@@ -509,6 +509,128 @@ class QuantAlgo:
             }
     
     @staticmethod
+    def get_turnover_rate(symbol, market="sh"):
+        """
+        获取换手率数据
+        symbol: 股票代码
+        market: 市场类型 ('sh' 或 'sz')
+        """
+        try:
+            import akshare as ak
+            
+            # 获取个股资金流向数据（包含换手率）
+            fund_flow_df = ak.stock_individual_fund_flow(stock=symbol, market=market)
+            
+            if fund_flow_df.empty:
+                return {
+                    '数据状态': '无法获取数据',
+                    '换手率': None
+                }
+            
+            # 获取最新的换手率
+            latest_data = fund_flow_df.iloc[0]
+            turnover_rate = latest_data['换手率']
+            
+            return {
+                '数据状态': '正常',
+                '换手率': round(turnover_rate, 2),
+                '日期': latest_data['日期']
+            }
+        except Exception as e:
+            return {
+                '数据状态': '获取失败',
+                '换手率': None,
+                '错误信息': str(e)
+            }
+    
+    @staticmethod
+    def analyze_turnover_and_volume(turnover_rate, volume_ratio):
+        """
+        根据换手率和量比分析个股情况
+        turnover_rate: 换手率（百分比）
+        volume_ratio: 量比
+        """
+        if turnover_rate is None:
+            return {
+                '分析状态': '换手率数据缺失',
+                '建议': '无法进行分析'
+            }
+        
+        # 换手率判断
+        if turnover_rate > 10:
+            turnover_level = "极高"
+            turnover_desc = "换手率极高，交易非常活跃"
+        elif turnover_rate > 5:
+            turnover_level = "高"
+            turnover_desc = "换手率较高，交易活跃"
+        elif turnover_rate > 2:
+            turnover_level = "中等"
+            turnover_desc = "换手率适中，交易正常"
+        elif turnover_rate > 0.5:
+            turnover_level = "低"
+            turnover_desc = "换手率较低，交易清淡"
+        else:
+            turnover_level = "极低"
+            turnover_desc = "换手率极低，交易非常清淡"
+        
+        # 量比判断
+        if volume_ratio > 2:
+            volume_level = "放量"
+            volume_desc = "成交量显著放大"
+        elif volume_ratio > 1.5:
+            volume_level = "温和放量"
+            volume_desc = "成交量温和放大"
+        elif volume_ratio < 0.5:
+            volume_level = "缩量"
+            volume_desc = "成交量萎缩"
+        else:
+            volume_level = "正常"
+            volume_desc = "成交量正常"
+        
+        # 综合分析
+        analysis_result = []
+        risk_level = "中等"
+        
+        # 高换手率 + 放量 = 主力活跃
+        if turnover_rate > 5 and volume_ratio > 1.5:
+            analysis_result.append("✅ 换手率高且放量，主力资金活跃，值得关注")
+            risk_level = "中等偏高"
+        # 高换手率 + 缩量 = 可能是出货
+        elif turnover_rate > 5 and volume_ratio < 0.8:
+            analysis_result.append("⚠️ 换手率高但缩量，可能是主力出货，需谨慎")
+            risk_level = "高"
+        # 低换手率 + 放量 = 可能是建仓
+        elif turnover_rate < 2 and volume_ratio > 1.5:
+            analysis_result.append("💡 换手率低但放量，可能是主力建仓，可关注")
+            risk_level = "低"
+        # 低换手率 + 缩量 = 观望
+        elif turnover_rate < 2 and volume_ratio < 0.8:
+            analysis_result.append("📊 换手率低且缩量，市场观望情绪浓厚")
+            risk_level = "低"
+        # 中等换手率 + 放量 = 稳健上涨
+        elif 2 <= turnover_rate <= 5 and volume_ratio > 1.5:
+            analysis_result.append("📈 换手率适中且放量，走势稳健，可继续持有")
+            risk_level = "中等"
+        # 中等换手率 + 缩量 = 调整中
+        elif 2 <= turnover_rate <= 5 and volume_ratio < 0.8:
+            analysis_result.append("📉 换手率适中但缩量，可能处于调整期")
+            risk_level = "中等"
+        else:
+            analysis_result.append("📊 换手率和量比均正常，走势平稳")
+            risk_level = "中等"
+        
+        return {
+            '换手率': turnover_rate,
+            '换手率等级': turnover_level,
+            '换手率说明': turnover_desc,
+            '量比': volume_ratio,
+            '量比等级': volume_level,
+            '量比说明': volume_desc,
+            '综合分析': analysis_result,
+            '风险等级': risk_level
+        }
+    
+    @staticmethod
     def get_sector_rotation():
         """
         获取板块轮动数据
