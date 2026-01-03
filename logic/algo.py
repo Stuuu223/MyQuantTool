@@ -1794,3 +1794,406 @@ class QuantAlgo:
             '风险提示': '做T风险较高，建议小仓位操作，严格止损',
             '操作建议': f"{t_level} {t_opportunity}，{'适合做T' if t_score >= 50 else '不建议做T'}"
         }
+    
+    @staticmethod
+    def get_auction_data():
+        """
+        获取集合竞价数据
+        返回当前市场所有股票的集合竞价信息
+        """
+        try:
+            import akshare as ak
+            
+            # 获取A股实时行情数据（包含集合竞价信息）
+            stock_df = ak.stock_zh_a_spot_em()
+            
+            if stock_df.empty:
+                return {
+                    '数据状态': '无法获取数据',
+                    '说明': '可能是数据源限制'
+                }
+            
+            # 筛选需要的列
+            auction_stocks = []
+            for _, row in stock_df.iterrows():
+                auction_stocks.append({
+                    '代码': row['代码'],
+                    '名称': row['名称'],
+                    '最新价': row['最新价'],
+                    '涨跌幅': row['涨跌幅'],
+                    '成交量': row['成交量'],
+                    '成交额': row['成交额'],
+                    '量比': row['量比'],
+                    '换手率': row['换手率'],
+                    '市盈率': row['市盈率-动态'],
+                    '总市值': row['总市值'],
+                    '流通市值': row['流通市值']
+                })
+            
+            return {
+                '数据状态': '正常',
+                '股票列表': auction_stocks,
+                '总数': len(auction_stocks)
+            }
+        except Exception as e:
+            return {
+                '数据状态': '获取失败',
+                '错误信息': str(e),
+                '说明': '可能是网络问题或数据源限制'
+            }
+    
+    @staticmethod
+    def detect_auction_weak_to_strong(df, symbol=None):
+        """
+        检测竞价弱转强战法
+        适用于烂板、炸板股次日竞价超预期的情况
+        
+        策略逻辑：
+        1. 前一天是烂板或炸板（弱势）
+        2. 次日竞价放量高开（超预期）
+        3. 说明有资金抢筹，值得重点关注
+        
+        df: 历史数据DataFrame
+        symbol: 股票代码（可选，用于获取更多信息）
+        """
+        try:
+            if df.empty or len(df) < 5:
+                return {
+                    '检测状态': '数据不足',
+                    '是否弱转强': False,
+                    '说明': '需要至少5天历史数据'
+                }
+            
+            # 获取最近两天的数据
+            today = df.iloc[-1]
+            yesterday = df.iloc[-2]
+            
+            # 1. 检查前一天是否是烂板或炸板
+            yesterday_change_pct = (yesterday['close'] - yesterday['open']) / yesterday['open'] * 100
+            yesterday_high_change = (yesterday['high'] - yesterday['open']) / yesterday['open'] * 100
+            
+            is_weak_yesterday = False
+            weak_type = ""
+            
+            # 炸板：盘中涨停但收盘未涨停
+            if yesterday_high_change >= 9.9 and yesterday_change_pct < 9.9:
+                is_weak_yesterday = True
+                weak_type = "炸板"
+            # 烂板：涨停但抛压大（换手率高）
+            elif yesterday_change_pct >= 9.9:
+                # 检查换手率
+                turnover = yesterday.get('turnover_rate', 0)
+                if turnover > 10:  # 换手率超过10%视为烂板
+                    is_weak_yesterday = True
+                    weak_type = "烂板"
+            
+            if not is_weak_yesterday:
+                return {
+                    '检测状态': '不符合条件',
+                    '是否弱转强': False,
+                    '说明': '前一天不是烂板或炸板，不符合弱转强条件'
+                }
+            
+            # 2. 检查今日竞价情况
+            today_open = today['open']
+            yesterday_close = yesterday['close']
+            gap_pct = (today_open - yesterday_close) / yesterday_close * 100
+            
+            # 计算今日成交量相对于昨日
+            today_volume = today.get('volume', 0)
+            yesterday_volume = yesterday.get('volume', 0)
+            volume_ratio = today_volume / yesterday_volume if yesterday_volume > 0 else 1
+            
+            # 3. 判断是否弱转强
+            # 条件：高开且放量
+            is_weak_to_strong = False
+            signals = []
+            
+            if gap_pct > 2:  # 高开超过2%
+                signals.append(f"✅ 高开{gap_pct:.2f}%，超预期")
+                is_weak_to_strong = True
+            elif gap_pct > 0:  # 小幅高开
+                signals.append(f"⚠️ 小幅高开{gap_pct:.2f}%")
+            elif gap_pct > -2:  # 平开或小幅低开
+                signals.append(f"⚠️ 平开/低开{gap_pct:.2f}%")
+            else:  # 大幅低开
+                signals.append(f"❌ 大幅低开{gap_pct:.2f}%，不符合弱转强")
+                return {
+                    '检测状态': '不符合条件',
+                    '是否弱转强': False,
+                    '说明': '大幅低开，不符合弱转强条件',
+                    '信号': signals
+                }
+            
+            if volume_ratio > 1.5:  # 放量超过1.5倍
+                signals.append(f"✅ 放量{volume_ratio:.2f}倍，资金抢筹")
+                is_weak_to_strong = True
+            elif volume_ratio > 1:
+                signals.append(f"⚠️ 温和放量{volume_ratio:.2f}倍")
+            else:
+                signals.append(f"❌ 缩量{volume_ratio:.2f}倍，资金不活跃")
+            
+            # 综合判断
+            if is_weak_to_strong and gap_pct > 2 and volume_ratio > 1.5:
+                rating = "🔥 强弱转强"
+                suggestion = "重点关注，竞价超预期，资金抢筹，可考虑参与"
+            elif is_weak_to_strong:
+                rating = "🟡 弱弱转强"
+                suggestion = "谨慎关注，信号一般，观察盘中走势"
+            else:
+                rating = "❌ 非弱转强"
+                suggestion = "不符合弱转强条件，不建议参与"
+            
+            return {
+                '检测状态': '正常',
+                '是否弱转强': is_weak_to_strong,
+                '前一天类型': weak_type,
+                '昨日涨跌幅': round(yesterday_change_pct, 2),
+                '今日开盘涨跌幅': round(gap_pct, 2),
+                '量比': round(volume_ratio, 2),
+                '评级': rating,
+                '信号': signals,
+                '操作建议': suggestion
+            }
+        except Exception as e:
+            return {
+                '检测状态': '检测失败',
+                '是否弱转强': False,
+                '错误信息': str(e)
+            }
+    
+    @staticmethod
+    def auction_diffusion_method(limit=50):
+        """
+        集合竞价扩散法
+        通过一字板强势股挖掘同题材概念股
+        
+        策略逻辑：
+        1. 9:20之后，找出一字涨停的股票
+        2. 筛选首板、二板，且封单金额超过流通盘5%
+        3. 剔除热炒题材，保留新题材
+        4. 根据题材找出同概念股，关注未涨停但高开的股票
+        
+        limit: 扫描的股票数量限制
+        """
+        try:
+            import akshare as ak
+            
+            # 获取实时行情数据
+            stock_df = ak.stock_zh_a_spot_em()
+            
+            if stock_df.empty:
+                return {
+                    '数据状态': '无法获取数据',
+                    '说明': '可能是数据源限制'
+                }
+            
+            # 1. 筛选一字涨停的股票（涨跌幅 >= 9.9%）
+            limit_up_stocks = stock_df[stock_df['涨跌幅'] >= 9.9].head(limit)
+            
+            if limit_up_stocks.empty:
+                return {
+                    '数据状态': '无涨停板股票',
+                    '说明': '当前市场无涨停板股票'
+                }
+            
+            # 2. 筛选强势一字板股票
+            strong_stocks = []
+            for _, row in limit_up_stocks.iterrows():
+                symbol = row['代码']
+                name = row['名称']
+                current_price = row['最新价']
+                turnover_rate = row['换手率']
+                market_cap = row['流通市值']
+                
+                # 计算封单金额（估算：成交量 * 当前价格）
+                volume = row['成交量']
+                seal_amount = volume * current_price
+                
+                # 封单金额占流通市值比例
+                seal_ratio = seal_amount / market_cap if market_cap > 0 else 0
+                
+                # 筛选条件：封单超过流通盘5%，且换手率适中（说明是一字板）
+                if seal_ratio > 0.05 and turnover_rate < 5:
+                    strong_stocks.append({
+                        '代码': symbol,
+                        '名称': name,
+                        '最新价': current_price,
+                        '涨跌幅': row['涨跌幅'],
+                        '封单金额': round(seal_amount, 2),
+                        '封单占比': round(seal_ratio * 100, 2),
+                        '换手率': turnover_rate,
+                        '流通市值': market_cap
+                    })
+            
+            if not strong_stocks:
+                return {
+                    '数据状态': '无符合条件的强势股',
+                    '说明': '未找到封单充足的强势一字板股票'
+                }
+            
+            # 3. 按封单占比排序
+            strong_stocks.sort(key=lambda x: x['封单占比'], reverse=True)
+            
+            # 4. 提取题材概念（这里简化处理，实际需要获取概念数据）
+            # 注意：由于AkShare的限制，这里无法直接获取概念数据
+            # 实际使用时，用户需要根据股票名称或代码手动查找相关概念
+            
+            return {
+                '数据状态': '正常',
+                '强势一字板股票': strong_stocks,
+                '说明': '请根据强势股票的名称或代码，手动查找相关概念股',
+                '操作建议': [
+                    '1. 关注封单占比最高的一字板股票',
+                    '2. 查找该股票的题材概念',
+                    '3. 搜索同概念的其他股票',
+                    '4. 关注未涨停但高开的同概念股',
+                    '5. 竞价后直接参与或打板介入'
+                ]
+            }
+        except Exception as e:
+            return {
+                '数据状态': '获取失败',
+                '错误信息': str(e),
+                '说明': '可能是网络问题或数据源限制'
+            }
+    
+    @staticmethod
+    def scan_auction_stocks(limit=100):
+        """
+        集合竞价选股扫描
+        综合运用竞价弱转强和集合竞价扩散法
+        
+        limit: 扫描的股票数量限制
+        """
+        try:
+            import akshare as ak
+            from logic.data_manager import DataManager
+            
+            # 获取实时行情数据
+            stock_df = ak.stock_zh_a_spot_em()
+            
+            if stock_df.empty:
+                return {
+                    '数据状态': '无法获取数据',
+                    '说明': '可能是数据源限制'
+                }
+            
+            # 筛选条件：量比大于1.5（放量）或涨跌幅大于3%
+            filtered_stocks = stock_df[
+                (stock_df['量比'] > 1.5) | (stock_df['涨跌幅'] > 3)
+            ].head(limit)
+            
+            if filtered_stocks.empty:
+                return {
+                    '数据状态': '无符合条件的股票',
+                    '说明': '当前市场无放量或涨幅明显的股票'
+                }
+            
+            # 分析每只股票
+            db = DataManager()
+            auction_stocks = []
+            
+            for _, row in filtered_stocks.iterrows():
+                symbol = row['代码']
+                name = row['名称']
+                current_price = row['最新价']
+                change_pct = row['涨跌幅']
+                volume_ratio = row['量比']
+                turnover_rate = row['换手率']
+                
+                try:
+                    # 获取历史数据
+                    df = db.get_history_data(symbol)
+                    
+                    if not df.empty and len(df) > 5:
+                        # 检测竞价弱转强
+                        weak_to_strong = QuantAlgo.detect_auction_weak_to_strong(df, symbol)
+                        
+                        # 计算综合评分
+                        score = 0
+                        signals = []
+                        
+                        # 量比评分
+                        if volume_ratio > 3:
+                            score += 30
+                            signals.append(f"大幅放量（量比{volume_ratio:.2f}）")
+                        elif volume_ratio > 2:
+                            score += 25
+                            signals.append(f"放量（量比{volume_ratio:.2f}）")
+                        elif volume_ratio > 1.5:
+                            score += 20
+                            signals.append(f"温和放量（量比{volume_ratio:.2f}）")
+                        
+                        # 涨跌幅评分
+                        if change_pct > 5:
+                            score += 25
+                            signals.append(f"大幅高开{change_pct:.2f}%")
+                        elif change_pct > 3:
+                            score += 20
+                            signals.append(f"高开{change_pct:.2f}%")
+                        elif change_pct > 0:
+                            score += 15
+                            signals.append(f"小幅高开{change_pct:.2f}%")
+                        
+                        # 换手率评分
+                        if 2 <= turnover_rate <= 10:
+                            score += 25
+                            signals.append(f"换手率适中（{turnover_rate:.2f}%）")
+                        elif turnover_rate > 10:
+                            score += 15
+                            signals.append(f"换手率较高（{turnover_rate:.2f}%）")
+                        
+                        # 弱转强加分
+                        if weak_to_strong.get('是否弱转强'):
+                            score += 20
+                            signals.append("竞价弱转强")
+                        
+                        # 评级
+                        if score >= 80:
+                            rating = "🔥 强势"
+                            suggestion = "重点关注，竞价强势，可考虑参与"
+                        elif score >= 60:
+                            rating = "🟡 活跃"
+                            suggestion = "关注，竞价活跃，观察盘中走势"
+                        elif score >= 40:
+                            rating = "🟢 一般"
+                            suggestion = "一般，信号较弱，观望为主"
+                        else:
+                            rating = "⚪ 弱势"
+                            suggestion = "弱势，不建议参与"
+                        
+                        auction_stocks.append({
+                            '代码': symbol,
+                            '名称': name,
+                            '最新价': current_price,
+                            '涨跌幅': change_pct,
+                            '量比': volume_ratio,
+                            '换手率': turnover_rate,
+                            '评分': score,
+                            '评级': rating,
+                            '信号': signals,
+                            '操作建议': suggestion,
+                            '弱转强': weak_to_strong.get('是否弱转强', False)
+                        })
+                except Exception as e:
+                    print(f"分析股票 {symbol} 失败: {e}")
+                    continue
+            
+            db.close()
+            
+            # 按评分排序
+            auction_stocks.sort(key=lambda x: x['评分'], reverse=True)
+            
+            return {
+                '数据状态': '正常',
+                '扫描数量': len(filtered_stocks),
+                '符合条件数量': len(auction_stocks),
+                '竞价股票列表': auction_stocks
+            }
+        except Exception as e:
+            return {
+                '数据状态': '获取失败',
+                '错误信息': str(e),
+                '说明': '可能是网络问题或数据源限制'
+            }
