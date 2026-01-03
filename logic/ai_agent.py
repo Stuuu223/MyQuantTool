@@ -32,7 +32,7 @@ class DeepSeekAgent:
             risks = self._identify_risks(technical_data, scores)
             
             # 4. 生成操作建议
-            operation = self._generate_operation(scores, market_state, risks)
+            operation = self._generate_operation(scores, market_state, risks, technical_data)
             
             # 5. 组装分析报告
             report = self._format_report(symbol, technical_data, market_state, risks, operation)
@@ -187,7 +187,7 @@ class DeepSeekAgent:
         
         return risks if risks else ["无明显风险"]
     
-    def _generate_operation(self, scores, market_state, risks):
+    def _generate_operation(self, scores, market_state, risks, technical_data):
         """生成操作建议"""
         total_score = sum(scores.values())
         max_score = len(scores) * 20
