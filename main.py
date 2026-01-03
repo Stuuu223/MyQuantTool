@@ -833,6 +833,10 @@ with tab_lhb:
         if lhb_data['数据状态'] == '正常':
             stocks = lhb_data['股票列表']
             
+            # 显示数据日期
+            if '数据日期' in lhb_data:
+                st.info(f"📅 数据日期：{lhb_data['数据日期']}")
+            
             # 直接显示原始数据，不进行格式化
             st.dataframe(
                 pd.DataFrame(stocks),
