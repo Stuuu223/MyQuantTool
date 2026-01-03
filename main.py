@@ -77,7 +77,38 @@ with st.sidebar:
     else:
         default_symbol = config.get('default_symbol', '600519')
     
-    symbol = st.text_input("股票代码", value=default_symbol, help="请输入6位A股代码")
+    # 搜索模式选择
+    search_mode = st.radio("搜索方式", ["按代码", "按名称"], horizontal=True)
+    
+    if search_mode == "按代码":
+        symbol = st.text_input("股票代码", value=default_symbol, help="请输入6位A股代码")
+    else:
+        # 按名称搜索
+        search_name = st.text_input("股票名称", placeholder="输入股票名称，如：贵州茅台", help="支持模糊搜索")
+        
+        if search_name:
+            with st.spinner('正在搜索...'):
+                matched_codes = QuantAlgo.get_stock_code_by_name(search_name)
+            
+            if matched_codes:
+                # 显示匹配的股票列表
+                st.write(f"找到 {len(matched_codes)} 只匹配的股票：")
+                stock_options = []
+                for code in matched_codes:
+                    name = QuantAlgo.get_stock_name(code)
+                    stock_options.append(f"{name} ({code})")
+                
+                selected_stock = st.selectbox("选择股票", stock_options)
+                
+                # 从选中项中提取股票代码
+                if selected_stock:
+                    symbol = selected_stock.split('(')[1].rstrip(')')
+            else:
+                st.warning("未找到匹配的股票")
+                symbol = default_symbol
+        else:
+            symbol = default_symbol
+    
     start_date = st.date_input("开始日期", pd.to_datetime(config.get('default_start_date', '2024-01-01')))
     
     # 策略参数
