@@ -9,6 +9,7 @@ class DataManager:
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.init_db()
+        self.update_db_schema()
 
     def init_db(self):
         query = '''
@@ -20,11 +21,27 @@ class DataManager:
             low REAL,
             close REAL,
             volume REAL,
+            turnover_rate REAL,
             PRIMARY KEY (symbol, date)
         )
         '''
         self.conn.execute(query)
         self.conn.commit()
+    
+    def update_db_schema(self):
+        """更新数据库表结构，添加换手率列"""
+        try:
+            # 检查表是否有 turnover_rate 列
+            cursor = self.conn.execute("PRAGMA table_info(daily_bars)")
+            columns = [column[1] for column in cursor.fetchall()]
+            
+            if 'turnover_rate' not in columns:
+                # 添加 turnover_rate 列
+                self.conn.execute("ALTER TABLE daily_bars ADD COLUMN turnover_rate REAL")
+                self.conn.commit()
+                print("数据库表结构已更新，添加了 turnover_rate 列")
+        except Exception as e:
+            print(f"更新数据库表结构失败: {e}")
 
     def get_history_data(self, symbol, start_date="20240101", end_date="20251231"):
         try:
@@ -36,11 +53,11 @@ class DataManager:
                 
                 df_api = df_api.rename(columns={
                     '日期': 'date', '开盘': 'open', '最高': 'high', 
-                    '最低': 'low', '收盘': 'close', '成交量': 'volume'
+                    '最低': 'low', '收盘': 'close', '成交量': 'volume', '换手率': 'turnover_rate'
                 })
                 df_api['symbol'] = symbol
                 
-                cols = ['symbol', 'date', 'open', 'high', 'low', 'close', 'volume']
+                cols = ['symbol', 'date', 'open', 'high', 'low', 'close', 'volume', 'turnover_rate']
                 df_api[cols].to_sql('daily_bars', self.conn, if_exists='append', index=False)
                 return df_api
             
