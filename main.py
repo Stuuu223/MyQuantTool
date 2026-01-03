@@ -833,28 +833,18 @@ with tab_lhb:
         if lhb_data['数据状态'] == '正常':
             stocks = lhb_data['股票列表']
             
-            # 格式化数据用于显示
-            display_stocks = []
-            for stock in stocks:
-                display_stocks.append({
-                    '代码': stock['代码'],
-                    '名称': stock['名称'],
-                    '收盘价': stock['收盘价'],
-                    '涨跌幅': stock['涨跌幅'],
-                    '龙虎榜净买入': format_amount(stock['龙虎榜净买入']),
-                    '上榜原因': stock['上榜原因']
-                })
-            
-            # 显示龙虎榜股票表格
+            # 直接显示原始数据，不进行格式化
             st.dataframe(
-                pd.DataFrame(display_stocks),
+                pd.DataFrame(stocks),
                 column_config={
                     '代码': st.column_config.TextColumn('代码', width='small'),
                     '名称': st.column_config.TextColumn('名称', width='medium'),
                     '收盘价': st.column_config.NumberColumn('收盘价', format='%.2f'),
                     '涨跌幅': st.column_config.NumberColumn('涨跌幅', format='%.2f%%'),
-                    '龙虎榜净买入': st.column_config.TextColumn('净买入', width='medium'),
-                    '上榜原因': st.column_config.TextColumn('上榜原因', width='large')
+                    '龙虎榜净买入': st.column_config.NumberColumn('净买入', format='%.2f'),
+                    '上榜原因': st.column_config.TextColumn('上榜原因', width='large'),
+                    '机构买入': st.column_config.NumberColumn('机构买入', format='%.2f'),
+                    '机构卖出': st.column_config.NumberColumn('机构卖出', format='%.2f')
                 },
                 use_container_width=True,
                 hide_index=True
