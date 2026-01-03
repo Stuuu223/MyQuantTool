@@ -63,8 +63,15 @@ class QuantAlgo:
             # 转换为字典
             info_dict = dict(zip(stock_info['item'], stock_info['value']))
             
-            # 1. 检查ST状态
+            # 1. 检查ST状态和退市状态
             stock_name = info_dict.get('股票名称', '')
+            
+            # 检查退市股票（名称中包含"退"字）
+            if '退' in stock_name:
+                risks.append("🔴 退市股票：已退市或即将退市，无法交易，强烈建议远离")
+                risk_level = "高"
+            
+            # 检查ST股票
             if 'ST' in stock_name or '*ST' in stock_name:
                 if '*ST' in stock_name:
                     risks.append("🔴 *ST退市风险警示：退市风险极高，强烈建议远离")
