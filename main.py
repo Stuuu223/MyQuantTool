@@ -893,6 +893,56 @@ with tab_lhb:
                     cols[3].metric("涨跌幅", f"{stock['涨跌幅']:.2f}%")
                     cols[4].caption(stock['上榜原因'])
                     st.divider()
+            
+            # 龙虎榜解析
+            st.divider()
+            st.subheader("📊 龙虎榜深度解析")
+            
+            with st.spinner('正在分析龙虎榜数据...'):
+                summary = QuantAlgo.analyze_lhb_summary()
+                
+                if summary['数据状态'] == '正常':
+                    # 总体数据
+                    col1, col2, col3 = st.columns(3)
+                    col1.metric("上榜股票数量", f"{summary['上榜股票数量']} 只")
+                    col2.metric("龙虎榜净买入总额", format_amount(summary['龙虎榜净买入总额']))
+                    col3.metric("总成交额", format_amount(summary['总成交额']))
+                    
+                    # 上榜原因统计
+                    if summary['上榜原因统计']:
+                        st.subheader("🔍 上榜原因统计")
+                        reason_df = pd.DataFrame([
+                            {'上榜原因': reason, '数量': count}
+                            for reason, count in summary['上榜原因统计'].items()
+                        ])
+                        st.dataframe(reason_df, use_container_width=True, hide_index=True)
+                    
+                    # 机构统计
+                    if summary['机构统计'] is not None and not summary['机构统计'].empty:
+                        st.subheader("🏢 机构席位统计")
+                        st.dataframe(summary['机构统计'].head(10), use_container_width=True)
+                    
+                    # 活跃营业部
+                    if summary['活跃营业部'] is not None and not summary['活跃营业部'].empty:
+                        st.subheader("🏪 活跃营业部")
+                        st.dataframe(summary['活跃营业部'].head(10), use_container_width=True)
+                    
+                    # 资金流向分析
+                    st.subheader("💰 资金流向分析")
+                    net_buy_ratio = summary['龙虎榜净买入总额'] / summary['总成交额'] * 100 if summary['总成交额'] > 0 else 0
+                    
+                    if net_buy_ratio > 5:
+                        st.success(f"✅ 龙虎榜资金净买入占比 {net_buy_ratio:.2f}%，主力资金积极介入")
+                    elif net_buy_ratio > 0:
+                        st.info(f"📊 龙虎榜资金净买入占比 {net_buy_ratio:.2f}%，资金面偏多")
+                    elif net_buy_ratio > -5:
+                        st.warning(f"⚠️ 龙虎榜资金净买入占比 {net_buy_ratio:.2f}%，资金面偏空")
+                    else:
+                        st.error(f"❌ 龙虎榜资金净买入占比 {net_buy_ratio:.2f}%，主力资金大幅流出")
+                else:
+                    st.error(f"❌ {summary['数据状态']}")
+                    if '错误信息' in summary:
+                        st.caption(summary['错误信息'])
         else:
             st.error(f"❌ {lhb_data['数据状态']}")
             if '错误信息' in lhb_data:
