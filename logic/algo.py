@@ -474,9 +474,7 @@ class QuantAlgo:
                     '板块名称': row.iloc[1],  # 板块名称
                     '涨跌幅': row.iloc[2],    # 涨跌幅
                     '主力净流入': row.iloc[3],  # 主力净流入-净额
-                    '主力净流入占比': row.iloc[4],  # 主力净流入-净占比
-                    '最新价': 0,  # 该接口不提供最新价
-                    '总市值': 0   # 该接口不提供总市值
+                    '主力净流入占比': row.iloc[4]  # 主力净流入-净占比
                 })
             
             return {
@@ -532,4 +530,142 @@ class QuantAlgo:
                 '错误信息': str(e),
                 '说明': '可能是网络问题或数据源限制'
             }
-        return plan
+    
+    @staticmethod
+    def generate_trading_plan(df, symbol="600519"):
+        """
+        生成个股操作预案
+        基于技术指标和形态识别，生成买入点、卖出点、止损点、止盈点
+        """
+        try:
+            current_price = df.iloc[-1]['close']
+            
+            # 计算各项技术指标
+            atr = QuantAlgo.calculate_atr(df)
+            macd_data = QuantAlgo.calculate_macd(df)
+            rsi_data = QuantAlgo.calculate_rsi(df)
+            bollinger_data = QuantAlgo.calculate_bollinger_bands(df)
+            kdj_data = QuantAlgo.calculate_kdj(df)
+            volume_data = QuantAlgo.analyze_volume(df)
+            money_flow_data = QuantAlgo.analyze_money_flow(df, symbol=symbol, market="sh" if symbol.startswith("6") else "sz")
+            
+            # 形态识别
+            box_pattern = QuantAlgo.detect_box_pattern(df)
+            double_bottom = QuantAlgo.detect_double_bottom(df)
+            double_top = QuantAlgo.detect_double_top(df)
+            head_shoulders = QuantAlgo.detect_head_shoulders(df)
+            
+            # 生成操作建议
+            plan = {
+                '股票代码': symbol,
+                '当前价格': current_price,
+                '操作建议': '观望',
+                '买入点': None,
+                '卖出点': None,
+                '止损点': None,
+                '止盈点': None,
+                '风险等级': '中等',
+                '持仓周期': '短期',
+                '分析依据': []
+            }
+            
+            # 综合分析
+            signals = []
+            
+            # MACD信号
+            if macd_data['趋势'] == '多头':
+                signals.append({'指标': 'MACD', '信号': '看多', '强度': '强'})
+                plan['操作建议'] = '买入'
+            elif macd_data['趋势'] == '空头':
+                signals.append({'指标': 'MACD', '信号': '看空', '强度': '强'})
+                plan['操作建议'] = '卖出'
+            
+            # RSI信号
+            if rsi_data['RSI'] < 30:
+                signals.append({'指标': 'RSI', '信号': '超卖', '强度': '中'})
+                if plan['操作建议'] == '观望':
+                    plan['操作建议'] = '考虑买入'
+            elif rsi_data['RSI'] > 70:
+                signals.append({'指标': 'RSI', '信号': '超买', '强度': '中'})
+                if plan['操作建议'] == '观望':
+                    plan['操作建议'] = '考虑卖出'
+            
+            # KDJ信号
+            if '金叉' in kdj_data['信号']:
+                signals.append({'指标': 'KDJ', '信号': '金叉', '强度': '中'})
+            elif '死叉' in kdj_data['信号']:
+                signals.append({'指标': 'KDJ', '信号': '死叉', '强度': '中'})
+            
+            # 布林带信号
+            if current_price < bollinger_data['下轨']:
+                signals.append({'指标': '布林带', '信号': '触及下轨', '强度': '强'})
+                plan['操作建议'] = '买入'
+            elif current_price > bollinger_data['上轨']:
+                signals.append({'指标': '布林带', '信号': '触及上轨', '强度': '强'})
+                plan['操作建议'] = '卖出'
+            
+            # 成交量信号
+            if volume_data['成交量状态'] == '放量':
+                signals.append({'指标': '成交量', '信号': '放量', '强度': '中'})
+            elif volume_data['成交量状态'] == '缩量':
+                signals.append({'指标': '成交量', '信号': '缩量', '强度': '弱'})
+            
+            # 资金流向信号
+            if money_flow_data['数据状态'] == '正常':
+                if money_flow_data['资金流向'] == '净流入':
+                    signals.append({'指标': '资金流向', '信号': '净流入', '强度': '强'})
+                elif money_flow_data['资金流向'] == '净流出':
+                    signals.append({'指标': '资金流向', '信号': '净流出', '强度': '强'})
+            
+            # 形态识别信号
+            if box_pattern['检测到']:
+                if box_pattern['方向'] == '向上突破':
+                    signals.append({'指标': '箱体形态', '信号': '向上突破', '强度': '强'})
+                    plan['操作建议'] = '买入'
+                elif box_pattern['方向'] == '向下突破':
+                    signals.append({'指标': '箱体形态', '信号': '向下突破', '强度': '强'})
+                    plan['操作建议'] = '卖出'
+            
+            if double_bottom['检测到']:
+                signals.append({'指标': '形态', '信号': '双底', '强度': '强'})
+                plan['操作建议'] = '买入'
+            
+            if double_top['检测到']:
+                signals.append({'指标': '形态', '信号': '双顶', '强度': '强'})
+                plan['操作建议'] = '卖出'
+            
+            if head_shoulders['检测到']:
+                if head_shoulders['方向'] == '顶部':
+                    signals.append({'指标': '形态', '信号': '头肩顶', '强度': '强'})
+                    plan['操作建议'] = '卖出'
+                elif head_shoulders['方向'] == '底部':
+                    signals.append({'指标': '形态', '信号': '头肩底', '强度': '强'})
+                    plan['操作建议'] = '买入'
+            
+            # 计算买入点、卖出点、止损点、止盈点
+            if plan['操作建议'] == '买入':
+                plan['买入点'] = current_price
+                plan['止损点'] = current_price - atr * 2  # ATR的2倍作为止损
+                plan['止盈点'] = current_price + atr * 3  # ATR的3倍作为止盈
+                plan['风险等级'] = '中等'
+                plan['持仓周期'] = '短期（3-5天）'
+            elif plan['操作建议'] == '卖出':
+                plan['卖出点'] = current_price
+                plan['风险等级'] = '低'
+                plan['持仓周期'] = '空仓观望'
+            
+            # 如果有多个强势信号，提高风险等级
+            strong_signals = [s for s in signals if s['强度'] == '强']
+            if len(strong_signals) >= 2:
+                plan['风险等级'] = '高'
+                if plan['操作建议'] == '买入':
+                    plan['持仓周期'] = '中期（1-2周）'
+            
+            plan['分析依据'] = signals
+            
+            return plan
+        except Exception as e:
+            return {
+                '错误': str(e),
+                '说明': '生成操作预案失败'
+            }
