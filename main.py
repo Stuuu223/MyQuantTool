@@ -116,7 +116,7 @@ with st.sidebar:
     atr_mult = st.slider("ATR 倍数", 0.1, 2.0, float(config.get('atr_multiplier', 0.5)), 0.1)
     grid_ratio = st.slider("网格比例", 0.05, 0.5, float(config.get('grid_ratio', 0.1)), 0.05)
     
-    run_ai = st.button("🧠 呼叫 AI 投顾")
+    run_ai = st.button("🧠 智能分析")
     
     st.markdown("---")
     
@@ -175,9 +175,8 @@ with st.sidebar:
     
     st.caption("数据来源: AkShare 开源接口")
     
-    # 检查 API Key 是否有效
-    if not API_KEY or len(API_KEY) < 10:
-        st.warning("⚠️ 未检测到有效 Key，AI 功能将不可用。请访问 https://siliconflow.cn/ 获取免费 API Key（2000万tokens）。")
+    # 提示用户使用本地分析系统
+    st.info("💡 现在使用本地智能分析系统，无需 API Key，分析更快速、更稳定！")
 
 with tab_single:
     # 自选股快速切换
@@ -758,9 +757,9 @@ with tab_single:
                 st.table(pd.DataFrame([grid_plan]).T.rename(columns={0: '数值/建议'}))
             
             with col_ai:
-                st.subheader("🤖 AI 智能分析")
+                st.subheader("🤖 智能分析")
                 if run_ai:
-                    with st.spinner("DeepSeek 正在深度分析..."):
+                    with st.spinner("正在智能分析..."):
                         # 准备技术数据
                         tech_data = {
                             'current_price': current_price,
@@ -783,7 +782,7 @@ with tab_single:
                         analysis = ai_agent.analyze_stock(symbol, round(change_pct, 2), tech_data)
                         st.success(analysis)
                 else:
-                    st.write("点击侧边栏的「呼叫 AI 投顾」按钮，获取专业投资建议。")
+                    st.write("点击侧边栏的「🧠 智能分析」按钮，获取智能投资建议。")
 
 with tab_backtest:
     st.subheader("🧪 网格策略回测")
