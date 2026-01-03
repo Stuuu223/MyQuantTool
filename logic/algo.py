@@ -94,16 +94,29 @@ class QuantAlgo:
                     # 检查是否亏损
                     profit = info_dict.get('净利润', '')
                     if profit and '-' in str(profit):
-                        risks.append("🟡 净利润亏损：公司盈利能力较弱")
-                        if risk_level == "低":
-                            risk_level = "中"
+                        try:
+                            profit_value = float(profit.replace('亿', '').replace('万', '').replace('元', ''))
+                            if profit_value < -1:  # 亏损超过1亿
+                                risks.append("🔴 严重亏损：净利润为负，亏损金额较大")
+                                risk_level = "高"
+                            else:
+                                risks.append("🟡 净利润亏损：公司盈利能力较弱")
+                                if risk_level == "低":
+                                    risk_level = "中"
+                        except:
+                            risks.append("🟡 净利润亏损：公司盈利能力较弱")
+                            if risk_level == "低":
+                                risk_level = "中"
                     
                     # 检查负债率
                     debt_ratio = info_dict.get('负债率', '')
                     if debt_ratio:
                         try:
                             debt_value = float(debt_ratio.replace('%', ''))
-                            if debt_value > 80:
+                            if debt_value > 90:
+                                risks.append("🔴 负债率极高：财务风险非常大")
+                                risk_level = "高"
+                            elif debt_value > 80:
                                 risks.append("🟡 负债率过高：财务风险较大")
                                 if risk_level == "低":
                                     risk_level = "中"
@@ -162,41 +175,145 @@ class QuantAlgo:
             try:
                 announcements = ak.stock_news_em(symbol=symbol)
                 if not announcements.empty:
-                    risk_keywords = ['立案', '调查', '诉讼', '仲裁', '处罚', '违规', '退市', '停牌', 'ST', '*ST', '内控', '缺陷']
+                    risk_keywords = ['立案', '调查', '诉讼', '仲裁', '处罚', '违规', '退市', '停牌', 'ST', '*ST', '内控', '缺陷', '证监', '证监会']
                     found_risks = set()
+                    risk_details = {}  # 存储具体的风险详情
                     
                     # 检查公告标题和内容
                     for idx in range(min(30, len(announcements))):  # 检查最近30条公告
                         title = str(announcements.iloc[idx, 1])
                         content = str(announcements.iloc[idx, 2])
+                        date = str(announcements.iloc[idx, 3])
                         full_text = title + ' ' + content
                         
                         for keyword in risk_keywords:
                             if keyword in full_text:
-                                found_risks.add(keyword)
+                                if keyword not in found_risks:
+                                    found_risks.add(keyword)
+                                    # 保存具体的风险详情
+                                    if keyword not in risk_details:
+                                        risk_details[keyword] = []
+                                    risk_details[keyword].append({
+                                        '日期': date,
+                                        '标题': title[:50] + '...' if len(title) > 50 else title
+                                    })
                     
-                    # 根据发现的关键词添加风险
-                    if found_risks:
-                        if '立案' in found_risks or '调查' in found_risks:
-                            risks.append("🔴 立案调查风险：公司涉及立案调查，存在重大法律风险")
-                            risk_level = "高"
-                        elif '内控' in found_risks and '缺陷' in found_risks:
-                            risks.append("🟠 内控缺陷风险：公司内部控制存在缺陷")
-                            if risk_level == "低":
-                                risk_level = "中"
-                        elif '诉讼' in found_risks or '仲裁' in found_risks:
-                            risks.append("🟡 诉讼仲裁风险：公司涉及诉讼或仲裁案件")
-                            if risk_level == "低":
-                                risk_level = "中"
-                        elif '处罚' in found_risks or '违规' in found_risks:
-                            risks.append("🟡 监管处罚风险：公司受到监管处罚")
-                            if risk_level == "低":
-                                risk_level = "中"
-                        elif 'ST' in found_risks or '*ST' in found_risks:
-                            # ST风险已经在前面检测过了，这里不再重复
-                            pass
+                    # 根据发现的关键词添加详细风险
+                    if '立案' in found_risks or '调查' in found_risks:
+                        details = risk_details.get('立案', []) + risk_details.get('调查', [])
+                        details_str = '; '.join([f"{d['日期']}:{d['标题']}" for d in details[:2]])  # 只显示前2条
+                        risks.append(f"🔴 立案调查风险：公司涉及立案调查，存在重大法律风险 ({details_str})")
+                        risk_level = "高"
+                    elif '内控' in found_risks and '缺陷' in found_risks:
+                        details = risk_details.get('内控', []) + risk_details.get('缺陷', [])
+                        details_str = '; '.join([f"{d['日期']}:{d['标题']}" for d in details[:2]])
+                        risks.append(f"🟠 内控缺陷风险：公司内部控制存在缺陷 ({details_str})")
+                        if risk_level == "低":
+                            risk_level = "中"
+                    elif '诉讼' in found_risks or '仲裁' in found_risks:
+                        details = risk_details.get('诉讼', []) + risk_details.get('仲裁', [])
+                        details_str = '; '.join([f"{d['日期']}:{d['标题']}" for d in details[:2]])
+                        risks.append(f"🟡 诉讼仲裁风险：公司涉及诉讼或仲裁案件 ({details_str})")
+                        if risk_level == "低":
+                            risk_level = "中"
+                    elif '处罚' in found_risks or '违规' in found_risks:
+                        details = risk_details.get('处罚', []) + risk_details.get('违规', [])
+                        details_str = '; '.join([f"{d['日期']}:{d['标题']}" for d in details[:2]])
+                        risks.append(f"🟡 监管处罚风险：公司受到监管处罚 ({details_str})")
+                        if risk_level == "低":
+                            risk_level = "中"
+                    elif 'ST' in found_risks or '*ST' in found_risks:
+                        # ST风险已经在前面检测过了，这里不再重复
+                        pass
             except Exception as e:
                 # 如果获取公告失败，不影响其他风险检测
+                pass
+            
+            # 7. 检查财报风险
+            try:
+                # 获取财务报表数据
+                financial_report = ak.stock_financial_analysis_indicator(symbol=symbol)
+                if not financial_report.empty:
+                    # 转换为字典
+                    financial_dict = dict(zip(financial_report['指标'], financial_report['最新值']))
+                    
+                    # 检查财务指标
+                    # 检查资产负债率
+                    asset_liability_ratio = financial_dict.get('资产负债率', '')
+                    if asset_liability_ratio:
+                        try:
+                            ratio_value = float(asset_liability_ratio.replace('%', ''))
+                            if ratio_value > 80:
+                                risks.append("🔴 资产负债率过高：财务结构风险大")
+                                if risk_level == "低":
+                                    risk_level = "中"
+                            elif ratio_value > 60:
+                                risks.append("🟡 资产负债率偏高：财务压力较大")
+                                if risk_level == "低":
+                                    risk_level = "中"
+                        except:
+                            pass
+                    
+                    # 检查流动比率
+                    current_ratio = financial_report.get('流动比率', '')
+                    if current_ratio:
+                        try:
+                            ratio_value = float(current_ratio)
+                            if ratio_value < 1:
+                                risks.append("🟡 流动比率偏低：短期偿债能力弱")
+                                if risk_level == "低":
+                                    risk_level = "中"
+                            elif ratio_value < 0.5:
+                                risks.append("🔴 流动比率过低：短期偿债风险大")
+                                risk_level = "高"
+                        except:
+                            pass
+                    
+                    # 检查速动比率
+                    quick_ratio = financial_report.get('速动比率', '')
+                    if quick_ratio:
+                        try:
+                            ratio_value = float(quick_ratio)
+                            if ratio_value < 0.8:
+                                risks.append("🟡 速动比率偏低：流动性风险")
+                                if risk_level == "低":
+                                    risk_level = "中"
+                            elif ratio_value < 0.5:
+                                risks.append("🔴 速动比率过低：流动性风险大")
+                                risk_level = "高"
+                        except:
+                            pass
+                    
+                    # 检查毛利率
+                    gross_margin = financial_report.get('销售毛利率', '')
+                    if gross_margin:
+                        try:
+                            margin_value = float(gross_margin.replace('%', ''))
+                            if margin_value < 10:
+                                risks.append("🟡 毛利率过低：盈利能力弱")
+                                if risk_level == "低":
+                                    risk_level = "中"
+                            elif margin_value < 0:
+                                risks.append("🔴 毛利率为负：严重亏损")
+                                risk_level = "高"
+                        except:
+                            pass
+                    
+                    # 检查净资产收益率
+                    roe = financial_report.get('净资产收益率', '')
+                    if roe:
+                        try:
+                            roe_value = float(roe.replace('%', ''))
+                            if roe_value < 0:
+                                risks.append("🟡 净资产收益率为负：股东回报率低")
+                                if risk_level == "低":
+                                    risk_level = "中"
+                            elif roe_value < 5:
+                                risks.append("🟢 净资产收益率偏低：盈利能力一般")
+                        except:
+                            pass
+            except Exception as e:
+                # 如果获取财报数据失败，不影响其他风险检测
                 pass
             
             # 如果没有发现风险
