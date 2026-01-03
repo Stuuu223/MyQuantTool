@@ -686,6 +686,69 @@ with tab_single:
             fig.update_layout(xaxis_rangeslider_visible=False, height=500)
             st.plotly_chart(fig, use_container_width=True)
 
+            # 龙头战法分析
+            st.divider()
+            st.subheader("🔥 龙头战法分析")
+            st.caption("基于财联社龙头战法精髓：快、狠、准、捕食")
+            
+            dragon_analysis = QuantAlgo.analyze_dragon_stock(df, current_price)
+            
+            if dragon_analysis.get('龙头评级'):
+                # 显示龙头评级
+                col_dragon_rating, col_dragon_score = st.columns(2)
+                with col_dragon_rating:
+                    st.metric("龙头评级", dragon_analysis['龙头评级'], delta=dragon_analysis['评级说明'])
+                with col_dragon_score:
+                    st.metric("评级得分", f"{dragon_analysis['评级得分']}/100")
+                
+                # 显示五个条件
+                st.subheader("📋 龙头股五个条件")
+                
+                col_cond1, col_cond2 = st.columns(2)
+                with col_cond1:
+                    st.info("**条件1：涨停板**")
+                    for desc in dragon_analysis['条件1_涨停板']['说明']:
+                        st.write(desc)
+                    st.caption(f"得分: {dragon_analysis['条件1_涨停板']['得分']}/20")
+                
+                with col_cond2:
+                    st.info("**条件2：价格**")
+                    for desc in dragon_analysis['条件2_价格']['说明']:
+                        st.write(desc)
+                    st.caption(f"得分: {dragon_analysis['条件2_价格']['得分']}/20")
+                
+                col_cond3, col_cond4 = st.columns(2)
+                with col_cond3:
+                    st.info("**条件3：成交量**")
+                    for desc in dragon_analysis['条件3_成交量']['说明']:
+                        st.write(desc)
+                    st.caption(f"得分: {dragon_analysis['条件3_成交量']['得分']}/20")
+                
+                with col_cond4:
+                    st.info("**条件4：KDJ**")
+                    for desc in dragon_analysis['条件4_KDJ']['说明']:
+                        st.write(desc)
+                    st.caption(f"得分: {dragon_analysis['条件4_KDJ']['得分']}/20")
+                
+                st.info("**条件5：换手率**")
+                for desc in dragon_analysis['条件5_换手率']['说明']:
+                    st.write(desc)
+                st.caption(f"得分: {dragon_analysis['条件5_换手率']['得分']}/20")
+                
+                # 显示综合分析
+                st.divider()
+                st.subheader("🔍 综合分析")
+                for i, analysis in enumerate(dragon_analysis['综合分析'], 1):
+                    st.write(f"{i}. {analysis}")
+                
+                # 显示操作建议
+                st.divider()
+                st.subheader("💡 操作建议")
+                for suggestion in dragon_analysis['操作建议']:
+                    st.write(suggestion)
+            else:
+                st.error(f"❌ {dragon_analysis.get('评级得分', '无法分析')}")
+
             # 策略和AI分析
             col_strategy, col_ai = st.columns([1, 1])
             

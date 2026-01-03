@@ -646,6 +646,228 @@ class QuantAlgo:
         }
     
     @staticmethod
+    def check_limit_up(df):
+        """
+        检查是否涨停
+        df: 历史数据DataFrame
+        返回: 是否涨停、涨停日期列表
+        """
+        try:
+            if df.empty or len(df) < 2:
+                return {
+                    '是否涨停': False,
+                    '涨停日期': []
+                }
+            
+            # 计算涨跌幅
+            df['change_pct'] = df['close'].pct_change() * 100
+            
+            # 判断涨停（涨跌幅 >= 9.9%）
+            limit_up_days = df[df['change_pct'] >= 9.9]
+            
+            if not limit_up_days.empty:
+                return {
+                    '是否涨停': True,
+                    '涨停日期': limit_up_days['date'].tolist(),
+                    '涨停次数': len(limit_up_days),
+                    '最新涨停': limit_up_days.iloc[-1]['date'] if len(limit_up_days) > 0 else None
+                }
+            else:
+                return {
+                    '是否涨停': False,
+                    '涨停日期': [],
+                    '涨停次数': 0
+                }
+        except Exception as e:
+            return {
+                '是否涨停': False,
+                '涨停日期': [],
+                '错误信息': str(e)
+            }
+    
+    @staticmethod
+    def analyze_dragon_stock(df, current_price=None):
+        """
+        龙头战法分析
+        根据文章中的五个条件和识别特征进行综合分析
+        df: 历史数据DataFrame
+        current_price: 当前价格（可选）
+        """
+        try:
+            if df.empty or len(df) < 20:
+                return {
+                    '龙头评级': '数据不足',
+                    '评级得分': 0,
+                    '不符合原因': '数据不足，无法分析'
+                }
+            
+            # 1. 检查是否从涨停板开始
+            limit_up_info = QuantAlgo.check_limit_up(df)
+            condition1_score = 0
+            condition1_desc = []
+            
+            if limit_up_info['是否涨停']:
+                condition1_score = 20
+                condition1_desc.append(f"✅ 有涨停板记录（{limit_up_info['涨停次数']}次）")
+            else:
+                condition1_desc.append("❌ 无涨停板记录，不能做龙头")
+            
+            # 2. 检查价格（不超过10元）
+            current_price = current_price if current_price else df.iloc[-1]['close']
+            condition2_score = 20 if current_price <= 10 else 10 if current_price <= 15 else 0
+            condition2_desc = []
+            
+            if current_price <= 10:
+                condition2_desc.append(f"✅ 价格低廉（¥{current_price:.2f}），具备炒作空间")
+            elif current_price <= 15:
+                condition2_desc.append(f"⚠️ 价格适中（¥{current_price:.2f}），炒作空间一般")
+            else:
+                condition2_desc.append(f"❌ 价格过高（¥{current_price:.2f}），不具备炒作空间")
+            
+            # 3. 检查成交量（攻击性放量）
+            volume_data = QuantAlgo.analyze_volume(df)
+            condition3_score = 0
+            condition3_desc = []
+            
+            if volume_data['量比'] > 2:
+                condition3_score = 20
+                condition3_desc.append(f"✅ 攻击性放量（量比{volume_data['量比']}）")
+            elif volume_data['量比'] > 1.5:
+                condition3_score = 15
+                condition3_desc.append(f"⚠️ 温和放量（量比{volume_data['量比']}）")
+            else:
+                condition3_desc.append(f"❌ 缩量或正常（量比{volume_data['量比']}）")
+            
+            # 4. 检查KDJ金叉
+            kdj_data = QuantAlgo.calculate_kdj(df)
+            condition4_score = 0
+            condition4_desc = []
+            
+            if "金叉" in kdj_data['信号']:
+                condition4_score = 20
+                condition4_desc.append(f"✅ KDJ金叉（K:{kdj_data['K']}, D:{kdj_data['D']}, J:{kdj_data['J']}）")
+            elif kdj_data['K'] < 30:
+                condition4_score = 10
+                condition4_desc.append(f"⚠️ KDJ低位（K:{kdj_data['K']}, D:{kdj_data['D']}, J:{kdj_data['J']}）")
+            else:
+                condition4_desc.append(f"❌ KDJ不在低位（K:{kdj_data['K']}, D:{kdj_data['D']}, J:{kdj_data['J']}）")
+            
+            # 5. 检查换手率
+            turnover_data = QuantAlgo.get_turnover_rate(df)
+            condition5_score = 0
+            condition5_desc = []
+            
+            if turnover_data.get('换手率'):
+                tr = turnover_data['换手率']
+                if 5 <= tr <= 15:
+                    condition5_score = 20
+                    condition5_desc.append(f"✅ 换手率适中（{tr}%），资金活跃")
+                elif 2 <= tr < 5:
+                    condition5_score = 15
+                    condition5_desc.append(f"⚠️ 换手率偏低（{tr}%），资金参与度一般")
+                elif tr > 15:
+                    condition5_score = 10
+                    condition5_desc.append(f"⚠️ 换手率过高（{tr}%），风险较大")
+                else:
+                    condition5_desc.append(f"❌ 换手率过低（{tr}%），资金不活跃")
+            else:
+                condition5_desc.append("❌ 换手率数据缺失")
+            
+            # 计算总分和评级
+            total_score = condition1_score + condition2_score + condition3_score + condition4_score + condition5_score
+            
+            if total_score >= 80:
+                rating = "🔥 强龙头"
+                rating_desc = "符合龙头战法大部分条件，重点关注"
+            elif total_score >= 60:
+                rating = "📈 潜力龙头"
+                rating_desc = "具备龙头股特征，可关注"
+            elif total_score >= 40:
+                rating = "⚠️ 弱龙头"
+                rating_desc = "部分符合条件，谨慎关注"
+            else:
+                rating = "❌ 非龙头"
+                rating_desc = "不符合龙头战法条件"
+            
+            # 综合分析
+            analysis = []
+            if condition1_score > 0:
+                analysis.append("该股具备涨停板特征，是龙头的发源地")
+            if condition2_score > 0:
+                analysis.append("价格适中，具备炒作空间，容易得到市场追捧")
+            if condition3_score > 0:
+                analysis.append("成交量放大，显示主力资金活跃")
+            if condition4_score > 0:
+                analysis.append("技术指标金叉，具备上涨动能")
+            if condition5_score > 0:
+                analysis.append("换手率适中，资金参与度较高")
+            
+            return {
+                '龙头评级': rating,
+                '评级得分': total_score,
+                '评级说明': rating_desc,
+                '条件1_涨停板': {
+                    '得分': condition1_score,
+                    '说明': condition1_desc
+                },
+                '条件2_价格': {
+                    '得分': condition2_score,
+                    '说明': condition2_desc
+                },
+                '条件3_成交量': {
+                    '得分': condition3_score,
+                    '说明': condition3_desc
+                },
+                '条件4_KDJ': {
+                    '得分': condition4_score,
+                    '说明': condition4_desc
+                },
+                '条件5_换手率': {
+                    '得分': condition5_score,
+                    '说明': condition5_desc
+                },
+                '综合分析': analysis,
+                '操作建议': QuantAlgo.get_dragon_operation_suggestion(total_score, limit_up_info, kdj_data)
+            }
+        except Exception as e:
+            return {
+                '龙头评级': '分析失败',
+                '评级得分': 0,
+                '错误信息': str(e)
+            }
+    
+    @staticmethod
+    def get_dragon_operation_suggestion(total_score, limit_up_info, kdj_data):
+        """
+        根据龙头战法给出操作建议
+        """
+        suggestions = []
+        
+        if total_score >= 80:
+            suggestions.append("🎯 **强龙头策略**")
+            suggestions.append("1. 追涨策略：在涨停开闸放水时买入")
+            suggestions.append("2. 回调策略：等待股价回到第一个涨停板启涨点附近买入")
+            suggestions.append("3. 止损点：以第一个涨停板为止损点")
+            suggestions.append("4. 持有：耐心持有，直到不再涨停，收盘前10分钟卖出")
+        elif total_score >= 60:
+            suggestions.append("💡 **潜力龙头策略**")
+            suggestions.append("1. 分批买入：先试探性买入，确认强势后再加仓")
+            suggestions.append("2. 关注KDJ：等待KDJ金叉确认后再重仓")
+            suggestions.append("3. 止损点：弱势市场以3%为止损点")
+            suggestions.append("4. 观察放量：确认攻击性放量后再追涨")
+        elif total_score >= 40:
+            suggestions.append("⚠️ **弱龙头策略**")
+            suggestions.append("1. 轻仓尝试：小仓位试探，不宜重仓")
+            suggestions.append("2. 严格止损：设置3%止损，严格执行")
+            suggestions.append("3. 观望为主：等待更多信号确认")
+        else:
+            suggestions.append("❌ **非龙头建议**")
+            suggestions.append("1. 不建议操作：不符合龙头战法条件")
+            suggestions.append("2. 观望等待：等待出现更好的机会")
+        
+        return suggestions
+    
+    @staticmethod
     def get_sector_rotation():
         """
         获取板块轮动数据
