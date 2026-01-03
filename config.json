@@ -1,0 +1,10 @@
+{
+  "api_key": "sk-bxjtojiiuhmtrnrnwykrompexglngkzmcjydvgesxkqgzzet",
+  "default_symbol": "600519",
+  "default_start_date": "2024-01-01",
+  "atr_multiplier": 0.5,
+  "grid_ratio": 0.1,
+  "theme": "light",
+  "language": "zh",
+  "watchlist": []
+}
