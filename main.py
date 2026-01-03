@@ -65,8 +65,18 @@ tab_single, tab_compare, tab_backtest, tab_sector, tab_lhb = st.tabs(["📊 单�
 with st.sidebar:
     st.header("🎮 控制台")
     
+    # 获取自选股列表
+    watchlist = config.get('watchlist', [])
+    
     # 从配置文件加载默认值，如果session state中有选中的股票，则使用选中的
-    default_symbol = st.session_state.selected_stock if st.session_state.selected_stock else config.get('default_symbol', '600519')
+    # 如果没有选中的股票，优先使用自选股最后一个，否则使用配置文件的默认值
+    if st.session_state.selected_stock:
+        default_symbol = st.session_state.selected_stock
+    elif watchlist:
+        default_symbol = watchlist[-1]  # 使用自选股最后一个
+    else:
+        default_symbol = config.get('default_symbol', '600519')
+    
     symbol = st.text_input("股票代码", value=default_symbol, help="请输入6位A股代码")
     start_date = st.date_input("开始日期", pd.to_datetime(config.get('default_start_date', '2024-01-01')))
     
@@ -81,7 +91,6 @@ with st.sidebar:
     
     # 自选股管理
     st.subheader("⭐ 自选股")
-    watchlist = config.get('watchlist', [])
     
     if watchlist:
         st.write("已关注的股票：")
