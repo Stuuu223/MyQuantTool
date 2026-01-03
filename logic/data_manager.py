@@ -47,7 +47,16 @@ class DataManager:
         try:
             df = pd.read_sql(f"SELECT * FROM daily_bars WHERE symbol='{symbol}'", self.conn)
             
+            # 检查是否需要重新获取数据
+            need_fetch = False
             if df.empty or len(df) < 5:
+                need_fetch = True
+            elif 'turnover_rate' not in df.columns:
+                need_fetch = True
+            elif df['turnover_rate'].isna().all():
+                need_fetch = True
+            
+            if need_fetch:
                 # print(f"本地缓存未命中，正在下载 {symbol} ...") # 保持界面清爽
                 df_api = ak.stock_zh_a_hist(symbol=symbol, period="daily", start_date=start_date, end_date=end_date, adjust="qfq")
                 
@@ -57,6 +66,11 @@ class DataManager:
                 })
                 df_api['symbol'] = symbol
                 
+                # 删除旧数据
+                self.conn.execute(f"DELETE FROM daily_bars WHERE symbol='{symbol}'")
+                self.conn.commit()
+                
+                # 插入新数据
                 cols = ['symbol', 'date', 'open', 'high', 'low', 'close', 'volume', 'turnover_rate']
                 df_api[cols].to_sql('daily_bars', self.conn, if_exists='append', index=False)
                 return df_api
