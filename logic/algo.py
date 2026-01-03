@@ -557,13 +557,18 @@ class QuantAlgo:
     def get_lhb_data(date=None):
         """
         获取龙虎榜数据
-        date: 日期，格式 YYYY-MM-DD，默认为最新交易日
+        date: 日期，格式 YYYY-MM-DD，默认为最近7天
         """
         try:
             import akshare as ak
+            from datetime import datetime, timedelta
             
-            # 获取新浪龙虎榜每日详情
-            lhb_df = ak.stock_lhb_detail_daily_sina()
+            # 计算日期范围（最近7天）
+            end_date = datetime.now().strftime('%Y%m%d')
+            start_date = (datetime.now() - timedelta(days=7)).strftime('%Y%m%d')
+            
+            # 获取东方财富龙虎榜数据（支持日期范围）
+            lhb_df = ak.stock_lhb_detail_em(start_date=start_date, end_date=end_date)
             
             if lhb_df.empty:
                 return {
@@ -571,23 +576,28 @@ class QuantAlgo:
                     '说明': '可能是数据源限制或非交易日'
                 }
             
+            # 只取最新日期的数据
+            latest_date = lhb_df.iloc[:, 3].max()  # 上榜日期列
+            latest_data = lhb_df[lhb_df.iloc[:, 3] == latest_date]
+            
             # 转换数据为列表格式（使用列索引避免中文乱码）
             stocks = []
-            for _, row in lhb_df.head(30).iterrows():  # 取前30只股票
+            for _, row in latest_data.head(30).iterrows():  # 取最新日期的30只股票
                 stocks.append({
                     '代码': row.iloc[1],      # 股票代码
                     '名称': row.iloc[2],      # 股票名称
-                    '收盘价': row.iloc[3],    # 收盘价
-                    '涨跌幅': row.iloc[4],    # 对应值（涨跌幅）
-                    '龙虎榜净买入': row.iloc[6],  # 净买入
-                    '上榜原因': row.iloc[7],  # 指数（上榜原因）
+                    '收盘价': row.iloc[4],    # 收盘价
+                    '涨跌幅': row.iloc[5],    # 涨跌幅
+                    '龙虎榜净买入': row.iloc[9],  # 龙虎榜净买入额
+                    '上榜原因': row.iloc[15],  # 上榜原因
                     '机构买入': 0,  # 该接口不提供机构买卖数据
                     '机构卖出': 0
                 })
             
             return {
                 '数据状态': '正常',
-                '股票列表': stocks
+                '股票列表': stocks,
+                '数据日期': latest_date
             }
         except Exception as e:
             return {
