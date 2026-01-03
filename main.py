@@ -837,18 +837,44 @@ with tab_lhb:
             if '数据日期' in lhb_data:
                 st.info(f"📅 数据日期：{lhb_data['数据日期']}")
             
-            # 直接显示原始数据，不进行格式化
+            # 排序选项
+            col_sort1, col_sort2 = st.columns(2)
+            with col_sort1:
+                sort_by = st.selectbox("排序方式", ["净买入额", "涨跌幅", "收盘价"])
+            with col_sort2:
+                sort_order = st.selectbox("排序顺序", ["降序", "升序"])
+            
+            # 排序
+            reverse_order = (sort_order == "降序")
+            if sort_by == "净买入额":
+                stocks_sorted = sorted(stocks, key=lambda x: x['龙虎榜净买入'], reverse=reverse_order)
+            elif sort_by == "涨跌幅":
+                stocks_sorted = sorted(stocks, key=lambda x: x['涨跌幅'], reverse=reverse_order)
+            else:  # 收盘价
+                stocks_sorted = sorted(stocks, key=lambda x: x['收盘价'], reverse=reverse_order)
+            
+            # 格式化数据用于显示
+            display_stocks = []
+            for stock in stocks_sorted:
+                display_stocks.append({
+                    '代码': stock['代码'],
+                    '名称': stock['名称'],
+                    '收盘价': stock['收盘价'],
+                    '涨跌幅': stock['涨跌幅'],
+                    '龙虎榜净买入': format_amount(stock['龙虎榜净买入']),
+                    '上榜原因': stock['上榜原因']
+                })
+            
+            # 显示数据表格
             st.dataframe(
-                pd.DataFrame(stocks),
+                pd.DataFrame(display_stocks),
                 column_config={
                     '代码': st.column_config.TextColumn('代码', width='small'),
                     '名称': st.column_config.TextColumn('名称', width='medium'),
                     '收盘价': st.column_config.NumberColumn('收盘价', format='%.2f'),
                     '涨跌幅': st.column_config.NumberColumn('涨跌幅', format='%.2f%%'),
-                    '龙虎榜净买入': st.column_config.NumberColumn('净买入', format='%.2f'),
-                    '上榜原因': st.column_config.TextColumn('上榜原因', width='large'),
-                    '机构买入': st.column_config.NumberColumn('机构买入', format='%.2f'),
-                    '机构卖出': st.column_config.NumberColumn('机构卖出', format='%.2f')
+                    '龙虎榜净买入': st.column_config.TextColumn('净买入', width='medium'),
+                    '上榜原因': st.column_config.TextColumn('上榜原因', width='large')
                 },
                 use_container_width=True,
                 hide_index=True
