@@ -49,6 +49,10 @@ def format_amount(amount):
 st.title("🚀 个人化A股智能投研终端")
 st.markdown("基于 DeepSeek AI & AkShare 数据 | 专为股市小白设计")
 
+# 初始化session state
+if 'selected_stock' not in st.session_state:
+    st.session_state.selected_stock = None
+
 # 添加系统菜单说明
 # st.caption("💡 右上角菜单说明：")
 # st.caption("  • ⚙️ Settings（设置）：调整显示主题、字体大小等")
@@ -61,8 +65,9 @@ tab_single, tab_compare, tab_backtest, tab_sector, tab_lhb = st.tabs(["📊 单�
 with st.sidebar:
     st.header("🎮 控制台")
     
-    # 从配置文件加载默认值
-    symbol = st.text_input("股票代码", value=config.get('default_symbol', '600519'), help="请输入6位A股代码")
+    # 从配置文件加载默认值，如果session state中有选中的股票，则使用选中的
+    default_symbol = st.session_state.selected_stock if st.session_state.selected_stock else config.get('default_symbol', '600519')
+    symbol = st.text_input("股票代码", value=default_symbol, help="请输入6位A股代码")
     start_date = st.date_input("开始日期", pd.to_datetime(config.get('default_start_date', '2024-01-01')))
     
     # 策略参数
@@ -81,23 +86,29 @@ with st.sidebar:
     if watchlist:
         st.write("已关注的股票：")
         for stock in watchlist:
+            stock_name = QuantAlgo.get_stock_name(stock)
             col_watch, col_remove = st.columns([3, 1])
             with col_watch:
-                st.write(f"📌 {stock}")
+                if st.button(f"📌 {stock_name} ({stock})", key=f"select_{stock}"):
+                    st.session_state.selected_stock = stock
+                    st.rerun()
             with col_remove:
                 if st.button("❌", key=f"remove_{stock}"):
                     watchlist.remove(stock)
                     config.set('watchlist', watchlist)
+                    st.success(f"已删除 {stock_name} ({stock})")
                     st.rerun()
     
     add_stock = st.text_input("添加自选股", placeholder="输入股票代码", help="例如：600519")
     if st.button("➕ 添加") and add_stock:
         if add_stock not in watchlist:
+            stock_name = QuantAlgo.get_stock_name(add_stock)
             watchlist.append(add_stock)
             config.set('watchlist', watchlist)
-            st.success(f"已添加 {add_stock} 到自选股")
+            st.success(f"已添加 {stock_name} ({add_stock}) 到自选股")
         else:
-            st.warning(f"{add_stock} 已在自选股中")
+            stock_name = QuantAlgo.get_stock_name(add_stock)
+            st.warning(f"{stock_name} ({add_stock}) 已在自选股中")
     
     st.markdown("---")
     
@@ -257,8 +268,11 @@ with tab_single:
             support_levels = [x for x in resistance_levels if x < current_price]
             resistance_levels = [x for x in resistance_levels if x > current_price]
 
+            # 获取股票名称
+            stock_name = QuantAlgo.get_stock_name(symbol)
+
             # 顶部指标卡片
-            st.subheader("📈 核心指标看板")
+            st.subheader(f"📈 核心指标看板 - {stock_name} ({symbol})")
             col1, col2, col3, col4 = st.columns(4)
             col1.metric("最新价格", f"¥{current_price}", f"{change_pct:.2f}%")
             col2.metric("日内波动 (ATR)", f"{atr:.2f}")
