@@ -60,17 +60,121 @@ class QuantAlgo:
 
             else:
 
-                return f"未知股票({symbol})"
+            
 
-        except Exception as e:
+                            return f"未知股票({symbol})"
 
-            return f"查询失败({symbol})"
+            
 
-    
+                    except Exception as e:
 
-    @staticmethod
+            
 
-    def detect_box_pattern(df, lookback=20):
+                        return f"查询失败({symbol})"
+
+                
+
+            
+
+                @staticmethod
+
+            
+
+                def get_stock_code_by_name(name):
+
+            
+
+                    """
+
+            
+
+                    通过股票名称查找股票代码
+
+            
+
+                    name: 股票名称
+
+            
+
+                    返回: 股票代码列表（可能有多个匹配）
+
+            
+
+                    """
+
+            
+
+                    try:
+
+            
+
+                        import akshare as ak
+
+            
+
+                        
+
+            
+
+                        # 获取A股代码名称表
+
+            
+
+                        stock_info_df = ak.stock_info_a_code_name()
+
+            
+
+                        
+
+            
+
+                        # 查找匹配的股票（支持部分匹配）
+
+            
+
+                        matched_stocks = stock_info_df[stock_info_df['name'].str.contains(name, na=False)]
+
+            
+
+                        
+
+            
+
+                        if not matched_stocks.empty:
+
+            
+
+                            # 返回匹配的股票代码列表
+
+            
+
+                            return matched_stocks['code'].tolist()
+
+            
+
+                        else:
+
+            
+
+                            return []
+
+            
+
+                    except Exception as e:
+
+            
+
+                        return []
+
+                
+
+            
+
+                @staticmethod
+
+            
+
+                def detect_box_pattern(df, lookback=20):
         """
         检测箱体震荡模式
         返回箱体上下边界和当前状态
