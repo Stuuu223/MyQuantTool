@@ -667,6 +667,159 @@ class QuantAlgo:
                     }
 
     @staticmethod
+    def analyze_lhb_quality():
+        """
+        龙虎榜质量分析
+        分析哪些是好榜、坏榜，哪些值得次日介入
+        """
+        try:
+            import akshare as ak
+            from datetime import datetime, timedelta
+            
+            # 计算日期范围
+            end_date = datetime.now().strftime('%Y%m%d')
+            start_date = (datetime.now() - timedelta(days=7)).strftime('%Y%m%d')
+            
+            # 获取龙虎榜详情
+            lhb_df = ak.stock_lhb_detail_em(start_date=start_date, end_date=end_date)
+            latest_date = lhb_df.iloc[:, 3].max()
+            latest_data = lhb_df[lhb_df.iloc[:, 3] == latest_date]
+            
+            # 分析每只股票的质量
+            stock_analysis = []
+            for _, row in latest_data.iterrows():
+                code = row.iloc[1]
+                name = row.iloc[2]
+                close_price = row.iloc[5]
+                change_pct = row.iloc[6]
+                net_buy = row.iloc[9]
+                total_volume = row.iloc[10]
+                reason = row.iloc[16]
+                
+                # 评分系统（0-100分）
+                score = 0
+                reasons = []
+                
+                # 1. 净买入额（30分）
+                if net_buy > 100000000:  # 净买入超过1亿
+                    score += 30
+                    reasons.append('净买入>1亿')
+                elif net_buy > 50000000:  # 净买入超过5000万
+                    score += 20
+                    reasons.append('净买入>5000万')
+                elif net_buy > 0:  # 净买入为正
+                    score += 10
+                    reasons.append('净买入为正')
+                elif net_buy > -50000000:  # 净买入小于5000万
+                    score += 0
+                else:  # 净卖出超过5000万
+                    score -= 10
+                    reasons.append('净卖出>5000万')
+                
+                # 2. 涨跌幅（20分）
+                if 3 <= abs(change_pct) <= 7:  # 涨跌幅适中
+                    score += 20
+                    reasons.append('涨跌幅适中')
+                elif 7 < abs(change_pct) <= 10:
+                    score += 10
+                    reasons.append('涨跌幅较大')
+                elif abs(change_pct) > 10:
+                    score -= 10
+                    reasons.append('涨跌幅过大')
+                
+                # 3. 成交额（15分）
+                if total_volume > 500000000:  # 成交额超过5亿
+                    score += 15
+                    reasons.append('成交额>5亿')
+                elif total_volume > 200000000:  # 成交额超过2亿
+                    score += 10
+                    reasons.append('成交额>2亿')
+                elif total_volume > 100000000:  # 成交额超过1亿
+                    score += 5
+                    reasons.append('成交额>1亿')
+                
+                # 4. 上榜原因（20分）
+                good_reasons = ['机构买入', '机构专用', '连续涨停', '换手率']
+                bad_reasons = ['跌停', '跌停价', 'ST']
+                
+                if any(keyword in reason for keyword in good_reasons):
+                    score += 20
+                    reasons.append('上榜原因优质')
+                elif any(keyword in reason for keyword in bad_reasons):
+                    score -= 20
+                    reasons.append('上榜原因较差')
+                else:
+                    score += 10
+                    reasons.append('上榜原因一般')
+                
+                # 5. 净买入占比（15分）
+                net_buy_ratio = net_buy / total_volume * 100 if total_volume > 0 else 0
+                if net_buy_ratio > 10:
+                    score += 15
+                    reasons.append('净买入占比>10%')
+                elif net_buy_ratio > 5:
+                    score += 10
+                    reasons.append('净买入占比>5%')
+                elif net_buy_ratio > 0:
+                    score += 5
+                    reasons.append('净买入占比>0')
+                
+                # 判断榜单质量
+                if score >= 70:
+                    quality = '🟢 优质榜'
+                    recommendation = '强烈推荐'
+                elif score >= 50:
+                    quality = '🟡 良好榜'
+                    recommendation = '推荐关注'
+                elif score >= 30:
+                    quality = '🟠 一般榜'
+                    recommendation = '谨慎观望'
+                else:
+                    quality = '🔴 劣质榜'
+                    recommendation = '不建议介入'
+                
+                stock_analysis.append({
+                    '代码': code,
+                    '名称': name,
+                    '收盘价': close_price,
+                    '涨跌幅': change_pct,
+                    '净买入': net_buy,
+                    '净买入占比': net_buy_ratio,
+                    '成交额': total_volume,
+                    '上榜原因': reason,
+                    '评分': score,
+                    '榜单质量': quality,
+                    '推荐': recommendation,
+                    '评分原因': reasons
+                })
+            
+            # 按评分排序
+            stock_analysis.sort(key=lambda x: x['评分'], reverse=True)
+            
+            # 统计
+            good_count = len([s for s in stock_analysis if s['评分'] >= 70])
+            medium_count = len([s for s in stock_analysis if 50 <= s['评分'] < 70])
+            poor_count = len([s for s in stock_analysis if s['评分'] < 50])
+            
+            return {
+                '数据状态': '正常',
+                '数据日期': latest_date,
+                '股票分析': stock_analysis,
+                '统计': {
+                    '优质榜数量': good_count,
+                    '良好榜数量': medium_count,
+                    '劣质榜数量': poor_count,
+                    '总数': len(stock_analysis)
+                }
+            }
+        except Exception as e:
+            return {
+                '数据状态': '获取失败',
+                '错误信息': str(e),
+                '说明': '可能是网络问题或数据源限制'
+            }
+
+    @staticmethod
     def generate_trading_plan(df, symbol="600519"):
         """
         生成个股操作预案
