@@ -45,7 +45,7 @@ st.markdown("基于 DeepSeek AI & AkShare 数据 | 专为股市小白设计")
 # st.caption("  • ❌ Clear cache（清除缓存）：刷新数据和重置状态")
 
 # 添加功能标签页
-tab_single, tab_compare, tab_backtest = st.tabs(["📊 单股分析", "🔍 多股对比", "🧪 策略回测"])
+tab_single, tab_compare, tab_backtest, tab_sector, tab_lhb = st.tabs(["📊 单股分析", "🔍 多股对比", "🧪 策略回测", "🔄 板块轮动", "🏆 龙虎榜"])
 
 with st.sidebar:
     st.header("🎮 控制台")
@@ -237,7 +237,7 @@ with tab_single:
             box_pattern = QuantAlgo.detect_box_pattern(df)
             kdj_data = QuantAlgo.calculate_kdj(df)
             volume_data = QuantAlgo.analyze_volume(df)
-            money_flow_data = QuantAlgo.analyze_money_flow(df)
+            money_flow_data = QuantAlgo.analyze_money_flow(df, symbol=symbol, market="sh" if symbol.startswith("6") else "sz")
             double_bottom = QuantAlgo.detect_double_bottom(df)
             double_top = QuantAlgo.detect_double_top(df)
             head_shoulders = QuantAlgo.detect_head_shoulders(df)
@@ -346,14 +346,78 @@ with tab_single:
                     st.info("📉 缩量，观望为主")
             
             with col_flow:
-                st.info("**资金流向**")
-                st.write(f"流向: {money_flow_data['资金流向']}")
-                st.write(f"强度: {money_flow_data['资金强度']}")
-                st.caption(money_flow_data['说明'])
-                if money_flow_data['资金流向'] == "流入":
-                    st.success("✅ 资金净流入")
-                elif money_flow_data['资金流向'] == "流出":
-                    st.warning("⚠️ 资金净流出")
+                st.info("**资金流向（真实数据）**")
+                
+                # 添加CSS样式调整字体大小
+                st.markdown("""
+                <style>
+                div[data-testid="stMetricValue"] {
+                    font-size: 22px !important;
+                }
+                </style>
+                """, unsafe_allow_html=True)
+                
+                if money_flow_data['数据状态'] == '正常':
+                    # 显示总流向
+                    if money_flow_data['资金流向'] == "净流入":
+                        st.success(f"✅ {money_flow_data['资金流向']}")
+                    elif money_flow_data['资金流向'] == "净流出":
+                        st.warning(f"⚠️ {money_flow_data['资金流向']}")
+                    else:
+                        st.info(f"📊 {money_flow_data['资金流向']}")
+                    
+                    st.caption(money_flow_data['说明'])
+                    
+                    # 显示主力资金
+                    col_main, col_large, col_medium, col_small = st.columns(4)
+                    
+                    # 辅助函数：格式化金额显示
+                    def format_amount(amount):
+                        abs_amount = abs(amount)
+                        if abs_amount >= 100000000:  # 1亿以上
+                            return f"{amount/100000000:.2f}亿"
+                        elif abs_amount >= 10000:  # 1万以上
+                            return f"{amount/10000:.2f}万"
+                        else:
+                            return f"{amount:.0f}"
+                    
+                    with col_main:
+                        st.metric("主力净流入", format_amount(money_flow_data['主力净流入-净额']), 
+                                 f"{money_flow_data['主力净流入-净占比']:.2f}%")
+                    with col_large:
+                        st.metric("超大单", format_amount(money_flow_data['超大单净流入-净额']),
+                                 f"{money_flow_data['超大单净流入-净占比']:.2f}%")
+                    with col_medium:
+                        st.metric("大单", format_amount(money_flow_data['大单净流入-净额']),
+                                 f"{money_flow_data['大单净流入-净占比']:.2f}%")
+                    with col_small:
+                        st.metric("小单", format_amount(money_flow_data['小单净流入-净额']),
+                                 f"{money_flow_data['小单净流入-净占比']:.2f}%")
+                    
+                    # 资金分析
+                    main_flow = money_flow_data['主力净流入-净额']
+                    if abs(main_flow) > 10000000:  # 主力资金超过1000万
+                        st.success("💰 主力资金大幅介入，值得关注！")
+                    elif abs(main_flow) > 5000000:
+                        st.info("📈 主力资金参与度较高")
+                    elif abs(main_flow) > 1000000:
+                        st.caption("💡 主力资金温和参与")
+                    else:
+                        st.caption("💡 主力资金参与度较低")
+                    
+                    # 散户资金分析
+                    small_flow = money_flow_data['小单净流入-净额']
+                    if small_flow > 0:
+                        st.caption("👥 散户资金流入，跟风情绪浓厚")
+                    elif small_flow < 0:
+                        st.caption("👥 散户资金流出，情绪低迷")
+                
+                else:
+                    st.error(f"❌ {money_flow_data['数据状态']}")
+                    if '错误信息' in money_flow_data:
+                        st.caption(money_flow_data['错误信息'])
+                    else:
+                        st.caption(money_flow_data['说明'])
 
             # 形态识别提示
             st.divider()
@@ -571,3 +635,147 @@ with tab_compare:
                     st.plotly_chart(fig_perf, use_container_width=True)
             else:
                 st.warning("未能获取到有效的对比数据，请检查股票代码是否正确。")
+
+with tab_sector:
+    st.subheader("🔄 板块轮动分析")
+    st.caption("实时监控各行业板块资金流向，发现热点板块")
+    
+    if st.button("刷新板块数据"):
+        with st.spinner('正在获取板块轮动数据...'):
+            sector_data = QuantAlgo.get_sector_rotation()
+            
+            if sector_data['数据状态'] == '正常':
+                sectors = sector_data['板块列表']
+                
+                # 显示板块资金流向表格
+                st.dataframe(
+                    pd.DataFrame(sectors),
+                    column_config={
+                        '板块名称': st.column_config.TextColumn('板块名称', width='medium'),
+                        '涨跌幅': st.column_config.NumberColumn('涨跌幅', format='%.2f%%'),
+                        '主力净流入': st.column_config.NumberColumn('主力净流入', format='%.2f'),
+                        '主力净流入占比': st.column_config.NumberColumn('净流入占比', format='%.2f%%'),
+                        '最新价': st.column_config.NumberColumn('最新价', format='%.2f'),
+                        '总市值': st.column_config.NumberColumn('总市值', format='%.2f')
+                    },
+                    use_container_width=True,
+                    hide_index=True
+                )
+                
+                # 热点板块分析
+                st.subheader("🔥 热点板块分析")
+                hot_sectors = sorted(sectors, key=lambda x: x['主力净流入'], reverse=True)[:5]
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.info("**资金流入最多的板块**")
+                    for i, sector in enumerate(hot_sectors, 1):
+                        st.metric(f"{i}. {sector['板块名称']}", 
+                                f"{sector['主力净流入']:.2f}",
+                                f"{sector['涨跌幅']:.2f}%")
+                
+                with col2:
+                    cold_sectors = sorted(sectors, key=lambda x: x['主力净流入'])[:5]
+                    st.warning("**资金流出最多的板块**")
+                    for i, sector in enumerate(cold_sectors, 1):
+                        st.metric(f"{i}. {sector['板块名称']}", 
+                                f"{sector['主力净流入']:.2f}",
+                                f"{sector['涨跌幅']:.2f}%")
+                
+                # 板块资金流向图
+                st.subheader("📊 板块资金流向分布")
+                fig_sector = go.Figure()
+                
+                fig_sector.add_trace(go.Bar(
+                    x=[s['板块名称'][:4] for s in sectors[:10]],  # 只显示前10个，名称截取
+                    y=[s['主力净流入'] for s in sectors[:10]],
+                    marker_color=['green' if s['主力净流入'] > 0 else 'red' for s in sectors[:10]]
+                ))
+                
+                fig_sector.update_layout(
+                    title="前10大板块资金流向",
+                    xaxis_title="板块",
+                    yaxis_title="主力净流入（元）",
+                    height=400
+                )
+                st.plotly_chart(fig_sector, use_container_width=True)
+            else:
+                st.error(f"❌ {sector_data['数据状态']}")
+                if '错误信息' in sector_data:
+                    st.caption(sector_data['错误信息'])
+    else:
+        st.info("点击按钮获取最新的板块轮动数据")
+
+with tab_lhb:
+    st.subheader("🏆 龙虎榜分析")
+    st.caption("监控市场活跃股票和机构动向")
+    
+    # 日期选择
+    lhb_date = st.date_input("选择日期", value=pd.Timestamp.now().date())
+    
+    if st.button("查询龙虎榜"):
+        with st.spinner('正在获取龙虎榜数据...'):
+            date_str = lhb_date.strftime("%Y%m%d")
+            lhb_data = QuantAlgo.get_lhb_data(date_str)
+            
+            if lhb_data['数据状态'] == '正常':
+                stocks = lhb_data['股票列表']
+                
+                # 显示龙虎榜股票表格
+                st.dataframe(
+                    pd.DataFrame(stocks),
+                    column_config={
+                        '代码': st.column_config.TextColumn('代码', width='small'),
+                        '名称': st.column_config.TextColumn('名称', width='medium'),
+                        '收盘价': st.column_config.NumberColumn('收盘价', format='%.2f'),
+                        '涨跌幅': st.column_config.NumberColumn('涨跌幅', format='%.2f%%'),
+                        '龙虎榜净买入': st.column_config.NumberColumn('净买入', format='%.2f'),
+                        '机构买入': st.column_config.NumberColumn('机构买入', format='%.2f'),
+                        '机构卖出': st.column_config.NumberColumn('机构卖出', format='%.2f'),
+                        '上榜原因': st.column_config.TextColumn('上榜原因', width='large')
+                    },
+                    use_container_width=True,
+                    hide_index=True
+                )
+                
+                # 机构动向分析
+                st.subheader("🏢 机构动向分析")
+                
+                # 计算总机构买卖
+                total_buy = sum([s['机构买入'] for s in stocks])
+                total_sell = sum([s['机构卖出'] for s in stocks])
+                net_buy = total_buy - total_sell
+                
+                col1, col2, col3 = st.columns(3)
+                col1.metric("机构总买入", f"{total_buy:.2f}")
+                col2.metric("机构总卖出", f"{total_sell:.2f}")
+                col3.metric("机构净买入", f"{net_buy:.2f}")
+                
+                if net_buy > 0:
+                    st.success(f"✅ 机构当日净买入 {net_buy:.2f} 万元，主力看多")
+                elif net_buy < 0:
+                    st.warning(f"⚠️ 机构当日净卖出 {abs(net_buy):.2f} 万元，主力看空")
+                else:
+                    st.info("📊 机构买卖平衡")
+                
+                # 龙虎榜净买入排行
+                st.subheader("📈 龙虎榜净买入排行")
+                top_stocks = sorted(stocks, key=lambda x: x['龙虎榜净买入'], reverse=True)[:10]
+                
+                for i, stock in enumerate(top_stocks, 1):
+                    with st.container():
+                        cols = st.columns([1, 3, 2, 2, 3])
+                        cols[0].write(f"**{i}**")
+                        cols[1].write(f"**{stock['名称']}** ({stock['代码']})")
+                        cols[2].metric("净买入", f"{stock['龙虎榜净买入']:.2f}")
+                        cols[3].metric("涨跌幅", f"{stock['涨跌幅']:.2f}%")
+                        cols[4].caption(stock['上榜原因'])
+                        st.divider()
+            else:
+                st.error(f"❌ {lhb_data['数据状态']}")
+                if '错误信息' in lhb_data:
+                    st.caption(lhb_data['错误信息'])
+                else:
+                    st.caption(lhb_data['说明'])
+    else:
+        st.info("选择日期后点击按钮查询龙虎榜数据")

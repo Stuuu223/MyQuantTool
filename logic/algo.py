@@ -384,33 +384,152 @@ class QuantAlgo:
         }
 
     @staticmethod
-    def analyze_money_flow(df):
+    def analyze_money_flow(df, symbol="600519", market="sh"):
         """
-        分析资金流向（简化版）
-        基于价格变化和成交量估算资金流向
+        分析资金流向（真实数据）
+        使用 AkShare 获取真实的资金流向数据
         """
-        current_close = df['close'].iloc[-1]
-        prev_close = df['close'].iloc[-2]
-        current_volume = df['volume'].iloc[-1]
-        
-        price_change = current_close - prev_close
-        
-        if price_change > 0:
-            flow_type = "流入"
-            flow_strength = abs(price_change) * current_volume / 100000000  # 简化计算
-            meaning = "价格上涨，资金净流入"
-        elif price_change < 0:
-            flow_type = "流出"
-            flow_strength = abs(price_change) * current_volume / 100000000
-            meaning = "价格下跌，资金净流出"
-        else:
-            flow_type = "持平"
-            flow_strength = 0
-            meaning = "价格持平，资金无明显流向"
-        
-        return {
-            '资金流向': flow_type,
-            '资金强度': round(flow_strength, 2),
-            '说明': meaning
-        }
+        try:
+            import akshare as ak
+            
+            # 获取个股资金流向数据
+            fund_flow_df = ak.stock_individual_fund_flow(stock=symbol, market=market)
+            
+            if fund_flow_df.empty:
+                return {
+                    '数据状态': '无法获取数据',
+                    '说明': '可能是数据源限制或股票代码错误'
+                }
+            
+            # 获取最新的数据
+            latest_data = fund_flow_df.iloc[0]
+            
+            # 计算总资金流向
+            total_net_flow = (
+                latest_data['主力净流入-净额'] +
+                latest_data['超大单净流入-净额'] +
+                latest_data['大单净流入-净额'] +
+                latest_data['中单净流入-净额'] +
+                latest_data['小单净流入-净额']
+            )
+            
+            # 判断资金流向
+            if total_net_flow > 0:
+                flow_type = "净流入"
+                meaning = "资金净流入，主力看好"
+            elif total_net_flow < 0:
+                flow_type = "净流出"
+                meaning = "资金净流出，主力看空"
+            else:
+                flow_type = "持平"
+                meaning = "资金进出平衡"
+            
+            return {
+                '数据状态': '正常',
+                '日期': latest_data['日期'],
+                '收盘价': latest_data['收盘价'],
+                '涨跌幅': latest_data['涨跌幅'],
+                '主力净流入-净额': latest_data['主力净流入-净额'],
+                '主力净流入-净占比': latest_data['主力净流入-净占比'],
+                '超大单净流入-净额': latest_data['超大单净流入-净额'],
+                '超大单净流入-净占比': latest_data['超大单净流入-净占比'],
+                '大单净流入-净额': latest_data['大单净流入-净额'],
+                '大单净流入-净占比': latest_data['大单净流入-净占比'],
+                '中单净流入-净额': latest_data['中单净流入-净额'],
+                '中单净流入-净占比': latest_data['中单净流入-净占比'],
+                '小单净流入-净额': latest_data['小单净流入-净额'],
+                '小单净流入-净占比': latest_data['小单净流入-净占比'],
+                '资金流向': flow_type,
+                '说明': meaning
+            }
+        except Exception as e:
+            return {
+                '数据状态': '获取失败',
+                '错误信息': str(e),
+                '说明': '可能是网络问题或数据源限制'
+            }
+    
+    @staticmethod
+    def get_sector_rotation():
+        """
+        获取板块轮动数据
+        返回各行业板块的资金流向和涨跌幅
+        """
+        try:
+            import akshare as ak
+            
+            # 获取行业板块资金流向排名
+            sector_flow_df = ak.stock_sector_fund_flow_rank()
+            
+            if sector_flow_df.empty:
+                return {
+                    '数据状态': '无法获取数据',
+                    '说明': '可能是数据源限制'
+                }
+            
+            # 转换数据为列表格式（使用列索引避免中文乱码）
+            sectors = []
+            for _, row in sector_flow_df.head(20).iterrows():  # 取前20个板块
+                sectors.append({
+                    '板块名称': row.iloc[1],  # 板块名称
+                    '涨跌幅': row.iloc[2],    # 涨跌幅
+                    '主力净流入': row.iloc[3],  # 主力净流入-净额
+                    '主力净流入占比': row.iloc[4],  # 主力净流入-净占比
+                    '最新价': 0,  # 该接口不提供最新价
+                    '总市值': 0   # 该接口不提供总市值
+                })
+            
+            return {
+                '数据状态': '正常',
+                '板块列表': sectors
+            }
+        except Exception as e:
+            return {
+                '数据状态': '获取失败',
+                '错误信息': str(e),
+                '说明': '可能是网络问题或数据源限制'
+            }
+    
+    @staticmethod
+    def get_lhb_data(date=None):
+        """
+        获取龙虎榜数据
+        date: 日期，格式 YYYY-MM-DD，默认为最新交易日
+        """
+        try:
+            import akshare as ak
+            
+            # 获取龙虎榜股票统计
+            lhb_df = ak.stock_lhb_stock_statistic_em()
+            
+            if lhb_df.empty:
+                return {
+                    '数据状态': '无法获取数据',
+                    '说明': '可能是数据源限制或非交易日'
+                }
+            
+            # 转换数据为列表格式（使用列索引避免中文乱码）
+            stocks = []
+            for _, row in lhb_df.head(30).iterrows():  # 取前30只股票
+                stocks.append({
+                    '代码': row.iloc[1],      # 代码
+                    '名称': row.iloc[2],      # 名称
+                    '收盘价': row.iloc[4],    # 收盘价
+                    '涨跌幅': row.iloc[5],    # 涨跌幅
+                    '龙虎榜净买入': row.iloc[7],  # 龙虎榜净买入额
+                    '上榜原因': row.iloc[6],  # 上榜原因
+                    '机构买入': 0,  # 需要单独获取，先设为0
+                    '机构卖出': 0   # 需要单独获取，先设为0
+                })
+            
+            return {
+                '数据状态': '正常',
+                '股票列表': stocks
+            }
+        except Exception as e:
+            return {
+                '数据状态': '获取失败',
+                '错误信息': str(e),
+                '说明': '可能是网络问题或数据源限制'
+            }
         return plan
