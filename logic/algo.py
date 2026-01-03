@@ -868,6 +868,89 @@ class QuantAlgo:
         return suggestions
     
     @staticmethod
+    def scan_dragon_stocks(limit=50, min_score=60):
+        """
+        扫描市场中的潜在龙头股
+        limit: 扫描的股票数量限制
+        min_score: 最低评分门槛
+        返回: 符合条件的龙头股列表
+        """
+        try:
+            import akshare as ak
+            from logic.data_manager import DataManager
+            
+            # 获取涨停板股票
+            limit_up_df = ak.stock_zh_a_spot_em()
+            
+            if limit_up_df.empty:
+                return {
+                    '数据状态': '无法获取数据',
+                    '说明': '可能是数据源限制'
+                }
+            
+            # 筛选涨停板股票（涨跌幅 >= 9.9%）
+            limit_up_stocks = limit_up_df[limit_up_df['涨跌幅'] >= 9.9].head(limit)
+            
+            if limit_up_stocks.empty:
+                return {
+                    '数据状态': '无涨停板股票',
+                    '说明': '当前市场无涨停板股票'
+                }
+            
+            # 分析每只涨停板股票
+            db = DataManager()
+            dragon_stocks = []
+            
+            st_count = 0
+            for _, row in limit_up_stocks.iterrows():
+                st_count += 1
+                symbol = row['代码']
+                name = row['名称']
+                current_price = row['最新价']
+                
+                try:
+                    # 获取历史数据
+                    df = db.get_history_data(symbol)
+                    
+                    if not df.empty and len(df) > 20:
+                        # 龙头战法分析
+                        dragon_analysis = QuantAlgo.analyze_dragon_stock(df, current_price)
+                        
+                        # 只保留评分达到门槛的股票
+                        if dragon_analysis.get('评级得分', 0) >= min_score:
+                            dragon_stocks.append({
+                                '代码': symbol,
+                                '名称': name,
+                                '最新价': current_price,
+                                '涨跌幅': row['涨跌幅'],
+                                '龙头评级': dragon_analysis['龙头评级'],
+                                '评级得分': dragon_analysis['评级得分'],
+                                '评级说明': dragon_analysis['评级说明'],
+                                '详情': dragon_analysis
+                            })
+                except Exception as e:
+                    print(f"分析股票 {symbol} 失败: {e}")
+                    continue
+            
+            db.close()
+            
+            # 按评分排序
+            dragon_stocks.sort(key=lambda x: x['评级得分'], reverse=True)
+            
+            return {
+                '数据状态': '正常',
+                '扫描数量': st_count,
+                '符合条件数量': len(dragon_stocks),
+                '龙头股列表': dragon_stocks
+            }
+        except Exception as e:
+            return {
+                '数据状态': '获取失败',
+                '错误信息': str(e),
+                '说明': '可能是网络问题或数据源限制'
+            }
+    
+    @staticmethod
     def get_sector_rotation():
         """
         获取板块轮动数据
