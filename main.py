@@ -356,6 +356,48 @@ with tab_single:
             else:
                 st.info(f"📊 **{box_pattern['message']}**")
 
+            # 个股扫雷
+            st.divider()
+            st.subheader("⚡ 个股扫雷")
+            with st.spinner('正在扫描股票风险...'):
+                risk_check = QuantAlgo.check_stock_risks(symbol)
+            
+            # 显示风险等级
+            risk_colors = {
+                '低': '🟢',
+                '中': '🟡',
+                '高': '🔴',
+                '未知': '⚪'
+            }
+            col_risk_level, col_risk_count = st.columns(2)
+            with col_risk_level:
+                st.metric("风险等级", f"{risk_colors.get(risk_check['风险等级'], '⚪')} {risk_check['风险等级']}")
+            with col_risk_count:
+                risk_count = len([r for r in risk_check['风险列表'] if not r.startswith('✅')])
+                st.metric("风险项数", f"{risk_count} 项")
+            
+            # 显示详细风险列表
+            if risk_check['风险列表']:
+                for risk in risk_check['风险列表']:
+                    if risk.startswith('🔴'):
+                        st.error(risk)
+                    elif risk.startswith('🟠'):
+                        st.warning(risk)
+                    elif risk.startswith('🟡'):
+                        st.warning(risk)
+                    elif risk.startswith('🟢'):
+                        st.info(risk)
+                    else:
+                        st.success(risk)
+            
+            # 根据风险等级给出建议
+            if risk_check['风险等级'] == '高':
+                st.error("⚠️ 风险等级较高，建议谨慎操作或避开")
+            elif risk_check['风险等级'] == '中':
+                st.warning("⚠️ 风险等级中等，建议控制仓位")
+            else:
+                st.success("✅ 风险等级较低，可正常关注")
+
             # 技术指标详情
             st.subheader("📊 技术指标分析")
             st.caption("💡 点击上方「📖 技术指标解释」查看详细说明")
