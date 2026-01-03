@@ -84,6 +84,119 @@ class QuantAlgo:
             'is_box': False,
             'message': '无明显箱体模式'
         }
+
+    @staticmethod
+    def detect_double_bottom(df, window=20):
+        """
+        检测双底形态
+        双底：两次探底，第二次探底不创新低，形成W形
+        """
+        if len(df) < window * 2:
+            return {'is_double_bottom': False, 'message': '数据不足'}
+        
+        # 寻找局部低点
+        lows = df['low'].rolling(window=5, center=True).apply(
+            lambda x: x[2] == min(x), raw=True
+        )
+        low_points = df[lows == 1]['low'].tolist()
+        
+        if len(low_points) < 2:
+            return {'is_double_bottom': False, 'message': '未找到足够的低点'}
+        
+        # 检查最近的两个低点
+        recent_lows = low_points[-2:]
+        if len(recent_lows) >= 2:
+            # 第二个低点不低于第一个低点太多（允许小幅波动）
+            if abs(recent_lows[1] - recent_lows[0]) / recent_lows[0] < 0.05:
+                return {
+                    'is_double_bottom': True,
+                    'first_bottom': round(recent_lows[0], 2),
+                    'second_bottom': round(recent_lows[1], 2),
+                    'message': f'⬆️ 双底形态形成！底部 {recent_lows[0]:.2f} 和 {recent_lows[1]:.2f}'
+                }
+        
+        return {'is_double_bottom': False, 'message': '未检测到双底形态'}
+
+    @staticmethod
+    def detect_double_top(df, window=20):
+        """
+        检测双顶形态
+        双顶：两次冲高，第二次冲高不创新高，形成M形
+        """
+        if len(df) < window * 2:
+            return {'is_double_top': False, 'message': '数据不足'}
+        
+        # 寻找局部高点
+        highs = df['high'].rolling(window=5, center=True).apply(
+            lambda x: x[2] == max(x), raw=True
+        )
+        high_points = df[highs == 1]['high'].tolist()
+        
+        if len(high_points) < 2:
+            return {'is_double_top': False, 'message': '未找到足够的高点'}
+        
+        # 检查最近的两个高点
+        recent_highs = high_points[-2:]
+        if len(recent_highs) >= 2:
+            # 第二个高点不高于第一个高点太多
+            if abs(recent_highs[1] - recent_highs[0]) / recent_highs[0] < 0.05:
+                return {
+                    'is_double_top': True,
+                    'first_top': round(recent_highs[0], 2),
+                    'second_top': round(recent_highs[1], 2),
+                    'message': f'⬇️ 双顶形态形成！顶部 {recent_highs[0]:.2f} 和 {recent_highs[1]:.2f}'
+                }
+        
+        return {'is_double_top': False, 'message': '未检测到双顶形态'}
+
+    @staticmethod
+    def detect_head_shoulders(df, window=30):
+        """
+        检测头肩顶/头肩底形态
+        头肩顶：三个高点，中间最高（头），两边较低（肩）
+        头肩底：三个低点，中间最低（头），两边较高（肩）
+        """
+        if len(df) < window * 3:
+            return {'pattern': None, 'message': '数据不足'}
+        
+        # 寻找极值点
+        highs = df['high'].rolling(window=5, center=True).apply(
+            lambda x: x[2] == max(x), raw=True
+        )
+        lows = df['low'].rolling(window=5, center=True).apply(
+            lambda x: x[2] == min(x), raw=True
+        )
+        
+        high_points = df[highs == 1]['high'].tolist()
+        low_points = df[lows == 1]['low'].tolist()
+        
+        # 检测头肩顶（需要至少3个高点）
+        if len(high_points) >= 3:
+            recent_highs = high_points[-3:]
+            # 中间最高，两边较低
+            if recent_highs[1] > recent_highs[0] and recent_highs[1] > recent_highs[2]:
+                return {
+                    'pattern': 'head_shoulders_top',
+                    'left_shoulder': round(recent_highs[0], 2),
+                    'head': round(recent_highs[1], 2),
+                    'right_shoulder': round(recent_highs[2], 2),
+                    'message': f'⚠️ 头肩顶形态！左肩 {recent_highs[0]:.2f}，头部 {recent_highs[1]:.2f}，右肩 {recent_highs[2]:.2f}'
+                }
+        
+        # 检测头肩底（需要至少3个低点）
+        if len(low_points) >= 3:
+            recent_lows = low_points[-3:]
+            # 中间最低，两边较高
+            if recent_lows[1] < recent_lows[0] and recent_lows[1] < recent_lows[2]:
+                return {
+                    'pattern': 'head_shoulders_bottom',
+                    'left_shoulder': round(recent_lows[0], 2),
+                    'head': round(recent_lows[1], 2),
+                    'right_shoulder': round(recent_lows[2], 2),
+                    'message': f'✅ 头肩底形态！左肩 {recent_lows[0]:.2f}，头部 {recent_lows[1]:.2f}，右肩 {recent_lows[2]:.2f}'
+                }
+        
+        return {'pattern': None, 'message': '未检测到头肩形态'}
     
     @staticmethod
     def calculate_resistance_support(df, n_clusters=5):
@@ -191,12 +304,110 @@ class QuantAlgo:
     def generate_grid_strategy(current_price, atr):
         grid_width_val = atr * 0.5 
         
-        plan = {
-            "基准价": current_price,
-            "网格宽度": round(grid_width_val, 2),
+return {
+            '网格宽度': round(grid_width_val, 2),
             "买入挂单": round(current_price - grid_width_val, 2),
             "卖出挂单": round(current_price + grid_width_val, 2),
-            "止损红线": round(current_price - grid_width_val * 3, 2),
-            "操作建议": f"建议在 {round(current_price - grid_width_val, 2)} 买入底仓的1/10，在 {round(current_price + grid_width_val, 2)} 卖出同等数量。"
+            "止损红线": round(current_price - grid_width_val * 3, 2)
+        }
+
+    @staticmethod
+    def calculate_kdj(df, n=9, m1=3, m2=3):
+        """
+        计算 KDJ 指标
+        KDJ 是一种超买超卖指标，结合了动量、强弱指标和移动平均线的优点
+        """
+        low_list = df['low'].rolling(window=n, min_periods=1).min()
+        high_list = df['high'].rolling(window=n, min_periods=1).max()
+        rsv = (df['close'] - low_list) / (high_list - low_list) * 100
+        
+        k = rsv.ewm(com=m1-1, adjust=False).mean()
+        d = k.ewm(com=m2-1, adjust=False).mean()
+        j = 3 * k - 2 * d
+        
+        k_value = k.iloc[-1]
+        d_value = d.iloc[-1]
+        j_value = j.iloc[-1]
+        
+        # KDJ 信号判断
+        signal = "正常"
+        if k_value > 80 and d_value > 80:
+            signal = "超买，注意风险"
+        elif k_value < 20 and d_value < 20:
+            signal = "超卖，可能反弹"
+        elif k_value > d_value and j_value > 0:
+            signal = "金叉，买入信号"
+        elif k_value < d_value and j_value < 0:
+            signal = "死叉，卖出信号"
+        
+        return {
+            'K': round(k_value, 2),
+            'D': round(d_value, 2),
+            'J': round(j_value, 2),
+            '信号': signal
+        }
+
+    @staticmethod
+    def analyze_volume(df, period=5):
+        """
+        分析成交量
+        判断成交量是否异常放大
+        """
+        current_volume = df['volume'].iloc[-1]
+        avg_volume = df['volume'].rolling(window=period).mean().iloc[-1]
+        
+        volume_ratio = current_volume / avg_volume if avg_volume > 0 else 1
+        
+        # 成交量判断
+        if volume_ratio > 2:
+            signal = "放量显著"
+            meaning = "成交量放大超过2倍，关注主力动向"
+        elif volume_ratio > 1.5:
+            signal = "温和放量"
+            meaning = "成交量温和放大，资金参与度提升"
+        elif volume_ratio < 0.5:
+            signal = "缩量"
+            meaning = "成交量萎缩，观望为主"
+        else:
+            signal = "正常"
+            meaning = "成交量在正常范围内"
+        
+        return {
+            '当前成交量': current_volume,
+            '平均成交量': avg_volume,
+            '量比': round(volume_ratio, 2),
+            '信号': signal,
+            '含义': meaning
+        }
+
+    @staticmethod
+    def analyze_money_flow(df):
+        """
+        分析资金流向（简化版）
+        基于价格变化和成交量估算资金流向
+        """
+        current_close = df['close'].iloc[-1]
+        prev_close = df['close'].iloc[-2]
+        current_volume = df['volume'].iloc[-1]
+        
+        price_change = current_close - prev_close
+        
+        if price_change > 0:
+            flow_type = "流入"
+            flow_strength = abs(price_change) * current_volume / 100000000  # 简化计算
+            meaning = "价格上涨，资金净流入"
+        elif price_change < 0:
+            flow_type = "流出"
+            flow_strength = abs(price_change) * current_volume / 100000000
+            meaning = "价格下跌，资金净流出"
+        else:
+            flow_type = "持平"
+            flow_strength = 0
+            meaning = "价格持平，资金无明显流向"
+        
+        return {
+            '资金流向': flow_type,
+            '资金强度': round(flow_strength, 2),
+            '说明': meaning
         }
         return plan

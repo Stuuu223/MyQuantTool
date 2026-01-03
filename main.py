@@ -148,6 +148,16 @@ with tab_single:
         - **向下突破**：注意风险，考虑止损
         - 💡 最常见的形态，适合短线操作
         
+        **双底/双顶**：
+        - **双底**：W形，两次探底不创新低，底部确认
+        - **双顶**：M形，两次冲高不创新高，顶部确认
+        - 💡 重要的反转信号
+        
+        **头肩顶/头肩底**：
+        - **头肩顶**：三高形态，中间最高，看跌信号
+        - **头肩底**：三低形态，中间最低，看涨信号
+        - 💡 经典的反转形态，可靠性高
+        
         ---
         
         ### 🎯 技术指标
@@ -166,6 +176,25 @@ with tab_single:
         - 判断价格高低
         - 价格接近上轨：偏高，考虑减仓
         - 价格接近下轨：偏低，考虑买入
+        
+        **KDJ 指标**：
+        - 超买超卖指标，结合动量和强弱
+        - K > D 且 J > 0：金叉，买入信号
+        - K < D 且 J < 0：死叉，卖出信号
+        - K > 80 且 D > 80：超买，注意风险
+        - K < 20 且 D < 20：超卖，可能反弹
+        
+        **成交量分析**：
+        - 量比 > 2：放量显著，关注主力动向
+        - 量比 1.5-2：温和放量，资金参与度提升
+        - 量比 < 0.5：缩量，观望为主
+        - 💡 量价配合是关键
+        
+        **资金流向**：
+        - 流入：价格上涨，资金净流入
+        - 流出：价格下跌，资金净流出
+        - 持平：价格持平，资金无明显流向
+        - 💡 反映主力资金动向
         
         ---
         
@@ -206,6 +235,12 @@ with tab_single:
             rsi_data = QuantAlgo.calculate_rsi(df)
             bollinger_data = QuantAlgo.calculate_bollinger_bands(df)
             box_pattern = QuantAlgo.detect_box_pattern(df)
+            kdj_data = QuantAlgo.calculate_kdj(df)
+            volume_data = QuantAlgo.analyze_volume(df)
+            money_flow_data = QuantAlgo.analyze_money_flow(df)
+            double_bottom = QuantAlgo.detect_double_bottom(df)
+            double_top = QuantAlgo.detect_double_top(df)
+            head_shoulders = QuantAlgo.detect_head_shoulders(df)
             
             # 分离支撑位和阻力位
             support_levels = [x for x in resistance_levels if x < current_price]
@@ -282,6 +317,60 @@ with tab_single:
                 else:
                     st.info("价格在布林带内，正常波动")
 
+            # 第二行：KDJ、成交量、资金流向
+            col_kdj, col_vol, col_flow = st.columns(3)
+            
+            with col_kdj:
+                st.info("**KDJ 指标**")
+                st.write(f"K: {kdj_data['K']}")
+                st.write(f"D: {kdj_data['D']}")
+                st.write(f"J: {kdj_data['J']}")
+                st.write(f"信号: {kdj_data['信号']}")
+                if "金叉" in kdj_data['信号']:
+                    st.success("✅ 金叉，买入信号")
+                elif "死叉" in kdj_data['信号']:
+                    st.warning("⚠️ 死叉，卖出信号")
+                elif "超买" in kdj_data['信号']:
+                    st.warning("⚠️ 超买，注意风险")
+                elif "超卖" in kdj_data['信号']:
+                    st.success("✅ 超卖，可能反弹")
+            
+            with col_vol:
+                st.info("**成交量分析**")
+                st.write(f"量比: {volume_data['量比']}")
+                st.write(f"信号: {volume_data['信号']}")
+                st.caption(volume_data['含义'])
+                if volume_data['量比'] > 2:
+                    st.warning("⚠️ 放量显著，关注主力动向")
+                elif volume_data['量比'] < 0.5:
+                    st.info("📉 缩量，观望为主")
+            
+            with col_flow:
+                st.info("**资金流向**")
+                st.write(f"流向: {money_flow_data['资金流向']}")
+                st.write(f"强度: {money_flow_data['资金强度']}")
+                st.caption(money_flow_data['说明'])
+                if money_flow_data['资金流向'] == "流入":
+                    st.success("✅ 资金净流入")
+                elif money_flow_data['资金流向'] == "流出":
+                    st.warning("⚠️ 资金净流出")
+
+            # 形态识别提示
+            st.divider()
+            st.subheader("🎨 形态识别")
+            
+            # 双底/双顶
+            if double_bottom['is_double_bottom']:
+                st.success(double_bottom['message'])
+            elif double_top['is_double_top']:
+                st.warning(double_top['message'])
+            
+            # 头肩形态
+            if head_shoulders['pattern'] == 'head_shoulders_top':
+                st.error(head_shoulders['message'])
+            elif head_shoulders['pattern'] == 'head_shoulders_bottom':
+                st.success(head_shoulders['message'])
+
             # K线图
             st.subheader("📊 K线图与支撑阻力位")
             fig = go.Figure(data=[go.Candlestick(x=df['date'],
@@ -350,7 +439,16 @@ with tab_single:
                             'atr': atr,
                             'macd': macd_data,
                             'rsi': rsi_data,
-                            'bollinger': bollinger_data
+                            'bollinger': bollinger_data,
+                            'kdj': kdj_data,
+                            'volume': volume_data,
+                            'money_flow': money_flow_data,
+                            'box_pattern': box_pattern,
+                            'patterns': {
+                                'double_bottom': double_bottom,
+                                'double_top': double_top,
+                                'head_shoulders': head_shoulders
+                            }
                         }
                         analysis = ai_agent.analyze_stock(symbol, round(change_pct, 2), tech_data)
                         st.success(analysis)
