@@ -281,7 +281,19 @@ with tab_single:
             stock_name = QuantAlgo.get_stock_name(symbol)
 
             # 顶部指标卡片
-            st.subheader(f"📈 核心指标看板 - {stock_name} ({symbol})")
+            col_title, col_add = st.columns([3, 1])
+            with col_title:
+                st.subheader(f"📈 核心指标看板 - {stock_name} ({symbol})")
+            with col_add:
+                if st.button("⭐ 加自选", key=f"add_to_watchlist_{symbol}"):
+                    watchlist = config.get('watchlist', [])
+                    if symbol not in watchlist:
+                        watchlist.append(symbol)
+                        config.set('watchlist', watchlist)
+                        st.success(f"已添加 {stock_name} ({symbol}) 到自选股")
+                    else:
+                        st.info(f"{stock_name} ({symbol}) 已在自选股中")
+            
             col1, col2, col3, col4 = st.columns(4)
             col1.metric("最新价格", f"¥{current_price}", f"{change_pct:.2f}%")
             col2.metric("日内波动 (ATR)", f"{atr:.2f}")
