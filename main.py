@@ -436,6 +436,61 @@ with tab_single:
             elif head_shoulders['pattern'] == 'head_shoulders_bottom':
                 st.success(head_shoulders['message'])
 
+            # 个股操作预案
+            st.divider()
+            st.subheader("📋 个股操作预案")
+            
+            with st.spinner('正在生成操作预案...'):
+                trading_plan = QuantAlgo.generate_trading_plan(df, symbol=symbol)
+                
+                if '错误' not in trading_plan:
+                    # 显示操作建议
+                    col1, col2, col3 = st.columns(3)
+                    
+                    # 根据操作建议设置颜色
+                    if trading_plan['操作建议'] == '买入':
+                        col1.metric("操作建议", trading_plan['操作建议'], delta="看多")
+                        col1.markdown('<style>div[data-testid="stMetricValue"] {color: green;}</style>', unsafe_allow_html=True)
+                    elif trading_plan['操作建议'] == '卖出':
+                        col1.metric("操作建议", trading_plan['操作建议'], delta="看空")
+                        col1.markdown('<style>div[data-testid="stMetricValue"] {color: red;}</style>', unsafe_allow_html=True)
+                    else:
+                        col1.metric("操作建议", trading_plan['操作建议'])
+                    
+                    col2.metric("当前价格", f"¥{trading_plan['当前价格']:.2f}")
+                    
+                    # 风险等级
+                    risk_colors = {
+                        '高': '🔴',
+                        '中等': '🟡',
+                        '低': '🟢'
+                    }
+                    col3.metric("风险等级", f"{risk_colors.get(trading_plan['风险等级'], '⚪')} {trading_plan['风险等级']}")
+                    
+                    # 显示买卖点
+                    if trading_plan['买入点']:
+                        col_buy, col_sell, col_stop, col_profit = st.columns(4)
+                        col_buy.metric("买入点", f"¥{trading_plan['买入点']:.2f}")
+                        col_sell.metric("卖出点", f"¥{trading_plan['卖出点']:.2f}" if trading_plan['卖出点'] else "-")
+                        col_stop.metric("止损点", f"¥{trading_plan['止损点']:.2f}")
+                        col_profit.metric("止盈点", f"¥{trading_plan['止盈点']:.2f}")
+                    
+                    # 显示持仓周期
+                    st.info(f"📅 建议持仓周期：{trading_plan['持仓周期']}")
+                    
+                    # 显示分析依据
+                    if trading_plan['分析依据']:
+                        st.subheader("🔍 分析依据")
+                        for i, signal in enumerate(trading_plan['分析依据'], 1):
+                            signal_color = {
+                                '强': '🔴',
+                                '中': '🟡',
+                                '弱': '🟢'
+                            }
+                            st.write(f"{i}. **{signal['指标']}**: {signal['信号']} ({signal_color.get(signal['强度'], '⚪')} 强度: {signal['强度']})")
+                else:
+                    st.error(f"❌ 生成操作预案失败: {trading_plan['错误']}")
+
             # K线图
             st.subheader("📊 K线图与支撑阻力位")
             fig = go.Figure(data=[go.Candlestick(x=df['date'],
@@ -655,9 +710,7 @@ with tab_sector:
                     '板块名称': sector['板块名称'],
                     '涨跌幅': sector['涨跌幅'],
                     '主力净流入': format_amount(sector['主力净流入']),
-                    '主力净流入占比': sector['主力净流入占比'],
-                    '最新价': sector['最新价'],
-                    '总市值': sector['总市值']
+                    '主力净流入占比': sector['主力净流入占比']
                 })
             
             # 显示板块资金流向表格
@@ -667,9 +720,7 @@ with tab_sector:
                     '板块名称': st.column_config.TextColumn('板块名称', width='medium'),
                     '涨跌幅': st.column_config.NumberColumn('涨跌幅', format='%.2f%%'),
                     '主力净流入': st.column_config.TextColumn('主力净流入', width='medium'),
-                    '主力净流入占比': st.column_config.NumberColumn('净流入占比', format='%.2f%%'),
-                    '最新价': st.column_config.NumberColumn('最新价', format='%.2f'),
-                    '总市值': st.column_config.NumberColumn('总市值', format='%.2f')
+                    '主力净流入占比': st.column_config.NumberColumn('净流入占比', format='%.2f%%')
                 },
                 use_container_width=True,
                 hide_index=True
