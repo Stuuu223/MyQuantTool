@@ -949,3 +949,94 @@ with tab_lhb:
                 st.caption(lhb_data['错误信息'])
             else:
                 st.caption(lhb_data['说明'])
+        
+        # 龙虎榜质量分析
+        st.divider()
+        st.subheader("🎯 龙虎榜质量分析")
+        st.caption("区分好榜和坏榜，推荐值得次日介入的股票")
+        
+        with st.spinner('正在分析龙虎榜质量...'):
+            quality_analysis = QuantAlgo.analyze_lhb_quality()
+            
+            if quality_analysis['数据状态'] == '正常':
+                stats = quality_analysis['统计']
+                
+                # 显示统计
+                col1, col2, col3, col4 = st.columns(4)
+                col1.metric("优质榜", f"{stats['优质榜数量']} 只", delta="强烈推荐")
+                col2.metric("良好榜", f"{stats['良好榜数量']} 只", delta="推荐关注")
+                col3.metric("一般榜", f"{stats['劣质榜数量']} 只", delta="谨慎观望")
+                col4.metric("总数", f"{stats['总数']} 只")
+                
+                # 推荐股票
+                st.subheader("⭐ 推荐关注（优质榜）")
+                recommended_stocks = [s for s in quality_analysis['股票分析'] if s['评分'] >= 70]
+                
+                if recommended_stocks:
+                    for stock in recommended_stocks:
+                        with st.expander(f"{stock['榜单质量']} {stock['名称']} ({stock['代码']}) - 评分: {stock['评分']}"):
+                            col1, col2, col3 = st.columns(3)
+                            col1.metric("收盘价", f"¥{stock['收盘价']:.2f}")
+                            col2.metric("涨跌幅", f"{stock['涨跌幅']:.2f}%")
+                            col3.metric("净买入", format_amount(stock['净买入']))
+                            
+                            st.write("**上榜原因：**", stock['上榜原因'])
+                            st.write("**评分原因：**", "、".join(stock['评分原因']))
+                            st.success(f"📈 推荐操作：{stock['推荐']}")
+                else:
+                    st.info("暂无优质榜单")
+                
+                # 良好榜
+                if len(recommended_stocks) < 10:
+                    st.subheader("🟡 良好榜（可关注）")
+                    good_stocks = [s for s in quality_analysis['股票分析'] if 50 <= s['评分'] < 70]
+                    
+                    if good_stocks:
+                        for stock in good_stocks[:5]:  # 只显示前5只
+                            with st.expander(f"{stock['榜单质量']} {stock['名称']} ({stock['代码']}) - 评分: {stock['评分']}"):
+                                col1, col2, col3 = st.columns(3)
+                                col1.metric("收盘价", f"¥{stock['收盘价']:.2f}")
+                                col2.metric("涨跌幅", f"{stock['涨跌幅']:.2f}%")
+                                col3.metric("净买入", format_amount(stock['净买入']))
+                                
+                                st.write("**上榜原因：**", stock['上榜原因'])
+                                st.write("**评分原因：**", "、".join(stock['评分原因']))
+                                st.info(f"📊 推荐操作：{stock['推荐']}")
+                
+                # 劣质榜（可选显示）
+                with st.expander("🔴 劣质榜（不建议介入）"):
+                    poor_stocks = [s for s in quality_analysis['股票分析'] if s['评分'] < 30]
+                    if poor_stocks:
+                        st.dataframe(
+                            pd.DataFrame([
+                                {
+                                    '代码': s['代码'],
+                                    '名称': s['名称'],
+                                    '评分': s['评分'],
+                                    '上榜原因': s['上榜原因'],
+                                    '推荐': s['推荐']
+                                }
+                                for s in poor_stocks
+                            ]),
+                            use_container_width=True,
+                            hide_index=True
+                            )
+                    else:
+                        st.info("暂无劣质榜单")
+                
+                # 评分说明
+                st.divider()
+                st.caption("**评分说明：**")
+                st.caption("- 净买入额（30分）：净买入>1亿得30分，>5000万得20分，>0得10分")
+                st.caption("- 涨跌幅（20分）：3-7%得20分，7-10%得10分，>10%扣10分")
+                st.caption("- 成交额（15分）：>5亿得15分，>2亿得10分，>1亿得5分")
+                st.caption("- 上榜原因（20分）：机构买入等优质原因得20分，ST等劣质原因扣20分")
+                st.caption("- 净买入占比（15分）：>10%得15分，>5%得10分，>0得5分")
+                st.caption("- 优质榜（≥70分）：强烈推荐次日介入")
+                st.caption("- 良好榜（50-69分）：推荐关注")
+                st.caption("- 一般榜（30-49分）：谨慎观望")
+                st.caption("- 劣质榜（<30分）：不建议介入")
+            else:
+                st.error(f"❌ {quality_analysis['数据状态']}")
+                if '错误信息' in quality_analysis:
+                    st.caption(quality_analysis['错误信息'])
