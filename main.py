@@ -35,6 +35,17 @@ ai_agent = DeepSeekAgent(api_key=API_KEY)
 comparator = StockComparator(db)
 backtest_engine = BacktestEngine()
 
+# 全局辅助函数：格式化金额显示
+def format_amount(amount):
+    """格式化金额显示，自动转换为万或亿单位"""
+    abs_amount = abs(amount)
+    if abs_amount >= 100000000:  # 1亿以上
+        return f"{amount/100000000:.2f}亿"
+    elif abs_amount >= 10000:  # 1万以上
+        return f"{amount/10000:.2f}万"
+    else:
+        return f"{amount:.0f}"
+
 st.title("🚀 个人化A股智能投研终端")
 st.markdown("基于 DeepSeek AI & AkShare 数据 | 专为股市小白设计")
 
@@ -371,16 +382,6 @@ with tab_single:
                     # 显示主力资金
                     col_main, col_large, col_medium, col_small = st.columns(4)
                     
-                    # 辅助函数：格式化金额显示
-                    def format_amount(amount):
-                        abs_amount = abs(amount)
-                        if abs_amount >= 100000000:  # 1亿以上
-                            return f"{amount/100000000:.2f}亿"
-                        elif abs_amount >= 10000:  # 1万以上
-                            return f"{amount/10000:.2f}万"
-                        else:
-                            return f"{amount:.0f}"
-                    
                     with col_main:
                         st.metric("主力净流入", format_amount(money_flow_data['主力净流入-净额']), 
                                  f"{money_flow_data['主力净流入-净占比']:.2f}%")
@@ -671,7 +672,7 @@ with tab_sector:
                     st.info("**资金流入最多的板块**")
                     for i, sector in enumerate(hot_sectors, 1):
                         st.metric(f"{i}. {sector['板块名称']}", 
-                                f"{sector['主力净流入']:.2f}",
+                                format_amount(sector['主力净流入']),
                                 f"{sector['涨跌幅']:.2f}%")
                 
                 with col2:
@@ -679,7 +680,7 @@ with tab_sector:
                     st.warning("**资金流出最多的板块**")
                     for i, sector in enumerate(cold_sectors, 1):
                         st.metric(f"{i}. {sector['板块名称']}", 
-                                f"{sector['主力净流入']:.2f}",
+                                format_amount(sector['主力净流入']),
                                 f"{sector['涨跌幅']:.2f}%")
                 
                 # 板块资金流向图
@@ -747,14 +748,14 @@ with tab_lhb:
                 net_buy = total_buy - total_sell
                 
                 col1, col2, col3 = st.columns(3)
-                col1.metric("机构总买入", f"{total_buy:.2f}")
-                col2.metric("机构总卖出", f"{total_sell:.2f}")
-                col3.metric("机构净买入", f"{net_buy:.2f}")
+                col1.metric("机构总买入", format_amount(total_buy))
+                col2.metric("机构总卖出", format_amount(total_sell))
+                col3.metric("机构净买入", format_amount(net_buy))
                 
                 if net_buy > 0:
-                    st.success(f"✅ 机构当日净买入 {net_buy:.2f} 万元，主力看多")
+                    st.success(f"✅ 机构当日净买入 {format_amount(net_buy)}，主力看多")
                 elif net_buy < 0:
-                    st.warning(f"⚠️ 机构当日净卖出 {abs(net_buy):.2f} 万元，主力看空")
+                    st.warning(f"⚠️ 机构当日净卖出 {format_amount(abs(net_buy))}，主力看空")
                 else:
                     st.info("📊 机构买卖平衡")
                 
@@ -767,7 +768,7 @@ with tab_lhb:
                         cols = st.columns([1, 3, 2, 2, 3])
                         cols[0].write(f"**{i}**")
                         cols[1].write(f"**{stock['名称']}** ({stock['代码']})")
-                        cols[2].metric("净买入", f"{stock['龙虎榜净买入']:.2f}")
+                        cols[2].metric("净买入", format_amount(stock['龙虎榜净买入']))
                         cols[3].metric("涨跌幅", f"{stock['涨跌幅']:.2f}%")
                         cols[4].caption(stock['上榜原因'])
                         st.divider()
