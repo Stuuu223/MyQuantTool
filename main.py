@@ -1401,5 +1401,3 @@ with tab_dragon:
             - 破止损的个股，不要做补仓动作
             - 补仓是实盘操作中最蠢的行为
             """)
-                if '错误信息' in quality_analysis:
-                    st.caption(quality_analysis['错误信息'])
