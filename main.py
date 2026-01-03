@@ -299,6 +299,11 @@ with tab_single:
             box_pattern = QuantAlgo.detect_box_pattern(df)
             kdj_data = QuantAlgo.calculate_kdj(df)
             volume_data = QuantAlgo.analyze_volume(df)
+            turnover_data = QuantAlgo.get_turnover_rate(symbol, market="sh" if symbol.startswith("6") else "sz")
+            turnover_volume_analysis = QuantAlgo.analyze_turnover_and_volume(
+                turnover_data.get('换手率'), 
+                volume_data.get('量比', 1)
+            )
             money_flow_data = QuantAlgo.analyze_money_flow(df, symbol=symbol, market="sh" if symbol.startswith("6") else "sz")
             double_bottom = QuantAlgo.detect_double_bottom(df)
             double_top = QuantAlgo.detect_double_top(df)
@@ -413,8 +418,9 @@ with tab_single:
                     st.success("✅ 超卖，可能反弹")
             
             with col_vol:
-                st.info("**成交量分析**")
+                st.info("**成交量与换手率**")
                 st.write(f"量比: {volume_data['量比']}")
+                st.write(f"换手率: {turnover_data.get('换手率', 'N/A')}%")
                 st.write(f"信号: {volume_data['信号']}")
                 st.caption(volume_data['含义'])
                 if volume_data['量比'] > 2:
@@ -485,6 +491,51 @@ with tab_single:
                         st.caption(money_flow_data['错误信息'])
                     else:
                         st.caption(money_flow_data['说明'])
+
+            # 换手率和量比综合分析
+            st.divider()
+            st.subheader("📊 换手率与量比综合分析")
+            
+            if turnover_volume_analysis['分析状态'] == '换手率数据缺失':
+                st.error("❌ 换手率数据缺失，无法进行综合分析")
+            else:
+                # 显示基本信息
+                col_turnover, col_volume, col_risk = st.columns(3)
+                
+                with col_turnover:
+                    st.metric("换手率", f"{turnover_volume_analysis['换手率']}%", 
+                             turnover_volume_analysis['换手率等级'])
+                    st.caption(turnover_volume_analysis['换手率说明'])
+                
+                with col_volume:
+                    st.metric("量比", turnover_volume_analysis['量比'], 
+                             turnover_volume_analysis['量比等级'])
+                    st.caption(turnover_volume_analysis['量比说明'])
+                
+                with col_risk:
+                    risk_colors = {
+                        '低': '🟢',
+                        '中等': '🟡',
+                        '中等偏高': '🟠',
+                        '高': '🔴'
+                    }
+                    st.metric("风险等级", 
+                             f"{risk_colors.get(turnover_volume_analysis['风险等级'], '⚪')} {turnover_volume_analysis['风险等级']}")
+                
+                # 显示综合分析结果
+                st.subheader("🔍 综合分析")
+                for i, analysis in enumerate(turnover_volume_analysis['综合分析'], 1):
+                    st.write(f"{i}. {analysis}")
+                
+                # 根据风险等级给出建议
+                if turnover_volume_analysis['风险等级'] == '高':
+                    st.warning("⚠️ 当前风险较高，建议谨慎操作，可考虑减仓或观望")
+                elif turnover_volume_analysis['风险等级'] == '中等偏高':
+                    st.info("💡 风险偏高，建议控制仓位，密切关注走势")
+                elif turnover_volume_analysis['风险等级'] == '中等':
+                    st.success("✅ 风险适中，可正常操作")
+                else:
+                    st.success("✅ 风险较低，适合稳健操作")
 
             # 形态识别提示
             st.divider()
