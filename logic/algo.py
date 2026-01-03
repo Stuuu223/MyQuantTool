@@ -603,7 +603,69 @@ class QuantAlgo:
                 '错误信息': str(e),
                 '说明': '可能是网络问题或数据源限制'
             }
-    
+
+    @staticmethod
+    def analyze_lhb_summary(date=None):
+                """
+                龙虎榜综合分析
+                分析机构席位、营业部席位、资金流向、上榜原因等
+                """
+                try:
+                    import akshare as ak
+                    from datetime import datetime, timedelta
+                    
+                    # 计算日期范围
+                    end_date = datetime.now().strftime('%Y%m%d')
+                    start_date = (datetime.now() - timedelta(days=7)).strftime('%Y%m%d')
+                    
+                    # 获取机构统计
+                    try:
+                        jg_stat = ak.stock_lhb_jgstatistic_em()
+                        jg_stat = jg_stat[jg_stat.iloc[:, 0] == start_date]  # 筛选指定日期
+                    except:
+                        jg_stat = None
+                    
+                    # 获取活跃营业部
+                    try:
+                        active_yyb = ak.stock_lhb_hyyyb_em()
+                    except:
+                        active_yyb = None
+                    
+                    # 获取龙虎榜详情用于分析上榜原因
+                    lhb_df = ak.stock_lhb_detail_em(start_date=start_date, end_date=end_date)
+                    latest_date = lhb_df.iloc[:, 3].max()
+                    latest_data = lhb_df[lhb_df.iloc[:, 3] == latest_date]
+                    
+                    # 统计上榜原因
+                    reason_stats = {}
+                    for _, row in latest_data.iterrows():
+                        reason = row.iloc[16]
+                        if reason in reason_stats:
+                            reason_stats[reason] += 1
+                        else:
+                            reason_stats[reason] = 1
+                    
+                    # 计算资金流向
+                    total_net_buy = latest_data.iloc[:, 9].sum()  # 龙虎榜净买入总额
+                    total_volume = latest_data.iloc[:, 10].sum()  # 总成交额
+                    
+                    return {
+                        '数据状态': '正常',
+                        '数据日期': latest_date,
+                        '上榜股票数量': len(latest_data),
+                        '龙虎榜净买入总额': total_net_buy,
+                        '总成交额': total_volume,
+                        '上榜原因统计': reason_stats,
+                        '机构统计': jg_stat,
+                        '活跃营业部': active_yyb
+                    }
+                except Exception as e:
+                    return {
+                        '数据状态': '获取失败',
+                        '错误信息': str(e),
+                        '说明': '可能是网络问题或数据源限制'
+                    }
+
     @staticmethod
     def generate_trading_plan(df, symbol="600519"):
         """
