@@ -573,10 +573,10 @@ class QuantAlgo:
             signals = []
             
             # MACD信号
-            if macd_data['趋势'] == '多头':
+            if macd_data['Trend'] == '多头':
                 signals.append({'指标': 'MACD', '信号': '看多', '强度': '强'})
                 plan['操作建议'] = '买入'
-            elif macd_data['趋势'] == '空头':
+            elif macd_data['Trend'] == '空头':
                 signals.append({'指标': 'MACD', '信号': '看空', '强度': '强'})
                 plan['操作建议'] = '卖出'
             
@@ -605,9 +605,9 @@ class QuantAlgo:
                 plan['操作建议'] = '卖出'
             
             # 成交量信号
-            if volume_data['成交量状态'] == '放量':
+            if volume_data['信号'] == '放量显著' or volume_data['信号'] == '温和放量':
                 signals.append({'指标': '成交量', '信号': '放量', '强度': '中'})
-            elif volume_data['成交量状态'] == '缩量':
+            elif volume_data['信号'] == '缩量':
                 signals.append({'指标': '成交量', '信号': '缩量', '强度': '弱'})
             
             # 资金流向信号
@@ -618,29 +618,27 @@ class QuantAlgo:
                     signals.append({'指标': '资金流向', '信号': '净流出', '强度': '强'})
             
             # 形态识别信号
-            if box_pattern['检测到']:
-                if box_pattern['方向'] == '向上突破':
-                    signals.append({'指标': '箱体形态', '信号': '向上突破', '强度': '强'})
-                    plan['操作建议'] = '买入'
-                elif box_pattern['方向'] == '向下突破':
-                    signals.append({'指标': '箱体形态', '信号': '向下突破', '强度': '强'})
-                    plan['操作建议'] = '卖出'
+            if box_pattern.get('is_breakout_up'):
+                signals.append({'指标': '箱体形态', '信号': '向上突破', '强度': '强'})
+                plan['操作建议'] = '买入'
+            elif box_pattern.get('is_breakout_down'):
+                signals.append({'指标': '箱体形态', '信号': '向下突破', '强度': '强'})
+                plan['操作建议'] = '卖出'
             
-            if double_bottom['检测到']:
+            if double_bottom.get('is_double_bottom'):
                 signals.append({'指标': '形态', '信号': '双底', '强度': '强'})
                 plan['操作建议'] = '买入'
             
-            if double_top['检测到']:
+            if double_top.get('is_double_top'):
                 signals.append({'指标': '形态', '信号': '双顶', '强度': '强'})
                 plan['操作建议'] = '卖出'
             
-            if head_shoulders['检测到']:
-                if head_shoulders['方向'] == '顶部':
-                    signals.append({'指标': '形态', '信号': '头肩顶', '强度': '强'})
-                    plan['操作建议'] = '卖出'
-                elif head_shoulders['方向'] == '底部':
-                    signals.append({'指标': '形态', '信号': '头肩底', '强度': '强'})
-                    plan['操作建议'] = '买入'
+            if head_shoulders.get('pattern') == 'head_shoulders_top':
+                signals.append({'指标': '形态', '信号': '头肩顶', '强度': '强'})
+                plan['操作建议'] = '卖出'
+            elif head_shoulders.get('pattern') == 'head_shoulders_bottom':
+                signals.append({'指标': '形态', '信号': '头肩底', '强度': '强'})
+                plan['操作建议'] = '买入'
             
             # 计算买入点、卖出点、止损点、止盈点
             if plan['操作建议'] == '买入':
