@@ -3,8 +3,73 @@ import numpy as np
 from sklearn.cluster import KMeans
 
 class QuantAlgo:
+
+    # 股票名称缓存
+
+    _stock_names_cache = {}
+
     
+
     @staticmethod
+
+    def get_stock_name(symbol):
+
+        """
+
+        获取股票名称
+
+        symbol: 股票代码（6位数字）
+
+        """
+
+        try:
+
+            # 检查缓存
+
+            if symbol in QuantAlgo._stock_names_cache:
+
+                return QuantAlgo._stock_names_cache[symbol]
+
+            
+
+            import akshare as ak
+
+            
+
+            # 获取A股代码名称表
+
+            stock_info_df = ak.stock_info_a_code_name()
+
+            
+
+            # 查找股票名称
+
+            stock_row = stock_info_df[stock_info_df['code'] == symbol]
+
+            
+
+            if not stock_row.empty:
+
+                stock_name = stock_row.iloc[0]['name']
+
+                # 缓存结果
+
+                QuantAlgo._stock_names_cache[symbol] = stock_name
+
+                return stock_name
+
+            else:
+
+                return f"未知股票({symbol})"
+
+        except Exception as e:
+
+            return f"查询失败({symbol})"
+
+    
+
+    @staticmethod
+
     def detect_box_pattern(df, lookback=20):
         """
         检测箱体震荡模式
