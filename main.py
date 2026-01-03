@@ -498,6 +498,9 @@ with tab_single:
             
             if turnover_volume_analysis['分析状态'] == '换手率数据缺失':
                 st.error("❌ 换手率数据缺失，无法进行综合分析")
+                if '说明' in turnover_data and turnover_data['说明']:
+                    st.info(f"💡 {turnover_data['说明']}")
+                    st.info("📌 提示：请选择更早的日期重新获取数据，系统会自动更新换手率信息")
             else:
                 # 显示基本信息
                 col_turnover, col_volume, col_risk = st.columns(3)

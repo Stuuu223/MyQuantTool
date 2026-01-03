@@ -515,19 +515,40 @@ class QuantAlgo:
         df: 历史数据DataFrame
         """
         try:
-            if df.empty or '换手率' not in df.columns:
+            if df.empty:
                 return {
-                    '数据状态': '数据缺失',
+                    '数据状态': '数据为空',
+                    '换手率': None
+                }
+            
+            # 检查是否有换手率列（可能是中文或英文）
+            turnover_col = None
+            if '换手率' in df.columns:
+                turnover_col = '换手率'
+            elif 'turnover_rate' in df.columns:
+                turnover_col = 'turnover_rate'
+            
+            if turnover_col is None:
+                return {
+                    '数据状态': '换手率列不存在',
                     '换手率': None
                 }
             
             # 获取最新的换手率
             latest_data = df.iloc[-1]
-            turnover_rate = latest_data['换手率']
+            turnover_rate = latest_data[turnover_col]
+            
+            # 检查换手率是否为有效值
+            if pd.isna(turnover_rate) or turnover_rate is None:
+                return {
+                    '数据状态': '换手率数据为空',
+                    '换手率': None,
+                    '说明': '旧数据不包含换手率，请重新获取数据'
+                }
             
             return {
                 '数据状态': '正常',
-                '换手率': round(turnover_rate, 2),
+                '换手率': round(float(turnover_rate), 2),
                 '日期': latest_data.get('date', latest_data.get('日期', ''))
             }
         except Exception as e:
