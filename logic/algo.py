@@ -11,170 +11,60 @@ class QuantAlgo:
     
 
     @staticmethod
-
     def get_stock_name(symbol):
-
         """
-
         获取股票名称
-
         symbol: 股票代码（6位数字）
-
         """
-
         try:
-
             # 检查缓存
-
             if symbol in QuantAlgo._stock_names_cache:
-
                 return QuantAlgo._stock_names_cache[symbol]
-
             
-
             import akshare as ak
-
             
-
             # 获取A股代码名称表
-
             stock_info_df = ak.stock_info_a_code_name()
-
             
-
             # 查找股票名称
-
             stock_row = stock_info_df[stock_info_df['code'] == symbol]
-
             
-
             if not stock_row.empty:
-
                 stock_name = stock_row.iloc[0]['name']
-
                 # 缓存结果
-
                 QuantAlgo._stock_names_cache[symbol] = stock_name
-
                 return stock_name
-
             else:
-
+                return f"未知股票({symbol})"
+        except Exception as e:
+            return f"查询失败({symbol})"
+    
+    @staticmethod
+    def get_stock_code_by_name(name):
+        """
+        通过股票名称查找股票代码
+        name: 股票名称
+        返回: 股票代码列表（可能有多个匹配）
+        """
+        try:
+            import akshare as ak
             
-
-                            return f"未知股票({symbol})"
-
+            # 获取A股代码名称表
+            stock_info_df = ak.stock_info_a_code_name()
             
-
-                    except Exception as e:
-
+            # 查找匹配的股票（支持部分匹配）
+            matched_stocks = stock_info_df[stock_info_df['name'].str.contains(name, na=False)]
             
-
-                        return f"查询失败({symbol})"
-
-                
-
-            
-
-                @staticmethod
-
-            
-
-                def get_stock_code_by_name(name):
-
-            
-
-                    """
-
-            
-
-                    通过股票名称查找股票代码
-
-            
-
-                    name: 股票名称
-
-            
-
-                    返回: 股票代码列表（可能有多个匹配）
-
-            
-
-                    """
-
-            
-
-                    try:
-
-            
-
-                        import akshare as ak
-
-            
-
-                        
-
-            
-
-                        # 获取A股代码名称表
-
-            
-
-                        stock_info_df = ak.stock_info_a_code_name()
-
-            
-
-                        
-
-            
-
-                        # 查找匹配的股票（支持部分匹配）
-
-            
-
-                        matched_stocks = stock_info_df[stock_info_df['name'].str.contains(name, na=False)]
-
-            
-
-                        
-
-            
-
-                        if not matched_stocks.empty:
-
-            
-
-                            # 返回匹配的股票代码列表
-
-            
-
-                            return matched_stocks['code'].tolist()
-
-            
-
-                        else:
-
-            
-
-                            return []
-
-            
-
-                    except Exception as e:
-
-            
-
-                        return []
-
-                
-
-            
-
-                @staticmethod
-
-            
-
-                def detect_box_pattern(df, lookback=20):
+            if not matched_stocks.empty:
+                # 返回匹配的股票代码列表
+                return matched_stocks['code'].tolist()
+            else:
+                return []
+        except Exception as e:
+            return []
+    
+    @staticmethod
+    def detect_box_pattern(df, lookback=20):
         """
         检测箱体震荡模式
         返回箱体上下边界和当前状态
