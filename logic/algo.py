@@ -158,6 +158,36 @@ class QuantAlgo:
                 # 如果获取详细信息失败，不影响其他风险检测
                 pass
             
+            # 6. 检查公告风险（立案调查、诉讼仲裁等）
+            try:
+                announcements = ak.stock_news_em(symbol=symbol)
+                if not announcements.empty:
+                    risk_keywords = ['立案', '调查', '诉讼', '仲裁', '处罚', '违规', '退市', '停牌', 'ST', '*ST']
+                    found_risks = []
+                    
+                    for title in announcements.iloc[:, 1].head(20).tolist():  # 检查最近20条公告
+                        title_str = str(title)
+                        for keyword in risk_keywords:
+                            if keyword in title_str:
+                                if keyword not in found_risks:
+                                    found_risks.append(keyword)
+                    
+                    # 根据发现的关键词添加风险
+                    if '立案' in found_risks or '调查' in found_risks:
+                        risks.append("🔴 立案调查风险：公司涉及立案调查，存在重大法律风险")
+                        risk_level = "高"
+                    elif '诉讼' in found_risks or '仲裁' in found_risks:
+                        risks.append("🟡 诉讼仲裁风险：公司涉及诉讼或仲裁案件")
+                        if risk_level == "低":
+                            risk_level = "中"
+                    elif '处罚' in found_risks or '违规' in found_risks:
+                        risks.append("🟡 监管处罚风险：公司受到监管处罚")
+                        if risk_level == "低":
+                            risk_level = "中"
+            except Exception as e:
+                # 如果获取公告失败，不影响其他风险检测
+                pass
+            
             # 如果没有发现风险
             if not risks:
                 risks.append("✅ 未发现明显风险")
