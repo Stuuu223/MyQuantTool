@@ -586,10 +586,10 @@ class QuantAlgo:
                 stocks.append({
                     '代码': row.iloc[1],      # 股票代码
                     '名称': row.iloc[2],      # 股票名称
-                    '收盘价': row.iloc[4],    # 收盘价
-                    '涨跌幅': row.iloc[5],    # 涨跌幅
+                    '收盘价': row.iloc[5],    # 收盘价
+                    '涨跌幅': row.iloc[6],    # 涨跌幅
                     '龙虎榜净买入': row.iloc[9],  # 龙虎榜净买入额
-                    '上榜原因': row.iloc[15]   # 上榜原因
+                    '上榜原因': row.iloc[16]   # 上榜原因
                 })
             
             return {
