@@ -496,7 +496,7 @@ with tab_single:
             st.divider()
             st.subheader("📊 换手率与量比综合分析")
             
-            if turnover_volume_analysis['分析状态'] == '换手率数据缺失':
+            if turnover_volume_analysis.get('分析状态') == '换手率数据缺失':
                 st.error("❌ 换手率数据缺失，无法进行综合分析")
                 if '说明' in turnover_data and turnover_data['说明']:
                     st.info(f"💡 {turnover_data['说明']}")
