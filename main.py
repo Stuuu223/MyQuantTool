@@ -299,7 +299,7 @@ with tab_single:
             box_pattern = QuantAlgo.detect_box_pattern(df)
             kdj_data = QuantAlgo.calculate_kdj(df)
             volume_data = QuantAlgo.analyze_volume(df)
-            turnover_data = QuantAlgo.get_turnover_rate(symbol, market="sh" if symbol.startswith("6") else "sz")
+            turnover_data = QuantAlgo.get_turnover_rate(df)
             turnover_volume_analysis = QuantAlgo.analyze_turnover_and_volume(
                 turnover_data.get('换手率'), 
                 volume_data.get('量比', 1)

@@ -509,32 +509,26 @@ class QuantAlgo:
             }
     
     @staticmethod
-    def get_turnover_rate(symbol, market="sh"):
+    def get_turnover_rate(df):
         """
-        获取换手率数据
-        symbol: 股票代码
-        market: 市场类型 ('sh' 或 'sz')
+        从历史数据中获取换手率
+        df: 历史数据DataFrame
         """
         try:
-            import akshare as ak
-            
-            # 获取个股资金流向数据（包含换手率）
-            fund_flow_df = ak.stock_individual_fund_flow(stock=symbol, market=market)
-            
-            if fund_flow_df.empty:
+            if df.empty or '换手率' not in df.columns:
                 return {
-                    '数据状态': '无法获取数据',
+                    '数据状态': '数据缺失',
                     '换手率': None
                 }
             
             # 获取最新的换手率
-            latest_data = fund_flow_df.iloc[0]
+            latest_data = df.iloc[-1]
             turnover_rate = latest_data['换手率']
             
             return {
                 '数据状态': '正常',
                 '换手率': round(turnover_rate, 2),
-                '日期': latest_data['日期']
+                '日期': latest_data.get('date', latest_data.get('日期', ''))
             }
         except Exception as e:
             return {
