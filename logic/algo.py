@@ -304,12 +304,15 @@ class QuantAlgo:
     def generate_grid_strategy(current_price, atr):
         grid_width_val = atr * 0.5 
         
-return {
-            '网格宽度': round(grid_width_val, 2),
+        plan = {
+            "基准价": current_price,
+            "网格宽度": round(grid_width_val, 2),
             "买入挂单": round(current_price - grid_width_val, 2),
             "卖出挂单": round(current_price + grid_width_val, 2),
             "止损红线": round(current_price - grid_width_val * 3, 2)
         }
+        
+        return plan
 
     @staticmethod
     def calculate_kdj(df, n=9, m1=3, m2=3):
