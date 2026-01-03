@@ -724,6 +724,10 @@ class QuantAlgo:
                 if plan['操作建议'] == '买入':
                     plan['持仓周期'] = '中期（1-2周）'
             
+            # 做T机会分析
+            t_opportunity = QuantAlgo.analyze_t_trading(df, atr, current_price, bollinger_data, rsi_data, volume_data)
+            plan['做T机会'] = t_opportunity
+            
             plan['分析依据'] = signals
             
             return plan
@@ -732,3 +736,110 @@ class QuantAlgo:
                 '错误': str(e),
                 '说明': '生成操作预案失败'
             }
+    
+    @staticmethod
+    def analyze_t_trading(df, atr, current_price, bollinger_data, rsi_data, volume_data):
+        """
+        分析做T机会
+        做T：日内交易，低买高卖赚取差价
+        """
+        # 计算昨日收盘价和今日开盘价
+        prev_close = df.iloc[-2]['close']
+        today_open = df.iloc[-1]['open']
+        
+        # 计算日内波动率
+        intraday_high = df.iloc[-1]['high']
+        intraday_low = df.iloc[-1]['low']
+        intraday_range = intraday_high - intraday_low
+        
+        # 做T机会评分（0-100）
+        t_score = 0
+        t_signals = []
+        
+        # 1. 波动性分析（权重30%）
+        if atr > 0:
+            volatility_ratio = atr / current_price
+            if volatility_ratio > 0.03:  # 日内波动超过3%
+                t_score += 30
+                t_signals.append(f"波动性良好（ATR波动{volatility_ratio*100:.2f}%）")
+            elif volatility_ratio > 0.02:  # 日内波动超过2%
+                t_score += 20
+                t_signals.append(f"波动性一般（ATR波动{volatility_ratio*100:.2f}%）")
+        
+        # 2. 布林带位置（权重25%）
+        if current_price < bollinger_data['中轨']:
+            t_score += 25
+            t_signals.append("价格在中轨下方，适合低吸")
+        elif current_price > bollinger_data['中轨'] and current_price < bollinger_data['上轨']:
+            t_score += 15
+            t_signals.append("价格在中轨附近，震荡机会")
+        
+        # 3. RSI超买超卖（权重20%）
+        if rsi_data['RSI'] < 30:
+            t_score += 20
+            t_signals.append("RSI超卖，反弹概率大")
+        elif rsi_data['RSI'] > 70:
+            t_score += 20
+            t_signals.append("RSI超买，回调概率大")
+        elif 40 <= rsi_data['RSI'] <= 60:
+            t_score += 10
+            t_signals.append("RSI中性，震荡区间")
+        
+        # 4. 成交量（权重15%）
+        if volume_data['信号'] == '放量显著':
+            t_score += 15
+            t_signals.append("放量显著，流动性好")
+        elif volume_data['信号'] == '温和放量':
+            t_score += 10
+            t_signals.append("温和放量，流动性尚可")
+        
+        # 5. 开盘缺口（权重10%）
+        gap = (today_open - prev_close) / prev_close
+        if abs(gap) > 0.02:  # 缺口超过2%
+            t_score += 10
+            if gap > 0:
+                t_signals.append(f"高开{gap*100:.2f}%，可能回补")
+            else:
+                t_signals.append(f"低开{gap*100:.2f}%，可能反弹")
+        
+        # 判断做T机会
+        if t_score >= 70:
+            t_opportunity = '优秀'
+            t_level = '🔥'
+        elif t_score >= 50:
+            t_opportunity = '良好'
+            t_level = '🟡'
+        elif t_score >= 30:
+            t_opportunity = '一般'
+            t_level = '🟢'
+        else:
+            t_opportunity = '较差'
+            t_level = '⚪'
+        
+        # 计算做T点位
+        # 买入点：当前价格向下1-2个ATR
+        # 卖出点：当前价格向上1-2个ATR
+        if t_score >= 30:
+            t_buy_points = [
+                current_price - atr * 0.5,  # 小幅回调
+                current_price - atr * 1.0,  # 中幅回调
+                current_price - atr * 1.5   # 大幅回调
+            ]
+            t_sell_points = [
+                current_price + atr * 0.5,  # 小幅上涨
+                current_price + atr * 1.0,  # 中幅上涨
+                current_price + atr * 1.5   # 大幅上涨
+            ]
+        else:
+            t_buy_points = []
+            t_sell_points = []
+        
+        return {
+            '做T机会': t_opportunity,
+            '做T评分': t_score,
+            '做T信号': t_signals,
+            '做T买入点': [round(p, 2) for p in t_buy_points],
+            '做T卖出点': [round(p, 2) for p in t_sell_points],
+            '风险提示': '做T风险较高，建议小仓位操作，严格止损',
+            '操作建议': f"{t_level} {t_opportunity}，{'适合做T' if t_score >= 50 else '不建议做T'}"
+        }
