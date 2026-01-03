@@ -1,0 +1,32 @@
+﻿Using pip 22.3 from C:\Users\pc\AppData\Local\Programs\Python\Python310\lib\site-packages\pip (python 3.10)
+Looking in indexes: https://pypi.tuna.tsinghua.edu.cn/simple
+pip : WARNING: Retrying (Retry(total=4, connect=None, read=None, redirec
+t=None, status=None)) after connection broken by 'SSLError(SSLEOFError(8
+, 'EOF occurred in violation of protocol (_ssl.c:997)'))': /simple/strea
+mlit/
+At line:1 char:1
++ pip install -v streamlit 2>&1 | Out-File -FilePath pip_debug.log -Enc 
+...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (WARNING: Retryi...mple/str 
+   eamlit/:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+WARNING: Retrying (Retry(total=3, connect=None, read=None, redirect=None
+, status=None)) after connection broken by 'SSLError(SSLEOFError(8, 'EOF
+ occurred in violation of protocol (_ssl.c:997)'))': /simple/streamlit/
+WARNING: Retrying (Retry(total=2, connect=None, read=None, redirect=None
+, status=None)) after connection broken by 'SSLError(SSLEOFError(8, 'EOF
+ occurred in violation of protocol (_ssl.c:997)'))': /simple/streamlit/
+WARNING: Retrying (Retry(total=1, connect=None, read=None, redirect=None
+, status=None)) after connection broken by 'SSLError(SSLEOFError(8, 'EOF
+ occurred in violation of protocol (_ssl.c:997)'))': /simple/streamlit/
+WARNING: Retrying (Retry(total=0, connect=None, read=None, redirect=None
+, status=None)) after connection broken by 'SSLError(SSLEOFError(8, 'EOF
+ occurred in violation of protocol (_ssl.c:997)'))': /simple/streamlit/
+Could not fetch URL https://pypi.tuna.tsinghua.edu.cn/simple/streamlit/: There was a problem confirming the ssl certificate: HTTPSConnectionPool(host='pypi.tuna.tsinghua.edu.cn', port=443): Max retries exceeded with url: /simple/streamlit/ (Caused by SSLError(SSLEOFError(8, 'EOF occurred in violation of protocol (_ssl.c:997)'))) - skipping
+ERROR: Could not find a version that satisfies the requirement streamlit
+ (from versions: none)
+ERROR: No matching distribution found for streamlit
+Could not fetch URL https://pypi.tuna.tsinghua.edu.cn/simple/pip/: There was a problem confirming the ssl certificate: HTTPSConnectionPool(host='pypi.tuna.tsinghua.edu.cn', port=443): Max retries exceeded with url: /simple/pip/ (Caused by SSLError(SSLEOFError(8, 'EOF occurred in violation of protocol (_ssl.c:997)'))) - skipping
+WARNING: There was an error checking the latest version of pip.
