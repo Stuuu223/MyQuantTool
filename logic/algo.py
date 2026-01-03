@@ -162,28 +162,39 @@ class QuantAlgo:
             try:
                 announcements = ak.stock_news_em(symbol=symbol)
                 if not announcements.empty:
-                    risk_keywords = ['立案', '调查', '诉讼', '仲裁', '处罚', '违规', '退市', '停牌', 'ST', '*ST']
-                    found_risks = []
+                    risk_keywords = ['立案', '调查', '诉讼', '仲裁', '处罚', '违规', '退市', '停牌', 'ST', '*ST', '内控', '缺陷']
+                    found_risks = set()
                     
-                    for title in announcements.iloc[:, 1].head(20).tolist():  # 检查最近20条公告
-                        title_str = str(title)
+                    # 检查公告标题和内容
+                    for idx in range(min(30, len(announcements))):  # 检查最近30条公告
+                        title = str(announcements.iloc[idx, 1])
+                        content = str(announcements.iloc[idx, 2])
+                        full_text = title + ' ' + content
+                        
                         for keyword in risk_keywords:
-                            if keyword in title_str:
-                                if keyword not in found_risks:
-                                    found_risks.append(keyword)
+                            if keyword in full_text:
+                                found_risks.add(keyword)
                     
                     # 根据发现的关键词添加风险
-                    if '立案' in found_risks or '调查' in found_risks:
-                        risks.append("🔴 立案调查风险：公司涉及立案调查，存在重大法律风险")
-                        risk_level = "高"
-                    elif '诉讼' in found_risks or '仲裁' in found_risks:
-                        risks.append("🟡 诉讼仲裁风险：公司涉及诉讼或仲裁案件")
-                        if risk_level == "低":
-                            risk_level = "中"
-                    elif '处罚' in found_risks or '违规' in found_risks:
-                        risks.append("🟡 监管处罚风险：公司受到监管处罚")
-                        if risk_level == "低":
-                            risk_level = "中"
+                    if found_risks:
+                        if '立案' in found_risks or '调查' in found_risks:
+                            risks.append("🔴 立案调查风险：公司涉及立案调查，存在重大法律风险")
+                            risk_level = "高"
+                        elif '内控' in found_risks and '缺陷' in found_risks:
+                            risks.append("🟠 内控缺陷风险：公司内部控制存在缺陷")
+                            if risk_level == "低":
+                                risk_level = "中"
+                        elif '诉讼' in found_risks or '仲裁' in found_risks:
+                            risks.append("🟡 诉讼仲裁风险：公司涉及诉讼或仲裁案件")
+                            if risk_level == "低":
+                                risk_level = "中"
+                        elif '处罚' in found_risks or '违规' in found_risks:
+                            risks.append("🟡 监管处罚风险：公司受到监管处罚")
+                            if risk_level == "低":
+                                risk_level = "中"
+                        elif 'ST' in found_risks or '*ST' in found_risks:
+                            # ST风险已经在前面检测过了，这里不再重复
+                            pass
             except Exception as e:
                 # 如果获取公告失败，不影响其他风险检测
                 pass
