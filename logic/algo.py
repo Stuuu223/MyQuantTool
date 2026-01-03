@@ -499,8 +499,8 @@ class QuantAlgo:
         try:
             import akshare as ak
             
-            # 获取龙虎榜股票统计
-            lhb_df = ak.stock_lhb_stock_statistic_em()
+            # 获取新浪龙虎榜每日详情
+            lhb_df = ak.stock_lhb_detail_daily_sina()
             
             if lhb_df.empty:
                 return {
@@ -512,14 +512,14 @@ class QuantAlgo:
             stocks = []
             for _, row in lhb_df.head(30).iterrows():  # 取前30只股票
                 stocks.append({
-                    '代码': row.iloc[1],      # 代码
-                    '名称': row.iloc[2],      # 名称
-                    '收盘价': row.iloc[4],    # 收盘价
-                    '涨跌幅': row.iloc[5],    # 涨跌幅
-                    '龙虎榜净买入': row.iloc[7],  # 龙虎榜净买入额
-                    '上榜原因': row.iloc[6],  # 上榜原因
-                    '机构买入': 0,  # 需要单独获取，先设为0
-                    '机构卖出': 0   # 需要单独获取，先设为0
+                    '代码': row.iloc[1],      # 股票代码
+                    '名称': row.iloc[2],      # 股票名称
+                    '收盘价': row.iloc[3],    # 收盘价
+                    '涨跌幅': row.iloc[4],    # 对应值（涨跌幅）
+                    '龙虎榜净买入': row.iloc[6],  # 净买入
+                    '上榜原因': row.iloc[7],  # 指数（上榜原因）
+                    '机构买入': 0,  # 该接口不提供机构买卖数据
+                    '机构卖出': 0
                 })
             
             return {
