@@ -40,6 +40,120 @@ class QuantAlgo:
             return f"查询失败({symbol})"
     
     @staticmethod
+    def check_stock_risks(symbol):
+        """
+        检查股票风险（扫雷）
+        symbol: 股票代码（6位数字）
+        """
+        try:
+            import akshare as ak
+            
+            risks = []
+            risk_level = "低"  # 低、中、高
+            
+            # 获取股票基本信息
+            stock_info = ak.stock_individual_info_em(symbol=symbol)
+            
+            if stock_info.empty:
+                return {
+                    '风险等级': '未知',
+                    '风险列表': ['无法获取风险信息']
+                }
+            
+            # 转换为字典
+            info_dict = dict(zip(stock_info['item'], stock_info['value']))
+            
+            # 1. 检查ST状态
+            stock_name = info_dict.get('股票名称', '')
+            if 'ST' in stock_name or '*ST' in stock_name:
+                if '*ST' in stock_name:
+                    risks.append("🔴 *ST退市风险警示：退市风险极高，强烈建议远离")
+                    risk_level = "高"
+                else:
+                    risks.append("🟠 ST特别处理：存在退市风险，建议谨慎")
+                    risk_level = "高"
+            
+            # 2. 检查财务状况
+            # 检查是否亏损
+            profit = info_dict.get('净利润', '')
+            if profit and '-' in str(profit):
+                risks.append("🟡 净利润亏损：公司盈利能力较弱")
+                if risk_level == "低":
+                    risk_level = "中"
+            
+            # 3. 检查负债率
+            debt_ratio = info_dict.get('负债率', '')
+            if debt_ratio:
+                try:
+                    debt_value = float(debt_ratio.replace('%', ''))
+                    if debt_value > 80:
+                        risks.append("🟡 负债率过高：财务风险较大")
+                        if risk_level == "低":
+                            risk_level = "中"
+                    elif debt_ratio > 60:
+                        risks.append("🟢 负债率偏高：需关注财务状况")
+                except:
+                    pass
+            
+            # 4. 检查市盈率
+            pe = info_dict.get('市盈率-动态', '')
+            if pe:
+                try:
+                    pe_value = float(pe)
+                    if pe_value < 0:
+                        risks.append("🟡 市盈率为负：公司亏损")
+                        if risk_level == "低":
+                            risk_level = "中"
+                    elif pe_value > 100:
+                        risks.append("🟢 市盈率过高：估值可能偏高")
+                except:
+                    pass
+            
+            # 5. 检查市净率
+            pb = info_dict.get('市净率', '')
+            if pb:
+                try:
+                    pb_value = float(pb)
+                    if pb_value < 1:
+                        risks.append("🟢 市净率低于1：股价跌破净资产")
+                    elif pb_value > 10:
+                        risks.append("🟢 市净率过高：估值可能偏高")
+                except:
+                    pass
+            
+            # 6. 检查是否停牌
+            status = info_dict.get('交易状态', '')
+            if '停牌' in status:
+                risks.append("🔴 股票停牌：无法交易")
+                risk_level = "高"
+            
+            # 7. 检查是否新股
+            listing_date = info_dict.get('上市日期', '')
+            if listing_date:
+                try:
+                    from datetime import datetime
+                    days_since_listing = (datetime.now() - datetime.strptime(listing_date, '%Y-%m-%d')).days
+                    if days_since_listing < 180:  # 上市不到半年
+                        risks.append("🟢 次新股：上市时间短，波动较大")
+                except:
+                    pass
+            
+            # 如果没有发现风险
+            if not risks:
+                risks.append("✅ 未发现明显风险")
+            
+            return {
+                '风险等级': risk_level,
+                '风险列表': risks,
+                '股票名称': stock_name
+            }
+        except Exception as e:
+            return {
+                '风险等级': '未知',
+                '风险列表': [f'风险检测失败: {str(e)}']
+            }
+    
+    @staticmethod
     def get_stock_code_by_name(name):
         """
         通过股票名称查找股票代码
