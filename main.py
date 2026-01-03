@@ -511,6 +511,33 @@ with tab_single:
                                 '弱': '🟢'
                             }
                             st.write(f"{i}. **{signal['指标']}**: {signal['信号']} ({signal_color.get(signal['强度'], '⚪')} 强度: {signal['强度']})")
+                    
+                    # 显示做T机会
+                    if '做T机会' in trading_plan:
+                        st.divider()
+                        st.subheader("🎯 做T机会分析")
+                        
+                        t_data = trading_plan['做T机会']
+                        t_col1, t_col2, t_col3 = st.columns(3)
+                        
+                        # 做T机会等级
+                        t_col1.metric("做T机会", t_data['操作建议'], delta=f"评分: {t_data['做T评分']}")
+                        
+                        # 做T信号
+                        if t_data['做T信号']:
+                            t_col2.write("**做T信号**")
+                            for signal in t_data['做T信号']:
+                                t_col2.write(f"• {signal}")
+                        
+                        # 风险提示
+                        t_col3.warning(t_data['风险提示'])
+                        
+                        # 做T点位
+                        if t_data['做T买入点'] and t_data['做T卖出点']:
+                            st.subheader("📍 做T参考点位")
+                            st.info(f"💡 **买入点（低吸）**: ¥{t_data['做T买入点'][0]:.2f} / ¥{t_data['做T买入点'][1]:.2f} / ¥{t_data['做T买入点'][2]:.2f}")
+                            st.info(f"💡 **卖出点（高抛）**: ¥{t_data['做T卖出点'][0]:.2f} / ¥{t_data['做T卖出点'][1]:.2f} / ¥{t_data['做T卖出点'][2]:.2f}")
+                            st.caption("注：做T点位仅供参考，实际操作请结合实时行情和仓位管理")
                 else:
                     st.error(f"❌ 生成操作预案失败: {trading_plan['错误']}")
 
