@@ -53,6 +53,16 @@ st.markdown("基于 DeepSeek AI & AkShare 数据 | 专为股市小白设计")
 if 'selected_stock' not in st.session_state:
     st.session_state.selected_stock = None
 
+# 初始化回测结果存储
+if 'pattern_backtest_result' not in st.session_state:
+    st.session_state.pattern_backtest_result = None
+if 'portfolio_backtest_result' not in st.session_state:
+    st.session_state.portfolio_backtest_result = None
+if 'parameter_optimization_result' not in st.session_state:
+    st.session_state.parameter_optimization_result = None
+if 'pattern_combination_result' not in st.session_state:
+    st.session_state.pattern_combination_result = None
+
 # 添加系统菜单说明
 # st.caption("💡 右上角菜单说明：")
 # st.caption("  • ⚙️ Settings（设置）：调整显示主题、字体大小等")
@@ -827,75 +837,714 @@ with tab_single:
                     st.write("点击侧边栏的「🧠 智能分析」按钮，获取智能投资建议。")
 
 with tab_backtest:
-    st.subheader("🧪 网格策略回测")
+    # 回测类型选择
+    backtest_type = st.radio("回测类型", 
+                            ["网格策略回测", "战法成功率回测", "策略组合回测", "参数优化", "战法组合分析"],
+                            horizontal=True)
     
-    st.info("⚠️ 注意：回测结果仅供参考，不构成投资建议。实际交易中存在滑点、手续费等额外成本。")
-    
-    # 回测参数设置
-    backtest_symbol = st.text_input("回测股票代码", value="600519")
-    backtest_start = st.date_input("回测开始日期", pd.to_datetime("2023-01-01"))
-    
-    col_atr, col_ratio, col_cost = st.columns(3)
-    with col_atr:
-        bt_atr_mult = st.slider("ATR 倍数", 0.1, 2.0, 0.5, 0.1)
-    with col_ratio:
-        bt_grid_ratio = st.slider("网格比例", 0.05, 0.5, 0.1, 0.05)
-    with col_cost:
-        bt_cost = st.slider("交易手续费", 0.000, 0.01, 0.001, 0.001)
-    
-    if st.button("运行回测"):
-        s_date_str = backtest_start.strftime("%Y%m%d")
-        e_date_str = pd.Timestamp.now().strftime("%Y%m%d")
+    if backtest_type == "网格策略回测":
+        st.subheader("🧪 网格策略回测")
         
-        with st.spinner('正在运行回测...'):
-            df = db.get_history_data(backtest_symbol, start_date=s_date_str, end_date=e_date_str)
+        st.info("⚠️ 注意：回测结果仅供参考，不构成投资建议。实际交易中存在滑点、手续费等额外成本。")
+        
+        # 回测参数设置
+        backtest_symbol = st.text_input("回测股票代码", value="600519")
+        backtest_start = st.date_input("回测开始日期", pd.to_datetime("2023-01-01"))
+        
+        col_atr, col_ratio, col_cost = st.columns(3)
+        with col_atr:
+            bt_atr_mult = st.slider("ATR 倍数", 0.1, 2.0, 0.5, 0.1)
+        with col_ratio:
+            bt_grid_ratio = st.slider("网格比例", 0.05, 0.5, 0.1, 0.05)
+        with col_cost:
+            bt_cost = st.slider("交易手续费", 0.000, 0.01, 0.001, 0.001)
+        
+        if st.button("运行网格回测"):
+            s_date_str = backtest_start.strftime("%Y%m%d")
+            e_date_str = pd.Timestamp.now().strftime("%Y%m%d")
             
-            if not df.empty and len(df) > 50:
-                result = backtest_engine.run_grid_strategy_backtest(
-                    df, 
-                    atr_multiplier=bt_atr_mult, 
-                    grid_ratio=bt_grid_ratio,
-                    transaction_cost=bt_cost
-                )
+            with st.spinner('正在运行回测...'):
+                df = db.get_history_data(backtest_symbol, start_date=s_date_str, end_date=e_date_str)
                 
-                # 显示回测报告
-                report = backtest_engine.generate_backtest_report(result)
-                st.markdown(report)
-                
-                # 显示交易记录
-                if not result['交易记录'].empty:
-                    st.subheader("📝 交易记录")
-                    st.dataframe(result['交易记录'], use_container_width=True)
-                
-                # 显示资金曲线
-                st.subheader("💰 资金曲线")
-                # 简单的资金曲线可视化
-                capital_curve = []
-                running_capital = result['初始资金']
-                capital_curve.append(running_capital)
-                
-                for _, trade in result['交易记录'].iterrows():
-                    running_capital = trade['capital']
+                if not df.empty and len(df) > 50:
+                    result = backtest_engine.run_grid_strategy_backtest(
+                        df, 
+                        atr_multiplier=bt_atr_mult, 
+                        grid_ratio=bt_grid_ratio,
+                        transaction_cost=bt_cost
+                    )
+                    
+                    # 显示回测报告
+                    report = backtest_engine.generate_backtest_report(result)
+                    st.markdown(report)
+                    
+                    # 显示交易记录
+                    if not result['交易记录'].empty:
+                        st.subheader("📝 交易记录")
+                        st.dataframe(result['交易记录'], use_container_width=True)
+                    
+                    # 显示资金曲线
+                    st.subheader("💰 资金曲线")
+                    # 简单的资金曲线可视化
+                    capital_curve = []
+                    running_capital = result['初始资金']
                     capital_curve.append(running_capital)
+                    
+                    for _, trade in result['交易记录'].iterrows():
+                        running_capital = trade['capital']
+                        capital_curve.append(running_capital)
+                    
+                    fig_capital = go.Figure()
+                    fig_capital.add_trace(go.Scatter(
+                        y=capital_curve,
+                        mode='lines+markers',
+                        name='资金曲线',
+                        line=dict(color='blue', width=2)
+                    ))
+                    
+                    fig_capital.update_layout(
+                        title="资金变化曲线",
+                        xaxis_title="交易次数",
+                        yaxis_title="资金（元）",
+                        height=400
+                    )
+                    st.plotly_chart(fig_capital, use_container_width=True)
+                    
+                else:
+                    st.error("数据不足，无法进行回测。请选择更早的日期或检查股票代码。")
+    
+    elif backtest_type == "战法成功率回测":
+        st.subheader("🎯 战法成功率回测")
+        
+        st.info("💡 统计历史数据中各种战法信号的成功率，帮助你选择最有效的战法")
+        
+        # 回测参数设置
+        # 搜索模式选择
+        pattern_search_mode = st.radio("搜索方式", ["按代码", "按名称"], horizontal=True, key="pattern_search_mode")
+        
+        if pattern_search_mode == "按代码":
+            pattern_symbol = st.text_input("回测股票代码", value="600519", key="pattern_symbol_input")
+        else:
+            # 按名称搜索
+            pattern_search_name = st.text_input("股票名称", placeholder="输入股票名称，如：贵州茅台", key="pattern_search_name", help="支持模糊搜索")
+            
+            if pattern_search_name:
+                with st.spinner('正在搜索...'):
+                    pattern_matched_codes = QuantAlgo.get_stock_code_by_name(pattern_search_name)
                 
-                fig_capital = go.Figure()
-                fig_capital.add_trace(go.Scatter(
-                    y=capital_curve,
-                    mode='lines+markers',
-                    name='资金曲线',
-                    line=dict(color='blue', width=2)
+                if pattern_matched_codes:
+                    # 显示匹配的股票列表
+                    st.write(f"找到 {len(pattern_matched_codes)} 只匹配的股票：")
+                    pattern_stock_options = []
+                    for code in pattern_matched_codes:
+                        name = QuantAlgo.get_stock_name(code)
+                        pattern_stock_options.append(f"{name} ({code})")
+                    
+                    pattern_selected_stock = st.selectbox("选择股票", pattern_stock_options, key="pattern_selected_stock")
+                    
+                    # 从选中项中提取股票代码
+                    if pattern_selected_stock:
+                        pattern_symbol = pattern_selected_stock.split('(')[1].rstrip(')')
+                else:
+                    st.warning("未找到匹配的股票")
+                    pattern_symbol = "600519"
+            else:
+                pattern_symbol = "600519"
+        
+        pattern_start = st.date_input("回测开始日期", pd.to_datetime("2023-01-01"))
+        
+        col_pattern, col_hold, col_profit, col_loss = st.columns(4)
+        with col_pattern:
+            pattern_type = st.selectbox(
+                "战法类型",
+                ["all", "dragon", "box", "double_bottom", "double_top", "head_shoulders"],
+                format_func=lambda x: {
+                    "all": "全部战法",
+                    "dragon": "龙头战法",
+                    "box": "箱体突破",
+                    "double_bottom": "双底",
+                    "double_top": "双顶",
+                    "head_shoulders": "头肩形态"
+                }[x],
+                key="pattern_type_select"
+            )
+        
+        with col_hold:
+            hold_days = st.slider("持有天数", 1, 20, 5, 1)
+        
+        with col_profit:
+            profit_threshold = st.slider("盈利阈值(%)", 1, 10, 3, 1) / 100
+        
+        with col_loss:
+            loss_threshold = st.slider("亏损阈值(%)", -10, -1, -3, 1) / 100
+        
+        if st.button("运行战法回测"):
+            s_date_str = pattern_start.strftime("%Y%m%d")
+            e_date_str = pd.Timestamp.now().strftime("%Y%m%d")
+            
+            with st.spinner('正在运行战法回测...'):
+                df = db.get_history_data(pattern_symbol, start_date=s_date_str, end_date=e_date_str)
+                
+                if not df.empty and len(df) > 60:
+                    # 运行战法回测
+                    result = backtest_engine.run_pattern_backtest(
+                        df, 
+                        pattern_type=pattern_type,
+                        hold_days=hold_days,
+                        profit_threshold=profit_threshold,
+                        loss_threshold=loss_threshold
+                    )
+                    
+                    # 保存结果到session_state
+                    st.session_state.pattern_backtest_result = result
+                    st.session_state.pattern_backtest_symbol = pattern_symbol
+                    st.session_state.pattern_backtest_params = {
+                        'pattern_type': pattern_type,
+                        'hold_days': hold_days,
+                        'profit_threshold': profit_threshold,
+                        'loss_threshold': loss_threshold
+                    }
+                    st.success("回测完成!")
+        
+        # 显示回测结果(如果有)
+        if st.session_state.pattern_backtest_result is not None:
+            result = st.session_state.pattern_backtest_result
+            
+            # 显示回测报告
+            report = backtest_engine.generate_pattern_backtest_report(result)
+            st.markdown(report)
+            
+            # 计算并显示风险指标
+            st.subheader("⚠️ 风险指标")
+            risk_metrics = backtest_engine.calculate_risk_metrics(result)
+            
+            col_risk1, col_risk2, col_risk3, col_risk4 = st.columns(4)
+            with col_risk1:
+                st.metric("最大回撤", f"{risk_metrics['最大回撤']}%", delta="风险控制")
+            with col_risk2:
+                st.metric("夏普比率", risk_metrics['夏普比率'], delta="风险收益比")
+            with col_risk3:
+                st.metric("卡尔马比率", risk_metrics['卡尔马比率'], delta="回撤收益比")
+            with col_risk4:
+                st.metric("年化收益率", f"{risk_metrics['年化收益率']}%", delta="年化表现")
+            
+            # 风险等级评估
+            if risk_metrics['最大回撤'] < 10:
+                risk_level = "🟢 低风险"
+            elif risk_metrics['最大回撤'] < 20:
+                risk_level = "🟡 中风险"
+            else:
+                risk_level = "🔴 高风险"
+            
+            st.info(f"💡 风险等级: {risk_level} | 夏普比率{'优秀' if risk_metrics['夏普比率'] > 1 else '一般' if risk_metrics['夏普比率'] > 0 else '较差'}")
+            
+            # 显示分战法统计
+            if not result['分战法统计'].empty:
+                st.subheader("📊 各战法成功率排名")
+                
+                # 显示排名表格
+                pattern_ranking = result['分战法统计'].copy()
+                st.dataframe(pattern_ranking, use_container_width=True)
+                
+                # 高亮显示成功率最高的战法
+                if not pattern_ranking.empty:
+                    best_pattern = pattern_ranking.iloc[0]
+                    st.success(f"🏆 **成功率最高的战法**: {best_pattern.name} (成功率: {best_pattern['成功率']}%, 信号数: {int(best_pattern['信号数'])})")
+                
+                # 战法成功率对比图
+                st.subheader("📈 各战法成功率对比")
+                fig_pattern = go.Figure()
+                
+                fig_pattern.add_trace(go.Bar(
+                    x=pattern_ranking.index,
+                    y=pattern_ranking['成功率'],
+                    name='成功率',
+                    marker_color='blue',
+                    text=pattern_ranking['成功率'].apply(lambda x: f"{x}%"),
+                    textposition='outside'
                 ))
                 
-                fig_capital.update_layout(
-                    title="资金变化曲线",
-                    xaxis_title="交易次数",
-                    yaxis_title="资金（元）",
+                fig_pattern.update_layout(
+                    title="各战法成功率对比",
+                    xaxis_title="战法类型",
+                    yaxis_title="成功率(%)",
+                    height=400,
+                    showlegend=False
+                )
+                st.plotly_chart(fig_pattern, use_container_width=True)
+                
+                # 战法收益率对比图
+                st.subheader("💰 各战法平均收益率对比")
+                fig_returns = go.Figure()
+                
+                fig_returns.add_trace(go.Bar(
+                    x=pattern_ranking.index,
+                    y=pattern_ranking['平均收益率'],
+                    name='平均收益率',
+                    marker_color='green',
+                    text=pattern_ranking['平均收益率'].apply(lambda x: f"{x}%"),
+                    textposition='outside'
+                ))
+                
+                fig_returns.update_layout(
+                    title="各战法平均收益率对比",
+                    xaxis_title="战法类型",
+                    yaxis_title="平均收益率(%)",
+                    height=400,
+                    showlegend=False
+                )
+                st.plotly_chart(fig_returns, use_container_width=True)
+            
+            # 显示详细信号记录
+            if not result['总体统计']['详细统计'].empty:
+                st.subheader("📝 详细信号记录")
+                
+                # 获取所有战法类型
+                all_patterns = result['总体统计']['详细统计']['战法类型'].unique().tolist()
+                
+                # 添加战法筛选
+                col_filter1, col_filter2 = st.columns(2)
+                with col_filter1:
+                    pattern_filter = st.selectbox("筛选战法", ["全部"] + all_patterns, key="pattern_type_filter")
+                
+                with col_filter2:
+                    result_filter = st.selectbox("筛选结果", ["全部", "盈利", "亏损", "平局"], key="pattern_result_filter")
+                
+                # 应用筛选
+                filtered_df = result['总体统计']['详细统计'].copy()
+                
+                if pattern_filter != "全部":
+                    filtered_df = filtered_df[filtered_df['战法类型'] == pattern_filter]
+                
+                if result_filter != "全部":
+                    filtered_df = filtered_df[filtered_df['结果'] == result_filter]
+                
+                # 添加触发情景说明
+                def get_trigger_context(row):
+                    """根据战法类型生成触发情景说明"""
+                    pattern = row['战法类型']
+                    context = ""
+                    
+                    if pattern == '龙头战法':
+                        context = f"涨停触发:当日涨幅{row.get('change_pct', 0):.2f}%,价格¥{row['信号价格']:.2f},量比{row.get('volume_ratio', 0):.2f}"
+                    elif pattern == '箱体突破':
+                        if row['信号类型'] == '买入':
+                            context = f"向上突破:突破箱体上沿¥{row['box_high']:.2f},当前价¥{row['信号价格']:.2f}"
+                        else:
+                            context = f"向下突破:跌破箱体下沿¥{row['box_low']:.2f},当前价¥{row['信号价格']:.2f}"
+                    elif pattern == '双底':
+                        context = f"双底形成:第一底¥{row['first_bottom']:.2f},第二底¥{row['second_bottom']:.2f},突破颈线¥{row['neck_line']:.2f}"
+                    elif pattern == '双顶':
+                        context = f"双顶形成:第一顶¥{row['first_top']:.2f},第二顶¥{row['second_top']:.2f},跌破颈线¥{row['neck_line']:.2f}"
+                    elif pattern == '头肩顶':
+                        context = f"头肩顶形成:左肩¥{row['left_shoulder']:.2f},头部¥{row['head']:.2f},右肩¥{row['right_shoulder']:.2f}"
+                    elif pattern == '头肩底':
+                        context = f"头肩底形成:左肩¥{row['left_shoulder']:.2f},头部¥{row['head']:.2f},右肩¥{row['right_shoulder']:.2f}"
+                    else:
+                        context = f"{pattern}信号触发于{row['信号日期']}"
+                    
+                    return context
+                
+                # 添加触发情景列
+                filtered_df['触发情景'] = filtered_df.apply(get_trigger_context, axis=1)
+                
+                # 重新排列列顺序
+                cols = ['信号日期', '战法类型', '信号类型', '触发情景', '信号价格', '收益率', '结果', '持有天数']
+                filtered_df = filtered_df[[col for col in cols if col in filtered_df.columns]]
+                
+                st.dataframe(filtered_df, use_container_width=True)
+                
+                # 成功率可视化
+                st.subheader("📈 成功率分布")
+                success_stats = result['总体统计']
+                
+                fig_success = go.Figure(data=[
+                    go.Bar(
+                        name='盈利',
+                        x=['成功'],
+                        y=[success_stats['盈利信号数']],
+                        marker_color='green'
+                    ),
+                    go.Bar(
+                        name='亏损',
+                        x=['失败'],
+                        y=[success_stats['亏损信号数']],
+                        marker_color='red'
+                    ),
+                    go.Bar(
+                        name='平局',
+                        x=['平局'],
+                        y=[success_stats['平局信号数']],
+                        marker_color='gray'
+                    )
+                ])
+                
+                fig_success.update_layout(
+                    title=f"信号结果分布 (成功率: {success_stats['成功率']}%)",
+                    barmode='group',
                     height=400
                 )
-                st.plotly_chart(fig_capital, use_container_width=True)
+                st.plotly_chart(fig_success, use_container_width=True)
                 
-            else:
-                st.error("数据不足，无法进行回测。请选择更早的日期或检查股票代码。")
+                # 收益率分布图
+                if not filtered_df.empty:
+                    st.subheader("💰 收益率分布")
+                    fig_returns = go.Figure()
+                    
+                    for pattern in filtered_df['战法类型'].unique():
+                        pattern_data = filtered_df[filtered_df['战法类型'] == pattern]
+                        fig_returns.add_trace(go.Box(
+                            y=pattern_data['收益率'],
+                            name=pattern,
+                            boxpoints='outliers'
+                        ))
+                    
+                    fig_returns.update_layout(
+                        title="各战法收益率分布",
+                        yaxis_title="收益率(%)",
+                        height=400
+                    )
+                    st.plotly_chart(fig_returns, use_container_width=True)
+            
+            # 显示信号数量趋势
+            if result['所有信号']:
+                st.subheader("📊 信号数量趋势")
+                signal_df = pd.DataFrame(result['所有信号'])
+                signal_df['日期'] = pd.to_datetime(signal_df['date'])
+                signal_df['月份'] = signal_df['日期'].dt.to_period('M')
+                
+                monthly_signals = signal_df.groupby(['月份', 'pattern']).size().reset_index(name='信号数')
+                monthly_signals['月份'] = monthly_signals['月份'].astype(str)
+                
+                fig_trend = go.Figure()
+                
+                for pattern in monthly_signals['pattern'].unique():
+                    pattern_data = monthly_signals[monthly_signals['pattern'] == pattern]
+                    fig_trend.add_trace(go.Scatter(
+                        x=pattern_data['月份'],
+                        y=pattern_data['信号数'],
+                        mode='lines+markers',
+                        name=pattern
+                    ))
+                
+                fig_trend.update_layout(
+                    title="月度信号数量趋势",
+                    xaxis_title="月份",
+                    yaxis_title="信号数量",
+                    height=400
+                )
+                st.plotly_chart(fig_trend, use_container_width=True)
+    
+    elif backtest_type == "策略组合回测":
+        st.subheader("📊 策略组合回测")
+        
+        st.info("💡 同时回测多只股票,对比战法在不同股票上的表现")
+        
+        # 股票选择
+        portfolio_symbols_input = st.text_input("输入股票代码列表（用逗号分隔）", 
+                                               value="600519,000001,600036",
+                                               help="例如：600519,000001,600036")
+        
+        portfolio_symbols = [s.strip() for s in portfolio_symbols_input.split(',') if s.strip()]
+        
+        # 或者选择自选股
+        use_watchlist = st.checkbox("使用自选股列表")
+        if use_watchlist:
+            watchlist = config.get('watchlist', [])
+            if watchlist:
+                portfolio_symbols = watchlist
+                st.info(f"已加载 {len(watchlist)} 只自选股")
+        
+        portfolio_start = st.date_input("回测开始日期", pd.to_datetime("2023-01-01"))
+        
+        col_pattern, col_hold = st.columns(2)
+        with col_pattern:
+            portfolio_pattern = st.selectbox(
+                "战法类型",
+                ["all", "dragon", "box", "double_bottom", "double_top", "head_shoulders"],
+                format_func=lambda x: {
+                    "all": "全部战法",
+                    "dragon": "龙头战法",
+                    "box": "箱体突破",
+                    "double_bottom": "双底",
+                    "double_top": "双顶",
+                    "head_shoulders": "头肩形态"
+                }[x],
+                key="portfolio_pattern_select"
+            )
+        
+        with col_hold:
+            portfolio_hold_days = st.slider("持有天数", 1, 20, 5, 1)
+        
+        if st.button("运行组合回测"):
+            s_date_str = portfolio_start.strftime("%Y%m%d")
+            e_date_str = pd.Timestamp.now().strftime("%Y%m%d")
+            
+            with st.spinner('正在运行组合回测...'):
+                result = backtest_engine.run_portfolio_backtest(
+                    portfolio_symbols,
+                    pattern_type=portfolio_pattern,
+                    hold_days=portfolio_hold_days,
+                    start_date=s_date_str,
+                    end_date=e_date_str,
+                    data_manager=db
+                )
+                
+                # 显示组合统计
+                st.subheader("📈 组合统计")
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("股票数量", result['组合统计']['股票数量'])
+                with col2:
+                    st.metric("总信号数", result['组合统计']['总信号数'])
+                with col3:
+                    st.metric("平均成功率", f"{result['组合统计']['平均成功率']}%")
+                with col4:
+                    st.metric("组合成功率", f"{result['组合统计']['组合成功率']}%")
+                
+                # 显示详细结果
+                if not result['详细结果'].empty:
+                    st.subheader("📊 各股回测结果")
+                    st.dataframe(result['详细结果'], use_container_width=True)
+                    
+                    # 成功率对比图
+                    st.subheader("📊 成功率对比")
+                    fig_portfolio = go.Figure()
+                    
+                    fig_portfolio.add_trace(go.Bar(
+                        x=result['详细结果']['股票名称'],
+                        y=result['详细结果']['成功率'],
+                        name='成功率',
+                        marker_color='blue'
+                    ))
+                    
+                    fig_portfolio.update_layout(
+                        title="各股票成功率对比",
+                        xaxis_title="股票",
+                        yaxis_title="成功率(%)",
+                        height=400
+                    )
+                    st.plotly_chart(fig_portfolio, use_container_width=True)
+                    
+                    # 导出功能
+                    st.subheader("💾 导出结果")
+                    if st.button("导出Excel"):
+                        excel_data = backtest_engine.export_backtest_results(
+                            result['各股回测'][0] if result['各股回测'] else None
+                        )
+                        st.download_button(
+                            label="下载回测结果",
+                            data=excel_data.getvalue(),
+                            file_name=f"组合回测结果_{pd.Timestamp.now().strftime('%Y%m%d')}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        )
+    
+    elif backtest_type == "参数优化":
+        st.subheader("🔧 参数优化")
+        
+        st.info("💡 自动寻找最优的回测参数,提高战法成功率")
+        
+        # 股票选择
+        opt_symbol = st.text_input("优化股票代码", value="600519")
+        opt_start = st.date_input("优化数据起始日期", pd.to_datetime("2023-01-01"))
+        
+        opt_pattern = st.selectbox(
+            "战法类型",
+            ["all", "dragon", "box", "double_bottom", "double_top", "head_shoulders"],
+            format_func=lambda x: {
+                "all": "全部战法",
+                "dragon": "龙头战法",
+                "box": "箱体突破",
+                "double_bottom": "双底",
+                "double_top": "双顶",
+                "head_shoulders": "头肩形态"
+            }[x],
+            key="opt_pattern_select"
+        )
+        
+        # 参数范围设置
+        st.subheader("⚙️ 参数范围设置")
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            hold_days_range = st.multiselect("持有天数范围", [3, 5, 7, 10, 15, 20], default=[3, 5, 7, 10])
+        
+        with col2:
+            profit_range = st.multiselect("盈利阈值范围", [0.02, 0.03, 0.05, 0.08, 0.10], default=[0.02, 0.03, 0.05])
+        
+        with col3:
+            loss_range = st.multiselect("亏损阈值范围", [-0.10, -0.08, -0.05, -0.03, -0.02], default=[-0.05, -0.03, -0.02])
+        
+        if st.button("开始优化"):
+            s_date_str = opt_start.strftime("%Y%m%d")
+            e_date_str = pd.Timestamp.now().strftime("%Y%m%d")
+            
+            with st.spinner('正在优化参数...'):
+                # 获取数据
+                df = db.get_history_data(opt_symbol, start_date=s_date_str, end_date=e_date_str)
+                
+                if not df.empty and len(df) > 60:
+                    # 构建参数范围
+                    param_ranges = {
+                        'hold_days': hold_days_range,
+                        'profit_threshold': profit_range,
+                        'loss_threshold': loss_range
+                    }
+                    
+                    # 运行优化
+                    opt_result = backtest_engine.optimize_parameters(
+                        df, pattern_type=opt_pattern, param_ranges=param_ranges
+                    )
+                    
+                    # 显示最优参数
+                    st.subheader("🏆 最优参数")
+                    if opt_result['最优参数']:
+                        col_opt1, col_opt2, col_opt3 = st.columns(3)
+                        with col_opt1:
+                            st.metric("持有天数", opt_result['最优_params']['hold_days'])
+                        with col_opt2:
+                            st.metric("盈利阈值", f"{opt_result['最优_params']['profit_threshold']*100:.1f}%")
+                        with col_opt3:
+                            st.metric("亏损阈值", f"{opt_result['最优_params']['loss_threshold']*100:.1f}%")
+                        
+                        # 显示最优结果
+                        if opt_result['最优结果']:
+                            st.subheader("📊 最优结果")
+                            best_stats = opt_result['最优结果']['总体统计']
+                            col_best1, col_best2, col_best3 = st.columns(3)
+                            with col_best1:
+                                st.metric("成功率", f"{best_stats['成功率']}%")
+                            with col_best2:
+                                st.metric("盈亏比", best_stats['盈亏比'])
+                            with col_best3:
+                                st.metric("总信号数", best_stats['总信号数'])
+                    
+                    # 显示所有结果
+                    if not opt_result['所有结果'].empty:
+                        st.subheader("📋 所有参数组合结果")
+                        st.dataframe(opt_result['所有结果'], use_container_width=True)
+                        
+                        # 参数热力图
+                        st.subheader("🔥 参数组合热力图")
+                        pivot_table = opt_result['所有结果'].pivot_table(
+                            values='综合评分',
+                            index='持有天数',
+                            columns='盈利阈值'
+                        )
+                        
+                        fig_heatmap = go.Figure(data=go.Heatmap(
+                            z=pivot_table.values,
+                            x=pivot_table.columns,
+                            y=pivot_table.index,
+                            colorscale='Viridis'
+                        ))
+                        
+                        fig_heatmap.update_layout(
+                            title="参数组合评分热力图",
+                            xaxis_title="盈利阈值",
+                            yaxis_title="持有天数",
+                            height=400
+                        )
+                        st.plotly_chart(fig_heatmap, use_container_width=True)
+                else:
+                    st.error("数据不足,无法进行参数优化")
+    
+    elif backtest_type == "战法组合分析":
+        st.subheader("🎯 战法组合分析")
+        
+        st.info("💡 分析多个战法组合使用的效果,寻找最佳战法组合")
+        
+        # 股票选择
+        combo_symbol = st.text_input("分析股票代码", value="600519")
+        combo_start = st.date_input("分析数据起始日期", pd.to_datetime("2023-01-01"))
+        
+        # 选择战法组合
+        st.subheader("📌 选择战法组合")
+        selected_patterns = st.multiselect(
+            "选择要组合的战法",
+            ["dragon", "box", "double_bottom", "double_top", "head_shoulders"],
+            default=["dragon", "box"],
+            format_func=lambda x: {
+                "dragon": "龙头战法",
+                "box": "箱体突破",
+                "double_bottom": "双底",
+                "double_top": "双顶",
+                "head_shoulders": "头肩形态"
+            }[x]
+        )
+        
+        if len(selected_patterns) < 2:
+            st.warning("请至少选择2个战法进行分析")
+        else:
+            combo_hold_days = st.slider("持有天数", 1, 20, 5, 1)
+            
+            if st.button("开始分析"):
+                s_date_str = combo_start.strftime("%Y%m%d")
+                e_date_str = pd.Timestamp.now().strftime("%Y%m%d")
+                
+                with st.spinner('正在分析战法组合...'):
+                    # 获取数据
+                    df = db.get_history_data(combo_symbol, start_date=s_date_str, end_date=e_date_str)
+                    
+                    if not df.empty and len(df) > 60:
+                        # 运行组合分析
+                        combo_result = backtest_engine.analyze_pattern_combination(
+                            df, patterns=selected_patterns, hold_days=combo_hold_days
+                        )
+                        
+                        # 显示单个战法结果
+                        st.subheader("📊 单个战法结果")
+                        single_results = []
+                        for pattern in selected_patterns:
+                            if pattern in combo_result['单个战法结果']:
+                                stats = combo_result['单个战法结果'][pattern]['总体统计']
+                                single_results.append({
+                                    '战法': pattern,
+                                    '成功率': f"{stats['成功率']}%",
+                                    '盈亏比': stats['盈亏比'],
+                                    '信号数': stats['总信号数']
+                                })
+                        
+                        st.dataframe(pd.DataFrame(single_results), use_container_width=True)
+                        
+                        # 显示组合策略结果
+                        st.subheader("🎯 组合策略结果")
+                        col_combo1, col_combo2 = st.columns(2)
+                        with col_combo1:
+                            st.metric("组合信号数", combo_result['组合信号数'])
+                        with col_combo2:
+                            st.metric("组合成功率", f"{combo_result['组合策略成功率']}%")
+                        
+                        # 显示相关性分析
+                        if not combo_result['相关性分析'].empty:
+                            st.subheader("🔗 战法相关性分析")
+                            st.dataframe(combo_result['相关性分析'], use_container_width=True)
+                            
+                            # 相关性热力图
+                            correlation_matrix = combo_result['相关性分析'].pivot_table(
+                                values='Jaccard相似度',
+                                index='战法1',
+                                columns='战法2'
+                            )
+                            
+                            fig_corr = go.Figure(data=go.Heatmap(
+                                z=correlation_matrix.values,
+                                x=correlation_matrix.columns,
+                                y=correlation_matrix.index,
+                                colorscale='RdYlGn',
+                                zmin=0,
+                                zmax=1
+                            ))
+                            
+                            fig_corr.update_layout(
+                                title="战法相关性热力图 (Jaccard相似度)",
+                                height=400
+                            )
+                            st.plotly_chart(fig_corr, use_container_width=True)
+                            
+                            st.info("💡 相似度越高,说明战法信号重叠越多,组合使用效果可能不如预期")
+                    else:
+                        st.error("数据不足,无法进行战法组合分析")
 
 with tab_compare:
     st.subheader("🔍 多股票技术指标对比")
