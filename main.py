@@ -2749,15 +2749,14 @@ with tab_sentiment:
             st.session_state.sector_rotation_data = None
             st.info("💡 板块轮动:监控板块资金流向、热度排名、追踪龙头股")
         
-        if "sector_rotation_data" not in st.session_state:
-            st.session_state.sector_rotation_data = None
-        
         if st.button("监控板块轮动", key="monitor_sector"):
             with st.spinner('正在监控板块轮动...'):
                 from logic.algo_advanced import AdvancedPatternAnalyzer
                 st.session_state.sector_rotation_data = AdvancedPatternAnalyzer.monitor_sector_rotation()
-                sector_data = st.session_state.sector_rotation_data
-
+        
+        # 从session_state获取数据
+        sector_data = st.session_state.get('sector_rotation_data', {})
+        
         if sector_data.get('数据状态') == '正常':
                     # 显示最强板块
                     if sector_data.get('最强板块'):
@@ -2857,7 +2856,7 @@ with tab_sentiment:
                     if not board_data['连板统计'].empty:
                         st.subheader("📊 连板高度统计")
                         
-                        board_df = board_data['连板_stats'].copy()
+                        board_df = board_data['连板统计'].copy()
                         st.dataframe(board_df, use_container_width=True)
                         
                         # 胜率对比图
