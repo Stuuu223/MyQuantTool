@@ -2869,17 +2869,13 @@ with tab_sentiment:
                 board_data = AdvancedPatternAnalyzer.analyze_board_height()
                 
                 if board_data['数据状态'] == '正常':
-                    # 显示风险预警
-                    if board_data['风险预警']:
-                        st.subheader("⚠️ 风险预警")
-                        for warning in board_data['风险预警']:
-                            st.warning(warning)
-                    
-                    # 显示连板统计
+                    # 显示连板统计(放在最前面)
                     if not board_data['连板统计'].empty:
                         st.subheader("📊 连板高度统计")
                         
                         board_df = board_data['连板统计'].copy()
+                        # 按连板数降序排序
+                        board_df = board_df.sort_index(ascending=False)
                         st.dataframe(board_df, use_container_width=True)
                         
                         # 胜率对比图
@@ -2900,6 +2896,12 @@ with tab_sentiment:
                             height=400
                         )
                         st.plotly_chart(fig_win_rate, use_container_width=True)
+                    
+                    # 显示风险预警
+                    if board_data['风险预警']:
+                        st.subheader("⚠️ 风险预警")
+                        for warning in board_data['风险预警']:
+                            st.warning(warning)
                     
                     # 显示连板特征
                     if board_data['连板特征']:
