@@ -1169,7 +1169,7 @@ with tab_backtest:
                         name='亏损',
                         x=['失败'],
                         y=[success_stats['亏损信号数']],
-                        marker_color='red'
+                        marker=dict(color='rgba(255, 87, 51, 0.8)')
                     ),
                     go.Bar(
                         name='平局',
@@ -1595,14 +1595,11 @@ with tab_compare:
 with tab_sector:
     st.subheader("🔄 板块轮动分析")
     st.caption("实时监控各行业板块资金流向，发现热点板块")
-    
     # 自动加载数据
     with st.spinner('正在获取板块轮动数据...'):
         sector_data = QuantAlgo.get_sector_rotation()
-        
         if sector_data['数据状态'] == '正常':
             sectors = sector_data['板块列表']
-            
             # 格式化数据用于显示
             display_sectors = []
             for sector in sectors:
@@ -1612,7 +1609,6 @@ with tab_sector:
                     '主力净流入': format_amount(sector['主力净流入']),
                     '主力净流入占比': sector['主力净流入占比']
                 })
-            
             # 显示板块资金流向表格
             st.dataframe(
                 pd.DataFrame(display_sectors),
@@ -1653,7 +1649,9 @@ with tab_sector:
             fig_sector.add_trace(go.Bar(
                 x=[s['板块名称'][:4] for s in sectors[:10]],  # 只显示前10个，名称截取
                 y=[s['主力净流入'] for s in sectors[:10]],
-                marker_color=['green' if s['主力净流入'] > 0 else 'red' for s in sectors[:10]]
+                marker=dict(
+                    color=['rgba(75, 192, 192, 0.8)' if s['主力净流入'] > 0 else 'rgba(255, 99, 132, 0.8)' for s in sectors[:10]]
+                )
             ))
             
             fig_sector.update_layout(
@@ -2613,7 +2611,12 @@ with tab_sentiment:
                             x=board_df['连板数'].astype(str),
                             y=board_df['数量'],
                             name='连板数量',
-                            marker_color='red',
+                            marker=dict(
+                                color=board_df['数量'],
+                                colorscale='Viridis',
+                                showscale=True,
+                                colorbar=dict(title="数量")
+                            ),
                             text=board_df['数量'],
                             textposition='outside'
                         ))
@@ -2742,9 +2745,9 @@ with tab_sentiment:
                     st.error("数据不足,无法识别反包模式")
     
     elif sentiment_type == "板块轮动":
-        st.subheader("🔄 板块轮动监控")
-        
-        st.info("💡 板块轮动:监控板块资金流向、热度排名、追踪龙头股")
+        if "sector_rotation_data" not in st.session_state:
+            st.session_state.sector_rotation_data = None
+            st.info("💡 板块轮动:监控板块资金流向、热度排名、追踪龙头股")
         
         if "sector_rotation_data" not in st.session_state:
             st.session_state.sector_rotation_data = None
@@ -2752,17 +2755,17 @@ with tab_sentiment:
         if st.button("监控板块轮动", key="monitor_sector"):
             with st.spinner('正在监控板块轮动...'):
                 from logic.algo_advanced import AdvancedPatternAnalyzer
-                
-                sector_data = AdvancedPatternAnalyzer.monitor_sector_rotation()
-                
-                if sector_data['数据状态'] == '正常':
+                st.session_state.sector_rotation_data = AdvancedPatternAnalyzer.monitor_sector_rotation()
+                sector_data = st.session_state.sector_rotation_data
+
+        if sector_data.get('数据状态') == '正常':
                     # 显示最强板块
-                    if sector_data['最强板块']:
+                    if sector_data.get('最强板块'):
                         strongest = sector_data['最强板块']
                         st.success(f"🔥 **最强板块**: {strongest['板块名称']} - 热度评分: {strongest['热度评分']}")
                     
                     # 显示热门板块
-                    if sector_data['热门板块']:
+                    if sector_data.get('热门板块'):
                         st.subheader("🔥 热门板块")
                         
                         hot_df = pd.DataFrame(sector_data['热门板块'])
@@ -2774,7 +2777,12 @@ with tab_sentiment:
                             x=hot_df['板块名称'],
                             y=hot_df['热度评分'],
                             name='热度评分',
-                            marker_color='red',
+                            marker=dict(
+                                color=hot_df['热度评分'],
+                                colorscale='Viridis',
+                                showscale=True,
+                                colorbar=dict(title="热度评分")
+                            ),
                             text=hot_df['热度评分'],
                             textposition='outside'
                         ))
@@ -2786,44 +2794,46 @@ with tab_sentiment:
                             height=400
                         )
                         st.plotly_chart(fig_heat, use_container_width=True)
+            
+            # 显示冷门板块
+        if  sector_data.get('冷门板块'):
+                st.subheader("❄️ 冷门板块")
+                
+                cold_df = pd.DataFrame(sector_data.get('冷门板块'))
+                st.dataframe(cold_df, use_container_width=True)
+        
+        # 板块龙头追踪
+        if sector_data.get('热门板块'):
+            st.subheader("🏆 板块龙头追踪")
+            
+            selected_sector = st.selectbox(
+                "选择板块追踪龙头",
+                [s['板块名称'] for s in sector_data.get('热门板块')],
+                key="select_sector_for_leader"
+            )
+            
+            if st.button("追踪龙头", key="track_leader"):
+                with st.spinner('正在追踪龙头股...'):
+                    st.session_state.leader_data = AdvancedPatternAnalyzer.track_sector_leaders(selected_sector)
+        
+        # 显示龙头追踪结果
+        if 'leader_data' in st.session_state:
+            leader_data = st.session_state.leader_data
+            
+            if leader_data.get('数据状态') == '正常':
+                if leader_data.get('龙头股'):
+                    leader_df = pd.DataFrame(leader_data['龙头股'])
+                    st.dataframe(leader_df, use_container_width=True)
                     
-                    # 显示冷门板块
-                    if sector_data['冷门板块']:
-                        st.subheader("❄️ 冷门板块")
-                        
-                        cold_df = pd.DataFrame(sector_data['冷门板块'])
-                        st.dataframe(cold_df, use_container_width=True)
-                    
-                    # 板块龙头追踪
-                    if sector_data['热门板块']:
-                        st.subheader("🏆 板块龙头追踪")
-                        
-                        selected_sector = st.selectbox(
-                            "选择板块追踪龙头",
-                            [s['板块名称'] for s in sector_data['热门板块']],
-                            key="select_sector_for_leader"
-                        )
-                        
-                        if st.button("追踪龙头", key="track_leader"):
-                            with st.spinner('正在追踪龙头股...'):
-                                leader_data = AdvancedPatternAnalyzer.track_sector_leaders(selected_sector)
-                                
-                                if leader_data['数据状态'] == '正常':
-                                    if leader_data['龙头股']:
-                                        leader_df = pd.DataFrame(leader_data['龙头股'])
-                                        st.dataframe(leader_df, use_container_width=True)
-                                        
-                                        # 显示最佳龙头
-                                        best_leader = leader_df.iloc[0]
-                                        st.success(f"🏆 **最佳龙头**: {best_leader['名称']} ({best_leader['代码']}) - 评分: {best_leader['龙头评分']}")
-                                    else:
-                                        st.info("该板块暂无龙头股")
-                                else:
-                                    st.error(f"❌ {leader_data['数据状态']}")
+                    # 显示最佳龙头
+                    best_leader = leader_df.iloc[0]
+                    st.success(f"🏆 **最佳龙头**: {best_leader['名称']} ({best_leader['代码']}) - 评分: {best_leader['龙头评分']}")
                 else:
-                    st.error(f"❌ {sector_data['数据状态']}")
-                    if '说明' in sector_data:
-                        st.info(f"💡 {sector_data['说明']}")
+                    st.info("该板块暂无龙头股")
+            else:
+                st.error(f"❌ {leader_data.get('数据状态', '未知错误')}")
+                if '说明' in leader_data:
+                    st.info(f"💡 {leader_data['说明']}")
     
     elif sentiment_type == "连板高度":
         st.subheader("🔗 连板高度分析")
@@ -2884,7 +2894,9 @@ with tab_sentiment:
                             x=risk_dist.index,
                             y=risk_dist.values,
                             name='数量',
-                            marker_color=['red', 'orange', 'yellow', 'green'],
+                            marker=dict(
+                                color=['rgba(255, 99, 132, 0.8)', 'rgba(255, 159, 64, 0.8)', 'rgba(255, 205, 86, 0.8)', 'rgba(75, 192, 192, 0.8)'],
+                            ),
                             text=risk_dist.values,
                             textposition='outside'
                         ))
