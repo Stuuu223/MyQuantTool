@@ -2470,9 +2470,84 @@ with tab_sentiment:
     st.caption("基于拾荒网技术文章:情绪指数、涨停板分析、龙虎榜深度分析")
     
     # 情绪分析类型选择
-    sentiment_type = st.radio("分析类型", ["情绪指数", "涨停板分析", "龙虎榜分析", "反包模式", "板块轮动", "连板高度"], horizontal=True, key="sentiment_type_select")
+    sentiment_type = st.radio("分析类型", ["情绪周期", "情绪指数", "涨停板分析", "龙虎榜分析", "反包模式", "板块轮动", "连板高度"], horizontal=True, key="sentiment_type_select")
     
-    if sentiment_type == "情绪指数":
+    if sentiment_type == "情绪周期":
+        st.subheader("🔄 情绪周期分析")
+        
+        st.info("💡 情绪周期五阶段论:冰点期→复苏期→活跃期→高潮期→退潮期")
+        
+        if st.button("分析情绪周期", key="analyze_sentiment_cycle"):
+            with st.spinner('正在分析情绪周期...'):
+                cycle_data = sentiment_analyzer.analyze_sentiment_cycle()
+                
+                if cycle_data['数据状态'] == '正常':
+                    # 显示情绪周期阶段
+                    col_stage, col_height, col_zt = st.columns(3)
+                    
+                    with col_stage:
+                        st.metric("当前阶段", cycle_data['情绪周期阶段'])
+                    
+                    with col_height:
+                        st.metric("空间板高度", f"{cycle_data['空间板高度']}板")
+                    
+                    with col_zt:
+                        st.metric("涨停数量", cycle_data['涨停数量'])
+                    
+                    # 显示阶段描述
+                    st.subheader("📝 阶段描述")
+                    st.info(cycle_data['阶段描述'])
+                    
+                    # 显示操作建议
+                    st.subheader("💡 操作建议")
+                    st.success(cycle_data['操作建议'])
+                    
+                    # 显示连板分布
+                    if cycle_data['连板分布']:
+                        st.subheader("📊 连板分布")
+                        
+                        board_df = pd.DataFrame(list(cycle_data['连板分布'].items()), 
+                                               columns=['连板数', '数量'])
+                        board_df = board_df.sort_values('连板数', ascending=False)
+                        st.dataframe(board_df, use_container_width=True)
+                        
+                        # 连板分布图
+                        fig_board = go.Figure()
+                        fig_board.add_trace(go.Bar(
+                            x=board_df['连板数'].astype(str),
+                            y=board_df['数量'],
+                            name='数量',
+                            marker=dict(
+                                color=board_df['数量'],
+                                colorscale='Viridis',
+                                showscale=True,
+                                colorbar=dict(title="数量")
+                            ),
+                            text=board_df['数量'],
+                            textposition='outside'
+                        ))
+                        
+                        fig_board.update_layout(
+                            title="连板高度分布",
+                            xaxis_title="连板数",
+                            yaxis_title="数量",
+                            height=400
+                        )
+                        st.plotly_chart(fig_board, use_container_width=True)
+                    
+                    # 显示情绪指数
+                    st.subheader("🎯 情绪指数")
+                    col_idx, col_lvl = st.columns(2)
+                    with col_idx:
+                        st.metric("情绪指数", f"{cycle_data['情绪指数']:.2f}")
+                    with col_lvl:
+                        st.metric("情绪等级", cycle_data['情绪等级'])
+                else:
+                    st.error(f"❌ {cycle_data['数据状态']}")
+                    if '说明' in cycle_data:
+                        st.info(f"💡 {cycle_data['说明']}")
+    
+    elif sentiment_type == "情绪指数":
         st.subheader("🎯 市场情绪指数")
         
         st.info("💡 情绪指数说明:综合涨停数量、连板高度、打开率等指标,评估市场整体情绪")
