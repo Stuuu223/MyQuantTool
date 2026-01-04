@@ -2776,28 +2776,67 @@ with tab_sentiment:
                         
                         dragon_df = pd.DataFrame(limit_data['龙头股'])
                         
-                        # 添加点击分析按钮
-                        for idx, row in dragon_df.iterrows():
-                            col_name, col_code, col_score, col_analyze = st.columns([3, 2, 2, 1])
-                            with col_name:
-                                st.write(f"📌 {row['名称']}")
-                            with col_code:
-                                st.write(f"代码: {row['代码']}")
-                            with col_score:
-                                st.write(f"评分: {row['龙头评分']:.1f}")
-                            with col_analyze:
-                                if st.button("📊 分析", key=f"dragon_{row['代码']}"):
-                                    st.session_state.analyze_stock = row['代码']
-                                    st.rerun()
+                        # 选择要显示的列
+                        display_df = dragon_df[['代码', '名称', '最新价', '涨跌幅', '成交额', '换手率', '龙头评分']].copy()
                         
-                        # 显示单股分析
-                        if 'analyze_stock' in st.session_state:
-                            show_stock_analysis_modal(st.session_state.analyze_stock)
+                        # 格式化成交额
+                        display_df['成交额'] = display_df['成交额'].apply(format_amount)
+                        
+                        # 格式化涨跌幅
+                        display_df['涨跌幅'] = display_df['涨跌幅'].apply(lambda x: f"{x:+.2f}%")
+                        
+                        # 格式化换手率
+                        display_df['换手率'] = display_df['换手率'].apply(lambda x: f"{x:.2f}%")
+                        
+                        # 显示表格
+                        st.dataframe(display_df, use_container_width=True)
                         
                         # 显示最佳龙头
                         if not dragon_df.empty:
                             best_dragon = dragon_df.iloc[0]
-                            st.success(f"🏆 **最佳龙头**: {best_dragon['名称']} ({best_dragon['代码']}) - 评分: {best_dragon['龙头评分']}")
+                            st.success(f"🏆 **最佳龙头**: {best_dragon['名称']} ({best_dragon['代码']}) - 评分: {best_dragon['龙头评分']:.1f}")
+                        
+                        # 添加股票选择和分析
+                        st.subheader("📊 单股涨停分析")
+                        selected_stock = st.selectbox(
+                            "选择股票查看详细分析",
+                            options=dragon_df['代码'].tolist(),
+                            format_func=lambda x: f"{dragon_df[dragon_df['代码']==x]['名称'].values[0]} ({x})",
+                            key="select_limit_stock"
+                        )
+                        
+                        if selected_stock:
+                            # 显示选中股票的详细信息
+                            stock_info = dragon_df[dragon_df['代码'] == selected_stock].iloc[0]
+                            
+                            col1, col2, col3, col4 = st.columns(4)
+                            with col1:
+                                st.metric("代码", stock_info['代码'])
+                            with col2:
+                                st.metric("名称", stock_info['名称'])
+                            with col3:
+                                st.metric("最新价", f"¥{stock_info['最新价']:.2f}")
+                            with col4:
+                                st.metric("龙头评分", f"{stock_info['龙头评分']:.1f}")
+                            
+                            # 详细信息
+                            st.subheader("📋 详细信息")
+                            col_a, col_b = st.columns(2)
+                            with col_a:
+                                st.write(f"**涨跌幅**: {stock_info['涨跌幅']:+.2f}%")
+                                st.write(f"**成交额**: {format_amount(stock_info['成交额'])}")
+                            with col_b:
+                                st.write(f"**换手率**: {stock_info['换手率']:.2f}%")
+                                st.write(f"**封板强度**: {'强' if stock_info['涨跌幅'] >= 9.9 else '中' if stock_info['涨跌幅'] >= 9.5 else '弱'}")
+                            
+                            # 单股分析按钮
+                            if st.button("📊 查看技术分析", key=f"analyze_limit_{selected_stock}"):
+                                st.session_state.analyze_stock = selected_stock
+                                st.rerun()
+                        
+                        # 显示单股分析
+                        if 'analyze_stock' in st.session_state:
+                            show_stock_analysis_modal(st.session_state.analyze_stock)
                     
                     # 板块分布
                     if limit_data['板块分布']:
@@ -2893,21 +2932,47 @@ with tab_sentiment:
                         
                         hot_seat_df = pd.DataFrame(lhb_data['热门营业部交易'])
                         
-                        # 添加点击分析按钮
-                        for idx, row in hot_seat_df.iterrows():
-                            col_seat, col_code, col_name, col_buy, col_analyze = st.columns([3, 2, 2, 2, 1])
-                            with col_seat:
-                                st.write(f"🏢 {row['营业部'][:15]}...")
-                            with col_code:
-                                st.write(f"代码: {row['股票代码']}")
-                            with col_name:
-                                st.write(f"名称: {row['股票名称']}")
-                            with col_buy:
-                                st.write(f"净买入: {format_amount(row['净买入'])}")
-                            with col_analyze:
-                                if st.button("📊 分析", key=f"lhb_{row['股票代码']}"):
-                                    st.session_state.analyze_stock = row['股票代码']
-                                    st.rerun()
+                        # 去重(按股票代码)
+                        hot_seat_df = hot_seat_df.drop_duplicates(subset=['股票代码'], keep='first')
+                        
+                        # 格式化净买入
+                        hot_seat_df['净买入'] = hot_seat_df['净买入'].apply(format_amount)
+                        
+                        # 重命名列
+                        hot_seat_df.columns = ['营业部', '股票代码', '股票名称', '净买入']
+                        
+                        # 显示表格
+                        st.dataframe(hot_seat_df, use_container_width=True)
+                        
+                        # 添加股票选择和分析
+                        st.subheader("📊 单股龙虎榜分析")
+                        selected_stock = st.selectbox(
+                            "选择股票查看详细分析",
+                            options=hot_seat_df['股票代码'].tolist(),
+                            format_func=lambda x: f"{hot_seat_df[hot_seat_df['股票代码']==x]['股票名称'].values[0]} ({x})",
+                            key="select_hot_seat_stock"
+                        )
+                        
+                        if selected_stock:
+                            # 显示选中股票的详细信息
+                            stock_info = hot_seat_df[hot_seat_df['股票代码'] == selected_stock].iloc[0]
+                            
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
+                                st.metric("代码", stock_info['股票代码'])
+                            with col2:
+                                st.metric("名称", stock_info['股票名称'])
+                            with col3:
+                                st.metric("净买入", stock_info['净买入'])
+                            
+                            # 详细信息
+                            st.subheader("📋 详细信息")
+                            st.write(f"**营业部**: {stock_info['营业部']}")
+                            
+                            # 单股分析按钮
+                            if st.button("📊 查看技术分析", key=f"analyze_hot_seat_{selected_stock}"):
+                                st.session_state.analyze_stock = selected_stock
+                                st.rerun()
                         
                         # 显示单股分析
                         if 'analyze_stock' in st.session_state:
