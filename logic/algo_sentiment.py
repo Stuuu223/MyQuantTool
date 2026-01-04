@@ -386,3 +386,96 @@ class MarketSentimentAnalyzer:
                 '数据状态': '获取失败',
                 '错误信息': str(e)
             }
+    
+    @staticmethod
+    def analyze_sentiment_cycle():
+        """
+        分析情绪周期五阶段
+        
+        基于拾荒网情绪周期理论:
+        1. 情绪冰点期: 空间板被压缩至2板
+        2. 情绪复苏期: 空间板突破2板,达到3-4板
+        3. 情绪活跃期: 空间板达到5-7板,涨停数量增加
+        4. 情绪高潮期: 空间板达到7板以上,市场极度活跃
+        5. 情绪退潮期: 空间板开始下降,涨停数量减少
+        """
+        try:
+            import akshare as ak
+            
+            # 获取涨停数据
+            limit_stocks = ak.stock_zt_pool_em(date=pd.Timestamp.now().strftime('%Y%m%d'))
+            
+            if limit_stocks.empty:
+                return {
+                    '数据状态': '无数据',
+                    '说明': '今日暂无涨跌停数据'
+                }
+            
+            # 获取连板高度
+            if '连板数' in limit_stocks.columns:
+                max_board = limit_stocks['连板数'].max()
+                board_distribution = limit_stocks['连板数'].value_counts().to_dict()
+            else:
+                max_board = 0
+                board_distribution = {}
+            
+            # 统计涨停数量
+            zt_count = len(limit_stocks)
+            
+            # 统计涨停打开率
+            zt_open_count = len(limit_stocks[limit_stocks['涨跌幅'] < 9.9])
+            zt_open_rate = (zt_open_count / zt_count * 100) if zt_count > 0 else 0
+            
+            # 计算情绪指数
+            sentiment_index = MarketSentimentAnalyzer.get_market_sentiment_index()
+            
+            # 判断情绪周期阶段
+            cycle_stage = ""
+            stage_desc = ""
+            operation_advice = ""
+            
+            # 判断逻辑
+            if max_board <= 2:
+                cycle_stage = "❄️ 情绪冰点期"
+                stage_desc = "空间板被压缩至2板,市场情绪极度低落"
+                operation_advice = "🎯 市场处于冰点,是布局良机,可关注首板和2板股票"
+            elif max_board == 3:
+                cycle_stage = "🌱 情绪复苏期"
+                stage_desc = "空间板突破2板,达到3板,情绪开始复苏"
+                operation_advice = "📈 情绪开始复苏,可以参与3板及以下股票"
+            elif max_board in [4, 5]:
+                cycle_stage = "🔥 情绪活跃期"
+                stage_desc = f"空间板达到{max_board}板,涨停数量增多,市场活跃"
+                operation_advice = "🚀 市场活跃,可参与中高位接力,注意风险控制"
+            elif max_board >= 6:
+                cycle_stage = "⚡ 情绪高潮期"
+                stage_desc = f"空间板达到{max_board}板,市场极度活跃,需谨慎"
+                operation_advice = "⚠️ 市场高潮,注意风险,建议减仓或观望"
+            else:
+                cycle_stage = "📉 情绪退潮期"
+                stage_desc = "空间板开始下降,情绪逐步退潮"
+                operation_advice = "🛑 情绪退潮,建议观望为主,等待下一轮周期"
+            
+            # 补充判断
+            if zt_open_rate > 30:
+                cycle_stage += " (炸板率高)"
+                operation_advice += ",炸板率较高,需谨慎"
+            
+            return {
+                '数据状态': '正常',
+                '情绪周期阶段': cycle_stage,
+                '阶段描述': stage_desc,
+                '操作建议': operation_advice,
+                '空间板高度': max_board,
+                '涨停数量': zt_count,
+                '涨停打开率': round(zt_open_rate, 2),
+                '连板分布': board_distribution,
+                '情绪指数': sentiment_index.get('情绪指数', 0),
+                '情绪等级': sentiment_index.get('情绪等级', ''),
+                '详细数据': limit_stocks
+            }
+        except Exception as e:
+            return {
+                '数据状态': '获取失败',
+                '错误信息': str(e)
+            }
