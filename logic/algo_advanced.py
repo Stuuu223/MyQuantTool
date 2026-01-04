@@ -352,12 +352,24 @@ class AdvancedPatternAnalyzer:
                 # 获取概念板块列表
                 concept_list = ak.stock_board_concept_name_em()
                 
-                # 查找匹配的板块
+                # 查找匹配的板块(使用更灵活的匹配)
                 sector_code = None
+                matched_name = None
+                
+                # 先尝试精确匹配
                 for _, row in concept_list.iterrows():
-                    if sector_name in row['板块名称']:
+                    if row['板块名称'] == sector_name:
                         sector_code = row['板块代码']
+                        matched_name = row['板块名称']
                         break
+                
+                # 如果精确匹配失败,尝试包含匹配
+                if not sector_code:
+                    for _, row in concept_list.iterrows():
+                        if sector_name in row['板块名称'] or row['板块名称'] in sector_name:
+                            sector_code = row['板块代码']
+                            matched_name = row['板块名称']
+                            break
                 
                 if not sector_code:
                     return {
@@ -374,10 +386,22 @@ class AdvancedPatternAnalyzer:
                     industry_list = ak.stock_board_industry_name_em()
                     
                     sector_code = None
+                    matched_name = None
+                    
+                    # 先尝试精确匹配
                     for _, row in industry_list.iterrows():
-                        if sector_name in row['板块名称']:
+                        if row['板块名称'] == sector_name:
                             sector_code = row['板块代码']
+                            matched_name = row['板块名称']
                             break
+                    
+                    # 如果精确匹配失败,尝试包含匹配
+                    if not sector_code:
+                        for _, row in industry_list.iterrows():
+                            if sector_name in row['板块名称'] or row['板块名称'] in sector_name:
+                                sector_code = row['板块代码']
+                                matched_name = row['板块名称']
+                                break
                     
                     if not sector_code:
                         return {
