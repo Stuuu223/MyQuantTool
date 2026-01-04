@@ -2943,8 +2943,8 @@ with tab_sentiment:
                                 with col_name:
                                     st.write(f"名称: {row['名称']}")
                                 with col_quality:
-                                    quality_emoji = "🟢" if row['质量评级'] == '优质' else "🟡" if row['质量评级'] == '良好' else "🔴"
-                                    st.write(f"{quality_emoji} {row['质量评级']}")
+                                    quality_text = row.get('榜单质量', '未知')
+                                    st.write(f"{quality_text}")
                                 with col_analyze:
                                     if st.button("📊 分析", key=f"quality_{row['代码']}"):
                                         st.session_state.analyze_stock = row['代码']
