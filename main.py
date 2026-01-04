@@ -2755,7 +2755,7 @@ with tab_sentiment:
                 st.session_state.sector_rotation_data = AdvancedPatternAnalyzer.monitor_sector_rotation()
         
         # 从session_state获取数据
-        sector_data = st.session_state.get('sector_rotation_data', {})
+        sector_data = st.session_state.get('sector_rotation_data') or {}
         
         if sector_data.get('数据状态') == '正常':
                     # 显示最强板块
