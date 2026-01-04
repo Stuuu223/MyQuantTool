@@ -2935,20 +2935,60 @@ with tab_sentiment:
                             
                             quality_df = pd.DataFrame(lhb_data['质量分析']['股票分析'])
                             
-                            # 添加点击分析按钮
-                            for idx, row in quality_df.iterrows():
-                                col_code, col_name, col_quality, col_analyze = st.columns([2, 3, 2, 1])
-                                with col_code:
-                                    st.write(f"代码: {row['代码']}")
-                                with col_name:
-                                    st.write(f"名称: {row['名称']}")
-                                with col_quality:
-                                    quality_text = row.get('榜单质量', '未知')
-                                    st.write(f"{quality_text}")
-                                with col_analyze:
-                                    if st.button("📊 分析", key=f"quality_{row['代码']}"):
-                                        st.session_state.analyze_stock = row['代码']
-                                        st.rerun()
+                            # 去重(按股票代码)
+                            quality_df = quality_df.drop_duplicates(subset=['代码'], keep='first')
+                            
+                            # 选择要显示的列
+                            display_df = quality_df[['代码', '名称', '榜单质量', '上榜原因', '净买入', '评分']].copy()
+                            
+                            # 格式化净买入
+                            display_df['净买入'] = display_df['净买入'].apply(format_amount)
+                            
+                            # 重命名列
+                            display_df.columns = ['代码', '名称', '榜单质量', '上榜原因', '净买入', '评分']
+                            
+                            # 显示表格
+                            st.dataframe(display_df, use_container_width=True)
+                            
+                            # 添加股票选择和分析
+                            st.subheader("📊 单股龙虎榜分析")
+                            selected_stock = st.selectbox(
+                                "选择股票查看详细分析",
+                                options=quality_df['代码'].tolist(),
+                                format_func=lambda x: f"{quality_df[quality_df['代码']==x]['名称'].values[0]} ({x})",
+                                key="select_lhb_stock"
+                            )
+                            
+                            if selected_stock:
+                                # 显示选中股票的详细信息
+                                stock_info = quality_df[quality_df['代码'] == selected_stock].iloc[0]
+                                
+                                col1, col2, col3, col4 = st.columns(4)
+                                with col1:
+                                    st.metric("代码", stock_info['代码'])
+                                with col2:
+                                    st.metric("名称", stock_info['名称'])
+                                with col3:
+                                    st.metric("榜单质量", stock_info['榜单质量'])
+                                with col4:
+                                    st.metric("评分", f"{stock_info['评分']:.1f}")
+                                
+                                # 详细信息
+                                st.subheader("📋 详细信息")
+                                col_a, col_b = st.columns(2)
+                                with col_a:
+                                    st.write(f"**收盘价**: ¥{stock_info['收盘价']:.2f}")
+                                    st.write(f"**涨跌幅**: {stock_info['涨跌幅']:+.2f}%")
+                                    st.write(f"**净买入**: {format_amount(stock_info['净买入'])}")
+                                with col_b:
+                                    st.write(f"**净买入占比**: {stock_info['净买入占比']:.2f}%")
+                                    st.write(f"**成交额**: {format_amount(stock_info['成交额'])}")
+                                    st.write(f"**上榜原因**: {stock_info['上榜原因']}")
+                                
+                                # 单股分析按钮
+                                if st.button("📊 查看技术分析", key=f"analyze_lhb_{selected_stock}"):
+                                    st.session_state.analyze_stock = selected_stock
+                                    st.rerun()
                             
                             # 显示单股分析
                             if 'analyze_stock' in st.session_state:
