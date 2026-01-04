@@ -347,8 +347,51 @@ class AdvancedPatternAnalyzer:
         try:
             import akshare as ak
             
-            # 获取板块成分股
-            concept_stocks = ak.stock_board_concept_cons_em(symbol=sector_name)
+            # 先获取板块列表,找到对应的板块代码
+            try:
+                # 获取概念板块列表
+                concept_list = ak.stock_board_concept_name_em()
+                
+                # 查找匹配的板块
+                sector_code = None
+                for _, row in concept_list.iterrows():
+                    if sector_name in row['板块名称']:
+                        sector_code = row['板块代码']
+                        break
+                
+                if not sector_code:
+                    return {
+                        '数据状态': '无数据',
+                        '说明': f'未找到板块: {sector_name}'
+                    }
+                
+                # 获取板块成分股
+                concept_stocks = ak.stock_board_concept_cons_em(symbol=sector_code)
+                
+            except Exception as e:
+                # 如果概念板块失败,尝试行业板块
+                try:
+                    industry_list = ak.stock_board_industry_name_em()
+                    
+                    sector_code = None
+                    for _, row in industry_list.iterrows():
+                        if sector_name in row['板块名称']:
+                            sector_code = row['板块代码']
+                            break
+                    
+                    if not sector_code:
+                        return {
+                            '数据状态': '无数据',
+                            '说明': f'未找到板块: {sector_name}'
+                        }
+                    
+                    concept_stocks = ak.stock_board_industry_cons_em(symbol=sector_code)
+                    
+                except Exception as e2:
+                    return {
+                        '数据状态': '获取失败',
+                        '说明': f'获取板块数据失败: {str(e)}, {str(e2)}'
+                    }
             
             if concept_stocks.empty:
                 return {
