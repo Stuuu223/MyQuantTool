@@ -2767,7 +2767,14 @@ with tab_sentiment:
                     if sector_data.get('热门板块'):
                         st.subheader("🔥 热门板块")
                         
-                        hot_df = pd.DataFrame(sector_data['热门板块'])
+                        # 格式化主力净流入
+                        formatted_hot = []
+                        for s in sector_data['热门板块']:
+                            formatted_s = s.copy()
+                            formatted_s['主力净流入'] = format_amount(s['主力净流入'])
+                            formatted_hot.append(formatted_s)
+                        
+                        hot_df = pd.DataFrame(formatted_hot)
                         st.dataframe(hot_df, use_container_width=True)
                         
                         # 板块热度对比图
@@ -2798,11 +2805,20 @@ with tab_sentiment:
         if  sector_data.get('冷门板块'):
                 st.subheader("❄️ 冷门板块")
                 
-                cold_df = pd.DataFrame(sector_data.get('冷门板块'))
+                # 格式化主力净流入
+                formatted_cold = []
+                for s in sector_data['冷门板块']:
+                    formatted_s = s.copy()
+                    formatted_s['主力净流入'] = format_amount(s['主力净流入'])
+                    formatted_cold.append(formatted_s)
+                
+                cold_df = pd.DataFrame(formatted_cold)
                 st.dataframe(cold_df, use_container_width=True)
         
         # 板块龙头追踪
         if sector_data.get('热门板块'):
+            from logic.algo_advanced import AdvancedPatternAnalyzer
+            
             st.subheader("🏆 板块龙头追踪")
             
             selected_sector = st.selectbox(
@@ -2821,7 +2837,14 @@ with tab_sentiment:
             
             if leader_data.get('数据状态') == '正常':
                 if leader_data.get('龙头股'):
-                    leader_df = pd.DataFrame(leader_data['龙头股'])
+                    # 格式化成交额
+                    formatted_leaders = []
+                    for leader in leader_data['龙头股']:
+                        formatted_leader = leader.copy()
+                        formatted_leader['成交额'] = format_amount(leader['成交额'])
+                        formatted_leaders.append(formatted_leader)
+                    
+                    leader_df = pd.DataFrame(formatted_leaders)
                     st.dataframe(leader_df, use_container_width=True)
                     
                     # 显示最佳龙头
