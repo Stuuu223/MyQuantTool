@@ -398,6 +398,16 @@ class MarketSentimentAnalyzer:
         3. 情绪活跃期: 空间板达到5-7板,涨停数量增加
         4. 情绪高潮期: 空间板达到7板以上,市场极度活跃
         5. 情绪退潮期: 空间板开始下降,涨停数量减少
+        
+        补充判断:
+        - 热点形成期: 少量涨停板,资金还未聚焦
+        - 热点发展期: 出现连板股,有高标出现
+        - 热点高潮期: 龙头成为市场高标,打出示范效应
+        - 热点衰退期: 龙头断板,后排集中派面
+        
+        周期延续判断:
+        - 新龙头卡位: 旧龙头断板,新龙头无缝衔接
+        - 周期延伸: 旧龙头未退潮,出现更高空间板
         """
         try:
             import akshare as ak
@@ -426,6 +436,12 @@ class MarketSentimentAnalyzer:
             zt_open_count = len(limit_stocks[limit_stocks['涨跌幅'] < 9.9])
             zt_open_rate = (zt_open_count / zt_count * 100) if zt_count > 0 else 0
             
+            # 统计不同板数
+            board_2_count = board_distribution.get(2, 0)
+            board_3_4_count = sum([board_distribution.get(i, 0) for i in [3, 4]])
+            board_5_7_count = sum([board_distribution.get(i, 0) for i in [5, 6, 7]])
+            board_7plus_count = sum([board_distribution.get(i, 0) for i in range(8, 100)])
+            
             # 计算情绪指数
             sentiment_index = MarketSentimentAnalyzer.get_market_sentiment_index()
             
@@ -433,39 +449,95 @@ class MarketSentimentAnalyzer:
             cycle_stage = ""
             stage_desc = ""
             operation_advice = ""
+            cycle_features = []
             
-            # 判断逻辑
+            # 判断逻辑(更精确的判断)
+            # 1. 情绪冰点期判断
             if max_board <= 2:
                 cycle_stage = "❄️ 情绪冰点期"
                 stage_desc = "空间板被压缩至2板,市场情绪极度低落"
                 operation_advice = "🎯 市场处于冰点,是布局良机,可关注首板和2板股票"
+                cycle_features.append("空间板高度: 2板")
+                cycle_features.append(f"2板数量: {board_2_count}只")
+                
+                # 特殊情况:如果有高位一字板(公告利好),排除后判断
+                high_limit = [stock for _, stock in limit_stocks.iterrows() 
+                             if stock['连板数'] > 2 and stock['涨跌幅'] >= 9.9]
+                if high_limit:
+                    cycle_features.append(f"⚠️ 存在{len(high_limit)}只高位一字板(公告利好,不计入周期)")
+            
+            # 2. 情绪复苏期判断
             elif max_board == 3:
                 cycle_stage = "🌱 情绪复苏期"
                 stage_desc = "空间板突破2板,达到3板,情绪开始复苏"
                 operation_advice = "📈 情绪开始复苏,可以参与3板及以下股票"
-            elif max_board in [4, 5]:
-                cycle_stage = "🔥 情绪活跃期"
-                stage_desc = f"空间板达到{max_board}板,涨停数量增多,市场活跃"
-                operation_advice = "🚀 市场活跃,可参与中高位接力,注意风险控制"
-            elif max_board >= 6:
-                cycle_stage = "⚡ 情绪高潮期"
-                stage_desc = f"空间板达到{max_board}板,市场极度活跃,需谨慎"
-                operation_advice = "⚠️ 市场高潮,注意风险,建议减仓或观望"
+                cycle_features.append("空间板高度: 3板")
+                cycle_features.append(f"3板数量: {board_distribution.get(3, 0)}只")
+                cycle_features.append(f"2板数量: {board_2_count}只")
+            
+            # 3. 情绪活跃期判断
+            elif max_board in [4, 5, 6]:
+                if zt_count >= 30 and board_3_4_count >= 5:
+                    cycle_stage = "🔥 热点发展期"
+                    stage_desc = f"空间板达到{max_board}板,出现连板股,有高标出现"
+                    operation_advice = "🚀 热点在发展期,可以关注龙一龙二"
+                    cycle_features.append("热点阶段: 发展期")
+                else:
+                    cycle_stage = "🔥 情绪活跃期"
+                    stage_desc = f"空间板达到{max_board}板,涨停数量增多,市场活跃"
+                    operation_advice = "🚀 市场活跃,可参与中高位接力,注意风险控制"
+                
+                cycle_features.append(f"空间板高度: {max_board}板")
+                cycle_features.append(f"涨停数量: {zt_count}只")
+                cycle_features.append(f"3-4板数量: {board_3_4_count}只")
+                cycle_features.append(f"5-7板数量: {board_5_7_count}只")
+            
+            # 4. 情绪高潮期判断
+            elif max_board >= 7:
+                if zt_count >= 50 and board_5_7_count >= 10:
+                    cycle_stage = "⚡ 热点高潮期"
+                    stage_desc = f"空间板达到{max_board}板,龙头成为市场高标,打出示范效应"
+                    operation_advice = "⚠️ 热点高潮,各路资金聚焦,板块梯队完整,注意最后一棒风险"
+                    cycle_features.append("热点阶段: 高潮期")
+                    cycle_features.append("板块梯队: 完整")
+                    cycle_features.append("跟风小弟: 众多且活跃")
+                else:
+                    cycle_stage = "⚡ 情绪高潮期"
+                    stage_desc = f"空间板达到{max_board}板,市场极度活跃,需谨慎"
+                    operation_advice = "⚠️ 市场高潮,注意风险,建议减仓或观望"
+                
+                cycle_features.append(f"空间板高度: {max_board}板")
+                cycle_features.append(f"涨停数量: {zt_count}只")
+                cycle_features.append(f"7板以上: {board_7plus_count}只")
+            
+            # 5. 情绪退潮期判断
             else:
-                cycle_stage = "📉 情绪退潮期"
-                stage_desc = "空间板开始下降,情绪逐步退潮"
-                operation_advice = "🛑 情绪退潮,建议观望为主,等待下一轮周期"
+                cycle_stage = "📉 热点衰退期"
+                stage_desc = "龙头高标开始断板,后排开始集中派面"
+                operation_advice = "🛑 热点衰退,板块亏钱效应放大,建议观望"
+                cycle_features.append("龙头状态: 断板")
+                cycle_features.append("后排状态: 集中派面")
+                cycle_features.append("亏钱效应: 放大")
             
             # 补充判断
             if zt_open_rate > 30:
                 cycle_stage += " (炸板率高)"
                 operation_advice += ",炸板率较高,需谨慎"
+                cycle_features.append(f"⚠️ 炸板率: {zt_open_rate:.1f}%")
+            
+            if zt_count < 20:
+                cycle_features.append(f"⚠️ 涨停数量偏少: {zt_count}只")
+            
+            # 判断是否有周期延续迹象
+            if max_board >= 5 and zt_count >= 40:
+                cycle_features.append("💡 可能存在周期延续,观察是否有新龙头卡位")
             
             return {
                 '数据状态': '正常',
                 '情绪周期阶段': cycle_stage,
                 '阶段描述': stage_desc,
                 '操作建议': operation_advice,
+                '周期特征': cycle_features,
                 '空间板高度': max_board,
                 '涨停数量': zt_count,
                 '涨停打开率': round(zt_open_rate, 2),
