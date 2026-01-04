@@ -46,6 +46,129 @@ def format_amount(amount):
     else:
         return f"{amount:.0f}"
 
+# 全局辅助函数：显示单股分析弹窗
+def show_stock_analysis_modal(symbol, stock_name=None):
+    """显示单股分析弹窗"""
+    if not stock_name:
+        stock_name = QuantAlgo.get_stock_name(symbol)
+    
+    with st.expander(f"📊 单股分析 - {stock_name} ({symbol})", expanded=True):
+        # 获取股票数据
+        start_date = pd.Timestamp.now() - pd.Timedelta(days=60)
+        s_date_str = start_date.strftime("%Y%m%d")
+        e_date_str = pd.Timestamp.now().strftime("%Y%m%d")
+        
+        with st.spinner(f'正在获取 {stock_name} 数据...'):
+            df = db.get_history_data(symbol, start_date=s_date_str, end_date=e_date_str)
+        
+        if not df.empty and len(df) > 30:
+            current_price = df.iloc[-1]['close']
+            prev_close = df.iloc[-2]['close']
+            change_pct = (current_price - prev_close) / prev_close * 100
+            
+            # 计算技术指标
+            atr = QuantAlgo.calculate_atr(df)
+            resistance_levels = QuantAlgo.calculate_resistance_support(df)
+            macd_data = QuantAlgo.calculate_macd(df)
+            rsi_data = QuantAlgo.calculate_rsi(df)
+            bollinger_data = QuantAlgo.calculate_bollinger_bands(df)
+            kdj_data = QuantAlgo.calculate_kdj(df)
+            volume_data = QuantAlgo.analyze_volume(df)
+            money_flow_data = QuantAlgo.analyze_money_flow(df, symbol=symbol, market="sh" if symbol.startswith("6") else "sz")
+            
+            # 核心指标
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("最新价", f"¥{current_price:.2f}", f"{change_pct:+.2f}%")
+            with col2:
+                st.metric("ATR", f"{atr:.2f}", "波动率")
+            with col3:
+                rsi_val = rsi_data['RSI'].iloc[-1]
+                rsi_status = "超买" if rsi_val > 70 else "超卖" if rsi_val < 30 else "正常"
+                st.metric("RSI", f"{rsi_val:.2f}", rsi_status)
+            with col4:
+                k_val, d_val, j_val = kdj_data['K'].iloc[-1], kdj_data['D'].iloc[-1], kdj_data['J'].iloc[-1]
+                kdj_status = "金叉" if k_val > d_val else "死叉"
+                st.metric("KDJ", f"{k_val:.2f}", kdj_status)
+            
+            # MACD分析
+            st.subheader("📈 MACD分析")
+            macd_signal = macd_data['MACD'].iloc[-1] - macd_data['Signal'].iloc[-1]
+            macd_status = "多头" if macd_signal > 0 else "空头"
+            st.info(f"MACD: {macd_status} (差值: {macd_signal:.4f})")
+            
+            # 资金流向
+            st.subheader("💰 资金流向")
+            flow_status = money_flow_data['资金流向']
+            flow_emoji = "📈" if flow_status == "净流入" else "📉" if flow_status == "净流出" else "➡️"
+            st.metric(f"{flow_emoji} {flow_status}", format_amount(money_flow_data['主力净流入-净额']))
+            
+            # 操作建议
+            st.subheader("💡 操作建议")
+            suggestions = []
+            
+            # 基于多个指标给出建议
+            if macd_signal > 0 and rsi_val < 70:
+                suggestions.append("✅ MACD多头且RSI未超买,可考虑买入")
+            elif macd_signal < 0 and rsi_val > 30:
+                suggestions.append("❌ MACD空头且RSI未超卖,建议观望")
+            
+            if rsi_val > 80:
+                suggestions.append("⚠️ RSI严重超买,注意风险")
+            elif rsi_val < 20:
+                suggestions.append("🎯 RSI严重超卖,可能反弹")
+            
+            if flow_status == "净流入":
+                suggestions.append("💰 主力资金流入,积极信号")
+            elif flow_status == "净流出":
+                suggestions.append("💸 主力资金流出,谨慎操作")
+            
+            for suggestion in suggestions:
+                st.write(suggestion)
+            
+            # 价格走势图
+            st.subheader("📊 价格走势")
+            fig = go.Figure()
+            fig.add_trace(go.Candlestick(
+                x=df.index,
+                open=df['open'],
+                high=df['high'],
+                low=df['low'],
+                close=df['close'],
+                name='K线'
+            ))
+            fig.add_trace(go.Scatter(
+                x=df.index,
+                y=bollinger_data['Upper'],
+                name='布林带上轨',
+                line=dict(color='rgba(255,0,0,0.5)')
+            ))
+            fig.add_trace(go.Scatter(
+                x=df.index,
+                y=bollinger_data['Lower'],
+                name='布林带下轨',
+                line=dict(color='rgba(0,255,0,0.5)')
+            ))
+            fig.update_layout(
+                title=f"{stock_name} 价格走势",
+                xaxis_title="日期",
+                yaxis_title="价格",
+                height=400
+            )
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # 添加到自选股按钮
+            if st.button(f"⭐ 添加 {stock_name} 到自选股", key=f"add_modal_{symbol}"):
+                watchlist = config.get('watchlist', [])
+                if symbol not in watchlist:
+                    watchlist.append(symbol)
+                    config.set('watchlist', watchlist)
+                    st.success(f"已添加 {stock_name} ({symbol}) 到自选股")
+                else:
+                    st.info(f"{stock_name} ({symbol}) 已在自选股中")
+        else:
+            st.warning("数据不足,无法分析")
+
 st.title("🚀 个人化A股智能投研终端")
 st.markdown("基于 DeepSeek AI & AkShare 数据 | 专为股市小白设计")
 
@@ -2652,7 +2775,24 @@ with tab_sentiment:
                         st.subheader("🔥 龙头股列表")
                         
                         dragon_df = pd.DataFrame(limit_data['龙头股'])
-                        st.dataframe(dragon_df, use_container_width=True)
+                        
+                        # 添加点击分析按钮
+                        for idx, row in dragon_df.iterrows():
+                            col_name, col_code, col_score, col_analyze = st.columns([3, 2, 2, 1])
+                            with col_name:
+                                st.write(f"📌 {row['名称']}")
+                            with col_code:
+                                st.write(f"代码: {row['代码']}")
+                            with col_score:
+                                st.write(f"评分: {row['龙头评分']:.1f}")
+                            with col_analyze:
+                                if st.button("📊 分析", key=f"dragon_{row['代码']}"):
+                                    st.session_state.analyze_stock = row['代码']
+                                    st.rerun()
+                        
+                        # 显示单股分析
+                        if 'analyze_stock' in st.session_state:
+                            show_stock_analysis_modal(st.session_state.analyze_stock)
                         
                         # 显示最佳龙头
                         if not dragon_df.empty:
@@ -2752,7 +2892,26 @@ with tab_sentiment:
                         st.subheader("🔥 热门营业部交易")
                         
                         hot_seat_df = pd.DataFrame(lhb_data['热门营业部交易'])
-                        st.dataframe(hot_seat_df, use_container_width=True)
+                        
+                        # 添加点击分析按钮
+                        for idx, row in hot_seat_df.iterrows():
+                            col_seat, col_code, col_name, col_buy, col_analyze = st.columns([3, 2, 2, 2, 1])
+                            with col_seat:
+                                st.write(f"🏢 {row['营业部'][:15]}...")
+                            with col_code:
+                                st.write(f"代码: {row['股票代码']}")
+                            with col_name:
+                                st.write(f"名称: {row['股票名称']}")
+                            with col_buy:
+                                st.write(f"净买入: {format_amount(row['净买入'])}")
+                            with col_analyze:
+                                if st.button("📊 分析", key=f"lhb_{row['股票代码']}"):
+                                    st.session_state.analyze_stock = row['股票代码']
+                                    st.rerun()
+                        
+                        # 显示单股分析
+                        if 'analyze_stock' in st.session_state:
+                            show_stock_analysis_modal(st.session_state.analyze_stock)
                     
                     # 龙虎榜质量分析
                     if '质量分析' in lhb_data and lhb_data['质量分析']['数据状态'] == '正常':
@@ -2775,7 +2934,25 @@ with tab_sentiment:
                             st.subheader("📝 股票质量分析")
                             
                             quality_df = pd.DataFrame(lhb_data['质量分析']['股票分析'])
-                            st.dataframe(quality_df, use_container_width=True)
+                            
+                            # 添加点击分析按钮
+                            for idx, row in quality_df.iterrows():
+                                col_code, col_name, col_quality, col_analyze = st.columns([2, 3, 2, 1])
+                                with col_code:
+                                    st.write(f"代码: {row['代码']}")
+                                with col_name:
+                                    st.write(f"名称: {row['名称']}")
+                                with col_quality:
+                                    quality_emoji = "🟢" if row['质量评级'] == '优质' else "🟡" if row['质量评级'] == '良好' else "🔴"
+                                    st.write(f"{quality_emoji} {row['质量评级']}")
+                                with col_analyze:
+                                    if st.button("📊 分析", key=f"quality_{row['代码']}"):
+                                        st.session_state.analyze_stock = row['代码']
+                                        st.rerun()
+                            
+                            # 显示单股分析
+                            if 'analyze_stock' in st.session_state:
+                                show_stock_analysis_modal(st.session_state.analyze_stock)
                 else:
                     st.error(f"❌ {lhb_data['数据状态']}")
                     if '说明' in lhb_data:
