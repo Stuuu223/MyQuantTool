@@ -2498,6 +2498,12 @@ with tab_sentiment:
                     st.subheader("📝 阶段描述")
                     st.info(cycle_data['阶段描述'])
                     
+                    # 显示周期特征
+                    if cycle_data.get('周期特征'):
+                        st.subheader("🔍 周期特征")
+                        for feature in cycle_data['周期特征']:
+                            st.write(f"• {feature}")
+                    
                     # 显示操作建议
                     st.subheader("💡 操作建议")
                     st.success(cycle_data['操作建议'])
