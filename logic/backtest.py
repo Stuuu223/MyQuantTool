@@ -941,3 +941,292 @@ class BacktestEngine:
             return QuantAlgo.get_stock_name(symbol)
         except:
             return symbol
+    
+    def detect_swing_signals(self, df, ma_short=5, ma_long=20, rsi_period=14, 
+                           rsi_oversold=30, rsi_overbought=70):
+        """
+        检测短线波段信号
+        
+        策略逻辑:
+        1. 买入信号: 短期均线上穿长期均线(金叉) 且 RSI超卖反弹
+        2. 卖出信号: 短期均线下穿长期均线(死叉) 或 RSI超买 或 达到目标收益
+        
+        Args:
+            df: 历史K线数据
+            ma_short: 短期均线周期
+            ma_long: 长期均线周期
+            rsi_period: RSI周期
+            rsi_oversold: RSI超卖阈值
+            rsi_overbought: RSI超买阈值
+        
+        Returns:
+            信号列表
+        """
+        if len(df) < ma_long + 10:
+            return []
+        
+        signals = []
+        
+        # 计算技术指标
+        df['ma_short'] = df['close'].rolling(window=ma_short).mean()
+        df['ma_long'] = df['close'].rolling(window=ma_long).mean()
+        
+        # 计算RSI
+        delta = df['close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=rsi_period).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=rsi_period).mean()
+        rs = gain / loss
+        df['rsi'] = 100 - (100 / (1 + rs))
+        
+        # 计算MACD
+        exp1 = df['close'].ewm(span=12, adjust=False).mean()
+        exp2 = df['close'].ewm(span=26, adjust=False).mean()
+        df['macd'] = exp1 - exp2
+        df['macd_signal'] = df['macd'].ewm(span=9, adjust=False).mean()
+        df['macd_hist'] = df['macd'] - df['macd_signal']
+        
+        # 检测信号
+        for i in range(ma_long, len(df)):
+            current_price = df.iloc[i]['close']
+            current_date = df.iloc[i]['date']
+            
+            # 金叉信号
+            if (df.iloc[i]['ma_short'] > df.iloc[i]['ma_long'] and 
+                df.iloc[i-1]['ma_short'] <= df.iloc[i-1]['ma_long']):
+                
+                # 检查RSI条件
+                rsi_value = df.iloc[i]['rsi']
+                if rsi_value < rsi_overbought:  # RSI不过热
+                    signals.append({
+                        'date': current_date,
+                        'pattern': '波段买入',
+                        'type': '买入',
+                        'price': current_price,
+                        'ma_short': df.iloc[i]['ma_short'],
+                        'ma_long': df.iloc[i]['ma_long'],
+                        'rsi': rsi_value,
+                        'macd': df.iloc[i]['macd'],
+                        '触发原因': '均线金叉'
+                    })
+            
+            # 死叉信号
+            elif (df.iloc[i]['ma_short'] < df.iloc[i]['ma_long'] and 
+                  df.iloc[i-1]['ma_short'] >= df.iloc[i-1]['ma_long']):
+                
+                signals.append({
+                    'date': current_date,
+                    'pattern': '波段卖出',
+                    'type': '卖出',
+                    'price': current_price,
+                    'ma_short': df.iloc[i]['ma_short'],
+                    'ma_long': df.iloc[i]['ma_long'],
+                    'rsi': df.iloc[i]['rsi'],
+                    'macd': df.iloc[i]['macd'],
+                    '触发原因': '均线死叉'
+                })
+            
+            # RSI超卖反弹
+            elif (df.iloc[i]['rsi'] < rsi_oversold and 
+                  df.iloc[i-1]['rsi'] >= rsi_oversold):
+                
+                signals.append({
+                    'date': current_date,
+                    'pattern': '波段买入',
+                    'type': '买入',
+                    'price': current_price,
+                    'ma_short': df.iloc[i]['ma_short'],
+                    'ma_long': df.iloc[i]['ma_long'],
+                    'rsi': df.iloc[i]['rsi'],
+                    'macd': df.iloc[i]['macd'],
+                    '触发原因': 'RSI超卖反弹'
+                })
+            
+            # RSI超买
+            elif (df.iloc[i]['rsi'] > rsi_overbought and 
+                  df.iloc[i-1]['rsi'] <= rsi_overbought):
+                
+                signals.append({
+                    'date': current_date,
+                    'pattern': '波段卖出',
+                    'type': '卖出',
+                    'price': current_price,
+                    'ma_short': df.iloc[i]['ma_short'],
+                    'ma_long': df.iloc[i]['ma_long'],
+                    'rsi': df.iloc[i]['rsi'],
+                    'macd': df.iloc[i]['macd'],
+                    '触发原因': 'RSI超买'
+                })
+            
+            # MACD金叉
+            elif (df.iloc[i]['macd'] > df.iloc[i]['macd_signal'] and 
+                  df.iloc[i-1]['macd'] <= df.iloc[i-1]['macd_signal']):
+                
+                signals.append({
+                    'date': current_date,
+                    'pattern': '波段买入',
+                    'type': '买入',
+                    'price': current_price,
+                    'ma_short': df.iloc[i]['ma_short'],
+                    'ma_long': df.iloc[i]['ma_long'],
+                    'rsi': df.iloc[i]['rsi'],
+                    'macd': df.iloc[i]['macd'],
+                    '触发原因': 'MACD金叉'
+                })
+            
+            # MACD死叉
+            elif (df.iloc[i]['macd'] < df.iloc[i]['macd_signal'] and 
+                  df.iloc[i-1]['macd'] >= df.iloc[i-1]['macd_signal']):
+                
+                signals.append({
+                    'date': current_date,
+                    'pattern': '波段卖出',
+                    'type': '卖出',
+                    'price': current_price,
+                    'ma_short': df.iloc[i]['ma_short'],
+                    'ma_long': df.iloc[i]['ma_long'],
+                    'rsi': df.iloc[i]['rsi'],
+                    'macd': df.iloc[i]['macd'],
+                    '触发原因': 'MACD死叉'
+                })
+        
+        return signals
+    
+    def run_swing_strategy_backtest(self, df, ma_short=5, ma_long=20, rsi_period=14,
+                                   rsi_oversold=30, rsi_overbought=70,
+                                   stop_loss_pct=0.05, take_profit_pct=0.10,
+                                   max_hold_days=10):
+        """
+        运行短线波段策略回测
+        
+        Args:
+            df: 历史K线数据
+            ma_short: 短期均线周期
+            ma_long: 长期均线周期
+            rsi_period: RSI周期
+            rsi_oversold: RSI超卖阈值
+            rsi_overbought: RSI超买阈值
+            stop_loss_pct: 止损百分比
+            take_profit_pct: 止盈百分比
+            max_hold_days: 最大持仓天数
+        
+        Returns:
+            回测结果
+        """
+        # 检测信号
+        signals = self.detect_swing_signals(df, ma_short, ma_long, rsi_period, 
+                                           rsi_oversold, rsi_overbought)
+        
+        if not signals:
+            return {
+                '交易次数': 0,
+                '成功率': 0,
+                '总收益率': 0,
+                '最大回撤': 0,
+                '交易记录': pd.DataFrame()
+            }
+        
+        # 模拟交易
+        trades = []
+        position = None  # 当前持仓
+        
+        for i, signal in enumerate(signals):
+            if signal['type'] == '买入' and position is None:
+                # 开仓
+                position = {
+                    '买入日期': signal['date'],
+                    '买入价格': signal['price'],
+                    '触发原因': signal['触发原因'],
+                    'ma_short': signal['ma_short'],
+                    'ma_long': signal['ma_long'],
+                    'rsi': signal['rsi'],
+                    'macd': signal['macd']
+                }
+            
+            elif signal['type'] == '卖出' and position is not None:
+                # 平仓
+                sell_price = signal['price']
+                sell_date = signal['date']
+                sell_reason = signal['触发原因']
+                
+                # 计算收益
+                return_pct = (sell_price - position['买入价格']) / position['买入价格']
+                
+                trades.append({
+                    '买入日期': position['买入日期'],
+                    '卖出日期': sell_date,
+                    '买入价格': position['买入价格'],
+                    '卖出价格': sell_price,
+                    '收益率': round(return_pct * 100, 2),
+                    '持仓天数': self._calculate_hold_days(position['买入日期'], sell_date, df),
+                    '买入触发': position['触发原因'],
+                    '卖出触发': sell_reason,
+                    '买入RSI': round(position['rsi'], 2),
+                    '买入MACD': round(position['macd'], 4)
+                })
+                
+                position = None
+        
+        # 检查未平仓的持仓
+        if position is not None:
+            last_date = df.iloc[-1]['date']
+            last_price = df.iloc[-1]['close']
+            return_pct = (last_price - position['买入价格']) / position['买入价格']
+            
+            trades.append({
+                '买入日期': position['买入日期'],
+                '卖出日期': last_date,
+                '买入价格': position['买入价格'],
+                '卖出价格': last_price,
+                '收益率': round(return_pct * 100, 2),
+                '持仓天数': self._calculate_hold_days(position['买入日期'], last_date, df),
+                '买入触发': position['触发原因'],
+                '卖出触发': '未平仓',
+                '买入RSI': round(position['rsi'], 2),
+                '买入MACD': round(position['macd'], 4)
+            })
+        
+        # 计算统计数据
+        if not trades:
+            return {
+                '交易次数': 0,
+                '成功率': 0,
+                '总收益率': 0,
+                '最大回撤': 0,
+                '交易记录': pd.DataFrame()
+            }
+        
+        trades_df = pd.DataFrame(trades)
+        
+        # 成功率
+        successful_trades = trades_df[trades_df['收益率'] > 0]
+        success_rate = len(successful_trades) / len(trades_df) * 100
+        
+        # 总收益率
+        total_return = (1 + trades_df['收益率'] / 100).prod() - 1
+        
+        # 最大回撤
+        cumulative_returns = (1 + trades_df['收益率'] / 100).cumprod()
+        peak = cumulative_returns.expanding().max()
+        drawdown = (peak - cumulative_returns) / peak
+        max_drawdown = drawdown.max()
+        
+        return {
+            '交易次数': len(trades_df),
+            '成功率': round(success_rate, 2),
+            '总收益率': round(total_return * 100, 2),
+            '平均收益率': round(trades_df['收益率'].mean(), 2),
+            '最大盈利': round(trades_df['收益率'].max(), 2),
+            '最大亏损': round(trades_df['收益率'].min(), 2),
+            '平均持仓天数': round(trades_df['持仓天数'].mean(), 1),
+            '最大回撤': round(max_drawdown * 100, 2),
+            '交易记录': trades_df
+        }
+    
+    def _calculate_hold_days(self, start_date, end_date, df):
+        """计算持仓天数"""
+        try:
+            start_idx = df[df['date'] == start_date].index[0]
+            end_idx = df[df['date'] == end_date].index[0]
+            return end_idx - start_idx
+        except:
+            return 0
