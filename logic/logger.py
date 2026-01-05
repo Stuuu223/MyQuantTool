@@ -8,20 +8,21 @@ import logging
 import sys
 from pathlib import Path
 from datetime import datetime
+from typing import Optional
 
 
 class Logger:
     """日志管理器"""
     
-    _instance = None
-    _initialized = False
+    _instance: Optional['Logger'] = None
+    _initialized: bool = False
     
-    def __new__(cls):
+    def __new__(cls) -> 'Logger':
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
     
-    def __init__(self):
+    def __init__(self) -> None:
         if self._initialized:
             return
         
@@ -43,7 +44,7 @@ class Logger:
         )
     
     @staticmethod
-    def get_logger(name: str = None) -> logging.Logger:
+    def get_logger(name: Optional[str] = None) -> logging.Logger:
         """获取日志记录器
         
         Args:
@@ -64,7 +65,7 @@ class Logger:
 
 
 # 便捷函数
-def get_logger(name: str = None) -> logging.Logger:
+def get_logger(name: Optional[str] = None) -> logging.Logger:
     """获取日志记录器的便捷函数"""
     return Logger.get_logger(name)
 

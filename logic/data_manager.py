@@ -2,25 +2,26 @@ import akshare as ak
 import pandas as pd
 import sqlite3
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
+from typing import Optional, Dict, Any
 from logic.logger import get_logger
 from logic.error_handler import handle_errors, DataError, NetworkError, ValidationError
 
 logger = get_logger(__name__)
 
 class DataManager:
-    def __init__(self, db_path='data/stock_data.db'):
+    def __init__(self, db_path: str = 'data/stock_data.db') -> None:
         logger.info(f"初始化 DataManager，数据库路径: {db_path}")
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.init_db()
         self.update_db_schema()
         # 实时数据缓存：{symbol: {'data': {...}, 'timestamp': datetime}}
-        self.realtime_cache = {}
-        self.cache_expire_seconds = 60  # 缓存60秒
+        self.realtime_cache: Dict[str, Dict[str, Any]] = {}
+        self.cache_expire_seconds: int = 60  # 缓存60秒
         logger.info("DataManager 初始化完成")
 
-    def init_db(self):
+    def init_db(self) -> None:
         query = '''
         CREATE TABLE IF NOT EXISTS daily_bars (
             symbol TEXT,
@@ -53,7 +54,7 @@ class DataManager:
             print(f"更新数据库表结构失败: {e}")
 
     @handle_errors(show_user_message=False)
-    def get_history_data(self, symbol, start_date="20240101", end_date="20251231"):
+    def get_history_data(self, symbol: str, start_date: str = "20240101", end_date: str = "20251231") -> pd.DataFrame:
         try:
             # 验证股票代码
             if not symbol or len(symbol) != 6:
@@ -94,14 +95,20 @@ class DataManager:
             
             return df
         except Exception as e:
-            print(f"数据获取异常: {e}")
+            logger.error(f"数据获取异常: {e}", exc_info=True)
             return pd.DataFrame()
 
-    def get_realtime_data(self, symbol):
-        """获取实时行情数据（使用1分钟K线，带60秒缓存）"""
+    def get_realtime_data(self, symbol: str) -> Optional[Dict[str, Any]]:
+        """获取实时行情数据（使用1分钟K线，带60秒缓存）
+        
+        Args:
+            symbol: 股票代码
+            
+        Returns:
+            实时数据字典，失败返回 None
+        """
         try:
             import time
-            from datetime import timedelta
 
             # 检查缓存
             if symbol in self.realtime_cache:
@@ -206,10 +213,10 @@ class DataManager:
                         'data': result,
                         'timestamp': now
                     }
-                    print(f"✅ 日线数据获取成功: {result}")
+                    logger.info(f"✅ 日线数据获取成功: {result}")
                     return result
 
-            print("⚠️ 未找到股票数据")
+            logger.warning(f"⚠️ 未找到股票数据: {symbol}")
             return None
 
         except Exception as e:

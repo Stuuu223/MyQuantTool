@@ -13,7 +13,7 @@ logger = get_logger(__name__)
 
 class AppError(Exception):
     """应用基础异常类"""
-    def __init__(self, message: str, user_message: str = None):
+    def __init__(self, message: str, user_message: Optional[str] = None) -> None:
         self.message = message
         self.user_message = user_message or message
         super().__init__(self.message)
