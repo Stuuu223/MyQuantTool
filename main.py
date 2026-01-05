@@ -169,7 +169,7 @@ def show_stock_analysis_modal(symbol, stock_name=None):
                 yaxis_title="价格",
                 height=400
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
             
             # 添加到自选股按钮
             if st.button(f"⭐ 添加 {stock_name} 到自选股", key=f"add_modal_{symbol}"):
@@ -908,7 +908,7 @@ with tab_single:
             ))
                 
             fig.update_layout(xaxis_rangeslider_visible=False, height=500)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
 
             # 龙头战法分析
             st.divider()
@@ -1054,7 +1054,7 @@ with tab_backtest:
                     # 显示交易记录
                     if not result['交易记录'].empty:
                         st.subheader("📝 交易记录")
-                        st.dataframe(result['交易记录'], use_container_width=True)
+                        st.dataframe(result['交易记录'], width="stretch")
                     
                     # 显示资金曲线
                     st.subheader("💰 资金曲线")
@@ -1081,7 +1081,7 @@ with tab_backtest:
                         yaxis_title="资金（元）",
                         height=400
                     )
-                    st.plotly_chart(fig_capital, use_container_width=True)
+                    st.plotly_chart(fig_capital, width="stretch")
                     
                 else:
                     st.error("数据不足，无法进行回测。请选择更早的日期或检查股票代码。")
@@ -1217,7 +1217,7 @@ with tab_backtest:
                 
                 # 显示排名表格
                 pattern_ranking = result['分战法统计'].copy()
-                st.dataframe(pattern_ranking, use_container_width=True)
+                st.dataframe(pattern_ranking, width="stretch")
                 
                 # 高亮显示成功率最高的战法
                 if not pattern_ranking.empty:
@@ -1244,7 +1244,7 @@ with tab_backtest:
                     height=400,
                     showlegend=False
                 )
-                st.plotly_chart(fig_pattern, use_container_width=True)
+                st.plotly_chart(fig_pattern, width="stretch")
                 
                 # 战法收益率对比图
                 st.subheader("💰 各战法平均收益率对比")
@@ -1266,7 +1266,7 @@ with tab_backtest:
                     height=400,
                     showlegend=False
                 )
-                st.plotly_chart(fig_returns, use_container_width=True)
+                st.plotly_chart(fig_returns, width="stretch")
             
             # 显示详细信号记录
             if not result['总体统计']['详细统计'].empty:
@@ -1325,7 +1325,7 @@ with tab_backtest:
                 cols = ['信号日期', '战法类型', '信号类型', '触发情景', '信号价格', '收益率', '结果', '持有天数']
                 filtered_df = filtered_df[[col for col in cols if col in filtered_df.columns]]
                 
-                st.dataframe(filtered_df, use_container_width=True)
+                st.dataframe(filtered_df, width="stretch")
                 
                 # 成功率可视化
                 st.subheader("📈 成功率分布")
@@ -1357,7 +1357,7 @@ with tab_backtest:
                     barmode='group',
                     height=400
                 )
-                st.plotly_chart(fig_success, use_container_width=True)
+                st.plotly_chart(fig_success, width="stretch")
                 
                 # 收益率分布图
                 if not filtered_df.empty:
@@ -1377,7 +1377,7 @@ with tab_backtest:
                         yaxis_title="收益率(%)",
                         height=400
                     )
-                    st.plotly_chart(fig_returns, use_container_width=True)
+                    st.plotly_chart(fig_returns, width="stretch")
             
             # 显示信号数量趋势
             if result['所有信号']:
@@ -1406,7 +1406,7 @@ with tab_backtest:
                     yaxis_title="信号数量",
                     height=400
                 )
-                st.plotly_chart(fig_trend, use_container_width=True)
+                st.plotly_chart(fig_trend, width="stretch")
     
     elif backtest_type == "策略组合回测":
         st.subheader("📊 策略组合回测")
@@ -1478,7 +1478,7 @@ with tab_backtest:
                 # 显示详细结果
                 if not result['详细结果'].empty:
                     st.subheader("📊 各股回测结果")
-                    st.dataframe(result['详细结果'], use_container_width=True)
+                    st.dataframe(result['详细结果'], width="stretch")
                     
                     # 成功率对比图
                     st.subheader("📊 成功率对比")
@@ -1497,7 +1497,7 @@ with tab_backtest:
                         yaxis_title="成功率(%)",
                         height=400
                     )
-                    st.plotly_chart(fig_portfolio, use_container_width=True)
+                    st.plotly_chart(fig_portfolio, width="stretch")
                     
                     # 导出功能
                     st.subheader("💾 导出结果")
@@ -1595,7 +1595,7 @@ with tab_backtest:
                     # 显示所有结果
                     if not opt_result['所有结果'].empty:
                         st.subheader("📋 所有参数组合结果")
-                        st.dataframe(opt_result['所有结果'], use_container_width=True)
+                        st.dataframe(opt_result['所有结果'], width="stretch")
                         
                         # 参数热力图
                         st.subheader("🔥 参数组合热力图")
@@ -1618,7 +1618,7 @@ with tab_backtest:
                             yaxis_title="持有天数",
                             height=400
                         )
-                        st.plotly_chart(fig_heatmap, use_container_width=True)
+                        st.plotly_chart(fig_heatmap, width="stretch")
                 else:
                     st.error("数据不足,无法进行参数优化")
     
@@ -1678,7 +1678,7 @@ with tab_backtest:
                                     '信号数': stats['总信号数']
                                 })
                         
-                        st.dataframe(pd.DataFrame(single_results), use_container_width=True)
+                        st.dataframe(pd.DataFrame(single_results), width="stretch")
                         
                         # 显示组合策略结果
                         st.subheader("🎯 组合策略结果")
@@ -1691,7 +1691,7 @@ with tab_backtest:
                         # 显示相关性分析
                         if not combo_result['相关性分析'].empty:
                             st.subheader("🔗 战法相关性分析")
-                            st.dataframe(combo_result['相关性分析'], use_container_width=True)
+                            st.dataframe(combo_result['相关性分析'], width="stretch")
                             
                             # 相关性热力图
                             correlation_matrix = combo_result['相关性分析'].pivot_table(
@@ -1713,7 +1713,7 @@ with tab_backtest:
                                 title="战法相关性热力图 (Jaccard相似度)",
                                 height=400
                             )
-                            st.plotly_chart(fig_corr, use_container_width=True)
+                            st.plotly_chart(fig_corr, width="stretch")
                             
                             st.info("💡 相似度越高,说明战法信号重叠越多,组合使用效果可能不如预期")
                     else:
@@ -1738,7 +1738,7 @@ with tab_compare:
             comparison_df = comparator.compare_stocks(compare_symbols, s_date_str, e_date_str)
             
             if not comparison_df.empty:
-                st.dataframe(comparison_df, use_container_width=True)
+                st.dataframe(comparison_df, width="stretch")
                 
                 # 收益率对比图
                 st.subheader("📈 收益率曲线对比")
@@ -1761,7 +1761,7 @@ with tab_compare:
                         yaxis_title="累计收益率",
                         height=400
                     )
-                    st.plotly_chart(fig_perf, use_container_width=True)
+                    st.plotly_chart(fig_perf, width="stretch")
             else:
                 st.warning("未能获取到有效的对比数据，请检查股票代码是否正确。")
 
@@ -1791,7 +1791,7 @@ with tab_sector:
                     '主力净流入': st.column_config.TextColumn('主力净流入', width='medium'),
                     '主力净流入占比': st.column_config.NumberColumn('净流入占比', format='%.2f%%')
                 },
-                use_container_width=True,
+                width="stretch",
                 hide_index=True
             )
             
@@ -1833,7 +1833,7 @@ with tab_sector:
                 yaxis_title="主力净流入（元）",
                 height=400
             )
-            st.plotly_chart(fig_sector, use_container_width=True)
+            st.plotly_chart(fig_sector, width="stretch")
         else:
             st.error(f"❌ {sector_data['数据状态']}")
             if '错误信息' in sector_data:
@@ -1897,7 +1897,7 @@ with tab_lhb:
                     '龙虎榜净买入': st.column_config.TextColumn('净买入', width='medium'),
                     '上榜原因': st.column_config.TextColumn('上榜原因', width='large')
                 },
-                use_container_width=True,
+                width="stretch",
                 hide_index=True
             )
             
@@ -1936,17 +1936,17 @@ with tab_lhb:
                             {'上榜原因': reason, '数量': count}
                             for reason, count in summary['上榜原因统计'].items()
                         ])
-                        st.dataframe(reason_df, use_container_width=True, hide_index=True)
+                        st.dataframe(reason_df, width="stretch", hide_index=True)
                     
                     # 机构统计
                     if summary['机构统计'] is not None and not summary['机构统计'].empty:
                         st.subheader("🏢 机构席位统计")
-                        st.dataframe(summary['机构统计'].head(10), use_container_width=True)
+                        st.dataframe(summary['机构统计'].head(10), width="stretch")
                     
                     # 活跃营业部
                     if summary['活跃营业部'] is not None and not summary['活跃营业部'].empty:
                         st.subheader("🏪 活跃营业部")
-                        st.dataframe(summary['活跃营业部'].head(10), use_container_width=True)
+                        st.dataframe(summary['活跃营业部'].head(10), width="stretch")
                     
                     # 资金流向分析
                     st.subheader("💰 资金流向分析")
@@ -2039,7 +2039,7 @@ with tab_lhb:
                                 }
                                 for s in poor_stocks
                             ]),
-                            use_container_width=True,
+                            width="stretch",
                             hide_index=True
                             )
                     else:
@@ -2176,7 +2176,7 @@ with tab_dragon:
                         }
                         for s in weak_dragons
                     ])
-                    st.dataframe(df_weak, use_container_width=True, hide_index=True)
+                    st.dataframe(df_weak, width="stretch", hide_index=True)
             else:
                 st.warning("⚠️ 未发现符合条件的龙头股")
                 st.info("💡 提示：可以降低最低评分门槛或增加扫描数量")
@@ -2356,7 +2356,7 @@ with tab_auction:
                             }
                             for s in active_stocks
                         ])
-                        st.dataframe(df_active, use_container_width=True, hide_index=True)
+                        st.dataframe(df_active, width="stretch", hide_index=True)
                     
                     # 一般股票
                     if normal_stocks:
@@ -2373,7 +2373,7 @@ with tab_auction:
                             }
                             for s in normal_stocks
                         ])
-                        st.dataframe(df_normal, use_container_width=True, hide_index=True)
+                        st.dataframe(df_normal, width="stretch", hide_index=True)
                 else:
                     st.warning("⚠️ 未发现符合条件的竞价股票")
                     st.info("💡 提示：当前市场可能没有明显的竞价异动")
@@ -2498,7 +2498,7 @@ with tab_auction:
                     df_strong['封单金额'] = df_strong['封单金额'].apply(lambda x: f"{x/10000:.2f}万" if x < 100000000 else f"{x/100000000:.2f}亿")
                     df_strong['流通市值'] = df_strong['流通市值'].apply(lambda x: f"{x/100000000:.2f}亿")
                     
-                    st.dataframe(df_strong, use_container_width=True, hide_index=True)
+                    st.dataframe(df_strong, width="stretch", hide_index=True)
                     
                     # 显示操作建议
                     st.divider()
@@ -2692,7 +2692,7 @@ with tab_sentiment:
                         board_df = pd.DataFrame(list(cycle_data['连板分布'].items()), 
                                                columns=['连板数', '数量'])
                         board_df = board_df.sort_values('连板数', ascending=False)
-                        st.dataframe(board_df, use_container_width=True)
+                        st.dataframe(board_df, width="stretch")
                         
                         # 连板分布图
                         fig_board = go.Figure()
@@ -2716,7 +2716,7 @@ with tab_sentiment:
                             yaxis_title="数量",
                             height=400
                         )
-                        st.plotly_chart(fig_board, use_container_width=True)
+                        st.plotly_chart(fig_board, width="stretch")
                     
                     # 显示情绪指数
                     st.subheader("🎯 情绪指数")
@@ -2789,12 +2789,12 @@ with tab_sentiment:
                             yaxis_title="数量",
                             height=400
                         )
-                        st.plotly_chart(fig_board, use_container_width=True)
+                        st.plotly_chart(fig_board, width="stretch")
                     
                     # 涨停股票列表
                     if not sentiment_data['详细数据'].empty:
                         st.subheader("📝 涨停股票列表")
-                        st.dataframe(sentiment_data['详细数据'], use_container_width=True)
+                        st.dataframe(sentiment_data['详细数据'], width="stretch")
                 else:
                     st.error(f"❌ {sentiment_data['数据状态']}")
                     if '说明' in sentiment_data:
@@ -2851,7 +2851,7 @@ with tab_sentiment:
                             display_df['换手率'] = display_df['换手率'].apply(lambda x: f"{x:.2f}%")
 
                         # 显示表格
-                        st.dataframe(display_df, use_container_width=True)
+                        st.dataframe(display_df, width="stretch")
                         
                         # 显示最佳龙头
                         if not dragon_df.empty:
@@ -2923,7 +2923,7 @@ with tab_sentiment:
                             yaxis_title="数量",
                             height=400
                         )
-                        st.plotly_chart(fig_sector, use_container_width=True)
+                        st.plotly_chart(fig_sector, width="stretch")
                     
                     # 连板统计
                     if limit_data['连板统计']:
@@ -2953,12 +2953,12 @@ with tab_sentiment:
                             yaxis_title="数量",
                             height=400
                         )
-                        st.plotly_chart(fig_board, use_container_width=True)
+                        st.plotly_chart(fig_board, width="stretch")
                     
                     # 详细数据
                     if not limit_data['详细数据'].empty:
                         st.subheader("📝 涨停详细数据")
-                        st.dataframe(limit_data['详细数据'], use_container_width=True)
+                        st.dataframe(limit_data['详细数据'], width="stretch")
                 else:
                     st.error(f"❌ {limit_data['数据状态']}")
                     if '说明' in limit_data:
@@ -3004,7 +3004,7 @@ with tab_sentiment:
                         hot_seat_df.columns = ['营业部', '股票代码', '股票名称', '净买入']
                         
                         # 显示表格
-                        st.dataframe(hot_seat_df, use_container_width=True)
+                        st.dataframe(hot_seat_df, width="stretch")
                         
                         # 添加股票选择和分析
                         st.subheader("📊 单股龙虎榜分析")
@@ -3075,7 +3075,7 @@ with tab_sentiment:
                             display_df.columns = ['代码', '名称', '榜单质量', '上榜原因', '净买入', '评分']
                             
                             # 显示表格
-                            st.dataframe(display_df, use_container_width=True)
+                            st.dataframe(display_df, width="stretch")
                             
                             # 添加股票选择和分析
                             st.subheader("📊 单股龙虎榜分析")
@@ -3148,7 +3148,7 @@ with tab_sentiment:
                         
                         # 显示反包信号
                         fanbao_df = pd.DataFrame(signals)
-                        st.dataframe(fanbao_df, use_container_width=True)
+                        st.dataframe(fanbao_df, width="stretch")
                         
                         # 对每个信号进行走势预测
                         st.subheader("🔮 走势预测")
@@ -3204,7 +3204,7 @@ with tab_sentiment:
                             formatted_hot.append(formatted_s)
                         
                         hot_df = pd.DataFrame(formatted_hot)
-                        st.dataframe(hot_df, use_container_width=True)
+                        st.dataframe(hot_df, width="stretch")
                         
                         # 板块热度对比图
                         fig_heat = go.Figure()
@@ -3228,7 +3228,7 @@ with tab_sentiment:
                             yaxis_title="热度评分",
                             height=400
                         )
-                        st.plotly_chart(fig_heat, use_container_width=True)
+                        st.plotly_chart(fig_heat, width="stretch")
             
             # 显示冷门板块
         if  sector_data.get('冷门板块'):
@@ -3242,7 +3242,7 @@ with tab_sentiment:
                     formatted_cold.append(formatted_s)
                 
                 cold_df = pd.DataFrame(formatted_cold)
-                st.dataframe(cold_df, use_container_width=True)
+                st.dataframe(cold_df, width="stretch")
         
         # 板块龙头追踪
         if sector_data.get('热门板块'):
@@ -3274,7 +3274,7 @@ with tab_sentiment:
                         formatted_leaders.append(formatted_leader)
                     
                     leader_df = pd.DataFrame(formatted_leaders)
-                    st.dataframe(leader_df, use_container_width=True)
+                    st.dataframe(leader_df, width="stretch")
                     
                     # 显示最佳龙头
                     best_leader = leader_df.iloc[0]
@@ -3305,7 +3305,7 @@ with tab_sentiment:
                         board_df = board_data['连板统计'].copy()
                         # 按连板数降序排序
                         board_df = board_df.sort_index(ascending=False)
-                        st.dataframe(board_df, use_container_width=True)
+                        st.dataframe(board_df, width="stretch")
                         
                         # 胜率对比图
                         fig_win_rate = go.Figure()
@@ -3324,7 +3324,7 @@ with tab_sentiment:
                             yaxis_title="胜率(%)",
                             height=400
                         )
-                        st.plotly_chart(fig_win_rate, use_container_width=True)
+                        st.plotly_chart(fig_win_rate, width="stretch")
                     
                     # 显示风险预警
                     if board_data['风险预警']:
@@ -3337,7 +3337,7 @@ with tab_sentiment:
                         st.subheader("🔍 连板股特征分析")
                         
                         feature_df = pd.DataFrame(board_data['连板特征'])
-                        st.dataframe(feature_df, use_container_width=True)
+                        st.dataframe(feature_df, width="stretch")
                         
                         # 风险等级分布
                         risk_dist = feature_df['风险等级'].value_counts()
@@ -3360,14 +3360,14 @@ with tab_sentiment:
                             yaxis_title="数量",
                             height=400
                         )
-                        st.plotly_chart(fig_risk, use_container_width=True)
+                        st.plotly_chart(fig_risk, width="stretch")
                     
                     # 高板数股票
                     if not board_data['高板数股票'].empty:
                         st.subheader("🔴 高板数股票(风险较高)")
                         
                         high_risk_df = board_data['高板数股票']
-                        st.dataframe(high_risk_df, use_container_width=True)
+                        st.dataframe(high_risk_df, width="stretch")
                 else:
                     st.error(f"❌ {board_data['数据状态']}")
                     if '说明' in board_data:
@@ -3515,7 +3515,7 @@ with tab_hot_topics:
                             continuity_result['趋势强度']
                         ]
                     })
-                    st.dataframe(detail_df, use_container_width=True, hide_index=True)
+                    st.dataframe(detail_df, width="stretch", hide_index=True)
                 else:
                     st.error(f"❌ {continuity_result['数据状态']}")
                     if '说明' in continuity_result:
@@ -3889,7 +3889,7 @@ with tab_capital:
                     st.subheader("📊 游资统计汇总")
 
                     summary_df = pd.DataFrame(capital_result['游资统计汇总'])
-                    st.dataframe(summary_df, use_container_width=True, hide_index=True)
+                    st.dataframe(summary_df, width="stretch", hide_index=True)
 
                 # 显示详细操作记录
                 if capital_result['游资分析列表']:
@@ -4052,7 +4052,7 @@ with tab_limit_up:
                     st.subheader("📊 影响因素")
 
                     factor_df = pd.DataFrame(prediction_result['影响因素'])
-                    st.dataframe(factor_df, use_container_width=True, hide_index=True)
+                    st.dataframe(factor_df, width="stretch", hide_index=True)
 
                 # 显示涨停记录
                 if prediction_result['涨停记录']:
@@ -4060,7 +4060,7 @@ with tab_limit_up:
                     st.subheader("📝 最近涨停记录")
 
                     record_df = pd.DataFrame(prediction_result['涨停记录'])
-                    st.dataframe(record_df, use_container_width=True, hide_index=True)
+                    st.dataframe(record_df, width="stretch", hide_index=True)
             else:
                 st.error(f"❌ {prediction_result['数据状态']}")
                 if '说明' in prediction_result:
@@ -4082,7 +4082,7 @@ with tab_limit_up:
 
                     # 显示预测结果
                     prediction_df = pd.DataFrame(batch_result['预测列表'])
-                    st.dataframe(prediction_df, use_container_width=True, hide_index=True)
+                    st.dataframe(prediction_df, width="stretch", hide_index=True)
 
                     # 按评级分组
                     excellent = [p for p in batch_result['预测列表'] if '优秀' in p['评级']]
@@ -4127,7 +4127,7 @@ with tab_limit_up:
                     st.subheader("📊 评级分布")
 
                     rating_df = pd.DataFrame(list(market_result['评级分布'].items()), columns=['评级', '数量'])
-                    st.dataframe(rating_df, use_container_width=True, hide_index=True)
+                    st.dataframe(rating_df, width="stretch", hide_index=True)
 
                 # 显示详细预测
                 if market_result['详细预测']:
@@ -4135,7 +4135,7 @@ with tab_limit_up:
                     st.subheader("📝 详细预测")
 
                     prediction_df = pd.DataFrame(market_result['详细预测'])
-                    st.dataframe(prediction_df, use_container_width=True, hide_index=True)
+                    st.dataframe(prediction_df, width="stretch", hide_index=True)
             else:
                 st.error(f"❌ {market_result['数据状态']}")
                 if '说明' in market_result:
@@ -4284,7 +4284,7 @@ with tab_smart:
                         market_condition['跌停股票']
                     ]
                 })
-                st.dataframe(market_df, use_container_width=True, hide_index=True)
+                st.dataframe(market_df, width="stretch", hide_index=True)
             else:
                 st.error(f"❌ {market_condition['数据状态']}")
                 if '说明' in market_condition:
