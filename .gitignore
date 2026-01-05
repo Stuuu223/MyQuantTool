@@ -42,6 +42,18 @@ Thumbs.db
 get-pip.py
 pip-*.whl
 pip_debug.log
+fix_*.py
+rewrite_*.py
+append_*.py
+complete_*.py
+safe_*.py
+simple_*.py
+main_backup.py
+main_*.py
+build_project.py
+*.patch
+修复指南.md
+优化建议.md
 
 # Data files (optional, uncomment if you want to ignore data directory)
 # data/
