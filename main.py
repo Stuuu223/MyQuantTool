@@ -4248,9 +4248,9 @@ with tab_risk:
         with col1:
             capital = st.number_input("总资金", value=100000, min_value=0, step=1000)
         with col2:
-            risk_per_trade = st.slider("单笔风险比例(%)", 1, 10, 2, 0.5) / 100
+            risk_per_trade = st.slider("单笔风险比例(%)", 1.0, 10.0, 2.0, 0.5) / 100
         with col3:
-            stop_loss_pct = st.slider("止损比例(%)", 2, 10, 5, 0.5) / 100
+            stop_loss_pct = st.slider("止损比例(%)", 2.0, 10.0, 5.0, 0.5) / 100
 
         if st.button("📊 计算仓位", key="calculate_position"):
             position_result = RiskManager.calculate_position_size(capital, risk_per_trade, stop_loss_pct)
@@ -4282,7 +4282,7 @@ with tab_risk:
         with col3:
             buy_price = st.number_input("买入价格", value=0.0, min_value=0.0, step=0.01)
         with col4:
-            stop_loss_pct = st.slider("止损比例(%)", 2, 10, 5, 0.5) / 100
+            stop_loss_pct = st.slider("止损比例(%)", 2.0, 10.0, 5.0, 0.5) / 100
 
         if st.button("📊 检查", key="check_stop_loss"):
             if current_price > 0 and buy_price > 0:
@@ -4451,8 +4451,8 @@ with tab_settings:
         st.subheader("📊 分析设置")
 
         analysis_days = st.slider("默认分析天数", 30, 180, user_prefs.get('analysis', '默认分析天数', 60), 10)
-        stop_loss_pct = st.slider("默认止损比例(%)", 2, 10, user_prefs.get('analysis', '默认止损比例', 0.05) * 100, 0.5) / 100
-        take_profit_pct = st.slider("默认止盈比例(%)", 5, 20, user_prefs.get('analysis', '默认止盈比例', 0.10) * 100, 0.5) / 100
+        stop_loss_pct = st.slider("默认止损比例(%)", 2.0, 10.0, user_prefs.get('analysis', '默认止损比例', 0.05) * 100, 0.5) / 100
+        take_profit_pct = st.slider("默认止盈比例(%)", 5.0, 20.0, user_prefs.get('analysis', '默认止盈比例', 0.10) * 100, 0.5) / 100
 
         if st.button("💾 保存分析设置", key="save_analysis_settings"):
             user_prefs.set('analysis', '默认分析天数', analysis_days)
@@ -4478,9 +4478,9 @@ with tab_settings:
         st.divider()
         st.subheader("⚠️ 风险设置")
 
-        risk_per_trade = st.slider("单笔风险比例(%)", 1, 5, user_prefs.get('risk', '单笔风险比例', 0.02) * 100, 0.5) / 100
+        risk_per_trade = st.slider("单笔风险比例(%)", 1.0, 5.0, user_prefs.get('risk', '单笔风险比例', 0.02) * 100, 0.5) / 100
         max_positions = st.slider("最大持仓数量", 3, 10, user_prefs.get('risk', '最大持仓数量', 5), 1)
-        max_drawdown = st.slider("最大回撤限制(%)", 5, 20, user_prefs.get('risk', '最大回撤限制', 0.10) * 100, 1) / 100
+        max_drawdown = st.slider("最大回撤限制(%)", 5.0, 20.0, user_prefs.get('risk', '最大回撤限制', 0.10) * 100, 1.0) / 100
 
         if st.button("💾 保存风险设置", key="save_risk_settings"):
             user_prefs.set('risk', '单笔风险比例', risk_per_trade)
