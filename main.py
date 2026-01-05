@@ -194,7 +194,7 @@ if 'pattern_combination_result' not in st.session_state:
 # st.caption("  • ❌ Clear cache（清除缓存）：刷新数据和重置状态")
 
 # 添加功能标签页
-tab_single, tab_compare, tab_backtest, tab_sector, tab_lhb, tab_dragon, tab_auction, tab_sentiment, tab_hot_topics = st.tabs(["📊 单股分析", "🔍 多股对比", "🧪 策略回测", "🔄 板块轮动", "🏆 龙虎榜", "🔥 龙头战法", "⚡ 集合竞价", "📈 情绪分析", "🎯 热点题材"])
+tab_single, tab_compare, tab_backtest, tab_sector, tab_lhb, tab_dragon, tab_auction, tab_sentiment, tab_hot_topics, tab_alert, tab_vp, tab_ma, tab_new_stock = st.tabs(["📊 单股分析", "🔍 多股对比", "🧪 策略回测", "🔄 板块轮动", "🏆 龙虎榜", "🔥 龙头战法", "⚡ 集合竞价", "📈 情绪分析", "🎯 热点题材", "🔔 智能预警", "📊 量价关系", "📈 均线战法", "🆕 次新股"])
 
 with st.sidebar:
     st.header("🎮 控制台")
@@ -3461,3 +3461,336 @@ with tab_hot_topics:
                         st.info(f"💡 {continuity_result['说明']}")
             else:
                 st.warning("⚠️ 请输入板块名称")
+
+with tab_alert:
+    st.subheader("🔔 智能预警系统")
+    st.caption("自定义条件预警，实时监控价格、量能、技术指标等信号")
+
+    # 导入预警系统
+    from logic.algo_alert import AlertSystem
+
+    # 预警模式选择
+    alert_mode = st.radio("选择功能", ["单股预警", "自选股批量预警"], horizontal=True)
+
+    if alert_mode == "单股预警":
+        st.divider()
+        st.subheader("📊 单股预警设置")
+
+        # 股票代码输入
+        alert_symbol = st.text_input("股票代码", value=symbol, help="输入6位A股代码")
+
+        # 预警条件设置
+        st.write("### 预警条件设置")
+
+        # 1. 价格预警
+        with st.expander("💰 价格预警", expanded=False):
+            price_alert_enabled = st.checkbox("启用价格预警", key="price_alert_enabled")
+            col_price1, col_price2 = st.columns(2)
+            with col_price1:
+                price_above = st.number_input("突破预警价", value=0.0, min_value=0.0, step=0.01, disabled=not price_alert_enabled)
+            with col_price2:
+                price_below = st.number_input("跌破预警价", value=0.0, min_value=0.0, step=0.01, disabled=not price_alert_enabled)
+
+        # 2. 涨跌幅预警
+        with st.expander("📈 涨跌幅预警", expanded=False):
+            change_alert_enabled = st.checkbox("启用涨跌幅预警", key="change_alert_enabled")
+            col_change1, col_change2 = st.columns(2)
+            with col_change1:
+                change_above = st.number_input("涨幅预警(%)", value=5.0, step=0.1, disabled=not change_alert_enabled)
+            with col_change2:
+                change_below = st.number_input("跌幅预警(%)", value=-5.0, step=0.1, disabled=not change_alert_enabled)
+
+        # 3. 量能预警
+        with st.expander("📊 量能预警", expanded=False):
+            volume_alert_enabled = st.checkbox("启用量能预警", key="volume_alert_enabled")
+            volume_ratio_threshold = st.slider("量比阈值", 1.5, 5.0, 2.0, 0.1, disabled=not volume_alert_enabled)
+
+        # 4. 技术指标预警
+        with st.expander("📉 技术指标预警", expanded=False):
+            indicator_alert_enabled = st.checkbox("启用技术指标预警", key="indicator_alert_enabled")
+
+            col_rsi1, col_rsi2 = st.columns(2)
+            with col_rsi1:
+                rsi_overbought = st.checkbox("RSI超买(>70)", value=True, disabled=not indicator_alert_enabled)
+            with col_rsi2:
+                rsi_oversold = st.checkbox("RSI超卖(<30)", value=True, disabled=not indicator_alert_enabled)
+
+            col_macd1, col_macd2 = st.columns(2)
+            with col_macd1:
+                macd_golden_cross = st.checkbox("MACD金叉", value=True, disabled=not indicator_alert_enabled)
+            with col_macd2:
+                macd_death_cross = st.checkbox("MACD死叉", value=True, disabled=not indicator_alert_enabled)
+
+        # 组装预警条件
+        alert_conditions = {
+            'price_alert_enabled': price_alert_enabled,
+            'price_above': price_above,
+            'price_below': price_below,
+            'change_alert_enabled': change_alert_enabled,
+            'change_above': change_above,
+            'change_below': change_below,
+            'volume_alert_enabled': volume_alert_enabled,
+            'volume_ratio_threshold': volume_ratio_threshold,
+            'indicator_alert_enabled': indicator_alert_enabled,
+            'rsi_overbought': rsi_overbought,
+            'rsi_oversold': rsi_oversold,
+            'macd_golden_cross': macd_golden_cross,
+            'macd_death_cross': macd_death_cross
+        }
+
+        # 检查预警按钮
+        if st.button("🔍 检查预警", key="check_single_alert"):
+            with st.spinner('正在检查预警条件...'):
+                alert_result = AlertSystem.check_alerts(alert_symbol, alert_conditions)
+
+            if alert_result['数据状态'] == '正常':
+                st.success(f"✅ 检查完成！发现 {alert_result['预警数量']} 个预警")
+
+                if alert_result['预警列表']:
+                    for alert in alert_result['预警列表']:
+                        level_color = {
+                            '高': '🔴',
+                            '中': '🟡',
+                            '低': '🟢'
+                        }
+                        with st.expander(f"{level_color.get(alert['预警级别'], '⚪')} {alert['预警类型']} - {alert['预警级别']}级"):
+                            st.write(f"**说明：** {alert['说明']}")
+                            if '当前价格' in alert:
+                                st.write(f"**当前价格：** ¥{alert['当前价格']:.2f}")
+                            if '当前涨跌幅' in alert:
+                                st.write(f"**当前涨跌幅：** {alert['当前涨跌幅']}")
+                            st.write(f"**预警条件：** {alert['预警条件']}")
+                else:
+                    st.info("👍 当前未触发任何预警条件")
+            else:
+                st.error(f"❌ {alert_result['数据状态']}")
+                if '说明' in alert_result:
+                    st.info(f"💡 {alert_result['说明']}")
+
+    elif alert_mode == "自选股批量预警":
+        st.divider()
+        st.subheader("📋 自选股批量预警")
+
+        st.info("💡 将对自选股中的所有股票进行批量预警检查")
+
+        # 使用相同的预警条件设置（简化版）
+        with st.expander("⚙️ 预警条件设置", expanded=True):
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                change_above = st.number_input("涨幅预警(%)", value=5.0, step=0.1)
+                change_below = st.number_input("跌幅预警(%)", value=-5.0, step=0.1)
+
+            with col2:
+                volume_ratio_threshold = st.slider("量比阈值", 1.5, 5.0, 2.0, 0.1)
+                rsi_overbought = st.checkbox("RSI超买(>70)", value=True)
+                rsi_oversold = st.checkbox("RSI超卖(<30)", value=True)
+
+            with col3:
+                macd_golden_cross = st.checkbox("MACD金叉", value=True)
+                macd_death_cross = st.checkbox("MACD死叉", value=True)
+
+        alert_conditions = {
+            'change_alert_enabled': True,
+            'change_above': change_above,
+            'change_below': change_below,
+            'volume_alert_enabled': True,
+            'volume_ratio_threshold': volume_ratio_threshold,
+            'indicator_alert_enabled': True,
+            'rsi_overbought': rsi_overbought,
+            'rsi_oversold': rsi_oversold,
+            'macd_golden_cross': macd_golden_cross,
+            'macd_death_cross': macd_death_cross
+        }
+
+        # 批量检查按钮
+        if st.button("🔍 批量检查预警", key="check_batch_alert"):
+            if watchlist:
+                with st.spinner(f'正在检查 {len(watchlist)} 只自选股的预警...'):
+                    batch_result = AlertSystem.scan_watchlist_alerts(watchlist, alert_conditions)
+
+                if batch_result['数据状态'] == '正常':
+                    st.success(f"✅ 检查完成！发现 {batch_result['预警总数']} 个预警")
+
+                    if batch_result['预警列表']:
+                        # 按预警级别分组显示
+                        high_alerts = [a for a in batch_result['预警列表'] if a['预警级别'] == '高']
+                        medium_alerts = [a for a in batch_result['预警列表'] if a['预警级别'] == '中']
+                        low_alerts = [a for a in batch_result['预警列表'] if a['预警级别'] == '低']
+
+                        # 高级预警
+                        if high_alerts:
+                            st.divider()
+                            st.subheader("🔴 高级预警")
+                            for alert in high_alerts:
+                                with st.expander(f"{alert['股票名称']} ({alert['股票代码']}) - {alert['预警类型']}"):
+                                    st.write(f"**说明：** {alert['说明']}")
+                                    st.write(f"**当前价格：** ¥{alert['当前价格']:.2f}")
+                                    st.write(f"**当前涨跌幅：** {alert['当前涨跌幅']}")
+
+                        # 中级预警
+                        if medium_alerts:
+                            st.divider()
+                            st.subheader("🟡 中级预警")
+                            for alert in medium_alerts:
+                                with st.expander(f"{alert['股票名称']} ({alert['股票代码']}) - {alert['预警类型']}"):
+                                    st.write(f"**说明：** {alert['说明']}")
+
+                        # 低级预警
+                        if low_alerts:
+                            st.divider()
+                            st.subheader("🟢 低级预警")
+                            for alert in low_alerts:
+                                with st.expander(f"{alert['股票名称']} ({alert['股票代码']}) - {alert['预警类型']}"):
+                                    st.write(f"**说明：** {alert['说明']}")
+                    else:
+                        st.info("👍 自选股中未触发任何预警条件")
+            else:
+                st.warning("⚠️ 自选股列表为空，请先添加股票到自选股")
+
+with tab_vp:
+    st.subheader("📊 量价关系战法")
+    st.caption("检测缩量回调、放量突破、顶背离、底背离等量价信号")
+
+    # 股票代码输入
+    vp_symbol = st.text_input("股票代码", value=symbol, help="输入6位A股代码", key="vp_symbol")
+
+    if st.button("📊 分析量价关系", key="analyze_vp"):
+        with st.spinner('正在分析量价关系...'):
+            start_date = pd.Timestamp.now() - pd.Timedelta(days=60)
+            s_date_str = start_date.strftime("%Y%m%d")
+            e_date_str = pd.Timestamp.now().strftime("%Y%m%d")
+
+            df = db.get_history_data(vp_symbol, start_date=s_date_str, end_date=e_date_str)
+
+            if not df.empty and len(df) > 20:
+                vp_result = AdvancedAlgo.detect_volume_price_signals(df)
+
+                if vp_result['数据状态'] == '正常':
+                    st.success(f"✅ 分析完成！发现 {vp_result['信号数量']} 个量价信号")
+
+                    if vp_result['信号列表']:
+                        for signal in vp_result['信号列表']:
+                            level_color = {
+                                '强': '🔥',
+                                '中': '🟡',
+                                '弱': '🟢'
+                            }
+                            with st.expander(f"{level_color.get(signal['信号强度'], '⚪')} {signal['信号类型']} - {signal['信号强度']}"):
+                                st.write(f"**操作建议：** {signal['操作建议']}")
+                                st.write(f"**说明：** {signal['说明']}")
+                    else:
+                        st.info("👍 当前未发现明显的量价信号")
+                else:
+                    st.error(f"❌ {vp_result['数据状态']}")
+            else:
+                st.warning("⚠️ 数据不足，需要至少20天数据")
+
+with tab_ma:
+    st.subheader("📈 均线战法")
+    st.caption("分析均线多头排列、金叉死叉、支撑压力")
+
+    # 股票代码输入
+    ma_symbol = st.text_input("股票代码", value=symbol, help="输入6位A股代码", key="ma_symbol")
+
+    # 均线参数设置
+    col_ma1, col_ma2, col_ma3 = st.columns(3)
+    with col_ma1:
+        ma_short = st.number_input("短期均线", value=5, min_value=3, max_value=20)
+    with col_ma2:
+        ma_medium = st.number_input("中期均线", value=10, min_value=5, max_value=30)
+    with col_ma3:
+        ma_long = st.number_input("长期均线", value=20, min_value=10, max_value=60)
+
+    if st.button("📊 分析均线", key="analyze_ma"):
+        with st.spinner('正在分析均线...'):
+            start_date = pd.Timestamp.now() - pd.Timedelta(days=90)
+            s_date_str = start_date.strftime("%Y%m%d")
+            e_date_str = pd.Timestamp.now().strftime("%Y%m%d")
+
+            df = db.get_history_data(ma_symbol, start_date=s_date_str, end_date=e_date_str)
+
+            if not df.empty and len(df) > ma_long:
+                ma_result = AdvancedAlgo.analyze_moving_average(df, short=ma_short, medium=ma_medium, long=ma_long)
+
+                if ma_result['数据状态'] == '正常':
+                    st.success(f"✅ 分析完成！发现 {ma_result['信号数量']} 个均线信号")
+
+                    # 显示均线值
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric(f"MA{ma_short}", f"¥{ma_result['MA{ma_short}']:.2f}")
+                    with col2:
+                        st.metric(f"MA{ma_medium}", f"¥{ma_result['MA{ma_medium}']:.2f}")
+                    with col3:
+                        st.metric(f"MA{ma_long}", f"¥{ma_result['MA{ma_long}']:.2f}")
+
+                    if ma_result['信号列表']:
+                        st.divider()
+                        for signal in ma_result['信号列表']:
+                            level_color = {
+                                '强': '🔥',
+                                '中': '🟡',
+                                '弱': '🟢'
+                            }
+                            with st.expander(f"{level_color.get(signal['信号强度'], '⚪')} {signal['信号类型']} - {signal['信号强度']}"):
+                                st.write(f"**操作建议：** {signal['操作建议']}")
+                                st.write(f"**说明：** {signal['说明']}")
+                    else:
+                        st.info("👍 当前未发现明显的均线信号")
+                else:
+                    st.error(f"❌ {ma_result['数据状态']}")
+            else:
+                st.warning(f"⚠️ 数据不足，需要至少{ma_long}天数据")
+
+with tab_new_stock:
+    st.subheader("🆕 次新股战法")
+    st.caption("分析开板次新股、情绪周期、换手率")
+
+    # 股票代码输入
+    new_stock_symbol = st.text_input("股票代码", value=symbol, help="输入6位A股代码", key="new_stock_symbol")
+
+    if st.button("📊 分析次新股", key="analyze_new_stock"):
+        with st.spinner('正在分析次新股...'):
+            start_date = pd.Timestamp.now() - pd.Timedelta(days=180)
+            s_date_str = start_date.strftime("%Y%m%d")
+            e_date_str = pd.Timestamp.now().strftime("%Y%m%d")
+
+            df = db.get_history_data(new_stock_symbol, start_date=s_date_str, end_date=e_date_str)
+
+            if not df.empty and len(df) > 10:
+                new_stock_result = AdvancedAlgo.analyze_new_stock(df, new_stock_symbol)
+
+                if new_stock_result['数据状态'] == '正常':
+                    st.success(f"✅ 分析完成！上市{new_stock_result['上市天数']}天")
+
+                    # 显示基本信息
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.metric("上市天数", f"{new_stock_result['上市天数']}天")
+                    with col2:
+                        st.metric("当前阶段", new_stock_result['当前阶段'])
+
+                    # 显示操作建议
+                    st.divider()
+                    st.write("**💡 操作建议：**")
+                    st.success(new_stock_result['操作建议'])
+
+                    # 显示信号列表
+                    if new_stock_result['信号列表']:
+                        st.divider()
+                        for signal in new_stock_result['信号列表']:
+                            level_color = {
+                                '强': '🔥',
+                                '中': '🟡',
+                                '弱': '🟢'
+                            }
+                            with st.expander(f"{level_color.get(signal['信号强度'], '⚪')} {signal['信号类型']} - {signal['信号强度']}"):
+                                st.write(f"**操作建议：** {signal['操作建议']}")
+                                st.write(f"**说明：** {signal['说明']}")
+                else:
+                    st.error(f"❌ {new_stock_result['数据状态']}")
+                    if '说明' in new_stock_result:
+                        st.info(f"💡 {new_stock_result['说明']}")
+            else:
+                st.warning("⚠️ 数据不足，需要至少10天数据")
