@@ -6,30 +6,35 @@ import re
 
 # 定义要提取的功能及其对应的行号范围
 FUNCTIONS = {
-    'backtest': {
-        'start': 1094,
-        'end': 1803,
-        'file': 'main_old.py'
+    'alert': {
+        'start': 3620,
+        'end': 3816,
+        'file': 'main_old.py',
+        'placeholder': 'st.info("💡 智能预警功能正在开发中...")'
     },
-    'long_hu_bang': {
-        'start': 1936,
-        'end': 2156,
-        'file': 'main_old.py'
+    'volume_price': {
+        'start': 3817,
+        'end': 3854,
+        'file': 'main_old.py',
+        'placeholder': 'st.info("💡 量价关系功能正在开发中...")'
     },
-    'auction': {
-        'start': 2360,
-        'end': 2734,
-        'file': 'main_old.py'
+    'ma_strategy': {
+        'start': 3855,
+        'end': 3911,
+        'file': 'main_old.py',
+        'placeholder': 'st.info("💡 均线战法功能正在开发中...")'
     },
-    'sentiment': {
-        'start': 2735,
-        'end': 3469,
-        'file': 'main_old.py'
+    'new_stock': {
+        'start': 3912,
+        'end': 3963,
+        'file': 'main_old.py',
+        'placeholder': 'st.info("💡 次新股功能正在开发中...")'
     },
-    'hot_topics': {
-        'start': 3470,
-        'end': 3619,
-        'file': 'main_old.py'
+    'capital': {
+        'start': 3964,
+        'end': 4113,
+        'file': 'main_old.py',
+        'placeholder': 'st.info("💡 游资席位功能正在开发中...")'
     }
 }
 
@@ -51,7 +56,7 @@ def extract_code(file_path, start_line, end_line):
         print(f"Error extracting code: {e}")
         return None
 
-def update_ui_module(module_name, code):
+def update_ui_module(module_name, code, placeholder):
     """更新UI模块文件"""
     module_path = f'ui/{module_name}.py'
     
@@ -61,7 +66,7 @@ def update_ui_module(module_name, code):
             content = f.read()
         
         # 替换占位符
-        new_content = content.replace('    st.info("功能正在开发中...")', code)
+        new_content = content.replace(placeholder, code)
         
         # 写回文件
         with open(module_path, 'w', encoding='utf-8') as f:
@@ -80,9 +85,10 @@ if __name__ == '__main__':
     for func_name, info in FUNCTIONS.items():
         print(f"\nProcessing {func_name}...")
         code = extract_code(info['file'], info['start'], info['end'])
+        placeholder = info.get('placeholder', '    st.info("功能正在开发中...")')
         
         if code:
-            success = update_ui_module(func_name, code)
+            success = update_ui_module(func_name, code, placeholder)
             if success:
                 print(f"  -> {func_name} migrated successfully")
             else:
