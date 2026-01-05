@@ -7,6 +7,7 @@ from logic.algo_advanced import AdvancedAlgo
 from logic.ai_agent import DeepSeekAgent
 from logic.comparator import StockComparator
 from logic.backtest import BacktestEngine
+from logic.formatter import Formatter
 from config import Config
 import os
 
@@ -4264,10 +4265,10 @@ with tab_risk:
             with col2:
                 st.metric("止损比例", position_result['止损比例'])
             with col3:
-                st.metric("建议仓位", f"¥{position_result['建议仓位']:.2f}")
+                st.metric("建议仓位", Formatter.format_amount(position_result['建议仓位']))
 
             st.write(f"**仓位占比：** {position_result['仓位占比']}")
-            st.write(f"**单笔最大损失：** ¥{position_result['单笔最大损失']:.2f}")
+            st.write(f"**单笔最大损失：** {Formatter.format_amount(position_result['单笔最大损失'])}")
 
     elif risk_mode == "止损止盈检查":
         st.divider()
@@ -4299,14 +4300,13 @@ with tab_risk:
                 # 显示详细信息
                 col1, col2, col3 = st.columns(3)
                 with col1:
-                    st.metric("当前价格", f"¥{check_result['当前价格']:.2f}")
-                with col2:
-                    st.metric("买入价格", f"¥{check_result['买入价格']:.2f}")
-                with col3:
+                    st.metric("当前价格", Formatter.format_price(check_result['当前价格']))
+                                with col2:
+                                    st.metric("买入价格", Formatter.format_price(check_result['买入价格']))                with col3:
                     st.metric("盈亏比例", check_result['盈亏比例'])
 
-                st.write(f"**止损价：** ¥{check_result['止损价']:.2f}")
-                st.write(f"**止盈价：** ¥{check_result['止盈价']:.2f}")
+                st.write(f"**止损价：** {Formatter.format_price(check_result['止损价'])}")
+                st.write(f"**止盈价：** {Formatter.format_price(check_result['止盈价'])}")
 
                 if check_result['状态'] == '持有':
                     st.write(f"**距离止损：** {check_result['距离止损']}")
