@@ -26,7 +26,30 @@ class DataManager:
         
         创建 daily_bars 表，如果不存在的话。
         表结构包含：symbol, date, open, high, low, close, volume, turnover_rate
+        同时创建索引以优化查询性能。
         """
+        query = '''
+        CREATE TABLE IF NOT EXISTS daily_bars (
+            symbol TEXT,
+            date TEXT,
+            open REAL,
+            high REAL,
+            low REAL,
+            close REAL,
+            volume REAL,
+            turnover_rate REAL,
+            PRIMARY KEY (symbol, date)
+        )
+        '''
+        self.conn.execute(query)
+        
+        # 创建索引以优化查询性能
+        try:
+            self.conn.execute('CREATE INDEX IF NOT EXISTS idx_symbol_date ON daily_bars(symbol, date)')
+            self.conn.commit()
+            logger.info("数据库索引创建成功")
+        except Exception as e:
+            logger.warning(f"数据库索引创建失败: {e}")
         query = '''
         CREATE TABLE IF NOT EXISTS daily_bars (
             symbol TEXT,
@@ -126,6 +149,38 @@ class DataManager:
         except Exception as e:
             logger.error(f"数据获取异常: {e}", exc_info=True)
             return pd.DataFrame()
+
+    def get_multiple_stocks(self, symbols: list) -> Dict[str, pd.DataFrame]:
+        """批量获取多只股票数据
+        
+        Args:
+            symbols: 股票代码列表
+            
+        Returns:
+            股票代码到 DataFrame 的字典
+        """
+        try:
+            if not symbols:
+                return {}
+            
+            symbols_str = "','".join(symbols)
+            query = f"SELECT * FROM daily_bars WHERE symbol IN ('{symbols_str}') ORDER BY symbol, date"
+            df = pd.read_sql(query, self.conn)
+            
+            if df.empty:
+                return {}
+            
+            # 按股票代码分组
+            result = {}
+            for symbol in symbols:
+                symbol_df = df[df['symbol'] == symbol].copy()
+                if not symbol_df.empty:
+                    result[symbol] = symbol_df
+            
+            return result
+        except Exception as e:
+            logger.error(f"批量获取股票数据失败: {e}", exc_info=True)
+            return {}
 
     def get_realtime_data(self, symbol: str) -> Optional[Dict[str, Any]]:
         """获取实时行情数据（使用1分钟K线，带60秒缓存）
