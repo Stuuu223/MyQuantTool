@@ -194,7 +194,22 @@ if 'pattern_combination_result' not in st.session_state:
 # st.caption("  • 🚀 Deploy（部署）：将应用部署到云端（需要账号）")
 # st.caption("  • ❌ Clear cache（清除缓存）：刷新数据和重置状态")
 
-# 添加功能标签页
+# 添加功能标签页分组（避免标签过多溢出）
+st.markdown("""
+<style>
+.stTabs [data-baseweb="tab-list"] {
+    gap: 8px;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+}
+.stTabs [data-baseweb="tab"] {
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# 主要功能标签页
 tab_single, tab_compare, tab_backtest, tab_sector, tab_lhb, tab_dragon, tab_auction, tab_sentiment, tab_hot_topics, tab_alert, tab_vp, tab_ma, tab_new_stock, tab_capital, tab_limit_up, tab_smart, tab_risk, tab_history, tab_settings = st.tabs(["📊 单股分析", "🔍 多股对比", "🧪 策略回测", "🔄 板块轮动", "🏆 龙虎榜", "🔥 龙头战法", "⚡ 集合竞价", "📈 情绪分析", "🎯 热点题材", "🔔 智能预警", "📊 量价关系", "📈 均线战法", "🆕 次新股", "💰 游资席位", "🎯 打板预测", "🤖 智能推荐", "⚠️ 风险管理", "📜 历史记录", "⚙️ 系统设置"])
 
 with st.sidebar:
