@@ -1,7 +1,7 @@
 """游资席位模块"""
 import streamlit as st
 import pandas as pd
-from logic.formatter import format_amount
+from logic.formatter import Formatter
 
 def render_capital_tab(db, config):
     st.subheader("💰 游资席位")
@@ -48,11 +48,11 @@ def render_capital_tab(db, config):
                         with st.expander(f"{record['游资名称']} - {record['股票名称']} ({record['股票代码']})"):
                             col1, col2, col3 = st.columns(3)
                             with col1:
-                                st.metric("买入金额", format_amount(record['买入金额']))
+                                st.metric("买入金额", Formatter.format_amount(record['买入金额']))
                             with col2:
-                                st.metric("卖出金额", format_amount(record['卖出金额']))
+                                st.metric("卖出金额", Formatter.format_amount(record['卖出金额']))
                             with col3:
-                                st.metric("净买入", format_amount(record['净买入']))
+                                st.metric("净买入", Formatter.format_amount(record['净买入']))
                             st.write(f"**上榜日：** {record['上榜日']}")
                             st.write(f"**营业部：** {record['营业部名称']}")
                 else:
@@ -101,10 +101,9 @@ def render_capital_tab(db, config):
                 st.divider()
                 col1, col2 = st.columns(2)
                 with col1:
-                    st.metric("总买入金额", format_amount(pattern_result['总买入金额']))
+                    st.metric("总买入金额", Formatter.format_amount(pattern_result['总买入金额']))
                 with col2:
-                    st.metric("总卖出金额", format_amount(pattern_result['总卖出金额']))
-
+                    st.metric("总卖出金额", Formatter.format_amount(pattern_result['总卖出金额']))
                 # 显示操作记录
                 if pattern_result['操作记录']:
                     st.divider()
@@ -114,11 +113,11 @@ def render_capital_tab(db, config):
                         with st.expander(f"{record['日期']} - {record['股票名称']} ({record['股票代码']})"):
                             col1, col2, col3 = st.columns(3)
                             with col1:
-                                st.metric("买入金额", format_amount(record['买入金额']))
+                                st.metric("买入金额", Formatter.format_amount(record['买入金额']))
                             with col2:
-                                st.metric("卖出金额", format_amount(record['卖出金额']))
+                                st.metric("卖出金额", Formatter.format_amount(record['卖出金额']))
                             with col3:
-                                st.metric("净买入", format_amount(record['净买入']))
+                                st.metric("净买入", Formatter.format_amount(record['净买入']))
             else:
                 st.error(f"❌ {pattern_result['数据状态']}")
                 if '说明' in pattern_result:
