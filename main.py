@@ -8,6 +8,7 @@ from logic.ai_agent import DeepSeekAgent
 from logic.comparator import StockComparator
 from logic.backtest import BacktestEngine
 from logic.formatter import Formatter
+from logic.tab_manager import TabManager
 from config import Config
 import os
 
@@ -214,6 +215,28 @@ tab_single, tab_compare, tab_backtest, tab_sector, tab_lhb, tab_dragon, tab_auct
 
 with st.sidebar:
     st.header("🎮 控制台")
+    
+    # 标签页管理
+    with st.expander("📑 功能导航", expanded=False):
+        # 分组选择
+        group_id = TabManager.render_group_selector()
+        
+        # 搜索框
+        search_keyword = TabManager.render_search_box()
+        
+        # 显示统计信息
+        if not search_keyword:
+            TabManager.render_tab_statistics()
+        
+        # 显示快捷键提示
+        TabManager.render_shortcut_hint()
+        
+        # 收藏栏
+        if TabManager.get_favorite_tabs():
+            st.divider()
+            TabManager.render_favorites_bar()
+    
+    st.divider()
     
     # 获取自选股列表
     watchlist = config.get('watchlist', [])
