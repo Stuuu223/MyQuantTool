@@ -182,26 +182,6 @@ class CapitalAnalyzer:
                 '龙虎榜总记录数': len(lhb_df),
                 '说明': f'在 {len(lhb_df)} 条龙虎榜记录中，找到 {matched_count} 条游资操作记录'
             }
-                    style = "激进买入"
-                elif stats['卖出金额'] > stats['买入金额'] * 2:
-                    style = "大幅卖出"
-                else:
-                    style = "均衡操作"
-
-                capital_summary.append({
-                    '游资名称': capital_name,
-                    '买入次数': stats['买入次数'],
-                    '卖出次数': stats['卖出次数'],
-                    '总操作次数': total_trades,
-                    '买入金额': stats['买入金额'],
-                    '卖出金额': stats['卖出金额'],
-                    '净买入': net_flow,
-                    '操作风格': style,
-                    '操作股票数': len(stats['操作股票'])
-                })
-
-            # 按净买入金额排序
-            capital_summary.sort(key=lambda x: x['净买入'], reverse=True)
 
             return {
                 '数据状态': '正常',
