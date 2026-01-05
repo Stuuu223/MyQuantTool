@@ -49,11 +49,18 @@ complete_*.py
 safe_*.py
 simple_*.py
 main_backup.py
-main_*.py
+main_old.py
+main_new.py
 build_project.py
 *.patch
 修复指南.md
 优化建议.md
+架构提示词.md
+
+# Coverage
+.coverage
+htmlcov/
+.pytest_cache/
 
 # Data files (optional, uncomment if you want to ignore data directory)
 # data/
