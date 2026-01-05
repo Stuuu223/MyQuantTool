@@ -4301,8 +4301,9 @@ with tab_risk:
                 col1, col2, col3 = st.columns(3)
                 with col1:
                     st.metric("当前价格", Formatter.format_price(check_result['当前价格']))
-                                with col2:
-                                    st.metric("买入价格", Formatter.format_price(check_result['买入价格']))                with col3:
+                with col2:
+                    st.metric("买入价格", Formatter.format_price(check_result['买入价格']))
+                with col3:
                     st.metric("盈亏比例", check_result['盈亏比例'])
 
                 st.write(f"**止损价：** {Formatter.format_price(check_result['止损价'])}")
