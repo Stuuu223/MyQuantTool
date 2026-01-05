@@ -17,6 +17,13 @@ class LimitUpPredictor:
         基于历史涨停数据预测次日成功率
         """
         try:
+            # 验证股票代码格式
+            if not symbol or len(symbol) != 6 or not symbol.isdigit():
+                return {
+                    '数据状态': '股票代码错误',
+                    '说明': '股票代码格式不正确，应为6位数字'
+                }
+
             db = DataManager()
 
             # 获取历史数据
@@ -26,10 +33,16 @@ class LimitUpPredictor:
 
             df = db.get_history_data(symbol, start_date=s_date_str, end_date=e_date_str)
 
-            if df.empty or len(df) < 30:
+            if df is None or df.empty:
+                return {
+                    '数据状态': '无法获取数据',
+                    '说明': f'无法获取股票 {symbol} 的历史数据，请检查网络连接或股票代码'
+                }
+
+            if len(df) < 30:
                 return {
                     '数据状态': '数据不足',
-                    '说明': '需要至少30天历史数据'
+                    '说明': f'该股票只有 {len(df)} 天数据，需要至少30天历史数据'
                 }
 
             # 识别涨停板
