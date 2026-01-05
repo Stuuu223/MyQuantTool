@@ -10,6 +10,8 @@ from logic.backtest import BacktestEngine
 from logic.formatter import Formatter
 from config import Config
 import os
+import concurrent.futures
+import threading
 
 st.set_page_config(page_title="个人化A股智能终端", layout="wide", page_icon="📈", menu_items={
     'Get Help': None,
@@ -63,10 +65,20 @@ def show_stock_analysis_modal(symbol, stock_name=None):
         with st.spinner(f'正在获取 {stock_name} 数据...'):
             df = db.get_history_data(symbol, start_date=s_date_str, end_date=e_date_str)
         
+        # 尝试获取实时数据
+        realtime_data = db.get_realtime_data(symbol)
+        
         if not df.empty and len(df) > 30:
-            current_price = df.iloc[-1]['close']
-            prev_close = df.iloc[-2]['close']
-            change_pct = (current_price - prev_close) / prev_close * 100
+            # 优先使用实时数据
+            if realtime_data:
+                current_price = realtime_data['price']
+                change_pct = realtime_data['change_percent']
+                st.success(f"🟢 实时数据已更新 ({realtime_data['timestamp']})")
+            else:
+                current_price = df.iloc[-1]['close']
+                prev_close = df.iloc[-2]['close']
+                change_pct = (current_price - prev_close) / prev_close * 100
+                st.info("⚪ 使用历史数据（实时数据获取失败）")
             
             # 计算技术指标
             atr = QuantAlgo.calculate_atr(df)
@@ -425,18 +437,39 @@ with tab_single:
         
         💡 **新手建议**：不要只看一个指标，要综合判断。先用模拟盘练习，从小资金开始！
         """)
-    
-    if symbol:
+
+    # 添加"开始分析"按钮，避免首次访问自动加载数据
+    if symbol and st.button("🚀 开始分析", key="start_analysis"):
         s_date_str = start_date.strftime("%Y%m%d")
         e_date_str = pd.Timestamp.now().strftime("%Y%m%d")
-        
+
         with st.spinner('正在连接交易所数据管道...'):
             df = db.get_history_data(symbol, start_date=s_date_str, end_date=e_date_str)
-        
+
+        # 获取实时数据（带缓存，60秒内直接使用缓存）
+        realtime_data = db.get_realtime_data(symbol)
+
         if not df.empty and len(df) > 30:
-            current_price = df.iloc[-1]['close']
-            prev_close = df.iloc[-2]['close']
-            change_pct = (current_price - prev_close) / prev_close * 100
+            # 优先使用实时数据
+            if realtime_data:
+                current_price = realtime_data['price']
+                change_pct = realtime_data['change_percent']
+
+                # 根据是否在交易时间显示不同的提示
+                is_trading = realtime_data.get('is_trading', False)
+                if is_trading:
+                    st.success(f"🟢 实时数据已更新 ({realtime_data['timestamp']})")
+                else:
+                    st.info(f"📊 收盘数据 ({realtime_data['timestamp']})")
+            else:
+                current_price = df.iloc[-1]['close']
+                prev_close = df.iloc[-2]['close']
+                change_pct = (current_price - prev_close) / prev_close * 100
+                st.info("⚪ 使用历史数据（数据获取失败）")
+                current_price = df.iloc[-1]['close']
+                prev_close = df.iloc[-2]['close']
+                change_pct = (current_price - prev_close) / prev_close * 100
+                st.info("⚪ 使用历史数据（实时数据获取失败）")
             
             # 计算各项技术指标
             atr = QuantAlgo.calculate_atr(df)
@@ -2790,21 +2823,33 @@ with tab_sentiment:
                     # 龙头股列表
                     if limit_data['龙头股']:
                         st.subheader("🔥 龙头股列表")
-                        
+
                         dragon_df = pd.DataFrame(limit_data['龙头股'])
-                        
-                        # 选择要显示的列
-                        display_df = dragon_df[['代码', '名称', '最新价', '涨跌幅', '成交额', '换手率', '龙头评分']].copy()
-                        
-                        # 格式化成交额
-                        display_df['成交额'] = display_df['成交额'].apply(format_amount)
-                        
-                        # 格式化涨跌幅
-                        display_df['涨跌幅'] = display_df['涨跌幅'].apply(lambda x: f"{x:+.2f}%")
-                        
-                        # 格式化换手率
-                        display_df['换手率'] = display_df['换手率'].apply(lambda x: f"{x:.2f}%")
-                        
+
+                        # 打印调试信息
+                        print(f"龙头股数据列名: {dragon_df.columns.tolist()}")
+                        print(f"龙头股数据示例: {dragon_df.head(1).to_dict() if not dragon_df.empty else '空'}")
+
+                        # 检查实际列名并选择要显示的列
+                        available_cols = dragon_df.columns.tolist()
+                        required_cols = ['代码', '名称', '最新价', '涨跌幅', '成交额', '换手率', '龙头评分']
+
+                        # 只选择存在的列
+                        display_cols = [col for col in required_cols if col in available_cols]
+                        display_df = dragon_df[display_cols].copy()
+
+                        # 格式化成交额（如果存在）
+                        if '成交额' in display_df.columns:
+                            display_df['成交额'] = display_df['成交额'].apply(format_amount)
+
+                        # 格式化涨跌幅（如果存在）
+                        if '涨跌幅' in display_df.columns:
+                            display_df['涨跌幅'] = display_df['涨跌幅'].apply(lambda x: f"{x:+.2f}%")
+
+                        # 格式化换手率（如果存在）
+                        if '换手率' in display_df.columns:
+                            display_df['换手率'] = display_df['换手率'].apply(lambda x: f"{x:.2f}%")
+
                         # 显示表格
                         st.dataframe(display_df, use_container_width=True)
                         
