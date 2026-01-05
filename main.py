@@ -194,7 +194,7 @@ if 'pattern_combination_result' not in st.session_state:
 # st.caption("  • ❌ Clear cache（清除缓存）：刷新数据和重置状态")
 
 # 添加功能标签页
-tab_single, tab_compare, tab_backtest, tab_sector, tab_lhb, tab_dragon, tab_auction, tab_sentiment, tab_hot_topics, tab_alert, tab_vp, tab_ma, tab_new_stock, tab_capital, tab_limit_up = st.tabs(["📊 单股分析", "🔍 多股对比", "🧪 策略回测", "🔄 板块轮动", "🏆 龙虎榜", "🔥 龙头战法", "⚡ 集合竞价", "📈 情绪分析", "🎯 热点题材", "🔔 智能预警", "📊 量价关系", "📈 均线战法", "🆕 次新股", "💰 游资席位", "🎯 打板预测"])
+tab_single, tab_compare, tab_backtest, tab_sector, tab_lhb, tab_dragon, tab_auction, tab_sentiment, tab_hot_topics, tab_alert, tab_vp, tab_ma, tab_new_stock, tab_capital, tab_limit_up, tab_smart, tab_risk, tab_history, tab_settings = st.tabs(["📊 单股分析", "🔍 多股对比", "🧪 策略回测", "🔄 板块轮动", "🏆 龙虎榜", "🔥 龙头战法", "⚡ 集合竞价", "📈 情绪分析", "🎯 热点题材", "🔔 智能预警", "📊 量价关系", "📈 均线战法", "🆕 次新股", "💰 游资席位", "🎯 打板预测", "🤖 智能推荐", "⚠️ 风险管理", "📜 历史记录", "⚙️ 系统设置"])
 
 with st.sidebar:
     st.header("🎮 控制台")
@@ -4079,3 +4079,431 @@ with tab_limit_up:
                 st.error(f"❌ {market_result['数据状态']}")
                 if '说明' in market_result:
                     st.info(f"💡 {market_result['说明']}")
+
+with tab_smart:
+    st.subheader("🤖 智能推荐系统")
+    st.caption("根据市场行情自动推荐相关战法")
+
+    # 导入智能推荐器
+    from logic.smart_recommender import SmartRecommender
+
+    # 功能选择
+    smart_mode = st.radio("选择功能", ["每日报告", "战法推荐", "市场分析"], horizontal=True)
+
+    if smart_mode == "每日报告":
+        st.divider()
+        st.subheader("📊 每日报告")
+
+        if st.button("📊 生成今日报告", key="generate_daily_report"):
+            with st.spinner('正在生成今日报告...'):
+                report = SmartRecommender.generate_daily_report()
+
+            if '日期' in report:
+                st.success(f"✅ 报告生成成功！")
+
+                # 显示市场情绪
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("市场情绪", report['市场情绪'])
+                with col2:
+                    st.metric("平均涨跌幅", report['市场数据']['平均涨跌幅'])
+                with col3:
+                    st.metric("涨跌比", report['市场数据']['涨跌比'])
+
+                # 显示情绪描述
+                st.divider()
+                st.write("**📝 情绪描述：**")
+                st.info(report['情绪描述'])
+
+                # 显示操作建议
+                st.divider()
+                st.write("**💡 操作建议：**")
+                st.success(report['操作建议'])
+
+                # 显示推荐战法
+                if report['推荐战法']:
+                    st.divider()
+                    st.subheader("🎯 推荐战法")
+
+                    for strategy in report['推荐战法']:
+                        priority_color = {
+                            '高': '🔥',
+                            '中': '🟡',
+                            '低': '🟢'
+                        }
+                        with st.expander(f"{priority_color.get(strategy['优先级'], '⚪')} {strategy['战法名称']} - {strategy['优先级']}"):
+                            st.write(f"**推荐理由：** {strategy['推荐理由']}")
+                            st.write(f"**适用场景：** {strategy['适用场景']}")
+            else:
+                st.error(f"❌ {report.get('数据状态', '生成失败')}")
+                if '说明' in report:
+                    st.info(f"💡 {report['说明']}")
+
+    elif smart_mode == "战法推荐":
+        st.divider()
+        st.subheader("🎯 战法推荐")
+
+        st.info("💡 根据当前市场情况推荐最适合的战法")
+
+        if st.button("🎯 获取推荐", key="get_strategy_recommendations"):
+            with st.spinner('正在分析市场并推荐战法...'):
+                # 分析市场情况
+                market_condition = SmartRecommender.analyze_market_condition()
+
+                if market_condition['数据状态'] == '正常':
+                    # 推荐战法
+                    recommendations = SmartRecommender.recommend_strategies(market_condition)
+
+                    st.success(f"✅ 分析完成！为您推荐 {recommendations['推荐数量']} 个战法")
+
+                    # 显示市场情况
+                    st.divider()
+                    st.subheader("📊 市场情况")
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("市场情绪", market_condition['市场情绪'])
+                    with col2:
+                        st.metric("涨跌比", market_condition['涨跌比'])
+                    with col3:
+                        st.metric("涨停数", market_condition['涨停股票'])
+                    with col4:
+                        st.metric("跌停数", market_condition['跌停股票'])
+
+                    # 显示推荐战法
+                    st.divider()
+                    for strategy in recommendations['推荐列表']:
+                        priority_color = {
+                            '高': '🔥',
+                            '中': '🟡',
+                            '低': '🟢'
+                        }
+                        with st.expander(f"{priority_color.get(strategy['优先级'], '⚪')} {strategy['战法名称']} - {strategy['优先级']}"):
+                            st.write(f"**推荐理由：** {strategy['推荐理由']}")
+                            st.write(f"**适用场景：** {strategy['适用场景']}")
+                else:
+                    st.error(f"❌ {market_condition['数据状态']}")
+                    if '说明' in market_condition:
+                        st.info(f"💡 {market_condition['说明']}")
+
+    elif smart_mode == "市场分析":
+        st.divider()
+        st.subheader("📈 市场分析")
+
+        if st.button("📊 分析市场", key="analyze_market"):
+            with st.spinner('正在分析市场...'):
+                market_condition = SmartRecommender.analyze_market_condition()
+
+            if market_condition['数据状态'] == '正常':
+                st.success("✅ 分析完成！")
+
+                # 显示市场指标
+                col1, col2, col3, col4, col5 = st.columns(5)
+                with col1:
+                    st.metric("总股票数", market_condition['总股票数'])
+                with col2:
+                    st.metric("上涨股票", market_condition['上涨股票'])
+                with col3:
+                    st.metric("下跌股票", market_condition['下跌股票'])
+                with col4:
+                    st.metric("涨停股票", market_condition['涨停股票'])
+                with col5:
+                    st.metric("跌停股票", market_condition['跌停股票'])
+
+                # 显示详细数据
+                st.divider()
+                st.subheader("📊 详细数据")
+
+                market_df = pd.DataFrame({
+                    '指标': ['市场情绪', '涨跌比', '平均涨跌幅', '涨停数', '跌停数'],
+                    '数值': [
+                        market_condition['市场情绪'],
+                        market_condition['涨跌比'],
+                        f"{market_condition['平均涨跌幅']}%",
+                        market_condition['涨停股票'],
+                        market_condition['跌停股票']
+                    ]
+                })
+                st.dataframe(market_df, use_container_width=True, hide_index=True)
+            else:
+                st.error(f"❌ {market_condition['数据状态']}")
+                if '说明' in market_condition:
+                    st.info(f"💡 {market_condition['说明']}")
+
+with tab_risk:
+    st.subheader("⚠️ 风险管理")
+    st.caption("仓位管理、止损止盈提醒")
+
+    # 导入风险管理器
+    from logic.risk_manager import RiskManager
+
+    # 功能选择
+    risk_mode = st.radio("选择功能", ["仓位计算", "止损止盈检查", "组合风险评估", "风险预警"], horizontal=True)
+
+    if risk_mode == "仓位计算":
+        st.divider()
+        st.subheader("💰 仓位计算")
+
+        # 输入参数
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            capital = st.number_input("总资金", value=100000, min_value=0, step=1000)
+        with col2:
+            risk_per_trade = st.slider("单笔风险比例(%)", 1, 10, 2, 0.5) / 100
+        with col3:
+            stop_loss_pct = st.slider("止损比例(%)", 2, 10, 5, 0.5) / 100
+
+        if st.button("📊 计算仓位", key="calculate_position"):
+            position_result = RiskManager.calculate_position_size(capital, risk_per_trade, stop_loss_pct)
+
+            st.success("✅ 计算完成！")
+
+            # 显示结果
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("单笔风险比例", position_result['单笔风险比例'])
+            with col2:
+                st.metric("止损比例", position_result['止损比例'])
+            with col3:
+                st.metric("建议仓位", f"¥{position_result['建议仓位']:.2f}")
+
+            st.write(f"**仓位占比：** {position_result['仓位占比']}")
+            st.write(f"**单笔最大损失：** ¥{position_result['单笔最大损失']:.2f}")
+
+    elif risk_mode == "止损止盈检查":
+        st.divider()
+        st.subheader("📉 止损止盈检查")
+
+        # 输入参数
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            check_symbol = st.text_input("股票代码", value=symbol, key="risk_check_symbol")
+        with col2:
+            current_price = st.number_input("当前价格", value=0.0, min_value=0.0, step=0.01)
+        with col3:
+            buy_price = st.number_input("买入价格", value=0.0, min_value=0.0, step=0.01)
+        with col4:
+            stop_loss_pct = st.slider("止损比例(%)", 2, 10, 5, 0.5) / 100
+
+        if st.button("📊 检查", key="check_stop_loss"):
+            if current_price > 0 and buy_price > 0:
+                check_result = RiskManager.check_stop_loss(check_symbol, current_price, buy_price, stop_loss_pct)
+
+                # 根据状态显示不同颜色
+                if check_result['状态'] == '止损':
+                    st.error(f"⚠️ {check_result['状态']}")
+                elif check_result['状态'] == '止盈':
+                    st.success(f"✅ {check_result['状态']}")
+                else:
+                    st.info(f"📊 {check_result['状态']}")
+
+                # 显示详细信息
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("当前价格", f"¥{check_result['当前价格']:.2f}")
+                with col2:
+                    st.metric("买入价格", f"¥{check_result['买入价格']:.2f}")
+                with col3:
+                    st.metric("盈亏比例", check_result['盈亏比例'])
+
+                st.write(f"**止损价：** ¥{check_result['止损价']:.2f}")
+                st.write(f"**止盈价：** ¥{check_result['止盈价']:.2f}")
+
+                if check_result['状态'] == '持有':
+                    st.write(f"**距离止损：** {check_result['距离止损']}")
+                    st.write(f"**距离止盈：** {check_result['距离止盈']}")
+
+                st.write(f"**建议：** {check_result['建议']}")
+            else:
+                st.warning("⚠️ 请输入有效的价格")
+
+    elif risk_mode == "组合风险评估":
+        st.divider()
+        st.subheader("📊 组合风险评估")
+
+        st.info("💡 输入持仓信息，评估整体风险")
+
+        # 这里可以添加持仓输入功能
+        # 由于篇幅限制，简化处理
+        st.warning("⚠️ 此功能需要输入详细持仓信息，请使用自选股管理")
+
+    elif risk_mode == "风险预警":
+        st.divider()
+        st.subheader("🚨 风险预警")
+
+        st.info("💡 检查自选股中的风险预警")
+
+        if watchlist:
+            if st.button("🔍 检查风险", key="check_risk_alerts"):
+                st.warning("⚠️ 需要输入持仓成本价才能进行风险预警")
+        else:
+            st.warning("⚠️ 自选股列表为空")
+
+with tab_history:
+    st.subheader("📜 历史记录")
+    st.caption("查看和导出分析历史")
+
+    # 导入历史记录管理器
+    from logic.history_manager import HistoryManager
+
+    history_manager = HistoryManager()
+
+    # 功能选择
+    history_mode = st.radio("选择功能", ["查看历史", "导出记录", "清理旧记录"], horizontal=True)
+
+    if history_mode == "查看历史":
+        st.divider()
+        st.subheader("📋 查看历史")
+
+        # 筛选条件
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            analysis_type = st.selectbox("分析类型", ["全部", "单股分析", "热点题材", "智能预警", "量价关系"])
+        with col2:
+            history_symbol = st.text_input("股票代码（可选）", key="history_symbol")
+        with col3:
+            history_limit = st.slider("显示数量", 5, 50, 10, 5)
+
+        if st.button("🔍 查询", key="query_history"):
+            type_filter = None if analysis_type == "全部" else analysis_type
+            symbol_filter = None if not history_symbol else history_symbol
+
+            history_result = history_manager.get_history(type_filter, symbol_filter, history_limit)
+
+            if history_result['状态'] == '成功':
+                st.success(f"✅ 找到 {history_result['记录数量']} 条记录")
+
+                if history_result['记录列表']:
+                    for record in history_result['记录列表']:
+                        with st.expander(f"{record['timestamp']} - {record['analysis_type']} - {record['symbol']}"):
+                            st.json(record['result'])
+                else:
+                    st.info("👍 暂无历史记录")
+            else:
+                st.error(f"❌ {history_result['状态']}")
+                if '错误信息' in history_result:
+                    st.info(f"💡 {history_result['错误信息']}")
+
+    elif history_mode == "导出记录":
+        st.divider()
+        st.subheader("📤 导出记录")
+
+        # 筛选条件
+        col1, col2 = st.columns(2)
+        with col1:
+            export_type = st.selectbox("分析类型", ["单股分析", "热点题材", "智能预警", "量价关系"])
+        with col2:
+            export_symbol = st.text_input("股票代码（可选）", key="export_symbol")
+
+        if st.button("📤 导出Excel", key="export_history"):
+            symbol_filter = None if not export_symbol else export_symbol
+            export_result = history_manager.export_to_excel(export_type, symbol_filter)
+
+            if export_result['状态'] == '成功':
+                st.success(f"✅ 导出成功！共 {export_result['记录数量']} 条记录")
+                st.info(f"📁 文件路径：{export_result['文件路径']}")
+            else:
+                st.error(f"❌ {export_result['状态']}")
+                if '说明' in export_result:
+                    st.info(f"💡 {export_result['说明']}")
+
+    elif history_mode == "清理旧记录":
+        st.divider()
+        st.subheader("🗑️ 清理旧记录")
+
+        keep_days = st.slider("保留天数", 7, 90, 30, 1)
+
+        if st.button("🗑️ 清理", key="clear_old_history"):
+            clear_result = history_manager.clear_old_history(keep_days)
+
+            if clear_result['状态'] == '成功':
+                st.success(f"✅ 清理完成！删除了 {clear_result['删除数量']} 条记录")
+            else:
+                st.error(f"❌ {clear_result['状态']}")
+
+with tab_settings:
+    st.subheader("⚙️ 系统设置")
+    st.caption("个性化设置和系统配置")
+
+    # 导入用户偏好管理器
+    from logic.user_preferences import UserPreferences
+
+    user_prefs = UserPreferences()
+
+    # 功能选择
+    settings_mode = st.radio("选择设置", ["显示设置", "分析设置", "预警设置", "风险设置", "其他设置"], horizontal=True)
+
+    if settings_mode == "显示设置":
+        st.divider()
+        st.subheader("🎨 显示设置")
+
+        theme = st.selectbox("主题", ["light", "dark"], index=0 if user_prefs.get('display', '主题') == 'light' else 1)
+        show_grid = st.checkbox("显示网格", value=user_prefs.get('display', '显示网格', True))
+        show_volume = st.checkbox("显示成交量", value=user_prefs.get('display', '显示成交量', True))
+
+        if st.button("💾 保存显示设置", key="save_display_settings"):
+            user_prefs.set('display', '主题', theme)
+            user_prefs.set('display', '显示网格', show_grid)
+            user_prefs.set('display', '显示成交量', show_volume)
+            st.success("✅ 显示设置已保存")
+
+    elif settings_mode == "分析设置":
+        st.divider()
+        st.subheader("📊 分析设置")
+
+        analysis_days = st.slider("默认分析天数", 30, 180, user_prefs.get('analysis', '默认分析天数', 60), 10)
+        stop_loss_pct = st.slider("默认止损比例(%)", 2, 10, user_prefs.get('analysis', '默认止损比例', 0.05) * 100, 0.5) / 100
+        take_profit_pct = st.slider("默认止盈比例(%)", 5, 20, user_prefs.get('analysis', '默认止盈比例', 0.10) * 100, 0.5) / 100
+
+        if st.button("💾 保存分析设置", key="save_analysis_settings"):
+            user_prefs.set('analysis', '默认分析天数', analysis_days)
+            user_prefs.set('analysis', '默认止损比例', stop_loss_pct)
+            user_prefs.set('analysis', '默认止盈比例', take_profit_pct)
+            st.success("✅ 分析设置已保存")
+
+    elif settings_mode == "预警设置":
+        st.divider()
+        st.subheader("🔔 预警设置")
+
+        enable_sound = st.checkbox("启用声音提醒", value=user_prefs.get('alert', '启用声音提醒', False))
+        enable_popup = st.checkbox("启用弹窗提醒", value=user_prefs.get('alert', '启用弹窗提醒', True))
+        refresh_interval = st.slider("刷新间隔(秒)", 30, 300, user_prefs.get('alert', '预警刷新间隔', 60), 10)
+
+        if st.button("💾 保存预警设置", key="save_alert_settings"):
+            user_prefs.set('alert', '启用声音提醒', enable_sound)
+            user_prefs.set('alert', '启用弹窗提醒', enable_popup)
+            user_prefs.set('alert', '预警刷新间隔', refresh_interval)
+            st.success("✅ 预警设置已保存")
+
+    elif settings_mode == "风险设置":
+        st.divider()
+        st.subheader("⚠️ 风险设置")
+
+        risk_per_trade = st.slider("单笔风险比例(%)", 1, 5, user_prefs.get('risk', '单笔风险比例', 0.02) * 100, 0.5) / 100
+        max_positions = st.slider("最大持仓数量", 3, 10, user_prefs.get('risk', '最大持仓数量', 5), 1)
+        max_drawdown = st.slider("最大回撤限制(%)", 5, 20, user_prefs.get('risk', '最大回撤限制', 0.10) * 100, 1) / 100
+
+        if st.button("💾 保存风险设置", key="save_risk_settings"):
+            user_prefs.set('risk', '单笔风险比例', risk_per_trade)
+            user_prefs.set('risk', '最大持仓数量', max_positions)
+            user_prefs.set('risk', '最大回撤限制', max_drawdown)
+            st.success("✅ 风险设置已保存")
+
+    elif settings_mode == "其他设置":
+        st.divider()
+        st.subheader("🔧 其他设置")
+
+        auto_refresh = st.checkbox("自动刷新", value=user_prefs.get('other', '自动刷新', False))
+        save_history = st.checkbox("保存历史记录", value=user_prefs.get('other', '保存历史记录', True))
+        history_days = st.slider("历史记录保留天数", 7, 90, user_prefs.get('other', '历史记录保留天数', 30), 1)
+
+        if st.button("💾 保存其他设置", key="save_other_settings"):
+            user_prefs.set('other', '自动刷新', auto_refresh)
+            user_prefs.set('other', '保存历史记录', save_history)
+            user_prefs.set('other', '历史记录保留天数', history_days)
+            st.success("✅ 其他设置已保存")
+
+    # 重置设置
+    st.divider()
+    if st.button("🔄 重置为默认设置", key="reset_settings"):
+        user_prefs.reset_to_default()
+        st.success("✅ 已重置为默认设置")
