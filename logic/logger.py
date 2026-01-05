@@ -73,10 +73,6 @@ class Logger:
             >>> logger.info("应用启动")
             >>> logger.error("发生错误", exc_info=True)
         """
-            
-        Returns:
-            日志记录器实例
-        """
         logger_instance = Logger()
         if name is None:
             import inspect
