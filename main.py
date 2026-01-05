@@ -9,6 +9,7 @@ from logic.comparator import StockComparator
 from logic.backtest import BacktestEngine
 from logic.formatter import Formatter
 from logic.logger import get_logger
+from logic.error_handler import handle_errors, ValidationError
 from config import Config
 import os
 import concurrent.futures
