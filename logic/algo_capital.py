@@ -32,6 +32,7 @@ class CapitalAnalyzer:
         """
         try:
             import akshare as ak
+            from datetime import datetime
 
             # 获取龙虎榜数据
             try:
@@ -41,9 +42,20 @@ class CapitalAnalyzer:
                     else:
                         date_str = date.strftime("%Y%m%d")
                     lhb_df = ak.stock_lhb_detail_daily_em(date=date_str)
+                    print(f"获取 {date_str} 的龙虎榜数据，共 {len(lhb_df)} 条记录")
                 else:
-                    lhb_df = ak.stock_lhb_detail_daily_em()
+                    # 获取最近几天的数据
+                    today = datetime.now()
+                    lhb_df = ak.stock_lhb_detail_daily_em(date=today.strftime("%Y%m%d"))
+                    print(f"获取今日龙虎榜数据，共 {len(lhb_df)} 条记录")
+                    
+                    # 如果今日无数据，尝试获取昨天的
+                    if lhb_df.empty:
+                        yesterday = today - pd.Timedelta(days=1)
+                        lhb_df = ak.stock_lhb_detail_daily_em(date=yesterday.strftime("%Y%m%d"))
+                        print(f"今日无数据，获取昨日龙虎榜数据，共 {len(lhb_df)} 条记录")
             except Exception as e:
+                print(f"获取龙虎榜数据失败: {e}")
                 return {
                     '数据状态': '获取龙虎榜数据失败',
                     '错误信息': str(e),
@@ -51,19 +63,40 @@ class CapitalAnalyzer:
                 }
 
             if lhb_df is None or lhb_df.empty:
+                print("龙虎榜数据为空")
                 return {
                     '数据状态': '无数据',
-                    '说明': '暂无龙虎榜数据，可能今日无龙虎榜或数据未更新'
+                    '说明': '暂无龙虎榜数据，可能今日无龙虎榜或数据未更新。建议选择其他日期查看。'
                 }
+            
+            # 打印列名，帮助调试
+            print(f"龙虎榜数据列名: {lhb_df.columns.tolist()}")
+            print(f"前3条数据示例:\n{lhb_df.head(3)}")
 
             # 分析游资席位
             capital_analysis = []
             capital_stats = {}
+            matched_count = 0
+
+            # 打印所有营业部名称，帮助调试
+            unique_seats = lhb_df['营业部名称'].unique()
+            print(f"共找到 {len(unique_seats)} 个不同的营业部")
+            print(f"营业部列表: {unique_seats[:10]}...")  # 只打印前10个
 
             for _, row in lhb_df.iterrows():
-                # 检查是否为知名游资席位
+                seat_name = str(row['营业部名称'])
+                
+                # 检查是否为知名游资席位（使用模糊匹配）
                 for capital_name, seats in CapitalAnalyzer.FAMOUS_CAPITALISTS.items():
-                    if row['营业部名称'] in seats:
+                    # 精确匹配
+                    if seat_name in seats:
+                        matched = True
+                    # 模糊匹配：检查是否包含关键词
+                    else:
+                        matched = any(keyword in seat_name for keyword in seats)
+                    
+                    if matched:
+                        matched_count += 1
                         # 统计游资操作
                         if capital_name not in capital_stats:
                             capital_stats[capital_name] = {
@@ -75,9 +108,12 @@ class CapitalAnalyzer:
                             }
 
                         # 判断买卖方向
-                        if row['买入金额'] > 0:
+                        buy_amount = row.get('买入金额', 0)
+                        sell_amount = row.get('卖出金额', 0)
+                        
+                        if buy_amount > 0:
                             capital_stats[capital_name]['买入次数'] += 1
-                            capital_stats[capital_name]['买入金额'] += row['买入金额']
+                            capital_stats[capital_name]['买入金额'] += buy_amount
                         elif row['卖出金额'] > 0:
                             capital_stats[capital_name]['卖出次数'] += 1
                             capital_stats[capital_name]['卖出金额'] += row['卖出金额']
@@ -112,6 +148,40 @@ class CapitalAnalyzer:
 
                 # 判断操作风格
                 if stats['买入金额'] > stats['卖出金额'] * 2:
+                    style = "激进买入"
+                elif stats['卖出金额'] > stats['买入金额'] * 2:
+                    style = "激进卖出"
+                elif net_flow > 0:
+                    style = "偏多头"
+                else:
+                    style = "偏空头"
+
+                capital_summary.append({
+                    '游资名称': capital_name,
+                    '买入次数': stats['买入次数'],
+                    '卖出次数': stats['卖出次数'],
+                    '总操作次数': total_trades,
+                    '买入金额': stats['买入金额'],
+                    '卖出金额': stats['卖出金额'],
+                    '净流入': net_flow,
+                    '操作风格': style,
+                    '操作股票数': len(stats['操作股票'])
+                })
+
+            # 按净流入排序
+            capital_summary.sort(key=lambda x: x['净流入'], reverse=True)
+
+            print(f"分析完成：匹配到 {matched_count} 条游资操作记录，涉及 {len(capital_stats)} 个游资")
+
+            return {
+                '数据状态': '正常',
+                '游资统计': capital_summary,
+                '游资操作记录': capital_analysis,
+                '匹配记录数': matched_count,
+                '游资数量': len(capital_stats),
+                '龙虎榜总记录数': len(lhb_df),
+                '说明': f'在 {len(lhb_df)} 条龙虎榜记录中，找到 {matched_count} 条游资操作记录'
+            }
                     style = "激进买入"
                 elif stats['卖出金额'] > stats['买入金额'] * 2:
                     style = "大幅卖出"
