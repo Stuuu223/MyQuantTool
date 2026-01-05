@@ -59,6 +59,27 @@ def format_amount(amount):
     else:
         return f"{amount:.0f}"
 
+# 全局辅助函数：显示加载状态
+def show_loading_state(message: str, progress: float = 0):
+    """显示加载状态和进度"""
+    st.session_state.loading = True
+    if progress > 0:
+        st.session_state.progress = progress
+        st.session_state.progress_text = message
+    else:
+        st.session_state.loading_message = message
+
+# 全局辅助函数：隐藏加载状态
+def hide_loading_state():
+    """隐藏加载状态"""
+    st.session_state.loading = False
+    if 'progress' in st.session_state:
+        del st.session_state.progress
+    if 'progress_text' in st.session_state:
+        del st.session_state.progress_text
+    if 'loading_message' in st.session_state:
+        del st.session_state.loading_message
+
 # 全局辅助函数：显示单股分析弹窗
 def show_stock_analysis_modal(symbol, stock_name=None):
     """显示单股分析弹窗"""
@@ -236,6 +257,10 @@ tab_single, tab_compare, tab_backtest, tab_sector, tab_lhb, tab_dragon, tab_auct
 with st.sidebar:
     st.header("🎮 控制台")
     
+    # 全局加载状态
+    if st.session_state.get('loading', False):
+        st.info("⏳ 数据加载中...")
+    
     # 获取自选股列表
     watchlist = config.get('watchlist', [])
     
@@ -294,14 +319,49 @@ with st.sidebar:
     # 自选股管理
     st.subheader("⭐ 自选股")
     
+    # 数据刷新功能
+    col_refresh, col_auto = st.columns([1, 1])
+    with col_refresh:
+        if st.button("🔄 刷新数据"):
+            st.session_state.cache_clear()
+            st.success("✅ 数据已刷新")
+            st.rerun()
+    
+    with col_auto:
+        auto_refresh = st.checkbox("自动刷新（每5分钟）", value=st.session_state.get('auto_refresh', False))
+        st.session_state.auto_refresh = auto_refresh
+        if auto_refresh:
+            last_refresh = st.session_state.get('last_refresh', 0)
+            current_time = pd.Timestamp.now().timestamp()
+            if current_time - last_refresh > 300:  # 5分钟
+                st.session_state.cache_clear()
+                st.info("⏱️ 自动刷新中...")
+                st.rerun()
+    
+    st.markdown("---")
+    
     if watchlist:
         st.write("已关注的股票：")
+        
+        # 批量选择
+        selected_stocks = st.multiselect("选择要删除的股票", watchlist, key="batch_select")
+        
+        if selected_stocks:
+            if st.button("🗑️ 批量删除", key="batch_remove"):
+                new_watchlist = [s for s in watchlist if s not in selected_stocks]
+                config.set('watchlist', new_watchlist)
+                st.success(f"✅ 已删除 {len(selected_stocks)} 只股票")
+                st.rerun()
+        
+        st.markdown("---")
+        
         for stock in watchlist:
             stock_name = QuantAlgo.get_stock_name(stock)
             col_watch, col_remove = st.columns([3, 1])
             with col_watch:
                 if st.button(f"📌 {stock_name} ({stock})", key=f"select_{stock}"):
                     st.session_state.selected_stock = stock
+                    st.session_state.last_refresh = pd.Timestamp.now().timestamp()
                     st.rerun()
             with col_remove:
                 if st.button("❌", key=f"remove_{stock}"):
@@ -452,11 +512,24 @@ with tab_single:
         s_date_str = start_date.strftime("%Y%m%d")
         e_date_str = pd.Timestamp.now().strftime("%Y%m%d")
 
-        with st.spinner('正在连接交易所数据管道...'):
-            df = db.get_history_data(symbol, start_date=s_date_str, end_date=e_date_str)
-
+        # 进度条
+        progress_bar = st.progress(0)
+        progress_text = st.empty()
+        
+        progress_text.text("📡 正在连接交易所数据管道...")
+        progress_bar.progress(10)
+        df = db.get_history_data(symbol, start_date=s_date_str, end_date=e_date_str)
+        
+        progress_text.text("📊 正在获取实时行情...")
+        progress_bar.progress(30)
         # 获取实时数据（带缓存，60秒内直接使用缓存）
         realtime_data = db.get_realtime_data(symbol)
+        
+        progress_text.text("🔍 正在分析数据...")
+        progress_bar.progress(50)
+        
+        progress_bar.empty()
+        progress_text.empty()
 
         if not df.empty and len(df) > 30:
             # 优先使用实时数据
@@ -1742,37 +1815,49 @@ with tab_compare:
         s_date_str = start_date.strftime("%Y%m%d")
         e_date_str = pd.Timestamp.now().strftime("%Y%m%d")
         
-        with st.spinner('正在分析多只股票...'):
-            # 技术指标对比
-            comparison_df = comparator.compare_stocks(compare_symbols, s_date_str, e_date_str)
+        # 进度条
+        progress_bar = st.progress(0)
+        progress_text = st.empty()
+        
+        progress_text.text(f"📊 正在分析 {len(compare_symbols)} 只股票...")
+        # 技术指标对比
+        comparison_df = comparator.compare_stocks(compare_symbols, s_date_str, e_date_str)
+        progress_bar.progress(50)
+        
+        progress_text.text("📈 正在生成收益率曲线...")
+        # 收益率对比图
+        performance_df = comparator.get_performance_comparison(compare_symbols, s_date_str, e_date_str)
+        progress_bar.progress(100)
+        
+        progress_bar.empty()
+        progress_text.empty()
+        
+        if not comparison_df.empty:
+            st.dataframe(comparison_df, width="stretch")
             
-            if not comparison_df.empty:
-                st.dataframe(comparison_df, width="stretch")
+            # 收益率对比图
+            st.subheader("📈 收益率曲线对比")
+            
+            if not performance_df.empty:
+                fig_perf = go.Figure()
                 
-                # 收益率对比图
-                st.subheader("📈 收益率曲线对比")
-                performance_df = comparator.get_performance_comparison(compare_symbols, s_date_str, e_date_str)
+                for symbol in performance_df.columns:
+                    fig_perf.add_trace(go.Scatter(
+                        x=performance_df.index,
+                        y=performance_df[symbol],
+                        mode='lines',
+                        name=symbol
+                    ))
                 
-                if not performance_df.empty:
-                    fig_perf = go.Figure()
-                    
-                    for symbol in performance_df.columns:
-                        fig_perf.add_trace(go.Scatter(
-                            x=performance_df.index,
-                            y=performance_df[symbol],
-                            mode='lines',
-                            name=symbol
-                        ))
-                    
-                    fig_perf.update_layout(
-                        title="累计收益率对比",
-                        xaxis_title="日期",
-                        yaxis_title="累计收益率",
-                        height=400
-                    )
-                    st.plotly_chart(fig_perf, width="stretch")
-            else:
-                st.warning("未能获取到有效的对比数据，请检查股票代码是否正确。")
+                fig_perf.update_layout(
+                    title="累计收益率对比",
+                    xaxis_title="日期",
+                    yaxis_title="累计收益率",
+                    height=400
+                )
+                st.plotly_chart(fig_perf, width="stretch")
+        else:
+            st.warning("未能获取到有效的对比数据，请检查股票代码是否正确。")
 
 with tab_sector:
     st.subheader("🔄 板块轮动分析")
@@ -3676,8 +3761,19 @@ with tab_alert:
         # 批量检查按钮
         if st.button("🔍 批量检查预警", key="check_batch_alert"):
             if watchlist:
-                with st.spinner(f'正在检查 {len(watchlist)} 只自选股的预警...'):
-                    batch_result = AlertSystem.scan_watchlist_alerts(watchlist, alert_conditions)
+                # 进度条
+                progress_bar = st.progress(0)
+                progress_text = st.empty()
+                
+                total_stocks = len(watchlist)
+                progress_text.text(f"🔍 正在检查 {total_stocks} 只自选股的预警...")
+                
+                # 批量检查预警
+                batch_result = AlertSystem.scan_watchlist_alerts(watchlist, alert_conditions)
+                progress_bar.progress(100)
+                
+                progress_bar.empty()
+                progress_text.empty()
 
                 if batch_result['数据状态'] == '正常':
                     st.success(f"✅ 检查完成！发现 {batch_result['预警总数']} 个预警")
@@ -4083,8 +4179,18 @@ with tab_limit_up:
 
         if watchlist:
             if st.button("📊 批量预测", key="batch_predict_limit_up"):
-                with st.spinner(f'正在预测 {len(watchlist)} 只自选股的打板成功率...'):
-                    batch_result = LimitUpPredictor.batch_predict_limit_up(watchlist)
+                # 进度条
+                progress_bar = st.progress(0)
+                progress_text = st.empty()
+                
+                total_stocks = len(watchlist)
+                progress_text.text(f"🔮 正在预测 {total_stocks} 只自选股的打板成功率...")
+                
+                batch_result = LimitUpPredictor.batch_predict_limit_up(watchlist)
+                progress_bar.progress(100)
+                
+                progress_bar.empty()
+                progress_text.empty()
 
                 if batch_result['数据状态'] == '正常':
                     st.success(f"✅ 预测完成！共预测 {batch_result['预测总数']} 只股票")
