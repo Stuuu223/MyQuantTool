@@ -8,10 +8,16 @@ from logic.ai_agent import DeepSeekAgent
 from logic.comparator import StockComparator
 from logic.backtest import BacktestEngine
 from logic.formatter import Formatter
+from logic.logger import get_logger
 from config import Config
 import os
 import concurrent.futures
 import threading
+
+# 初始化日志系统
+logger = get_logger(__name__)
+logger.info("=" * 50)
+logger.info("应用启动")
 
 st.set_page_config(page_title="个人化A股智能终端", layout="wide", page_icon="📈", menu_items={
     'Get Help': None,
@@ -38,6 +44,8 @@ db = DataManager()
 ai_agent = DeepSeekAgent(api_key=API_KEY)
 comparator = StockComparator(db)
 backtest_engine = BacktestEngine()
+
+logger.info("核心组件初始化完成")
 
 # 全局辅助函数：格式化金额显示
 def format_amount(amount):

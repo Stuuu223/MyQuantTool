@@ -3,9 +3,13 @@ import pandas as pd
 import sqlite3
 import os
 from datetime import datetime
+from logic.logger import get_logger
+
+logger = get_logger(__name__)
 
 class DataManager:
     def __init__(self, db_path='data/stock_data.db'):
+        logger.info(f"初始化 DataManager，数据库路径: {db_path}")
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.init_db()
@@ -13,6 +17,7 @@ class DataManager:
         # 实时数据缓存：{symbol: {'data': {...}, 'timestamp': datetime}}
         self.realtime_cache = {}
         self.cache_expire_seconds = 60  # 缓存60秒
+        logger.info("DataManager 初始化完成")
 
     def init_db(self):
         query = '''
@@ -112,13 +117,13 @@ class DataManager:
 
             if is_trading_time and is_weekday:
                 # 交易时间内，使用1分钟K线
-                print(f"正在获取1分钟K线数据: {symbol}...")
+                logger.info(f"正在获取1分钟K线数据: {symbol}...")
                 end_date = now.strftime("%Y-%m-%d %H:%M:%S")
                 start_date = (now - timedelta(days=3)).strftime("%Y-%m-%d %H:%M:%S")
 
                 df = ak.stock_zh_a_hist_min_em(symbol=symbol, period="1", start_date=start_date, end_date=end_date, adjust="qfq")
                 elapsed = time.time() - start_time
-                print(f"1分钟K线数据获取耗时: {elapsed:.2f}秒")
+                logger.info(f"1分钟K线数据获取耗时: {elapsed:.2f}秒")
 
                 if not df.empty:
                     # 取最后一根K线（最新的数据）
@@ -154,13 +159,13 @@ class DataManager:
                     return result
             else:
                 # 非交易时间，使用日线数据（昨天的收盘价）
-                print(f"非交易时间，获取日线数据: {symbol}...")
+                logger.info(f"非交易时间，获取日线数据: {symbol}...")
                 end_date = now.strftime("%Y%m%d")
                 start_date = (now - timedelta(days=10)).strftime("%Y%m%d")
 
                 df = ak.stock_zh_a_hist(symbol=symbol, period="daily", start_date=start_date, end_date=end_date, adjust="qfq")
                 elapsed = time.time() - start_time
-                print(f"日线数据获取耗时: {elapsed:.2f}秒")
+                logger.info(f"日线数据获取耗时: {elapsed:.2f}秒")
 
                 if not df.empty:
                     # 取最后一根K线（昨天的收盘价）
