@@ -12,7 +12,20 @@ from typing import Optional
 
 
 class Logger:
-    """日志管理器"""
+    """日志管理器（单例模式）
+    
+    提供统一的日志记录功能，支持文件和控制台双输出。
+    日志文件按日期分割，每天一个文件。
+    
+    Attributes:
+        log_dir: 日志文件存储目录
+        _instance: 单例实例
+        _initialized: 是否已初始化
+        
+    Example:
+        >>> logger = Logger()
+        >>> print(logger.log_dir)
+    """
     
     _instance: Optional['Logger'] = None
     _initialized: bool = False
@@ -47,8 +60,19 @@ class Logger:
     def get_logger(name: Optional[str] = None) -> logging.Logger:
         """获取日志记录器
         
+        如果不提供名称，会自动使用调用者的模块名。
+        
         Args:
             name: 日志记录器名称，默认使用调用者的模块名
+            
+        Returns:
+            配置好的日志记录器实例
+            
+        Example:
+            >>> logger = get_logger(__name__)
+            >>> logger.info("应用启动")
+            >>> logger.error("发生错误", exc_info=True)
+        """
             
         Returns:
             日志记录器实例

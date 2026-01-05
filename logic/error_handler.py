@@ -43,12 +43,29 @@ def handle_errors(func: Callable = None, *, show_user_message: bool = True) -> C
     """
     统一的错误处理装饰器
     
+    捕获函数执行过程中的各种异常，并记录日志。
+    可以选择是否向用户显示友好的错误信息。
+    
     Args:
         func: 被装饰的函数
-        show_user_message: 是否显示用户友好的错误信息
+        show_user_message: 是否显示用户友好的错误信息，默认 True
         
     Returns:
         装饰后的函数
+        
+    Raises:
+        AppError: 应用自定义异常（会被捕获并记录）
+        ValueError: 参数错误（会被捕获并记录）
+        ConnectionError: 网络连接错误（会被捕获并记录）
+        TimeoutError: 超时错误（会被捕获并记录）
+        KeyError: 键错误（会被捕获并记录）
+        Exception: 其他未知异常（会被捕获并记录）
+        
+    Example:
+        >>> @handle_errors(show_user_message=True)
+        >>> def get_stock_data(symbol: str):
+        >>>     # 业务逻辑
+        >>>     pass
     """
     def decorator(f: Callable) -> Callable:
         @functools.wraps(f)
@@ -115,13 +132,19 @@ def safe_execute(func: Callable, default_value: Any = None, log_error: bool = Tr
     """
     安全执行函数，捕获所有异常
     
+    在不确定函数是否会抛出异常时使用此函数，避免程序崩溃。
+    
     Args:
         func: 要执行的函数
-        default_value: 发生异常时返回的默认值
-        log_error: 是否记录错误日志
+        default_value: 发生异常时返回的默认值，默认 None
+        log_error: 是否记录错误日志，默认 True
         
     Returns:
         函数执行结果或默认值
+        
+    Example:
+        >>> result = safe_execute(lambda: risky_operation(), default_value=0)
+        >>> print(result)
     """
     try:
         return func()

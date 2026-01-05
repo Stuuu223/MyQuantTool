@@ -22,6 +22,11 @@ class DataManager:
         logger.info("DataManager 初始化完成")
 
     def init_db(self) -> None:
+        """初始化数据库表结构
+        
+        创建 daily_bars 表，如果不存在的话。
+        表结构包含：symbol, date, open, high, low, close, volume, turnover_rate
+        """
         query = '''
         CREATE TABLE IF NOT EXISTS daily_bars (
             symbol TEXT,
@@ -38,8 +43,11 @@ class DataManager:
         self.conn.execute(query)
         self.conn.commit()
     
-    def update_db_schema(self):
-        """更新数据库表结构，添加换手率列"""
+    def update_db_schema(self) -> None:
+        """更新数据库表结构，添加换手率列
+        
+        检查 daily_bars 表是否有 turnover_rate 列，如果没有则添加。
+        """
         try:
             # 检查表是否有 turnover_rate 列
             cursor = self.conn.execute("PRAGMA table_info(daily_bars)")
@@ -55,6 +63,27 @@ class DataManager:
 
     @handle_errors(show_user_message=False)
     def get_history_data(self, symbol: str, start_date: str = "20240101", end_date: str = "20251231") -> pd.DataFrame:
+        """获取股票历史数据
+        
+        从本地数据库获取历史数据，如果缓存未命中则从 akshare 获取并缓存。
+        
+        Args:
+            symbol: 股票代码（6位数字）
+            start_date: 开始日期，格式 YYYYMMDD，默认 20240101
+            end_date: 结束日期，格式 YYYYMMDD，默认 20251231
+            
+        Returns:
+            包含历史数据的 DataFrame，包含列：symbol, date, open, high, low, close, volume, turnover_rate
+            
+        Raises:
+            ValidationError: 股票代码格式错误
+            DataError: 获取数据失败
+            
+        Example:
+            >>> db = DataManager()
+            >>> df = db.get_history_data('600519', '20240101', '20241231')
+            >>> print(df.head())
+        """
         try:
             # 验证股票代码
             if not symbol or len(symbol) != 6:
@@ -101,11 +130,30 @@ class DataManager:
     def get_realtime_data(self, symbol: str) -> Optional[Dict[str, Any]]:
         """获取实时行情数据（使用1分钟K线，带60秒缓存）
         
+        根据当前时间自动选择数据源：
+        - 交易时间内（9:30-11:30, 13:00-15:00）：使用1分钟K线数据
+        - 非交易时间：使用日线数据
+        
         Args:
-            symbol: 股票代码
+            symbol: 股票代码（6位数字）
             
         Returns:
-            实时数据字典，失败返回 None
+            实时数据字典，包含以下字段：
+            - symbol: 股票代码
+            - price: 最新价格
+            - change_percent: 涨跌幅（百分比）
+            - volume: 成交量
+            - turnover_rate: 换手率
+            - high: 最高价
+            - low: 最低价
+            - open: 开盘价
+            - pre_close: 昨收价
+            - timestamp: 数据时间戳
+            
+            失败返回 None
+            
+        Note:
+            数据缓存60秒，60秒内重复查询会返回缓存数据
         """
         try:
             import time
@@ -223,5 +271,9 @@ class DataManager:
             print(f"❌ 获取数据失败: {type(e).__name__}: {str(e)}")
             return None
 
-    def close(self):
+    def close(self) -> None:
+        """关闭数据库连接
+        
+        释放数据库资源，应在应用退出时调用。
+        """
         self.conn.close()
