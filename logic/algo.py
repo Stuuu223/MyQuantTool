@@ -2079,10 +2079,29 @@ class QuantAlgo:
                     '说明': '可能是数据源限制'
                 }
             
-            # 筛选条件：量比大于1.5（放量）或涨跌幅大于3%
-            filtered_stocks = stock_df[
-                (stock_df['量比'] > 1.5) | (stock_df['涨跌幅'] > 3)
-            ].head(limit)
+            # 快速初筛：过滤掉明显不符合集合竞价特征的股票
+            # 1. 排除ST、*ST股票
+            # 2. 排除跌停股票（涨跌幅 <= -9.5%）
+            # 3. 排除停牌股票（成交量为0）
+            # 4. 排除价格异常（最新价 <= 0）
+            # 5. 只保留有竞价特征的股票：量比>1 或 涨跌幅>1%
+            pre_filtered = stock_df[
+                (~stock_df['名称'].str.contains('ST|退', na=False)) &  # 排除ST和退市股
+                (stock_df['涨跌幅'] > -9.5) &  # 排除跌停
+                (stock_df['成交量'] > 0) &  # 排除停牌
+                (stock_df['最新价'] > 0) &  # 排除价格异常
+                ((stock_df['量比'] > 1) | (stock_df['涨跌幅'] > 1))  # 有竞价特征
+            ]
+            
+            if pre_filtered.empty:
+                return {
+                    '数据状态': '无符合条件的股票',
+                    '说明': '初筛后无符合条件的股票'
+                }
+            
+            # 按综合指标排序（量比和涨跌幅加权），取前limit只进行深度分析
+            pre_filtered['综合得分'] = pre_filtered['量比'] * 0.6 + pre_filtered['涨跌幅'] * 0.4
+            filtered_stocks = pre_filtered.nlargest(limit, '综合得分')
             
             if filtered_stocks.empty:
                 return {
