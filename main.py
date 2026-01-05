@@ -194,7 +194,7 @@ if 'pattern_combination_result' not in st.session_state:
 # st.caption("  • ❌ Clear cache（清除缓存）：刷新数据和重置状态")
 
 # 添加功能标签页
-tab_single, tab_compare, tab_backtest, tab_sector, tab_lhb, tab_dragon, tab_auction, tab_sentiment, tab_hot_topics, tab_alert, tab_vp, tab_ma, tab_new_stock = st.tabs(["📊 单股分析", "🔍 多股对比", "🧪 策略回测", "🔄 板块轮动", "🏆 龙虎榜", "🔥 龙头战法", "⚡ 集合竞价", "📈 情绪分析", "🎯 热点题材", "🔔 智能预警", "📊 量价关系", "📈 均线战法", "🆕 次新股"])
+tab_single, tab_compare, tab_backtest, tab_sector, tab_lhb, tab_dragon, tab_auction, tab_sentiment, tab_hot_topics, tab_alert, tab_vp, tab_ma, tab_new_stock, tab_capital, tab_limit_up = st.tabs(["📊 单股分析", "🔍 多股对比", "🧪 策略回测", "🔄 板块轮动", "🏆 龙虎榜", "🔥 龙头战法", "⚡ 集合竞价", "📈 情绪分析", "🎯 热点题材", "🔔 智能预警", "📊 量价关系", "📈 均线战法", "🆕 次新股", "💰 游资席位", "🎯 打板预测"])
 
 with st.sidebar:
     st.header("🎮 控制台")
@@ -3794,3 +3794,288 @@ with tab_new_stock:
                         st.info(f"💡 {new_stock_result['说明']}")
             else:
                 st.warning("⚠️ 数据不足，需要至少10天数据")
+
+with tab_capital:
+    st.subheader("💰 游资席位分析")
+    st.caption("分析龙虎榜游资、追踪操作模式、识别知名游资")
+
+    # 导入游资分析器
+    from logic.algo_capital import CapitalAnalyzer
+
+    # 功能选择
+    capital_mode = st.radio("选择功能", ["龙虎榜游资分析", "游资操作模式追踪", "游资下一步预测"], horizontal=True)
+
+    if capital_mode == "龙虎榜游资分析":
+        st.divider()
+        st.subheader("🏆 龙虎榜游资分析")
+
+        st.info("💡 分析当日龙虎榜中的游资席位操作")
+
+        # 日期选择
+        analysis_date = st.date_input("分析日期", value=pd.Timestamp.now(), key="capital_date")
+
+        if st.button("🔍 分析龙虎榜", key="analyze_lhb_capital"):
+            with st.spinner('正在分析龙虎榜游资...'):
+                date_str = analysis_date.strftime("%Y%m%d")
+                capital_result = CapitalAnalyzer.analyze_longhubu_capital(date=date_str)
+
+            if capital_result['数据状态'] == '正常':
+                st.success(f"✅ 分析完成！发现 {capital_result['活跃游资数']} 个活跃游资，共 {capital_result['总操作次数']} 次操作")
+
+                # 显示游资统计汇总
+                if capital_result['游资统计汇总']:
+                    st.divider()
+                    st.subheader("📊 游资统计汇总")
+
+                    summary_df = pd.DataFrame(capital_result['游资统计汇总'])
+                    st.dataframe(summary_df, use_container_width=True, hide_index=True)
+
+                # 显示详细操作记录
+                if capital_result['游资分析列表']:
+                    st.divider()
+                    st.subheader("📝 详细操作记录")
+
+                    for record in capital_result['游资分析列表'][:20]:  # 只显示前20条
+                        with st.expander(f"{record['游资名称']} - {record['股票名称']} ({record['股票代码']})"):
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
+                                st.metric("买入金额", format_amount(record['买入金额']))
+                            with col2:
+                                st.metric("卖出金额", format_amount(record['卖出金额']))
+                            with col3:
+                                st.metric("净买入", format_amount(record['净买入']))
+                            st.write(f"**上榜日：** {record['上榜日']}")
+                            st.write(f"**营业部：** {record['营业部名称']}")
+                else:
+                    st.info("👍 今日龙虎榜中无知名游资操作")
+            else:
+                st.error(f"❌ {capital_result['数据状态']}")
+                if '说明' in capital_result:
+                    st.info(f"💡 {capital_result['说明']}")
+
+    elif capital_mode == "游资操作模式追踪":
+        st.divider()
+        st.subheader("📈 游资操作模式追踪")
+
+        st.info("💡 追踪特定游资在指定时间内的操作规律")
+
+        # 游资选择
+        capital_name = st.selectbox("选择游资", list(CapitalAnalyzer.FAMOUS_CAPITALISTS.keys()), key="select_capital")
+
+        # 分析天数
+        track_days = st.slider("分析天数", 7, 90, 30, 1)
+
+        if st.button("📊 追踪操作模式", key="track_capital_pattern"):
+            with st.spinner(f'正在追踪 {capital_name} 的操作模式...'):
+                pattern_result = CapitalAnalyzer.track_capital_pattern(capital_name, days=track_days)
+
+            if pattern_result['数据状态'] == '正常':
+                st.success(f"✅ 追踪完成！{capital_name} 在最近 {track_days} 天内有 {pattern_result['操作次数']} 次操作")
+
+                # 显示基本信息
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("操作次数", pattern_result['操作次数'])
+                with col2:
+                    st.metric("操作频率", f"{pattern_result['操作频率']:.2f}次/天")
+                with col3:
+                    st.metric("买入比例", f"{pattern_result['买入比例']}%")
+                with col4:
+                    st.metric("操作成功率", f"{pattern_result['操作成功率']}%")
+
+                # 显示操作风格
+                st.divider()
+                st.write("**🎭 操作风格：**")
+                st.info(pattern_result['操作风格'])
+
+                # 显示资金流向
+                st.divider()
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("总买入金额", format_amount(pattern_result['总买入金额']))
+                with col2:
+                    st.metric("总卖出金额", format_amount(pattern_result['总卖出金额']))
+
+                # 显示操作记录
+                if pattern_result['操作记录']:
+                    st.divider()
+                    st.subheader("📝 操作记录")
+
+                    for record in pattern_result['操作记录'][-10:]:  # 只显示最近10条
+                        with st.expander(f"{record['日期']} - {record['股票名称']} ({record['股票代码']})"):
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
+                                st.metric("买入金额", format_amount(record['买入金额']))
+                            with col2:
+                                st.metric("卖出金额", format_amount(record['卖出金额']))
+                            with col3:
+                                st.metric("净买入", format_amount(record['净买入']))
+            else:
+                st.error(f"❌ {pattern_result['数据状态']}")
+                if '说明' in pattern_result:
+                    st.info(f"💡 {pattern_result['说明']}")
+
+    elif capital_mode == "游资下一步预测":
+        st.divider()
+        st.subheader("🔮 游资下一步预测")
+
+        st.info("💡 基于历史操作模式预测游资下一步操作")
+
+        # 游资选择
+        predict_capital = st.selectbox("选择游资", list(CapitalAnalyzer.FAMOUS_CAPITALISTS.keys()), key="predict_capital")
+
+        if st.button("🔮 预测下一步操作", key="predict_capital_next"):
+            with st.spinner(f'正在预测 {predict_capital} 的下一步操作...'):
+                prediction_result = CapitalAnalyzer.predict_capital_next_move(predict_capital)
+
+            if prediction_result['数据状态'] == '正常':
+                st.success(f"✅ 预测完成！")
+
+                # 显示预测结果
+                for prediction in prediction_result['预测列表']:
+                    level_color = {
+                        '高': '🔥',
+                        '中': '🟡',
+                        '低': '🟢'
+                    }
+                    with st.expander(f"{level_color.get(prediction['概率'], '⚪')} {prediction['预测类型']} - {prediction['概率']}"):
+                        st.write(f"**说明：** {prediction['说明']}")
+            else:
+                st.error(f"❌ {prediction_result['数据状态']}")
+                if '说明' in prediction_result:
+                    st.info(f"💡 {prediction_result['说明']}")
+
+with tab_limit_up:
+    st.subheader("🎯 打板成功率预测")
+    st.caption("基于历史数据预测次日打板成功率")
+
+    # 导入打板预测器
+    from logic.algo_limit_up import LimitUpPredictor
+
+    # 功能选择
+    limit_up_mode = st.radio("选择功能", ["单股打板预测", "自选股批量预测", "市场整体分析"], horizontal=True)
+
+    if limit_up_mode == "单股打板预测":
+        st.divider()
+        st.subheader("📊 单股打板预测")
+
+        # 股票代码输入
+        limit_up_symbol = st.text_input("股票代码", value=symbol, help="输入6位A股代码", key="limit_up_symbol")
+
+        if st.button("📊 预测打板成功率", key="predict_limit_up"):
+            with st.spinner('正在预测打板成功率...'):
+                prediction_result = LimitUpPredictor.predict_limit_up_success_rate(limit_up_symbol)
+
+            if prediction_result['数据状态'] == '正常':
+                st.success(f"✅ 预测完成！该股票历史涨停 {prediction_result['总涨停次数']} 次")
+
+                # 显示基本信息
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("总涨停次数", prediction_result['总涨停次数'])
+                with col2:
+                    st.metric("成功率", f"{prediction_result['成功率']}%")
+                with col3:
+                    st.metric("综合评分", prediction_result['综合评分'])
+                with col4:
+                    st.metric("评级", prediction_result['评级'])
+
+                # 显示操作建议
+                st.divider()
+                st.write("**💡 操作建议：**")
+                st.success(prediction_result['操作建议'])
+
+                # 显示影响因素
+                if prediction_result['影响因素']:
+                    st.divider()
+                    st.subheader("📊 影响因素")
+
+                    factor_df = pd.DataFrame(prediction_result['影响因素'])
+                    st.dataframe(factor_df, use_container_width=True, hide_index=True)
+
+                # 显示涨停记录
+                if prediction_result['涨停记录']:
+                    st.divider()
+                    st.subheader("📝 最近涨停记录")
+
+                    record_df = pd.DataFrame(prediction_result['涨停记录'])
+                    st.dataframe(record_df, use_container_width=True, hide_index=True)
+            else:
+                st.error(f"❌ {prediction_result['数据状态']}")
+                if '说明' in prediction_result:
+                    st.info(f"💡 {prediction_result['说明']}")
+
+    elif limit_up_mode == "自选股批量预测":
+        st.divider()
+        st.subheader("📋 自选股批量预测")
+
+        st.info("💡 批量预测自选股中所有股票的打板成功率")
+
+        if watchlist:
+            if st.button("📊 批量预测", key="batch_predict_limit_up"):
+                with st.spinner(f'正在预测 {len(watchlist)} 只自选股的打板成功率...'):
+                    batch_result = LimitUpPredictor.batch_predict_limit_up(watchlist)
+
+                if batch_result['数据状态'] == '正常':
+                    st.success(f"✅ 预测完成！共预测 {batch_result['预测总数']} 只股票")
+
+                    # 显示预测结果
+                    prediction_df = pd.DataFrame(batch_result['预测列表'])
+                    st.dataframe(prediction_df, use_container_width=True, hide_index=True)
+
+                    # 按评级分组
+                    excellent = [p for p in batch_result['预测列表'] if '优秀' in p['评级']]
+                    good = [p for p in batch_result['预测列表'] if '良好' in p['评级']]
+                    general = [p for p in batch_result['预测列表'] if '一般' in p['评级']]
+                    poor = [p for p in batch_result['预测列表'] if '较差' in p['评级']]
+
+                    # 优秀股票
+                    if excellent:
+                        st.divider()
+                        st.subheader("🔥 优秀股票")
+                        for stock in excellent:
+                            st.write(f"• {stock['股票代码']} - 成功率: {stock['成功率']}%, 评分: {stock['综合评分']}")
+        else:
+            st.warning("⚠️ 自选股列表为空，请先添加股票到自选股")
+
+    elif limit_up_mode == "市场整体分析":
+        st.divider()
+        st.subheader("📈 市场整体分析")
+
+        st.info("💡 分析今日涨停股票的整体打板成功率")
+
+        if st.button("📊 分析市场", key="analyze_market_limit_up"):
+            with st.spinner('正在分析市场整体打板成功率...'):
+                market_result = LimitUpPredictor.analyze_market_limit_up_success()
+
+            if market_result['数据状态'] == '正常':
+                st.success(f"✅ 分析完成！今日涨停 {market_result['今日涨停数']} 只股票")
+
+                # 显示基本信息
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("今日涨停数", market_result['今日涨停数'])
+                with col2:
+                    st.metric("分析样本数", market_result['分析样本数'])
+                with col3:
+                    st.metric("市场平均成功率", f"{market_result['市场平均成功率']}%")
+
+                # 显示评级分布
+                if market_result['评级分布']:
+                    st.divider()
+                    st.subheader("📊 评级分布")
+
+                    rating_df = pd.DataFrame(list(market_result['评级分布'].items()), columns=['评级', '数量'])
+                    st.dataframe(rating_df, use_container_width=True, hide_index=True)
+
+                # 显示详细预测
+                if market_result['详细预测']:
+                    st.divider()
+                    st.subheader("📝 详细预测")
+
+                    prediction_df = pd.DataFrame(market_result['详细预测'])
+                    st.dataframe(prediction_df, use_container_width=True, hide_index=True)
+            else:
+                st.error(f"❌ {market_result['数据状态']}")
+                if '说明' in market_result:
+                    st.info(f"💡 {market_result['说明']}")
