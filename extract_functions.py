@@ -6,35 +6,29 @@ import re
 
 # 定义要提取的功能及其对应的行号范围
 FUNCTIONS = {
-    'limit_up': {
-        'start': 4114,
-        'end': 4258,
+    'long_hu_bang': {
+        'start': 1937,
+        'end': 2156,
         'file': 'main_old.py',
-        'placeholder': 'st.info("💡 打板预测功能正在开发中...")'
+        'placeholder': 'st.info("💡 龙虎榜功能正在开发中，敬请期待...")'
     },
-    'smart_recommend': {
-        'start': 4259,
-        'end': 4407,
+    'auction': {
+        'start': 2360,
+        'end': 2734,
         'file': 'main_old.py',
-        'placeholder': 'st.info("💡 智能推荐功能正在开发中...")'
+        'placeholder': 'st.info("💡 集合竞价功能正在开发中...")'
     },
-    'risk': {
-        'start': 4408,
-        'end': 4516,
+    'sentiment': {
+        'start': 2735,
+        'end': 3469,
         'file': 'main_old.py',
-        'placeholder': 'st.info("💡 风险管理功能正在开发中...")'
+        'placeholder': 'st.info("💡 情绪分析功能正在开发中...")'
     },
-    'history': {
-        'start': 4517,
-        'end': 4598,
+    'hot_topics': {
+        'start': 3470,
+        'end': 3619,
         'file': 'main_old.py',
-        'placeholder': 'st.info("💡 历史记录功能正在开发中...")'
-    },
-    'settings': {
-        'start': 4599,
-        'end': 4685,
-        'file': 'main_old.py',
-        'placeholder': 'st.info("💡 系统设置功能正在开发中...")'
+        'placeholder': 'st.info("💡 热点题材功能正在开发中...")'
     }
 }
 
