@@ -2353,7 +2353,7 @@ with tab_auction:
         with col_stock1:
             check_symbol = st.text_input("股票代码", placeholder="输入6位股票代码", help="例如：600519")
         with col_stock2:
-            if st.button("🔍 检测弱转强", key="check_weak_to_strong"):
+            if st.button("🔍 检测弱转强", key="check_weak_to_strong_btn"):
                 if check_symbol:
                     st.session_state.check_symbol = check_symbol
                     st.session_state.check_weak_to_strong = True
@@ -2428,7 +2428,7 @@ with tab_auction:
         with col_diff1:
             diffusion_limit = st.slider("扫描股票数量", 20, 100, 50, 10)
         with col_diff2:
-            if st.button("🔍 扫描一字板", key="scan_diffusion"):
+            if st.button("🔍 扫描一字板", key="scan_diffusion_btn"):
                 st.session_state.scan_diffusion = True
                 st.rerun()
         
@@ -3328,7 +3328,7 @@ with tab_hot_topics:
         with col_topic1:
             topic_limit = st.slider("扫描板块数量", 10, 50, 20, 5)
         with col_topic2:
-            if st.button("🔍 开始扫描", key="scan_hot_topics"):
+            if st.button("🔍 开始扫描", key="scan_hot_topics_btn"):
                 st.session_state.scan_hot_topics = True
                 st.rerun()
 
