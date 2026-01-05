@@ -215,42 +215,59 @@ class CapitalAnalyzer:
 
             # 获取该游资的席位列表
             seats = CapitalAnalyzer.FAMOUS_CAPITALISTS[capital_name]
+            print(f"游资 {capital_name} 的席位列表: {seats}")
 
             # 获取历史龙虎榜数据
             end_date = pd.Timestamp.now()
             start_date = end_date - pd.Timedelta(days=days)
 
             all_operations = []
+            checked_dates = 0
+            matched_dates = 0
 
             # 获取每日龙虎榜数据
             current_date = start_date
             while current_date <= end_date:
                 date_str = current_date.strftime("%Y%m%d")
+                checked_dates += 1
 
                 try:
                     lhb_df = ak.stock_lhb_detail_daily_em(date=date_str)
 
                     if not lhb_df.empty:
-                        # 筛选该游资的操作
+                        print(f"{date_str}: 获取到 {len(lhb_df)} 条龙虎榜记录")
+                        
+                        # 筛选该游资的操作（使用模糊匹配）
                         for _, row in lhb_df.iterrows():
-                            if row['营业部名称'] in seats:
+                            seat_name = str(row['营业部名称'])
+                            
+                            # 精确匹配或模糊匹配
+                            if seat_name in seats or any(keyword in seat_name for keyword in seats):
+                                matched_dates += 1
                                 all_operations.append({
                                     '日期': row['上榜日'],
                                     '股票代码': row['代码'],
                                     '股票名称': row['名称'],
-                                    '买入金额': row['买入金额'],
-                                    '卖出金额': row['卖出金额'],
-                                    '净买入': row['买入金额'] - row['卖出金额']
+                                    '买入金额': row.get('买入金额', 0),
+                                    '卖出金额': row.get('卖出金额', 0),
+                                    '净买入': row.get('买入金额', 0) - row.get('卖出金额', 0),
+                                    '营业部名称': seat_name
                                 })
-                except:
+                                print(f"  匹配到: {seat_name} - {row['名称']}({row['代码']})")
+                except Exception as e:
+                    print(f"{date_str}: 获取数据失败 - {e}")
                     pass
 
                 current_date += pd.Timedelta(days=1)
 
+            print(f"检查了 {checked_dates} 天，在 {matched_dates} 天找到操作记录，共 {len(all_operations)} 条操作")
+
             if not all_operations:
                 return {
                     '数据状态': '无操作记录',
-                    '说明': f'{capital_name} 在最近 {days} 天内无操作记录'
+                    '说明': f'{capital_name} 在最近 {days} 天内无操作记录。可能原因：1) 该游资近期未上榜 2) 席位名称不匹配 3) 数据源限制',
+                    '检查天数': checked_dates,
+                    '匹配天数': matched_dates
                 }
 
             # 分析操作模式
