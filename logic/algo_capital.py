@@ -34,15 +34,26 @@ class CapitalAnalyzer:
             import akshare as ak
 
             # 获取龙虎榜数据
-            if date:
-                lhb_df = ak.stock_lhb_detail_daily_em(date=date)
-            else:
-                lhb_df = ak.stock_lhb_detail_daily_em()
+            try:
+                if date:
+                    if isinstance(date, str):
+                        date_str = date
+                    else:
+                        date_str = date.strftime("%Y%m%d")
+                    lhb_df = ak.stock_lhb_detail_daily_em(date=date_str)
+                else:
+                    lhb_df = ak.stock_lhb_detail_daily_em()
+            except Exception as e:
+                return {
+                    '数据状态': '获取龙虎榜数据失败',
+                    '错误信息': str(e),
+                    '说明': '可能是网络问题或数据源限制，请稍后重试'
+                }
 
-            if lhb_df.empty:
+            if lhb_df is None or lhb_df.empty:
                 return {
                     '数据状态': '无数据',
-                    '说明': '暂无龙虎榜数据'
+                    '说明': '暂无龙虎榜数据，可能今日无龙虎榜或数据未更新'
                 }
 
             # 分析游资席位
