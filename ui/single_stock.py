@@ -229,20 +229,14 @@ def render_single_stock_tab(db: DataManager, config: Config):
         if isinstance(bollinger_data, dict):
             col_upper, col_middle, col_lower = st.columns(3)
             with col_upper:
-                st.metric("上轨", f"¥{float(bollinger_data['Upper']):.2f}")
+                st.metric("上轨", f"¥{float(bollinger_data['上轨']):.2f}")
             with col_middle:
-                st.metric("中轨", f"¥{float(bollinger_data['Middle']):.2f}")
+                st.metric("中轨", f"¥{float(bollinger_data['中轨']):.2f}")
             with col_lower:
-                st.metric("下轨", f"¥{float(bollinger_data['Lower']):.2f}")
+                st.metric("下轨", f"¥{float(bollinger_data['下轨']):.2f}")
             
-            # 位置判断
-            if current_price > float(bollinger_data['Upper']):
-                position = "接近上轨"
-            elif current_price < float(bollinger_data['Lower']):
-                position = "接近下轨"
-            else:
-                position = "在区间内"
-            st.caption(f"当前价格位置: {position}")
+            # 显示当前位置
+            st.caption(f"当前位置: {bollinger_data['当前位置']}% - {bollinger_data['解读']}")
         
         # 价格走势图
         st.markdown("---")
@@ -261,13 +255,13 @@ def render_single_stock_tab(db: DataManager, config: Config):
         if isinstance(bollinger_data, dict):
             fig.add_trace(go.Scatter(
                 x=df.index,
-                y=[float(bollinger_data['Upper'])] * len(df),
+                y=[float(bollinger_data['上轨'])] * len(df),
                 name='上轨',
                 line=dict(color='rgba(255,0,0,0.5)')
             ))
             fig.add_trace(go.Scatter(
                 x=df.index,
-                y=[float(bollinger_data['Lower'])] * len(df),
+                y=[float(bollinger_data['下轨'])] * len(df),
                 name='下轨',
                 line=dict(color='rgba(0,255,0,0.5)')
             ))
@@ -306,9 +300,9 @@ def render_single_stock_tab(db: DataManager, config: Config):
         
         # 布林带建议
         if isinstance(bollinger_data, dict):
-            if current_price > float(bollinger_data['Upper']):
+            if current_price > float(bollinger_data['上轨']):
                 suggestions.append("突破上轨，注意回调")
-            elif current_price < float(bollinger_data['Lower']):
+            elif current_price < float(bollinger_data['下轨']):
                 suggestions.append("跌破下轨，可能反弹")
         
         if suggestions:
