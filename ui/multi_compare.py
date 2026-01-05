@@ -30,18 +30,19 @@ def render_multi_compare_tab(db: DataManager, config: Config):
     # 股票代码输入
     compare_symbols_input = st.text_input("输入要对比的股票代码（用逗号分隔）", 
                                          value="600519,000001,600036",
-                                         help="例如：600519,000001,600036")
+                                         help="例如：600519,000001,600036",
+                                         key="compare_symbols_input")
     
     compare_symbols = [s.strip() for s in compare_symbols_input.split(',') if s.strip()]
     
     # 日期范围选择
     col_date1, col_date2 = st.columns(2)
     with col_date1:
-        start_date = st.date_input("开始日期", value=datetime.now() - timedelta(days=60))
+        start_date = st.date_input("开始日期", value=datetime.now() - timedelta(days=60), key="compare_start_date")
     with col_date2:
-        end_date = st.date_input("结束日期", value=datetime.now())
+        end_date = st.date_input("结束日期", value=datetime.now(), key="compare_end_date")
     
-    if st.button("开始对比分析") and compare_symbols:
+    if st.button("开始对比分析", key="compare_button") and compare_symbols:
         s_date_str = start_date.strftime("%Y%m%d")
         e_date_str = pd.Timestamp.now().strftime("%Y%m%d")
         
