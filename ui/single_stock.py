@@ -157,12 +157,12 @@ def render_single_stock_tab(db: DataManager, config: Config):
         if realtime_data:
             current_price = realtime_data['price']
             change_pct = realtime_data['change_percent']
-            st.success(f"🟢 实时数据已更新 ({realtime_data['timestamp']})")
+            st.success(f"实时数据已更新 ({realtime_data['timestamp']})")
         else:
             current_price = df.iloc[-1]['close']
             prev_close = df.iloc[-2]['close']
             change_pct = (current_price - prev_close) / prev_close * 100
-            st.info("⚪ 使用历史数据（实时数据获取失败）")
+            st.info("使用历史数据（实时数据获取失败）")
         
         # 计算技术指标
         atr = QuantAlgo.calculate_atr(df)
@@ -192,54 +192,36 @@ def render_single_stock_tab(db: DataManager, config: Config):
         # MACD
         col_macd, col_rsi, col_kdj = st.columns(3)
         with col_macd:
-            # 处理macd_data可能是Series或DataFrame的情况
-            if isinstance(macd_data, pd.Series):
-                macd_value = macd_data.iloc[-1]
-                signal_value = None
-            else:
-                macd_value = macd_data['MACD'].iloc[-1]
-                signal_value = macd_data['Signal'].iloc[-1]
+            # macd_data是字典，直接访问值
+            macd_value = float(macd_data['MACD'])
+            signal_value = float(macd_data['Signal'])
             
-            macd_status = "🔴 看涨" if signal_value and macd_value > signal_value else "🟢 看跌"
+            macd_status = "看涨" if macd_value > signal_value else "看跌"
             st.metric("MACD", f"{macd_value:.2f}")
-            if signal_value:
-                st.caption(f"信号线: {signal_value:.2f} | {macd_status}")
-            else:
-                st.caption(macd_status)
+            st.caption(f"信号线: {signal_value:.2f} | {macd_status}")
         
         with col_rsi:
-            # 处理rsi_data
-            if isinstance(rsi_data, pd.Series):
-                rsi_value = rsi_data.iloc[-1]
-            else:
-                rsi_value = rsi_data['RSI'].iloc[-1]
+            # rsi_data是字典
+            rsi_value = float(rsi_data['RSI'])
             
             if rsi_value > 70:
-                rsi_status = "⚠️ 超买"
+                rsi_status = "超买"
             elif rsi_value < 30:
-                rsi_status = "⚠️ 超卖"
+                rsi_status = "超卖"
             else:
-                rsi_status = "✅ 正常"
+                rsi_status = "正常"
             st.metric("RSI", f"{rsi_value:.2f}")
             st.caption(rsi_status)
         
         with col_kdj:
-            # 处理kdj_data
-            if isinstance(kdj_data, pd.Series):
-                k_value = kdj_data.iloc[-1]
-                d_value = None
-                j_value = None
-            else:
-                k_value = kdj_data['K'].iloc[-1]
-                d_value = kdj_data['D'].iloc[-1]
-                j_value = kdj_data['J'].iloc[-1]
+            # kdj_data是字典
+            k_value = float(kdj_data['K'])
+            d_value = float(kdj_data['D'])
+            j_value = float(kdj_data['J'])
             
-            kdj_status = "🔴 金叉" if d_value and k_value > d_value else "🟢 死叉"
-            st.metric("KDJ", f"K:{k_value:.2f} D:{d_value:.2f if d_value else 0:.2f}")
-            if j_value:
-                st.caption(f"J:{j_value:.2f} | {kdj_status}")
-            else:
-                st.caption(kdj_status)
+            kdj_status = "金叉" if k_value > d_value else "死叉"
+            st.metric("KDJ", f"K:{k_value:.2f} D:{d_value:.2f}")
+            st.caption(f"J:{j_value:.2f} | {kdj_status}")
         
         # 布林带
         st.markdown("---")
@@ -247,19 +229,19 @@ def render_single_stock_tab(db: DataManager, config: Config):
         if isinstance(bollinger_data, dict):
             col_upper, col_middle, col_lower = st.columns(3)
             with col_upper:
-                st.metric("上轨", f"¥{bollinger_data['Upper']:.2f}")
+                st.metric("上轨", f"¥{float(bollinger_data['Upper']):.2f}")
             with col_middle:
-                st.metric("中轨", f"¥{bollinger_data['Middle']:.2f}")
+                st.metric("中轨", f"¥{float(bollinger_data['Middle']):.2f}")
             with col_lower:
-                st.metric("下轨", f"¥{bollinger_data['Lower']:.2f}")
+                st.metric("下轨", f"¥{float(bollinger_data['Lower']):.2f}")
             
             # 位置判断
-            if current_price > bollinger_data['Upper']:
-                position = "⚠️ 接近上轨"
-            elif current_price < bollinger_data['Lower']:
-                position = "⚠️ 接近下轨"
+            if current_price > float(bollinger_data['Upper']):
+                position = "接近上轨"
+            elif current_price < float(bollinger_data['Lower']):
+                position = "接近下轨"
             else:
-                position = "✅ 在区间内"
+                position = "在区间内"
             st.caption(f"当前价格位置: {position}")
         
         # 价格走势图
@@ -279,13 +261,13 @@ def render_single_stock_tab(db: DataManager, config: Config):
         if isinstance(bollinger_data, dict):
             fig.add_trace(go.Scatter(
                 x=df.index,
-                y=[bollinger_data['Upper']] * len(df),
+                y=[float(bollinger_data['Upper'])] * len(df),
                 name='上轨',
                 line=dict(color='rgba(255,0,0,0.5)')
             ))
             fig.add_trace(go.Scatter(
                 x=df.index,
-                y=[bollinger_data['Lower']] * len(df),
+                y=[float(bollinger_data['Lower'])] * len(df),
                 name='下轨',
                 line=dict(color='rgba(0,255,0,0.5)')
             ))
@@ -305,29 +287,29 @@ def render_single_stock_tab(db: DataManager, config: Config):
         suggestions = []
         
         # MACD建议
-        if signal_value and macd_value > signal_value:
-            suggestions.append("📈 MACD金叉，趋势向上")
-        elif signal_value:
-            suggestions.append("📉 MACD死叉，趋势向下")
+        if macd_value > signal_value:
+            suggestions.append("MACD金叉，趋势向上")
+        else:
+            suggestions.append("MACD死叉，趋势向下")
         
         # RSI建议
         if rsi_value > 70:
-            suggestions.append("⚠️ RSI超买，注意风险")
+            suggestions.append("RSI超买，注意风险")
         elif rsi_value < 30:
-            suggestions.append("🎯 RSI超卖，可能反弹")
+            suggestions.append("RSI超卖，可能反弹")
         
         # KDJ建议
-        if d_value and k_value > d_value and j_value > 0:
-            suggestions.append("🔴 KDJ金叉，买入信号")
-        elif d_value and k_value < d_value and j_value < 0:
-            suggestions.append("🟢 KDJ死叉，卖出信号")
+        if k_value > d_value and j_value > 0:
+            suggestions.append("KDJ金叉，买入信号")
+        elif k_value < d_value and j_value < 0:
+            suggestions.append("KDJ死叉，卖出信号")
         
         # 布林带建议
         if isinstance(bollinger_data, dict):
-            if current_price > bollinger_data['Upper']:
-                suggestions.append("⚠️ 突破上轨，注意回调")
-            elif current_price < bollinger_data['Lower']:
-                suggestions.append("🎯 跌破下轨，可能反弹")
+            if current_price > float(bollinger_data['Upper']):
+                suggestions.append("突破上轨，注意回调")
+            elif current_price < float(bollinger_data['Lower']):
+                suggestions.append("跌破下轨，可能反弹")
         
         if suggestions:
             for suggestion in suggestions:
@@ -336,7 +318,7 @@ def render_single_stock_tab(db: DataManager, config: Config):
             st.info("暂无明显信号，建议观望")
         
         # 添加到自选股按钮
-        if st.button(f"⭐ 添加 {stock_name} 到自选股", key=f"add_{symbol}"):
+        if st.button(f"添加 {stock_name} 到自选股", key=f"add_{symbol}"):
             watchlist = config.get('watchlist', [])
             if symbol not in watchlist:
                 watchlist.append(symbol)
