@@ -324,22 +324,34 @@ class CapitalAnalyzer:
 
             # 如果没有操作记录，显示所有找到的营业部名称
             if not all_operations:
-                # 尝试获取最近一天的龙虎榜数据，看看有哪些营业部
-                try:
-                    recent_date = (pd.Timestamp.now() - pd.Timedelta(days=1)).strftime("%Y%m%d")
-                    recent_lhb = ak.stock_lhb_detail_daily_em(date=recent_date)
-                    if not recent_lhb.empty:
-                        all_seats = recent_lhb['营业部名称'].unique()
-                        print(f"最近一天的营业部名称（前20个）: {all_seats[:20].tolist()}")
-                except:
-                    pass
+                # 获取最近几天的龙虎榜数据，收集所有营业部名称
+                found_seats = []
+                sample_date = start_date
+                
+                for _ in range(min(5, days)):  # 最多检查5天
+                    date_str = sample_date.strftime("%Y%m%d")
+                    try:
+                        lhb_df = ak.stock_lhb_detail_daily_em(date=date_str)
+                        if not lhb_df.empty:
+                            all_seats = lhb_df['营业部名称'].unique()
+                            found_seats.extend(all_seats)
+                            print(f"{date_str}: 找到 {len(all_seats)} 个营业部")
+                            if len(found_seats) >= 50:  # 收集足够多的营业部
+                                break
+                    except:
+                        pass
+                    sample_date += pd.Timedelta(days=1)
+                
+                # 去重并排序
+                found_seats = sorted(list(set(found_seats)))
                 
                 return {
                     '数据状态': '无操作记录',
-                    '说明': f'{capital_name} 在最近 {days} 天内无操作记录。可能原因：1) 该游资近期未上榜 2) 席位名称不匹配 3) 数据源限制。请查看控制台输出的营业部名称进行对比。',
+                    '说明': f'{capital_name} 在最近 {days} 天内无操作记录。可能原因：1) 该游资近期未上榜 2) 席位名称不匹配 3) 数据源限制。请查看下方调试信息中的实际营业部名称进行对比。',
                     '检查天数': checked_dates,
                     '匹配天数': matched_dates,
-                    '游资席位': seats
+                    '游资席位': seats,
+                    '实际营业部': found_seats[:30]  # 只返回前30个
                 }
 
             # 分析操作模式

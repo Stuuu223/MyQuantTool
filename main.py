@@ -3908,6 +3908,18 @@ with tab_capital:
             with st.spinner(f'正在追踪 {capital_name} 的操作模式...'):
                 pattern_result = CapitalAnalyzer.track_capital_pattern(capital_name, days=track_days)
 
+            # 显示调试信息
+            if '游资席位' in pattern_result:
+                with st.expander("🔧 调试信息", expanded=False):
+                    st.write(f"**游资席位列表：**")
+                    for seat in pattern_result['游资席位']:
+                        st.write(f"- {seat}")
+                    
+                    if pattern_result.get('检查天数'):
+                        st.write(f"**检查天数：** {pattern_result['检查天数']}")
+                    if pattern_result.get('匹配天数'):
+                        st.write(f"**匹配天数：** {pattern_result['匹配天数']}")
+
             if pattern_result['数据状态'] == '正常':
                 st.success(f"✅ 追踪完成！{capital_name} 在最近 {track_days} 天内有 {pattern_result['操作次数']} 次操作")
 
