@@ -1,13 +1,16 @@
 """
 UI模块包
 
-包含所有用户界面相关的功能模块
+提供所有Streamlit UI组件的模块化实现
 """
 
+# 导入所有UI模块的渲染函数
 from .single_stock import render_single_stock_tab
 from .multi_compare import render_multi_compare_tab
-from .backtest import render_backtest_tab
 from .sector_rotation import render_sector_rotation_tab
+
+# 导入其他模块（框架）
+from .backtest import render_backtest_tab
 from .long_hu_bang import render_long_hu_bang_tab
 from .dragon_strategy import render_dragon_strategy_tab
 from .auction import render_auction_tab
@@ -27,8 +30,8 @@ from .settings import render_settings_tab
 __all__ = [
     'render_single_stock_tab',
     'render_multi_compare_tab',
-    'render_backtest_tab',
     'render_sector_rotation_tab',
+    'render_backtest_tab',
     'render_long_hu_bang_tab',
     'render_dragon_strategy_tab',
     'render_auction_tab',
