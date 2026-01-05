@@ -4,6 +4,7 @@ import sqlite3
 import os
 from datetime import datetime
 from logic.logger import get_logger
+from logic.error_handler import handle_errors, DataError, NetworkError, ValidationError
 
 logger = get_logger(__name__)
 
@@ -51,8 +52,13 @@ class DataManager:
         except Exception as e:
             print(f"更新数据库表结构失败: {e}")
 
+    @handle_errors(show_user_message=False)
     def get_history_data(self, symbol, start_date="20240101", end_date="20251231"):
         try:
+            # 验证股票代码
+            if not symbol or len(symbol) != 6:
+                raise ValidationError(f"股票代码格式错误: {symbol}")
+            
             df = pd.read_sql(f"SELECT * FROM daily_bars WHERE symbol='{symbol}'", self.conn)
             
             # 检查是否需要重新获取数据
@@ -65,8 +71,11 @@ class DataManager:
                 need_fetch = True
             
             if need_fetch:
-                # print(f"本地缓存未命中，正在下载 {symbol} ...") # 保持界面清爽
+                logger.info(f"本地缓存未命中，正在下载 {symbol} ...")
                 df_api = ak.stock_zh_a_hist(symbol=symbol, period="daily", start_date=start_date, end_date=end_date, adjust="qfq")
+                
+                if df_api.empty:
+                    raise DataError(f"获取股票数据失败: {symbol}")
                 
                 df_api = df_api.rename(columns={
                     '日期': 'date', '开盘': 'open', '最高': 'high', 
