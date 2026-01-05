@@ -1,281 +1,283 @@
-"""
-游资席位分析模块
-分析龙虎榜游资、追踪操作模式、识别知名游�?"""
+﻿"""
+娓歌祫甯綅鍒嗘瀽妯″潡
+鍒嗘瀽榫欒檸姒滄父璧勩€佽拷韪搷浣滄ā寮忋€佽瘑鍒煡鍚嶆父锟?"""
 
 import pandas as pd
 from logic.data_manager import DataManager
 
 
 class CapitalAnalyzer:
-    """游资席位分析模块""
+    """娓歌祫甯綅鍒嗘瀽妯″潡""
 
-    # 知名游资席位列表（包含常见变体）
+    # 鐭ュ悕娓歌祫甯綅鍒楄〃锛堝寘鍚父瑙佸彉浣擄級
     FAMOUS_CAPITALISTS = {
-        "章盟主 [
-            "中信证券股份有限公司杭州延安路证券营业部",
-            "国泰君安证券股份有限公司上海江苏路证券营业部",
-            "国泰君安证券股份有限公司上海分公�?,
-            "国泰君安证券股份有限公司上海江苏�?,
-            "中信证券杭州延安�?,
-            "国泰君安上海江苏�?
+        "绔犵洘涓?[
+            "涓俊璇佸埜鑲′唤鏈夐檺鍏徃鏉窞寤跺畨璺瘉鍒歌惀涓氶儴",
+            "鍥芥嘲鍚涘畨璇佸埜鑲′唤鏈夐檺鍏徃涓婃捣姹熻嫃璺瘉鍒歌惀涓氶儴",
+            "鍥芥嘲鍚涘畨璇佸埜鑲′唤鏈夐檺鍏徃涓婃捣鍒嗗叕锟?,
+            "鍥芥嘲鍚涘畨璇佸埜鑲′唤鏈夐檺鍏徃涓婃捣姹熻嫃锟?,
+            "涓俊璇佸埜鏉窞寤跺畨锟?,
+            "鍥芥嘲鍚涘畨涓婃捣姹熻嫃锟?
         ],
-        "方新�?: [
-            "兴业证券股份有限公司陕西分公�?,
-            "中信证券股份有限公司西安朱雀大街证券营业�?,
-            "兴业证券陕西分公�?,
-            "中信证券西安朱雀大街",
-            "兴业证券股份有限公司陕西"
+        "鏂规柊锟?: [
+            "鍏翠笟璇佸埜鑲′唤鏈夐檺鍏徃闄曡タ鍒嗗叕锟?,
+            "涓俊璇佸埜鑲′唤鏈夐檺鍏徃瑗垮畨鏈遍泙澶ц璇佸埜钀ヤ笟锟?,
+            "鍏翠笟璇佸埜闄曡タ鍒嗗叕锟?,
+            "涓俊璇佸埜瑗垮畨鏈遍泙澶ц",
+            "鍏翠笟璇佸埜鑲′唤鏈夐檺鍏徃闄曡タ"
         ],
-        "徐翔": [
-            "国泰君安证券股份有限公司上海福山路证券营业部",
-            "光大证券股份有限公司宁波解放南路证券营业�?,
-            "国泰君安上海福山�?,
-            "光大证券宁波解放南路",
-            "国泰君安上海福山路证�?
+        "寰愮繑": [
+            "鍥芥嘲鍚涘畨璇佸埜鑲′唤鏈夐檺鍏徃涓婃捣绂忓北璺瘉鍒歌惀涓氶儴",
+            "鍏夊ぇ璇佸埜鑲′唤鏈夐檺鍏徃瀹佹尝瑙ｆ斁鍗楄矾璇佸埜钀ヤ笟锟?,
+            "鍥芥嘲鍚涘畨涓婃捣绂忓北锟?,
+            "鍏夊ぇ璇佸埜瀹佹尝瑙ｆ斁鍗楄矾",
+            "鍥芥嘲鍚涘畨涓婃捣绂忓北璺瘉锟?
         ],
-        "赵老哥": [
-            "中国银河证券股份有限公司绍兴证券营业�?,
-            "华泰证券股份有限公司浙江分公�?,
-            "银河证券绍兴",
-            "华泰证券浙江分公�?,
-            "中国银河证券绍兴"
+        "璧佃€佸摜": [
+            "涓浗閾舵渤璇佸埜鑲′唤鏈夐檺鍏徃缁嶅叴璇佸埜钀ヤ笟锟?,
+            "鍗庢嘲璇佸埜鑲′唤鏈夐檺鍏徃娴欐睙鍒嗗叕锟?,
+            "閾舵渤璇佸埜缁嶅叴",
+            "鍗庢嘲璇佸埜娴欐睙鍒嗗叕锟?,
+            "涓浗閾舵渤璇佸埜缁嶅叴"
         ],
-        "乔帮�?: [
-            "中信证券股份有限公司上海淮海中路证券营业�?,
-            "国泰君安证券股份有限公司上海分公�?,
-            "中信证券上海淮海中路",
-            "国泰君安上海分公�?
+        "涔斿府锟?: [
+            "涓俊璇佸埜鑲′唤鏈夐檺鍏徃涓婃捣娣捣涓矾璇佸埜钀ヤ笟锟?,
+            "鍥芥嘲鍚涘畨璇佸埜鑲′唤鏈夐檺鍏徃涓婃捣鍒嗗叕锟?,
+            "涓俊璇佸埜涓婃捣娣捣涓矾",
+            "鍥芥嘲鍚涘畨涓婃捣鍒嗗叕锟?
         ],
-        "成都�?: [
-            "华泰证券股份有限公司成都蜀金路证券营业�?,
-            "国泰君安证券股份有限公司成都北一环路证券营业�?,
-            "华泰证券成都蜀金路",
-            "国泰君安成都北一环路",
-            "华泰证券成都"
+        "鎴愰兘锟?: [
+            "鍗庢嘲璇佸埜鑲′唤鏈夐檺鍏徃鎴愰兘铚€閲戣矾璇佸埜钀ヤ笟锟?,
+            "鍥芥嘲鍚涘畨璇佸埜鑲′唤鏈夐檺鍏徃鎴愰兘鍖椾竴鐜矾璇佸埜钀ヤ笟锟?,
+            "鍗庢嘲璇佸埜鎴愰兘铚€閲戣矾",
+            "鍥芥嘲鍚涘畨鎴愰兘鍖椾竴鐜矾",
+            "鍗庢嘲璇佸埜鎴愰兘"
         ],
-        "佛山�?: [
-            "光大证券股份有限公司佛山绿景路证券营业部",
-            "长江证券股份有限公司佛山顺德新宁路证券营业部",
-            "光大证券佛山绿景�?,
-            "长江证券佛山顺德新宁�?,
-            "光大证券佛山"
+        "浣涘北锟?: [
+            "鍏夊ぇ璇佸埜鑲′唤鏈夐檺鍏徃浣涘北缁挎櫙璺瘉鍒歌惀涓氶儴",
+            "闀挎睙璇佸埜鑲′唤鏈夐檺鍏徃浣涘北椤哄痉鏂板畞璺瘉鍒歌惀涓氶儴",
+            "鍏夊ぇ璇佸埜浣涘北缁挎櫙锟?,
+            "闀挎睙璇佸埜浣涘北椤哄痉鏂板畞锟?,
+            "鍏夊ぇ璇佸埜浣涘北"
         ],
-        "瑞鹤�?: [
-            "中国中金财富证券有限公司深圳分公�?,
-            "华泰证券股份有限公司深圳益田路荣超商务中心证券营业部",
-            "中金财富深圳",
-            "华泰证券深圳益田�?,
-            "中国中金财富深圳"
+        "鐟為工锟?: [
+            "涓浗涓噾璐㈠瘜璇佸埜鏈夐檺鍏徃娣卞湷鍒嗗叕锟?,
+            "鍗庢嘲璇佸埜鑲′唤鏈夐檺鍏徃娣卞湷鐩婄敯璺崳瓒呭晢鍔′腑蹇冭瘉鍒歌惀涓氶儴",
+            "涓噾璐㈠瘜娣卞湷",
+            "鍗庢嘲璇佸埜娣卞湷鐩婄敯锟?,
+            "涓浗涓噾璐㈠瘜娣卞湷"
         ],
-        "作手新一": [
-            "国泰君安证券股份有限公司南京太平南路证券营业�?,
-            "华泰证券股份有限公司南京江东中路证券营业�?,
-            "国泰君安南京太平南路",
-            "华泰证券南京江东中路",
-            "国泰君安南京"
+        "浣滄墜鏂颁竴": [
+            "鍥芥嘲鍚涘畨璇佸埜鑲′唤鏈夐檺鍏徃鍗椾含澶钩鍗楄矾璇佸埜钀ヤ笟锟?,
+            "鍗庢嘲璇佸埜鑲′唤鏈夐檺鍏徃鍗椾含姹熶笢涓矾璇佸埜钀ヤ笟锟?,
+            "鍥芥嘲鍚涘畨鍗椾含澶钩鍗楄矾",
+            "鍗庢嘲璇佸埜鍗椾含姹熶笢涓矾",
+            "鍥芥嘲鍚涘畨鍗椾含"
         ],
-        "小鳄�?: [
-            "中国银河证券股份有限公司北京中关村大街证券营业部",
-            "中信证券股份有限公司北京总部证券营业�?,
-            "银河证券北京中关村大�?,
-            "中信证券北京总部",
-            "银河证券北京"
+        "灏忛硠锟?: [
+            "涓浗閾舵渤璇佸埜鑲′唤鏈夐檺鍏徃鍖椾含涓叧鏉戝ぇ琛楄瘉鍒歌惀涓氶儴",
+            "涓俊璇佸埜鑲′唤鏈夐檺鍏徃鍖椾含鎬婚儴璇佸埜钀ヤ笟锟?,
+            "閾舵渤璇佸埜鍖椾含涓叧鏉戝ぇ锟?,
+            "涓俊璇佸埜鍖椾含鎬婚儴",
+            "閾舵渤璇佸埜鍖椾含"
         ]
     }
 
     @staticmethod
     def analyze_longhubu_capital(date=None):
         """
-        分析龙虎榜游�?        返回当日龙虎榜中的游资席位分�?        """
+        分析龙虎榜游资
+        返回当日龙虎榜中的游资席位分析
+        """
         try:
             import akshare as ak
             from datetime import datetime
 
-            # 获取龙虎榜数�?            try:
+            # 鑾峰彇榫欒檸姒滄暟锟?            try:
                 if date:
                     if isinstance(date, str):
                         date_str = date
                     else:
                         date_str = date.strftime("%Y%m%d")
                     lhb_df = ak.stock_lhb_detail_em(date=date_str)
-                    print(f"获取 {date_str} 的龙虎榜数据，共 {len(lhb_df)} 条记�?)
+                    print(f"鑾峰彇 {date_str} 鐨勯緳铏庢鏁版嵁锛屽叡 {len(lhb_df)} 鏉¤锟?)
                 else:
-                    # 获取最近几天的数据
+                    # 鑾峰彇鏈€杩戝嚑澶╃殑鏁版嵁
                     today = datetime.now()
                     lhb_df = ak.stock_lhb_detail_em(date=today.strftime("%Y%m%d"))
-                    print(f"获取今日龙虎榜数据，�?{len(lhb_df)} 条记�?)
+                    print(f"鑾峰彇浠婃棩榫欒檸姒滄暟鎹紝锟?{len(lhb_df)} 鏉¤锟?)
                     
-                    # 如果今日无数据，尝试获取昨天�?                    if lhb_df.empty:
+                    # 濡傛灉浠婃棩鏃犳暟鎹紝灏濊瘯鑾峰彇鏄ㄥぉ锟?                    if lhb_df.empty:
                         yesterday = today - pd.Timedelta(days=1)
                         lhb_df = ak.stock_lhb_detail_em(date=yesterday.strftime("%Y%m%d"))
-                        print(f"今日无数据，获取昨日龙虎榜数据，�?{len(lhb_df)} 条记�?)
+                        print(f"浠婃棩鏃犳暟鎹紝鑾峰彇鏄ㄦ棩榫欒檸姒滄暟鎹紝锟?{len(lhb_df)} 鏉¤锟?)
             except Exception as e:
-                print(f"获取龙虎榜数据失�? {e}")
+                print(f"鑾峰彇榫欒檸姒滄暟鎹け锟? {e}")
                 return {
-                    '数据状�?: '获取龙虎榜数据失�?,
-                    '错误信息': str(e),
-                    '说明': '可能是网络问题或数据源限制，请稍后重�?
+                    '鏁版嵁鐘讹拷?: '鑾峰彇榫欒檸姒滄暟鎹け锟?,
+                    '閿欒淇℃伅': str(e),
+                    '璇存槑': '鍙兘鏄綉缁滈棶棰樻垨鏁版嵁婧愰檺鍒讹紝璇风◢鍚庨噸锟?
                 }
 
             if lhb_df is None or lhb_df.empty:
-                print("龙虎榜数据为�?)
+                print("榫欒檸姒滄暟鎹负锟?)
                 return {
-                    '数据状�?: '无数�?,
-                    '说明': '暂无龙虎榜数据，可能今日无龙虎榜或数据未更新。建议选择其他日期查看�?
+                    '鏁版嵁鐘讹拷?: '鏃犳暟锟?,
+                    '璇存槑': '鏆傛棤榫欒檸姒滄暟鎹紝鍙兘浠婃棩鏃犻緳铏庢鎴栨暟鎹湭鏇存柊銆傚缓璁€夋嫨鍏朵粬鏃ユ湡鏌ョ湅锟?
                 }
             
-            # 打印列名，帮助调�?            print(f"龙虎榜数据列�? {lhb_df.columns.tolist()}")
-            print(f"�?条数据示�?\n{lhb_df.head(3)}")
+            # 鎵撳嵃鍒楀悕锛屽府鍔╄皟锟?            print(f"榫欒檸姒滄暟鎹垪锟? {lhb_df.columns.tolist()}")
+            print(f"锟?鏉℃暟鎹ず锟?\n{lhb_df.head(3)}")
 
-            # 分析游资席位
+            # 鍒嗘瀽娓歌祫甯綅
             capital_analysis = []
             capital_stats = {}
             matched_count = 0
 
-            # 打印所有营业部名称，帮助调�?            unique_seats = lhb_df['营业部名�?].unique()
-            print(f"共找�?{len(unique_seats)} 个不同的营业�?)
-            print(f"营业部列�? {unique_seats[:10]}...")  # 只打印前10�?
+            # 鎵撳嵃鎵€鏈夎惀涓氶儴鍚嶇О锛屽府鍔╄皟锟?            unique_seats = lhb_df['钀ヤ笟閮ㄥ悕锟?].unique()
+            print(f"鍏辨壘锟?{len(unique_seats)} 涓笉鍚岀殑钀ヤ笟锟?)
+            print(f"钀ヤ笟閮ㄥ垪锟? {unique_seats[:10]}...")  # 鍙墦鍗板墠10锟?
             for _, row in lhb_df.iterrows():
-                seat_name = str(row['营业部名�?])
+                seat_name = str(row['钀ヤ笟閮ㄥ悕锟?])
                 
-                # 检查是否为知名游资席位（使用模糊匹配）
+                # 妫€鏌ユ槸鍚︿负鐭ュ悕娓歌祫甯綅锛堜娇鐢ㄦā绯婂尮閰嶏級
                 for capital_name, seats in CapitalAnalyzer.FAMOUS_CAPITALISTS.items():
-                    # 精确匹配
+                    # 绮剧‘鍖归厤
                     if seat_name in seats:
                         matched = True
-                    # 模糊匹配：检查是否包含关键词
+                    # 妯＄硦鍖归厤锛氭鏌ユ槸鍚﹀寘鍚叧閿瘝
                     else:
                         matched = any(keyword in seat_name for keyword in seats)
                     
                     if matched:
                         matched_count += 1
-                        # 统计游资操作
+                        # 缁熻娓歌祫鎿嶄綔
                         if capital_name not in capital_stats:
                             capital_stats[capital_name] = {
-                                '买入次数': 0,
-                                '卖出次数': 0,
-                                '买入金额': 0,
-                                '卖出金额': 0,
-                                '操作股票': []
+                                '涔板叆娆℃暟': 0,
+                                '鍗栧嚭娆℃暟': 0,
+                                '涔板叆閲戦': 0,
+                                '鍗栧嚭閲戦': 0,
+                                '鎿嶄綔鑲＄エ': []
                             }
 
-                        # 判断买卖方向
-                        buy_amount = row.get('买入金额', 0)
-                        sell_amount = row.get('卖出金额', 0)
+                        # 鍒ゆ柇涔板崠鏂瑰悜
+                        buy_amount = row.get('涔板叆閲戦', 0)
+                        sell_amount = row.get('鍗栧嚭閲戦', 0)
                         
                         if buy_amount > 0:
-                            capital_stats[capital_name]['买入次数'] += 1
-                            capital_stats[capital_name]['买入金额'] += buy_amount
-                        elif row['卖出金额'] > 0:
-                            capital_stats[capital_name]['卖出次数'] += 1
-                            capital_stats[capital_name]['卖出金额'] += row['卖出金额']
+                            capital_stats[capital_name]['涔板叆娆℃暟'] += 1
+                            capital_stats[capital_name]['涔板叆閲戦'] += buy_amount
+                        elif row['鍗栧嚭閲戦'] > 0:
+                            capital_stats[capital_name]['鍗栧嚭娆℃暟'] += 1
+                            capital_stats[capital_name]['鍗栧嚭閲戦'] += row['鍗栧嚭閲戦']
 
-                        # 记录操作股票
+                        # 璁板綍鎿嶄綔鑲＄エ
                         stock_info = {
-                            '代码': row['代码'],
-                            '名称': row['名称'],
-                            '日期': row['上榜�?],
-                            '买入金额': row['买入金额'],
-                            '卖出金额': row['卖出金额'],
-                            '净买入': row['买入金额'] - row['卖出金额']
+                            '浠ｇ爜': row['浠ｇ爜'],
+                            '鍚嶇О': row['鍚嶇О'],
+                            '鏃ユ湡': row['涓婃锟?],
+                            '涔板叆閲戦': row['涔板叆閲戦'],
+                            '鍗栧嚭閲戦': row['鍗栧嚭閲戦'],
+                            '鍑€涔板叆': row['涔板叆閲戦'] - row['鍗栧嚭閲戦']
                         }
-                        capital_stats[capital_name]['操作股票'].append(stock_info)
+                        capital_stats[capital_name]['鎿嶄綔鑲＄エ'].append(stock_info)
 
                         capital_analysis.append({
-                            '游资名称': capital_name,
-                            '营业部名�?: row['营业部名�?],
-                            '股票代码': row['代码'],
-                            '股票名称': row['名称'],
-                            '上榜�?: row['上榜�?],
-                            '买入金额': row['买入金额'],
-                            '卖出金额': row['卖出金额'],
-                            '净买入': row['买入金额'] - row['卖出金额']
+                            '娓歌祫鍚嶇О': capital_name,
+                            '钀ヤ笟閮ㄥ悕锟?: row['钀ヤ笟閮ㄥ悕锟?],
+                            '鑲＄エ浠ｇ爜': row['浠ｇ爜'],
+                            '鑲＄エ鍚嶇О': row['鍚嶇О'],
+                            '涓婃锟?: row['涓婃锟?],
+                            '涔板叆閲戦': row['涔板叆閲戦'],
+                            '鍗栧嚭閲戦': row['鍗栧嚭閲戦'],
+                            '鍑€涔板叆': row['涔板叆閲戦'] - row['鍗栧嚭閲戦']
                         })
 
-            # 计算游资统计
+            # 璁＄畻娓歌祫缁熻
             capital_summary = []
             for capital_name, stats in capital_stats.items():
-                net_flow = stats['买入金额'] - stats['卖出金额']
-                total_trades = stats['买入次数'] + stats['卖出次数']
+                net_flow = stats['涔板叆閲戦'] - stats['鍗栧嚭閲戦']
+                total_trades = stats['涔板叆娆℃暟'] + stats['鍗栧嚭娆℃暟']
 
-                # 判断操作风格
-                if stats['买入金额'] > stats['卖出金额'] * 2:
-                    style = "激进买�?
-                elif stats['卖出金额'] > stats['买入金额'] * 2:
-                    style = "激进卖�?
+                # 鍒ゆ柇鎿嶄綔椋庢牸
+                if stats['涔板叆閲戦'] > stats['鍗栧嚭閲戦'] * 2:
+                    style = "婵€杩涗拱锟?
+                elif stats['鍗栧嚭閲戦'] > stats['涔板叆閲戦'] * 2:
+                    style = "婵€杩涘崠锟?
                 elif net_flow > 0:
-                    style = "偏多�?
+                    style = "鍋忓锟?
                 else:
-                    style = "偏空�?
+                    style = "鍋忕┖锟?
 
                 capital_summary.append({
-                    '游资名称': capital_name,
-                    '买入次数': stats['买入次数'],
-                    '卖出次数': stats['卖出次数'],
-                    '总操作次�?: total_trades,
-                    '买入金额': stats['买入金额'],
-                    '卖出金额': stats['卖出金额'],
-                    '净流入': net_flow,
-                    '操作风格': style,
-                    '操作股票�?: len(stats['操作股票'])
+                    '娓歌祫鍚嶇О': capital_name,
+                    '涔板叆娆℃暟': stats['涔板叆娆℃暟'],
+                    '鍗栧嚭娆℃暟': stats['鍗栧嚭娆℃暟'],
+                    '鎬绘搷浣滄锟?: total_trades,
+                    '涔板叆閲戦': stats['涔板叆閲戦'],
+                    '鍗栧嚭閲戦': stats['鍗栧嚭閲戦'],
+                    '鍑€娴佸叆': net_flow,
+                    '鎿嶄綔椋庢牸': style,
+                    '鎿嶄綔鑲＄エ锟?: len(stats['鎿嶄綔鑲＄エ'])
                 })
 
-            # 按净流入排序
-            capital_summary.sort(key=lambda x: x['净流入'], reverse=True)
+            # 鎸夊噣娴佸叆鎺掑簭
+            capital_summary.sort(key=lambda x: x['鍑€娴佸叆'], reverse=True)
 
-            print(f"分析完成：匹配到 {matched_count} 条游资操作记录，涉及 {len(capital_stats)} 个游�?)
+            print(f"鍒嗘瀽瀹屾垚锛氬尮閰嶅埌 {matched_count} 鏉℃父璧勬搷浣滆褰曪紝娑夊強 {len(capital_stats)} 涓父锟?)
 
             return {
-                '数据状�?: '正常',
-                '游资统计': capital_summary,
-                '游资操作记录': capital_analysis,
-                '匹配记录�?: matched_count,
-                '游资数量': len(capital_stats),
-                '龙虎榜总记录数': len(lhb_df),
-                '说明': f'�?{len(lhb_df)} 条龙虎榜记录中，找到 {matched_count} 条游资操作记�?
+                '鏁版嵁鐘讹拷?: '姝ｅ父',
+                '娓歌祫缁熻': capital_summary,
+                '娓歌祫鎿嶄綔璁板綍': capital_analysis,
+                '鍖归厤璁板綍锟?: matched_count,
+                '娓歌祫鏁伴噺': len(capital_stats),
+                '榫欒檸姒滄€昏褰曟暟': len(lhb_df),
+                '璇存槑': f'锟?{len(lhb_df)} 鏉￠緳铏庢璁板綍涓紝鎵惧埌 {matched_count} 鏉℃父璧勬搷浣滆锟?
             }
 
             return {
-                '数据状�?: '正常',
-                '游资分析列表': capital_analysis,
-                '游资统计汇�?: capital_summary,
-                '活跃游资�?: len(capital_stats),
-                '总操作次�?: len(capital_analysis)
+                '鏁版嵁鐘讹拷?: '姝ｅ父',
+                '娓歌祫鍒嗘瀽鍒楄〃': capital_analysis,
+                '娓歌祫缁熻姹囷拷?: capital_summary,
+                '娲昏穬娓歌祫锟?: len(capital_stats),
+                '鎬绘搷浣滄锟?: len(capital_analysis)
             }
 
         except Exception as e:
             return {
-                '数据状�?: '获取失败',
-                '错误信息': str(e),
-                '说明': '可能是网络问题或数据源限�?
+                '鏁版嵁鐘讹拷?: '鑾峰彇澶辫触',
+                '閿欒淇℃伅': str(e),
+                '璇存槑': '鍙兘鏄綉缁滈棶棰樻垨鏁版嵁婧愰檺锟?
             }
 
     @staticmethod
     def track_capital_pattern(capital_name, days=30):
         """
-        追踪游资操作模式
-        分析特定游资在指定时间内的操作规�?        """
+        杩借釜娓歌祫鎿嶄綔妯″紡
+        鍒嗘瀽鐗瑰畾娓歌祫鍦ㄦ寚瀹氭椂闂村唴鐨勬搷浣滆锟?        """
         try:
             import akshare as ak
 
             if capital_name not in CapitalAnalyzer.FAMOUS_CAPITALISTS:
                 return {
-                    '数据状�?: '未知游资',
-                    '说明': f'未找到游�? {capital_name}'
+                    '鏁版嵁鐘讹拷?: '鏈煡娓歌祫',
+                    '璇存槑': f'鏈壘鍒版父锟? {capital_name}'
                 }
 
-            # 获取该游资的席位列表
+            # 鑾峰彇璇ユ父璧勭殑甯綅鍒楄〃
             seats = CapitalAnalyzer.FAMOUS_CAPITALISTS[capital_name]
-            print(f"游资 {capital_name} 的席位列�? {seats}")
+            print(f"娓歌祫 {capital_name} 鐨勫腑浣嶅垪锟? {seats}")
 
-            # 获取历史龙虎榜数�?            end_date = pd.Timestamp.now()
+            # 鑾峰彇鍘嗗彶榫欒檸姒滄暟锟?            end_date = pd.Timestamp.now()
             start_date = end_date - pd.Timedelta(days=days)
 
             all_operations = []
             checked_dates = 0
             matched_dates = 0
 
-            # 获取每日龙虎榜数�?            current_date = start_date
+            # 鑾峰彇姣忔棩榫欒檸姒滄暟锟?            current_date = start_date
             while current_date <= end_date:
                 date_str = current_date.strftime("%Y%m%d")
                 checked_dates += 1
@@ -284,90 +286,90 @@ class CapitalAnalyzer:
                     lhb_df = ak.stock_lhb_detail_em(date=date_str)
 
                     if not lhb_df.empty:
-                        print(f"{date_str}: 获取�?{len(lhb_df)} 条龙虎榜记录")
+                        print(f"{date_str}: 鑾峰彇锟?{len(lhb_df)} 鏉￠緳铏庢璁板綍")
                         
-                        # 筛选该游资的操作（使用模糊匹配�?                        for _, row in lhb_df.iterrows():
-                            seat_name = str(row['营业部名�?])
+                        # 绛涢€夎娓歌祫鐨勬搷浣滐紙浣跨敤妯＄硦鍖归厤锟?                        for _, row in lhb_df.iterrows():
+                            seat_name = str(row['钀ヤ笟閮ㄥ悕锟?])
                             
-                            # 精确匹配或模糊匹�?                            if seat_name in seats or any(keyword in seat_name for keyword in seats):
+                            # 绮剧‘鍖归厤鎴栨ā绯婂尮锟?                            if seat_name in seats or any(keyword in seat_name for keyword in seats):
                                 matched_dates += 1
                                 all_operations.append({
-                                    '日期': row['上榜�?],
-                                    '股票代码': row['代码'],
-                                    '股票名称': row['名称'],
-                                    '买入金额': row.get('买入金额', 0),
-                                    '卖出金额': row.get('卖出金额', 0),
-                                    '净买入': row.get('买入金额', 0) - row.get('卖出金额', 0),
-                                    '营业部名�?: seat_name
+                                    '鏃ユ湡': row['涓婃锟?],
+                                    '鑲＄エ浠ｇ爜': row['浠ｇ爜'],
+                                    '鑲＄エ鍚嶇О': row['鍚嶇О'],
+                                    '涔板叆閲戦': row.get('涔板叆閲戦', 0),
+                                    '鍗栧嚭閲戦': row.get('鍗栧嚭閲戦', 0),
+                                    '鍑€涔板叆': row.get('涔板叆閲戦', 0) - row.get('鍗栧嚭閲戦', 0),
+                                    '钀ヤ笟閮ㄥ悕锟?: seat_name
                                 })
-                                print(f"  匹配�? {seat_name} - {row['名称']}({row['代码']})")
+                                print(f"  鍖归厤锟? {seat_name} - {row['鍚嶇О']}({row['浠ｇ爜']})")
                 except Exception as e:
-                    print(f"{date_str}: 获取数据失败 - {e}")
+                    print(f"{date_str}: 鑾峰彇鏁版嵁澶辫触 - {e}")
                     pass
 
                 current_date += pd.Timedelta(days=1)
 
-            print(f"检查了 {checked_dates} 天，�?{matched_dates} 天找到操作记录，�?{len(all_operations)} 条操�?)
+            print(f"妫€鏌ヤ簡 {checked_dates} 澶╋紝锟?{matched_dates} 澶╂壘鍒版搷浣滆褰曪紝锟?{len(all_operations)} 鏉℃搷锟?)
 
-            # 如果没有操作记录，显示所有找到的营业部名�?            if not all_operations:
-                # 获取最近几天的龙虎榜数据，收集所有营业部名称
+            # 濡傛灉娌℃湁鎿嶄綔璁板綍锛屾樉绀烘墍鏈夋壘鍒扮殑钀ヤ笟閮ㄥ悕锟?            if not all_operations:
+                # 鑾峰彇鏈€杩戝嚑澶╃殑榫欒檸姒滄暟鎹紝鏀堕泦鎵€鏈夎惀涓氶儴鍚嶇О
                 found_seats = []
                 sample_date = start_date
                 
-                for _ in range(min(5, days)):  # 最多检�?�?                    date_str = sample_date.strftime("%Y%m%d")
+                for _ in range(min(5, days)):  # 鏈€澶氭锟?锟?                    date_str = sample_date.strftime("%Y%m%d")
                     try:
                         lhb_df = ak.stock_lhb_detail_em(date=date_str)
                         if not lhb_df.empty:
-                            all_seats = lhb_df['营业部名�?].unique()
+                            all_seats = lhb_df['钀ヤ笟閮ㄥ悕锟?].unique()
                             found_seats.extend(all_seats)
-                            print(f"{date_str}: 找到 {len(all_seats)} 个营业部")
-                            if len(found_seats) >= 50:  # 收集足够多的营业�?                                break
+                            print(f"{date_str}: 鎵惧埌 {len(all_seats)} 涓惀涓氶儴")
+                            if len(found_seats) >= 50:  # 鏀堕泦瓒冲澶氱殑钀ヤ笟锟?                                break
                     except:
                         pass
                     sample_date += pd.Timedelta(days=1)
                 
-                # 去重并排�?                found_seats = sorted(list(set(found_seats)))
+                # 鍘婚噸骞舵帓锟?                found_seats = sorted(list(set(found_seats)))
                 
                 return {
-                    '数据状�?: '无操作记�?,
-                    '说明': f'{capital_name} 在最�?{days} 天内无操作记录。可能原因：1) 该游资近期未上榜 2) 席位名称不匹�?3) 数据源限制。请查看下方调试信息中的实际营业部名称进行对比�?,
-                    '检查天�?: checked_dates,
-                    '匹配天数': matched_dates,
-                    '游资席位': seats,
-                    '实际营业�?: found_seats[:30]  # 只返回前30�?                }
+                    '鏁版嵁鐘讹拷?: '鏃犳搷浣滆锟?,
+                    '璇存槑': f'{capital_name} 鍦ㄦ渶锟?{days} 澶╁唴鏃犳搷浣滆褰曘€傚彲鑳藉師鍥狅細1) 璇ユ父璧勮繎鏈熸湭涓婃 2) 甯綅鍚嶇О涓嶅尮锟?3) 鏁版嵁婧愰檺鍒躲€傝鏌ョ湅涓嬫柟璋冭瘯淇℃伅涓殑瀹為檯钀ヤ笟閮ㄥ悕绉拌繘琛屽姣旓拷?,
+                    '妫€鏌ュぉ锟?: checked_dates,
+                    '鍖归厤澶╂暟': matched_dates,
+                    '娓歌祫甯綅': seats,
+                    '瀹為檯钀ヤ笟锟?: found_seats[:30]  # 鍙繑鍥炲墠30锟?                }
 
-            # 分析操作模式
+            # 鍒嗘瀽鎿嶄綔妯″紡
             df_ops = pd.DataFrame(all_operations)
 
-            # 1. 操作频率
+            # 1. 鎿嶄綔棰戠巼
             operation_frequency = len(all_operations) / days
 
-            # 2. 买卖偏好
-            total_buy = df_ops['买入金额'].sum()
-            total_sell = df_ops['卖出金额'].sum()
+            # 2. 涔板崠鍋忓ソ
+            total_buy = df_ops['涔板叆閲戦'].sum()
+            total_sell = df_ops['鍗栧嚭閲戦'].sum()
             buy_ratio = total_buy / (total_buy + total_sell) if (total_buy + total_sell) > 0 else 0
 
-            # 3. 单次操作金额
-            avg_operation_amount = df_ops['净买入'].abs().mean()
+            # 3. 鍗曟鎿嶄綔閲戦
+            avg_operation_amount = df_ops['鍑€涔板叆'].abs().mean()
 
-            # 4. 操作成功率（后续3天涨跌）
+            # 4. 鎿嶄綔鎴愬姛鐜囷紙鍚庣画3澶╂定璺岋級
             success_count = 0
             total_count = 0
 
             db = DataManager()
             for op in all_operations:
                 try:
-                    symbol = op['股票代码']
-                    op_date = op['日期']
+                    symbol = op['鑲＄エ浠ｇ爜']
+                    op_date = op['鏃ユ湡']
 
-                    # 获取历史数据
+                    # 鑾峰彇鍘嗗彶鏁版嵁
                     start_date_str = op_date
                     end_date_str = (pd.Timestamp(op_date) + pd.Timedelta(days=5)).strftime("%Y%m%d")
 
                     df = db.get_history_data(symbol, start_date=start_date_str, end_date=end_date_str)
 
                     if not df.empty and len(df) > 3:
-                        # 计算操作�?天的涨跌�?                        op_price = df.iloc[0]['close']
+                        # 璁＄畻鎿嶄綔锟?澶╃殑娑ㄨ穼锟?                        op_price = df.iloc[0]['close']
                         future_price = df.iloc[3]['close']
                         future_return = (future_price - op_price) / op_price * 100
 
@@ -381,93 +383,93 @@ class CapitalAnalyzer:
 
             success_rate = (success_count / total_count * 100) if total_count > 0 else 0
 
-            # 5. 判断操作风格
+            # 5. 鍒ゆ柇鎿嶄綔椋庢牸
             if buy_ratio > 0.7:
-                style = "激进买入型"
+                style = "婵€杩涗拱鍏ュ瀷"
             elif buy_ratio < 0.3:
-                style = "激进卖出型"
+                style = "婵€杩涘崠鍑哄瀷"
             elif avg_operation_amount > 50000000:
-                style = "大资金操作型"
+                style = "澶ц祫閲戞搷浣滃瀷"
             else:
-                style = "均衡操作�?
+                style = "鍧囪　鎿嶄綔锟?
 
             return {
-                '数据状�?: '正常',
-                '游资名称': capital_name,
-                '分析天数': days,
-                '操作次数': len(all_operations),
-                '操作频率': round(operation_frequency, 2),
-                '总买入金�?: total_buy,
-                '总卖出金�?: total_sell,
-                '买入比例': round(buy_ratio * 100, 1),
-                '平均操作金额': round(avg_operation_amount, 0),
-                '操作成功�?: round(success_rate, 1),
-                '操作风格': style,
-                '操作记录': all_operations
+                '鏁版嵁鐘讹拷?: '姝ｅ父',
+                '娓歌祫鍚嶇О': capital_name,
+                '鍒嗘瀽澶╂暟': days,
+                '鎿嶄綔娆℃暟': len(all_operations),
+                '鎿嶄綔棰戠巼': round(operation_frequency, 2),
+                '鎬讳拱鍏ラ噾锟?: total_buy,
+                '鎬诲崠鍑洪噾锟?: total_sell,
+                '涔板叆姣斾緥': round(buy_ratio * 100, 1),
+                '骞冲潎鎿嶄綔閲戦': round(avg_operation_amount, 0),
+                '鎿嶄綔鎴愬姛锟?: round(success_rate, 1),
+                '鎿嶄綔椋庢牸': style,
+                '鎿嶄綔璁板綍': all_operations
             }
 
         except Exception as e:
             return {
-                '数据状�?: '分析失败',
-                '错误信息': str(e),
-                '说明': '可能是网络问题或数据源限�?
+                '鏁版嵁鐘讹拷?: '鍒嗘瀽澶辫触',
+                '閿欒淇℃伅': str(e),
+                '璇存槑': '鍙兘鏄綉缁滈棶棰樻垨鏁版嵁婧愰檺锟?
             }
 
     @staticmethod
     def predict_capital_next_move(capital_name):
         """
-        预测游资下一步操�?        基于历史操作模式预测
+        棰勬祴娓歌祫涓嬩竴姝ユ搷锟?        鍩轰簬鍘嗗彶鎿嶄綔妯″紡棰勬祴
         """
         try:
-            # 获取游资操作模式
+            # 鑾峰彇娓歌祫鎿嶄綔妯″紡
             pattern_result = CapitalAnalyzer.track_capital_pattern(capital_name, days=30)
 
-            if pattern_result['数据状�?] != '正常':
+            if pattern_result['鏁版嵁鐘讹拷?] != '姝ｅ父':
                 return pattern_result
 
-            # 获取最近操�?            recent_operations = pattern_result['操作记录'][-5:]  # 最�?次操�?
-            # 分析最近操作倾向
-            recent_buy = sum(op['买入金额'] for op in recent_operations)
-            recent_sell = sum(op['卖出金额'] for op in recent_operations)
+            # 鑾峰彇鏈€杩戞搷锟?            recent_operations = pattern_result['鎿嶄綔璁板綍'][-5:]  # 鏈€锟?娆℃搷锟?
+            # 鍒嗘瀽鏈€杩戞搷浣滃€惧悜
+            recent_buy = sum(op['涔板叆閲戦'] for op in recent_operations)
+            recent_sell = sum(op['鍗栧嚭閲戦'] for op in recent_operations)
 
-            # 预测
+            # 棰勬祴
             predictions = []
 
             if recent_buy > recent_sell * 2:
                 predictions.append({
-                    '预测类型': '继续买入',
-                    '概率': '�?,
-                    '说明': f'{capital_name} 最近大幅买入，可能继续加仓'
+                    '棰勬祴绫诲瀷': '缁х画涔板叆',
+                    '姒傜巼': '锟?,
+                    '璇存槑': f'{capital_name} 鏈€杩戝ぇ骞呬拱鍏ワ紝鍙兘缁х画鍔犱粨'
                 })
             elif recent_sell > recent_buy * 2:
                 predictions.append({
-                    '预测类型': '继续卖出',
-                    '概率': '�?,
-                    '说明': f'{capital_name} 最近大幅卖出，可能继续减仓'
+                    '棰勬祴绫诲瀷': '缁х画鍗栧嚭',
+                    '姒傜巼': '锟?,
+                    '璇存槑': f'{capital_name} 鏈€杩戝ぇ骞呭崠鍑猴紝鍙兘缁х画鍑忎粨'
                 })
             else:
                 predictions.append({
-                    '预测类型': '观望或小幅操�?,
-                    '概率': '�?,
-                    '说明': f'{capital_name} 最近操作均衡，可能观望'
+                    '棰勬祴绫诲瀷': '瑙傛湜鎴栧皬骞呮搷锟?,
+                    '姒傜巼': '锟?,
+                    '璇存槑': f'{capital_name} 鏈€杩戞搷浣滃潎琛★紝鍙兘瑙傛湜'
                 })
 
-            # 根据成功率预�?            if pattern_result['操作成功�?] > 60:
+            # 鏍规嵁鎴愬姛鐜囬锟?            if pattern_result['鎿嶄綔鎴愬姛锟?] > 60:
                 predictions.append({
-                    '预测类型': '关注其操�?,
-                    '概率': '�?,
-                    '说明': f'{capital_name} 历史成功率高，建议关注其操作'
+                    '棰勬祴绫诲瀷': '鍏虫敞鍏舵搷锟?,
+                    '姒傜巼': '锟?,
+                    '璇存槑': f'{capital_name} 鍘嗗彶鎴愬姛鐜囬珮锛屽缓璁叧娉ㄥ叾鎿嶄綔'
                 })
 
             return {
-                '数据状�?: '正常',
-                '游资名称': capital_name,
-                '预测列表': predictions
+                '鏁版嵁鐘讹拷?: '姝ｅ父',
+                '娓歌祫鍚嶇О': capital_name,
+                '棰勬祴鍒楄〃': predictions
             }
 
         except Exception as e:
             return {
-                '数据状�?: '预测失败',
-                '错误信息': str(e),
-                '说明': '可能是数据问�?
+                '鏁版嵁鐘讹拷?: '棰勬祴澶辫触',
+                '閿欒淇℃伅': str(e),
+                '璇存槑': '鍙兘鏄暟鎹棶锟?
             }
