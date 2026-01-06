@@ -63,7 +63,7 @@ def render_dragon_strategy_tab(db, config):
                     st.divider()
                     st.subheader("🔥 强龙头（重点关注）")
                     for stock in strong_dragons:
-                        with st.expander(f"{stock['龙头评级']} {stock['名称']} ({stock['代码']}) - 评分: {stock['评级得分']}", key=f"dragon_strong_{stock['代码']}"):
+                        with st.expander(f"{stock['龙头评级']} {stock['名称']} ({stock['代码']}) - 评分: {stock['评级得分']}"):
                             col1, col2, col3 = st.columns(3)
                             col1.metric("最新价", f"¥{stock['最新价']:.2f}")
                             col2.metric("涨跌幅", f"{stock['涨跌幅']:.2f}%")
@@ -98,7 +98,7 @@ def render_dragon_strategy_tab(db, config):
                     st.divider()
                     st.subheader("📈 潜力龙头（可关注）")
                     for stock in potential_dragons:
-                        with st.expander(f"{stock['龙头评级']} {stock['名称']} ({stock['代码']}) - 评分: {stock['评级得分']}", key=f"dragon_potential_{stock['代码']}"):
+                        with st.expander(f"{stock['龙头评级']} {stock['名称']} ({stock['代码']}) - 评分: {stock['评级得分']}"):
                             col1, col2 = st.columns(2)
                             col1.metric("最新价", f"¥{stock['最新价']:.2f}")
                             col2.metric("涨跌幅", f"{stock['涨跌幅']:.2f}%")
