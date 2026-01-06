@@ -199,23 +199,19 @@ def render_sentiment_tab(db, config):
 
                         # 检查实际列名并选择要显示的列
                         available_cols = dragon_df.columns.tolist()
-                        required_cols = ['代码', '名称', '最新价', '涨跌幅', '成交额', '换手率', '龙头评分']
+                        required_cols = ['代码', '名称', '涨停价', '涨跌幅', '封板强度', '龙头评分']
 
                         # 只选择存在的列
                         display_cols = [col for col in required_cols if col in available_cols]
                         display_df = dragon_df[display_cols].copy()
 
-                        # 格式化成交额（如果存在）
-                        if '成交额' in display_df.columns:
-                            display_df['成交额'] = display_df['成交额'].apply(Formatter.format_amount)
-
                         # 格式化涨跌幅（如果存在）
                         if '涨跌幅' in display_df.columns:
                             display_df['涨跌幅'] = display_df['涨跌幅'].apply(lambda x: f"{x:+.2f}%")
 
-                        # 格式化换手率（如果存在）
-                        if '换手率' in display_df.columns:
-                            display_df['换手率'] = display_df['换手率'].apply(lambda x: f"{x:.2f}%")
+                        # 格式化封板强度（如果存在）
+                        if '封板强度' in display_df.columns:
+                            display_df['封板强度'] = display_df['封板强度'].apply(lambda x: f"{x:.2f}")
 
                         # 显示表格
                         st.dataframe(display_df, width="stretch")
@@ -237,14 +233,14 @@ def render_sentiment_tab(db, config):
                         if selected_stock:
                             # 显示选中股票的详细信息
                             stock_info = dragon_df[dragon_df['代码'] == selected_stock].iloc[0]
-                            
+
                             col1, col2, col3, col4 = st.columns(4)
                             with col1:
                                 st.metric("代码", stock_info['代码'])
                             with col2:
                                 st.metric("名称", stock_info['名称'])
                             with col3:
-                                st.metric("最新价", f"¥{stock_info['最新价']:.2f}")
+                                st.metric("最新价", f"¥{stock_info['涨停价']:.2f}")
                             with col4:
                                 st.metric("龙头评分", f"{stock_info['龙头评分']:.1f}")
                             

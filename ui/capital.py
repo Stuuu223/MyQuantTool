@@ -28,34 +28,63 @@ def render_capital_tab(db, config):
                 capital_result = CapitalAnalyzer.analyze_longhubu_capital(date=date_str)
 
             if capital_result['数据状态'] == '正常':
-                st.success(f"✅ 分析完成！发现 {capital_result['活跃游资数']} 个活跃游资，共 {capital_result['总操作次数']} 次操作")
+                # 检查返回的数据类型
+                if '龙虎榜股票' in capital_result:
+                    # 返回的是龙虎榜股票列表（无营业部信息）
+                    st.success(f"✅ 分析完成！共发现 {capital_result['股票数量']} 只龙虎榜股票")
+                    st.info(capital_result.get('说明', ''))
 
-                # 显示游资统计汇总
-                if capital_result['游资统计汇总']:
-                    st.divider()
-                    st.subheader("📊 游资统计汇总")
+                    # 显示龙虎榜股票列表
+                    if capital_result['龙虎榜股票']:
+                        st.divider()
+                        st.subheader("📊 龙虎榜股票列表")
 
-                    summary_df = pd.DataFrame(capital_result['游资统计汇总'])
-                    st.dataframe(summary_df, width="stretch", hide_index=True)
+                        stock_df = pd.DataFrame(capital_result['龙虎榜股票'])
+                        st.dataframe(stock_df, width="stretch", hide_index=True)
+                elif '活跃营业部' in capital_result:
+                    # 返回的是活跃营业部数据
+                    st.success(f"✅ 分析完成！共发现 {capital_result['营业部数量']} 个活跃营业部")
+                    st.info(capital_result.get('说明', ''))
 
-                # 显示详细操作记录
-                if capital_result['游资分析列表']:
-                    st.divider()
-                    st.subheader("📝 详细操作记录")
+                    # 显示活跃营业部列表
+                    if capital_result['活跃营业部'] is not None and not capital_result['活跃营业部'].empty:
+                        st.divider()
+                        st.subheader("🏪 活跃营业部")
 
-                    for record in capital_result['游资分析列表'][:20]:  # 只显示前20条
-                        with st.expander(f"{record['游资名称']} - {record['股票名称']} ({record['股票代码']})"):
-                            col1, col2, col3 = st.columns(3)
-                            with col1:
-                                st.metric("买入金额", Formatter.format_amount(record['买入金额']))
-                            with col2:
-                                st.metric("卖出金额", Formatter.format_amount(record['卖出金额']))
-                            with col3:
-                                st.metric("净买入", Formatter.format_amount(record['净买入']))
-                            st.write(f"**上榜日：** {record['上榜日']}")
-                            st.write(f"**营业部：** {record['营业部名称']}")
+                        yyb_df = capital_result['活跃营业部'].head(20)
+                        st.dataframe(yyb_df, width="stretch", hide_index=True)
                 else:
-                    st.info("👍 今日龙虎榜中无知名游资操作")
+                    # 返回的是游资分析结果
+                    active_capital_count = capital_result.get('游资数量', 0)
+                    total_operations = capital_result.get('匹配记录数', 0)
+                    st.success(f"✅ 分析完成！发现 {active_capital_count} 个活跃游资，共 {total_operations} 次操作")
+
+                    # 显示游资统计汇总
+                    if capital_result.get('游资统计'):
+                        st.divider()
+                        st.subheader("📊 游资统计汇总")
+
+                        summary_df = pd.DataFrame(capital_result['游资统计'])
+                        st.dataframe(summary_df, width="stretch", hide_index=True)
+
+                    # 显示详细操作记录
+                    if capital_result.get('游资操作记录'):
+                        st.divider()
+                        st.subheader("📝 详细操作记录")
+
+                        for record in capital_result['游资操作记录'][:20]:  # 只显示前20条
+                            with st.expander(f"{record['游资名称']} - {record['股票名称']} ({record['股票代码']})"):
+                                col1, col2, col3 = st.columns(3)
+                                with col1:
+                                    st.metric("买入金额", Formatter.format_amount(record['买入金额']))
+                                with col2:
+                                    st.metric("卖出金额", Formatter.format_amount(record['卖出金额']))
+                                with col3:
+                                    st.metric("净买入", Formatter.format_amount(record['净买入']))
+                                st.write(f"**上榜日：** {record['上榜日']}")
+                                st.write(f"**营业部：** {record['营业部名称']}")
+                    else:
+                        st.info("👍 今日龙虎榜中无知名游资操作")
             else:
                 st.error(f"❌ {capital_result['数据状态']}")
                 if '说明' in capital_result:
