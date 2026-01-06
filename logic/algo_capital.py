@@ -200,9 +200,16 @@ class CapitalAnalyzer:
                         # 构建席位数据
                         all_seat_data = []
                         for _, row in yyb_stats.head(50).iterrows():  # 取前50条
-                            # 处理金额数据
-                            buy_amount = row.get('买入总额', 0)
-                            sell_amount = row.get('卖出总额', 0)
+                            # 找到营业部名称列
+                            seat_name = ''
+                            for col in yyb_stats.columns:
+                                if '营业部' in col:
+                                    seat_name = str(row.get(col, ''))
+                                    break
+
+                            # 处理金额数据（累积购买额和累积卖出额）
+                            buy_amount = row.get('累积购买额', 0)
+                            sell_amount = row.get('累积卖出额', 0)
 
                             # 确保金额是数值类型
                             if pd.notna(buy_amount):
@@ -221,23 +228,38 @@ class CapitalAnalyzer:
                             else:
                                 sell_amount = 0
 
-                            # 找到营业部名称列
-                            seat_name = ''
-                            for col in yyb_stats.columns:
-                                if '营业部' in col:
-                                    seat_name = str(row.get(col, ''))
-                                    break
+                            # 获取买入和卖出次数
+                            buy_count = row.get('买入席位数', 0)
+                            sell_count = row.get('卖出席位数', 0)
+
+                            if pd.notna(buy_count):
+                                try:
+                                    buy_count = int(buy_count)
+                                except:
+                                    buy_count = 0
+                            else:
+                                buy_count = 0
+
+                            if pd.notna(sell_count):
+                                try:
+                                    sell_count = int(sell_count)
+                                except:
+                                    sell_count = 0
+                            else:
+                                sell_count = 0
 
                             all_seat_data.append({
                                 '代码': '',
-                                '名称': str(row.get('操作前股票', '')),
+                                '名称': str(row.get('买入前三股票', '')),
                                 '上榜日': '2026-01-06',  # 使用当前日期
                                 '收盘价': 0,
                                 '涨跌幅': 0,
                                 '营业部名称': seat_name,
                                 '买入额': buy_amount,
                                 '卖出额': sell_amount,
-                                '净买入': buy_amount - sell_amount
+                                '净买入': buy_amount - sell_amount,
+                                '买入次数': buy_count,
+                                '卖出次数': sell_count
                             })
 
                         if all_seat_data:
@@ -245,6 +267,7 @@ class CapitalAnalyzer:
                             lhb_df = seat_df
                             seat_col = '营业部名称'
                             print(f"成功获取席位数据，共 {len(lhb_df)} 条记录")
+                            print(f"样本数据:\n{lhb_df.head(3).to_string()}")
                         else:
                             print("新浪数据中没有有效的席位信息")
                     else:
@@ -326,14 +349,19 @@ class CapitalAnalyzer:
                             }
 
                         # 判断买卖方向
-                        buy_amount = row.get('龙虎榜买入额', row.get('买入金额', 0))
-                        sell_amount = row.get('龙虎榜卖出额', row.get('卖出金额', 0))
+                        # 新浪数据使用累积购买额和累积卖出额
+                        buy_amount = row.get('买入额', 0)
+                        sell_amount = row.get('卖出额', 0)
 
-                        if buy_amount > 0:
-                            capital_stats[capital_name]['买入次数'] += 1
+                        # 获取买入和卖出次数
+                        buy_count = row.get('买入次数', 0)
+                        sell_count = row.get('卖出次数', 0)
+
+                        if buy_amount > 0 or buy_count > 0:
+                            capital_stats[capital_name]['买入次数'] += buy_count if buy_count > 0 else 1
                             capital_stats[capital_name]['买入金额'] += buy_amount
-                        elif sell_amount > 0:
-                            capital_stats[capital_name]['卖出次数'] += 1
+                        if sell_amount > 0 or sell_count > 0:
+                            capital_stats[capital_name]['卖出次数'] += sell_count if sell_count > 0 else 1
                             capital_stats[capital_name]['卖出金额'] += sell_amount
 
                         # 记录操作股票
