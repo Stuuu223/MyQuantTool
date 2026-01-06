@@ -91,6 +91,7 @@ class CapitalAnalyzer:
         try:
             import akshare as ak
             from datetime import datetime
+            import time
 
             # 获取龙虎榜数据
             try:
@@ -145,75 +146,109 @@ class CapitalAnalyzer:
                     break
 
             if seat_col is None:
-                print(f"未找到营业部名称列，尝试使用新浪接口获取营业部数据")
+                print(f"龙虎榜数据中没有营业部名称列，尝试使用新浪接口获取营业部数据")
 
-                # 尝试使用新浪接口获取营业部数据
+                # 使用新浪接口获取营业部统计数据
                 try:
-                    yyb_stats = ak.stock_lhb_yytj_sina(symbol='5')
+                    yyb_stats = ak.stock_lhb_yytj_sina(symbol='5')  # 获取最近5天的数据
                     if not yyb_stats.empty:
                         print(f"获取到 {len(yyb_stats)} 条营业部统计数据")
+                        print(f"新浪数据列名: {yyb_stats.columns.tolist()}")
 
-                        # 筛选当天的数据
-                        if date:
-                            if isinstance(date, str):
-                                if '-' in date:
-                                    date_obj = pd.to_datetime(date)
-                                    target_date = date_obj.strftime('%Y-%m-%d')
-                                else:
-                                    target_date = date
+                        # 构建席位数据
+                        all_seat_data = []
+                        for _, row in yyb_stats.head(50).iterrows():  # 取前50条
+                            # 处理金额数据
+                            buy_amount = row.get('买入总额', 0)
+                            sell_amount = row.get('卖出总额', 0)
+
+                            # 确保金额是数值类型
+                            if pd.notna(buy_amount):
+                                try:
+                                    buy_amount = float(buy_amount)
+                                except:
+                                    buy_amount = 0
                             else:
-                                target_date = date.strftime('%Y-%m-%d')
+                                buy_amount = 0
 
-                            # 筛选当天或最近的数据
-                            recent_yyb = yyb_stats[yyb_stats['上榜日期'] == target_date]
-                            if recent_yyb.empty:
-                                # 如果没有当天的数据，使用最近的数据
-                                recent_yyb = yyb_stats.sort_values('上榜日期', ascending=False).head(20)
+                            if pd.notna(sell_amount):
+                                try:
+                                    sell_amount = float(sell_amount)
+                                except:
+                                    sell_amount = 0
+                            else:
+                                sell_amount = 0
 
-                        return {
-                            '数据状态': '正常',
-                            '说明': '使用新浪数据源获取营业部统计',
-                            '活跃营业部': recent_yyb,
-                            '营业部数量': len(recent_yyb)
-                        }
+                            # 找到营业部名称列
+                            seat_name = ''
+                            for col in yyb_stats.columns:
+                                if '营业部' in col:
+                                    seat_name = str(row.get(col, ''))
+                                    break
+
+                            all_seat_data.append({
+                                '代码': '',
+                                '名称': str(row.get('操作前股票', '')),
+                                '上榜日': '2026-01-06',  # 使用当前日期
+                                '收盘价': 0,
+                                '涨跌幅': 0,
+                                '营业部名称': seat_name,
+                                '买入额': buy_amount,
+                                '卖出额': sell_amount,
+                                '净买入': buy_amount - sell_amount
+                            })
+
+                        if all_seat_data:
+                            seat_df = pd.DataFrame(all_seat_data)
+                            lhb_df = seat_df
+                            seat_col = '营业部名称'
+                            print(f"成功获取席位数据，共 {len(lhb_df)} 条记录")
+                        else:
+                            print("新浪数据中没有有效的席位信息")
+                    else:
+                        print("新浪接口返回空数据")
                 except Exception as e:
                     print(f"获取新浪营业部数据失败: {e}")
+                    import traceback
+                    traceback.print_exc()
 
                 # 如果新浪接口也失败，尝试获取历史营业部数据
-                try:
-                    active_yyb = ak.stock_lhb_hyyyb_em()
-                    if not active_yyb.empty:
-                        print(f"获取到 {len(active_yyb)} 条历史营业部数据")
-                        # 返回历史营业部数据
-                        return {
-                            '数据状态': '正常',
-                            '说明': '当前数据源不提供当日营业部明细，显示历史活跃营业部数据',
-                            '活跃营业部': active_yyb,
-                            '营业部数量': len(active_yyb)
-                        }
-                except Exception as e:
-                    print(f"获取历史营业部数据失败: {e}")
+                if seat_col is None:
+                    try:
+                        active_yyb = ak.stock_lhb_hyyyb_em()
+                        if not active_yyb.empty:
+                            print(f"获取到 {len(active_yyb)} 条历史营业部数据")
+                            # 返回历史营业部数据
+                            return {
+                                '数据状态': '正常',
+                                '说明': '当前数据源不提供当日营业部明细，显示历史活跃营业部数据',
+                                '活跃营业部': active_yyb,
+                                '营业部数量': len(active_yyb)
+                            }
+                    except Exception as e:
+                        print(f"获取历史营业部数据失败: {e}")
 
                 # 如果所有方法都失败，返回龙虎榜股票列表
-                print(f"返回龙虎榜股票列表")
-                stock_list = []
-                for _, row in lhb_df.iterrows():
-                    stock_list.append({
-                        '代码': row['代码'],
-                        '名称': row['名称'],
-                        '上榜日': row['上榜日'],
-                        '收盘价': row['收盘价'],
-                        '涨跌幅': row['涨跌幅'],
-                        '龙虎榜净买额': row['龙虎榜净买额'],
-                        '上榜原因': row['上榜原因']
-                    })
+                if seat_col is None:
+                    print(f"返回龙虎榜股票列表")
+                    stock_list = []
+                    for _, row in lhb_df.iterrows():
+                        stock_list.append({
+                            '代码': row['代码'],
+                            '名称': row['名称'],
+                            '上榜日': row['上榜日'],
+                            '收盘价': row['收盘价'],
+                            '涨跌幅': row['涨跌幅'],
+                            '龙虎榜净买额': row['龙虎榜净买额'],
+                            '上榜原因': row['上榜原因']
+                        })
 
-                return {
-                    '数据状态': '正常',
-                    '说明': '当前数据源不提供营业部明细，仅显示龙虎榜股票列表',
-                    '龙虎榜股票': stock_list,
-                    '股票数量': len(stock_list)
-                }
+                    return {
+                        '数据状态': '正常',
+                        '说明': '当前数据源不提供营业部明细，仅显示龙虎榜股票列表',
+                        '龙虎榜股票': stock_list,
+                        '股票数量': len(stock_list)
+                    }
 
             # 分析游资席位
             capital_analysis = []
