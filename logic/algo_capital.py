@@ -10,6 +10,10 @@ from datetime import datetime, timedelta
 from functools import wraps
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from logic.data_manager import DataManager
+from logic.logger import get_logger, log_execution_time, performance_context
+
+# 获取日志记录器
+logger = get_logger(__name__)
 
 
 class CacheManager:
@@ -19,6 +23,12 @@ class CacheManager:
         """初始化缓存管理器"""
         self.db_path = db_path
         self._init_db()
+        self.stats = {
+            'hits': 0,
+            'misses': 0,
+            'sets': 0,
+            'deletes': 0
+        }
 
     def _init_db(self):
         """初始化数据库"""
@@ -29,7 +39,9 @@ class CacheManager:
                 key TEXT PRIMARY KEY,
                 data TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                expires_at TIMESTAMP NOT NULL
+                expires_at TIMESTAMP NOT NULL,
+                access_count INTEGER DEFAULT 0,
+                last_accessed TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
         conn.commit()
@@ -40,14 +52,27 @@ class CacheManager:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         cursor.execute('''
-            SELECT data, expires_at FROM api_cache
+            SELECT data, expires_at, access_count FROM api_cache
             WHERE key = ? AND expires_at > CURRENT_TIMESTAMP
         ''', (key,))
         result = cursor.fetchone()
-        conn.close()
-
+        
         if result:
+            # 更新访问统计
+            cursor.execute('''
+                UPDATE api_cache 
+                SET access_count = access_count + 1,
+                    last_accessed = CURRENT_TIMESTAMP
+                WHERE key = ?
+            ''', (key,))
+            conn.commit()
+            
+            self.stats['hits'] += 1
+            conn.close()
             return json.loads(result[0])
+        
+        self.stats['misses'] += 1
+        conn.close()
         return None
 
     def set(self, key, data, ttl=3600):
@@ -56,19 +81,78 @@ class CacheManager:
         cursor = conn.cursor()
         expires_at = datetime.now() + timedelta(seconds=ttl)
         cursor.execute('''
-            INSERT OR REPLACE INTO api_cache (key, data, expires_at)
-            VALUES (?, ?, ?)
+            INSERT OR REPLACE INTO api_cache (key, data, expires_at, access_count, last_accessed)
+            VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP)
         ''', (key, json.dumps(data), expires_at.strftime('%Y-%m-%d %H:%M:%S')))
         conn.commit()
         conn.close()
+        
+        self.stats['sets'] += 1
+
+    def delete(self, key):
+        """删除缓存数据"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM api_cache WHERE key = ?', (key,))
+        conn.commit()
+        conn.close()
+        
+        self.stats['deletes'] += 1
 
     def clear_expired(self):
         """清理过期缓存"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         cursor.execute('DELETE FROM api_cache WHERE expires_at <= CURRENT_TIMESTAMP')
+        deleted_count = cursor.rowcount
         conn.commit()
         conn.close()
+        
+        return deleted_count
+
+    def get_stats(self):
+        """获取缓存统计信息"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        # 获取缓存总数
+        cursor.execute('SELECT COUNT(*) FROM api_cache')
+        total_count = cursor.fetchone()[0]
+        
+        # 获取过期缓存数
+        cursor.execute('SELECT COUNT(*) FROM api_cache WHERE expires_at <= CURRENT_TIMESTAMP')
+        expired_count = cursor.fetchone()[0]
+        
+        conn.close()
+        
+        hit_rate = self.stats['hits'] / (self.stats['hits'] + self.stats['misses']) if (self.stats['hits'] + self.stats['misses']) > 0 else 0
+        
+        return {
+            'total_keys': total_count,
+            'expired_keys': expired_count,
+            'active_keys': total_count - expired_count,
+            'hits': self.stats['hits'],
+            'misses': self.stats['misses'],
+            'hit_rate': hit_rate,
+            'sets': self.stats['sets'],
+            'deletes': self.stats['deletes']
+        }
+
+    def clear_all(self):
+        """清空所有缓存"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM api_cache')
+        conn.commit()
+        conn.close()
+        
+        # 重置统计
+        self.stats = {
+            'hits': 0,
+            'misses': 0,
+            'sets': 0,
+            'deletes': 0
+        }
 
 
 def retry_with_backoff(max_retries=3, backoff_factor=2):
@@ -223,6 +307,7 @@ class CapitalAnalyzer:
     cache = CacheManager()
 
     @staticmethod
+    @log_execution_time
     def analyze_longhubu_capital(date=None):
         """
         分析龙虎榜游资
@@ -233,6 +318,8 @@ class CapitalAnalyzer:
         2. 第二层：新浪接口 - 使用 stock_lhb_yytj_sina 获取累积统计数据
         3. 第三层：本地缓存 - 如果前两层都失败，返回历史数据
         """
+        logger.info(f"开始分析龙虎榜游资，日期: {date or '最新'}")
+
         try:
             import akshare as ak
             from datetime import datetime
@@ -242,13 +329,13 @@ class CapitalAnalyzer:
             cache_key = f"lhb_capital_{date or 'latest'}"
             cached_data = CapitalAnalyzer.cache.get(cache_key)
             if cached_data:
-                print(f"从缓存获取数据: {cache_key}")
+                logger.info(f"从缓存获取数据: {cache_key}")
                 return cached_data
 
             # ===== 第一层：东方财富接口 =====
-            print("=" * 60)
-            print("第一层数据源：东方财富接口")
-            print("=" * 60)
+            logger.info("=" * 60)
+            logger.info("第一层数据源：东方财富接口")
+            logger.info("=" * 60)
 
             # 获取龙虎榜数据
             try:
@@ -264,31 +351,31 @@ class CapitalAnalyzer:
                     else:
                         date_str = date.strftime("%Y%m%d")
                     lhb_df = ak.stock_lhb_detail_em(start_date=date_str, end_date=date_str)
-                    print(f"获取 {date_str} 的龙虎榜数据，共 {len(lhb_df)} 条记录")
+                    logger.info(f"获取 {date_str} 的龙虎榜数据，共 {len(lhb_df)} 条记录")
                 else:
                     # 获取最近几天的数据
                     today = datetime.now()
                     lhb_df = ak.stock_lhb_detail_em(start_date=today.strftime("%Y%m%d"), end_date=today.strftime("%Y%m%d"))
-                    print(f"获取今日龙虎榜数据，共 {len(lhb_df)} 条记录")
+                    logger.info(f"获取今日龙虎榜数据，共 {len(lhb_df)} 条记录")
 
                     # 如果今日无数据，尝试获取昨天
                     if lhb_df.empty:
                         yesterday = today - pd.Timedelta(days=1)
                         lhb_df = ak.stock_lhb_detail_em(start_date=yesterday.strftime("%Y%m%d"), end_date=yesterday.strftime("%Y%m%d"))
-                        print(f"今日无数据，获取昨日龙虎榜数据，共 {len(lhb_df)} 条记录")
+                        logger.info(f"今日无数据，获取昨日龙虎榜数据，共 {len(lhb_df)} 条记录")
             except Exception as e:
-                print(f"获取龙虎榜数据失败: {e}")
+                logger.error(f"获取龙虎榜数据失败: {e}", exc_info=True)
                 lhb_df = None
 
             # 如果龙虎榜数据为空，尝试第二层数据源
             if lhb_df is None or lhb_df.empty:
-                print("龙虎榜数据为空，切换到第二层数据源")
+                logger.warning("龙虎榜数据为空，切换到第二层数据源")
                 return CapitalAnalyzer._get_sina_data()
 
-            print(f"[OK] 获取 {len(lhb_df)} 只龙虎榜股票")
+            logger.info(f"[OK] 获取 {len(lhb_df)} 只龙虎榜股票")
 
             # ===== 方案1：按股票逐个查询营业部明细（并发优化） =====
-            print("=" * 60)
+            logger.info("=" * 60)
             print("方案1：按股票逐个查询营业部明细（并发查询）")
             print("=" * 60)
 
@@ -1293,3 +1380,34 @@ class CapitalAnalyzer:
                 '错误信息': str(e),
                 '说明': '可能是数据问题'
             }
+
+    @staticmethod
+    def get_performance_stats():
+        """获取性能统计信息
+        
+        Returns:
+            包含缓存统计和性能指标的字典
+        """
+        cache_stats = CapitalAnalyzer.cache.get_stats()
+        
+        return {
+            '缓存统计': cache_stats,
+            '缓存命中率': f"{cache_stats['hit_rate'] * 100:.2f}%",
+            '活跃缓存数': cache_stats['active_keys'],
+            '过期缓存数': cache_stats['expired_keys'],
+            '总缓存数': cache_stats['total_keys']
+        }
+
+    @staticmethod
+    def clear_cache():
+        """清空所有缓存"""
+        CapitalAnalyzer.cache.clear_all()
+        logger.info("已清空所有缓存")
+        return {'状态': '成功', '说明': '已清空所有缓存'}
+
+    @staticmethod
+    def cleanup_expired_cache():
+        """清理过期缓存"""
+        deleted_count = CapitalAnalyzer.cache.clear_expired()
+        logger.info(f"已清理 {deleted_count} 条过期缓存")
+        return {'状态': '成功', '说明': f'已清理 {deleted_count} 条过期缓存'}
