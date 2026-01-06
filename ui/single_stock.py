@@ -161,7 +161,11 @@ def render_single_stock_tab(db: DataManager, config: Config):
         else:
             current_price = df.iloc[-1]['close']
             prev_close = df.iloc[-2]['close']
-            change_pct = (current_price - prev_close) / prev_close * 100
+            # 防止除以零
+            if prev_close != 0:
+                change_pct = (current_price - prev_close) / prev_close * 100
+            else:
+                change_pct = 0.0
             st.info("使用历史数据（实时数据获取失败）")
         
         # 计算技术指标

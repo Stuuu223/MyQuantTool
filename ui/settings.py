@@ -4,7 +4,6 @@ import pandas as pd
 
 def render_settings_tab(db, config):
     st.subheader("⚙️ 系统设置")
-    st.subheader("⚙️ 系统设置")
     st.caption("个性化设置和系统配置")
 
     # 导入用户偏好管理器

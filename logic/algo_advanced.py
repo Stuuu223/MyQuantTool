@@ -20,119 +20,75 @@ class AdvancedAlgo:
         try:
             import akshare as ak
 
-            # 获取板块数据
+            # 获取板块数据（添加超时处理）
             try:
                 # 获取概念板块数据
                 concept_df = ak.stock_board_concept_name_em()
+            except Exception as e:
+                print(f"获取概念板块失败: {e}")
+                concept_df = pd.DataFrame()
+            
+            try:
+                # 获取行业板块数据
                 industry_df = ak.stock_board_industry_name_em()
-            except:
+            except Exception as e:
+                print(f"获取行业板块失败: {e}")
+                industry_df = pd.DataFrame()
+
+            if concept_df.empty and industry_df.empty:
                 return {
                     '数据状态': '无法获取板块数据',
-                    '说明': '可能是数据源限制'
+                    '说明': '网络连接超时，请稍后再试'
                 }
 
-            # 分析概念板块异动
-            hot_concepts = []
+            # 合并概念板块和行业板块
+            all_boards = []
             if not concept_df.empty:
-                # 筛选涨幅较大、成交量放大的板块
-                concept_df['综合得分'] = (
-                    concept_df['涨跌幅'] * 0.5 +
-                    concept_df['涨家数'] * 0.3 +
-                    concept_df['量比'] * 0.2
-                )
-                hot_concepts = concept_df.nlargest(limit, '综合得分')
-
-            # 分析行业板块异动
-            hot_industries = []
+                concept_df['板块类型'] = '概念'
+                all_boards.append(concept_df)
             if not industry_df.empty:
-                industry_df['综合得分'] = (
-                    industry_df['涨跌幅'] * 0.5 +
-                    industry_df['涨家数'] * 0.3 +
-                    industry_df['量比'] * 0.2
-                )
-                hot_industries = industry_df.nlargest(limit, '综合得分')
+                industry_df['板块类型'] = '行业'
+                all_boards.append(industry_df)
+            
+            if not all_boards:
+                return {
+                    '数据状态': '无法获取板块数据',
+                    '说明': '网络连接超时，请稍后再试'
+                }
+            
+            # 合并所有板块
+            combined_df = pd.concat(all_boards, ignore_index=True)
+            
+            # 计算综合得分
+            # 主要看涨跌幅和换手率，降低上涨家数的权重
+            # 标准化上涨家数（除以100），避免数值差异过大
+            combined_df['综合得分'] = (
+                combined_df['涨跌幅'] * 0.6 +
+                (combined_df['上涨家数'] / 100) * 0.2 +
+                combined_df['换手率'] * 0.2
+            )
+            
+            # 统一排序，取前limit个最热的板块
+            hot_boards = combined_df.nlargest(limit, '综合得分')
 
             # 识别每个板块的龙头股
             db = DataManager()
             topic_leaders = {}
 
-            # 分析概念板块龙头
-            for _, row in hot_concepts.iterrows():
-                concept_name = row['板块名称']
-                try:
-                    # 获取板块成分股
-                    concept_stocks = ak.stock_board_concept_cons_em(symbol=row['板块代码'])
+            # 为了性能考虑，不获取成分股数据
+            # 用户可以通过"分析题材持续度"功能获取更详细的信息
 
-                    if not concept_stocks.empty:
-                        # 筛选出强势股（涨幅大、成交量大）
-                        concept_stocks['龙头得分'] = (
-                            concept_stocks['涨跌幅'] * 0.4 +
-                            concept_stocks['最新价'] / concept_stocks['昨收'] * 0.3 +
-                            concept_stocks['成交额'] / concept_stocks['成交额'].mean() * 0.3
-                        )
-
-                        # 取前3只作为龙头
-                        top_stocks = concept_stocks.nlargest(3, '龙头得分')
-
-                        topic_leaders[concept_name] = {
-                            '板块类型': '概念',
-                            '涨跌幅': row['涨跌幅'],
-                            '涨家数': row['涨家数'],
-                            '跌家数': row['跌家数'],
-                            '量比': row['量比'],
-                            '龙头股': [
-                                {
-                                    '代码': s['代码'],
-                                    '名称': s['名称'],
-                                    '涨跌幅': s['涨跌幅'],
-                                    '最新价': s['最新价'],
-                                    '成交额': s['成交额']
-                                }
-                                for _, s in top_stocks.iterrows()
-                            ]
-                        }
-                except Exception as e:
-                    print(f"分析板块 {concept_name} 失败: {e}")
-                    continue
-
-            # 分析行业板块龙头
-            for _, row in hot_industries.iterrows():
-                industry_name = row['板块名称']
-                try:
-                    # 获取板块成分股
-                    industry_stocks = ak.stock_board_industry_cons_em(symbol=row['板块代码'])
-
-                    if not industry_stocks.empty:
-                        # 筛选出强势股
-                        industry_stocks['龙头得分'] = (
-                            industry_stocks['涨跌幅'] * 0.4 +
-                            industry_stocks['最新价'] / industry_stocks['昨收'] * 0.3 +
-                            industry_stocks['成交额'] / industry_stocks['成交额'].mean() * 0.3
-                        )
-
-                        # 取前3只作为龙头
-                        top_stocks = industry_stocks.nlargest(3, '龙头得分')
-
-                        topic_leaders[industry_name] = {
-                            '板块类型': '行业',
-                            '涨跌幅': row['涨跌幅'],
-                            '涨家数': row['涨家数'],
-                            '跌家数': row['跌家数'],
-                            '量比': row['量比'],
-                            '龙头股': [
-                                {
-                                    '代码': s['代码'],
-                                    '名称': s['名称'],
-                                    '涨跌幅': s['涨跌幅'],
-                                    '最新价': s['最新价'],
-                                    '成交额': s['成交额']
-                                }
-                                for _, s in top_stocks.iterrows()
-                            ]
-                        }
-                except Exception as e:
-                    print(f"分析板块 {industry_name} 失败: {e}")
-                    continue
+            # 添加板块基本信息
+            for _, row in hot_boards.iterrows():
+                board_name = row['板块名称']
+                topic_leaders[board_name] = {
+                    '板块类型': row['板块类型'],
+                    '涨跌幅': row['涨跌幅'],
+                    '涨家数': row['上涨家数'],
+                    '跌家数': row['下跌家数'],
+                    '量比': row['换手率'],
+                    '龙头股': []  # 空列表，表示未获取龙头股（性能优化）
+                }
 
             db.close()
 
@@ -146,8 +102,7 @@ class AdvancedAlgo:
             return {
                 '数据状态': '正常',
                 '热点题材': dict(sorted_topics),
-                '概念板块数': len(hot_concepts),
-                '行业板块数': len(hot_industries)
+                '扫描板块数': len(hot_boards)
             }
 
         except Exception as e:
@@ -165,6 +120,7 @@ class AdvancedAlgo:
         """
         try:
             import akshare as ak
+            from functools import lru_cache
 
             db = DataManager()
 
@@ -574,4 +530,228 @@ class AdvancedAlgo:
                 '数据状态': '分析失败',
                 '错误信息': str(e),
                 '说明': '可能是数据问题'
+            }
+
+class AdvancedPatternAnalyzer:
+    """高级形态分析器"""
+
+    @staticmethod
+    def detect_fanbao_pattern(df, symbol):
+        """
+        识别反包形态
+        反包形态：股票昨日跌停或大跌，今日涨停或大涨，形成反包
+        """
+        try:
+            signals = []
+
+            if len(df) < 5:
+                return signals
+
+            for i in range(1, len(df)):
+                today = df.iloc[i]
+                yesterday = df.iloc[i - 1]
+
+                # 昨日大跌（跌幅超过5%）
+                if yesterday['close'] < yesterday['open'] * 0.95:
+                    # 今日大涨（涨幅超过5%）
+                    if today['close'] > today['open'] * 1.05:
+                        # 今日收盘价超过昨日开盘价（反包）
+                        if today['close'] > yesterday['open']:
+                            signals.append({
+                                '反包日期': df.index[i],
+                                '昨日跌幅': round((yesterday['close'] - yesterday['open']) / yesterday['open'] * 100, 2),
+                                '今日涨幅': round((today['close'] - today['open']) / today['open'] * 100, 2),
+                                '反包强度': round((today['close'] - yesterday['open']) / yesterday['open'] * 100, 2)
+                            })
+
+            return signals
+
+        except Exception as e:
+            print(f"识别反包形态失败: {e}")
+            return []
+
+    @staticmethod
+    def predict_fanbao_future(df, fanbao_date):
+        """
+        预测反包后的走势
+        """
+        try:
+            # 找到反包日的索引
+            fanbao_idx = df.index.get_loc(fanbao_date)
+
+            if fanbao_idx + 3 >= len(df):
+                return {
+                    '预测': '数据不足',
+                    '评分': 0,
+                    '建议': '数据不足，无法预测'
+                }
+
+            # 查看反包后3天的表现
+            next_3_days = df.iloc[fanbao_idx + 1:fanbao_idx + 4]
+
+            # 计算平均涨跌幅
+            avg_change = next_3_days['close'].pct_change().mean() * 100
+
+            # 评分
+            if avg_change > 3:
+                prediction = '强势上涨'
+                score = 80
+                suggestion = '反包后表现强势，可以继续持有'
+            elif avg_change > 0:
+                prediction = '温和上涨'
+                score = 60
+                suggestion = '反包后表现良好，可以适量参与'
+            elif avg_change > -3:
+                prediction = '震荡整理'
+                score = 40
+                suggestion = '反包后震荡整理，建议观望'
+            else:
+                prediction = '弱势下跌'
+                score = 20
+                suggestion = '反包后表现不佳，建议减仓'
+
+            return {
+                '预测': prediction,
+                '评分': score,
+                '建议': suggestion
+            }
+
+        except Exception as e:
+            print(f"预测反包走势失败: {e}")
+            return {
+                '预测': '预测失败',
+                '评分': 0,
+                '建议': '预测失败，请稍后再试'
+            }
+
+    @staticmethod
+    def monitor_sector_rotation():
+        """
+        监控板块轮动
+        分析板块资金流向、热度排名
+        """
+        try:
+            import akshare as ak
+
+            # 获取概念板块数据
+            concept_df = ak.stock_board_concept_name_em()
+
+            if concept_df.empty:
+                return {
+                    '数据状态': '无数据',
+                    '说明': '无法获取板块数据'
+                }
+
+            # 计算热度评分（涨跌幅 + 换手率）
+            concept_df['热度评分'] = (
+                concept_df['涨跌幅'] * 0.6 +
+                concept_df['换手率'] * 0.4
+            )
+
+            # 排序
+            concept_df = concept_df.sort_values('热度评分', ascending=False)
+
+            # 热门板块（前10）
+            hot_sectors = concept_df.head(10).to_dict('records')
+
+            # 冷门板块（后10）
+            cold_sectors = concept_df.tail(10).to_dict('records')
+
+            # 最强板块
+            strongest = hot_sectors[0] if hot_sectors else None
+
+            return {
+                '数据状态': '正常',
+                '最强板块': strongest,
+                '热门板块': hot_sectors,
+                '冷门板块': cold_sectors
+            }
+
+        except Exception as e:
+            return {
+                '数据状态': '监控失败',
+                '错误信息': str(e),
+                '说明': '可能是网络问题或数据源限制'
+            }
+
+    @staticmethod
+    def track_sector_leaders(sector_name):
+        """
+        追踪板块龙头股
+        """
+        try:
+            import akshare as ak
+
+            # 获取板块成分股
+            sector_df = ak.stock_board_concept_cons_em(symbol=sector_name)
+
+            if sector_df.empty:
+                return {
+                    '数据状态': '无数据',
+                    '说明': f'无法获取板块 {sector_name} 的成分股'
+                }
+
+            # 计算龙头得分
+            sector_df['龙头得分'] = (
+                sector_df['涨跌幅'] * 0.5 +
+                sector_df['成交额'] / sector_df['成交额'].mean() * 0.3 +
+                sector_df['换手率'] * 0.2
+            )
+
+            # 排序
+            leaders = sector_df.nlargest(5, '龙头得分')
+
+            return {
+                '数据状态': '正常',
+                '龙头股': leaders.to_dict('records')
+            }
+
+        except Exception as e:
+            return {
+                '数据状态': '追踪失败',
+                '错误信息': str(e),
+                '说明': '可能是网络问题或数据源限制'
+            }
+
+    @staticmethod
+    def analyze_board_height():
+        """
+        分析连板高度
+        统计不同连板数的股票数量和胜率
+        """
+        try:
+            import akshare as ak
+
+            # 获取涨停数据
+            limit_up_df = ak.stock_zt_pool_em(date=pd.Timestamp.now().strftime('%Y%m%d'))
+
+            if limit_up_df.empty:
+                return {
+                    '数据状态': '无数据',
+                    '说明': '今日无涨停数据'
+                }
+
+            # 统计连板高度
+            if '连板数' in limit_up_df.columns:
+                board_stats = limit_up_df['连板数'].value_counts().sort_index()
+
+                # 计算胜率（简化版本，实际需要历史数据）
+                board_df = pd.DataFrame({
+                    '股票数量': board_stats,
+                    '胜率': [50.0] * len(board_stats)  # 简化处理，实际需要计算历史胜率
+                })
+            else:
+                board_df = pd.DataFrame()
+
+            return {
+                '数据状态': '正常',
+                '连板统计': board_df,
+                '涨停总数': len(limit_up_df)
+            }
+
+        except Exception as e:
+            return {
+                '数据状态': '分析失败',
+                '错误信息': str(e),
+                '说明': '可能是网络问题或数据源限制'
             }

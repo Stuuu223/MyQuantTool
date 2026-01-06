@@ -34,7 +34,11 @@ class StockComparator:
                 
                 current_price = df.iloc[-1]['close']
                 prev_close = df.iloc[-2]['close']
-                change_pct = (current_price - prev_close) / prev_close * 100
+                # 防止除以零
+                if prev_close != 0:
+                    change_pct = (current_price - prev_close) / prev_close * 100
+                else:
+                    change_pct = 0.0
                 
                 # 计算各项指标
                 atr = QuantAlgo.calculate_atr(df)

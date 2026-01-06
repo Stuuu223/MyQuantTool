@@ -4,7 +4,6 @@ import pandas as pd
 from logic.formatter import Formatter
 
 def render_capital_tab(db, config):
-    st.subheader("💰 游资席位")
     st.subheader("💰 游资席位分析")
     st.caption("分析龙虎榜游资、追踪操作模式、识别知名游资")
 

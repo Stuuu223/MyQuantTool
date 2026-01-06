@@ -3,6 +3,10 @@ MyQuantTool - 个人化A股智能投研终端
 主入口文件
 """
 
+# 禁用 tqdm 进度条，避免停止应用时的 asyncio 错误
+import os
+os.environ['TQDM_DISABLE'] = '1'
+
 import pandas as pd
 import plotly.graph_objects as go
 from logic.data_manager import DataManager
@@ -15,7 +19,6 @@ from logic.formatter import Formatter
 from logic.logger import get_logger
 from logic.error_handler import handle_errors, ValidationError
 from config import Config
-import os
 import streamlit as st
 
 # 初始化日志系统

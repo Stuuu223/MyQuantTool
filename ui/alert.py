@@ -4,7 +4,6 @@ import pandas as pd
 import numpy as np
 
 def render_alert_tab(db, config):
-    st.subheader("🔔 智能预警")
     st.subheader("🔔 智能预警系统")
     st.caption("自定义条件预警，实时监控价格、量能、技术指标等信号")
 

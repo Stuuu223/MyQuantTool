@@ -3,7 +3,6 @@ import streamlit as st
 import pandas as pd
 
 def render_limit_up_tab(db, config):
-    st.subheader("🎯 打板预测")
     st.subheader("🎯 打板成功率预测")
     st.caption("基于历史数据预测次日打板成功率")
 

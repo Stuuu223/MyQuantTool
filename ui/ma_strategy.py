@@ -5,7 +5,6 @@ from logic.algo_advanced import AdvancedAlgo
 
 def render_ma_strategy_tab(db, config):
     st.subheader("📈 均线战法")
-    st.subheader("📈 均线战法")
     st.caption("分析均线多头排列、金叉死叉、支撑压力")
 
     # 股票代码输入

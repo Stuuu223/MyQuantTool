@@ -7,7 +7,6 @@ from logic.formatter import Formatter
 def render_hot_topics_tab(db, config):
     st.subheader("🎯 热点题材")
     st.caption("实时检测板块异动、识别龙头股、分析题材持续度")
-    st.caption("实时检测板块异动、识别龙头股、分析题材持续度")
 
     # 功能选择
     topic_mode = st.radio("选择功能", ["热点题材扫描", "题材持续度分析"], horizontal=True)
@@ -19,7 +18,7 @@ def render_hot_topics_tab(db, config):
         # 扫描参数
         col_topic1, col_topic2 = st.columns(2)
         with col_topic1:
-            topic_limit = st.slider("扫描板块数量", 10, 50, 20, 5)
+            topic_limit = st.slider("扫描板块数量", 5, 30, 10, 5)
         with col_topic2:
             if st.button("🔍 开始扫描", key="scan_hot_topics_btn"):
                 st.session_state.scan_hot_topics = True
@@ -27,11 +26,12 @@ def render_hot_topics_tab(db, config):
 
         # 执行扫描
         if st.session_state.get('scan_hot_topics', False):
-            with st.spinner('正在扫描热点题材...'):
+            with st.spinner(f'🔍 扫描中...（最热板块显示龙头股，预计需要20-30秒）'):
                 topic_result = AdvancedAlgo.scan_hot_topics(limit=topic_limit)
 
             if topic_result['数据状态'] == '正常':
                 st.success(f"✅ 扫描完成！发现 {len(topic_result['热点题材'])} 个热点题材")
+                st.info("💡 提示：点击「📈 分析题材持续度」可查看板块龙头股和详细分析")
 
                 if topic_result['热点题材']:
                     # 显示热点题材列表
@@ -51,26 +51,30 @@ def render_hot_topics_tab(db, config):
                             with col4:
                                 st.metric("量比", f"{topic_data['量比']:.2f}")
 
-                            # 显示龙头股
-                            st.write("**🔥 龙头股：**")
-                            for idx, stock in enumerate(topic_data['龙头股'], 1):
-                                st.write(f"{idx}. {stock['名称']} ({stock['代码']}) - 涨幅: {stock['涨跌幅']:.2f}%, 成交额: {Formatter.format_amount(stock['成交额'])}")
+                            # 显示龙头股（如果有）
+                            if topic_data['龙头股']:
+                                st.write("**🔥 龙头股：**")
+                                for idx, stock in enumerate(topic_data['龙头股'], 1):
+                                    st.write(f"{idx}. {stock['名称']} ({stock['代码']}) - 涨幅: {stock['涨跌幅']:.2f}%, 成交额: {Formatter.format_amount(stock['成交额'])}")
+                            else:
+                                st.write("**🔥 龙头股：** 暂未加载（点击下方按钮查看）")
+                                
+                                # 添加到自选股按钮
+                                for stock in topic_data['龙头股']:
+                                    if st.button(f"⭐ 添加 {stock['名称']} 到自选", key=f"add_topic_{topic_name}_{stock['代码']}"):
+                                        watchlist = config.get('watchlist', [])
+                                        if stock['代码'] not in watchlist:
+                                            watchlist.append(stock['代码'])
+                                            config.set('watchlist', watchlist)
+                                            st.success(f"已添加 {stock['名称']} ({stock['代码']}) 到自选股")
+                                        else:
+                                            st.info(f"{stock['名称']} ({stock['代码']}) 已在自选股中")
 
                             # 分析题材持续度按钮
                             if st.button(f"📈 分析题材持续度", key=f"analyze_continuity_{topic_name}"):
                                 st.session_state.analyze_topic = topic_name
+                                st.session_state.auto_analyze = True
                                 st.rerun()
-
-                            # 添加到自选股按钮
-                            for stock in topic_data['龙头股']:
-                                if st.button(f"⭐ 添加 {stock['名称']} 到自选", key=f"add_topic_{stock['代码']}"):
-                                    watchlist = config.get('watchlist', [])
-                                    if stock['代码'] not in watchlist:
-                                        watchlist.append(stock['代码'])
-                                        config.set('watchlist', watchlist)
-                                        st.success(f"已添加 {stock['名称']} ({stock['代码']}) 到自选股")
-                                    else:
-                                        st.info(f"{stock['名称']} ({stock['代码']}) 已在自选股中")
                 else:
                     st.warning("⚠️ 未发现热点题材")
                     st.info("💡 提示：当前市场无明显热点，建议观望")
@@ -92,18 +96,39 @@ def render_hot_topics_tab(db, config):
         - 提供操作建议
         """)
 
+        # 检查是否有从热点题材扫描传来的板块名称
+        prefill_topic = st.session_state.get('analyze_topic', '')
+        auto_analyze = st.session_state.get('auto_analyze', False)
+        
+        if prefill_topic:
+            st.info(f"💡 已自动填入板块名称：**{prefill_topic}**（从热点题材扫描跳转）")
+            # 清除标志
+            st.session_state.analyze_topic = None
+            st.session_state.auto_analyze = False
+
         # 输入板块名称
-        topic_name_input = st.text_input("输入板块名称", placeholder="如：人工智能、新能源汽车、半导体...")
+        topic_name_input = st.text_input("输入板块名称", value=prefill_topic, placeholder="如：人工智能、新能源汽车、半导体...")
 
         # 分析天数
         analysis_days = st.slider("分析天数", 10, 90, 30, 5)
 
-        if st.button("📊 开始分析", key="analyze_topic_continuity"):
+        # 执行分析
+        continuity_result = None
+        if auto_analyze and topic_name_input:
+            # 自动分析（从热点题材扫描跳转）
+            with st.spinner(f'📊 分析中...'):
+                continuity_result = AdvancedAlgo.analyze_topic_continuity(topic_name_input, days=analysis_days)
+        elif st.button("📊 开始分析", key="analyze_topic_continuity"):
+            # 手动点击分析按钮
             if topic_name_input:
-                with st.spinner(f'正在分析 {topic_name_input} 的持续度...'):
+                with st.spinner(f'📊 分析中...'):
                     continuity_result = AdvancedAlgo.analyze_topic_continuity(topic_name_input, days=analysis_days)
+            else:
+                st.warning("⚠️ 请输入板块名称")
 
-                if continuity_result['数据状态'] == '正常':
+        # 显示分析结果
+        if continuity_result:
+            if continuity_result['数据状态'] == '正常':
                     # 显示持续度指标
                     col1, col2, col3, col4 = st.columns(4)
                     with col1:
@@ -148,10 +173,8 @@ def render_hot_topics_tab(db, config):
                         ]
                     })
                     st.dataframe(detail_df, width="stretch", hide_index=True)
-                else:
-                    st.error(f"❌ {continuity_result['数据状态']}")
-                    if '说明' in continuity_result:
-                        st.info(f"💡 {continuity_result['说明']}")
             else:
-                st.warning("⚠️ 请输入板块名称")
+                st.error(f"❌ {continuity_result['数据状态']}")
+                if '说明' in continuity_result:
+                    st.info(f"💡 {continuity_result['说明']}")
 

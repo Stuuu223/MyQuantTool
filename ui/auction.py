@@ -7,7 +7,6 @@ from logic.formatter import Formatter
 def render_auction_tab(db, config):
     st.subheader("⚡ 集合竞价")
     st.caption("基于雪球集合竞价选股法：竞价看方向，弱转强战法，竞价扩散法")
-    st.caption("基于雪球集合竞价选股法：竞价看方向，弱转强战法，竞价扩散法")
     
     st.info("""
     **集合竞价选股核心要点：**

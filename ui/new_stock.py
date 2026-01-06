@@ -4,7 +4,6 @@ import pandas as pd
 from logic.algo_advanced import AdvancedAlgo
 
 def render_new_stock_tab(db, config):
-    st.subheader("🆕 次新股")
     st.subheader("🆕 次新股战法")
     st.caption("分析开板次新股、情绪周期、换手率")
 
