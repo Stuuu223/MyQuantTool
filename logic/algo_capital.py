@@ -1042,11 +1042,16 @@ class CapitalAnalyzer:
     @staticmethod
     def track_capital_pattern(capital_name, days=30):
         """
-        追踪游资操作模式
+        追踪游资操作模式（修复版）
         分析特定游资在指定时间内的操作规律
+        
+        修复方案：使用两步法获取营业部明细
+        1. 获取龙虎榜股票列表
+        2. 逐个查询营业部明细（并发优化）
         """
         try:
             import akshare as ak
+            from concurrent.futures import ThreadPoolExecutor, as_completed
 
             if capital_name not in CapitalAnalyzer.FAMOUS_CAPITALISTS:
                 return {
@@ -1056,7 +1061,7 @@ class CapitalAnalyzer:
 
             # 获取该游资的席位列表
             seats = CapitalAnalyzer.FAMOUS_CAPITALISTS[capital_name]
-            print(f"游资 {capital_name} 的席位列表: {seats}")
+            logger.info(f"游资 {capital_name} 的席位列表: {seats}")
 
             # 获取历史龙虎榜数据
             end_date = pd.Timestamp.now()
@@ -1073,168 +1078,100 @@ class CapitalAnalyzer:
                 checked_dates += 1
 
                 try:
+                    # Step 1: 获取龙虎榜股票列表
                     lhb_df = ak.stock_lhb_detail_em(start_date=date_str, end_date=date_str)
 
                     if not lhb_df.empty:
-                        print(f"{date_str}: 获取 {len(lhb_df)} 条龙虎榜记录")
+                        logger.info(f"{date_str}: 获取 {len(lhb_df)} 条龙虎榜股票")
 
-                        # 筛选该游资的操作（使用模糊匹配）
-                        # 检查列名是否存在
-                        if '营业部名称' in lhb_df.columns:
-                            seat_col = '营业部名称'
-                        elif '营业部' in lhb_df.columns:
-                            seat_col = '营业部'
-                        elif '营业部' in str(lhb_df.columns):
-                            seat_col = '营业部名称'
-                        else:
-                            # 尝试找到包含"营业部"的列
-                            seat_col = None
-                            for col in lhb_df.columns:
-                                if '营业' in col:
-                                    seat_col = col
-                                    break
+                        # Step 2: 逐个查询营业部明细（并发优化）
+                        def fetch_seat_detail(stock_info):
+                            """获取单个股票的营业部明细"""
+                            code = stock_info['代码']
+                            name = stock_info['名称']
 
-                        if seat_col is None:
-                            print(f"  未找到营业部列，可用列: {lhb_df.columns.tolist()}")
-                            current_date += pd.Timedelta(days=1)
-                            continue
+                            try:
+                                # 使用正确的接口：按股票代码查询营业部明细
+                                seats_df = ak.stock_lhb_stock_detail_em(
+                                    symbol=code,
+                                    date=date_str
+                                )
 
-                        for _, row in lhb_df.iterrows():
-                            seat_name = str(row[seat_col])
+                                if not seats_df.empty:
+                                    # 添加股票信息
+                                    seats_df['股票代码'] = code
+                                    seats_df['股票名称'] = name
+                                    seats_df['日期'] = date_str
+                                    return seats_df, True
+                                else:
+                                    return None, False
+                            except Exception as e:
+                                logger.warning(f"  [WARN] {name}({code}) 查询失败: {e}")
+                                return None, False
 
-                            # 精确匹配或模糊匹配
-                            if seat_name in seats or any(keyword in seat_name for keyword in seats):
-                                matched_dates += 1
-                                all_operations.append({
-                                    '日期': row.get('交易日期', row.get('上榜日', date_str)),
-                                    '股票代码': row['代码'],
-                                    '股票名称': row['名称'],
-                                    '买入金额': row.get('买入额', row.get('买入金额', 0)),
-                                    '卖出金额': row.get('卖出额', row.get('卖出金额', 0)),
-                                    '净买入': row.get('买入额', row.get('买入金额', 0)) - row.get('卖出额', row.get('卖出金额', 0)),
-                                    '营业部名称': seat_name
-                                })
-                                print(f"  匹配: {seat_name} - {row['名称']}({row['代码']})")
-                except Exception as e:
-                    print(f"{date_str}: 获取数据失败 - {e}")
-                    pass
+                        # 并发查询营业部明细
+                        all_seats = []
+                        success_count = 0
 
-                current_date += pd.Timedelta(days=1)
+                        with ThreadPoolExecutor(max_workers=10) as executor:
+                            # 提交所有任务
+                            futures = {
+                                executor.submit(fetch_seat_detail, row): idx
+                                for idx, row in lhb_df.iterrows()
+                            }
 
-            print(f"检查了 {checked_dates} 天，{matched_dates} 天找到操作记录，共 {len(all_operations)} 条操作")
+                            # 收集结果
+                            for future in as_completed(futures):
+                                result, success = future.result()
+                                if success and result is not None:
+                                    all_seats.append(result)
+                                    success_count += 1
 
-            # 如果没有操作记录，尝试使用新浪接口获取营业部数据
-            if not all_operations:
-                print("龙虎榜数据中无营业部信息，尝试使用新浪接口获取营业部数据")
+                        logger.info(f"  并发查询完成：成功 {success_count} 只股票")
 
-                max_retries = 3
-                for attempt in range(max_retries):
-                    try:
-                        # 获取新浪营业部统计数据
-                        yyb_stats = ak.stock_lhb_yytj_sina(symbol='30')  # 获取最近30天的数据
+                        if all_seats:
+                            # 合并所有营业部数据
+                            df_all = pd.concat(all_seats, ignore_index=True)
+                            logger.info(f"  获取到 {len(df_all)} 条营业部明细")
+                            logger.info(f"  营业部明细列名: {df_all.columns.tolist()}")
 
-                        if not yyb_stats.empty:
-                            print(f"获取到 {len(yyb_stats)} 条营业部统计数据")
+                            # 检查是否有营业部名称列
+                            if '营业部名称' not in df_all.columns:
+                                logger.error(f"  营业部明细数据中没有'营业部名称'列，可用列: {df_all.columns.tolist()}")
+                                current_date += pd.Timedelta(days=1)
+                                continue
 
-                            # 筛选该游资的营业部
-                            matched_yyb = []
-                            for _, row in yyb_stats.iterrows():
+                            # 筛选该游资的操作
+                            for _, row in df_all.iterrows():
                                 seat_name = str(row['营业部名称'])
 
                                 # 精确匹配或模糊匹配
                                 if seat_name in seats or any(keyword in seat_name for keyword in seats):
-                                    # 处理金额数据
-                                    buy_amount = row.get('买入总额', 0)
-                                    sell_amount = row.get('卖出总额', 0)
-
-                                    # 确保金额是数值类型
-                                    if pd.notna(buy_amount):
-                                        try:
-                                            buy_amount = float(buy_amount)
-                                        except:
-                                            buy_amount = 0
-                                    else:
-                                        buy_amount = 0
-
-                                    if pd.notna(sell_amount):
-                                        try:
-                                            sell_amount = float(sell_amount)
-                                        except:
-                                            sell_amount = 0
-                                    else:
-                                        sell_amount = 0
-
-                                    matched_yyb.append({
-                                        '日期': row['上榜日期'],
-                                        '股票代码': '',  # 新浪数据中没有股票代码
-                                        '股票名称': str(row.get('操作前股票', '')),
-                                        '买入金额': buy_amount,
-                                        '卖出金额': sell_amount,
-                                        '净买入': buy_amount - sell_amount,
+                                    matched_dates += 1
+                                    all_operations.append({
+                                        '日期': row['日期'],
+                                        '股票代码': row['股票代码'],
+                                        '股票名称': row['股票名称'],
+                                        '买入金额': row.get('买入额', 0),
+                                        '卖出金额': row.get('卖出额', 0),
+                                        '净买入': row.get('买入额', 0) - row.get('卖出额', 0),
                                         '营业部名称': seat_name
                                     })
+                                    logger.info(f"  匹配: {seat_name} - {row['股票名称']}({row['股票代码']})")
 
-                            if matched_yyb:
-                                print(f"从新浪数据中找到 {len(matched_yyb)} 条操作记录")
+                except Exception as e:
+                    logger.error(f"{date_str}: 获取数据失败 - {e}")
+                    pass
 
-                                # 分析操作模式
-                                df_ops = pd.DataFrame(matched_yyb)
+                current_date += pd.Timedelta(days=1)
 
-                                # 1. 操作频率
-                                operation_frequency = len(matched_yyb) / days if days > 0 else 0
+            logger.info(f"检查了 {checked_dates} 天，{matched_dates} 天找到操作记录，共 {len(all_operations)} 条操作")
 
-                                # 2. 买入比例
-                                buy_count = len(df_ops[df_ops['净买入'] > 0])
-                                sell_count = len(df_ops[df_ops['净买入'] < 0])
-                                buy_ratio = round(buy_count / len(df_ops) * 100, 2) if len(df_ops) > 0 else 0
-
-                                # 3. 总金额
-                                total_buy = df_ops['买入金额'].sum()
-                                total_sell = df_ops['卖出金额'].sum()
-
-                                # 4. 操作风格
-                                net_flow = total_buy - total_sell
-                                if total_buy > total_sell * 2:
-                                    style = "激进买入"
-                                elif total_sell > total_buy * 2:
-                                    style = "激进卖出"
-                                elif net_flow > 0:
-                                    style = "偏多"
-                                else:
-                                    style = "偏空"
-
-                                # 5. 操作成功率（简化版）
-                                success_rate = 50.0  # 新浪数据无法计算准确的成功率
-
-                                return {
-                                    '数据状态': '正常',
-                                    '数据来源': '新浪数据',
-                                    '操作次数': len(matched_yyb),
-                                    '操作频率': operation_frequency,
-                                    '买入比例': buy_ratio,
-                                    '操作成功率': success_rate,
-                                    '操作风格': style,
-                                    '总买入金额': total_buy,
-                                    '总卖出金额': total_sell,
-                                    '操作记录': matched_yyb,
-                                    '说明': f'基于新浪数据分析，{capital_name} 共有 {len(matched_yyb)} 次操作记录'
-                                }
-                            else:
-                                print(f"新浪数据中未找到 {capital_name} 的操作记录")
-                        else:
-                            print("新浪数据为空")
-                    except Exception as e:
-                        print(f"获取新浪营业部数据失败（尝试 {attempt + 1}/{max_retries}）: {e}")
-                        if attempt < max_retries - 1:
-                            import time
-                            time.sleep(2)  # 等待2秒后重试
-                        else:
-                            print(f"所有重试均失败")
-
-                # 如果历史数据也没有，返回提示信息
+            # 如果没有操作记录，返回提示信息
+            if not all_operations:
                 return {
                     '数据状态': '无操作记录',
-                    '说明': f'{capital_name} 在最近 {days} 天内无操作记录。可能原因：1) 该游资近期未上榜 2) 席位名称不匹配 3) 数据源限制。当前数据源不提供营业部明细，无法追踪游资操作。',
+                    '说明': f'{capital_name} 在最近 {days} 天内无操作记录。可能原因：1) 该游资近期未上榜 2) 席位名称不匹配 3) 数据源限制。',
                     '检查天数': checked_dates,
                     '匹配天数': matched_dates,
                     '游资席位': seats
