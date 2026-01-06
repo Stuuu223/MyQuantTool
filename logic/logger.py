@@ -6,9 +6,12 @@
 
 import logging
 import sys
+import time
 from pathlib import Path
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Dict, Any
+from functools import wraps
+from contextlib import contextmanager
 
 
 class Logger:
@@ -30,11 +33,6 @@ class Logger:
     _instance: Optional['Logger'] = None
     _initialized: bool = False
     
-    def __new__(cls) -> 'Logger':
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
-    
     def __init__(self) -> None:
         if self._initialized:
             return
@@ -46,7 +44,7 @@ class Logger:
         # 配置日志系统
         logging.basicConfig(
             level=logging.INFO,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s',
             handlers=[
                 logging.FileHandler(
                     self.log_dir / f'app_{datetime.now().strftime("%Y%m%d")}.log',
@@ -55,6 +53,18 @@ class Logger:
                 logging.StreamHandler(sys.stdout)
             ]
         )
+        
+        # 性能日志单独文件
+        self.performance_logger = logging.getLogger('performance')
+        self.performance_logger.setLevel(logging.INFO)
+        performance_handler = logging.FileHandler(
+            self.log_dir / f'performance_{datetime.now().strftime("%Y%m%d")}.log',
+            encoding='utf-8'
+        )
+        performance_handler.setFormatter(
+            logging.Formatter('%(asctime)s - %(message)s')
+        )
+        self.performance_logger.addHandler(performance_handler)
     
     @staticmethod
     def get_logger(name: Optional[str] = None) -> logging.Logger:
@@ -82,6 +92,87 @@ class Logger:
             name = module.__name__ if module else __name__
         
         return logging.getLogger(name)
+    
+    @staticmethod
+    def log_performance(func_name: str, duration: float, metadata: Optional[Dict[str, Any]] = None) -> None:
+        """记录性能日志
+        
+        Args:
+            func_name: 函数名称
+            duration: 执行时长（秒）
+            metadata: 额外的元数据
+        """
+        logger_instance = Logger()
+        msg = f"[PERF] {func_name} - {duration:.3f}s"
+        if metadata:
+            msg += f" - {metadata}"
+        logger_instance.performance_logger.info(msg)
+    
+    @staticmethod
+    def log_error(func_name: str, error: Exception, metadata: Optional[Dict[str, Any]] = None) -> None:
+        """记录错误日志
+        
+        Args:
+            func_name: 函数名称
+            error: 异常对象
+            metadata: 额外的元数据
+        """
+        logger_instance = Logger()
+        logger = logger_instance.get_logger(func_name)
+        msg = f"[ERROR] {func_name} - {type(error).__name__}: {str(error)}"
+        if metadata:
+            msg += f" - {metadata}"
+        logger.error(msg, exc_info=True)
+
+
+def log_execution_time(func):
+    """装饰器：记录函数执行时间
+    
+    Args:
+        func: 要装饰的函数
+        
+    Returns:
+        装饰后的函数
+        
+    Example:
+        >>> @log_execution_time
+        >>> def my_function():
+        >>>     time.sleep(1)
+        >>>     return "done"
+    """
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        start_time = time.time()
+        try:
+            result = func(*args, **kwargs)
+            duration = time.time() - start_time
+            Logger.log_performance(func.__name__, duration, {'status': 'success'})
+            return result
+        except Exception as e:
+            duration = time.time() - start_time
+            Logger.log_error(func.__name__, e, {'duration': f'{duration:.3f}s'})
+            raise
+    return wrapper
+
+
+@contextmanager
+def performance_context(name: str):
+    """上下文管理器：记录代码块执行时间
+    
+    Args:
+        name: 代码块名称
+        
+    Example:
+        >>> with performance_context("data_processing"):
+        >>>     # 执行一些操作
+        >>>     process_data()
+    """
+    start_time = time.time()
+    try:
+        yield
+    finally:
+        duration = time.time() - start_time
+        Logger.log_performance(name, duration)
 
 
 # 便捷函数
