@@ -419,77 +419,109 @@ class CapitalAnalyzer:
             if not all_operations:
                 print("龙虎榜数据中无营业部信息，尝试使用新浪接口获取营业部数据")
 
-                try:
-                    # 获取新浪营业部统计数据
-                    yyb_stats = ak.stock_lhb_yytj_sina(symbol='30')  # 获取最近30天的数据
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        # 获取新浪营业部统计数据
+                        yyb_stats = ak.stock_lhb_yytj_sina(symbol='30')  # 获取最近30天的数据
 
-                    if not yyb_stats.empty:
-                        print(f"获取到 {len(yyb_stats)} 条营业部统计数据")
+                        if not yyb_stats.empty:
+                            print(f"获取到 {len(yyb_stats)} 条营业部统计数据")
 
-                        # 筛选该游资的营业部
-                        matched_yyb = []
-                        for _, row in yyb_stats.iterrows():
-                            seat_name = row['营业部名称']
+                            # 筛选该游资的营业部
+                            matched_yyb = []
+                            for _, row in yyb_stats.iterrows():
+                                seat_name = str(row['营业部名称'])
 
-                            # 精确匹配或模糊匹配
-                            if seat_name in seats or any(keyword in seat_name for keyword in seats):
-                                matched_yyb.append({
-                                    '日期': row['上榜日期'],
-                                    '股票代码': '',  # 新浪数据中没有股票代码
-                                    '股票名称': row['操作前股票'],
-                                    '买入金额': row.get('买入总额', 0) if pd.notna(row.get('买入总额', 0)) else 0,
-                                    '卖出金额': row.get('卖出总额', 0) if pd.notna(row.get('卖出总额', 0)) else 0,
-                                    '净买入': (row.get('买入总额', 0) if pd.notna(row.get('买入总额', 0)) else 0) - (row.get('卖出总额', 0) if pd.notna(row.get('卖出总额', 0)) else 0),
-                                    '营业部名称': seat_name
-                                })
+                                # 精确匹配或模糊匹配
+                                if seat_name in seats or any(keyword in seat_name for keyword in seats):
+                                    # 处理金额数据
+                                    buy_amount = row.get('买入总额', 0)
+                                    sell_amount = row.get('卖出总额', 0)
 
-                        if matched_yyb:
-                            print(f"从新浪数据中找到 {len(matched_yyb)} 条操作记录")
+                                    # 确保金额是数值类型
+                                    if pd.notna(buy_amount):
+                                        try:
+                                            buy_amount = float(buy_amount)
+                                        except:
+                                            buy_amount = 0
+                                    else:
+                                        buy_amount = 0
 
-                            # 分析操作模式
-                            df_ops = pd.DataFrame(matched_yyb)
+                                    if pd.notna(sell_amount):
+                                        try:
+                                            sell_amount = float(sell_amount)
+                                        except:
+                                            sell_amount = 0
+                                    else:
+                                        sell_amount = 0
 
-                            # 1. 操作频率
-                            operation_frequency = len(matched_yyb) / days if days > 0 else 0
+                                    matched_yyb.append({
+                                        '日期': row['上榜日期'],
+                                        '股票代码': '',  # 新浪数据中没有股票代码
+                                        '股票名称': str(row.get('操作前股票', '')),
+                                        '买入金额': buy_amount,
+                                        '卖出金额': sell_amount,
+                                        '净买入': buy_amount - sell_amount,
+                                        '营业部名称': seat_name
+                                    })
 
-                            # 2. 买入比例
-                            buy_count = len(df_ops[df_ops['净买入'] > 0])
-                            sell_count = len(df_ops[df_ops['净买入'] < 0])
-                            buy_ratio = round(buy_count / len(df_ops) * 100, 2) if len(df_ops) > 0 else 0
+                            if matched_yyb:
+                                print(f"从新浪数据中找到 {len(matched_yyb)} 条操作记录")
 
-                            # 3. 总金额
-                            total_buy = df_ops['买入金额'].sum()
-                            total_sell = df_ops['卖出金额'].sum()
+                                # 分析操作模式
+                                df_ops = pd.DataFrame(matched_yyb)
 
-                            # 4. 操作风格
-                            net_flow = total_buy - total_sell
-                            if total_buy > total_sell * 2:
-                                style = "激进买入"
-                            elif total_sell > total_buy * 2:
-                                style = "激进卖出"
-                            elif net_flow > 0:
-                                style = "偏多"
+                                # 1. 操作频率
+                                operation_frequency = len(matched_yyb) / days if days > 0 else 0
+
+                                # 2. 买入比例
+                                buy_count = len(df_ops[df_ops['净买入'] > 0])
+                                sell_count = len(df_ops[df_ops['净买入'] < 0])
+                                buy_ratio = round(buy_count / len(df_ops) * 100, 2) if len(df_ops) > 0 else 0
+
+                                # 3. 总金额
+                                total_buy = df_ops['买入金额'].sum()
+                                total_sell = df_ops['卖出金额'].sum()
+
+                                # 4. 操作风格
+                                net_flow = total_buy - total_sell
+                                if total_buy > total_sell * 2:
+                                    style = "激进买入"
+                                elif total_sell > total_buy * 2:
+                                    style = "激进卖出"
+                                elif net_flow > 0:
+                                    style = "偏多"
+                                else:
+                                    style = "偏空"
+
+                                # 5. 操作成功率（简化版）
+                                success_rate = 50.0  # 新浪数据无法计算准确的成功率
+
+                                return {
+                                    '数据状态': '正常',
+                                    '数据来源': '新浪数据',
+                                    '操作次数': len(matched_yyb),
+                                    '操作频率': operation_frequency,
+                                    '买入比例': buy_ratio,
+                                    '操作成功率': success_rate,
+                                    '操作风格': style,
+                                    '总买入金额': total_buy,
+                                    '总卖出金额': total_sell,
+                                    '操作记录': matched_yyb,
+                                    '说明': f'基于新浪数据分析，{capital_name} 共有 {len(matched_yyb)} 次操作记录'
+                                }
                             else:
-                                style = "偏空"
-
-                            # 5. 操作成功率（简化版）
-                            success_rate = 50.0  # 新浪数据无法计算准确的成功率
-
-                            return {
-                                '数据状态': '正常',
-                                '数据来源': '新浪数据',
-                                '操作次数': len(matched_yyb),
-                                '操作频率': operation_frequency,
-                                '买入比例': buy_ratio,
-                                '操作成功率': success_rate,
-                                '操作风格': style,
-                                '总买入金额': total_buy,
-                                '总卖出金额': total_sell,
-                                '操作记录': matched_yyb,
-                                '说明': f'基于新浪数据分析，{capital_name} 共有 {len(matched_yyb)} 次操作记录'
-                            }
-                except Exception as e:
-                    print(f"获取新浪营业部数据失败: {e}")
+                                print(f"新浪数据中未找到 {capital_name} 的操作记录")
+                        else:
+                            print("新浪数据为空")
+                    except Exception as e:
+                        print(f"获取新浪营业部数据失败（尝试 {attempt + 1}/{max_retries}）: {e}")
+                        if attempt < max_retries - 1:
+                            import time
+                            time.sleep(2)  # 等待2秒后重试
+                        else:
+                            print(f"所有重试均失败")
 
                 # 如果历史数据也没有，返回提示信息
                 return {

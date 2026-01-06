@@ -1285,46 +1285,91 @@ class QuantAlgo:
     def get_lhb_data(date=None):
         """
         获取龙虎榜数据
-        date: 日期，格式 YYYY-MM-DD，默认为最近7天
+        date: 日期，格式 YYYY-MM-DD，默认为最近一天
         """
         try:
             import akshare as ak
             from datetime import datetime, timedelta
-            
-            # 计算日期范围（最近7天）
-            end_date = datetime.now().strftime('%Y%m%d')
-            start_date = (datetime.now() - timedelta(days=7)).strftime('%Y%m%d')
-            
-            # 获取东方财富龙虎榜数据（支持日期范围）
-            lhb_df = ak.stock_lhb_detail_em(start_date=start_date, end_date=end_date)
-            
-            if lhb_df.empty:
+
+            # 计算日期
+            if date:
+                if isinstance(date, str):
+                    date_obj = pd.to_datetime(date)
+                else:
+                    date_obj = date
+                date_str = date_obj.strftime('%Y%m%d')
+            else:
+                date_str = datetime.now().strftime('%Y%m%d')
+
+            # 先尝试使用新浪接口获取数据
+            try:
+                lhb_df = ak.stock_lhb_detail_daily_sina(date=date_str)
+
+                if not lhb_df.empty:
+                    # 转换数据为列表格式
+                    stocks = []
+                    for _, row in lhb_df.iterrows():
+                        stocks.append({
+                            '代码': row['股票代码'],
+                            '名称': row['股票名称'],
+                            '收盘价': row['收盘价'],
+                            '涨跌幅': row['涨跌幅'],
+                            '龙虎榜净买入': row['成交额'],  # 新浪接口使用成交额
+                            '上榜原因': row['指数']
+                        })
+
+                    return {
+                        '数据状态': '正常',
+                        '股票列表': stocks,
+                        '数据日期': date_str
+                    }
+            except Exception as e:
+                print(f"新浪接口获取失败: {e}")
+
+            # 如果新浪接口失败，使用东方财富接口
+            try:
+                # 计算日期范围（最近7天）
+                end_date = datetime.now().strftime('%Y%m%d')
+                start_date = (datetime.now() - timedelta(days=7)).strftime('%Y%m%d')
+
+                # 获取东方财富龙虎榜数据（支持日期范围）
+                lhb_df = ak.stock_lhb_detail_em(start_date=start_date, end_date=end_date)
+
+                if lhb_df.empty:
+                    return {
+                        '数据状态': '无法获取数据',
+                        '说明': '可能是数据源限制或非交易日'
+                    }
+
+                # 只取最新日期的数据
+                latest_date = lhb_df.iloc[:, 3].max()  # 上榜日期列
+                latest_data = lhb_df[lhb_df.iloc[:, 3] == latest_date]
+
+                # 转换数据为列表格式（使用列索引避免中文乱码）
+                stocks = []
+                for _, row in latest_data.head(30).iterrows():  # 取最新日期的30只股票
+                    stocks.append({
+                        '代码': row.iloc[1],      # 股票代码
+                        '名称': row.iloc[2],      # 股票名称
+                        '收盘价': row.iloc[5],    # 收盘价
+                        '涨跌幅': row.iloc[6],    # 涨跌幅
+                        '龙虎榜净买入': row.iloc[9],  # 龙虎榜净买入额
+                        '上榜原因': row.iloc[16]   # 上榜原因
+                    })
+
                 return {
-                    '数据状态': '无法获取数据',
-                    '说明': '可能是数据源限制或非交易日'
+                    '数据状态': '正常',
+                    '股票列表': stocks,
+                    '数据日期': latest_date
                 }
-            
-            # 只取最新日期的数据
-            latest_date = lhb_df.iloc[:, 3].max()  # 上榜日期列
-            latest_data = lhb_df[lhb_df.iloc[:, 3] == latest_date]
-            
-            # 转换数据为列表格式（使用列索引避免中文乱码）
-            stocks = []
-            for _, row in latest_data.head(30).iterrows():  # 取最新日期的30只股票
-                stocks.append({
-                    '代码': row.iloc[1],      # 股票代码
-                    '名称': row.iloc[2],      # 股票名称
-                    '收盘价': row.iloc[5],    # 收盘价
-                    '涨跌幅': row.iloc[6],    # 涨跌幅
-                    '龙虎榜净买入': row.iloc[9],  # 龙虎榜净买入额
-                    '上榜原因': row.iloc[16]   # 上榜原因
-                })
-            
+            except Exception as e:
+                print(f"东方财富接口获取失败: {e}")
+
             return {
-                '数据状态': '正常',
-                '股票列表': stocks,
-                '数据日期': latest_date
+                '数据状态': '无法获取数据',
+                '说明': '所有数据源均无法获取数据'
             }
+
         except Exception as e:
             return {
                 '数据状态': '获取失败',
