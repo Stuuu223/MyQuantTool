@@ -363,6 +363,8 @@ class CapitalAnalyzer:
                         yesterday = today - pd.Timedelta(days=1)
                         lhb_df = ak.stock_lhb_detail_em(start_date=yesterday.strftime("%Y%m%d"), end_date=yesterday.strftime("%Y%m%d"))
                         logger.info(f"今日无数据，获取昨日龙虎榜数据，共 {len(lhb_df)} 条记录")
+                    
+                    date_str = today.strftime("%Y%m%d")
             except Exception as e:
                 logger.error(f"获取龙虎榜数据失败: {e}", exc_info=True)
                 lhb_df = None
@@ -376,8 +378,8 @@ class CapitalAnalyzer:
 
             # ===== 方案1：按股票逐个查询营业部明细（并发优化） =====
             logger.info("=" * 60)
-            print("方案1：按股票逐个查询营业部明细（并发查询）")
-            print("=" * 60)
+            logger.info("方案1：按股票逐个查询营业部明细（并发查询）")
+            logger.info("=" * 60)
 
             # 使用并发查询获取营业部明细
             seat_detail_result = CapitalAnalyzer._get_seat_detail_by_stock_concurrent(lhb_df, date_str)
@@ -385,11 +387,11 @@ class CapitalAnalyzer:
                 return seat_detail_result
 
             # 如果并发查询失败，切换到第二层数据源
-            print("并发查询营业部明细失败，切换到第二层数据源")
+            logger.warning("并发查询营业部明细失败，切换到第二层数据源")
             return CapitalAnalyzer._get_sina_data()
 
         except Exception as e:
-            print(f"分析龙虎榜游资失败: {e}")
+            logger.error(f"分析龙虎榜游资失败: {e}")
             import traceback
             traceback.print_exc()
             return {
@@ -397,77 +399,6 @@ class CapitalAnalyzer:
                 '错误信息': str(e),
                 '说明': '分析过程中发生错误，请稍后重试'
             }
-
-    @staticmethod
-    @retry_with_backoff(max_retries=3, backoff_factor=2)
-    def _get_seat_detail_by_code(lhb_df, date=None):
-        """
-        使用营业部代码查询详细数据（带重试机制）
-        """
-        try:
-            import akshare as ak
-
-            # 从龙虎榜数据中提取营业部代码（如果有）
-            # 注意：stock_lhb_detail_em 不直接返回营业部代码
-            # 我们需要通过其他方式获取营业部代码
-
-            # 方案：从新浪接口获取活跃营业部列表，然后查询详细数据
-            try:
-                # 检查缓存
-                cache_key = f"sina_yyb_stats_{date or 'latest'}"
-                cached_data = CapitalAnalyzer.cache.get(cache_key)
-                if cached_data:
-                    print(f"从缓存获取新浪营业部数据")
-                    yyb_stats = pd.DataFrame(cached_data)
-                else:
-                    # 获取新浪营业部统计数据
-                    yyb_stats = ak.stock_lhb_yytj_sina(symbol='5')
-                    if not yyb_stats.empty:
-                        # 缓存数据，TTL为1小时
-                        CapitalAnalyzer.cache.set(cache_key, yyb_stats.to_dict('records'), ttl=3600)
-
-                if yyb_stats.empty:
-                    print("新浪接口返回空数据")
-                    return None
-
-                print(f"从新浪接口获取到 {len(yyb_stats)} 个营业部")
-
-                # 筛选出在龙虎榜中的营业部
-                # 通过营业部名称匹配
-                matched_seats = []
-
-                # 构建营业部名称列表（用于匹配）
-                seat_names = []
-                for _, row in yyb_stats.iterrows():
-                    for col in yyb_stats.columns:
-                        if '营业部' in col or '席位' in col:
-                            seat_name = str(row.get(col, ''))
-                            if seat_name and seat_name not in seat_names:
-                                seat_names.append(seat_name)
-                            break
-
-                print(f"新浪接口中的营业部数量: {len(seat_names)}")
-                print(f"营业部示例: {seat_names[:5]}")
-
-                # 如果没有营业部信息，返回None
-                if not seat_names:
-                    return None
-
-                # 如果获取到了营业部代码，可以尝试查询详细数据
-                # 但是由于营业部代码需要从 stock_lhb_hyyyb_em 获取，而该接口数据过时
-                # 所以这里我们直接使用新浪接口的统计数据
-
-                return CapitalAnalyzer._analyze_sina_seat_data(yyb_stats, date)
-
-            except Exception as e:
-                print(f"获取营业部详细数据失败: {e}")
-                import traceback
-                traceback.print_exc()
-                return None
-
-        except Exception as e:
-            print(f"查询营业部详细数据失败: {e}")
-            raise
 
     @staticmethod
     @retry_with_backoff(max_retries=3, backoff_factor=2)
@@ -512,11 +443,11 @@ class CapitalAnalyzer:
                     else:
                         return None, False
                 except Exception as e:
-                    print(f"  [WARN] {name}({code}) 查询失败: {e}")
+                    logger.debug(f"  [WARN] {name}({code}) 查询失败: {e}")
                     return None, False
 
             # 并发查询
-            print(f"[START] 开始并发查询 {len(lhb_df)} 只股票的营业部明细（线程数: {max_workers}）")
+            logger.info(f"[START] 开始并发查询 {len(lhb_df)} 只股票的营业部明细（线程数: {max_workers}）")
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 # 提交所有任务
                 futures = {
@@ -530,25 +461,25 @@ class CapitalAnalyzer:
                     if success and result is not None:
                         all_seats.append(result)
                         success_count += 1
-                        print(f"  [OK] 成功获取 {success_count}/{len(lhb_df)}")
                     else:
                         fail_count += 1
 
-            print(f"[OK] 并发查询完成：成功 {success_count} 只，失败 {fail_count} 只")
+            logger.info(f"[OK] 并发查询完成：成功 {success_count} 只，失败 {fail_count} 只")
 
             if not all_seats:
-                print("[ERROR] 所有股票的营业部明细查询均失败")
+                logger.error("[ERROR] 所有股票的营业部明细查询均失败")
                 return None
 
             # 合并所有营业部数据
             df_all = pd.concat(all_seats, ignore_index=True)
-            print(f"[OK] 总计获取 {len(df_all)} 条营业部明细数据")
+            logger.info(f"[OK] 总计获取 {len(df_all)} 条营业部明细数据")
+            logger.info(f"[OK] 营业部明细列名: {df_all.columns.tolist()}")
 
             # 分析营业部数据
-            return CapitalAnalyzer._analyze_seat_data_from_stock_detail(df_all)
+            return CapitalAnalyzer._analyze_seat_data_from_stock_detail(df_all, date_str)
 
         except Exception as e:
-            print(f"[ERROR] 并发查询营业部明细失败: {e}")
+            logger.error(f"[ERROR] 并发查询营业部明细失败: {e}")
             import traceback
             traceback.print_exc()
             return None
@@ -570,28 +501,24 @@ class CapitalAnalyzer:
             capital_stats = {}
             matched_count = 0
 
-            # 检查列名
-            if '营业部名称' not in df_all.columns:
-                # 尝试找到营业部名称列
-                seat_col = None
-                for col in df_all.columns:
-                    if '营业' in col or '席位' in col:
-                        seat_col = col
-                        break
+            # ✅ 关键修复：检查正确的列名
+            seat_col = None
+            if '交易营业部名称' in df_all.columns:
+                seat_col = '交易营业部名称'
+            elif '营业部名称' in df_all.columns:
+                seat_col = '营业部名称'
+            else:
+                logger.error(f"营业部明细数据中没有'营业部名称'列，可用列: {df_all.columns.tolist()}")
+                return None
 
-                if seat_col is None:
-                    print("[ERROR] 营业部明细数据中找不到营业部名称列")
-                    return None
-
-                df_all = df_all.rename(columns={seat_col: '营业部名称'})
-
-            print(f"[OK] 营业部明细列名: {df_all.columns.tolist()}")
+            logger.info(f"[OK] 使用列名: {seat_col}")
+            logger.info(f"[OK] 营业部明细列名: {df_all.columns.tolist()}")
 
             # 分析每条营业部记录
             for _, row in df_all.iterrows():
-                seat_name = str(row.get('营业部名称', ''))
+                seat_name = str(row.get(seat_col, ''))
 
-                if not seat_name:
+                if not seat_name or seat_name == 'nan':
                     continue
 
                 # 使用智能匹配算法
@@ -612,8 +539,15 @@ class CapitalAnalyzer:
                         }
 
                     # 获取买入和卖出金额
-                    buy_amount = row.get('买入额', 0) or row.get('买入', 0) or 0
-                    sell_amount = row.get('卖出额', 0) or row.get('卖出', 0) or 0
+                    try:
+                        buy_amount = float(row.get('买入金额', 0) or row.get('买入', 0) or 0)
+                    except:
+                        buy_amount = 0
+                    
+                    try:
+                        sell_amount = float(row.get('卖出金额', 0) or row.get('卖出', 0) or 0)
+                    except:
+                        sell_amount = 0
 
                     # 获取买入和卖出次数
                     buy_count = 1 if buy_amount > 0 else 0
@@ -679,7 +613,7 @@ class CapitalAnalyzer:
             # 按净流入排序
             capital_summary.sort(key=lambda x: x['净流入'], reverse=True)
 
-            print(f"[OK] 分析完成：匹配到 {matched_count} 条游资操作记录，涉及 {len(capital_stats)} 个游资")
+            logger.info(f"[OK] 分析完成：匹配到 {matched_count} 条游资操作记录，涉及 {len(capital_stats)} 个游资")
 
             result = {
                 '数据状态': '正常',
@@ -692,13 +626,14 @@ class CapitalAnalyzer:
             }
 
             # 保存到缓存
-            cache_key = f"lhb_capital_concurrent_{date_str}"
-            CapitalAnalyzer.cache.set(cache_key, result, ttl=3600)  # 缓存1小时
+            if date_str:
+                cache_key = f"lhb_capital_concurrent_{date_str}"
+                CapitalAnalyzer.cache.set(cache_key, result, ttl=3600)  # 缓存1小时
 
             return result
 
         except Exception as e:
-            print(f"[ERROR] 分析营业部明细数据失败: {e}")
+            logger.error(f"[ERROR] 分析营业部明细数据失败: {e}")
             import traceback
             traceback.print_exc()
             return None
@@ -713,15 +648,15 @@ class CapitalAnalyzer:
         try:
             import akshare as ak
 
-            print("=" * 60)
-            print("第二层数据源：新浪接口")
-            print("=" * 60)
+            logger.info("=" * 60)
+            logger.info("第二层数据源：新浪接口")
+            logger.info("=" * 60)
 
             # 检查缓存
             cache_key = "sina_yyb_stats_latest"
             cached_data = CapitalAnalyzer.cache.get(cache_key)
             if cached_data:
-                print(f"从缓存获取新浪营业部数据")
+                logger.info(f"从缓存获取新浪营业部数据")
                 yyb_stats = pd.DataFrame(cached_data)
             else:
                 # 使用新浪接口获取营业部统计数据
@@ -731,16 +666,16 @@ class CapitalAnalyzer:
                     CapitalAnalyzer.cache.set(cache_key, yyb_stats.to_dict('records'), ttl=3600)
 
             if yyb_stats.empty:
-                print("新浪接口返回空数据，切换到第三层数据源")
+                logger.warning("新浪接口返回空数据，切换到第三层数据源")
                 return CapitalAnalyzer._get_historical_data()
 
-            print(f"获取到 {len(yyb_stats)} 条营业部统计数据")
-            print(f"新浪数据列名: {yyb_stats.columns.tolist()}")
+            logger.info(f"获取到 {len(yyb_stats)} 条营业部统计数据")
+            logger.info(f"新浪数据列名: {yyb_stats.columns.tolist()}")
 
             return CapitalAnalyzer._analyze_sina_seat_data(yyb_stats)
 
         except Exception as e:
-            print(f"获取新浪营业部数据失败: {e}")
+            logger.error(f"获取新浪营业部数据失败: {e}")
             import traceback
             traceback.print_exc()
             return CapitalAnalyzer._get_historical_data()
@@ -821,15 +756,14 @@ class CapitalAnalyzer:
 
             if all_seat_data:
                 seat_df = pd.DataFrame(all_seat_data)
-                print(f"成功构建席位数据，共 {len(seat_df)} 条记录")
-                print(f"样本数据:\n{seat_df.head(3).to_string()}")
+                logger.info(f"成功构建席位数据，共 {len(seat_df)} 条记录")
                 return CapitalAnalyzer._analyze_seat_data(seat_df, '营业部名称', is_sina=True)
             else:
-                print("新浪数据中没有有效的席位信息")
+                logger.info("新浪数据中没有有效的席位信息")
                 return CapitalAnalyzer._get_historical_data()
 
         except Exception as e:
-            print(f"分析新浪营业部数据失败: {e}")
+            logger.error(f"分析新浪营业部数据失败: {e}")
             import traceback
             traceback.print_exc()
             return CapitalAnalyzer._get_historical_data()
@@ -842,14 +776,14 @@ class CapitalAnalyzer:
         try:
             import akshare as ak
 
-            print("=" * 60)
-            print("第三层数据源：历史营业部数据")
-            print("=" * 60)
+            logger.info("=" * 60)
+            logger.info("第三层数据源：历史营业部数据")
+            logger.info("=" * 60)
 
             # 尝试获取历史营业部数据
             active_yyb = ak.stock_lhb_yyb_detail_em()
             if not active_yyb.empty:
-                print(f"获取到 {len(active_yyb)} 条历史营业部数据")
+                logger.info(f"获取到 {len(active_yyb)} 条历史营业部数据")
                 # 返回历史营业部数据
                 return {
                     '数据状态': '正常',
@@ -858,14 +792,14 @@ class CapitalAnalyzer:
                     '营业部数量': len(active_yyb)
                 }
             else:
-                print("历史营业部数据为空")
+                logger.info("历史营业部数据为空")
                 return {
                     '数据状态': '无数据',
                     '说明': '所有数据源均无法获取到有效数据，请稍后重试'
                 }
 
         except Exception as e:
-            print(f"获取历史营业部数据失败: {e}")
+            logger.error(f"获取历史营业部数据失败: {e}")
             return {
                 '数据状态': '获取数据失败',
                 '错误信息': str(e),
@@ -923,8 +857,8 @@ class CapitalAnalyzer:
             matched_count = 0
 
             unique_seats = lhb_df[seat_col].unique()
-            print(f"共找到 {len(unique_seats)} 个不同的营业部")
-            print(f"营业部列表: {unique_seats[:10]}...")  # 只打印前10个
+            logger.info(f"共找到 {len(unique_seats)} 个不同的营业部")
+            logger.info(f"营业部列表: {unique_seats[:10]}...")  # 只打印前10个
 
             for _, row in lhb_df.iterrows():
                 seat_name = str(row[seat_col])
@@ -1014,7 +948,7 @@ class CapitalAnalyzer:
             # 按净流入排序
             capital_summary.sort(key=lambda x: x['净流入'], reverse=True)
 
-            print(f"分析完成：匹配到 {matched_count} 条游资操作记录，涉及 {len(capital_stats)} 个游资")
+            logger.info(f"分析完成：匹配到 {matched_count} 条游资操作记录，涉及 {len(capital_stats)} 个游资")
 
             result = {
                 '数据状态': '正常',
@@ -1045,9 +979,7 @@ class CapitalAnalyzer:
         追踪游资操作模式（修复版）
         分析特定游资在指定时间内的操作规律
         
-        修复方案：使用两步法获取营业部明细
-        1. 获取龙虎榜股票列表
-        2. 逐个查询营业部明细（并发优化）
+        核心修复：使用正确的列名 '交易营业部名称'
         """
         try:
             import akshare as ak
@@ -1061,7 +993,7 @@ class CapitalAnalyzer:
 
             # 获取该游资的席位列表
             seats = CapitalAnalyzer.FAMOUS_CAPITALISTS[capital_name]
-            logger.info(f"游资 {capital_name} 的席位列表: {seats}")
+            logger.info(f"🎯 游资 {capital_name} 的席位列表: {seats}")
 
             # 获取历史龙虎榜数据
             end_date = pd.Timestamp.now()
@@ -1082,7 +1014,7 @@ class CapitalAnalyzer:
                     lhb_df = ak.stock_lhb_detail_em(start_date=date_str, end_date=date_str)
 
                     if not lhb_df.empty:
-                        logger.info(f"{date_str}: 获取 {len(lhb_df)} 条龙虎榜股票")
+                        logger.info(f"📅 {date_str}: 获取 {len(lhb_df)} 条龙虎榜股票")
 
                         # Step 2: 逐个查询营业部明细（并发优化）
                         def fetch_seat_detail(stock_info):
@@ -1106,7 +1038,7 @@ class CapitalAnalyzer:
                                 else:
                                     return None, False
                             except Exception as e:
-                                logger.warning(f"  [WARN] {name}({code}) 查询失败: {e}")
+                                logger.debug(f"  [WARN] {name}({code}) 查询失败: {e}")
                                 return None, False
 
                         # 并发查询营业部明细
@@ -1127,7 +1059,7 @@ class CapitalAnalyzer:
                                     all_seats.append(result)
                                     success_count += 1
 
-                        logger.info(f"  并发查询完成：成功 {success_count} 只股票")
+                        logger.info(f"  ✅ 并发查询完成：成功 {success_count} 只股票")
 
                         if all_seats:
                             # 合并所有营业部数据
@@ -1135,29 +1067,45 @@ class CapitalAnalyzer:
                             logger.info(f"  获取到 {len(df_all)} 条营业部明细")
                             logger.info(f"  营业部明细列名: {df_all.columns.tolist()}")
 
-                            # 检查是否有营业部名称列
-                            if '营业部名称' not in df_all.columns:
+                            # ✅ 关键修复：检查正确的列名
+                            seat_col = None
+                            if '交易营业部名称' in df_all.columns:
+                                seat_col = '交易营业部名称'
+                            elif '营业部名称' in df_all.columns:
+                                seat_col = '营业部名称'
+                            else:
                                 logger.error(f"  营业部明细数据中没有'营业部名称'列，可用列: {df_all.columns.tolist()}")
                                 current_date += pd.Timedelta(days=1)
                                 continue
 
                             # 筛选该游资的操作
                             for _, row in df_all.iterrows():
-                                seat_name = str(row['营业部名称'])
+                                seat_name = str(row[seat_col])
 
                                 # 精确匹配或模糊匹配
                                 if seat_name in seats or any(keyword in seat_name for keyword in seats):
                                     matched_dates += 1
+                                    
+                                    try:
+                                        buy_amt = float(row.get('买入金额', 0) or 0)
+                                    except:
+                                        buy_amt = 0
+                                    
+                                    try:
+                                        sell_amt = float(row.get('卖出金额', 0) or 0)
+                                    except:
+                                        sell_amt = 0
+                                    
                                     all_operations.append({
                                         '日期': row['日期'],
                                         '股票代码': row['股票代码'],
                                         '股票名称': row['股票名称'],
-                                        '买入金额': row.get('买入额', 0),
-                                        '卖出金额': row.get('卖出额', 0),
-                                        '净买入': row.get('买入额', 0) - row.get('卖出额', 0),
+                                        '买入金额': buy_amt,
+                                        '卖出金额': sell_amt,
+                                        '净买入': buy_amt - sell_amt,
                                         '营业部名称': seat_name
                                     })
-                                    logger.info(f"  匹配: {seat_name} - {row['股票名称']}({row['股票代码']})")
+                                    logger.info(f"  ✅ 匹配: {seat_name} - {row['股票名称']}({row['股票代码']})")
 
                 except Exception as e:
                     logger.error(f"{date_str}: 获取数据失败 - {e}")
@@ -1249,6 +1197,7 @@ class CapitalAnalyzer:
             }
 
         except Exception as e:
+            logger.error(f"追踪游资操作模式失败: {e}", exc_info=True)
             return {
                 '数据状态': '分析失败',
                 '错误信息': str(e),
@@ -1312,6 +1261,7 @@ class CapitalAnalyzer:
             }
 
         except Exception as e:
+            logger.error(f"预测游资下一步操作失败: {e}", exc_info=True)
             return {
                 '数据状态': '预测失败',
                 '错误信息': str(e),
