@@ -847,7 +847,7 @@ class CapitalAnalyzer:
             print("=" * 60)
 
             # 尝试获取历史营业部数据
-            active_yyb = ak.stock_lhb_hyyyb_em()
+            active_yyb = ak.stock_lhb_yyb_detail_em()
             if not active_yyb.empty:
                 print(f"获取到 {len(active_yyb)} 条历史营业部数据")
                 # 返回历史营业部数据

@@ -1400,7 +1400,7 @@ class QuantAlgo:
                     
                     # 获取活跃营业部
                     try:
-                        active_yyb = ak.stock_lhb_hyyyb_em()
+                        active_yyb = ak.stock_lhb_yyb_detail_em()
                     except:
                         active_yyb = None
                     
