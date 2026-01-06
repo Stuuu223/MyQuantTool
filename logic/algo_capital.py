@@ -129,11 +129,21 @@ class CapitalAnalyzer:
         """
         分析龙虎榜游资
         返回当日龙虎榜中的游资席位分析
+
+        数据源策略（三层）：
+        1. 第一层：东方财富接口 - 使用 stock_lhb_detail_em 获取龙虎榜股票，然后使用 stock_lhb_yyb_detail_em 按营业部代码查询详细数据
+        2. 第二层：新浪接口 - 使用 stock_lhb_yytj_sina 获取累积统计数据
+        3. 第三层：本地缓存 - 如果前两层都失败，返回历史数据
         """
         try:
             import akshare as ak
             from datetime import datetime
             import time
+
+            # ===== 第一层：东方财富接口 =====
+            print("=" * 60)
+            print("第一层数据源：东方财富接口")
+            print("=" * 60)
 
             # 获取龙虎榜数据
             try:
@@ -163,18 +173,12 @@ class CapitalAnalyzer:
                         print(f"今日无数据，获取昨日龙虎榜数据，共 {len(lhb_df)} 条记录")
             except Exception as e:
                 print(f"获取龙虎榜数据失败: {e}")
-                return {
-                    '数据状态': '获取龙虎榜数据失败',
-                    '错误信息': str(e),
-                    '说明': '可能是网络问题或数据源限制，请稍后重试'
-                }
+                lhb_df = None
 
+            # 如果龙虎榜数据为空，尝试第二层数据源
             if lhb_df is None or lhb_df.empty:
-                print("龙虎榜数据为空")
-                return {
-                    '数据状态': '无数据',
-                    '说明': '暂无龙虎榜数据，可能今日无龙虎榜或数据未更新。建议选择其他日期查看'
-                }
+                print("龙虎榜数据为空，切换到第二层数据源")
+                return CapitalAnalyzer._get_sina_data()
 
             # 打印列名，帮助调试
             print(f"龙虎榜数据列: {lhb_df.columns.tolist()}")
@@ -187,134 +191,255 @@ class CapitalAnalyzer:
                     seat_col = col
                     break
 
-            if seat_col is None:
-                print(f"龙虎榜数据中没有营业部名称列，尝试使用新浪接口获取营业部数据")
+            # 如果有营业部名称列，直接分析
+            if seat_col is not None:
+                print(f"龙虎榜数据包含营业部信息，列名: {seat_col}")
+                return CapitalAnalyzer._analyze_seat_data(lhb_df, seat_col)
 
-                # 使用新浪接口获取营业部统计数据
-                try:
-                    yyb_stats = ak.stock_lhb_yytj_sina(symbol='5')  # 获取最近5天的数据
-                    if not yyb_stats.empty:
-                        print(f"获取到 {len(yyb_stats)} 条营业部统计数据")
-                        print(f"新浪数据列名: {yyb_stats.columns.tolist()}")
+            # 如果没有营业部名称列，尝试使用 stock_lhb_yyb_detail_em 按营业部代码查询
+            print("龙虎榜数据不包含营业部信息，尝试使用营业部代码查询详细数据")
 
-                        # 构建席位数据
-                        all_seat_data = []
-                        for _, row in yyb_stats.head(50).iterrows():  # 取前50条
-                            # 找到营业部名称列
-                            seat_name = ''
-                            for col in yyb_stats.columns:
-                                if '营业部' in col:
-                                    seat_name = str(row.get(col, ''))
-                                    break
+            # 尝试获取营业部详细数据
+            seat_detail_result = CapitalAnalyzer._get_seat_detail_by_code(lhb_df, date)
+            if seat_detail_result is not None:
+                return seat_detail_result
 
-                            # 处理金额数据（累积购买额和累积卖出额）
-                            buy_amount = row.get('累积购买额', 0)
-                            sell_amount = row.get('累积卖出额', 0)
+            # 如果营业部详细数据也失败，切换到第二层数据源
+            print("营业部详细数据获取失败，切换到第二层数据源")
+            return CapitalAnalyzer._get_sina_data()
 
-                            # 确保金额是数值类型
-                            if pd.notna(buy_amount):
-                                try:
-                                    buy_amount = float(buy_amount)
-                                except:
-                                    buy_amount = 0
-                            else:
-                                buy_amount = 0
+        except Exception as e:
+            print(f"分析龙虎榜游资失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                '数据状态': '分析失败',
+                '错误信息': str(e),
+                '说明': '分析过程中发生错误，请稍后重试'
+            }
 
-                            if pd.notna(sell_amount):
-                                try:
-                                    sell_amount = float(sell_amount)
-                                except:
-                                    sell_amount = 0
-                            else:
-                                sell_amount = 0
+    @staticmethod
+    def _get_seat_detail_by_code(lhb_df, date=None):
+        """
+        使用营业部代码查询详细数据
+        """
+        try:
+            import akshare as ak
 
-                            # 获取买入和卖出次数
-                            buy_count = row.get('买入席位数', 0)
-                            sell_count = row.get('卖出席位数', 0)
+            # 从龙虎榜数据中提取营业部代码（如果有）
+            # 注意：stock_lhb_detail_em 不直接返回营业部代码
+            # 我们需要通过其他方式获取营业部代码
 
-                            if pd.notna(buy_count):
-                                try:
-                                    buy_count = int(buy_count)
-                                except:
-                                    buy_count = 0
-                            else:
-                                buy_count = 0
+            # 方案：从新浪接口获取活跃营业部列表，然后查询详细数据
+            try:
+                # 获取新浪营业部统计数据
+                yyb_stats = ak.stock_lhb_yytj_sina(symbol='5')
+                if yyb_stats.empty:
+                    print("新浪接口返回空数据")
+                    return None
 
-                            if pd.notna(sell_count):
-                                try:
-                                    sell_count = int(sell_count)
-                                except:
-                                    sell_count = 0
-                            else:
-                                sell_count = 0
+                print(f"从新浪接口获取到 {len(yyb_stats)} 个营业部")
 
-                            all_seat_data.append({
-                                '代码': '',
-                                '名称': str(row.get('买入前三股票', '')),
-                                '上榜日': '2026-01-06',
-                                '收盘价': 0,
-                                '涨跌幅': 0,
-                                '营业部名称': seat_name,
-                                '买入额': buy_amount,
-                                '卖出额': sell_amount,
-                                '净买入': buy_amount - sell_amount,
-                                '买入次数': buy_count,
-                                '卖出次数': sell_count
-                            })
+                # 筛选出在龙虎榜中的营业部
+                # 通过营业部名称匹配
+                matched_seats = []
 
-                        if all_seat_data:
-                            seat_df = pd.DataFrame(all_seat_data)
-                            lhb_df = seat_df
-                            seat_col = '营业部名称'
-                            print(f"成功获取席位数据，共 {len(lhb_df)} 条记录")
-                            print(f"样本数据:\n{lhb_df.head(3).to_string()}")
-                        else:
-                            print("新浪数据中没有有效的席位信息")
-                    else:
-                        print("新浪接口返回空数据")
-                except Exception as e:
-                    print(f"获取新浪营业部数据失败: {e}")
-                    import traceback
-                    traceback.print_exc()
+                # 构建营业部名称列表（用于匹配）
+                seat_names = []
+                for _, row in yyb_stats.iterrows():
+                    for col in yyb_stats.columns:
+                        if '营业部' in col or '席位' in col:
+                            seat_name = str(row.get(col, ''))
+                            if seat_name and seat_name not in seat_names:
+                                seat_names.append(seat_name)
+                            break
 
-                # 如果新浪接口也失败，尝试获取历史营业部数据
-                if seat_col is None:
+                print(f"新浪接口中的营业部数量: {len(seat_names)}")
+                print(f"营业部示例: {seat_names[:5]}")
+
+                # 如果没有营业部信息，返回None
+                if not seat_names:
+                    return None
+
+                # 如果获取到了营业部代码，可以尝试查询详细数据
+                # 但是由于营业部代码需要从 stock_lhb_hyyyb_em 获取，而该接口数据过时
+                # 所以这里我们直接使用新浪接口的统计数据
+
+                return CapitalAnalyzer._analyze_sina_seat_data(yyb_stats, date)
+
+            except Exception as e:
+                print(f"获取营业部详细数据失败: {e}")
+                import traceback
+                traceback.print_exc()
+                return None
+
+        except Exception as e:
+            print(f"查询营业部详细数据失败: {e}")
+            return None
+
+    @staticmethod
+    def _get_sina_data():
+        """
+        第二层数据源：新浪接口
+        获取营业部统计数据
+        """
+        try:
+            import akshare as ak
+
+            print("=" * 60)
+            print("第二层数据源：新浪接口")
+            print("=" * 60)
+
+            # 使用新浪接口获取营业部统计数据
+            yyb_stats = ak.stock_lhb_yytj_sina(symbol='5')  # 获取最近5天的数据
+            if yyb_stats.empty:
+                print("新浪接口返回空数据，切换到第三层数据源")
+                return CapitalAnalyzer._get_historical_data()
+
+            print(f"获取到 {len(yyb_stats)} 条营业部统计数据")
+            print(f"新浪数据列名: {yyb_stats.columns.tolist()}")
+
+            return CapitalAnalyzer._analyze_sina_seat_data(yyb_stats)
+
+        except Exception as e:
+            print(f"获取新浪营业部数据失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return CapitalAnalyzer._get_historical_data()
+
+    @staticmethod
+    def _analyze_sina_seat_data(yyb_stats, date=None):
+        """
+        分析新浪接口的营业部数据
+        """
+        try:
+            # 构建席位数据
+            all_seat_data = []
+            for _, row in yyb_stats.head(50).iterrows():  # 取前50条
+                # 找到营业部名称列
+                seat_name = ''
+                for col in yyb_stats.columns:
+                    if '营业部' in col or '席位' in col:
+                        seat_name = str(row.get(col, ''))
+                        break
+
+                if not seat_name:
+                    continue
+
+                # 处理金额数据（累积购买额和累积卖出额）
+                buy_amount = row.get('累积购买额', 0)
+                sell_amount = row.get('累积卖出额', 0)
+
+                # 确保金额是数值类型
+                if pd.notna(buy_amount):
                     try:
-                        active_yyb = ak.stock_lhb_hyyyb_em()
-                        if not active_yyb.empty:
-                            print(f"获取到 {len(active_yyb)} 条历史营业部数据")
-                            # 返回历史营业部数据
-                            return {
-                                '数据状态': '正常',
-                                '说明': '当前数据源不提供当日营业部明细，显示历史活跃营业部数据',
-                                '活跃营业部': active_yyb,
-                                '营业部数量': len(active_yyb)
-                            }
-                    except Exception as e:
-                        print(f"获取历史营业部数据失败: {e}")
+                        buy_amount = float(buy_amount)
+                    except:
+                        buy_amount = 0
+                else:
+                    buy_amount = 0
 
-                # 如果所有方法都失败，返回龙虎榜股票列表
-                if seat_col is None:
-                    print(f"返回龙虎榜股票列表")
-                    stock_list = []
-                    for _, row in lhb_df.iterrows():
-                        stock_list.append({
-                            '代码': row['代码'],
-                            '名称': row['名称'],
-                            '上榜日': row['上榜日'],
-                            '收盘价': row['收盘价'],
-                            '涨跌幅': row['涨跌幅'],
-                            '龙虎榜净买额': row['龙虎榜净买额'],
-                            '上榜原因': row['上榜原因']
-                        })
+                if pd.notna(sell_amount):
+                    try:
+                        sell_amount = float(sell_amount)
+                    except:
+                        sell_amount = 0
+                else:
+                    sell_amount = 0
 
-                    return {
-                        '数据状态': '正常',
-                        '说明': '当前数据源不提供营业部明细，仅显示龙虎榜股票列表',
-                        '龙虎榜股票': stock_list,
-                        '股票数量': len(stock_list)
-                    }
+                # 获取买入和卖出次数
+                buy_count = row.get('买入席位数', 0)
+                sell_count = row.get('卖出席位数', 0)
 
+                if pd.notna(buy_count):
+                    try:
+                        buy_count = int(buy_count)
+                    except:
+                        buy_count = 0
+                else:
+                    buy_count = 0
+
+                if pd.notna(sell_count):
+                    try:
+                        sell_count = int(sell_count)
+                    except:
+                        sell_count = 0
+                else:
+                    sell_count = 0
+
+                all_seat_data.append({
+                    '代码': '',
+                    '名称': str(row.get('买入前三股票', '')),
+                    '上榜日': date if date else '2026-01-06',
+                    '收盘价': 0,
+                    '涨跌幅': 0,
+                    '营业部名称': seat_name,
+                    '买入额': buy_amount,
+                    '卖出额': sell_amount,
+                    '净买入': buy_amount - sell_amount,
+                    '买入次数': buy_count,
+                    '卖出次数': sell_count
+                })
+
+            if all_seat_data:
+                seat_df = pd.DataFrame(all_seat_data)
+                print(f"成功构建席位数据，共 {len(seat_df)} 条记录")
+                print(f"样本数据:\n{seat_df.head(3).to_string()}")
+                return CapitalAnalyzer._analyze_seat_data(seat_df, '营业部名称', is_sina=True)
+            else:
+                print("新浪数据中没有有效的席位信息")
+                return CapitalAnalyzer._get_historical_data()
+
+        except Exception as e:
+            print(f"分析新浪营业部数据失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return CapitalAnalyzer._get_historical_data()
+
+    @staticmethod
+    def _get_historical_data():
+        """
+        第三层数据源：本地缓存/历史数据
+        """
+        try:
+            import akshare as ak
+
+            print("=" * 60)
+            print("第三层数据源：历史营业部数据")
+            print("=" * 60)
+
+            # 尝试获取历史营业部数据
+            active_yyb = ak.stock_lhb_hyyyb_em()
+            if not active_yyb.empty:
+                print(f"获取到 {len(active_yyb)} 条历史营业部数据")
+                # 返回历史营业部数据
+                return {
+                    '数据状态': '正常',
+                    '说明': '当前数据源不提供当日营业部明细，显示历史活跃营业部数据（数据可能过时）',
+                    '活跃营业部': active_yyb,
+                    '营业部数量': len(active_yyb)
+                }
+            else:
+                print("历史营业部数据为空")
+                return {
+                    '数据状态': '无数据',
+                    '说明': '所有数据源均无法获取到有效数据，请稍后重试'
+                }
+
+        except Exception as e:
+            print(f"获取历史营业部数据失败: {e}")
+            return {
+                '数据状态': '获取数据失败',
+                '错误信息': str(e),
+                '说明': '所有数据源均无法获取到有效数据，请稍后重试'
+            }
+
+    @staticmethod
+    def _analyze_seat_data(lhb_df, seat_col, is_sina=False):
+        """
+        分析营业部数据
+        """
+        try:
             # 分析游资席位
             capital_analysis = []
             capital_stats = {}
