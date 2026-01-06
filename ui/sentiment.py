@@ -8,7 +8,6 @@ import plotly.graph_objects as go
 def render_sentiment_tab(db, config):
     st.subheader("📈 情绪分析")
     st.caption("基于拾荒网技术文章:情绪指数、涨停板分析、龙虎榜深度分析")
-    st.caption("基于拾荒网技术文章:情绪指数、涨停板分析、龙虎榜深度分析")
     
     # 初始化情绪分析器
     from logic.algo_sentiment import MarketSentimentAnalyzer

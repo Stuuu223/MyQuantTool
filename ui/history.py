@@ -4,7 +4,6 @@ import pandas as pd
 
 def render_history_tab(db, config):
     st.subheader("📜 历史记录")
-    st.subheader("📜 历史记录")
     st.caption("查看和导出分析历史")
 
     # 导入历史记录管理器

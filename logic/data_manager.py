@@ -248,12 +248,19 @@ class DataManager:
                     # 取最后一根K线（最新的数据）
                     latest = df.iloc[-1]
 
-                    # 计算涨跌幅（对比前一根K线的收盘价）
-                    if len(df) >= 2:
-                        prev_close = df.iloc[-2]['收盘']
-                        change_pct = (latest['收盘'] - prev_close) / prev_close * 100
+                    # 获取当日开盘价（找到9:30-9:31的K线）
+                    df['时间'] = pd.to_datetime(df['时间'])
+                    today_open_df = df[df['时间'].dt.time <= datetime.strptime("09:31", "%H:%M").time()]
+                    if not today_open_df.empty:
+                        day_open = today_open_df.iloc[0]['开盘']
                     else:
-                        prev_close = latest['开盘']
+                        day_open = latest['开盘']
+
+                    # 计算涨跌幅（对比当日开盘价，反映当日总涨跌幅）
+                    # 防止除以零
+                    if day_open != 0:
+                        change_pct = (latest['收盘'] - day_open) / day_open * 100
+                    else:
                         change_pct = 0.0
 
                     result = {
@@ -265,7 +272,7 @@ class DataManager:
                         'high': float(latest['最高']),
                         'low': float(latest['最低']),
                         'open': float(latest['开盘']),
-                        'pre_close': float(prev_close),
+                        'pre_close': float(day_open),  # 使用当日开盘价作为基准
                         'timestamp': now.strftime('%Y-%m-%d %H:%M:%S'),
                         'is_trading': True
                     }
@@ -293,7 +300,11 @@ class DataManager:
                     # 计算涨跌幅（对比前一根K线的收盘价）
                     if len(df) >= 2:
                         prev_close = df.iloc[-2]['收盘']
-                        change_pct = (latest['收盘'] - prev_close) / prev_close * 100
+                        # 防止除以零
+                        if prev_close != 0:
+                            change_pct = (latest['收盘'] - prev_close) / prev_close * 100
+                        else:
+                            change_pct = 0.0
                     else:
                         prev_close = latest['开盘']
                         change_pct = 0.0

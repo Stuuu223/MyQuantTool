@@ -4,7 +4,6 @@ import pandas as pd
 from logic.algo_advanced import AdvancedAlgo
 
 def render_volume_price_tab(db, config):
-    st.subheader("📊 量价关系")
     st.subheader("📊 量价关系战法")
     st.caption("检测缩量回调、放量突破、顶背离、底背离等量价信号")
 

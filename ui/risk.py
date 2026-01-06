@@ -5,7 +5,6 @@ from logic.formatter import Formatter
 
 def render_risk_tab(db, config):
     st.subheader("⚠️ 风险管理")
-    st.subheader("⚠️ 风险管理")
     st.caption("仓位管理、止损止盈提醒")
 
     # 导入风险管理器

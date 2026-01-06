@@ -3,7 +3,6 @@ import streamlit as st
 import pandas as pd
 
 def render_smart_recommend_tab(db, config):
-    st.subheader("🤖 智能推荐")
     st.subheader("🤖 智能推荐系统")
     st.caption("根据市场行情自动推荐相关战法")
 

@@ -147,7 +147,11 @@ class BacktestEngine:
             if pattern_type in ['all', 'dragon']:
                 # 检查是否涨停
                 prev_close = df.iloc[i-1]['close']
-                change_pct = (current_price - prev_close) / prev_close * 100
+                # 防止除以零
+                if prev_close != 0:
+                    change_pct = (current_price - prev_close) / prev_close * 100
+                else:
+                    change_pct = 0.0
                 
                 if change_pct >= 9.9:  # 涨停
                     # 检查价格条件

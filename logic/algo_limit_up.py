@@ -182,11 +182,13 @@ class LimitUpPredictor:
                     })
 
             # 4. 成交量特征
+            # 先计算成交量均线，然后再筛选涨停日
             df['volume_ma5'] = df['volume'].rolling(5).mean()
-            limit_up_days_with_volume = limit_up_days.copy()
-            limit_up_days_with_volume['volume_ratio'] = limit_up_days_with_volume['volume'] / limit_up_days_with_volume['volume_ma5']
+            # 重新筛选包含成交量均线的涨停日
+            limit_up_with_ma = df[df['change_pct'] >= 9.9].copy()
+            limit_up_with_ma['volume_ratio'] = limit_up_with_ma['volume'] / limit_up_with_ma['volume_ma5']
 
-            avg_volume_ratio = limit_up_days_with_volume['volume_ratio'].mean()
+            avg_volume_ratio = limit_up_with_ma['volume_ratio'].mean()
 
             if avg_volume_ratio > 2:
                 factors.append({

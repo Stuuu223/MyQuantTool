@@ -1745,7 +1745,11 @@ class QuantAlgo:
             t_signals.append("温和放量，流动性尚可")
         
         # 5. 开盘缺口（权重10%）
-        gap = (today_open - prev_close) / prev_close
+        # 防止除以零
+        if prev_close != 0:
+            gap = (today_open - prev_close) / prev_close
+        else:
+            gap = 0.0
         if abs(gap) > 0.02:  # 缺口超过2%
             t_score += 10
             if gap > 0:
