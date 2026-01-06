@@ -58,7 +58,11 @@ class AdvancedAlgo:
             
             # 合并所有板块
             combined_df = pd.concat(all_boards, ignore_index=True)
-            
+
+            # 过滤掉没有参考价值的板块（昨日涨停、昨日连板等）
+            exclude_keywords = ['昨日涨停', '昨日连板', '含一字']
+            combined_df = combined_df[~combined_df['板块名称'].str.contains('|'.join(exclude_keywords), na=False)]
+
             # 计算综合得分
             # 主要看涨跌幅和换手率，降低上涨家数的权重
             # 标准化上涨家数（除以100），避免数值差异过大
@@ -67,7 +71,7 @@ class AdvancedAlgo:
                 (combined_df['上涨家数'] / 100) * 0.2 +
                 combined_df['换手率'] * 0.2
             )
-            
+
             # 统一排序，取前limit个最热的板块
             hot_boards = combined_df.nlargest(limit, '综合得分')
 
@@ -75,10 +79,20 @@ class AdvancedAlgo:
             db = DataManager()
             topic_leaders = {}
 
-            # 为了性能考虑，不获取成分股数据
-            # 用户可以通过"分析题材持续度"功能获取更详细的信息
+            # 获取昨日涨停和连板股票列表
+            yesterday_limit_up_stocks = set()
+            try:
+                # 获取昨日涨停数据
+                yesterday = (pd.Timestamp.now() - pd.Timedelta(days=1)).strftime('%Y%m%d')
+                limit_up_df = ak.stock_zt_pool_em(date=yesterday)
+                if not limit_up_df.empty:
+                    # 获取连板数大于等于1的股票（即昨日已经涨停的）
+                    if '代码' in limit_up_df.columns:
+                        yesterday_limit_up_stocks = set(limit_up_df['代码'].tolist())
+            except:
+                pass  # 如果获取失败，继续执行
 
-            # 添加板块基本信息
+            # 添加板块基本信息（不获取成分股，提高扫描速度）
             for _, row in hot_boards.iterrows():
                 board_name = row['板块名称']
                 topic_leaders[board_name] = {
@@ -87,7 +101,7 @@ class AdvancedAlgo:
                     '涨家数': row['上涨家数'],
                     '跌家数': row['下跌家数'],
                     '量比': row['换手率'],
-                    '龙头股': []  # 空列表，表示未获取龙头股（性能优化）
+                    '龙头股': []  # 初始为空，用户点击"分析题材持续度"时再获取
                 }
 
             db.close()
@@ -185,6 +199,37 @@ class AdvancedAlgo:
                 stage = "震荡期"
                 suggestion = "题材震荡，观望为主"
 
+            # 获取板块成分股和龙头股
+            dragon_stocks = []
+            try:
+                # 获取板块成分股
+                stocks_df = None
+                try:
+                    stocks_df = ak.stock_board_concept_cons_em(symbol=topic_name)
+                except:
+                    try:
+                        stocks_df = ak.stock_board_industry_cons_em(symbol=topic_name)
+                    except:
+                        pass
+
+                if stocks_df is not None and not stocks_df.empty and '代码' in stocks_df.columns:
+                    # 只选择涨幅为正的股票（不过滤昨日涨停和连板）
+                    positive_stocks = stocks_df[stocks_df['涨跌幅'] > 0]
+
+                    if not positive_stocks.empty:
+                        # 计算龙头得分
+                        positive_stocks['龙头得分'] = (
+                            positive_stocks['涨跌幅'] * 0.5 +
+                            (positive_stocks['成交额'] / (positive_stocks['成交额'].mean() + 1e-6)) * 0.3 +
+                            positive_stocks['换手率'] * 0.2
+                        )
+
+                        # 取前5只龙头股
+                        leaders = positive_stocks.nlargest(5, '龙头得分')
+                        dragon_stocks = leaders.to_dict('records')
+            except Exception as e:
+                print(f"获取龙头股失败: {e}")
+
             db.close()
 
             return {
@@ -198,7 +243,8 @@ class AdvancedAlgo:
                 '波动率': round(volatility, 2),
                 '趋势强度': round(trend_strength, 2),
                 '当前阶段': stage,
-                '操作建议': suggestion
+                '操作建议': suggestion,
+                '龙头股': dragon_stocks
             }
 
         except Exception as e:

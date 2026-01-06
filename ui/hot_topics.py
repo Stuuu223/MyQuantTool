@@ -8,8 +8,26 @@ def render_hot_topics_tab(db, config):
     st.subheader("🎯 热点题材")
     st.caption("实时检测板块异动、识别龙头股、分析题材持续度")
 
+    # 检查是否需要切换到题材持续度分析
+    if st.session_state.get('switch_to_continuity', False):
+        st.session_state.switch_to_continuity = False
+        # 使用 query_params 来切换模式
+        st.query_params['mode'] = 'continuity'
+        st.rerun()
+
+    # 根据 query_params 确定默认模式
+    default_mode = "热点题材扫描"
+    if st.query_params.get('mode') == 'continuity':
+        default_mode = "题材持续度分析"
+
     # 功能选择
-    topic_mode = st.radio("选择功能", ["热点题材扫描", "题材持续度分析"], horizontal=True)
+    topic_mode = st.radio(
+        "选择功能",
+        ["热点题材扫描", "题材持续度分析"],
+        horizontal=True,
+        index=0 if default_mode == "热点题材扫描" else 1,
+        key="topic_mode_radio"
+    )
 
     if topic_mode == "热点题材扫描":
         st.divider()
@@ -26,7 +44,7 @@ def render_hot_topics_tab(db, config):
 
         # 执行扫描
         if st.session_state.get('scan_hot_topics', False):
-            with st.spinner(f'🔍 扫描中...（最热板块显示龙头股，预计需要20-30秒）'):
+            with st.spinner(f'🔍 扫描中...（快速扫描板块热度）'):
                 topic_result = AdvancedAlgo.scan_hot_topics(limit=topic_limit)
 
             if topic_result['数据状态'] == '正常':
@@ -56,9 +74,7 @@ def render_hot_topics_tab(db, config):
                                 st.write("**🔥 龙头股：**")
                                 for idx, stock in enumerate(topic_data['龙头股'], 1):
                                     st.write(f"{idx}. {stock['名称']} ({stock['代码']}) - 涨幅: {stock['涨跌幅']:.2f}%, 成交额: {Formatter.format_amount(stock['成交额'])}")
-                            else:
-                                st.write("**🔥 龙头股：** 暂未加载（点击下方按钮查看）")
-                                
+
                                 # 添加到自选股按钮
                                 for stock in topic_data['龙头股']:
                                     if st.button(f"⭐ 添加 {stock['名称']} 到自选", key=f"add_topic_{topic_name}_{stock['代码']}"):
@@ -69,11 +85,14 @@ def render_hot_topics_tab(db, config):
                                             st.success(f"已添加 {stock['名称']} ({stock['代码']}) 到自选股")
                                         else:
                                             st.info(f"{stock['名称']} ({stock['代码']}) 已在自选股中")
+                            else:
+                                st.write("**🔥 龙头股：** 暂无（该板块今日无涨幅为正的股票）")
 
                             # 分析题材持续度按钮
                             if st.button(f"📈 分析题材持续度", key=f"analyze_continuity_{topic_name}"):
                                 st.session_state.analyze_topic = topic_name
                                 st.session_state.auto_analyze = True
+                                st.session_state.switch_to_continuity = True
                                 st.rerun()
                 else:
                     st.warning("⚠️ 未发现热点题材")
@@ -129,50 +148,60 @@ def render_hot_topics_tab(db, config):
         # 显示分析结果
         if continuity_result:
             if continuity_result['数据状态'] == '正常':
-                    # 显示持续度指标
-                    col1, col2, col3, col4 = st.columns(4)
-                    with col1:
-                        st.metric("平均涨跌幅", f"{continuity_result['平均涨跌幅']:.2f}%")
-                    with col2:
-                        st.metric("上涨概率", f"{continuity_result['上涨概率']}%")
-                    with col3:
-                        st.metric("波动率", f"{continuity_result['波动率']:.2f}")
-                    with col4:
-                        st.metric("趋势强度", f"{continuity_result['趋势强度']:.2f}")
+                # 显示持续度指标
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("平均涨跌幅", f"{continuity_result['平均涨跌幅']:.2f}%")
+                with col2:
+                    st.metric("上涨概率", f"{continuity_result['上涨概率']}%")
+                with col3:
+                    st.metric("波动率", f"{continuity_result['波动率']:.2f}")
+                with col4:
+                    st.metric("趋势强度", f"{continuity_result['趋势强度']:.2f}")
 
-                    # 显示当前阶段
+                # 显示当前阶段
+                st.divider()
+                st.subheader("🔄 当前阶段")
+                stage_color = {
+                    "上升期": "🔥",
+                    "活跃期": "🟡",
+                    "衰退期": "🔴",
+                    "震荡期": "🟢"
+                }
+                st.info(f"{stage_color.get(continuity_result['当前阶段'], '📊')} **{continuity_result['当前阶段']}**")
+
+                # 显示操作建议
+                st.subheader("💡 操作建议")
+                st.success(continuity_result['操作建议'])
+
+                # 显示龙头股
+                if continuity_result.get('龙头股'):
                     st.divider()
-                    st.subheader("🔄 当前阶段")
-                    stage_color = {
-                        "上升期": "🔥",
-                        "活跃期": "🟡",
-                        "衰退期": "🔴",
-                        "震荡期": "🟢"
-                    }
-                    st.info(f"{stage_color.get(continuity_result['当前阶段'], '📊')} **{continuity_result['当前阶段']}**")
-
-                    # 显示操作建议
-                    st.subheader("💡 操作建议")
-                    st.success(continuity_result['操作建议'])
-
-                    # 显示详细指标
+                    st.subheader("🔥 龙头股")
+                    for idx, stock in enumerate(continuity_result['龙头股'], 1):
+                        st.write(f"{idx}. {stock['名称']} ({stock['代码']}) - 涨幅: {stock['涨跌幅']:.2f}%, 成交额: {Formatter.format_amount(stock['成交额'])}, 换手率: {stock['换手率']:.2f}%")
+                else:
                     st.divider()
-                    st.subheader("📊 详细指标")
+                    st.info("📊 该板块今日无涨幅为正的龙头股")
 
-                    detail_df = pd.DataFrame({
-                        '指标': ['平均涨跌幅', '最大涨幅', '最大跌幅', '上涨天数', '总天数', '上涨概率', '波动率', '趋势强度'],
-                        '数值': [
-                            f"{continuity_result['平均涨跌幅']:.2f}%",
-                            f"{continuity_result['最大涨幅']:.2f}%",
-                            f"{continuity_result['最大跌幅']:.2f}%",
-                            continuity_result['上涨天数'],
-                            continuity_result['总天数'],
-                            f"{continuity_result['上涨概率']}%",
-                            continuity_result['波动率'],
-                            continuity_result['趋势强度']
-                        ]
-                    })
-                    st.dataframe(detail_df, width="stretch", hide_index=True)
+                # 显示详细指标
+                st.divider()
+                st.subheader("📊 详细指标")
+
+                detail_df = pd.DataFrame({
+                    '指标': ['平均涨跌幅', '最大涨幅', '最大跌幅', '上涨天数', '总天数', '上涨概率', '波动率', '趋势强度'],
+                    '数值': [
+                        f"{continuity_result['平均涨跌幅']:.2f}%",
+                        f"{continuity_result['最大涨幅']:.2f}%",
+                        f"{continuity_result['最大跌幅']:.2f}%",
+                        continuity_result['上涨天数'],
+                        continuity_result['总天数'],
+                        f"{continuity_result['上涨概率']}%",
+                        continuity_result['波动率'],
+                        continuity_result['趋势强度']
+                    ]
+                })
+                st.dataframe(detail_df, width="stretch", hide_index=True)
             else:
                 st.error(f"❌ {continuity_result['数据状态']}")
                 if '说明' in continuity_result:
