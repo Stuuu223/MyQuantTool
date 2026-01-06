@@ -3,7 +3,102 @@
 分析龙虎榜游资、游资操作模式、识别知名游资"""
 
 import pandas as pd
+import sqlite3
+import json
+import time
+from datetime import datetime, timedelta
+from functools import wraps
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from logic.data_manager import DataManager
+
+
+class CacheManager:
+    """缓存管理器 - 使用SQLite缓存API数据"""
+
+    def __init__(self, db_path='data/cache.db'):
+        """初始化缓存管理器"""
+        self.db_path = db_path
+        self._init_db()
+
+    def _init_db(self):
+        """初始化数据库"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS api_cache (
+                key TEXT PRIMARY KEY,
+                data TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                expires_at TIMESTAMP NOT NULL
+            )
+        ''')
+        conn.commit()
+        conn.close()
+
+    def get(self, key):
+        """从缓存获取数据"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT data, expires_at FROM api_cache
+            WHERE key = ? AND expires_at > CURRENT_TIMESTAMP
+        ''', (key,))
+        result = cursor.fetchone()
+        conn.close()
+
+        if result:
+            return json.loads(result[0])
+        return None
+
+    def set(self, key, data, ttl=3600):
+        """设置缓存数据"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        expires_at = datetime.now() + timedelta(seconds=ttl)
+        cursor.execute('''
+            INSERT OR REPLACE INTO api_cache (key, data, expires_at)
+            VALUES (?, ?, ?)
+        ''', (key, json.dumps(data), expires_at.strftime('%Y-%m-%d %H:%M:%S')))
+        conn.commit()
+        conn.close()
+
+    def clear_expired(self):
+        """清理过期缓存"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM api_cache WHERE expires_at <= CURRENT_TIMESTAMP')
+        conn.commit()
+        conn.close()
+
+
+def retry_with_backoff(max_retries=3, backoff_factor=2):
+    """
+    指数退避重试装饰器
+
+    Args:
+        max_retries: 最大重试次数
+        backoff_factor: 退避因子
+    """
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            retries = 0
+            while retries < max_retries:
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    retries += 1
+                    if retries >= max_retries:
+                        print(f"函数 {func.__name__} 重试 {max_retries} 次后仍然失败: {e}")
+                        raise
+
+                    wait_time = backoff_factor ** retries
+                    print(f"函数 {func.__name__} 执行失败，{wait_time} 秒后进行第 {retries + 1} 次重试...")
+                    time.sleep(wait_time)
+
+            return None
+        return wrapper
+    return decorator
 
 
 class CapitalAnalyzer:
@@ -124,6 +219,9 @@ class CapitalAnalyzer:
         ]
     }
 
+    # 初始化缓存管理器
+    cache = CacheManager()
+
     @staticmethod
     def analyze_longhubu_capital(date=None):
         """
@@ -139,6 +237,13 @@ class CapitalAnalyzer:
             import akshare as ak
             from datetime import datetime
             import time
+
+            # 检查缓存
+            cache_key = f"lhb_capital_{date or 'latest'}"
+            cached_data = CapitalAnalyzer.cache.get(cache_key)
+            if cached_data:
+                print(f"从缓存获取数据: {cache_key}")
+                return cached_data
 
             # ===== 第一层：东方财富接口 =====
             print("=" * 60)
@@ -219,9 +324,10 @@ class CapitalAnalyzer:
             }
 
     @staticmethod
+    @retry_with_backoff(max_retries=3, backoff_factor=2)
     def _get_seat_detail_by_code(lhb_df, date=None):
         """
-        使用营业部代码查询详细数据
+        使用营业部代码查询详细数据（带重试机制）
         """
         try:
             import akshare as ak
@@ -232,8 +338,19 @@ class CapitalAnalyzer:
 
             # 方案：从新浪接口获取活跃营业部列表，然后查询详细数据
             try:
-                # 获取新浪营业部统计数据
-                yyb_stats = ak.stock_lhb_yytj_sina(symbol='5')
+                # 检查缓存
+                cache_key = f"sina_yyb_stats_{date or 'latest'}"
+                cached_data = CapitalAnalyzer.cache.get(cache_key)
+                if cached_data:
+                    print(f"从缓存获取新浪营业部数据")
+                    yyb_stats = pd.DataFrame(cached_data)
+                else:
+                    # 获取新浪营业部统计数据
+                    yyb_stats = ak.stock_lhb_yytj_sina(symbol='5')
+                    if not yyb_stats.empty:
+                        # 缓存数据，TTL为1小时
+                        CapitalAnalyzer.cache.set(cache_key, yyb_stats.to_dict('records'), ttl=3600)
+
                 if yyb_stats.empty:
                     print("新浪接口返回空数据")
                     return None
@@ -275,12 +392,13 @@ class CapitalAnalyzer:
 
         except Exception as e:
             print(f"查询营业部详细数据失败: {e}")
-            return None
+            raise
 
     @staticmethod
+    @retry_with_backoff(max_retries=3, backoff_factor=2)
     def _get_sina_data():
         """
-        第二层数据源：新浪接口
+        第二层数据源：新浪接口（带重试机制）
         获取营业部统计数据
         """
         try:
@@ -290,8 +408,19 @@ class CapitalAnalyzer:
             print("第二层数据源：新浪接口")
             print("=" * 60)
 
-            # 使用新浪接口获取营业部统计数据
-            yyb_stats = ak.stock_lhb_yytj_sina(symbol='5')  # 获取最近5天的数据
+            # 检查缓存
+            cache_key = "sina_yyb_stats_latest"
+            cached_data = CapitalAnalyzer.cache.get(cache_key)
+            if cached_data:
+                print(f"从缓存获取新浪营业部数据")
+                yyb_stats = pd.DataFrame(cached_data)
+            else:
+                # 使用新浪接口获取营业部统计数据
+                yyb_stats = ak.stock_lhb_yytj_sina(symbol='5')  # 获取最近5天的数据
+                if not yyb_stats.empty:
+                    # 缓存数据，TTL为1小时
+                    CapitalAnalyzer.cache.set(cache_key, yyb_stats.to_dict('records'), ttl=3600)
+
             if yyb_stats.empty:
                 print("新浪接口返回空数据，切换到第三层数据源")
                 return CapitalAnalyzer._get_historical_data()
@@ -435,9 +564,48 @@ class CapitalAnalyzer:
             }
 
     @staticmethod
+    def _match_capital_seat(seat_name):
+        """
+        智能匹配游资席位
+
+        使用多级匹配策略：
+        1. 精确匹配：完全匹配
+        2. 关键词匹配：包含关键词
+        3. 模糊匹配：去除空格和特殊字符后匹配
+
+        Returns:
+            tuple: (capital_name, match_score) 或 (None, 0)
+        """
+        # 标准化营业部名称：去除空格和特殊字符
+        normalized_name = seat_name.replace(' ', '').replace('　', '').replace('（', '(').replace('）', ')')
+
+        for capital_name, seats in CapitalAnalyzer.FAMOUS_CAPITALISTS.items():
+            # 1. 精确匹配
+            if seat_name in seats or normalized_name in seats:
+                return capital_name, 1.0
+
+            # 2. 关键词匹配
+            for seat_pattern in seats:
+                if seat_pattern in seat_name or seat_pattern in normalized_name:
+                    # 计算匹配度：关键词长度 / 总长度
+                    match_score = len(seat_pattern) / len(seat_name)
+                    return capital_name, match_score
+
+            # 3. 模糊匹配：去除"证券营业部"、"股份有限公司"等后缀
+            simplified_name = normalized_name.replace('证券营业部', '').replace('股份有限公司', '').replace('证券', '')
+            simplified_pattern = [s.replace('证券营业部', '').replace('股份有限公司', '').replace('证券', '') for s in seats]
+
+            for i, pattern in enumerate(simplified_pattern):
+                if pattern in simplified_name:
+                    match_score = len(pattern) / len(simplified_name)
+                    return capital_name, match_score * 0.9  # 降低匹配度
+
+        return None, 0.0
+
+    @staticmethod
     def _analyze_seat_data(lhb_df, seat_col, is_sina=False):
         """
-        分析营业部数据
+        分析营业部数据（优化游资识别精度）
         """
         try:
             # 分析游资席位
@@ -452,16 +620,11 @@ class CapitalAnalyzer:
             for _, row in lhb_df.iterrows():
                 seat_name = str(row[seat_col])
 
-                # 检查是否为知名游资席位（使用模糊匹配）
-                for capital_name, seats in CapitalAnalyzer.FAMOUS_CAPITALISTS.items():
-                    # 精确匹配
-                    if seat_name in seats:
-                        matched = True
-                    # 模糊匹配：检查是否包含关键词
-                    else:
-                        matched = any(keyword in seat_name for keyword in seats)
+                # 使用智能匹配算法
+                capital_name, match_score = CapitalAnalyzer._match_capital_seat(seat_name)
 
-                    if matched:
+                # 只保留匹配度较高的结果（> 0.3）
+                if capital_name and match_score > 0.3:
                         matched_count += 1
                         # 统计游资操作
                         if capital_name not in capital_stats:
@@ -544,7 +707,7 @@ class CapitalAnalyzer:
 
             print(f"分析完成：匹配到 {matched_count} 条游资操作记录，涉及 {len(capital_stats)} 个游资")
 
-            return {
+            result = {
                 '数据状态': '正常',
                 '游资统计': capital_summary,
                 '游资操作记录': capital_analysis,
@@ -553,6 +716,12 @@ class CapitalAnalyzer:
                 '龙虎榜总记录数': len(lhb_df),
                 '说明': f'在 {len(lhb_df)} 条龙虎榜记录中，找到 {matched_count} 条游资操作记录'
             }
+
+            # 保存到缓存
+            cache_key = f"lhb_capital_{is_sina and 'sina' or 'latest'}"
+            CapitalAnalyzer.cache.set(cache_key, result, ttl=3600)  # 缓存1小时
+
+            return result
 
         except Exception as e:
             return {
