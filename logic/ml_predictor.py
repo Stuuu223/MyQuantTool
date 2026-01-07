@@ -464,3 +464,205 @@ class EnsemblePredictor:
         signals[pred_returns < -threshold] = -1
         
         return signals
+
+
+class GRUPredictor(MLPredictorBase):
+    """
+    GRU预测器
+    """
+    
+    def __init__(self):
+        super().__init__("GRU预测器")
+        self.lookback = 20
+    
+    def prepare_data(self, df: pd.DataFrame, lookback: int = 20) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        准备GRU训练数据
+        
+        Args:
+            df: K线数据
+            lookback: 回看窗口
+        
+        Returns:
+            (X, y) 特征和标签
+        """
+        # 使用收盘价作为特征
+        data = df['close'].values
+        
+        X, y = [], []
+        
+        for i in range(lookback, len(data)):
+            X.append(data[i-lookback:i])
+            y.append(data[i])
+        
+        X = np.array(X)
+        y = np.array(y)
+        
+        # 归一化
+        X = X / X[:, 0:1]
+        y = y / X[:, 0]
+        
+        return X, y
+    
+    def train(self, df: pd.DataFrame, lookback: int = 20):
+        """
+        训练GRU模型
+        
+        Args:
+            df: 训练数据
+            lookback: 回看窗口
+        """
+        try:
+            from tensorflow.keras.models import Sequential
+            from tensorflow.keras.layers import GRU, Dense, Dropout
+        except ImportError:
+            logger.error("未安装 tensorflow，请运行: pip install tensorflow")
+            return
+        
+        X, y = self.prepare_data(df, lookback)
+        
+        # 构建GRU模型
+        self.model = Sequential([
+            GRU(50, return_sequences=True, input_shape=(lookback, 1)),
+            Dropout(0.2),
+            GRU(50, return_sequences=False),
+            Dropout(0.2),
+            Dense(25),
+            Dense(1)
+        ])
+        
+        self.model.compile(optimizer='adam', loss='mse')
+        
+        # 训练
+        self.model.fit(X, y, epochs=50, batch_size=32, verbose=0)
+        
+        self.is_trained = True
+        logger.info("GRU模型训练完成")
+    
+    def predict(self, df: pd.DataFrame, lookback: int = 20) -> np.ndarray:
+        """
+        GRU预测
+        
+        Args:
+            df: K线数据
+            lookback: 回看窗口
+        
+        Returns:
+            预测结果
+        """
+        if not self.is_trained:
+            logger.warning("模型未训练，将先训练")
+            self.train(df, lookback)
+        
+        X, _ = self.prepare_data(df, lookback)
+        
+        predictions = self.model.predict(X, verbose=0)
+        
+        # 反归一化
+        data = df['close'].values
+        predictions = predictions * data[lookback:len(data)]
+        
+        return predictions.flatten()
+
+
+class CNNPredictor(MLPredictorBase):
+    """
+    CNN预测器
+    """
+    
+    def __init__(self):
+        super().__init__("CNN预测器")
+        self.lookback = 20
+    
+    def prepare_data(self, df: pd.DataFrame, lookback: int = 20) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        准备CNN训练数据
+        
+        Args:
+            df: K线数据
+            lookback: 回看窗口
+        
+        Returns:
+            (X, y) 特征和标签
+        """
+        # 使用多特征
+        features = ['open', 'high', 'low', 'close', 'volume']
+        data = df[features].values
+        
+        X, y = [], []
+        
+        for i in range(lookback, len(data)):
+            X.append(data[i-lookback:i])
+            y.append(data[i, 3])  # 预测收盘价
+        
+        X = np.array(X)
+        y = np.array(y)
+        
+        # 归一化
+        X = X / X[:, 0:1, :]
+        y = y / X[:, 0, 3]
+        
+        return X, y
+    
+    def train(self, df: pd.DataFrame, lookback: int = 20):
+        """
+        训练CNN模型
+        
+        Args:
+            df: 训练数据
+            lookback: 回看窗口
+        """
+        try:
+            from tensorflow.keras.models import Sequential
+            from tensorflow.keras.layers import Conv1D, MaxPooling1D, Flatten, Dense, Dropout
+        except ImportError:
+            logger.error("未安装 tensorflow，请运行: pip install tensorflow")
+            return
+        
+        X, y = self.prepare_data(df, lookback)
+        
+        # 构建CNN模型
+        self.model = Sequential([
+            Conv1D(64, 3, activation='relu', input_shape=(lookback, 5)),
+            MaxPooling1D(2),
+            Conv1D(32, 3, activation='relu'),
+            MaxPooling1D(2),
+            Flatten(),
+            Dense(50, activation='relu'),
+            Dropout(0.2),
+            Dense(25, activation='relu'),
+            Dense(1)
+        ])
+        
+        self.model.compile(optimizer='adam', loss='mse')
+        
+        # 训练
+        self.model.fit(X, y, epochs=50, batch_size=32, verbose=0)
+        
+        self.is_trained = True
+        logger.info("CNN模型训练完成")
+    
+    def predict(self, df: pd.DataFrame, lookback: int = 20) -> np.ndarray:
+        """
+        CNN预测
+        
+        Args:
+            df: K线数据
+            lookback: 回看窗口
+        
+        Returns:
+            预测结果
+        """
+        if not self.is_trained:
+            logger.warning("模型未训练，将先训练")
+            self.train(df, lookback)
+        
+        X, _ = self.prepare_data(df, lookback)
+        
+        predictions = self.model.predict(X, verbose=0)
+        
+        # 反归一化
+        data = df['close'].values
+        predictions = predictions * data[lookback:len(data)]
+        
+        return predictions.flatten()
