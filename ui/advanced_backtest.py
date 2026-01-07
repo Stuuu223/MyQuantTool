@@ -4,9 +4,15 @@
 
 import streamlit as st
 import pandas as pd
+import numpy as np
 import plotly.graph_objects as go
 from logic.backtest_engine import get_backtest_engine
 from logic.data_manager import DataManager
+from logic.signal_generator import SignalGeneratorVectorized
+from logic.enhanced_metrics import EnhancedMetrics
+from logic.slippage_model import RealisticSlippage, DynamicSlippage
+from logic.risk_manager import RiskManager
+from logic.out_of_sample_validator import OutOfSampleValidator
 
 
 def render_advanced_backtest_tab(db, config):
@@ -35,9 +41,15 @@ def render_advanced_backtest_tab(db, config):
         
         signal_type = st.selectbox(
             "信号类型",
-            ["MA", "MACD", "RSI", "LSTM"],
+            ["MA", "MACD", "RSI", "Bollinger", "Multi-Signal"],
             help="选择要回测的交易信号类型"
         )
+        
+        # 新增: 向量化计算选项
+        use_vectorized = st.checkbox("启用向量化计算 (10倍加速)", value=True, help="使用向量化计算提升性能")
+        
+        # 新增: 现实滑点模型
+        use_realistic_slippage = st.checkbox("启用现实滑点模型", value=True, help="使用三段式滑点模型")
         
         st.markdown("---")
         st.subheader("💰 交易成本")
@@ -62,10 +74,53 @@ def render_advanced_backtest_tab(db, config):
         
         t_plus_one = st.checkbox("启用T+1交易", value=True, help="A股T+1交易规则")
         
+        # 新增: 风险管理
+        st.markdown("---")
+        st.subheader("🛡️ 风险管理")
+        
+        enable_risk_control = st.checkbox("启用风险控制", value=True, help="启用红黄绿三级风险预警")
+        
+        max_position_ratio = st.slider(
+            "最大持仓比例",
+            min_value=0.1,
+            max_value=1.0,
+            value=0.95,
+            step=0.05,
+            help="单只股票最大持仓比例"
+        )
+        
+        max_daily_loss_ratio = st.slider(
+            "单日最大亏损比例",
+            min_value=0.01,
+            max_value=0.2,
+            value=0.05,
+            step=0.01,
+            help="单日最大亏损比例"
+        )
+        
+        # 新增: 样本外检验
+        st.markdown("---")
+        st.subheader("🔬 样本外检验")
+        
+        enable_oos_validation = st.checkbox("启用样本外检验", value=False, help="检测策略是否过拟合")
+        
+        train_ratio = st.slider(
+            "训练集比例",
+            min_value=0.5,
+            max_value=0.9,
+            value=0.8,
+            step=0.05,
+            help="训练集占数据比例"
+        )
+        
         st.markdown("---")
         st.subheader("📊 绩效指标说明")
         st.markdown("""
         **夏普比率**: 风险调整后收益，>1为优秀
+        
+        **索提诺比率**: 下行风险调整后收益
+        
+        **卡玛比率**: 收益/最大回撤
         
         **最大回撤**: 最大亏损幅度，<20%为理想
         
@@ -101,10 +156,69 @@ def render_advanced_backtest_tab(db, config):
                     
                     if df is not None and not df.empty:
                         # 生成信号
-                        signals = engine.generate_signals(df, signal_type)
+                        if signal_type == "Multi-Signal":
+                            # 多策略融合
+                            signals_ma = SignalGeneratorVectorized.generate_ma_signals(df['close'])
+                            signals_macd = SignalGeneratorVectorized.generate_macd_signals(df['close'], df['close'])
+                            signals_rsi = SignalGeneratorVectorized.generate_rsi_signals(df['close'])
+                            
+                            # 加权融合
+                            signals = pd.Series(
+                                0.4 * signals_ma + 0.3 * signals_macd + 0.3 * signals_rsi,
+                                index=df.index
+                            )
+                            signals = (signals > 0.5).astype(int)
+                        else:
+                            signals = engine.generate_signals(df, signal_type)
                         
-                        # 运行回测
-                        metrics = engine.backtest(symbol, df, signals, signal_type)
+                        # 样本外检验
+                        if enable_oos_validation:
+                            validator = OutOfSampleValidator(train_ratio=train_ratio)
+                            df_train, df_test = validator.split_data(df)
+                            
+                            signals_train = signals[:len(df_train)]
+                            signals_test = signals[len(df_train):]
+                            
+                            # 训练集回测
+                            if use_vectorized:
+                                metrics_train = engine.backtest_vectorized(symbol, df_train, signals_train, signal_type)
+                            else:
+                                metrics_train = engine.backtest(symbol, df_train, signals_train, signal_type)
+                            
+                            # 测试集回测
+                            if use_vectorized:
+                                metrics_test = engine.backtest_vectorized(symbol, df_test, signals_test, signal_type)
+                            else:
+                                metrics_test = engine.backtest(symbol, df_test, signals_test, signal_type)
+                            
+                            # 检测过拟合
+                            is_overfitted, validation_message = validator.validate_overfitting(
+                                metrics_train._asdict(),
+                                metrics_test._asdict()
+                            )
+                            
+                            # 显示验证报告
+                            st.subheader("🔬 样本外检验报告")
+                            validation_report = validator.get_validation_report(
+                                metrics_train._asdict(),
+                                metrics_test._asdict()
+                            )
+                            st.markdown(validation_report)
+                            
+                            if is_overfitted:
+                                st.error(validation_message)
+                            else:
+                                st.success(validation_message)
+                            
+                            # 使用测试集结果
+                            metrics = metrics_test
+                            df = df_test
+                        else:
+                            # 运行回测
+                            if use_vectorized:
+                                metrics = engine.backtest_vectorized(symbol, df, signals, signal_type)
+                            else:
+                                metrics = engine.backtest(symbol, df, signals, signal_type)
                         
                         # 显示绩效指标
                         st.success("✅ 回测完成！")
@@ -121,6 +235,52 @@ def render_advanced_backtest_tab(db, config):
                         col_f.metric("盈亏比", f"{metrics.profit_factor:.2f}")
                         col_g.metric("交易次数", metrics.total_trades)
                         col_h.metric("超额收益", f"{metrics.excess_return:.2%}")
+                        
+                        # 新增: 增强指标
+                        with st.expander("📊 增强指标"):
+                            returns = pd.Series([equity_curve[i]/equity_curve[i-1]-1 for i in range(1, len(equity_curve))]) if len(equity_curve) > 1 else pd.Series()
+                            if not returns.empty:
+                                enhanced = EnhancedMetrics(returns)
+                                
+                                col1, col2, col3 = st.columns(3)
+                                col1.metric("索提诺比率", f"{enhanced.sortino_ratio:.4f}")
+                                col2.metric("卡玛比率", f"{enhanced.calmar_ratio:.4f}")
+                                col3.metric("信息比率", f"{enhanced.information_ratio:.4f}")
+                                
+                                col4, col5, col6 = st.columns(3)
+                                col4.metric("VaR (95%)", f"{enhanced.var_95:.2%}")
+                                col5.metric("连续亏损天数", f"{enhanced.max_consecutive_losses}")
+                                col6.metric("恢复时间", f"{enhanced.recovery_time}天")
+                        
+                        # 新增: 风险评估
+                        if enable_risk_control:
+                            risk_manager = RiskManager(
+                                max_position_ratio=max_position_ratio,
+                                max_daily_loss_ratio=max_daily_loss_ratio
+                            )
+                            
+                            risk_level, risk_message = risk_manager.assess_risk_level(
+                                metrics.max_drawdown,
+                                metrics.sharpe_ratio,
+                                metrics.losing_trades / metrics.total_trades if metrics.total_trades > 0 else 0,
+                                metrics.total_return
+                            )
+                            
+                            st.subheader("🛡️ 风险评估")
+                            
+                            if risk_level == "GREEN":
+                                st.success(f"🟢 {risk_message}")
+                            elif risk_level == "YELLOW":
+                                st.warning(f"🟡 {risk_message}")
+                            else:
+                                st.error(f"🔴 {risk_message}")
+                            
+                            # 风险详情
+                            with st.expander("风险详情"):
+                                st.write(f"- 最大回撤: {metrics.max_drawdown:.2%}")
+                                st.write(f"- 夏普比率: {metrics.sharpe_ratio:.4f}")
+                                st.write(f"- 连续亏损: {metrics.losing_trades}")
+                                st.write(f"- 总收益率: {metrics.total_return:.2%}")
                         
                         # 净值曲线
                         if len(engine.equity_curve) > 0:
