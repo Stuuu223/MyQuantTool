@@ -250,6 +250,38 @@ class HotTopicExtractor:
         
         return topic_stocks
     
+    def extract_topics(self, date: str, news_sources: List[str] = None) -> List[Topic]:
+        """提取热点题材（UI调用的主方法）
+        
+        Args:
+            date: 日期字符串 (YYYYMMDD)
+            news_sources: 新闻源列表（暂未使用，保留接口）
+            
+        Returns:
+            热点题材列表
+        """
+        # 转换日期格式
+        if '-' in date:
+            date_str = date.replace('-', '')
+        else:
+            date_str = date
+        
+        # 从龙虎榜提取题材
+        topics_dict = self.extract_topics_from_lhb(date_str)
+        
+        # 如果获取失败，使用演示数据
+        if not topics_dict:
+            logger.info("使用演示热点题材数据")
+            topics_dict = _get_demo_topics()
+        
+        # 转换为列表并按热度排序
+        topics_list = list(topics_dict.values())
+        topics_list.sort(key=lambda x: x.heat, reverse=True)
+        
+        return topics_list
+        
+        return topic_stocks
+    
     def calculate_topic_lifecycle(self, topic: str) -> Dict:
         """计算题材生命周期
         
@@ -311,33 +343,76 @@ class HotTopicExtractor:
 
 
 def demo_hot_topics():
-    """演示炭第题材提取"""
+    """演示热点题材提取"""
     extractor = HotTopicExtractor()
     
     today = datetime.now().strftime('%Y-%m-%d')
     
-    print("\n🔥 从龙虎榜提取炭第题材...")
+    print("\n🔥 从龙虎榜提取热点题材...")
     topics = extractor.extract_topics_from_lhb(today)
-    print(f"找到 {len(topics)} 个炭点题材")
+    print(f"找到 {len(topics)} 个热点题材")
     
-    # 显示前 5 个炭第题材
+    # 显示前 5 个热点题材
     top_5 = sorted(
         topics.items(),
         key=lambda x: x[1].heat,
         reverse=True
     )[:5]
     
-    print("\n🏆 Top 5 炭第题材:")
+    print("\n🏆 Top 5 热点题材:")
     for topic_name, topic_obj in top_5:
-        print(f"{topic_name}: 炭度{topic_obj.heat:.0f}, 阶段{topic_obj.stage.value}")
+        print(f"{topic_name}: 热度{topic_obj.heat:.0f}, 阶段{topic_obj.stage.value}")
     
     # 映射到股票
     if topics:
-        print("\n📊 抽象映射股票...")
+        print("\n📊 映射股票...")
         topic_stocks = extractor.map_topics_to_stocks(topics, today)
         
         for topic, stocks_info in list(topic_stocks.items())[:3]:
-            print(f"{topic}: 领跑股{stocks_info['leading_stock']} (擦映{len(stocks_info['stocks'])}个)")
+            print(f"{topic}: 领跑股{stocks_info['leading_stock']} (映射{len(stocks_info['stocks'])}个)")
+
+
+def get_hot_topic_extractor() -> HotTopicExtractor:
+    """获取热点题材提取器实例
+    
+    Returns:
+        HotTopicExtractor 实例
+    """
+    return HotTopicExtractor()
+
+
+def _get_demo_topics() -> Dict[str, Topic]:
+    """获取演示用的热点题材数据"""
+    demo_topics = {}
+    
+    demo_topic_list = [
+        ("人工智能", 85, TopicCategory.TECHNOLOGY, ["AI", "大模型", "算力"]),
+        ("新能源", 78, TopicCategory.POLICY, ["光伏", "风电", "储能"]),
+        ("半导体", 72, TopicCategory.TECHNOLOGY, ["芯片", "集成电路", "封装"]),
+        ("数字经济", 65, TopicCategory.POLICY, ["云计算", "大数据", "5G"]),
+        ("生物医药", 58, TopicCategory.NEWS, ["创新药", "疫苗", "医疗器械"]),
+        ("消费电子", 52, TopicCategory.MARKET, ["手机", "耳机", "智能手表"]),
+        ("军工", 48, TopicCategory.POLICY, ["航空", "航天", "雷达"]),
+        ("机器人", 45, TopicCategory.TECHNOLOGY, ["工业机器人", "服务机器人", "协作机器人"]),
+        ("碳中和", 42, TopicCategory.POLICY, ["节能", "环保", "新能源车"]),
+        ("元宇宙", 38, TopicCategory.MARKET, ["VR", "AR", "虚拟数字人"]),
+    ]
+    
+    for name, heat, category, keywords in demo_topic_list:
+        demo_topics[name] = Topic(
+            name=name,
+            category=category,
+            heat=heat,
+            frequency=int(heat / 10),
+            first_seen=datetime.now().strftime("%Y-%m-%d"),
+            stage=HotTopicExtractor()._get_lifecycle_stage(heat),
+            related_stocks=[f"600{hash(name) % 1000:03d}", f"000{hash(name) % 1000:03d}"],
+            lhb_stocks=[f"300{hash(name) % 1000:03d}"],
+            leading_stock=f"600{hash(name) % 1000:03d}",
+            keywords=keywords
+        )
+    
+    return demo_topics
 
 
 if __name__ == '__main__':

@@ -13,6 +13,41 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# 自定义中文导航菜单
+with st.sidebar:
+    st.markdown("""
+    <style>
+    [data-testid="stSidebarNav"] {
+        display: none;
+    }
+    .nav-link {
+        display: block;
+        padding: 0.5rem;
+        color: #262730;
+        text-decoration: none;
+        border-radius: 0.25rem;
+        margin: 0.25rem 0;
+    }
+    .nav-link:hover {
+        background-color: #f0f2f6;
+    }
+    .nav-link.active {
+        background-color: #FF6B6B;
+        color: white;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    st.subheader("📱 页面导航")
+    st.markdown('<a href="/" class="nav-link">🏠 主页</a>', unsafe_allow_html=True)
+    st.markdown('<a href="/advanced_analysis" class="nav-link">📊 高级量化分析</a>', unsafe_allow_html=True)
+    st.markdown('<a href="/capital_search" class="nav-link">💰 资金搜索</a>', unsafe_allow_html=True)
+    st.markdown('<a href="/deep_analysis" class="nav-link">🔬 深度分析</a>', unsafe_allow_html=True)
+    st.markdown('<a href="/kline_analysis_dashboard" class="nav-link">📈 K线分析</a>', unsafe_allow_html=True)
+    st.markdown('<a href="/monitor_dashboard" class="nav-link">📊 实时监控</a>', unsafe_allow_html=True)
+    st.markdown('<a href="/network_fusion_analysis" class="nav-link active">🕸️ 网络融合分析</a>', unsafe_allow_html=True)
+    st.markdown('<a href="/v4_integrated_analysis" class="nav-link">🚀 v4综合分析</a>', unsafe_allow_html=True)
+
 st.title("🕸️ 网络融合分析")
 st.markdown("游资关系网络分析 + 多因子融合预测")
 st.markdown("---")

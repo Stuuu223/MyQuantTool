@@ -40,13 +40,36 @@ st.markdown("""
     background-color: #f0f2f6;
 }
 .stTabs [data-baseweb="tab-list"] {
-    gap: 8px;
+    gap: 4px;
     overflow-x: auto;
     flex-wrap: nowrap;
+    padding-bottom: 8px;
+    scrollbar-width: thin;
+    scrollbar-color: #FF6B6B #f0f2f6;
+}
+.stTabs [data-baseweb="tab-list"]::-webkit-scrollbar {
+    height: 6px;
+}
+.stTabs [data-baseweb="tab-list"]::-webkit-scrollbar-track {
+    background: #f0f2f6;
+    border-radius: 3px;
+}
+.stTabs [data-baseweb="tab-list"]::-webkit-scrollbar-thumb {
+    background: #FF6B6B;
+    border-radius: 3px;
+}
+.stTabs [data-baseweb="tab-list"]::-webkit-scrollbar-thumb:hover {
+    background: #ff5252;
 }
 .stTabs [data-baseweb="tab"] {
     flex-shrink: 0;
     white-space: nowrap;
+    padding: 8px 12px;
+    font-size: 13px;
+}
+/* 隐藏默认的英文侧边栏导航 */
+[data-testid="stSidebarNav"] {
+    display: none;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -103,9 +126,15 @@ from ui.risk import render_risk_tab
 from ui.history import render_history_tab
 from ui.settings import render_settings_tab
 
-# --- 导入新页面模块 ---
-from pages.monitor_dashboard import render_dashboard
-from pages.capital_search import render_search_page
+# --- 导入新功能UI模块 ---
+from ui.kline_patterns import render_kline_patterns_tab
+from ui.advanced_backtest import render_advanced_backtest_tab
+from ui.paper_trading import render_paper_trading_tab
+from ui.performance_optimizer import render_performance_optimizer_tab
+from ui.lstm_predictor import render_lstm_predictor_tab
+from ui.sector_rotation import render_sector_rotation_tab
+from ui.hot_topics_enhanced import render_hot_topics_enhanced_tab
+from ui.limit_up_enhanced import render_limit_up_enhanced_tab
 
 # --- 侧边栏 ---
 with st.sidebar:
@@ -232,11 +261,12 @@ with st.sidebar:
             st.warning("该股票已在自选股中")
 
 # --- 主要功能标签页 ---
-tab_single, tab_compare, tab_backtest, tab_sector, tab_lhb, tab_dragon, tab_auction, tab_sentiment, tab_hot_topics, tab_alert, tab_vp, tab_ma, tab_new_stock, tab_capital, tab_limit_up, tab_smart, tab_risk, tab_history, tab_monitor, tab_search, tab_settings = st.tabs([
+tab_single, tab_compare, tab_backtest, tab_sector_enhanced, tab_lhb, tab_dragon, tab_auction, tab_sentiment, tab_hot_topics_enhanced, tab_alert, tab_vp, tab_ma, tab_new_stock, tab_capital, tab_limit_up_enhanced, tab_smart, tab_risk, tab_history, tab_kline_patterns, tab_advanced_backtest, tab_paper_trading, tab_performance_optimizer, tab_lstm_predictor, tab_settings = st.tabs([
     "📊 单股分析", "🔍 多股对比", "🧪 策略回测", "🔄 板块轮动", "🏆 龙虎榜",
     "🔥 龙头战法", "⚡ 集合竞价", "📈 情绪分析", "🎯 热点题材", "🔔 智能预警",
     "📊 量价关系", "📈 均线战法", "🆕 次新股", "💰 游资席位", "🎯 打板预测",
-    "🤖 智能推荐", "⚠️ 风险管理", "📜 历史记录", "📊 实时监控", "🔍 智能搜索", "⚙️ 系统设置"
+    "🤖 智能推荐", "⚠️ 风险管理", "📜 历史记录", "📊 K线形态", "🧪 高级回测",
+    "💰 模拟交易", "⚡ 性能优化", "🧠 LSTM预测", "⚙️ 系统设置"
 ])
 
 # --- 渲染各个标签页 ---
@@ -249,7 +279,7 @@ with tab_compare:
 with tab_backtest:
     render_backtest_tab(db, config)
 
-with tab_sector:
+with tab_sector_enhanced:
     render_sector_rotation_tab(db, config)
 
 with tab_lhb:
@@ -264,8 +294,8 @@ with tab_auction:
 with tab_sentiment:
     render_sentiment_tab(db, config)
 
-with tab_hot_topics:
-    render_hot_topics_tab(db, config)
+with tab_hot_topics_enhanced:
+    render_hot_topics_enhanced_tab(db, config)
 
 with tab_alert:
     render_alert_tab(db, config)
@@ -282,8 +312,8 @@ with tab_new_stock:
 with tab_capital:
     render_capital_tab(db, config)
 
-with tab_limit_up:
-    render_limit_up_tab(db, config)
+with tab_limit_up_enhanced:
+    render_limit_up_enhanced_tab(db, config)
 
 with tab_smart:
     render_smart_recommend_tab(db, config)
@@ -294,11 +324,20 @@ with tab_risk:
 with tab_history:
     render_history_tab(db, config)
 
-with tab_monitor:
-    render_dashboard()
+with tab_kline_patterns:
+    render_kline_patterns_tab(db, config)
 
-with tab_search:
-    render_search_page()
+with tab_advanced_backtest:
+    render_advanced_backtest_tab(db, config)
+
+with tab_paper_trading:
+    render_paper_trading_tab(db, config)
+
+with tab_performance_optimizer:
+    render_performance_optimizer_tab(db, config)
+
+with tab_lstm_predictor:
+    render_lstm_predictor_tab(db, config)
 
 with tab_settings:
     render_settings_tab(db, config)

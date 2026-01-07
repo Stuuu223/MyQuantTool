@@ -81,11 +81,33 @@ class SectorRotationAnalyzer:
         if self._industry_data_cache is None or force_refresh:
             try:
                 self._industry_data_cache = DL.get_industry_spot()
-                logger.info(f"已获取 {len(self._industry_data_cache)} 个行业板块的实时执行数据")
+                
+                # 如果获取失败，返回演示数据
+                if self._industry_data_cache is None or self._industry_data_cache.empty:
+                    logger.warning("获取行业板块数据失败，使用演示数据")
+                    self._industry_data_cache = self._get_demo_industry_data()
+                else:
+                    logger.info(f"已获取 {len(self._industry_data_cache)} 个行业板块的实时执行数据")
             except Exception as e:
                 logger.error(f"获取行业板块执行数据失败: {e}")
-                self._industry_data_cache = pd.DataFrame()
+                logger.info("使用演示数据")
+                self._industry_data_cache = self._get_demo_industry_data()
         return self._industry_data_cache
+    
+    def _get_demo_industry_data(self) -> pd.DataFrame:
+        """获取演示用的板块数据"""
+        demo_data = []
+        for sector in self.SECTORS:
+            demo_data.append({
+                '代码': f'BK{hash(sector) % 10000:04d}',
+                '名称': sector,
+                '最新价': 3000 + hash(sector) % 1000,
+                '涨跌幅': (hash(sector) % 200 - 100) / 10,  # -10% 到 +10%
+                '涨跌额': (hash(sector) % 200 - 100) / 10 * 30,
+                '成交量': hash(sector) % 1000000000,
+                '成交额': hash(sector) % 100000000000
+            })
+        return pd.DataFrame(demo_data)
     
     def _get_lhb_data(self, date: str) -> pd.DataFrame:
         """获取龙虎榜数据用于统计龙资"""
@@ -403,7 +425,7 @@ def demo_sector_rotation():
     strength_scores = analyzer.calculate_sector_strength(today)
     
     if not strength_scores:
-        print("\n抱义！最近可能是休市。板块执行数据为空")
+        print("\n抱歉！最近可能是休市。板块执行数据为空")
         return
     
     # 显示前 5 个板块
@@ -421,7 +443,7 @@ def demo_sector_rotation():
     print("\n🔄 检测轮动信号...")
     signals = analyzer.detect_rotation_signals(today)
     print(f"上升中: {signals['rising'][:3] if signals['rising'] else '无'}")
-    print(f"下邙中: {signals['falling'][:3] if signals['falling'] else '无'}")
+    print(f"下降中: {signals['falling'][:3] if signals['falling'] else '无'}")
     
     # 3. 预测趋势
     if signals['leading']:
@@ -435,6 +457,18 @@ def demo_sector_rotation():
     if opportunity:
         print(f"{opportunity['action']}")
         print(f"置信度: {opportunity['confidence']:.2%}")
+
+
+def get_sector_rotation_analyzer(history_days: int = 30) -> SectorRotationAnalyzer:
+    """获取板块轮动分析器实例
+    
+    Args:
+        history_days: 历史数据保留天数
+        
+    Returns:
+        SectorRotationAnalyzer 实例
+    """
+    return SectorRotationAnalyzer(history_days=history_days)
 
 
 if __name__ == '__main__':

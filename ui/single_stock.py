@@ -41,7 +41,7 @@ def render_single_stock_tab(db: DataManager, config: Config):
     # 股票代码输入
     col_input, col_button = st.columns([3, 1])
     with col_input:
-        symbol = st.text_input("股票代码", value="600519", help="输入6位股票代码，如600519")
+        symbol = st.text_input("股票代码", value="600519", help="输入6位股票代码，如600519", key="single_stock_symbol")
     with col_button:
         if st.button("🚀 开始分析", key="single_analyze"):
             st.session_state.analysis_symbol = symbol
