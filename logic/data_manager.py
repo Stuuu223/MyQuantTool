@@ -1,345 +1,154 @@
+"""DataManager - 统一数据管理器（akshare 实时 + 缓存 + 降级）
+
+Version: 1.0.0
+Feature: akshare 输入 + TTL 缓存 120s + 错误自动降级
+"""
+
 import akshare as ak
 import pandas as pd
-import sqlite3
-import os
+import numpy as np
+import logging
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any
-from logic.logger import get_logger
-from logic.error_handler import handle_errors, DataError, NetworkError, ValidationError
+from typing import Dict, List, Optional, Any
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 class DataManager:
-    def __init__(self, db_path: str = 'data/stock_data.db') -> None:
-        logger.info(f"初始化 DataManager，数据库路径: {db_path}")
-        os.makedirs(os.path.dirname(db_path), exist_ok=True)
-        self.conn = sqlite3.connect(db_path, check_same_thread=False)
-        self.init_db()
-        self.update_db_schema()
-        # 实时数据缓存：{symbol: {'data': {...}, 'timestamp': datetime}}
-        self.realtime_cache: Dict[str, Dict[str, Any]] = {}
-        self.cache_expire_seconds: int = 60  # 缓存60秒
-        logger.info("DataManager 初始化完成")
+    def __init__(self, cache_ttl: int = 120):
+        self.cache_ttl = cache_ttl
+        self._quote_cache = {}
+        self._kline_cache = {}
+        self._fundamental_cache = {}
+        self._cache_time = {}
+        logger.info(f"DataManager 上业 (TTL={cache_ttl}s)")
 
-    def init_db(self) -> None:
-        """初始化数据库表结构
-        
-        创建 daily_bars 表，如果不存在的话。
-        表结构包含：symbol, date, open, high, low, close, volume, turnover_rate
-        同时创建索引以优化查询性能。
-        """
-        query = '''
-        CREATE TABLE IF NOT EXISTS daily_bars (
-            symbol TEXT,
-            date TEXT,
-            open REAL,
-            high REAL,
-            low REAL,
-            close REAL,
-            volume REAL,
-            turnover_rate REAL,
-            PRIMARY KEY (symbol, date)
-        )
-        '''
-        self.conn.execute(query)
-        
-        # 创建索引以优化查询性能
+    def get_realtime_quote(self, code: str) -> Optional[Dict[str, Any]]:
+        """Get realtime quote via akshare"""
         try:
-            self.conn.execute('CREATE INDEX IF NOT EXISTS idx_symbol_date ON daily_bars(symbol, date)')
-            self.conn.commit()
-            logger.info("数据库索引创建成功")
-        except Exception as e:
-            logger.warning(f"数据库索引创建失败: {e}")
-        query = '''
-        CREATE TABLE IF NOT EXISTS daily_bars (
-            symbol TEXT,
-            date TEXT,
-            open REAL,
-            high REAL,
-            low REAL,
-            close REAL,
-            volume REAL,
-            turnover_rate REAL,
-            PRIMARY KEY (symbol, date)
-        )
-        '''
-        self.conn.execute(query)
-        self.conn.commit()
-    
-    def update_db_schema(self) -> None:
-        """更新数据库表结构，添加换手率列
-        
-        检查 daily_bars 表是否有 turnover_rate 列，如果没有则添加。
-        """
-        try:
-            # 检查表是否有 turnover_rate 列
-            cursor = self.conn.execute("PRAGMA table_info(daily_bars)")
-            columns = [column[1] for column in cursor.fetchall()]
+            code_norm = self._normalize_code(code)
+            if code_norm in self._quote_cache and self._is_cache_fresh(code_norm):
+                return self._quote_cache[code_norm]
             
-            if 'turnover_rate' not in columns:
-                # 添加 turnover_rate 列
-                self.conn.execute("ALTER TABLE daily_bars ADD COLUMN turnover_rate REAL")
-                self.conn.commit()
-                print("数据库表结构已更新，添加了 turnover_rate 列")
-        except Exception as e:
-            print(f"更新数据库表结构失败: {e}")
-
-    @handle_errors(show_user_message=False)
-    def get_history_data(self, symbol: str, start_date: str = "20240101", end_date: str = "20251231") -> pd.DataFrame:
-        """获取股票历史数据
-        
-        从本地数据库获取历史数据，如果缓存未命中则从 akshare 获取并缓存。
-        
-        Args:
-            symbol: 股票代码（6位数字）
-            start_date: 开始日期，格式 YYYYMMDD，默认 20240101
-            end_date: 结束日期，格式 YYYYMMDD，默认 20251231
+            df = ak.stock_zh_a_spot_em()
+            code_num = code_norm.replace('sh', '60').replace('sz', '00')
+            row = df[df['代码'] == code_num]
             
-        Returns:
-            包含历史数据的 DataFrame，包含列：symbol, date, open, high, low, close, volume, turnover_rate
+            if row.empty:
+                return None
             
-        Raises:
-            ValidationError: 股票代码格式错误
-            DataError: 获取数据失败
-            
-        Example:
-            >>> db = DataManager()
-            >>> df = db.get_history_data('600519', '20240101', '20241231')
-            >>> print(df.head())
-        """
-        try:
-            # 验证股票代码
-            if not symbol or len(symbol) != 6:
-                raise ValidationError(f"股票代码格式错误: {symbol}")
-            
-            df = pd.read_sql(f"SELECT * FROM daily_bars WHERE symbol='{symbol}'", self.conn)
-            
-            # 检查是否需要重新获取数据
-            need_fetch = False
-            if df.empty or len(df) < 5:
-                need_fetch = True
-            elif 'turnover_rate' not in df.columns:
-                need_fetch = True
-            elif df['turnover_rate'].isna().all():
-                need_fetch = True
-            
-            if need_fetch:
-                logger.info(f"本地缓存未命中，正在下载 {symbol} ...")
-                df_api = ak.stock_zh_a_hist(symbol=symbol, period="daily", start_date=start_date, end_date=end_date, adjust="qfq")
-                
-                if df_api.empty:
-                    raise DataError(f"获取股票数据失败: {symbol}")
-                
-                df_api = df_api.rename(columns={
-                    '日期': 'date', '开盘': 'open', '最高': 'high', 
-                    '最低': 'low', '收盘': 'close', '成交量': 'volume', '换手率': 'turnover_rate'
-                })
-                df_api['symbol'] = symbol
-                
-                # 删除旧数据
-                self.conn.execute(f"DELETE FROM daily_bars WHERE symbol='{symbol}'")
-                self.conn.commit()
-                
-                # 插入新数据
-                cols = ['symbol', 'date', 'open', 'high', 'low', 'close', 'volume', 'turnover_rate']
-                df_api[cols].to_sql('daily_bars', self.conn, if_exists='append', index=False)
-                return df_api
-            
-            return df
-        except Exception as e:
-            logger.error(f"数据获取异常: {e}", exc_info=True)
-            return pd.DataFrame()
-
-    def get_multiple_stocks(self, symbols: list) -> Dict[str, pd.DataFrame]:
-        """批量获取多只股票数据
-        
-        Args:
-            symbols: 股票代码列表
-            
-        Returns:
-            股票代码到 DataFrame 的字典
-        """
-        try:
-            if not symbols:
-                return {}
-            
-            symbols_str = "','".join(symbols)
-            query = f"SELECT * FROM daily_bars WHERE symbol IN ('{symbols_str}') ORDER BY symbol, date"
-            df = pd.read_sql(query, self.conn)
-            
-            if df.empty:
-                return {}
-            
-            # 按股票代码分组
-            result = {}
-            for symbol in symbols:
-                symbol_df = df[df['symbol'] == symbol].copy()
-                if not symbol_df.empty:
-                    result[symbol] = symbol_df
-            
+            r = row.iloc[0]
+            result = {
+                'code': code_norm,
+                'name': str(r['名称']),
+                'price': float(r['最新价']),
+                'change_pct': float(r['涨跌幅']) / 100.0,
+                'volume': int(r.get('成交量', 0)),
+                'turnover': float(r.get('成交额', 0)),
+                'high': float(r.get('最高', 0)),
+                'low': float(r.get('最低', 0)),
+                'timestamp': datetime.now().isoformat()
+            }
+            self._quote_cache[code_norm] = result
+            self._cache_time[code_norm] = datetime.now()
             return result
         except Exception as e:
-            logger.error(f"批量获取股票数据失败: {e}", exc_info=True)
-            return {}
+            logger.error(f"get_realtime_quote failed: {e}")
+            return None
 
-    def get_realtime_data(self, symbol: str) -> Optional[Dict[str, Any]]:
-        """获取实时行情数据（使用1分钟K线，带60秒缓存）
-        
-        根据当前时间自动选择数据源：
-        - 交易时间内（9:30-11:30, 13:00-15:00）：使用1分钟K线数据
-        - 非交易时间：使用日线数据
-        
-        Args:
-            symbol: 股票代码（6位数字）
-            
-        Returns:
-            实时数据字典，包含以下字段：
-            - symbol: 股票代码
-            - price: 最新价格
-            - change_percent: 涨跌幅（百分比）
-            - volume: 成交量
-            - turnover_rate: 换手率
-            - high: 最高价
-            - low: 最低价
-            - open: 开盘价
-            - pre_close: 昨收价
-            - timestamp: 数据时间戳
-            
-            失败返回 None
-            
-        Note:
-            数据缓存60秒，60秒内重复查询会返回缓存数据
-        """
+    def get_kline_data(self, code: str, period: str = 'daily', start_date: Optional[str] = None, end_date: Optional[str] = None) -> Optional[pd.DataFrame]:
+        """Get K-line data with MA indicators"""
         try:
-            import time
-
-            # 检查缓存
-            if symbol in self.realtime_cache:
-                cache_data = self.realtime_cache[symbol]
-                cache_age = (datetime.now() - cache_data['timestamp']).total_seconds()
-                if cache_age < self.cache_expire_seconds:
-                    print(f"📦 使用缓存数据 (剩余有效时间: {self.cache_expire_seconds - cache_age:.1f}秒)")
-                    return cache_data['data']
-
-            # 判断是否在交易时间内（9:30-11:30, 13:00-15:00）
-            now = datetime.now()
-            current_time = now.time()
-            is_trading_time = (current_time >= datetime.strptime("09:30", "%H:%M").time() and
-                              current_time <= datetime.strptime("11:30", "%H:%M").time()) or \
-                             (current_time >= datetime.strptime("13:00", "%H:%M").time() and
-                              current_time <= datetime.strptime("15:00", "%H:%M").time())
-
-            # 判断是否是工作日（周一到周五）
-            is_weekday = now.weekday() < 5
-
-            start_time = time.time()
-
-            if is_trading_time and is_weekday:
-                # 交易时间内，使用1分钟K线
-                logger.info(f"正在获取1分钟K线数据: {symbol}...")
-                end_date = now.strftime("%Y-%m-%d %H:%M:%S")
-                start_date = (now - timedelta(days=3)).strftime("%Y-%m-%d %H:%M:%S")
-
-                df = ak.stock_zh_a_hist_min_em(symbol=symbol, period="1", start_date=start_date, end_date=end_date, adjust="qfq")
-                elapsed = time.time() - start_time
-                logger.info(f"1分钟K线数据获取耗时: {elapsed:.2f}秒")
-
-                if not df.empty:
-                    # 取最后一根K线（最新的数据）
-                    latest = df.iloc[-1]
-
-                    # 获取当日开盘价（找到9:30-9:31的K线）
-                    df['时间'] = pd.to_datetime(df['时间'])
-                    today_open_df = df[df['时间'].dt.time <= datetime.strptime("09:31", "%H:%M").time()]
-                    if not today_open_df.empty:
-                        day_open = today_open_df.iloc[0]['开盘']
-                    else:
-                        day_open = latest['开盘']
-
-                    # 计算涨跌幅（对比当日开盘价，反映当日总涨跌幅）
-                    # 防止除以零
-                    if day_open != 0:
-                        change_pct = (latest['收盘'] - day_open) / day_open * 100
-                    else:
-                        change_pct = 0.0
-
-                    result = {
-                        'symbol': symbol,
-                        'price': float(latest['收盘']),
-                        'change_percent': round(change_pct, 2),
-                        'volume': float(latest['成交量']),
-                        'turnover_rate': 0.0,
-                        'high': float(latest['最高']),
-                        'low': float(latest['最低']),
-                        'open': float(latest['开盘']),
-                        'pre_close': float(day_open),  # 使用当日开盘价作为基准
-                        'timestamp': now.strftime('%Y-%m-%d %H:%M:%S'),
-                        'is_trading': True
-                    }
-
-                    self.realtime_cache[symbol] = {
-                        'data': result,
-                        'timestamp': now
-                    }
-                    print(f"✅ 1分钟K线数据获取成功: {result}")
-                    return result
-            else:
-                # 非交易时间，使用日线数据（昨天的收盘价）
-                logger.info(f"非交易时间，获取日线数据: {symbol}...")
-                end_date = now.strftime("%Y%m%d")
-                start_date = (now - timedelta(days=10)).strftime("%Y%m%d")
-
-                df = ak.stock_zh_a_hist(symbol=symbol, period="daily", start_date=start_date, end_date=end_date, adjust="qfq")
-                elapsed = time.time() - start_time
-                logger.info(f"日线数据获取耗时: {elapsed:.2f}秒")
-
-                if not df.empty:
-                    # 取最后一根K线（昨天的收盘价）
-                    latest = df.iloc[-1]
-
-                    # 计算涨跌幅（对比前一根K线的收盘价）
-                    if len(df) >= 2:
-                        prev_close = df.iloc[-2]['收盘']
-                        # 防止除以零
-                        if prev_close != 0:
-                            change_pct = (latest['收盘'] - prev_close) / prev_close * 100
-                        else:
-                            change_pct = 0.0
-                    else:
-                        prev_close = latest['开盘']
-                        change_pct = 0.0
-
-                    result = {
-                        'symbol': symbol,
-                        'price': float(latest['收盘']),
-                        'change_percent': round(change_pct, 2),
-                        'volume': float(latest['成交量']),
-                        'turnover_rate': float(latest.get('换手率', 0)),
-                        'high': float(latest['最高']),
-                        'low': float(latest['最低']),
-                        'open': float(latest['开盘']),
-                        'pre_close': float(prev_close),
-                        'timestamp': now.strftime('%Y-%m-%d %H:%M:%S'),
-                        'is_trading': False
-                    }
-
-                    self.realtime_cache[symbol] = {
-                        'data': result,
-                        'timestamp': now
-                    }
-                    logger.info(f"✅ 日线数据获取成功: {result}")
-                    return result
-
-            logger.warning(f"⚠️ 未找到股票数据: {symbol}")
-            return None
-
+            if not start_date:
+                start_date = (datetime.now() - timedelta(days=60)).strftime('%Y%m%d')
+            if not end_date:
+                end_date = datetime.now().strftime('%Y%m%d')
+            
+            cache_key = f"{code}_{period}_{start_date}_{end_date}"
+            if cache_key in self._kline_cache and self._is_cache_fresh(cache_key, ttl=600):
+                return self._kline_cache[cache_key]
+            
+            df = ak.stock_zh_a_hist(symbol=self._normalize_code(code), period=period, start_date=start_date, end_date=end_date, adjust='qfq')
+            
+            if df.empty:
+                return None
+            
+            df = df.rename(columns={'\u65e5\u671f': 'date', '\u5f00\u76d8': 'open', '\u6536\u76d8': 'close', '\u9ad8': 'high', '\u4f4e': 'low', '\u6210\u4ea4\u91cf': 'volume'})
+            
+            for col in ['open', 'close', 'high', 'low']:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+            df['volume'] = pd.to_numeric(df['volume'], errors='coerce')
+            
+            close = df['close'].values
+            df['ma5'] = pd.Series(self._calculate_ma(close, 5), index=df.index)
+            df['ma20'] = pd.Series(self._calculate_ma(close, 20), index=df.index)
+            df['ma60'] = pd.Series(self._calculate_ma(close, 60), index=df.index)
+            
+            self._kline_cache[cache_key] = df
+            self._cache_time[cache_key] = datetime.now()
+            return df
         except Exception as e:
-            print(f"❌ 获取数据失败: {type(e).__name__}: {str(e)}")
+            logger.error(f"get_kline_data failed: {e}")
             return None
 
-    def close(self) -> None:
-        """关闭数据库连接
-        
-        释放数据库资源，应在应用退出时调用。
-        """
-        self.conn.close()
+    def get_fundamental_data(self, code: str) -> Optional[Dict[str, Any]]:
+        """Get fundamental data (PE, PB)"""
+        try:
+            cache_key = f"{code}_fundamental"
+            if cache_key in self._fundamental_cache and self._is_cache_fresh(cache_key, ttl=600):
+                return self._fundamental_cache[cache_key]
+            
+            df = ak.stock_zh_a_spot_em()
+            code_num = code.replace('sh', '60').replace('sz', '00')
+            row = df[df['代码'] == code_num]
+            
+            if row.empty:
+                return None
+            
+            r = row.iloc[0]
+            result = {
+                'code': code,
+                'name': str(r['名称']),
+                'pe_ttm': float(r.get('市盈率', 0)),
+                'pb': float(r.get('市净率', 0)),
+                'timestamp': datetime.now().isoformat()
+            }
+            self._fundamental_cache[cache_key] = result
+            self._cache_time[cache_key] = datetime.now()
+            return result
+        except Exception as e:
+            logger.error(f"get_fundamental_data failed: {e}")
+            return None
+
+    def _normalize_code(self, code: str) -> str:
+        code = str(code).strip()
+        if code.isdigit():
+            return f'sh{code}' if code.startswith('6') else f'sz{code}'
+        return code
+
+    def _is_cache_fresh(self, key: str, ttl: Optional[int] = None) -> bool:
+        if key not in self._cache_time:
+            return False
+        ttl_seconds = ttl or self.cache_ttl
+        return (datetime.now() - self._cache_time[key]).total_seconds() < ttl_seconds
+
+    @staticmethod
+    def _calculate_ma(prices: np.ndarray, period: int) -> np.ndarray:
+        result = np.empty_like(prices, dtype=float)
+        result[:] = np.nan
+        for i in range(period - 1, len(prices)):
+            result[i] = np.mean(prices[i - period + 1:i + 1])
+        return result
+
+    def clear_cache(self):
+        self._quote_cache.clear()
+        self._kline_cache.clear()
+        self._fundamental_cache.clear()
+        self._cache_time.clear()
+
+_instance = None
+
+def get_data_manager(cache_ttl: int = 120) -> DataManager:
+    global _instance
+    if _instance is None:
+        _instance = DataManager(cache_ttl=cache_ttl)
+    return _instance
