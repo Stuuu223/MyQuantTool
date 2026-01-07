@@ -77,8 +77,19 @@ st.markdown("""
 # --- 加载配置 ---
 config = Config()
 
-# API Key 优先级：环境变量 > 配置文件 > 默认值
-API_KEY = os.getenv("SILICONFLOW_API_KEY") or config.get('api_key', 'sk-bxjtojiiuhmtrnrnwykrompexglngkzmcjydvgesxkqgzzet')
+# API Key 安全获取
+API_KEY = os.getenv("SILICONFLOW_API_KEY") or config.get('api_key')
+
+# API Key 安全检查
+if not API_KEY:
+    st.error("❌ 缺少 API Key 配置")
+    st.info("请设置环境变量: `export SILICONFLOW_API_KEY='your-key'`")
+    st.info("或在配置文件中设置 `api_key` 字段")
+    st.stop()
+
+# 检查 API Key 格式（简单验证）
+if not API_KEY.startswith('sk-'):
+    logger.warning("API Key 格式可能不正确，建议以 'sk-' 开头")
 
 # --- 初始化核心组件（智能缓存）---
 @st.cache_resource
@@ -144,7 +155,7 @@ st.title("🚀 个人化A股智能投研终端")
 st.markdown("基于 DeepSeek AI & AkShare 数据 | 专为股市小白设计")
 
 # --- 导入基础UI模块（轻量级） ---
-from ui.single_stock import render_single_stock_tab
+# 注意：ui.single_stock 导入时间较长（~1.6s），已改为延迟导入
 from ui.multi_compare import render_multi_compare_tab
 from ui.sector_rotation import render_sector_rotation_tab
 from ui.backtest import render_backtest_tab
@@ -166,6 +177,7 @@ from ui.settings import render_settings_tab
 
 # --- 导入高级UI模块（延迟导入） ---
 # 以下模块将在需要时才导入，以提升启动速度
+# from ui.single_stock import render_single_stock_tab  # 重型模块，延迟导入
 # from ui.kline_patterns import render_kline_patterns_tab
 # from ui.advanced_backtest import render_advanced_backtest_tab
 # from ui.paper_trading import render_paper_trading_tab
@@ -219,22 +231,39 @@ with st.sidebar:
         search_name = st.text_input("股票名称", placeholder="输入股票名称，如：贵州茅台", help="支持模糊搜索")
         
         if search_name:
-            with st.spinner('正在搜索...'):
-                matched_codes = QuantAlgo.get_stock_code_by_name(search_name)
-            
-            if matched_codes:
-                st.write(f"找到 {len(matched_codes)} 只匹配的股票：")
-                stock_options = []
-                for code in matched_codes:
-                    name = QuantAlgo.get_stock_name(code)
-                    stock_options.append(f"{name} ({code})")
+            try:
+                with st.spinner('正在搜索...'):
+                    matched_codes = QuantAlgo.get_stock_code_by_name(search_name)
                 
-                selected_stock = st.selectbox("选择股票", stock_options)
-                
-                if selected_stock:
-                    symbol = selected_stock.split('(')[1].rstrip(')')
-            else:
-                st.warning("未找到匹配的股票")
+                if matched_codes:
+                    st.write(f"找到 {len(matched_codes)} 只匹配的股票：")
+                    stock_options = []
+                    for code in matched_codes:
+                        try:
+                            name = QuantAlgo.get_stock_name(code) or f"未知({code})"
+                            stock_options.append(f"{name} ({code})")
+                        except Exception as e:
+                            logger.error(f"获取股票名称失败: {code}, {e}")
+                            stock_options.append(f"未知({code})")
+                    
+                    if stock_options:
+                        selected_stock = st.selectbox("选择股票", stock_options)
+                        
+                        if selected_stock:
+                            try:
+                                symbol = selected_stock.split('(')[1].rstrip(')')
+                            except (IndexError, AttributeError) as e:
+                                logger.error(f"解析股票代码失败: {selected_stock}, {e}")
+                                symbol = default_symbol
+                    else:
+                        st.warning("未找到匹配的股票")
+                        symbol = default_symbol
+                else:
+                    st.warning("未找到匹配的股票")
+                    symbol = default_symbol
+            except Exception as e:
+                st.error(f"搜索失败: {str(e)}")
+                logger.error(f"股票搜索错误: {e}", exc_info=True)
                 symbol = default_symbol
         else:
             symbol = default_symbol
@@ -290,7 +319,12 @@ with st.sidebar:
         st.markdown("---")
         
         for stock in watchlist:
-            stock_name = QuantAlgo.get_stock_name(stock)
+            try:
+                stock_name = QuantAlgo.get_stock_name(stock) or f"未知({stock})"
+            except Exception as e:
+                logger.error(f"获取股票名称失败: {stock}, {e}")
+                stock_name = f"未知({stock})"
+            
             col_watch, col_remove = st.columns([3, 1])
             with col_watch:
                 if st.button(f"📌 {stock_name} ({stock})", key=f"select_{stock}"):
@@ -299,27 +333,38 @@ with st.sidebar:
                     st.rerun()
             with col_remove:
                 if st.button("❌", key=f"remove_{stock}"):
-                    watchlist.remove(stock)
-                    config.set('watchlist', watchlist)
-                    st.success(f"已删除 {stock_name} ({stock})")
-                    st.rerun()
+                    try:
+                        watchlist.remove(stock)
+                        config.set('watchlist', watchlist)
+                        st.success(f"已删除 {stock_name} ({stock})")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"删除失败: {str(e)}")
+                        logger.error(f"删除自选股失败: {stock}, {e}")
     
     add_stock = st.text_input("添加自选股", placeholder="输入股票代码", help="例如：600519")
     if st.button("➕ 添加") and add_stock:
-        if add_stock not in watchlist:
-            stock_name = QuantAlgo.get_stock_name(add_stock)
-            watchlist.append(add_stock)
-            config.set('watchlist', watchlist)
-            st.success(f"已添加 {stock_name} ({add_stock}) 到自选股")
-        else:
-            st.warning("该股票已在自选股中")
+        try:
+            if add_stock not in watchlist:
+                stock_name = QuantAlgo.get_stock_name(add_stock) or f"未知({add_stock})"
+                watchlist.append(add_stock)
+                config.set('watchlist', watchlist)
+                st.success(f"已添加 {stock_name} ({add_stock}) 到自选股")
+            else:
+                st.warning("该股票已在自选股中")
+        except Exception as e:
+            st.error(f"添加失败: {str(e)}")
+            logger.error(f"添加自选股失败: {add_stock}, {e}")
 
 # --- 按功能大类渲染（Lazy Rendering）---
 if app_mode == "📈 市场分析":
     # 只渲染这 5 个 Tab，其他模块代码不执行！性能提升 5 倍
     t1, t2, t3, t4, t5 = st.tabs(["📊 单股分析", "🔍 多股对比", "🔄 板块轮动", "📈 情绪分析", "🎯 热点题材"])
     with t1:
-        render_single_stock_tab(db, config)
+        # 延迟导入重型模块（~1.6s）
+        with st.spinner("正在加载单股分析模块..."):
+            from ui.single_stock import render_single_stock_tab
+            render_single_stock_tab(db, config)
     with t2:
         render_multi_compare_tab(db, config)
     with t3:
