@@ -5,6 +5,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
 from datetime import datetime
+import numpy as np
 
 st.set_page_config(
     page_title="网络融合分析",
@@ -23,7 +24,6 @@ with st.sidebar:
     network_type = st.radio(
         "选择网络类型",
         ["游资关系图", "股票热度网", "对手关系图"],
-        captions=["游资之间的配合关系", "游资关注的股票", "游资对手关系"]
     )
     
     threshold = st.slider(
@@ -319,8 +319,6 @@ with tab5:
             'Correct': [True, True, False, True, True]
         })
         st.dataframe(recent_predictions, use_container_width=True, hide_index=True)
-
-import numpy as np
 
 st.markdown("---")
 st.caption("🕸️ 网络融合分析系统 v3.6.0")
