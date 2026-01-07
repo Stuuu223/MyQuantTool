@@ -4,6 +4,7 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
+import numpy as np
 from datetime import datetime
 
 st.set_page_config(
@@ -96,14 +97,16 @@ with tab2:
         st.subheader("📊 技术指标")
         
         dates = pd.date_range(end=datetime.now(), periods=60, freq='D')
-        prices = 1800 + (range(60) * 0.8 + pd.Series(range(60)).rolling(5).mean())
+        base = 1800 + np.arange(60) * 0.8
+        noise = np.random.normal(0, 5, 60)
+        prices = base + noise
         
         tech_df = pd.DataFrame({
             'Date': dates,
             'Price': prices,
-            'MA5': prices.rolling(5).mean(),
-            'MA20': prices.rolling(20).mean()
         })
+        tech_df['MA5'] = tech_df['Price'].rolling(5).mean()
+        tech_df['MA20'] = tech_df['Price'].rolling(20).mean()
         
         fig = go.Figure()
         fig.add_trace(go.Scatter(
