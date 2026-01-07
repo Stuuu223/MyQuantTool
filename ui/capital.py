@@ -132,6 +132,59 @@ def render_capital_tab(db, config):
                     st.metric("总买入金额", Formatter.format_amount(pattern_result['总买入金额']))
                 with col2:
                     st.metric("总卖出金额", Formatter.format_amount(pattern_result['总卖出金额']))
+
+                # 新增：可视化图表
+                if pattern_result['操作记录']:
+                    st.divider()
+                    st.subheader("📊 可视化分析")
+
+                    from logic.visualizers import (
+                        plot_capital_sankey,
+                        plot_capital_timeline,
+                        plot_activity_heatmap,
+                        plot_performance_timeseries
+                    )
+
+                    df_operations = pd.DataFrame(pattern_result['操作记录'])
+
+                    # 资金流向 Sankey 图和时间轴
+                    col1, col2 = st.columns(2)
+
+                    with col1:
+                        st.write("**资金流向**")
+                        fig_sankey = plot_capital_sankey(df_operations, capital_name)
+                        if fig_sankey:
+                            st.plotly_chart(fig_sankey, use_container_width=True)
+                        else:
+                            st.info("暂无资金流向数据")
+
+                    with col2:
+                        st.write("**操作时间轴**")
+                        fig_timeline = plot_capital_timeline(df_operations, capital_name)
+                        if fig_timeline:
+                            st.plotly_chart(fig_timeline, use_container_width=True)
+                        else:
+                            st.info("暂无时间轴数据")
+
+                    # 活跃度热力图和业绩表现
+                    col1, col2 = st.columns(2)
+
+                    with col1:
+                        st.write("**活跃度热力图**")
+                        fig_heatmap = plot_activity_heatmap(df_operations, by='day')
+                        if fig_heatmap:
+                            st.plotly_chart(fig_heatmap, use_container_width=True)
+                        else:
+                            st.info("暂无活跃度数据")
+
+                    with col2:
+                        st.write("**业绩表现趋势**")
+                        fig_performance = plot_performance_timeseries(df_operations, capital_name)
+                        if fig_performance:
+                            st.plotly_chart(fig_performance, use_container_width=True)
+                        else:
+                            st.info("暂无业绩数据")
+
                 # 显示操作记录
                 if pattern_result['操作记录']:
                     st.divider()

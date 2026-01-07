@@ -103,6 +103,10 @@ from ui.risk import render_risk_tab
 from ui.history import render_history_tab
 from ui.settings import render_settings_tab
 
+# --- 导入新页面模块 ---
+from pages.monitor_dashboard import render_dashboard
+from pages.capital_search import render_search_page
+
 # --- 侧边栏 ---
 with st.sidebar:
     st.header("🎮 控制台")
@@ -228,11 +232,11 @@ with st.sidebar:
             st.warning("该股票已在自选股中")
 
 # --- 主要功能标签页 ---
-tab_single, tab_compare, tab_backtest, tab_sector, tab_lhb, tab_dragon, tab_auction, tab_sentiment, tab_hot_topics, tab_alert, tab_vp, tab_ma, tab_new_stock, tab_capital, tab_limit_up, tab_smart, tab_risk, tab_history, tab_settings = st.tabs([
-    "📊 单股分析", "🔍 多股对比", "🧪 策略回测", "🔄 板块轮动", "🏆 龙虎榜", 
-    "🔥 龙头战法", "⚡ 集合竞价", "📈 情绪分析", "🎯 热点题材", "🔔 智能预警", 
-    "📊 量价关系", "📈 均线战法", "🆕 次新股", "💰 游资席位", "🎯 打板预测", 
-    "🤖 智能推荐", "⚠️ 风险管理", "📜 历史记录", "⚙️ 系统设置"
+tab_single, tab_compare, tab_backtest, tab_sector, tab_lhb, tab_dragon, tab_auction, tab_sentiment, tab_hot_topics, tab_alert, tab_vp, tab_ma, tab_new_stock, tab_capital, tab_limit_up, tab_smart, tab_risk, tab_history, tab_monitor, tab_search, tab_settings = st.tabs([
+    "📊 单股分析", "🔍 多股对比", "🧪 策略回测", "🔄 板块轮动", "🏆 龙虎榜",
+    "🔥 龙头战法", "⚡ 集合竞价", "📈 情绪分析", "🎯 热点题材", "🔔 智能预警",
+    "📊 量价关系", "📈 均线战法", "🆕 次新股", "💰 游资席位", "🎯 打板预测",
+    "🤖 智能推荐", "⚠️ 风险管理", "📜 历史记录", "📊 实时监控", "🔍 智能搜索", "⚙️ 系统设置"
 ])
 
 # --- 渲染各个标签页 ---
@@ -289,6 +293,12 @@ with tab_risk:
 
 with tab_history:
     render_history_tab(db, config)
+
+with tab_monitor:
+    render_dashboard()
+
+with tab_search:
+    render_search_page()
 
 with tab_settings:
     render_settings_tab(db, config)
