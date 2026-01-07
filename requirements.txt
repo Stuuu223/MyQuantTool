@@ -7,6 +7,10 @@ openai>=1.0.0
 sqlalchemy>=2.0.0
 ta-lib>=0.4.0
 diskcache>=5.6.0
+pyecharts>=2.0.0
+streamlit-aggrid>=0.3.4
+fuzzywuzzy>=0.18.0
+python-Levenshtein>=0.20.0
 
 # 测试依赖
 pytest>=7.4.0
