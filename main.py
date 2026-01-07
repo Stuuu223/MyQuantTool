@@ -598,7 +598,7 @@ elif app_mode == "🔥 交易策略":
 
 elif app_mode == "🧪 量化回测":
     # 量化回测模块 - 包含高级功能，使用延迟导入
-    t1, t2, t3, t4 = st.tabs(["🧪 策略回测", "🧪 高级回测", "📊 K线形态", "🧠 LSTM预测"])
+    t1, t2, t3, t4, t5 = st.tabs(["🧪 策略回测", "🧪 高级回测", "🔧 参数优化", "📊 K线形态", "🧠 LSTM预测"])
     with t1:
         render_backtest_tab(db, config)
     with t2:
@@ -607,11 +607,16 @@ elif app_mode == "🧪 量化回测":
             from ui.advanced_backtest import render_advanced_backtest_tab
             render_advanced_backtest_tab(db, config)
     with t3:
+        # 延迟导入参数优化模块
+        with st.spinner("正在加载参数优化引擎..."):
+            from ui.parameter_optimization import render_parameter_optimization_tab
+            render_parameter_optimization_tab(db, config)
+    with t4:
         # 延迟导入 K线形态模块
         with st.spinner("正在加载 K线形态识别引擎..."):
             from ui.kline_patterns import render_kline_patterns_tab
             render_kline_patterns_tab(db, config)
-    with t4:
+    with t5:
         # 延迟导入 LSTM 预测模块（最重）
         with st.spinner("正在加载 AI 深度学习模型..."):
             from ui.lstm_predictor import render_lstm_predictor_tab
@@ -619,7 +624,7 @@ elif app_mode == "🧪 量化回测":
 
 elif app_mode == "💰 资产管理":
     # 资产管理模块
-    t1, t2, t3, t4 = st.tabs(["💰 模拟交易", "💰 游资席位", "⚠️ 风险管理", "🤖 智能推荐"])
+    t1, t2, t3, t4, t5 = st.tabs(["💰 模拟交易", "💰 游资席位", "⚠️ 风险管理", "🤖 智能推荐", "📡 实时监控"])
     with t1:
         # 延迟导入模拟交易模块
         with st.spinner("正在加载模拟交易系统..."):
@@ -631,6 +636,11 @@ elif app_mode == "💰 资产管理":
         render_risk_tab(db, config)
     with t4:
         render_smart_recommend_tab(db, config)
+    with t5:
+        # 延迟导入实时监控模块
+        with st.spinner("正在加载实时监控系统..."):
+            from ui.live_monitoring import render_live_monitoring_tab
+            render_live_monitoring_tab(db, config)
 
 elif app_mode == "⚙️ 系统工具":
     # 系统工具模块

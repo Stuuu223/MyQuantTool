@@ -424,7 +424,7 @@ class BrokerAPIFactory:
         创建券商API实例
         
         Args:
-            broker_type: 券商类型 (futu, eastmoney)
+            broker_type: 券商类型 (futu, eastmoney, huatai, citic)
             config: 配置参数
         
         Returns:
@@ -434,6 +434,214 @@ class BrokerAPIFactory:
             return FutuAPI(config)
         elif broker_type.lower() == 'eastmoney':
             return EastMoneyAPI(config)
+        elif broker_type.lower() == 'huatai':
+            return HuataiAPI(config)
+        elif broker_type.lower() == 'citic':
+            return CiticAPI(config)
         else:
             logger.error(f"不支持的券商类型: {broker_type}")
             return None
+
+
+class HuataiAPI(BrokerAPIBase):
+    """
+    华泰证券API集成
+    
+    基于华泰证券的模拟交易接口
+    """
+    
+    def __init__(self, config: Dict):
+        """
+        初始化华泰API
+        
+        Args:
+            config: 配置参数
+                - account: 账号
+                - password: 密码
+                - client_id: 客户端ID
+        """
+        super().__init__(config)
+        self.account = config.get('account', '')
+        self.password = config.get('password', '')
+        self.client_id = config.get('client_id', '')
+    
+    def connect(self) -> bool:
+        """
+        连接华泰API
+        
+        Returns:
+            是否成功
+        """
+        # 模拟连接
+        logger.warning("华泰API为模拟实现，需要对接真实接口")
+        logger.info(f"华泰账号: {self.account}")
+        self.connected = True
+        return True
+    
+    def disconnect(self):
+        """断开连接"""
+        self.connected = False
+        logger.info("华泰API已断开")
+    
+    def place_order(self, order: LiveOrder) -> bool:
+        """下单"""
+        if not self.connected:
+            return False
+        
+        logger.info(f"华泰下单 (模拟): {order.order_id} {order.direction.value} {order.symbol} {order.quantity}股 @ {order.price}")
+        return True
+    
+    def cancel_order(self, order_id: str) -> bool:
+        """撤单"""
+        if not self.connected:
+            return False
+        
+        logger.info(f"华泰撤单 (模拟): {order_id}")
+        return True
+    
+    def get_positions(self) -> List[LivePosition]:
+        """获取持仓"""
+        if not self.connected:
+            return []
+        
+        # 模拟返回空持仓
+        return []
+    
+    def get_orders(self) -> List[LiveOrder]:
+        """获取订单"""
+        if not self.connected:
+            return []
+        
+        # 模拟返回空订单
+        return []
+    
+    def get_account_info(self) -> Dict:
+        """获取账户信息"""
+        if not self.connected:
+            return {}
+        
+        # 模拟账户信息
+        return {
+            'total_assets': 1000000.0,
+            'cash': 500000.0,
+            'market_val': 500000.0,
+            'power': 500000.0
+        }
+    
+    def get_market_data(self, symbol: str) -> Optional[Dict]:
+        """获取行情数据"""
+        if not self.connected:
+            return None
+        
+        # 模拟行情数据
+        return {
+            'symbol': symbol,
+            'price': 100.0,
+            'volume': 1000000,
+            'high': 105.0,
+            'low': 95.0,
+            'open': 98.0,
+            'timestamp': pd.Timestamp.now()
+        }
+
+
+class CiticAPI(BrokerAPIBase):
+    """
+    中信证券API集成
+    
+    基于中信证券的模拟交易接口
+    """
+    
+    def __init__(self, config: Dict):
+        """
+        初始化中信API
+        
+        Args:
+            config: 配置参数
+                - account: 账号
+                - password: 密码
+                - branch_id: 营业部ID
+        """
+        super().__init__(config)
+        self.account = config.get('account', '')
+        self.password = config.get('password', '')
+        self.branch_id = config.get('branch_id', '')
+    
+    def connect(self) -> bool:
+        """
+        连接中信API
+        
+        Returns:
+            是否成功
+        """
+        # 模拟连接
+        logger.warning("中信API为模拟实现，需要对接真实接口")
+        logger.info(f"中信账号: {self.account}")
+        self.connected = True
+        return True
+    
+    def disconnect(self):
+        """断开连接"""
+        self.connected = False
+        logger.info("中信API已断开")
+    
+    def place_order(self, order: LiveOrder) -> bool:
+        """下单"""
+        if not self.connected:
+            return False
+        
+        logger.info(f"中信下单 (模拟): {order.order_id} {order.direction.value} {order.symbol} {order.quantity}股 @ {order.price}")
+        return True
+    
+    def cancel_order(self, order_id: str) -> bool:
+        """撤单"""
+        if not self.connected:
+            return False
+        
+        logger.info(f"中信撤单 (模拟): {order_id}")
+        return True
+    
+    def get_positions(self) -> List[LivePosition]:
+        """获取持仓"""
+        if not self.connected:
+            return []
+        
+        # 模拟返回空持仓
+        return []
+    
+    def get_orders(self) -> List[LiveOrder]:
+        """获取订单"""
+        if not self.connected:
+            return []
+        
+        # 模拟返回空订单
+        return []
+    
+    def get_account_info(self) -> Dict:
+        """获取账户信息"""
+        if not self.connected:
+            return {}
+        
+        # 模拟账户信息
+        return {
+            'total_assets': 1000000.0,
+            'cash': 500000.0,
+            'market_val': 500000.0,
+            'power': 500000.0
+        }
+    
+    def get_market_data(self, symbol: str) -> Optional[Dict]:
+        """获取行情数据"""
+        if not self.connected:
+            return None
+        
+        # 模拟行情数据
+        return {
+            'symbol': symbol,
+            'price': 100.0,
+            'volume': 1000000,
+            'high': 105.0,
+            'low': 95.0,
+            'open': 98.0,
+            'timestamp': pd.Timestamp.now()
+        }

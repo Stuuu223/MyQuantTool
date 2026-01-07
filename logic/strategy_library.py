@@ -292,6 +292,187 @@ class VolumePriceStrategy(StrategyTemplate):
         }
 
 
+class ATRStrategy(StrategyTemplate):
+    """
+    ATR (Average True Range) 策略
+    """
+    
+    def __init__(self, params: Dict = None):
+        super().__init__("ATR策略", params)
+        self.description = "基于ATR指标的波动率突破策略"
+        self.category = "波动率"
+    
+    def generate_signals(self, df: pd.DataFrame) -> pd.Series:
+        period = self.params.get('period', 14)
+        atr_multiplier = self.params.get('atr_multiplier', 2.0)
+        
+        # 计算ATR
+        high_low = df['high'] - df['low']
+        high_close = np.abs(df['high'] - df['close'].shift())
+        low_close = np.abs(df['low'] - df['close'].shift())
+        
+        tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+        atr = tr.rolling(window=period).mean()
+        
+        # 计算ATR通道
+        upper_band = df['close'].shift(1) + atr * atr_multiplier
+        lower_band = df['close'].shift(1) - atr * atr_multiplier
+        
+        signals = pd.Series(0, index=df.index)
+        
+        # 突破上轨买入
+        signals[df['close'] > upper_band] = 1
+        
+        # 跌破下轨卖出
+        signals[df['close'] < lower_band] = -1
+        
+        return signals
+    
+    def get_default_params(self) -> Dict:
+        return {
+            'period': 14,
+            'atr_multiplier': 2.0
+        }
+
+
+class KDJStrategy(StrategyTemplate):
+    """
+    KDJ策略
+    """
+    
+    def __init__(self, params: Dict = None):
+        super().__init__("KDJ策略", params)
+        self.description = "基于KDJ指标的超买超卖策略"
+        self.category = "技术指标"
+    
+    def generate_signals(self, df: pd.DataFrame) -> pd.Series:
+        n = self.params.get('period', 9)
+        m1 = self.params.get('m1', 3)
+        m2 = self.params.get('m2', 3)
+        overbought = self.params.get('overbought', 80)
+        oversold = self.params.get('oversold', 20)
+        
+        # 计算KDJ
+        low_n = df['low'].rolling(window=n).min()
+        high_n = df['high'].rolling(window=n).max()
+        
+        rsv = (df['close'] - low_n) / (high_n - low_n) * 100
+        
+        k = rsv.ewm(com=m1-1, adjust=False).mean()
+        d = k.ewm(com=m2-1, adjust=False).mean()
+        j = 3 * k - 2 * d
+        
+        signals = pd.Series(0, index=df.index)
+        
+        # KDJ金叉买入
+        signals[(k > d) & (k.shift(1) <= d.shift(1))] = 1
+        
+        # KDJ死叉卖出
+        signals[(k < d) & (k.shift(1) >= d.shift(1))] = -1
+        
+        # 超买超卖
+        signals[j > overbought] = -1
+        signals[j < oversold] = 1
+        
+        return signals
+    
+    def get_default_params(self) -> Dict:
+        return {
+            'period': 9,
+            'm1': 3,
+            'm2': 3,
+            'overbought': 80,
+            'oversold': 20
+        }
+
+
+class WilliamStrategy(StrategyTemplate):
+    """
+    威廉指标 (WR) 策略
+    """
+    
+    def __init__(self, params: Dict = None):
+        super().__init__("威廉指标策略", params)
+        self.description = "基于威廉指标的超买超卖策略"
+        self.category = "技术指标"
+    
+    def generate_signals(self, df: pd.DataFrame) -> pd.Series:
+        period = self.params.get('period', 14)
+        overbought = self.params.get('overbought', -20)
+        oversold = self.params.get('oversold', -80)
+        
+        # 计算威廉指标
+        high_n = df['high'].rolling(window=period).max()
+        low_n = df['low'].rolling(window=period).min()
+        
+        wr = -100 * (high_n - df['close']) / (high_n - low_n)
+        
+        signals = pd.Series(0, index=df.index)
+        
+        # 超买
+        signals[wr > overbought] = -1
+        
+        # 超卖
+        signals[wr < oversold] = 1
+        
+        # 金叉死叉
+        signals[(wr > wr.shift(1)) & (wr.shift(1) < wr.shift(2))] = 1
+        signals[(wr < wr.shift(1)) & (wr.shift(1) > wr.shift(2))] = -1
+        
+        return signals
+    
+    def get_default_params(self) -> Dict:
+        return {
+            'period': 14,
+            'overbought': -20,
+            'oversold': -80
+        }
+
+
+class CCIStrategy(StrategyTemplate):
+    """
+    CCI (Commodity Channel Index) 策略
+    """
+    
+    def __init__(self, params: Dict = None):
+        super().__init__("CCI策略", params)
+        self.description = "基于CCI指标的趋势跟踪策略"
+        self.category = "技术指标"
+    
+    def generate_signals(self, df: pd.DataFrame) -> pd.Series:
+        period = self.params.get('period', 20)
+        overbought = self.params.get('overbought', 100)
+        oversold = self.params.get('oversold', -100)
+        
+        # 计算CCI
+        tp = (df['high'] + df['low'] + df['close']) / 3
+        ma_tp = tp.rolling(window=period).mean()
+        mad = tp.rolling(window=period).apply(lambda x: np.abs(x - x.mean()).mean())
+        
+        cci = (tp - ma_tp) / (0.015 * mad)
+        
+        signals = pd.Series(0, index=df.index)
+        
+        # 超买
+        signals[cci > overbought] = -1
+        
+        # 超卖
+        signals[cci < oversold] = 1
+        
+        # 零轴穿越
+        signals[(cci > 0) & (cci.shift(1) <= 0)] = 1
+        signals[(cci < 0) & (cci.shift(1) >= 0)] = -1
+        
+        return signals
+    
+    def get_default_params(self) -> Dict:
+        return {
+            'period': 20,
+            'overbought': 100,
+            'oversold': -100
+        }
+
+
 class StrategyLibrary:
     """
     策略库
@@ -312,6 +493,10 @@ class StrategyLibrary:
         self.register_strategy(BollingerStrategy())
         self.register_strategy(DualMAProfitStrategy())
         self.register_strategy(VolumePriceStrategy())
+        self.register_strategy(ATRStrategy())
+        self.register_strategy(KDJStrategy())
+        self.register_strategy(WilliamStrategy())
+        self.register_strategy(CCIStrategy())
     
     def register_strategy(self, strategy: StrategyTemplate):
         """
