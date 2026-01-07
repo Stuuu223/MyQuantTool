@@ -4,6 +4,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import numpy as np
 from datetime import datetime, timedelta
 
 st.set_page_config(
@@ -56,7 +57,7 @@ with tab1:
             '招商证券深圳福田',
             '华泰证券上海分公司',
             '中信证券北京总部',
-            '申万宏源厦门'
+            '申万宏源厚门'
         ],
         '最近30日出现次数': [15, 12, 8, 10, 6],
         '平均成交额(万)': [2450, 1850, 1200, 1600, 950],
@@ -141,16 +142,17 @@ with tab3:
     
     time_period = st.selectbox(
         "时间周期",
-        ["最近7天", "最近30天", "最近90天", "最近一年"]
+        ["最近7天", "最近30天", "最近90天", "最近1年"]
     )
     
     st.divider()
     
-    # 模拟趋势数据
+    # FIX: Corrected array operations - use pd.Series for operations
     dates = pd.date_range(end=datetime.now(), periods=30, freq='D')
+    frequency_raw = np.random.randint(5, 20, 30)
     trend_df = pd.DataFrame({
         'Date': dates,
-        'Frequency': np.random.randint(5, 20, 30).cumsum() % 50,
+        'Frequency': frequency_raw.cumsum() % 50,
         'Turnover': np.random.randint(1000, 3000, 30),
         'WinRate': np.random.uniform(0.6, 0.8, 30)
     })
@@ -183,8 +185,6 @@ with tab3:
     col2.metric("平均成交额", f"{trend_df['Turnover'].mean():.0f}万")
     col3.metric("平均成功率", f"{trend_df['WinRate'].mean():.1%}")
     col4.metric("趋势", "📈 向上")
-
-import numpy as np
 
 st.markdown("---")
 st.caption("💰 资金追踪系统 v3.6.0")
