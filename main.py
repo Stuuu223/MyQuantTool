@@ -167,6 +167,121 @@ class SessionStateManager:
 # 初始化 session state
 SessionStateManager.init()
 
+# --- 配置管理器 ---
+class ConfigManager:
+    """配置管理器 - 集中管理所有默认值"""
+    DEFAULT_CONFIGS = {
+        'default_symbol': '600519',
+        'default_start_date': '2024-01-01',
+        'atr_multiplier': 0.5,
+        'grid_ratio': 0.1,
+        'auto_refresh_interval': 300,  # 秒
+    }
+
+    @staticmethod
+    def get_safe(key):
+        """安全获取配置，自动使用默认值"""
+        default = ConfigManager.DEFAULT_CONFIGS.get(key)
+        return config.get(key, default)
+
+# --- 工具函数 ---
+def get_safe_stock_name(code, name_hint=None):
+    """
+    安全地获取股票名称，支持缓存
+
+    Args:
+        code: 股票代码
+        name_hint: 名称提示 (可选)
+
+    Returns:
+        股票名称或"未知(代码)"
+    """
+    if not code:
+        return "未知()"
+
+    try:
+        # 从 session_state 缓存读取
+        cache_key = f"stock_name_{code}"
+        if cache_key in st.session_state:
+            return st.session_state[cache_key]
+
+        # 从数据库获取
+        name = QuantAlgo.get_stock_name(code)
+
+        if not name:
+            result = name_hint or f"未知({code})"
+        else:
+            result = name
+
+        # 缓存结果
+        st.session_state[cache_key] = result
+        return result
+
+    except Exception as e:
+        logger.error(f"获取股票名称失败: code={code}, error={e}")
+        return f"未知({code})"
+
+def parse_selected_stock(selected_stock, fallback_symbol):
+    """安全地从选择框中解析股票代码"""
+    if not selected_stock:
+        return fallback_symbol
+
+    try:
+        parts = selected_stock.split('(')
+        if len(parts) != 2:  # 验证格式
+            logger.warning(f"格式异常的股票选择: {selected_stock}")
+            return fallback_symbol
+
+        symbol = parts[1].rstrip(')')
+
+        # 验证代码格式
+        if not symbol or len(symbol) != 6 or not symbol.isdigit():
+            logger.warning(f"无效的股票代码: {symbol}")
+            return fallback_symbol
+
+        return symbol
+
+    except Exception as e:
+        logger.error(f"解析股票代码异常: {selected_stock}, {e}")
+        return fallback_symbol
+
+def ensure_list(value, name="value"):
+    """确保返回值是有效的列表"""
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, (tuple, set)):
+        return list(value)
+    logger.warning(f"{name} 类型异常: {type(value)}")
+    return []
+
+class AutoRefreshManager:
+    """自动刷新管理器"""
+    REFRESH_INTERVAL = ConfigManager.get_safe('auto_refresh_interval')
+
+    @staticmethod
+    def should_refresh(force=False):
+        """判断是否应该刷新"""
+        if force:
+            return True
+
+        last_refresh = st.session_state.get('last_refresh', 0)
+        current_time = pd.Timestamp.now().timestamp()
+        elapsed = current_time - last_refresh
+
+        should = elapsed > AutoRefreshManager.REFRESH_INTERVAL
+
+        if should:
+            logger.info(f"触发自动刷新，已经过 {elapsed:.0f}s")
+
+        return should
+
+    @staticmethod
+    def mark_refreshed():
+        """标记已刷新"""
+        st.session_state.last_refresh = pd.Timestamp.now().timestamp()
+
 # --- 应用标题 ---
 st.title("🚀 个人化A股智能投研终端")
 st.markdown("基于 DeepSeek AI & AkShare 数据 | 专为股市小白设计")
@@ -236,42 +351,41 @@ with st.sidebar:
     elif watchlist:
         default_symbol = watchlist[-1]
     else:
-        default_symbol = config.get('default_symbol', '600519')
-    
+        default_symbol = ConfigManager.get_safe('default_symbol')
+
     # 搜索模式选择
     search_mode = st.radio("搜索方式", ["按代码", "按名称"], horizontal=True)
-    
+
     if search_mode == "按代码":
         symbol = st.text_input("股票代码", value=default_symbol, help="请输入6位A股代码")
     else:
         # 按名称搜索
         search_name = st.text_input("股票名称", placeholder="输入股票名称，如：贵州茅台", help="支持模糊搜索")
-        
+
         if search_name:
             try:
                 with st.spinner('正在搜索...'):
-                    matched_codes = QuantAlgo.get_stock_code_by_name(search_name)
-                
-                if matched_codes:
-                    st.write(f"找到 {len(matched_codes)} 只匹配的股票：")
+                    matched_codes = ensure_list(
+                        QuantAlgo.get_stock_code_by_name(search_name),
+                        name="matched_codes"
+                    )
+
+                if not matched_codes:
+                    st.info("💡 未找到匹配的股票，请尝试其他搜索条件")
+                    st.info("提示: 可以尝试按股票代码搜索")
+                    symbol = default_symbol
+                else:
+                    st.write(f"✅ 找到 {len(matched_codes)} 只匹配的股票")
                     stock_options = []
                     for code in matched_codes:
-                        try:
-                            name = QuantAlgo.get_stock_name(code) or f"未知({code})"
-                            stock_options.append(f"{name} ({code})")
-                        except Exception as e:
-                            logger.error(f"获取股票名称失败: {code}, {e}")
-                            stock_options.append(f"未知({code})")
-                    
+                        name = get_safe_stock_name(code)
+                        stock_options.append(f"{name} ({code})")
+
                     if stock_options:
                         selected_stock = st.selectbox("选择股票", stock_options)
-                        
+
                         if selected_stock:
-                            try:
-                                symbol = selected_stock.split('(')[1].rstrip(')')
-                            except (IndexError, AttributeError) as e:
-                                logger.error(f"解析股票代码失败: {selected_stock}, {e}")
-                                symbol = default_symbol
+                            symbol = parse_selected_stock(selected_stock, default_symbol)
                     else:
                         st.warning("未找到匹配的股票")
                         symbol = default_symbol
@@ -285,12 +399,12 @@ with st.sidebar:
         else:
             symbol = default_symbol
     
-    start_date = st.date_input("开始日期", pd.to_datetime(config.get('default_start_date', '2024-01-01')))
-    
+    start_date = st.date_input("开始日期", pd.to_datetime(ConfigManager.get_safe('default_start_date')))
+
     # 策略参数
     st.subheader("⚙️ 策略参数")
-    atr_mult = st.slider("ATR 倍数", 0.1, 2.0, float(config.get('atr_multiplier', 0.5)), 0.1)
-    grid_ratio = st.slider("网格比例", 0.05, 0.5, float(config.get('grid_ratio', 0.1)), 0.05)
+    atr_mult = st.slider("ATR 倍数", 0.1, 2.0, float(ConfigManager.get_safe('atr_multiplier')), 0.1)
+    grid_ratio = st.slider("网格比例", 0.05, 0.5, float(ConfigManager.get_safe('grid_ratio')), 0.05)
     
     run_ai = st.button("🧠 智能分析")
     
@@ -318,13 +432,11 @@ with st.sidebar:
     # 自动刷新
     auto_refresh = st.checkbox("自动刷新（每5分钟）", value=st.session_state.get('auto_refresh', False))
     st.session_state.auto_refresh = auto_refresh
-    if auto_refresh:
-        last_refresh = st.session_state.get('last_refresh', 0)
-        current_time = pd.Timestamp.now().timestamp()
-        if current_time - last_refresh > 300:
-            SessionStateManager.clear_cache()
-            st.info("⏱️ 自动刷新中...")
-            st.rerun()
+    if auto_refresh and AutoRefreshManager.should_refresh():
+        SessionStateManager.clear_cache()
+        AutoRefreshManager.mark_refreshed()
+        st.info("⏱️ 自动刷新中...")
+        st.rerun()
     
     st.markdown("---")
     
@@ -346,9 +458,8 @@ with st.sidebar:
         for stock in watchlist:
             try:
                 stock_name = QuantAlgo.get_stock_name(stock) or f"未知({stock})"
-            except Exception as e:
-                logger.error(f"获取股票名称失败: {stock}, {e}")
-                stock_name = f"未知({stock})"
+            # 使用 get_safe_stock_name 获取股票名称（带缓存）
+            stock_name = get_safe_stock_name(stock)
             
             col_watch, col_remove = st.columns([3, 1])
             with col_watch:
