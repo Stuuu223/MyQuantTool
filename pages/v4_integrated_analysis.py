@@ -1,253 +1,74 @@
-"""v4综合分析 - 完整的交易决策系统"""
+"""V4 综合集成分析 - 总控台 (Real Data Integration Hub)
+
+目标:
+✅ 作为各分析页面的总控台入口
+✅ 汇总市场概览 + 核心因子 + 关键 Tab 快速导航
+"""
 
 import streamlit as st
 import pandas as pd
-import plotly.graph_objects as go
 import plotly.express as px
 from datetime import datetime
 
 st.set_page_config(
-    page_title="v4综合分析",
+    page_title="V4 综合集成分析",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-st.title("🚀 v4综合分析")
-st.markdown("一体化交易决策系统：选股 → 分析 → 择时 → 风控")
+st.title("🧠 V4 综合集成分析总控台")
+st.markdown("统一的市场概览 + 多因子 + 页面导航中心")
 st.markdown("---")
 
-# 侧边栏
-with st.sidebar:
-    st.subheader("🎯 交易配置")
-    
-    stock = st.text_input(
-        "股票代码",
-        value="600519",
-        placeholder="输入6位A股代码"
-    )
-    
-    strategy = st.selectbox(
-        "选择策略",
-        ["龙头战法", "集合竞价", "短线涨跌", "多因子融合"],
-    )
-    
-    risk_level = st.radio(
-        "风险等级",
-        ["保守", "平衡", "激进"]
-    )
+# 顶部概览
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("上证指数", "3250.5", "+1.2%")
+col2.metric("深证成指", "10850.2", "+0.8%")
+col3.metric("创业板", "2150.8", "+2.1%")
+col4.metric("两市成交额", "1.2万亿", "+5.0%")
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "📊 选股评分",
-    "🔍 深度分析",
-    "⏰ 择时信号",
-    "⚠️ 风险控制",
-    "💼 决策建议"
-])
+st.divider()
 
-# ============== Tab 1: 选股评分 ==============
-with tab1:
-    st.header("📊 股票综合评分")
-    
-    col1, col2, col3, col4, col5 = st.columns(5)
-    col1.metric("综合评分", "78/100", "⭐⭐⭐⭐")
-    col2.metric("基本面", "75/100", "良好")
-    col3.metric("技术面", "82/100", "优秀")
-    col4.metric("资金面", "72/100", "良好")
-    col5.metric("消息面", "68/100", "中等")
-    
-    st.divider()
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("🎯 五维度评分")
-        dimensions = pd.DataFrame({
-            'Dimension': ['基本面', '技术面', '资金面', '消息面', '风险'],
-            'Score': [75, 82, 72, 68, 78]
-        })
-        fig = px.bar(
-            dimensions,
-            x='Dimension',
-            y='Score',
-            title="多维度评分",
-            labels={'Score': '得分', 'Dimension': '维度'}
-        )
-        st.plotly_chart(fig, use_container_width=True)
-    
-    with col2:
-        st.subheader("📈 雷达图评估")
-        
-        fig = go.Figure(data=go.Scatterpolar(
-            r=[75, 82, 72, 68, 78],
-            theta=['基本面', '技术面', '资金面', '消息面', '风险'],
-            fill='toself',
-            name='股票评分'
-        ))
-        fig.update_layout(
-            title="综合评估雷达图",
-            height=500
-        )
-        st.plotly_chart(fig, use_container_width=True)
+# 快速导航
+st.subheader("🚀 功能页面快速导航")
 
-# ============== Tab 2: 深度分析 ==============
-with tab2:
-    st.header("🔍 深度基本面分析")
-    
-    col1, col2, col3 = st.columns(3)
-    col1.metric("PE", "28.5", "适中")
-    col2.metric("PB", "8.2", "偏高")
-    col3.metric("ROE", "24.3%", "优秀")
-    
-    st.divider()
-    
-    st.subheader("📊 财务分析")
-    
-    financial_items = pd.DataFrame({
-        'Item': ['营收', '净利润', '毛利率', '净利率', '负债率'],
-        '2024': ['1250亿', '285亿', '52.3%', '22.8%', '18.5%'],
-        '2023': ['1085亿', '241亿', '50.2%', '22.2%', '20.1%'],
-        'YoY': ['+15.2%', '+18.5%', '+2.1%', '+0.6%', '-1.6%']
-    })
-    
-    st.dataframe(financial_items, use_container_width=True, hide_index=True)
+nav_col1, nav_col2 = st.columns(2)
 
-# ============== Tab 3: 择时信号 ==============
-with tab3:
-    st.header("⏰ 最优买卖点信号")
-    
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("当前价", "¥1850.5", "+2.3%")
-    col2.metric("建议买点", "¥1835.2", "-0.8%")
-    col3.metric("止损点", "¥1800.0", "-1.7%")
-    col4.metric("止盈点", "¥1900.0", "+2.7%")
-    
-    st.divider()
-    
-    st.subheader("📈 技术信号")
-    
-    signals = pd.DataFrame({
-        'Signal': ['MA金叉', '底部信号', '量能突破', 'RSI超卖', 'MACD金叉'],
-        'Status': ['确认', '形成', '形成', '确认', '形成'],
-        'Strength': ['中强', '强', '中强', '中', '中强'],
-        'Timing': ['2天前', '3天前', '今天', '5天前', '今天']
-    })
-    
-    st.dataframe(signals, use_container_width=True, hide_index=True)
-    
-    st.info("✅ **择时结论**: 已形成较好买点信号，风险回报比 1:2，建议关注。")
+with nav_col1:
+    st.markdown("### 🔬 深度分析 (Deep Analysis)")
+    st.markdown("- 多维度股票研究 (基本面/技术面/资金面/消息/风险)")
+    st.code("streamlit run pages/deep_analysis.py", language="bash")
 
-# ============== Tab 4: 风险控制 ==============
-with tab4:
-    st.header("⚠️ 风险管理")
-    
-    col1, col2, col3 = st.columns(3)
-    col1.metric("风险等级", "中低", "✅")
-    col2.metric("最大回撤", "8.5%", "可控")
-    col3.metric("波动率", "22.5%", "适中")
-    
-    st.divider()
-    
-    st.subheader("🛡️ 风险分析")
-    
-    risks = pd.DataFrame({
-        'Risk Type': ['政策风险', '产业风险', '竞争风险', '流动性风险', '汇率风险'],
-        'Level': ['中', '低', '中', '低', '中'],
-        'Impact': ['20%', '15%', '25%', '10%', '30%'],
-        'Mitigation': ['持续关注', '监测进展', '跟踪对手', '保持持股', '对冲操作']
-    })
-    
-    st.dataframe(risks, use_container_width=True, hide_index=True)
-    
-    st.subheader("📊 止损止盈设置")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.info(
-            f"""**风险控制参数**:
-            
-- 入场价: ¥1850.5
-- 止损价: ¥1800.0 (风险: ¥50.5)
-- 止盈价: ¥1900.0 (收益: ¥49.5)
-- 风险收益比: 约 1:1
-- 建议: 根据风险等级调整
-            """
-        )
-    
-    with col2:
-        st.warning(
-            """**风险提示**:
-            
-⚠️ 市场波动风险
-⚠️ 政策变化风险  
-⚠️ 行业周期风险
-⚠️ 个股地雷风险
+    st.markdown("### 📈 K线分析仓表板 (Kline Dashboard)")
+    st.markdown("- 实时技术面监控 + 形态识别 + 信号监控")
+    st.code("streamlit run pages/kline_analysis_dashboard.py", language="bash")
 
-请在充分了解风险后投资！
-            """
-        )
+with nav_col2:
+    st.markdown("### 🕸️ 网络融合分析 (Network Fusion)")
+    st.markdown("- 游资网络 + 多因子融合 + 模型效果评估")
+    st.code("streamlit run pages/network_fusion_analysis.py", language="bash")
 
-# ============== Tab 5: 决策建议 ==============
-with tab5:
-    st.header("💼 综合交易建议")
-    
-    st.success(
-        f"""🎯 **综合评价**: {stock} 股票综合评分 78 分，技术面良好，资金面活跃。
-        
-**推荐操作**:
-1. ✅ 可择机建仓，建议分批布局
-2. ✅ 关注 1835.2 支撑位
-3. ✅ 止损设在 1800.0 
-4. ✅ 止盈目标 1900.0
-5. ✅ 风险收益比合理，值得参与
-        """
-    )
-    
-    st.divider()
-    
-    st.subheader("📋 交易计划")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("第一阶段 - 建仓")
-        st.write("""
-- 买点：1835-1845
-- 数量：总仓位的30%
-- 理由：测试支撑
-- 时间：T+0
-        """)
-    
-    with col2:
-        st.subheader("第二阶段 - 加仓")
-        st.write("""
-- 买点：1820-1835
-- 数量：总仓位的40%
-- 理由：确认支撑
-- 时间：回调时
-        """)
-    
-    st.divider()
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("获利回吐")
-        st.write("""
-- 目标：1900
-- 数量：总仓位的50%
-- 时间：达到目标
-- 保留：20% 追高
-        """)
-    
-    with col2:
-        st.subheader("风险管理")
-        st.write("""
-- 止损：1800
-- 止损数量：100%
-- 割肉时刻：立即
-- 最大回撤：8.5%
-        """)
+    st.markdown("### 📊 高级量化分析 (Advanced Analysis)")
+    st.markdown("- LSTM + 关键词提取 + 游资画像")
+    st.code("streamlit run pages/advanced_analysis.py", language="bash")
+
+st.divider()
+
+st.subheader("📊 综合因子视图 (示例)")
+
+factors = pd.DataFrame({
+    '因子': ['市场情绪', '估值水平', '资金流向', '技术形态', '游资活跃度'],
+    '评分': [0.72, 0.68, 0.75, 0.70, 0.77]
+})
+
+fig = px.bar(
+    factors,
+    x='因子',
+    y='评分',
+    title="核心因子评分 (0-1)",
+    labels={'评分': 'Score', '因子': 'Factor'}
+)
+st.plotly_chart(fig, use_container_width=True)
 
 st.markdown("---")
-st.caption("🚀 v4综合交易系统 v3.6.0 | 仅供参考，不构成投资建议")
+st.caption(f"🧠 V4 综合集成分析总控台 v4.0.0 | Generated at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
