@@ -171,6 +171,99 @@ SessionStateManager.init()
 st.title("🚀 个人化A股智能投研终端")
 st.markdown("基于 DeepSeek AI & AkShare 数据 | 专为股市小白设计")
 
+# --- 辅助函数 ---
+def parse_selected_stock(selected_stock, fallback_symbol=None):
+    """
+    安全的股票代码解析函数
+    
+    Args:
+        selected_stock: 例如 "中国平安 (600519)"
+        fallback_symbol: 失败时的备用 (e.g., '600519')
+    
+    Returns:
+        稳定的代码 (e.g., '600519')
+    """
+    if not selected_stock:
+        return fallback_symbol
+    
+    try:
+        # 第 1 步: 简单的格式验证
+        parts = selected_stock.split('(')
+        if len(parts) != 2:
+            logger.warning(f"股票格式不常: {selected_stock}")
+            return fallback_symbol
+        
+        # 第 2 步: 提取代码部分
+        symbol = parts[1].rstrip(')')
+        
+        # 第 3 步: 验证代码不为空且是 6 位数字
+        if not symbol or len(symbol) != 6 or not symbol.isdigit():
+            logger.warning(f"代码无效: {symbol}")
+            return fallback_symbol
+        
+        return symbol
+    except Exception as e:
+        logger.error(f"解析股票失败: {e}")
+        return fallback_symbol
+
+
+def ensure_list(value, name="value"):
+    """
+    将不同类型统一成 list
+    
+    Args:
+        value: None, list, tuple, set 或 str
+        name: 出错时的变量名
+    
+    Returns:
+        list 或 []
+    """
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, (tuple, set)):
+        return list(value)
+    if isinstance(value, str):
+        return [value]
+    
+    # 未预期的整数类型，记录警告
+    logger.warning(f"{name} 类型不预期: {type(value)}, 返回 []")
+    return []
+
+
+@st.cache_data(ttl=3600)  # 缓存 1 小时
+def get_safe_stock_name(code):
+    """
+    安全地获取股票名称，有双层缓存
+    
+    Args:
+        code: 股票代码 e.g. '600519'
+    
+    Returns:
+        股票名称 e.g. '贵州茅台'
+    """
+    try:
+        # 第 1 层缓存: session_state (单会话级)
+        cache_key = f"stock_name_{code}"
+        if cache_key in st.session_state:
+            logger.debug(f"从 session 缓存中获取 {code}")
+            return st.session_state[cache_key]
+        
+        # 第 2 层缓存: @st.cache_data (函数级)
+        name = QuantAlgo.get_stock_name(code)
+        result = name or f"未知({code})"
+        
+        # 下次同一次会话中无需重新调用 API，速度 ~1ms
+        st.session_state[cache_key] = result
+        
+        logger.debug(f"函数缓存中获取 {code} -> {result}")
+        return result
+    except Exception as e:
+        logger.error(f"获取股票名称失败: {code}, {e}")
+        return f"未知({code})"
+
+
 # --- 数据验证层 ---
 class InputValidator:
     """输入数据验证器"""
@@ -224,6 +317,42 @@ class PerformanceMonitor:
                 return result
             return wrapper
         return decorator
+
+
+# --- 自动刷新管理 ---
+class AutoRefreshManager:
+    """自动刷新管理器"""
+    REFRESH_INTERVAL = config.get('auto_refresh_interval', 300)  # 个性化
+    
+    @staticmethod
+    def should_refresh(force=False):
+        if force:
+            return True
+        last = st.session_state.get('last_refresh', 0)
+        elapsed = pd.Timestamp.now().timestamp() - last
+        return elapsed > AutoRefreshManager.REFRESH_INTERVAL
+    
+    @staticmethod
+    def mark_refreshed():
+        st.session_state.last_refresh = pd.Timestamp.now().timestamp()
+
+
+# --- 配置管理 ---
+class ConfigManager:
+    """配置管理器 - 集中管理所有默认值"""
+    DEFAULT_CONFIGS = {
+        'default_symbol': '600519',
+        'default_start_date': '2024-01-01',
+        'atr_multiplier': 0.5,
+        'grid_ratio': 0.1,
+        'auto_refresh_interval': 300,
+    }
+    
+    @staticmethod
+    def get_safe(key):
+        """安全获取配置，自动使用默认值"""
+        default = ConfigManager.DEFAULT_CONFIGS.get(key)
+        return config.get(key, default)
 
 # --- 导入基础UI模块（轻量级） ---
 # 注意：ui.single_stock 导入时间较长（~1.6s），已改为延迟导入
