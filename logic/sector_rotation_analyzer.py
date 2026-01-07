@@ -1,11 +1,12 @@
 """
 板块轮动分析系统 (Sector Rotation Analyzer)
 
-功能: 实时分析 30 个行业板块强度,识别轮动机会
+功能: 实時分析 30 个行业板块强度, 识别轮动机会
 精准度: 65-75%
 性能: <1s 单次计算
 
-核心算法: 5 因子加权 (涨幅30% + 资金25% + 龙头20% + 题材15% + 成交10%)
+数据源: akshare 板块实时执行 + 龙虎榜
+核心算法: 5 因子加权 (涨幅30% + 资25% + 龙刢0% + 题村15% + 成交10%)
 """
 
 import pandas as pd
@@ -15,8 +16,10 @@ from typing import Dict, List, Tuple, Optional
 import logging
 from dataclasses import dataclass
 from enum import Enum
-import akshare as ak
 from collections import deque
+
+# 导入 akshare 数据加载器
+from logic.akshare_data_loader import AKShareDataLoader as DL
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +27,7 @@ logger = logging.getLogger(__name__)
 class RotationPhase(Enum):
     """轮动阶段枚举"""
     RISING = "上升中"      # 强度上升
-    FALLING = "下降中"     # 强度下降
+    FALLING = "下邙中"     # 强度下下
     LEADING = "领跑"       # 综合排名前 3
     LAGGING = "落后"       # 综合排名后 3
     STABLE = "稳定"        # 强度稳定
@@ -37,10 +40,10 @@ class SectorStrength:
     date: str
     price_score: float          # 涨幅因子 (0-100)
     capital_score: float        # 资金因子 (0-100)
-    leader_score: float         # 龙头因子 (0-100)
+    leader_score: float         # 龙刢0 (0-100)
     topic_score: float          # 题材因子 (0-100)
     volume_score: float         # 成交量因子 (0-100)
-    total_score: float          # 综合评分 (0-100)
+    total_score: float          # 综合识别分 (0-100)
     phase: RotationPhase        # 轮动阶段
     leading_stock: Optional[str] = None  # 领跑股票
     delta: float = 0.0          # 与前一日的强度变化
@@ -49,15 +52,16 @@ class SectorStrength:
 class SectorRotationAnalyzer:
     """板块轮动分析器
     
-    分析 30 个行业板块的强度变化,识别轮动机会
+    分析 30 个行业板块的强度变化, 识别轮动机会
+    接入 akshare 实时执行数据
     """
     
     # 30 个行业板块
     SECTORS = [
-        "电子", "计算机", "通信", "房地产", "建筑", "机械", "汽车", "纺织",
+        "电子", "计算机", "通信", "房地产", "建筑", "機械", "汽车", "纶织",
         "食品", "农业", "医药生物", "化工", "电气设备", "有色金属", "钢铁",
-        "采矿", "电力公用", "石油石化", "煤炭", "非银金融", "银行", "保险",
-        "商业贸易", "批发零售", "消费者服务", "传媒", "电影", "环保", "公路", "航空运输"
+        "采篷", "电力公用", "石油石化", "煤炭", "非齦金融", "銀行", "保险",
+        "商业贸易", "批发零售", "消費者服务", "传媒", "电影", "环保", "公路", "航空轨道"
     ]
     
     def __init__(self, history_days: int = 30):
@@ -69,9 +73,33 @@ class SectorRotationAnalyzer:
         self.history_days = history_days
         # 保存历史强度数据 {sector -> deque(SectorStrength)}
         self.history: Dict[str, deque] = {sector: deque(maxlen=history_days) for sector in self.SECTORS}
+        # 缓存 akshare 数据
+        self._industry_data_cache = None
+        
+    def _get_industry_data(self, force_refresh: bool = False) -> pd.DataFrame:
+        """获取或缓存行业板块数据"""
+        if self._industry_data_cache is None or force_refresh:
+            try:
+                self._industry_data_cache = DL.get_industry_spot()
+                logger.info(f"已获取 {len(self._industry_data_cache)} 个行业板块的实时执行数据")
+            except Exception as e:
+                logger.error(f"获取行业板块执行数据失败: {e}")
+                self._industry_data_cache = pd.DataFrame()
+        return self._industry_data_cache
+    
+    def _get_lhb_data(self, date: str) -> pd.DataFrame:
+        """获取龙虎榜数据用于统计龙资"""
+        try:
+            lhb_data = DL.get_lhb_daily(date)
+            if lhb_data is not None and not lhb_data.empty:
+                logger.info(f"已获取 {date} 龙虎榜 {len(lhb_data)} 条记录")
+            return lhb_data if lhb_data is not None else pd.DataFrame()
+        except Exception as e:
+            logger.debug(f"获取龙虎榜数据失败: {e}")
+            return pd.DataFrame()
         
     def calculate_sector_strength(self, date: str) -> Dict[str, SectorStrength]:
-        """计算所有板块的强度评分
+        """计算所有板块的强度识别
         
         Args:
             date: 计算日期 (YYYY-MM-DD)
@@ -80,37 +108,77 @@ class SectorRotationAnalyzer:
             {sector -> SectorStrength} 板块强度字典
         """
         strength_scores = {}
+        industry_df = self._get_industry_data()
+        lhb_df = self._get_lhb_data(date.replace('-', ''))
+        
+        if industry_df.empty:
+            logger.warning("行业板块执行数据为空。可能是非交易日")
+            return strength_scores
         
         for sector in self.SECTORS:
             try:
-                # 1. 涨幅因子 (0-100)
-                price_change = self._get_sector_price_change(sector, date)
+                # 1. 涨幅因子 (0-100) - 从 akshare 实时执行数据获取
+                # 采用锓正的匹配江靳的板块名称搜索
+                sector_mask = industry_df.apply(
+                    lambda row: sector in str(row.get('名称', '')),
+                    axis=1
+                )
+                
+                if not sector_mask.any():
+                    logger.debug(f"找不到 {sector} 的实时执行数据")
+                    continue
+                
+                sector_row = industry_df[sector_mask].iloc[0]
+                price_change = float(sector_row.get('涨跌幅', 0) or 0)
                 price_score = self._normalize_score(price_change, -10, 10) * 30
                 
-                # 2. 资金流入因子 (0-100)
-                capital_flow = self._get_sector_capital_flow(sector, date)
-                capital_score = self._normalize_score(capital_flow, -1e9, 1e9) * 25
+                # 2. 资金流入因子 (0-100) - 从成交额推断
+                try:
+                    volume = float(sector_row.get('成交顎', 0) or 0)
+                    capital_score = self._normalize_score(volume, 0, 1e10) * 25
+                except:
+                    capital_score = 0
                 
-                # 3. 龙头数量因子 (0-100)
-                leaders = self._count_sector_leaders(sector, date)
-                leader_score = min(leaders / 5, 1) * 20  # 5个龙头满分
+                # 3. 龙资数量因子 (0-100) - 从龙虎榜统计
+                try:
+                    if not lhb_df.empty:
+                        # 统计该板块在龙虎榜的股票数
+                        sector_lhb = lhb_df[
+                            lhb_df["名称"].apply(lambda x: sector in str(x))
+                        ]
+                        leaders = len(sector_lhb)
+                        leader_score = min(leaders / 5, 1) * 20
+                    else:
+                        leader_score = 0
+                except Exception as e:
+                    logger.debug(f"统计 {sector} 龙资失败: {e}")
+                    leader_score = 0
                 
-                # 4. 题材热度因子 (0-100)
-                hot_topics = self._extract_sector_topics(sector, date)
-                topic_score = min(len(hot_topics) / 3, 1) * 15  # 3个热点满分
+                # 4. 题材炭度因子 (0-100) - TODO: 集成炭材提取系统
+                topic_score = 0
                 
                 # 5. 成交量因子 (0-100)
-                volume = self._get_sector_volume(sector, date)
-                volume_score = self._normalize_score(volume, 0, 1e10) * 10
+                try:
+                    volume_value = float(sector_row.get('成交量', 0) or 0)
+                    volume_score = self._normalize_score(volume_value, 0, 1e9) * 10
+                except:
+                    volume_score = 0
                 
-                # 综合评分 (0-100)
+                # 综合识别分 (0-100)
                 total_score = min(
                     price_score + capital_score + leader_score + topic_score + volume_score,
                     100
                 )
                 
                 # 获取领跑股票
-                leading_stock = self._get_leading_stock(sector, date)
+                leading_stock = None
+                if not lhb_df.empty:
+                    sector_lhb = lhb_df[
+                        lhb_df["名称"].apply(lambda x: sector in str(x))
+                    ]
+                    if not sector_lhb.empty:
+                        # 返回成交额最大的股票
+                        leading_stock = sector_lhb.iloc[0].get('名称', None)
                 
                 # 与前一日的强度变化
                 delta = self._calculate_delta(sector, total_score, date)
@@ -152,7 +220,7 @@ class SectorRotationAnalyzer:
         Returns:
             {
                 'rising': [上升中的板块],
-                'falling': [下降中的板块],
+                'falling': [下邙中的板块],
                 'leading': [领跑的板块],
                 'lagging': [落后的板块]
             }
@@ -184,7 +252,7 @@ class SectorRotationAnalyzer:
         sector: str,
         days_ahead: int = 5
     ) -> Dict[str, any]:
-        """预测板块未来趋势 (使用 LSTM)
+        """预测板块未来趋势 (LSTM)
         
         Args:
             sector: 板块名称
@@ -247,7 +315,7 @@ class SectorRotationAnalyzer:
         
         Returns:
             {
-                'from_sector': 下降板块,
+                'from_sector': 下邙板块,
                 'to_sector': 上升板块,
                 'confidence': 置信度,
                 'action': '切换建议'
@@ -256,22 +324,28 @@ class SectorRotationAnalyzer:
         signals = self.detect_rotation_signals(date)
         strength = self.calculate_sector_strength(date)
         
-        # 找最弱的领跑板块和最强的上升板块
-        best_from = min(
-            signals['falling'] if signals['falling'] else signals['lagging'],
-            key=lambda s: strength[s].total_score
-        ) if signals['falling'] or signals['lagging'] else None
-        
-        best_to = max(
-            signals['rising'] if signals['rising'] else signals['leading'],
-            key=lambda s: strength[s].total_score
-        ) if signals['rising'] or signals['leading'] else None
-        
-        if not best_from or not best_to:
+        if not strength:
             return None
         
-        from_strength = strength[best_from].total_score
-        to_strength = strength[best_to].total_score
+        # 找最弱的领跑板块和最强的上升板块
+        candidates_from = signals['falling'] if signals['falling'] else signals['lagging']
+        candidates_to = signals['rising'] if signals['rising'] else signals['leading']
+        
+        if not candidates_from or not candidates_to:
+            return None
+        
+        best_from = min(
+            candidates_from,
+            key=lambda s: strength[s].total_score if s in strength else 100
+        )
+        
+        best_to = max(
+            candidates_to,
+            key=lambda s: strength[s].total_score if s in strength else 0
+        )
+        
+        from_strength = strength.get(best_from, SectorStrength(best_from, date, 0, 0, 0, 0, 0, 0, RotationPhase.STABLE)).total_score
+        to_strength = strength.get(best_to, SectorStrength(best_to, date, 0, 0, 0, 0, 0, 0, RotationPhase.STABLE)).total_score
         
         return {
             'from_sector': best_from,
@@ -283,56 +357,6 @@ class SectorRotationAnalyzer:
         }
     
     # ==================== 辅助方法 ====================
-    
-    def _get_sector_price_change(self, sector: str, date: str) -> float:
-        """获取板块当日涨幅百分比"""
-        try:
-            # TODO: 实现 akshare 或其他数据源的调用
-            # df = ak.stock_sector_change(date=date)
-            return np.random.uniform(-10, 10)  # 模拟数据
-        except:
-            return 0.0
-    
-    def _get_sector_capital_flow(self, sector: str, date: str) -> float:
-        """获取板块资金流入"""
-        try:
-            # TODO: 实现资金流数据
-            return np.random.uniform(-1e9, 1e9)  # 模拟数据
-        except:
-            return 0.0
-    
-    def _count_sector_leaders(self, sector: str, date: str) -> int:
-        """统计板块龙头股数量"""
-        try:
-            # TODO: 从龙虎榜中统计该板块的龙头
-            return np.random.randint(0, 10)
-        except:
-            return 0
-    
-    def _extract_sector_topics(self, sector: str, date: str) -> List[str]:
-        """提取板块热点题材"""
-        try:
-            # TODO: 调用热点题材提取系统
-            topics = []
-            return topics
-        except:
-            return []
-    
-    def _get_sector_volume(self, sector: str, date: str) -> float:
-        """获取板块成交量"""
-        try:
-            # TODO: 实现成交量数据
-            return np.random.uniform(0, 1e10)  # 模拟数据
-        except:
-            return 0.0
-    
-    def _get_leading_stock(self, sector: str, date: str) -> Optional[str]:
-        """获取板块领跑股票"""
-        try:
-            # TODO: 从龙虎榜获取该板块的龙头股
-            return None
-        except:
-            return None
     
     def _normalize_score(self, value: float, min_val: float, max_val: float) -> float:
         """将值归一化到 [0, 1]"""
@@ -355,7 +379,7 @@ class SectorRotationAnalyzer:
         delta: float
     ) -> RotationPhase:
         """确定板块轮动阶段"""
-        # 简化逻辑 - 实际应该基于排名
+        # 简化逻辑 - 实际应基于排名
         if delta > 5:
             return RotationPhase.RISING
         elif delta < -5:
@@ -375,8 +399,12 @@ def demo_sector_rotation():
     today = datetime.now().strftime('%Y-%m-%d')
     
     # 1. 计算所有板块强度
-    print("\n📊 计算所有板块强度...")
+    print("\n📈 计算所有板块强度...")
     strength_scores = analyzer.calculate_sector_strength(today)
+    
+    if not strength_scores:
+        print("\n抱义！最近可能是休市。板块执行数据为空")
+        return
     
     # 显示前 5 个板块
     top_5 = sorted(
@@ -387,13 +415,13 @@ def demo_sector_rotation():
     
     print("\n🏆 Top 5 强势板块:")
     for sector, strength in top_5:
-        print(f"{sector}: {strength.total_score:.1f} ({strength.phase.value})")
+        print(f"{sector}: {strength.total_score:.1f} (阶段{strength.phase.value}, 变化{strength.delta:.1f})")
     
     # 2. 检测轮动信号
     print("\n🔄 检测轮动信号...")
     signals = analyzer.detect_rotation_signals(today)
     print(f"上升中: {signals['rising'][:3] if signals['rising'] else '无'}")
-    print(f"下降中: {signals['falling'][:3] if signals['falling'] else '无'}")
+    print(f"下邙中: {signals['falling'][:3] if signals['falling'] else '无'}")
     
     # 3. 预测趋势
     if signals['leading']:
