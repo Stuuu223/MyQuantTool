@@ -105,7 +105,7 @@ with tab1:
             col1.metric("训练轮数", epochs)
             col2.metric("最终损失", f"{0.0234:.4f}")
             col3.metric("训练样本", "245")
-            col4.metric("验证准确率", "73.5%")
+            col4.metric("验证准確率", "73.5%")
             
             st.success("✅ 模型训练完成！")
     
@@ -125,14 +125,16 @@ with tab1:
     st.subheader("📊 特征重要性分析")
     
     features = pd.DataFrame({
-        'Feature': ['成交额趋势', '频率变化', '关联度', '市场情绪', '板块热度'],
+        'Feature': ['成交额趋势', '频率变化', '关联度', '市场情緒', '板块热度'],
         'Importance': [0.35, 0.28, 0.18, 0.12, 0.07]
     })
     
-    fig = px.barh(
+    # FIX: Changed px.barh to px.bar with orientation='h'
+    fig = px.bar(
         features,
-        x='Importance',
         y='Feature',
+        x='Importance',
+        orientation='h',
         title="特征重要性排序",
         labels={'Importance': '重要性权重', 'Feature': '特征'}
     )
@@ -213,7 +215,7 @@ with tab2:
 # ============== Tab 3: 游资画像 ==============
 with tab3:
     st.header("👥 游资画像分析")
-    st.write("量化游资的操作特征、风险偏好和盈利能力")
+    st.write("量化游资的操作特征、风险偏好和盆利能力")
     
     col1, col2 = st.columns(2)
     
@@ -261,7 +263,7 @@ with tab3:
     
     with col1:
         sector_pref = pd.DataFrame({
-            'Sector': ['医药生物', '电子', '计算机', '机械', '化工'],
+            'Sector': ['医药生物', '电子', '计算机', '机技', '化工'],
             'Preference': [0.28, 0.22, 0.18, 0.15, 0.17]
         })
         fig = px.bar(
@@ -274,7 +276,7 @@ with tab3:
     
     with col2:
         time_pref = pd.DataFrame({
-            'Stage': ['涨停期', '强势期', '回调期', '底部期'],
+            'Stage': ['涨停期', '强势期', '回调期', '低部期'],
             'Preference': [0.35, 0.28, 0.20, 0.17]
         })
         fig = px.pie(
