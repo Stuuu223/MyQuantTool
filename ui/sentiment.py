@@ -248,11 +248,11 @@ def render_sentiment_tab(db, config):
                             st.subheader("📋 详细信息")
                             col_a, col_b = st.columns(2)
                             with col_a:
-                                st.write(f"**涨跌幅**: {stock_info['涨跌幅']:+.2f}%")
-                                st.write(f"**成交额**: {Formatter.format_amount(stock_info['成交额'])}")
+                                st.write(f"**涨跌幅**: {stock_info.get('涨跌幅', 0):+.2f}%")
+                                st.write(f"**成交额**: {Formatter.format_amount(stock_info.get('成交额', 0))}")
                             with col_b:
-                                st.write(f"**换手率**: {stock_info['换手率']:.2f}%")
-                                st.write(f"**封板强度**: {'强' if stock_info['涨跌幅'] >= 9.9 else '中' if stock_info['涨跌幅'] >= 9.5 else '弱'}")
+                                st.write(f"**换手率**: {stock_info.get('换手率', 0):.2f}%")
+                                st.write(f"**封板强度**: {'强' if stock_info.get('涨跌幅', 0) >= 9.9 else '中' if stock_info.get('涨跌幅', 0) >= 9.5 else '弱'}")
                             
                             # 单股分析按钮
                             if st.button("📊 查看技术分析", key=f"analyze_limit_{selected_stock}"):

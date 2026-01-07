@@ -80,26 +80,64 @@ config = Config()
 # API Key 优先级：环境变量 > 配置文件 > 默认值
 API_KEY = os.getenv("SILICONFLOW_API_KEY") or config.get('api_key', 'sk-bxjtojiiuhmtrnrnwykrompexglngkzmcjydvgesxkqgzzet')
 
-# --- 初始化核心组件 ---
-db = DataManager()
-ai_agent = DeepSeekAgent(api_key=API_KEY)
-comparator = StockComparator(db)
-backtest_engine = BacktestEngine()
+# --- 初始化核心组件（智能缓存）---
+@st.cache_resource
+def get_db():
+    """获取数据库管理器实例（缓存）"""
+    return DataManager()
+
+@st.cache_resource
+def get_ai_agent():
+    """获取 AI 代理实例（缓存）"""
+    try:
+        return DeepSeekAgent(api_key=API_KEY)
+    except Exception as e:
+        logger.warning(f"AI 初始化失败: {e}")
+        return None
+
+@st.cache_resource
+def get_comparator():
+    """获取股票对比器实例（缓存）"""
+    return StockComparator(get_db())
+
+@st.cache_resource
+def get_backtest_engine():
+    """获取回测引擎实例（缓存）"""
+    return BacktestEngine()
+
+# 初始化组件
+db = get_db()
+ai_agent = get_ai_agent()
+comparator = get_comparator()
+backtest_engine = get_backtest_engine()
 
 logger.info("核心组件初始化完成")
 
-# --- 初始化session state ---
-if 'selected_stock' not in st.session_state:
-    st.session_state.selected_stock = None
+# --- Session State 集中管理 ---
+class SessionStateManager:
+    """Session State 集中管理器"""
+    DEFAULTS = {
+        'selected_stock': None,
+        'pattern_backtest_result': None,
+        'portfolio_backtest_result': None,
+        'parameter_optimization_result': None,
+        'pattern_combination_result': None,
+        'loading': False,
+        'auto_refresh': False,
+        'last_refresh': 0,
+        'cache_hits': 0,
+        'cache_misses': 0,
+    }
 
-if 'pattern_backtest_result' not in st.session_state:
-    st.session_state.pattern_backtest_result = None
-if 'portfolio_backtest_result' not in st.session_state:
-    st.session_state.portfolio_backtest_result = None
-if 'parameter_optimization_result' not in st.session_state:
-    st.session_state.parameter_optimization_result = None
-if 'pattern_combination_result' not in st.session_state:
-    st.session_state.pattern_combination_result = None
+    @staticmethod
+    def init():
+        """初始化所有 session_state 变量"""
+        for key, value in SessionStateManager.DEFAULTS.items():
+            if key not in st.session_state:
+                st.session_state[key] = value
+
+# 初始化 session state
+SessionStateManager.init()
 
 # --- 应用标题 ---
 st.title("🚀 个人化A股智能投研终端")
@@ -136,8 +174,9 @@ from ui.settings import render_settings_tab
 # from ui.hot_topics_enhanced import render_hot_topics_enhanced_tab
 # from ui.limit_up_enhanced import render_limit_up_enhanced_tab
 
-# --- 侧边栏功能导航 ---
+# --- 侧边栏 ---
 with st.sidebar:
+    # 功能导航
     st.header("🧭 功能导航")
     app_mode = st.radio(
         "选择功能模块",
@@ -152,8 +191,7 @@ with st.sidebar:
     )
     st.markdown("---")
 
-# --- 侧边栏控制台 ---
-with st.sidebar:
+    # 控制台
     st.header("🎮 控制台")
     
     # 全局加载状态
