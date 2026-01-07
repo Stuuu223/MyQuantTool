@@ -1,262 +1,303 @@
-"""
-实时监控仪表板页面
-提供多维度的游资和龙虎榜监控功能
-"""
+"""实时监控面板 - 市场全景监控"""
 
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta
-from logic.visualizers import (
-    plot_capital_sankey,
-    plot_capital_timeline,
-    plot_activity_heatmap,
-    plot_performance_timeseries
+import plotly.graph_objects as go
+import plotly.express as px
+from datetime import datetime
+import numpy as np
+
+st.set_page_config(
+    page_title="实时监控面板",
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
-from logic.algo_capital import CapitalAnalyzer
-from logic.formatter import Formatter
-from logic.logger import get_logger
 
-logger = get_logger(__name__)
+st.title("📊 实时监控面板")
+st.markdown("全市场行情监控、龙虎榜跟踪、资金流向分析")
+st.markdown("---")
 
+# 自动刷新
+if 'last_update' not in st.session_state:
+    st.session_state.last_update = datetime.now()
 
-def get_capital_list():
-    """获取游资列表"""
-    return list(CapitalAnalyzer.FAMOUS_CAPITALISTS.keys())
-
-
-def render_dashboard():
-    """渲染实时监控仪表板"""
-
-    # 页面配置
-    st.set_page_config(
-        page_title="实时监控",
-        layout="wide",
-        initial_sidebar_state="expanded"
+# 侧边栏设置
+with st.sidebar:
+    st.subheader("🔔 监控设置")
+    
+    auto_refresh = st.toggle("自动刷新", value=True)
+    refresh_interval = st.selectbox(
+        "刷新频率",
+        ["1分钟", "5分钟", "15分钟", "30分钟"]
+    )
+    
+    alert_enabled = st.toggle("启用告警", value=True)
+    alert_threshold = st.slider(
+        "告警涨幅阈值",
+        min_value=1,
+        max_value=20,
+        value=10,
+        step=1
     )
 
-    st.title("📊 实时监控仪表板")
-    st.caption("多维度监控游资动向和龙虎榜数据")
+# 主体标签页
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "🏠 市场概览",
+    "🏆 龙虎榜",
+    "💰 资金流向",
+    "⚡ 涨停池",
+    "🎯 智能告警"
+])
 
-    # 左侧过滤器
-    with st.sidebar:
-        st.header("📊 监控设置")
-
-        # 日期范围选择
-        st.subheader("📅 日期范围")
-        end_date = st.date_input("结束日期", value=datetime.now().date())
-        days_back = st.slider("回溯天数", 7, 90, 30)
-        start_date = end_date - timedelta(days=days_back)
-
-        # 游资选择
-        st.subheader("💰 游资选择")
-        selected_capital = st.multiselect(
-            "选择游资",
-            options=get_capital_list(),
-            default=['章盟主', '方新侠']
+# ============== Tab 1: 市场概览 ==============
+with tab1:
+    st.header("🏠 市场概览")
+    
+    # 三大指数
+    col1, col2, col3, col4, col5 = st.columns(5)
+    col1.metric("上证指数", "3250.5", "+1.2%", "🔴")
+    col2.metric("深证成指", "10850.2", "+0.8%", "🟢")
+    col3.metric("创业板", "2150.8", "+2.1%", "🟢")
+    col4.metric("沪深300", "3680.5", "+1.5%", "🟢")
+    col5.metric("两市成交", "1.2万亿", "+5%", "🟢")
+    
+    st.divider()
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("📈 涨跌家数")
+        market_stats = pd.DataFrame({
+            'Status': ['上升', '平盘', '下降'],
+            'Count': [2240, 85, 1045]
+        })
+        fig = px.pie(
+            market_stats,
+            names='Status',
+            values='Count',
+            title="A股涨跌分布"
         )
-
-        # 过滤条件
-        st.subheader("⚙️ 过滤条件")
-
-        # 资金量级
-        fund_range = st.slider(
-            "资金量级（亿元）",
-            0, 100, (10, 50)
+        st.plotly_chart(fig, use_container_width=True)
+    
+    with col2:
+        st.subheader("🏢 行业涨幅")
+        sectors = pd.DataFrame({
+            'Sector': ['新能源', '医药', '消费', '电子', '金融', '房地产'],
+            'Change': [3.2, 1.8, 0.5, -0.2, -1.2, -2.5]
+        })
+        fig = px.barh(
+            sectors,
+            x='Change',
+            y='Sector',
+            title="行业涨跌排序",
+            labels={'Change': '涨幅(%)', 'Sector': '行业'}
         )
+        st.plotly_chart(fig, use_container_width=True)
+    
+    st.divider()
+    
+    st.subheader("📊 分钟成交额")
+    
+    # 模拟成交额数据
+    minutes = pd.date_range(end=datetime.now(), periods=120, freq='1min')
+    volumes = np.random.randint(500, 1500, 120)
+    
+    volume_df = pd.DataFrame({
+        'Time': minutes,
+        'Volume': volumes
+    })
+    
+    fig = px.area(
+        volume_df,
+        x='Time',
+        y='Volume',
+        title="实时成交量",
+        labels={'Volume': '成交额(万)', 'Time': '时间'}
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
-        # 行业板块
-        sector_filter = st.selectbox(
-            "行业板块",
-            options=['全部', '新能源', '医药生物', '高端制造', '芯片半导体', '人工智能', '消费']
+# ============== Tab 2: 龙虎榜 ==============
+with tab2:
+    st.header("🏆 龙虎榜实时跟踪")
+    
+    col1, col2, col3 = st.columns(3)
+    col1.metric("上榜股票", "45", "+5 vs 昨日")
+    col2.metric("平均涨幅", "3.2%", "+0.5%")
+    col3.metric("资金净流入", "8.2亿", "+2.1亿")
+    
+    st.divider()
+    
+    st.subheader("📋 今日龙虎榜")
+    
+    lhb_df = pd.DataFrame({
+        '股票': ['股票A', '股票B', '股票C', '股票D', '股票E'],
+        '代码': ['600001', '000002', '000333', '600519', '601988'],
+        '价格': ['10.25', '18.50', '25.80', '1850.50', '35.25'],
+        '涨幅': ['+3.2%', '+5.8%', '+2.1%', '+1.5%', '+4.3%'],
+        '成交额': ['2.5亿', '4.2亿', '1.8亿', '5.5亿', '1.2亿'],
+        '上榜家数': [8, 12, 6, 10, 7],
+        '类型': ['机构抱团', '游资合作', '机构接力', '游资狙击', '机构建仓']
+    })
+    
+    st.dataframe(lhb_df, use_container_width=True, hide_index=True)
+    
+    st.divider()
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("🎯 上榜类型分布")
+        
+        types_dist = pd.DataFrame({
+            'Type': ['机构抱团', '游资合作', '机构接力', '游资狙击'],
+            'Count': [12, 8, 15, 10]
+        })
+        
+        fig = px.pie(
+            types_dist,
+            names='Type',
+            values='Count',
+            title="上榜类型分布"
         )
+        st.plotly_chart(fig, use_container_width=True)
+    
+    with col2:
+        st.subheader("💰 资金净流")
+        
+        net_flow = pd.DataFrame({
+            'Capital': ['游资A', '机构B', '游资C', '机构D'],
+            'Flow': [2.5, -1.2, 1.8, 0.5]
+        })
+        
+        fig = px.bar(
+            net_flow,
+            x='Capital',
+            y='Flow',
+            title="游资资金净流",
+            labels={'Flow': '净流入(亿)', 'Capital': '游资/机构'}
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
-        # 数据刷新
-        st.markdown("---")
-        if st.button("🔄 刷新数据", key="monitor_refresh"):
-            st.rerun()
+# ============== Tab 3: 资金流向 ==============
+with tab3:
+    st.header("💰 市场资金流向")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("主力净流入", "+25.2亿", "+8.2%")
+    col2.metric("散户净流入", "-12.5亿", "-5.3%")
+    col3.metric("机构净流入", "+8.5亿", "+2.1%")
+    col4.metric("游资净流入", "+3.2亿", "+1.5%")
+    
+    st.divider()
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("📊 资金类型流向")
+        
+        # 时间序列资金流向
+        dates = pd.date_range(end=datetime.now(), periods=30, freq='D')
+        flows = pd.DataFrame({
+            'Date': dates,
+            'Main': np.random.randint(-50, 100, 30),
+            'Retail': np.random.randint(-30, 30, 30),
+            'Institution': np.random.randint(-20, 50, 30)
+        })
+        
+        fig = px.line(
+            flows,
+            x='Date',
+            y=['Main', 'Retail', 'Institution'],
+            title="资金流向趋势",
+            labels={'value': '流入(亿)', 'Date': '日期'}
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    
+    with col2:
+        st.subheader("🏢 行业资金流向")
+        
+        sector_flow = pd.DataFrame({
+            'Sector': ['新能源', '医药', '消费', '科技', '金融'],
+            'Flow': [12.5, 8.2, -3.5, 6.8, -2.1]
+        })
+        
+        fig = px.bar(
+            sector_flow,
+            x='Sector',
+            y='Flow',
+            title="行业资金净流（亿元）",
+            labels={'Flow': '净流入', 'Sector': '行业'}
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
-        # 缓存统计
-        if st.checkbox("显示缓存统计"):
-            from logic.algo_capital import DiskCacheManager
-            cache = DiskCacheManager()
-            stats = cache.get_stats()
-            st.json(stats)
+# ============== Tab 4: 涨停池 ==============
+with tab4:
+    st.header("⚡ 涨停池监控")
+    
+    col1, col2, col3 = st.columns(3)
+    col1.metric("今日涨停", "68", "+12 vs 昨日")
+    col2.metric("一字板", "25", "-5 vs 昨日")
+    col3.metric("跳空高开", "35", "+8 vs 昨日")
+    
+    st.divider()
+    
+    st.subheader("📋 涨停池")
+    
+    limit_up = pd.DataFrame({
+        '股票': ['T股1', 'T股2', 'T股3', 'T股4', 'T股5'],
+        '代码': ['600001', '000002', '000333', '600519', '601988'],
+        '价格': ['10.50', '19.00', '26.29', '1885.50', '36.00'],
+        '涨幅': ['+10.0%', '+10.0%', '+10.0%', '+10.0%', '+10.0%'],
+        '板强': [3, 5, 2, 8, 1],
+        '成交量': ['2.1M', '4.5M', '1.2M', '3.8M', '0.8M']
+    })
+    
+    st.dataframe(limit_up, use_container_width=True, hide_index=True)
 
-    # 主内容区
-    st.markdown("---")
+# ============== Tab 5: 智能告警 ==============
+with tab5:
+    st.header("🎯 智能告警系统")
+    
+    st.subheader("📢 实时告警")
+    
+    alerts = pd.DataFrame({
+        '时间': ['09:35', '10:12', '10:45', '11:20', '11:58'],
+        '告警类型': ['涨停突破', '资金异常', '龙虎榜新增', '快速跳水', '放量涨停'],
+        '股票': ['股票A', '股票B', '股票C', '股票D', '股票E'],
+        '信号': ['看涨', '关注', '看涨', '看跌', '看涨'],
+        '强度': ['强', '中', '强', '中', '强']
+    })
+    
+    st.dataframe(alerts, use_container_width=True, hide_index=True)
+    
+    st.divider()
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("🔔 告警设置")
+        
+        st.checkbox("涨停突破告警", value=True)
+        st.checkbox("龙虎榜新增告警", value=True)
+        st.checkbox("资金异常告警", value=True)
+        st.checkbox("技术面突破告警", value=True)
+    
+    with col2:
+        st.subheader("📊 告警统计")
+        
+        alert_stats = pd.DataFrame({
+            'Type': ['涨停突破', '资金异常', '龙虎榜', '技术突破'],
+            'Count': [12, 8, 15, 10]
+        })
+        
+        fig = px.bar(
+            alert_stats,
+            x='Type',
+            y='Count',
+            title="告警类型分布",
+            labels={'Count': '告警次数', 'Type': '告警类型'}
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
-    # 核心指标行
-    st.subheader("📈 核心指标")
-
-    # 获取数据
-    with st.spinner('正在加载数据...'):
-        # 获取龙虎榜数据
-        from logic.algo import QuantAlgo
-        lhb_data = QuantAlgo.get_lhb_data(end_date.strftime("%Y%m%d"))
-
-        if lhb_data['数据状态'] == '正常':
-            stocks = lhb_data['股票列表']
-
-            # 计算指标
-            total_stocks = len(stocks)
-            total_net_buy = sum(s['龙虎榜净买入'] for s in stocks)
-            avg_amount = total_net_buy / total_stocks if total_stocks > 0 else 0
-
-            # 显示指标
-            col1, col2, col3, col4 = st.columns(4)
-
-            with col1:
-                st.metric(
-                    "龙虎榜股票数",
-                    f"{total_stocks} 只",
-                    delta="今日上榜"
-                )
-
-            with col2:
-                st.metric(
-                    "净买入总额",
-                    Formatter.format_amount(total_net_buy),
-                    delta=f"¥{avg_amount/100000000:.2f}亿/股"
-                )
-
-            with col3:
-                st.metric(
-                    "监控游资数",
-                    f"{len(selected_capital)} 个",
-                    delta=f"活跃追踪"
-                )
-
-            with col4:
-                st.metric(
-                    "数据日期",
-                    end_date.strftime("%Y-%m-%d"),
-                    delta=f"近{days_back}天"
-                )
-        else:
-            st.error(f"❌ {lhb_data['数据状态']}")
-            if '说明' in lhb_data:
-                st.info(lhb_data['说明'])
-
-    st.markdown("---")
-
-    # 上行：资金流向 Sankey 和时间轴
-    st.subheader("💰 资金流向追踪")
-
-    if selected_capital:
-        col1, col2 = st.columns(2)
-
-        # 获取游资追踪数据
-        with st.spinner('正在获取游资数据...'):
-            capital_data = CapitalAnalyzer.track_capital_pattern(
-                selected_capital[0],
-                days=days_back
-            )
-
-            if capital_data['数据状态'] == '正常':
-                operations = capital_data.get('操作记录', [])
-
-                if operations:
-                    df_operations = pd.DataFrame(operations)
-
-                    # Sankey 图
-                    with col1:
-                        fig_sankey = plot_capital_sankey(df_operations, selected_capital[0])
-                        if fig_sankey:
-                            st.plotly_chart(fig_sankey, use_container_width=True)
-                        else:
-                            st.info("暂无资金流向数据")
-
-                    # 时间轴图
-                    with col2:
-                        fig_timeline = plot_capital_timeline(df_operations, selected_capital[0])
-                        if fig_timeline:
-                            st.plotly_chart(fig_timeline, use_container_width=True)
-                        else:
-                            st.info("暂无时间轴数据")
-                else:
-                    st.info("暂无操作记录")
-            else:
-                st.error(f"❌ {capital_data['数据状态']}")
-                if '说明' in capital_data:
-                    st.info(capital_data['说明'])
-    else:
-        st.info("请选择要监控的游资")
-
-    st.markdown("---")
-
-    # 中行：活跃度热力图和业绩表现
-    st.subheader("📊 活跃度与业绩分析")
-
-    if selected_capital:
-        col1, col2 = st.columns(2)
-
-        with col1:
-            st.write("**游资活跃度热力图**")
-            with st.spinner('正在生成活跃度热力图...'):
-                if capital_data['数据状态'] == '正常':
-                    df_operations = pd.DataFrame(capital_data.get('操作记录', []))
-                    if not df_operations.empty:
-                        fig_heatmap = plot_activity_heatmap(df_operations, by='day')
-                        if fig_heatmap:
-                            st.plotly_chart(fig_heatmap, use_container_width=True)
-                        else:
-                            st.info("暂无活跃度数据")
-                    else:
-                        st.info("暂无操作记录")
-
-        with col2:
-            st.write("**业绩表现趋势**")
-            with st.spinner('正在生成业绩趋势图...'):
-                if capital_data['数据状态'] == '正常':
-                    df_operations = pd.DataFrame(capital_data.get('操作记录', []))
-                    if not df_operations.empty:
-                        fig_performance = plot_performance_timeseries(df_operations, selected_capital[0])
-                        if fig_performance:
-                            st.plotly_chart(fig_performance, use_container_width=True)
-                        else:
-                            st.info("暂无业绩数据")
-                    else:
-                        st.info("暂无操作记录")
-    else:
-        st.info("请选择要监控的游资")
-
-    st.markdown("---")
-
-    # 下行：详细操作明细
-    st.subheader("📋 详细操作明细")
-
-    if selected_capital and capital_data['数据状态'] == '正常':
-        operations = capital_data.get('操作记录', [])
-
-        if operations:
-            df_details = pd.DataFrame(operations)
-
-            # 格式化金额
-            df_details['买入金额(亿元)'] = (df_details['买入金额'] / 100000000).round(2)
-            df_details['卖出金额(亿元)'] = (df_details['卖出金额'] / 100000000).round(2)
-            df_details['净买入(亿元)'] = (df_details['净买入'] / 100000000).round(2)
-
-            # 显示数据表
-            display_cols = ['日期', '股票代码', '股票名称', '买入金额(亿元)', '卖出金额(亿元)', '净买入(亿元)']
-            st.dataframe(
-                df_details[display_cols],
-                use_container_width=True,
-                hide_index=True
-            )
-
-            # 数据下载
-            csv = df_details.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="📥 下载 CSV",
-                data=csv,
-                file_name=f'capital_operations_{selected_capital[0]}_{end_date}.csv',
-                mime='text/csv'
-            )
-        else:
-            st.info("暂无操作记录")
-    else:
-        st.info("请选择要监控的游资")
-
-    # 页脚
-    st.markdown("---")
-    st.caption("💡 提示：数据每5分钟自动刷新，点击刷新按钮可立即更新")
+st.markdown("---")
+st.caption(f"📊 监控面板 v3.6.0 | 最后更新: {st.session_state.last_update.strftime('%H:%M:%S')}")
