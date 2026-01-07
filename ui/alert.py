@@ -18,7 +18,7 @@ def render_alert_tab(db, config):
         st.subheader("📊 单股预警设置")
 
         # 股票代码输入
-        alert_symbol = st.text_input("股票代码", value="600519", help="输入6位A股代码")
+        alert_symbol = st.text_input("股票代码", value="600519", help="输入6位A股代码", key="alert_symbol")
 
         # 预警条件设置
         st.write("### 预警条件设置")

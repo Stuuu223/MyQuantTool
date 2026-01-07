@@ -19,7 +19,7 @@ def render_long_hu_bang_tab(db, config):
     st.caption("监控市场活跃股票和机构动向")
     
     # 日期选择
-    lhb_date = st.date_input("选择日期", value=pd.Timestamp.now().date())
+    lhb_date = st.date_input("选择日期", value=pd.Timestamp.now().date(), key="lhb_date")
     
     # 自动加载数据
     with st.spinner('正在获取龙虎榜数据...'):

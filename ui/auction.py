@@ -141,7 +141,7 @@ def render_auction_tab(db, config):
         # 股票选择
         col_stock1, col_stock2 = st.columns(2)
         with col_stock1:
-            check_symbol = st.text_input("股票代码", placeholder="输入6位股票代码", help="例如：600519")
+            check_symbol = st.text_input("股票代码", placeholder="输入6位股票代码", help="例如：600519", key="auction_symbol")
         with col_stock2:
             if st.button("🔍 检测弱转强", key="check_weak_to_strong_btn"):
                 if check_symbol:

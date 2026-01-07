@@ -6,14 +6,161 @@ import pandas as pd
 import sqlite3
 import json
 import time
+import os
 from datetime import datetime, timedelta
 from functools import wraps
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
+from typing import Any, Callable, Optional
 from logic.data_manager import DataManager
 from logic.logger import get_logger, log_execution_time, performance_context
 
 # 获取日志记录器
 logger = get_logger(__name__)
+
+try:
+    # diskcache is SQLite-backed persistent cache
+    from diskcache import FanoutCache
+except ImportError as e:
+    raise ImportError("Please install diskcache: pip install diskcache") from e
+
+
+@dataclass
+class CacheResult:
+    """缓存结果"""
+    value: Any
+    hit: bool
+
+
+class DiskCacheManager:
+    """
+    本地持久化缓存（SQLite-backed）。
+    - 适合缓存 pandas.DataFrame / dict / list 等可 pickle 对象
+    - 支持 TTL expire
+    - FanoutCache 适合多线程/多进程并发访问
+    """
+
+    _instance = None
+    _cache = None
+
+    def __new__(cls, *args, **kwargs):
+        """单例模式"""
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __init__(
+        self,
+        cache_dir: str = ".myquant_cache",
+        shards: int = 8,
+        size_limit_bytes: int = 5 * 1024**3,  # 5GB
+        enabled: bool = True,
+    ):
+        # 避免重复初始化
+        if hasattr(self, '_initialized') and self._initialized:
+            return
+
+        self.enabled = enabled
+        self.cache_dir = cache_dir
+
+        if not self.enabled:
+            self._cache = None
+            self._initialized = True
+            return
+
+        os.makedirs(cache_dir, exist_ok=True)
+        self._cache = FanoutCache(
+            directory=cache_dir,
+            shards=shards,
+            size_limit=size_limit_bytes,
+            statistics=True,
+        )
+        self._initialized = True
+
+    def get(self, key: str, default: Any = None) -> Any:
+        """获取缓存数据"""
+        if not self.enabled or self._cache is None:
+            return default
+        return self._cache.get(key, default=default)
+
+    def set(self, key: str, value: Any, expire: Optional[int] = None, tag: Optional[str] = None) -> bool:
+        """设置缓存数据"""
+        if not self.enabled or self._cache is None:
+            return False
+        # expire: seconds
+        self._cache.set(key, value, expire=expire, tag=tag)
+        return True
+
+    def get_or_set(
+        self,
+        key: str,
+        loader: Callable[[], Any],
+        expire: Optional[int] = None,
+        tag: Optional[str] = None,
+        cache_none: bool = False,
+    ) -> CacheResult:
+        """
+        获取或设置缓存
+        - cache_none=False：loader 返回 None 时不写入缓存（避免把临时失败缓存住）
+        """
+        cached = self.get(key, default=None)
+        if cached is not None:
+            return CacheResult(cached, True)
+
+        value = loader()
+        if value is None and not cache_none:
+            return CacheResult(None, False)
+
+        self.set(key, value, expire=expire, tag=tag)
+        return CacheResult(value, False)
+
+    def invalidate_prefix(self, prefix: str) -> int:
+        """
+        删除所有以 prefix 开头的 key（用于按日期/模块批量失效）。
+        """
+        if not self.enabled or self._cache is None:
+            return 0
+        keys = list(self._cache.iterkeys())
+        removed = 0
+        for k in keys:
+            if isinstance(k, str) and k.startswith(prefix):
+                if self._cache.delete(k):
+                    removed += 1
+        return removed
+
+    def invalidate_tag(self, tag: str) -> int:
+        """
+        删除所有指定 tag 的缓存条目
+        """
+        if not self.enabled or self._cache is None:
+            return 0
+        return self._cache.evict(tag)
+
+    def clear(self) -> None:
+        """清空所有缓存"""
+        if self._cache is not None:
+            self._cache.clear()
+
+    def close(self) -> None:
+        """关闭缓存"""
+        if self._cache is not None:
+            self._cache.close()
+
+    def get_stats(self) -> dict:
+        """获取缓存统计信息"""
+        if not self.enabled or self._cache is None:
+            return {'enabled': False}
+
+        stats = self._cache.stats()
+        return {
+            'enabled': True,
+            'cache_dir': self.cache_dir,
+            'size_limit_bytes': self._cache.size_limit,
+            'hits': stats.get('hits', 0),
+            'misses': stats.get('misses', 0),
+            'total_keys': len(list(self._cache.iterkeys())),
+            'hit_rate': f"{stats.get('hits', 0) / max(stats.get('hits', 0) + stats.get('misses', 0), 1) * 100:.2f}%"
+        }
 
 
 class CacheManager:
@@ -325,17 +472,20 @@ class CapitalAnalyzer:
             from datetime import datetime
             import time
 
-            # 检查缓存
+            # 检查旧缓存（兼容性）
             cache_key = f"lhb_capital_{date or 'latest'}"
             cached_data = CapitalAnalyzer.cache.get(cache_key)
             if cached_data:
-                logger.info(f"从缓存获取数据: {cache_key}")
+                logger.info(f"从旧缓存获取数据: {cache_key}")
                 return cached_data
 
             # ===== 第一层：东方财富接口 =====
             logger.info("=" * 60)
             logger.info("第一层数据源：东方财富接口")
             logger.info("=" * 60)
+
+            # 使用 diskcache 缓存龙虎榜列表
+            disk_cache = DiskCacheManager()
 
             # 获取龙虎榜数据
             try:
@@ -350,21 +500,68 @@ class CapitalAnalyzer:
                             date_str = date
                     else:
                         date_str = date.strftime("%Y%m%d")
-                    lhb_df = ak.stock_lhb_detail_em(start_date=date_str, end_date=date_str)
+
+                    # 使用 diskcache 缓存龙虎榜列表
+                    lhb_cache_key = f"lhb:list:{date_str}"
+                    cache_result = disk_cache.get_or_set(
+                        lhb_cache_key,
+                        loader=lambda: ak.stock_lhb_detail_em(start_date=date_str, end_date=date_str),
+                        expire=86400,  # 24小时
+                        tag=f"date:{date_str}"
+                    )
+
+                    if cache_result.hit:
+                        logger.info(f"[缓存命中] 从 diskcache 获取 {date_str} 的龙虎榜数据")
+                    else:
+                        logger.info(f"[缓存未命中] 从 API 获取 {date_str} 的龙虎榜数据")
+
+                    lhb_df = cache_result.value
                     logger.info(f"获取 {date_str} 的龙虎榜数据，共 {len(lhb_df)} 条记录")
                 else:
                     # 获取最近几天的数据
                     today = datetime.now()
-                    lhb_df = ak.stock_lhb_detail_em(start_date=today.strftime("%Y%m%d"), end_date=today.strftime("%Y%m%d"))
+                    date_str = today.strftime("%Y%m%d")
+
+                    # 使用 diskcache 缓存龙虎榜列表
+                    lhb_cache_key = f"lhb:list:{date_str}"
+                    cache_result = disk_cache.get_or_set(
+                        lhb_cache_key,
+                        loader=lambda: ak.stock_lhb_detail_em(start_date=date_str, end_date=date_str),
+                        expire=86400,  # 24小时
+                        tag=f"date:{date_str}"
+                    )
+
+                    if cache_result.hit:
+                        logger.info(f"[缓存命中] 从 diskcache 获取今日龙虎榜数据")
+                    else:
+                        logger.info(f"[缓存未命中] 从 API 获取今日龙虎榜数据")
+
+                    lhb_df = cache_result.value
                     logger.info(f"获取今日龙虎榜数据，共 {len(lhb_df)} 条记录")
 
                     # 如果今日无数据，尝试获取昨天
                     if lhb_df.empty:
                         yesterday = today - pd.Timedelta(days=1)
-                        lhb_df = ak.stock_lhb_detail_em(start_date=yesterday.strftime("%Y%m%d"), end_date=yesterday.strftime("%Y%m%d"))
+                        yesterday_str = yesterday.strftime("%Y%m%d")
+
+                        # 使用 diskcache 缓存昨日龙虎榜列表
+                        lhb_cache_key = f"lhb:list:{yesterday_str}"
+                        cache_result = disk_cache.get_or_set(
+                            lhb_cache_key,
+                            loader=lambda: ak.stock_lhb_detail_em(start_date=yesterday_str, end_date=yesterday_str),
+                            expire=86400,  # 24小时
+                            tag=f"date:{yesterday_str}"
+                        )
+
+                        if cache_result.hit:
+                            logger.info(f"[缓存命中] 从 diskcache 获取昨日龙虎榜数据")
+                        else:
+                            logger.info(f"[缓存未命中] 从 API 获取昨日龙虎榜数据")
+
+                        lhb_df = cache_result.value
                         logger.info(f"今日无数据，获取昨日龙虎榜数据，共 {len(lhb_df)} 条记录")
-                    
-                    date_str = today.strftime("%Y%m%d")
+
+                        date_str = yesterday_str
             except Exception as e:
                 logger.error(f"获取龙虎榜数据失败: {e}", exc_info=True)
                 lhb_df = None
@@ -439,7 +636,17 @@ class CapitalAnalyzer:
                 name = stock_info['名称']
 
                 try:
-                    # 使用正确的接口：按股票代码查询营业部明细
+                    # 使用 diskcache 缓存单股营业部明细
+                    disk_cache = DiskCacheManager()
+                    seat_cache_key = f"lhb:seat_detail:{date_str}:{code}"
+
+                    # 尝试从缓存获取
+                    cached_seats = disk_cache.get(seat_cache_key)
+                    if cached_seats is not None:
+                        logger.debug(f"  [缓存命中] {name}({code}) 营业部明细")
+                        return cached_seats, True
+
+                    # 缓存未命中，调用 API
                     seats = ak.stock_lhb_stock_detail_em(
                         symbol=code,
                         date=date_str
@@ -450,6 +657,11 @@ class CapitalAnalyzer:
                         seats['股票代码'] = code
                         seats['股票名称'] = name
                         seats['上榜日'] = date_str
+
+                        # 缓存结果
+                        disk_cache.set(seat_cache_key, seats, expire=86400, tag=f"date:{date_str}")
+                        logger.debug(f"  [缓存未命中] {name}({code}) 营业部明细，已缓存")
+
                         return seats, True
                     else:
                         return None, False
@@ -1014,7 +1226,7 @@ class CapitalAnalyzer:
         """
         追踪游资操作模式（修复版）
         分析特定游资在指定时间内的操作规律
-        
+
         核心修复：使用正确的列名 '交易营业部名称'
         """
         try:
@@ -1026,6 +1238,45 @@ class CapitalAnalyzer:
                     '数据状态': '未知游资',
                     '说明': f'未找到游资: {capital_name}'
                 }
+
+            # 使用 diskcache 缓存游资追踪结果
+            disk_cache = DiskCacheManager()
+            end_date = pd.Timestamp.now()
+            track_cache_key = f"lhb:track_pattern:{capital_name}:{days}:{end_date.strftime('%Y%m%d')}"
+
+            # 尝试从缓存获取
+            cache_result = disk_cache.get_or_set(
+                track_cache_key,
+                loader=lambda: CapitalAnalyzer._fetch_capital_pattern_data(capital_name, days),
+                expire=3600,  # 1小时
+                tag=f"capital:{capital_name}"
+            )
+
+            if cache_result.hit:
+                logger.info(f"[缓存命中] 从 diskcache 获取 {capital_name} 的游资追踪结果")
+            else:
+                logger.info(f"[缓存未命中] 从 API 获取 {capital_name} 的游资追踪结果")
+
+            return cache_result.value
+
+        except Exception as e:
+            logger.error(f"追踪游资操作模式失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                '数据状态': '分析失败',
+                '错误信息': str(e),
+                '说明': '可能是网络问题或数据源限制'
+            }
+
+    @staticmethod
+    def _fetch_capital_pattern_data(capital_name, days):
+        """
+        内部方法：获取游资操作模式数据（不包含缓存逻辑）
+        """
+        try:
+            import akshare as ak
+            from concurrent.futures import ThreadPoolExecutor, as_completed
 
             # 获取该游资的席位列表
             seats = CapitalAnalyzer.FAMOUS_CAPITALISTS[capital_name]
@@ -1059,7 +1310,18 @@ class CapitalAnalyzer:
                             name = stock_info['名称']
 
                             try:
-                                # 使用正确的接口：按股票代码查询营业部明细
+                                # 使用 diskcache 缓存单股营业部明细
+                                disk_cache = DiskCacheManager()
+                                seat_cache_key = f"lhb:seat_detail:{date_str}:{code}"
+
+                                # 尝试从缓存获取
+                                cached_seats = disk_cache.get(seat_cache_key)
+                                if cached_seats is not None:
+                                    logger.debug(f"  [缓存命中] {name}({code}) 营业部明细")
+                                    cached_seats['日期'] = date_str
+                                    return cached_seats, True
+
+                                # 缓存未命中，调用 API
                                 seats_df = ak.stock_lhb_stock_detail_em(
                                     symbol=code,
                                     date=date_str
@@ -1070,6 +1332,11 @@ class CapitalAnalyzer:
                                     seats_df['股票代码'] = code
                                     seats_df['股票名称'] = name
                                     seats_df['日期'] = date_str
+
+                                    # 缓存结果
+                                    disk_cache.set(seat_cache_key, seats_df, expire=86400, tag=f"date:{date_str}")
+                                    logger.debug(f"  [缓存未命中] {name}({code}) 营业部明细，已缓存")
+
                                     return seats_df, True
                                 else:
                                     return None, False
