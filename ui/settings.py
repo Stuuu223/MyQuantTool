@@ -12,7 +12,7 @@ def render_settings_tab(db, config):
     user_prefs = UserPreferences()
 
     # 功能选择
-    settings_mode = st.radio("选择设置", ["显示设置", "分析设置", "预警设置", "风险设置", "其他设置"], horizontal=True)
+    settings_mode = st.radio("选择设置", ["显示设置", "分析设置", "预警设置", "风险设置", "性能监控", "其他设置"], horizontal=True)
 
     if settings_mode == "显示设置":
         st.divider()
@@ -69,6 +69,99 @@ def render_settings_tab(db, config):
             user_prefs.set('risk', '最大持仓数量', max_positions)
             user_prefs.set('risk', '最大回撤限制', max_drawdown)
             st.success("✅ 风险设置已保存")
+
+    elif settings_mode == "性能监控":
+        st.divider()
+        st.subheader("📊 性能监控面板")
+
+        # 获取性能指标
+        import psutil
+        import time
+        from datetime import datetime
+
+        # 系统资源使用情况
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            cpu_percent = psutil.cpu_percent(interval=1)
+            st.metric("CPU 使用率", f"{cpu_percent}%", delta=f"{cpu_percent - 50:.1f}%")
+        with col2:
+            mem = psutil.virtual_memory()
+            st.metric("内存使用率", f"{mem.percent}%", delta=f"{mem.percent - 50:.1f}%")
+        with col3:
+            disk = psutil.disk_usage('/')
+            st.metric("磁盘使用率", f"{disk.percent}%")
+
+        # Streamlit 缓存统计
+        st.divider()
+        st.subheader("🚀 Streamlit 缓存统计")
+
+        try:
+            from streamlit.runtime.scriptrunner import get_script_run_ctx
+            from streamlit.runtime.caching import cache_data, cache_resource
+
+            # 缓存统计
+            cache_stats = {
+                "数据缓存命中": st.session_state.get('cache_hits', 0),
+                "数据缓存未命中": st.session_state.get('cache_misses', 0),
+                "命中率": f"{(st.session_state.get('cache_hits', 0) / max(st.session_state.get('cache_hits', 0) + st.session_state.get('cache_misses', 1), 1) * 100):.1f}%"
+            }
+
+            col4, col5 = st.columns(2)
+            with col4:
+                st.metric("缓存命中次数", cache_stats["数据缓存命中"])
+            with col5:
+                st.metric("缓存未命中次数", cache_stats["数据缓存未命中"])
+
+            st.metric("缓存命中率", cache_stats["命中率"])
+        except Exception as e:
+            st.warning(f"无法获取缓存统计: {e}")
+
+        # 应用运行时间
+        st.divider()
+        st.subheader("⏱️ 应用运行时间")
+
+        if 'app_start_time' not in st.session_state:
+            st.session_state.app_start_time = time.time()
+
+        elapsed_time = time.time() - st.session_state.app_start_time
+        minutes = int(elapsed_time // 60)
+        seconds = int(elapsed_time % 60)
+
+        col6, col7 = st.columns(2)
+        with col6:
+            st.metric("运行时长", f"{minutes}分{seconds}秒")
+        with col7:
+            st.metric("启动时间", datetime.now().strftime("%H:%M:%S"))
+
+        # 性能建议
+        st.divider()
+        st.subheader("💡 性能优化建议")
+
+        suggestions = []
+
+        if cpu_percent > 80:
+            suggestions.append("⚠️ CPU 使用率过高，建议关闭不必要的应用")
+        if mem.percent > 80:
+            suggestions.append("⚠️ 内存使用率过高，建议清理缓存或重启应用")
+        if cache_stats.get("命中率", 0) < 50 and cache_stats.get("数据缓存命中", 0) > 0:
+            suggestions.append("💡 缓存命中率较低，建议增加缓存时间或优化缓存策略")
+
+        if suggestions:
+            for suggestion in suggestions:
+                st.info(suggestion)
+        else:
+            st.success("✅ 系统运行状态良好")
+
+        # 清理缓存按钮
+        st.divider()
+        if st.button("🧹 清理所有缓存", key="clear_all_cache"):
+            st.cache_data.clear()
+            st.cache_resource.clear()
+            st.session_state.cache_hits = 0
+            st.session_state.cache_misses = 0
+            st.success("✅ 所有缓存已清理")
+            time.sleep(1)
+            st.rerun()
 
     elif settings_mode == "其他设置":
         st.divider()

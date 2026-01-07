@@ -147,6 +147,23 @@ class SessionStateManager:
             if key not in st.session_state:
                 st.session_state[key] = value
 
+    @staticmethod
+    def clear_cache():
+        """清理所有缓存数据"""
+        # 清理 Streamlit 缓存
+        st.cache_data.clear()
+        st.cache_resource.clear()
+
+        # 清理 session state 中的缓存数据
+        st.session_state.cache_hits = 0
+        st.session_state.cache_misses = 0
+        st.session_state.pattern_backtest_result = None
+        st.session_state.portfolio_backtest_result = None
+        st.session_state.parameter_optimization_result = None
+        st.session_state.pattern_combination_result = None
+
+        logger.info("所有缓存已清理")
+
 # 初始化 session state
 SessionStateManager.init()
 
@@ -286,20 +303,28 @@ with st.sidebar:
     col_refresh, col_auto = st.columns([1, 1])
     with col_refresh:
         if st.button("🔄 刷新数据"):
-            st.session_state.cache_clear()
+            SessionStateManager.clear_cache()
             st.success("✅ 数据已刷新")
             st.rerun()
     
     with col_auto:
-        auto_refresh = st.checkbox("自动刷新（每5分钟）", value=st.session_state.get('auto_refresh', False))
-        st.session_state.auto_refresh = auto_refresh
-        if auto_refresh:
-            last_refresh = st.session_state.get('last_refresh', 0)
-            current_time = pd.Timestamp.now().timestamp()
-            if current_time - last_refresh > 300:
-                st.session_state.cache_clear()
-                st.info("⏱️ 自动刷新中...")
-                st.rerun()
+        if st.button("🧹 清理缓存"):
+            SessionStateManager.clear_cache()
+            st.success("✅ 缓存已清理")
+            st.rerun()
+    
+    st.markdown("---")
+    
+    # 自动刷新
+    auto_refresh = st.checkbox("自动刷新（每5分钟）", value=st.session_state.get('auto_refresh', False))
+    st.session_state.auto_refresh = auto_refresh
+    if auto_refresh:
+        last_refresh = st.session_state.get('last_refresh', 0)
+        current_time = pd.Timestamp.now().timestamp()
+        if current_time - last_refresh > 300:
+            SessionStateManager.clear_cache()
+            st.info("⏱️ 自动刷新中...")
+            st.rerun()
     
     st.markdown("---")
     
