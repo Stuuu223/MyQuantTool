@@ -53,13 +53,13 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 with tab1:
     st.header("🏠 市场概览")
     
-    # 三大指数
+    # 三大指数 - 修复: 使用正确的 delta_color 参数
     col1, col2, col3, col4, col5 = st.columns(5)
-    col1.metric("上证指数", "3250.5", "+1.2%", "🔴")
-    col2.metric("深证成指", "10850.2", "+0.8%", "🟢")
-    col3.metric("创业板", "2150.8", "+2.1%", "🟢")
-    col4.metric("沪深300", "3680.5", "+1.5%", "🟢")
-    col5.metric("两市成交", "1.2万亿", "+5%", "🟢")
+    col1.metric("上证指数", "3250.5", "+1.2%", delta_color="inverse")
+    col2.metric("深证成指", "10850.2", "+0.8%", delta_color="normal")
+    col3.metric("创业板", "2150.8", "+2.1%", delta_color="normal")
+    col4.metric("沪深300", "3680.5", "+1.5%", delta_color="normal")
+    col5.metric("两市成交", "1.2万亿", "+5%", delta_color="normal")
     
     st.divider()
     
@@ -85,12 +85,13 @@ with tab1:
             'Sector': ['新能源', '医药', '消费', '电子', '金融', '房地产'],
             'Change': [3.2, 1.8, 0.5, -0.2, -1.2, -2.5]
         })
-        fig = px.barh(
+        fig = px.bar(
             sectors,
             x='Change',
             y='Sector',
             title="行业涨跌排序",
-            labels={'Change': '涨幅(%)', 'Sector': '行业'}
+            labels={'Change': '涨幅(%)', 'Sector': '行业'},
+            orientation='h'
         )
         st.plotly_chart(fig, use_container_width=True)
     
@@ -184,7 +185,7 @@ with tab3:
     
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("主力净流入", "+25.2亿", "+8.2%")
-    col2.metric("散户净流入", "-12.5亿", "-5.3%")
+    col2.metric("散户净流入", "-12.5亿", "-5.3%", delta_color="inverse")
     col3.metric("机构净流入", "+8.5亿", "+2.1%")
     col4.metric("游资净流入", "+3.2亿", "+1.5%")
     
@@ -236,7 +237,7 @@ with tab4:
     
     col1, col2, col3 = st.columns(3)
     col1.metric("今日涨停", "68", "+12 vs 昨日")
-    col2.metric("一字板", "25", "-5 vs 昨日")
+    col2.metric("一字板", "25", "-5 vs 昨日", delta_color="inverse")
     col3.metric("跳空高开", "35", "+8 vs 昨日")
     
     st.divider()
