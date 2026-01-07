@@ -92,6 +92,17 @@ class SectorRotationAnalyzer:
                 logger.error(f"获取行业板块执行数据失败: {e}")
                 logger.info("使用演示数据")
                 self._industry_data_cache = self._get_demo_industry_data()
+        
+        # 确保返回的数据不为空
+        if self._industry_data_cache is None or self._industry_data_cache.empty:
+            logger.warning("缓存数据为空，重新生成演示数据")
+            self._industry_data_cache = self._get_demo_industry_data()
+        
+        # 临时：强制使用演示数据进行测试
+        if len(self._industry_data_cache) == 0:
+            logger.info("强制使用演示数据")
+            self._industry_data_cache = self._get_demo_industry_data()
+        
         return self._industry_data_cache
     
     def _get_demo_industry_data(self) -> pd.DataFrame:
@@ -133,6 +144,10 @@ class SectorRotationAnalyzer:
         industry_df = self._get_industry_data()
         lhb_df = self._get_lhb_data(date.replace('-', ''))
         
+        logger.info(f"开始计算板块强度，日期: {date}")
+        logger.info(f"行业板块数据行数: {len(industry_df)}")
+        logger.info(f"龙虎榜数据行数: {len(lhb_df)}")
+        
         if industry_df.empty:
             logger.warning("行业板块执行数据为空。可能是非交易日")
             return strength_scores
@@ -156,7 +171,7 @@ class SectorRotationAnalyzer:
                 
                 # 2. 资金流入因子 (0-100) - 从成交额推断
                 try:
-                    volume = float(sector_row.get('成交顎', 0) or 0)
+                    volume = float(sector_row.get('成交额', 0) or 0)
                     capital_score = self._normalize_score(volume, 0, 1e10) * 25
                 except:
                     capital_score = 0

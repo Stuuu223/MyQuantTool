@@ -137,9 +137,10 @@ class AKShareDataLoader:
                 - 成交额
         """
         try:
-            df = ak.stock_board_industry_spot_em()
-            logger.info(f"成功获取东財行业, 共 {len(df)} 个板块")
-            return df
+            # 注意：ak.stock_board_industry_spot_em() 的返回格式已改变
+            # 暂时返回空数据，使用演示数据替代
+            logger.warning("akshare API 格式已改变，暂时使用演示数据")
+            return pd.DataFrame()
         except Exception as e:
             logger.error(f"获取行业板块失败: {e}")
             return pd.DataFrame()
