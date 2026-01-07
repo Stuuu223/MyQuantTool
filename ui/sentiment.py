@@ -411,13 +411,13 @@ def render_sentiment_tab(db, config):
                         col_good, col_medium, col_poor = st.columns(3)
                         
                         with col_good:
-                            st.metric("优质榜", quality_stats['优质榜数量'], delta="强烈推荐")
+                            st.metric("优质榜", quality_stats.get('优质榜数量', 0), delta="强烈推荐")
                         
                         with col_medium:
-                            st.metric("良好榜", quality_stats['良好榜数量'], delta="推荐关注")
+                            st.metric("良好榜", quality_stats.get('良好榜数量', 0), delta="推荐关注")
                         
                         with col_poor:
-                            st.metric("劣质榜", quality_stats['劣质榜数量'], delta="谨慎观望")
+                            st.metric("劣质榜", quality_stats.get('劣质榜数量', 0), delta="谨慎观望")
                         
                         # 详细股票分析
                         if lhb_data['质量分析']['股票分析']:
@@ -563,7 +563,7 @@ def render_sentiment_tab(db, config):
                         formatted_hot = []
                         for s in sector_data['热门板块']:
                             formatted_s = s.copy()
-                            formatted_s['主力净流入'] = Formatter.format_amount(s['主力净流入'])
+                            formatted_s['主力净流入'] = Formatter.format_amount(s.get('主力净流入', 0))
                             formatted_hot.append(formatted_s)
                         
                         hot_df = pd.DataFrame(formatted_hot)
@@ -601,7 +601,7 @@ def render_sentiment_tab(db, config):
                 formatted_cold = []
                 for s in sector_data['冷门板块']:
                     formatted_s = s.copy()
-                    formatted_s['主力净流入'] = format_amount(s['主力净流入'])
+                    formatted_s['主力净流入'] = format_amount(s.get('主力净流入', 0))
                     formatted_cold.append(formatted_s)
                 
                 cold_df = pd.DataFrame(formatted_cold)
