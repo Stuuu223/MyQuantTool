@@ -1,259 +1,195 @@
 """
-数据源管理模块
-提供多数据源切换和备份功能
+数据源管理器 - 实现多数据源备份和自动切换
 """
 
-import akshare as ak
 import pandas as pd
+from typing import Optional, Dict, List
+from enum import Enum
+import logging
+from abc import ABC, abstractmethod
+
+logger = logging.getLogger(__name__)
+
+
+class DataSourceStatus(Enum):
+    """数据源状态"""
+    HEALTHY = "健康"
+    DEGRADED = "降级"
+    UNAVAILABLE = "不可用"
+
+
+class DataSourceBase(ABC):
+    """数据源基类"""
+    
+    def __init__(self, name: str):
+        self.name = name
+        self.status = DataSourceStatus.HEALTHY
+        self.fail_count = 0
+        self.last_check_time = None
+    
+    @abstractmethod
+    def get_stock_data(self, symbol: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
+        """获取股票数据"""
+        pass
+    
+    @abstractmethod
+    def health_check(self) -> bool:
+        """健康检查"""
+        pass
+    
+    def mark_failure(self):
+        """标记失败"""
+        self.fail_count += 1
+        if self.fail_count >= 3:
+            self.status = DataSourceStatus.UNAVAILABLE
+            logger.warning(f"数据源 {self.name} 连续失败 {self.fail_count} 次，标记为不可用")
+    
+    def mark_success(self):
+        """标记成功"""
+        self.fail_count = 0
+        self.status = DataSourceStatus.HEALTHY
+
+
+class AkShareDataSource(DataSourceBase):
+    """AkShare 数据源"""
+    
+    def __init__(self):
+        super().__init__("AkShare")
+    
+    def get_stock_data(self, symbol: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
+        """获取股票数据"""
+        try:
+            import akshare as ak
+            df = ak.stock_zh_a_hist(symbol=symbol, start_date=start_date, end_date=end_date)
+            self.mark_success()
+            return df
+        except Exception as e:
+            logger.error(f"AkShare 获取数据失败: {e}")
+            self.mark_failure()
+            return None
+    
+    def health_check(self) -> bool:
+        """健康检查"""
+        try:
+            import akshare as ak
+            # 尝试获取一个简单的数据
+            df = ak.stock_zh_a_hist(symbol="600519", start_date="20240101", end_date="20240102")
+            is_healthy = df is not None and not df.empty
+            self.last_check_time = pd.Timestamp.now()
+            return is_healthy
+        except Exception as e:
+            logger.error(f"AkShare 健康检查失败: {e}")
+            self.last_check_time = pd.Timestamp.now()
+            return False
+
+
+class CacheDataSource(DataSourceBase):
+    """缓存数据源"""
+    
+    def __init__(self, db):
+        super().__init__("Cache")
+        self.db = db
+    
+    def get_stock_data(self, symbol: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
+        """从缓存获取数据"""
+        try:
+            df = self.db.get_stock_data(symbol, start_date, end_date)
+            if df is not None and not df.empty:
+                self.mark_success()
+                return df
+            return None
+        except Exception as e:
+            logger.error(f"缓存数据源失败: {e}")
+            self.mark_failure()
+            return None
+    
+    def health_check(self) -> bool:
+        """健康检查"""
+        try:
+            # 检查数据库连接
+            return self.db is not None
+        except Exception as e:
+            logger.error(f"缓存数据源健康检查失败: {e}")
+            return False
 
 
 class DataSourceManager:
     """数据源管理器"""
-
-    # 可用的数据源
-    DATA_SOURCES = {
-        'akshare': {
-            'name': 'AkShare',
-            'description': '开源财经数据接口',
-            'priority': 1
-        },
-        'tushare': {
-            'name': 'TuShare',
-            'description': 'TuShare Pro数据接口',
-            'priority': 2,
-            'requires_token': True
-        }
-    }
-
-    def __init__(self, primary_source='akshare', fallback_sources=None):
+    
+    def __init__(self, db):
+        self.db = db
+        self.sources: List[DataSourceBase] = []
+        self._init_sources()
+    
+    def _init_sources(self):
+        """初始化数据源"""
+        # 主数据源：AkShare
+        self.sources.append(AkShareDataSource())
+        # 备用数据源：缓存
+        self.sources.append(CacheDataSource(self.db))
+        
+        logger.info(f"已初始化 {len(self.sources)} 个数据源")
+    
+    def get_stock_data(self, symbol: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
         """
-        初始化数据源管理器
-
-        Args:
-            primary_source: 主数据源
-            fallback_sources: 备用数据源列表
-        """
-        self.primary_source = primary_source
-        self.fallback_sources = fallback_sources or ['akshare']
-        self.current_source = primary_source
-
-    def get_stock_list(self):
-        """
-        获取股票列表
-        尝试主数据源，失败后尝试备用数据源
-        """
-        # 尝试主数据源
-        try:
-            if self.current_source == 'akshare':
-                df = ak.stock_zh_a_spot_em()
-                return {
-                    '状态': '成功',
-                    '数据源': self.current_source,
-                    '数据': df
-                }
-        except Exception as e:
-            print(f"主数据源 {self.current_source} 失败: {e}")
-
-        # 尝试备用数据源
-        for source in self.fallback_sources:
-            if source == self.current_source:
-                continue
-
-            try:
-                if source == 'akshare':
-                    df = ak.stock_zh_a_spot_em()
-                    self.current_source = source
-                    return {
-                        '状态': '成功（使用备用数据源）',
-                        '数据源': source,
-                        '数据': df
-                    }
-            except Exception as e:
-                print(f"备用数据源 {source} 失败: {e}")
-                continue
-
-        return {
-            '状态': '失败',
-            '说明': '所有数据源均不可用'
-        }
-
-    def get_stock_data(self, symbol, start_date, end_date):
-        """
-        获取股票历史数据
-
+        获取股票数据（自动切换数据源）
+        
         Args:
             symbol: 股票代码
             start_date: 开始日期
             end_date: 结束日期
+        
+        Returns:
+            股票数据 DataFrame 或 None
         """
-        from logic.data_manager import DataManager
-
-        db = DataManager()
-        try:
-            df = db.get_history_data(symbol, start_date=start_date, end_date=end_date)
-            db.close()
-
-            if df.empty:
-                return {
-                    '状态': '无数据',
-                    '说明': '未找到股票数据'
-                }
-
-            return {
-                '状态': '成功',
-                '数据源': self.current_source,
-                '数据': df
-            }
-        except Exception as e:
-            db.close()
-            return {
-                '状态': '失败',
-                '错误信息': str(e),
-                '说明': '可能是数据源问题'
-            }
-
-    def get_board_data(self, board_type='concept'):
-        """
-        获取板块数据
-
-        Args:
-            board_type: 板块类型 ('concept' 或 'industry')
-        """
-        try:
-            if board_type == 'concept':
-                df = ak.stock_board_concept_name_em()
+        for source in self.sources:
+            if source.status == DataSourceStatus.UNAVAILABLE:
+                logger.debug(f"跳过不可用的数据源: {source.name}")
+                continue
+            
+            logger.info(f"尝试从 {source.name} 获取数据: {symbol}")
+            df = source.get_stock_data(symbol, start_date, end_date)
+            
+            if df is not None and not df.empty:
+                logger.info(f"成功从 {source.name} 获取数据")
+                return df
             else:
-                df = ak.stock_board_industry_name_em()
-
-            return {
-                '状态': '成功',
-                '数据源': self.current_source,
-                '数据': df
-            }
-        except Exception as e:
-            print(f"获取板块数据失败: {e}")
-            return {
-                '状态': '失败',
-                '错误信息': str(e),
-                '说明': '可能是数据源问题'
-            }
-
-    def get_lhb_data(self, date=None):
+                logger.warning(f"{source.name} 获取数据失败，尝试下一个数据源")
+        
+        logger.error(f"所有数据源均无法获取数据: {symbol}")
+        return None
+    
+    def health_check(self) -> Dict[str, DataSourceStatus]:
         """
-        获取龙虎榜数据
-
-        Args:
-            date: 日期（可选）
+        检查所有数据源健康状态
+        
+        Returns:
+            数据源状态字典
         """
-        try:
-            if date:
-                df = ak.stock_lhb_detail_daily_em(date=date)
+        results = {}
+        for source in self.sources:
+            is_healthy = source.health_check()
+            if is_healthy:
+                source.status = DataSourceStatus.HEALTHY
             else:
-                df = ak.stock_lhb_detail_daily_em()
+                source.status = DataSourceStatus.UNAVAILABLE
+            results[source.name] = source.status
+        
+        logger.info(f"数据源健康检查结果: {results}")
+        return results
+    
+    def get_available_sources(self) -> List[str]:
+        """获取可用的数据源列表"""
+        return [source.name for source in self.sources if source.status == DataSourceStatus.HEALTHY]
 
-            return {
-                '状态': '成功',
-                '数据源': self.current_source,
-                '数据': df
-            }
-        except Exception as e:
-            print(f"获取龙虎榜数据失败: {e}")
-            return {
-                '状态': '失败',
-                '错误信息': str(e),
-                '说明': '可能是数据源问题'
-            }
 
-    def get_limit_up_data(self):
-        """
-        获取涨停板数据
-        """
-        try:
-            df = ak.stock_zt_pool_em()
-            return {
-                '状态': '成功',
-                '数据源': self.current_source,
-                '数据': df
-            }
-        except Exception as e:
-            print(f"获取涨停板数据失败: {e}")
-            return {
-                '状态': '失败',
-                '错误信息': str(e),
-                '说明': '可能是数据源问题'
-            }
+# 全局实例
+_data_source_manager = None
 
-    def check_data_quality(self, df):
-        """
-        检查数据质量
 
-        Args:
-            df: DataFrame数据
-        """
-        if df.empty:
-            return {
-                '质量评分': 0,
-                '状态': '无数据'
-            }
-
-        score = 100
-        issues = []
-
-        # 检查缺失值
-        missing_ratio = df.isnull().sum().sum() / (df.shape[0] * df.shape[1])
-        if missing_ratio > 0.1:
-            score -= 20
-            issues.append(f"缺失值比例过高: {missing_ratio:.2%}")
-
-        # 检查数据量
-        if len(df) < 10:
-            score -= 30
-            issues.append(f"数据量不足: {len(df)}条")
-
-        # 检查数据范围
-        if 'close' in df.columns:
-            price_range = df['close'].max() - df['close'].min()
-            if price_range <= 0:
-                score -= 50
-                issues.append("价格数据异常")
-
-        # 检查数据连续性
-        if 'date' in df.columns:
-            date_diff = df['date'].diff().dropna()
-            if date_diff.max() > pd.Timedelta(days=7):
-                score -= 10
-                issues.append("数据不连续")
-
-        return {
-            '质量评分': max(0, score),
-            '状态': '优秀' if score >= 80 else '良好' if score >= 60 else '较差',
-            '问题列表': issues
-        }
-
-    def get_data_source_info(self):
-        """获取数据源信息"""
-        return {
-            '当前数据源': self.current_source,
-            '主数据源': self.primary_source,
-            '备用数据源': self.fallback_sources,
-            '可用数据源': list(self.DATA_SOURCES.keys())
-        }
-
-    def switch_data_source(self, new_source):
-        """
-        切换数据源
-
-        Args:
-            new_source: 新数据源名称
-        """
-        if new_source in self.DATA_SOURCES:
-            self.current_source = new_source
-            return {
-                '状态': '成功',
-                '当前数据源': new_source
-            }
-        else:
-            return {
-                '状态': '失败',
-                '说明': f'数据源 {new_source} 不存在'
-            }
+def get_data_source_manager(db) -> DataSourceManager:
+    """获取数据源管理器实例（单例）"""
+    global _data_source_manager
+    if _data_source_manager is None:
+        _data_source_manager = DataSourceManager(db)
+    return _data_source_manager
