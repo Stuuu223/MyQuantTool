@@ -29,12 +29,6 @@ with st.sidebar:
     strategy = st.selectbox(
         "选择策略",
         ["龙头战法", "集合竞价", "短线涨跌", "多因子融合"],
-        captions=[
-            "涨停突破策略",
-            "开盘预测",
-            "日内反转",
-            "AI融合预测"
-        ]
     )
     
     risk_level = st.radio(
