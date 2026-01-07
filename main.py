@@ -171,6 +171,60 @@ SessionStateManager.init()
 st.title("🚀 个人化A股智能投研终端")
 st.markdown("基于 DeepSeek AI & AkShare 数据 | 专为股市小白设计")
 
+# --- 数据验证层 ---
+class InputValidator:
+    """输入数据验证器"""
+    
+    @staticmethod
+    def validate_stock_code(code: str) -> bool:
+        """验证股票代码格式（6位数字）"""
+        if not code or not isinstance(code, str):
+            return False
+        return len(code) == 6 and code.isdigit()
+    
+    @staticmethod
+    def validate_percentage(value: float) -> bool:
+        """验证百分比范围（0-100）"""
+        return 0 <= value <= 100
+    
+    @staticmethod
+    def validate_positive(value: float) -> bool:
+        """验证正数"""
+        return value > 0
+
+# --- 性能监控 ---
+class PerformanceMonitor:
+    """性能监控和告警"""
+    
+    # 性能阈值（秒）
+    THRESHOLDS = {
+        'ai_init': 2.0,
+        'db_init': 1.0,
+        'data_fetch': 5.0,
+    }
+    
+    @staticmethod
+    def measure_time(operation_name: str):
+        """测量操作耗时并记录告警"""
+        import time
+        start_time = time.time()
+        
+        def decorator(func):
+            def wrapper(*args, **kwargs):
+                result = func(*args, **kwargs)
+                elapsed = time.time() - start_time
+                
+                # 检查是否超过阈值
+                threshold = PerformanceMonitor.THRESHOLDS.get(operation_name)
+                if threshold and elapsed > threshold:
+                    logger.warning(f"⚠️ 性能告警: {operation_name} 耗时 {elapsed:.2f}s (阈值: {threshold}s)")
+                else:
+                    logger.debug(f"✅ {operation_name} 耗时 {elapsed:.2f}s")
+                
+                return result
+            return wrapper
+        return decorator
+
 # --- 导入基础UI模块（轻量级） ---
 # 注意：ui.single_stock 导入时间较长（~1.6s），已改为延迟导入
 from ui.multi_compare import render_multi_compare_tab
