@@ -184,6 +184,151 @@ class ConfigManager:
         default = ConfigManager.DEFAULT_CONFIGS.get(key)
         return config.get(key, default)
 
+# --- 数据验证层 ---
+class InputValidator:
+    """输入数据验证器"""
+
+    @staticmethod
+    def validate_stock_code(code, allow_empty=False):
+        """
+        验证股票代码
+
+        Args:
+            code: 股票代码
+            allow_empty: 是否允许空值
+
+        Returns:
+            (is_valid, error_message)
+        """
+        if not code:
+            if allow_empty:
+                return True, None
+            return False, "股票代码不能为空"
+
+        if not isinstance(code, str):
+            return False, f"股票代码必须是字符串，当前类型: {type(code)}"
+
+        if len(code) != 6:
+            return False, f"股票代码必须是6位数字，当前长度: {len(code)}"
+
+        if not code.isdigit():
+            return False, f"股票代码必须全是数字，当前值: {code}"
+
+        return True, None
+
+    @staticmethod
+    def validate_date(date_str):
+        """
+        验证日期字符串
+
+        Args:
+            date_str: 日期字符串
+
+        Returns:
+            (is_valid, error_message)
+        """
+        if not date_str:
+            return False, "日期不能为空"
+
+        try:
+            pd.to_datetime(date_str)
+            return True, None
+        except Exception as e:
+            return False, f"日期格式无效: {date_str}, 错误: {e}"
+
+    @staticmethod
+    def validate_percentage(value, name="比例"):
+        """
+        验证百分比（0-100）
+
+        Args:
+            value: 百分比值
+            name: 参数名称
+
+        Returns:
+            (is_valid, error_message)
+        """
+        try:
+            num = float(value)
+            if num < 0 or num > 100:
+                return False, f"{name}必须在0-100之间，当前值: {num}"
+            return True, None
+        except (ValueError, TypeError):
+            return False, f"{name}必须是数字，当前值: {value}"
+
+    @staticmethod
+    def validate_positive_number(value, name="数值"):
+        """
+        验证正数
+
+        Args:
+            value: 数值
+            name: 参数名称
+
+        Returns:
+            (is_valid, error_message)
+        """
+        try:
+            num = float(value)
+            if num <= 0:
+                return False, f"{name}必须大于0，当前值: {num}"
+            return True, None
+        except (ValueError, TypeError):
+            return False, f"{name}必须是数字，当前值: {value}"
+
+# --- 性能监控和告警 ---
+class PerformanceMonitor:
+    """性能监控器"""
+
+    # 性能阈值（秒）
+    THRESHOLDS = {
+        'ai_init': 2.0,
+        'db_init': 1.0,
+        'stock_search': 1.0,
+        'data_fetch': 3.0,
+    }
+
+    @staticmethod
+    def measure_time(operation_name, threshold_key=None):
+        """
+        测量操作耗时并告警
+
+        Args:
+            operation_name: 操作名称
+            threshold_key: 阈值键名
+
+        Returns:
+            装饰器
+        """
+        def decorator(func):
+            def wrapper(*args, **kwargs):
+                import time
+                start = time.time()
+                try:
+                    result = func(*args, **kwargs)
+                    elapsed = time.time() - start
+
+                    # 记录性能
+                    logger.info(f"{operation_name} 耗时: {elapsed:.3f}s")
+
+                    # 检查是否超过阈值
+                    if threshold_key and threshold_key in PerformanceMonitor.THRESHOLDS:
+                        threshold = PerformanceMonitor.THRESHOLDS[threshold_key]
+                        if elapsed > threshold:
+                            logger.warning(
+                                f"⚠️ 性能告警: {operation_name} 耗时 {elapsed:.3f}s "
+                                f"超过阈值 {threshold}s"
+                            )
+
+                    return result
+                except Exception as e:
+                    elapsed = time.time() - start
+                    logger.error(f"{operation_name} 失败，耗时 {elapsed:.3f}s: {e}")
+                    raise
+
+            return wrapper
+        return decorator
+
 # --- 工具函数 ---
 def get_safe_stock_name(code, name_hint=None):
     """
@@ -335,19 +480,18 @@ with st.sidebar:
     )
     st.markdown("---")
 
-    # 控制台
-    st.header("🎮 控制台")
-    
-    # 全局加载状态
-    if st.session_state.get('loading', False):
-        st.info("⏳ 数据加载中...")
-    
-    # 获取自选股列表
-    watchlist = config.get('watchlist', [])
-    
-    # 从配置文件加载默认值
-    if st.session_state.selected_stock:
-        default_symbol = st.session_state.selected_stock
+    # 控制台（使用 Expander 折叠）
+    with st.expander("🎮 控制台", expanded=True):
+        # 全局加载状态
+        if st.session_state.get('loading', False):
+            st.info("⏳ 数据加载中...")
+
+        # 获取自选股列表
+        watchlist = config.get('watchlist', [])
+
+        # 从配置文件加载默认值
+        if st.session_state.selected_stock:
+            default_symbol = st.session_state.selected_stock
     elif watchlist:
         default_symbol = watchlist[-1]
     else:
@@ -401,47 +545,45 @@ with st.sidebar:
     
     start_date = st.date_input("开始日期", pd.to_datetime(ConfigManager.get_safe('default_start_date')))
 
-    # 策略参数
-    st.subheader("⚙️ 策略参数")
-    atr_mult = st.slider("ATR 倍数", 0.1, 2.0, float(ConfigManager.get_safe('atr_multiplier')), 0.1)
-    grid_ratio = st.slider("网格比例", 0.05, 0.5, float(ConfigManager.get_safe('grid_ratio')), 0.05)
-    
+    # 策略参数（使用 Expander 折叠）
+    with st.expander("⚙️ 策略参数"):
+        atr_mult = st.slider("ATR 倍数", 0.1, 2.0, float(ConfigManager.get_safe('atr_multiplier')), 0.1)
+        grid_ratio = st.slider("网格比例", 0.05, 0.5, float(ConfigManager.get_safe('grid_ratio')), 0.05)
+
     run_ai = st.button("🧠 智能分析")
-    
+
     st.markdown("---")
-    
-    # 自选股管理
-    st.subheader("⭐ 自选股")
+
+    # 自选股管理（使用 Expander 折叠）
+    with st.expander("⭐ 自选股管理", expanded=False):
     
     # 数据刷新功能
-    col_refresh, col_auto = st.columns([1, 1])
-    with col_refresh:
-        if st.button("🔄 刷新数据"):
-            SessionStateManager.clear_cache()
-            st.success("✅ 数据已刷新")
-            st.rerun()
+        with st.expander("🔄 数据管理"):
+            col_refresh, col_auto = st.columns([1, 1])
+            with col_refresh:
+                if st.button("🔄 刷新数据"):
+                    SessionStateManager.clear_cache()
+                    st.success("✅ 数据已刷新")
+                    st.rerun()
     
-    with col_auto:
-        if st.button("🧹 清理缓存"):
-            SessionStateManager.clear_cache()
-            st.success("✅ 缓存已清理")
-            st.rerun()
+            with col_auto:
+                if st.button("🧹 清理缓存"):
+                    SessionStateManager.clear_cache()
+                    st.success("✅ 缓存已清理")
+                    st.rerun()
     
-    st.markdown("---")
+            st.markdown("---")
     
-    # 自动刷新
-    auto_refresh = st.checkbox("自动刷新（每5分钟）", value=st.session_state.get('auto_refresh', False))
-    st.session_state.auto_refresh = auto_refresh
-    if auto_refresh and AutoRefreshManager.should_refresh():
-        SessionStateManager.clear_cache()
-        AutoRefreshManager.mark_refreshed()
-        st.info("⏱️ 自动刷新中...")
-        st.rerun()
+            # 自动刷新
+            auto_refresh = st.checkbox("自动刷新（每5分钟）", value=st.session_state.get('auto_refresh', False))
+            st.session_state.auto_refresh = auto_refresh
+            if auto_refresh and AutoRefreshManager.should_refresh():
+                SessionStateManager.clear_cache()
+                AutoRefreshManager.mark_refreshed()
+                st.info("⏱️ 自动刷新中...")
+                st.rerun()
     
-    st.markdown("---")
-    
-    if watchlist:
-        st.write("已关注的股票：")
+        if watchlist:        st.write("已关注的股票：")
         
         # 批量选择
         selected_stocks = st.multiselect("选择要删除的股票", watchlist, key="batch_select")
