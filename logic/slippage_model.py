@@ -1,164 +1,413 @@
 """
-现实滑点模型 - A股真实滑点模拟
+滑点与冲击成本优化模型
+
+功能：
+- 基于市场微观结构的滑点建模
+- 订单簿动态模拟
+- 冲击成本预测与优化
 """
 
 import numpy as np
 import pandas as pd
-from typing import Tuple
-import logging
+from typing import Dict, List, Tuple, Optional
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+import math
 
-logger = logging.getLogger(__name__)
+@dataclass
+class MarketDepth:
+    """市场深度数据"""
+    bid_prices: List[float]      # 买价
+    bid_volumes: List[int]       # 买量
+    ask_prices: List[float]      # 卖价
+    ask_volumes: List[int]       # 卖量
+    timestamp: datetime
 
+@dataclass
+class ExecutionCost:
+    """执行成本分析"""
+    slippage: float              # 滑点
+    impact_cost: float           # 冲击成本
+    total_cost: float            # 总成本
+    price_impact: float          # 价格影响
+    volume_weighted_cost: float  # 成交量加权成本
 
-class RealisticSlippage:
-    """
-    A 股真实滑点模型
+class SlippageModel:
+    """滑点模型"""
     
-    包含三部份成本:
-    1. 买卖差价 (bid-ask spread) - 最小，最好估算
-    2. 成交量冲击 (market impact)
-    3. 时间成本 (execution delay)
-    """
+    def __init__(self):
+        self.base_spread_factor = 0.0005  # 基础价差因子
+        self.volume_impact_factor = 0.0001  # 成交量影响因子
+        self.order_book_memory = []  # 订单簿历史
+        self.max_memory = 100  # 最大历史记录数
     
-    @staticmethod
-    def estimate_slippage(
-        price: float,
-        volume: float,
-        order_size: float,
-        order_type: str = 'market'
-    ) -> Tuple[float, dict]:
+    def calculate_market_slippage(self, order_quantity: int, side: str, market_depth: MarketDepth) -> float:
         """
-        估算实际滑点
+        基于订单簿的滑点计算
         
         Args:
-            price: 当前价格
-            volume: 当前成交量 (手)
-            order_size: 委托数量 (手)
-            order_type: 'market' 或 'limit'
-        
+            order_quantity: 订单数量
+            side: 订单方向 ('buy' or 'sell')
+            market_depth: 市场深度数据
+            
         Returns:
-            (总滑点百分比, 详细分析字典)
+            滑点（百分比）
         """
+        remaining_quantity = order_quantity
+        total_cost = 0
+        avg_price = 0
         
-        # 1. 买卖差价 (Bid-Ask Spread)
-        # A股 T0 时段 (9:30-11:30) 最小差价 1 个 tick
-        # 价格越高 tick 越大
-        if price < 10:
-            tick = 0.01
-        elif price < 100:
-            tick = 0.01
+        if side == 'buy':
+            # 买单需要吃掉卖盘
+            for price, volume in zip(market_depth.ask_prices, market_depth.ask_volumes):
+                if remaining_quantity <= 0:
+                    break
+                    
+                fill_volume = min(remaining_quantity, volume)
+                total_cost += fill_volume * price
+                remaining_quantity -= fill_volume
+        
+        else:  # sell
+            # 卖单需要吃掉买盘
+            for price, volume in zip(market_depth.bid_prices, market_depth.bid_volumes):
+                if remaining_quantity <= 0:
+                    break
+                    
+                fill_volume = min(remaining_quantity, volume)
+                total_cost += fill_volume * price
+                remaining_quantity -= fill_volume
+        
+        if order_quantity > 0:
+            avg_fill_price = total_cost / order_quantity
+            if side == 'buy':
+                reference_price = market_depth.ask_prices[0]  # 使用最优卖价作为参考
+            else:
+                reference_price = market_depth.bid_prices[0]  # 使用最优买价作为参考
+            
+            slippage = (avg_fill_price - reference_price) / reference_price
+            if side == 'sell':
+                slippage = -slippage  # 卖单的滑点方向相反
+                
+            return slippage
         else:
-            tick = 0.1
+            return 0.0
+    
+    def estimate_impact_cost(self, order_size: float, daily_volume: float, volatility: float) -> float:
+        """
+        估计冲击成本
         
-        spread_slippage = tick / price  # 买卖差价成本
+        Args:
+            order_size: 订单规模
+            daily_volume: 日均成交量
+            volatility: 市场波动率
+            
+        Returns:
+            冲击成本（百分比）
+        """
+        if daily_volume == 0:
+            return 1.0  # 如果没有成交量，冲击成本极高
         
-        # 2. 成交量冲击 (Market Impact)
-        # 委托量占当日成交量的比例越大，冲击越大
-        daily_volume = volume * 240  # 一天大约 240 分钟
-        order_impact_ratio = order_size / (daily_volume + 1e-6)
+        # 订单规模占比
+        volume_ratio = order_size / daily_volume
         
-        # 平方根模型: 冲击成本 ~ sqrt(委托量 / 日成交量)
-        # 例如: 5% 的日成交量 → 冲击约 0.7bps
-        market_impact = 0.001 * np.sqrt(order_impact_ratio)
+        # 使用Almgren-Chriss模型的简化版本
+        # 冲击成本 = gamma * sigma * (order_size / daily_volume)^beta
+        gamma = 0.1  # 市场影响系数
+        beta = 0.5   # 非线性影响指数
         
-        # 3. 时间成本 (Execution Delay)
-        # 市价单通常在 100ms 内成交
-        # 大单可能需要 1-5 秒
-        execution_time = min(1 + order_size / 1000, 5)  # 秒
+        impact_cost = gamma * volatility * (volume_ratio ** beta)
         
-        # 基于价格波动估算时间成本
-        # 假设日波动率为 2%，一分钟波动约为 0.02% / 240 ≈ 0.008%
-        daily_volatility = 0.02  # A股典型日波动
-        time_cost = daily_volatility / 240 * execution_time / 100
+        # 添加流动性影响
+        liquidity_factor = max(0.1, 1.0 - volume_ratio)  # 流动性越差影响越大
+        impact_cost = impact_cost / liquidity_factor
         
-        # 总滑点
-        total_slippage = spread_slippage + market_impact + time_cost
+        return min(impact_cost, 0.1)  # 限制最大冲击成本为10%
+    
+    def optimize_execution_strategy(self, 
+                                  total_quantity: int, 
+                                  side: str, 
+                                  market_depth: MarketDepth,
+                                  execution_time_minutes: int,
+                                  daily_volume: float,
+                                  volatility: float) -> Tuple[List[Tuple[int, float]], ExecutionCost]:
+        """
+        优化执行策略
         
-        # 详细分析
-        breakdown = {
-            'spread_slippage': spread_slippage,
-            'market_impact': market_impact,
-            'time_cost': time_cost,
-            'spread_bps': spread_slippage * 10000,
-            'impact_bps': market_impact * 10000,
-            'time_bps': time_cost * 10000,
-            'total_bps': total_slippage * 10000,
-        }
-        
-        logger.info(
-            f"滑点估算 | "
-            f"价格:{price:.2f} | "
-            f"买卖差:{spread_slippage*10000:.1f}bps | "
-            f"冲击:{market_impact*10000:.1f}bps | "
-            f"时间:{time_cost*10000:.1f}bps | "
-            f"总计:{total_slippage*10000:.1f}bps"
+        Args:
+            total_quantity: 总订单量
+            side: 订单方向
+            market_depth: 市场深度
+            execution_time_minutes: 执行时间（分钟）
+            daily_volume: 日均成交量
+            volatility: 波动率
+            
+        Returns:
+            (执行计划列表(数量,时间), 执行成本)
+        """
+        # 计算最优分批大小
+        optimal_batch_size = self._calculate_optimal_batch_size(
+            total_quantity, daily_volume, volatility
         )
         
-        return total_slippage, breakdown
+        # 生成执行计划
+        remaining_quantity = total_quantity
+        execution_plan = []
+        time_intervals = execution_time_minutes
+        
+        while remaining_quantity > 0:
+            batch_size = min(optimal_batch_size, remaining_quantity)
+            execution_plan.append((batch_size, 1))  # 每批次执行1分钟
+            remaining_quantity -= batch_size
+        
+        # 计算预期执行成本
+        estimated_cost = self.estimate_execution_cost(
+            execution_plan, market_depth, daily_volume, volatility
+        )
+        
+        return execution_plan, estimated_cost
+    
+    def _calculate_optimal_batch_size(self, total_quantity: int, daily_volume: float, volatility: float) -> int:
+        """计算最优批次大小"""
+        # 基于总订单规模和日成交量的比例
+        volume_ratio = total_quantity / daily_volume if daily_volume > 0 else 0.1
+        base_batch = max(100, int(total_quantity * 0.1))  # 最小100股，最大10%
+        
+        # 考虑波动率调整
+        volatility_factor = max(0.5, min(2.0, 1.0 + volatility))
+        optimal_size = int(base_batch / volatility_factor)
+        
+        return max(100, min(optimal_size, total_quantity))
+    
+    def estimate_execution_cost(self, 
+                              execution_plan: List[Tuple[int, float]], 
+                              market_depth: MarketDepth,
+                              daily_volume: float,
+                              volatility: float) -> ExecutionCost:
+        """估计执行成本"""
+        total_slippage = 0
+        total_impact_cost = 0
+        total_volume = sum(batch[0] for batch in execution_plan)
+        
+        for batch_quantity, _ in execution_plan:
+            # 计算滑点
+            batch_slippage = self.calculate_market_slippage(batch_quantity, 'buy', market_depth)
+            total_slippage += abs(batch_slippage) * (batch_quantity / total_volume)
+            
+            # 计算冲击成本
+            order_value = batch_quantity * market_depth.ask_prices[0]  # 使用当前价格估算
+            batch_impact = self.estimate_impact_cost(order_value, daily_volume, volatility)
+            total_impact_cost += batch_impact * (batch_quantity / total_volume)
+        
+        total_cost = total_slippage + total_impact_cost
+        price_impact = total_impact_cost  # 价格影响主要由冲击成本造成
+        
+        # 计算成交量加权成本
+        volume_weighted_cost = total_cost
+        
+        return ExecutionCost(
+            slippage=total_slippage,
+            impact_cost=total_impact_cost,
+            total_cost=total_cost,
+            price_impact=price_impact,
+            volume_weighted_cost=volume_weighted_cost
+        )
 
+class AdvancedSlippagePredictor:
+    """高级滑点预测器"""
+    
+    def __init__(self):
+        self.historical_slippage = []
+        self.max_history = 1000
+    
+    def predict_slippage(self, 
+                        order_size: float, 
+                        market_conditions: Dict[str, float],
+                        time_of_day: float) -> Tuple[float, float]:  # (expected_slippage, confidence)
+        """
+        预测滑点
+        
+        Args:
+            order_size: 订单规模
+            market_conditions: 市场条件字典
+            time_of_day: 一天中的时间 (0.0-1.0)
+            
+        Returns:
+            (预期滑点, 置信度)
+        """
+        # 基于历史数据的预测
+        historical_avg = np.mean([s[0] for s in self.historical_slippage[-50:]]) if self.historical_slippage else 0.001
+        
+        # 考虑订单规模影响
+        size_factor = math.log10(max(1, order_size / 10000)) * 0.001
+        
+        # 考虑市场波动率
+        vol_factor = market_conditions.get('volatility', 0.02) * 0.1
+        
+        # 考虑时间因素（开盘和收盘时滑点通常更大）
+        time_factor = abs(0.5 - time_of_day) * 0.0005  # 中午时段滑点较小
+        
+        predicted_slippage = historical_avg + size_factor + vol_factor + time_factor
+        
+        # 计算置信度（基于历史数据量）
+        confidence = min(1.0, len(self.historical_slippage) / 50.0)
+        
+        return predicted_slippage, confidence
+    
+    def update_historical_data(self, actual_slippage: float, order_data: Dict):
+        """更新历史数据"""
+        self.historical_slippage.append((actual_slippage, order_data))
+        if len(self.historical_slippage) > self.max_history:
+            self.historical_slippage.pop(0)
 
-class DynamicSlippage:
-    """
-    A股特殊滑点估算
+class MarketImpactSimulator:
+    """市场冲击模拟器"""
     
-    A股需要 T+1 第二天才能卖出
-    """
+    def __init__(self):
+        self.order_book_state = None
     
-    @staticmethod
-    def calculate_st_slippage(symbol: str, target_price: float) -> float:
+    def simulate_order_execution(self, 
+                               order_quantity: int, 
+                               side: str, 
+                               initial_order_book: MarketDepth,
+                               order_flow_intensity: float = 1.0) -> Tuple[MarketDepth, float]:
         """
-        计算 ST 股票滑点
+        模拟订单执行对订单簿的影响
         
         Args:
-            symbol: 股票代码
-            target_price: 目标价格
-        
+            order_quantity: 订单数量
+            side: 订单方向
+            initial_order_book: 初始订单簿状态
+            order_flow_intensity: 订单流强度
+            
         Returns:
-            滑点比例
+            (更新后的订单簿, 实际滑点)
         """
-        # *ST 股票 第个涨停和跌停都是 5% (特殊)
-        if symbol.startswith('*ST'):
-            return 0.05  # 涨停或跌停
+        # 复制订单簿状态
+        new_order_book = MarketDepth(
+            bid_prices=initial_order_book.bid_prices.copy(),
+            bid_volumes=initial_order_book.bid_volumes.copy(),
+            ask_prices=initial_order_book.ask_prices.copy(),
+            ask_volumes=initial_order_book.ask_volumes.copy(),
+            timestamp=datetime.now()
+        )
         
-        # ST 股票
-        if symbol.startswith('ST'):
-            return 0.05
+        remaining_quantity = order_quantity
+        total_cost = 0
+        executed_at_prices = []
         
-        # 一般股票
-        return 0.10  # 涨停或跌停
-    
-    @staticmethod
-    def calculate_limit_up_slippage(symbol: str) -> float:
-        """
-        计算涨停板滑点
+        if side == 'buy':
+            # 执行买单，消耗卖盘
+            level_idx = 0
+            while remaining_quantity > 0 and level_idx < len(new_order_book.ask_volumes):
+                available_volume = new_order_book.ask_volumes[level_idx]
+                price = new_order_book.ask_prices[level_idx]
+                
+                if available_volume >= remaining_quantity:
+                    # 当前档位可以完全满足订单
+                    new_order_book.ask_volumes[level_idx] -= remaining_quantity
+                    total_cost += remaining_quantity * price
+                    executed_at_prices.extend([price] * remaining_quantity)
+                    remaining_quantity = 0
+                else:
+                    # 部分满足，进入下一档
+                    total_cost += available_volume * price
+                    executed_at_prices.extend([price] * available_volume)
+                    remaining_quantity -= available_volume
+                    level_idx += 1
+            
+            # 如果还有剩余订单量，可能需要更新订单簿
+            if remaining_quantity > 0:
+                # 这里简化处理，实际上可能需要添加新的订单到买盘
+                pass
+            
+        else:  # sell
+            # 执行卖单，消耗买盘
+            level_idx = 0
+            while remaining_quantity > 0 and level_idx < len(new_order_book.bid_volumes):
+                available_volume = new_order_book.bid_volumes[level_idx]
+                price = new_order_book.bid_prices[level_idx]
+                
+                if available_volume >= remaining_quantity:
+                    new_order_book.bid_volumes[level_idx] -= remaining_quantity
+                    total_cost += remaining_quantity * price
+                    executed_at_prices.extend([price] * remaining_quantity)
+                    remaining_quantity = 0
+                else:
+                    total_cost += available_volume * price
+                    executed_at_prices.extend([price] * available_volume)
+                    remaining_quantity -= available_volume
+                    level_idx += 1
         
-        Args:
-            symbol: 股票代码
-        
-        Returns:
-            滑点比例
-        """
-        if symbol.startswith('*ST'):
-            return 0.05  # *ST 涨停 5%
-        elif symbol.startswith('ST'):
-            return 0.05  # ST 涨停 5%
+        # 计算平均成交价格和滑点
+        if order_quantity > 0 and executed_at_prices:
+            avg_execution_price = np.mean(executed_at_prices)
+            if side == 'buy':
+                reference_price = initial_order_book.ask_prices[0]
+            else:
+                reference_price = initial_order_book.bid_prices[0]
+            
+            slippage = (avg_execution_price - reference_price) / reference_price
+            if side == 'sell':
+                slippage = -slippage
+                
+            return new_order_book, slippage
         else:
-            return 0.10  # 一般股票涨停 10%
+            return new_order_book, 0.0
+
+# 使用示例
+def demo_slippage_model():
+    """演示滑点模型使用"""
+    # 创建滑点模型
+    slippage_model = SlippageModel()
     
-    @staticmethod
-    def calculate_limit_down_slippage(symbol: str) -> float:
-        """
-        计算跌停板滑点
-        
-        Args:
-            symbol: 股票代码
-        
-        Returns:
-            滑点比例
-        """
-        if symbol.startswith('*ST'):
-            return 0.05  # *ST 跌停 5%
-        elif symbol.startswith('ST'):
-            return 0.05  # ST 跌停 5%
-        else:
-            return 0.10  # 一般股票跌停 10%
+    # 模拟市场深度数据
+    market_depth = MarketDepth(
+        bid_prices=[29.95, 29.94, 29.93],
+        bid_volumes=[1000, 1500, 2000],
+        ask_prices=[29.96, 29.97, 29.98],
+        ask_volumes=[800, 1200, 1600],
+        timestamp=datetime.now()
+    )
+    
+    # 计算滑点
+    slippage = slippage_model.calculate_market_slippage(2500, 'buy', market_depth)
+    print(f"买单滑点: {slippage:.4f}")
+    
+    # 估计冲击成本
+    impact_cost = slippage_model.estimate_impact_cost(1000000, 50000000, 0.02)
+    print(f"冲击成本: {impact_cost:.4f}")
+    
+    # 优化执行策略
+    execution_plan, cost = slippage_model.optimize_execution_strategy(
+        total_quantity=5000,
+        side='buy',
+        market_depth=market_depth,
+        execution_time_minutes=30,
+        daily_volume=50000000,
+        volatility=0.02
+    )
+    
+    print(f"执行计划: {execution_plan}")
+    print(f"执行成本: 滑点={cost.slippage:.4f}, 冲击={cost.impact_cost:.4f}, 总成本={cost.total_cost:.4f}")
+    
+    # 高级滑点预测器
+    predictor = AdvancedSlippagePredictor()
+    predicted_slippage, confidence = predictor.predict_slippage(
+        order_size=1000000,
+        market_conditions={'volatility': 0.025, 'spread': 0.01},
+        time_of_day=0.3  # 上午
+    )
+    print(f"预测滑点: {predicted_slippage:.4f}, 置信度: {confidence:.2f}")
+    
+    # 市场冲击模拟
+    simulator = MarketImpactSimulator()
+    new_book, actual_slippage = simulator.simulate_order_execution(
+        order_quantity=3000,
+        side='buy',
+        initial_order_book=market_depth
+    )
+    print(f"模拟执行滑点: {actual_slippage:.4f}")
+    print(f"执行后卖盘: {list(zip(new_book.ask_prices[:3], new_book.ask_volumes[:3]))}")
+
+if __name__ == "__main__":
+    demo_slippage_model()

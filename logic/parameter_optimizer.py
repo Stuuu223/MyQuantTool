@@ -1,297 +1,571 @@
-"""
-参数网格搜索优化模块
-"""
-
-import pandas as pd
 import numpy as np
-from typing import Dict, List, Tuple, Any
-import logging
+import pandas as pd
+from typing import Dict, List, Any, Callable, Tuple
 from itertools import product
+import random
+from dataclasses import dataclass
+import warnings
+warnings.filterwarnings('ignore')
 
-logger = logging.getLogger(__name__)
+try:
+    from scipy.optimize import minimize, differential_evolution
+    SCIPY_AVAILABLE = True
+except ImportError:
+    SCIPY_AVAILABLE = False
+    print("警告: 未安装scipy，部分优化功能将受限")
+
+try:
+    import optuna
+    OPTUNA_AVAILABLE = True
+except ImportError:
+    OPTUNA_AVAILABLE = False
+    print("警告: 未安装optuna，高级优化功能将受限")
 
 
-class ParameterGridSearch:
-    """
-    参数网格搜索优化器
+@dataclass
+class OptimizationResult:
+    """优化结果数据类"""
+    best_params: Dict[str, Any]
+    best_value: float
+    optimization_trace: List[Tuple[Dict[str, Any], float]]  # (参数, 目标值) 的历史记录
+    optimization_method: str
+    execution_time: float
+
+
+class ParameterOptimizer:
+    """参数优化器"""
     
-    用于自动寻找最优策略参数
-    """
+    def __init__(self):
+        self.optimization_history = []
     
-    def __init__(self, backtest_engine, metric: str = 'sharpe_ratio'):
+    def grid_search(self, 
+                   objective_function: Callable[[Dict[str, Any]], float], 
+                   param_grid: Dict[str, List[Any]], 
+                   maximize: bool = True) -> OptimizationResult:
         """
-        初始化参数网格搜索器
+        网格搜索优化
         
         Args:
-            backtest_engine: 回测引擎实例
-            metric: 优化目标指标 (sharpe_ratio, annual_return, max_drawdown, etc.)
-        """
-        self.engine = backtest_engine
-        self.metric = metric
-        self.results = []
-    
-    def search(
-        self,
-        symbol: str,
-        df: pd.DataFrame,
-        param_grid: Dict[str, List[Any]],
-        signal_type: str = 'MA'
-    ) -> Dict[str, Any]:
-        """
-        执行网格搜索
-        
-        Args:
-            symbol: 股票代码
-            df: K线数据
-            param_grid: 参数网格字典
-            signal_type: 信号类型
+            objective_function: 目标函数，接受参数字典返回数值
+            param_grid: 参数网格，格式为 {param_name: [possible_values]}
+            maximize: 是否最大化目标函数
         
         Returns:
-            最优参数和结果
+            OptimizationResult: 优化结果
         """
-        # 生成所有参数组合
+        import time
+        start_time = time.time()
+        
+        # 生成参数组合
         param_names = list(param_grid.keys())
         param_values = list(param_grid.values())
-        all_combinations = list(product(*param_values))
         
-        logger.info(f"开始网格搜索: {len(all_combinations)} 个参数组合")
-        
+        combinations = list(product(*param_values))
         best_params = None
-        best_score = -np.inf if self.metric != 'max_drawdown' else np.inf
-        best_metrics = None
+        best_value = float('-inf') if maximize else float('inf')
+        optimization_trace = []
         
-        for i, combination in enumerate(all_combinations):
-            # 构建参数字典
-            params = dict(zip(param_names, combination))
+        print(f"开始网格搜索，共 {len(combinations)} 种参数组合")
+        
+        for i, values in enumerate(combinations):
+            params = dict(zip(param_names, values))
             
             try:
-                # 生成信号
-                signals = self._generate_signals(df, params, signal_type)
+                value = objective_function(params)
                 
-                # 运行回测
-                metrics = self.engine.backtest(symbol, df, signals, signal_type)
+                if maximize and value > best_value:
+                    best_value = value
+                    best_params = params.copy()
+                elif not maximize and value < best_value:
+                    best_value = value
+                    best_params = params.copy()
                 
-                # 获取优化指标值
-                score = getattr(metrics, self.metric)
+                optimization_trace.append((params.copy(), value))
                 
-                # 记录结果
-                result = {
-                    'params': params,
-                    'sharpe_ratio': metrics.sharpe_ratio,
-                    'annual_return': metrics.annual_return,
-                    'max_drawdown': metrics.max_drawdown,
-                    'win_rate': metrics.win_rate,
-                    'total_trades': metrics.total_trades
-                }
-                self.results.append(result)
-                
-                # 更新最优参数
-                is_better = (self.metric == 'max_drawdown' and score < best_score) or \
-                           (self.metric != 'max_drawdown' and score > best_score)
-                
-                if is_better:
-                    best_score = score
-                    best_params = params
-                    best_metrics = metrics
-                
-                logger.info(f"[{i+1}/{len(all_combinations)}] {params} -> {self.metric}: {score:.4f}")
-            
+                if (i + 1) % 10 == 0:
+                    print(f"已完成 {i + 1}/{len(combinations)} 种组合")
+                    
             except Exception as e:
-                logger.error(f"参数组合 {params} 回测失败: {e}")
+                print(f"参数组合 {params} 评估失败: {e}")
                 continue
         
-        logger.info(f"网格搜索完成! 最优参数: {best_params}, {self.metric}: {best_score:.4f}")
+        execution_time = time.time() - start_time
         
-        return {
-            'best_params': best_params,
-            'best_metrics': best_metrics._asdict() if best_metrics else None,
-            'all_results': self.results
-        }
+        return OptimizationResult(
+            best_params=best_params,
+            best_value=best_value,
+            optimization_trace=optimization_trace,
+            optimization_method='Grid Search',
+            execution_time=execution_time
+        )
     
-    def _generate_signals(
-        self,
-        df: pd.DataFrame,
-        params: Dict[str, Any],
-        signal_type: str
-    ) -> pd.Series:
+    def random_search(self, 
+                     objective_function: Callable[[Dict[str, Any]], float], 
+                     param_space: Dict[str, Tuple[Any, Any, str]],  # (min, max, type)
+                     n_trials: int = 100,
+                     maximize: bool = True) -> OptimizationResult:
         """
-        根据参数生成信号
+        随机搜索优化
         
         Args:
-            df: K线数据
-            params: 参数字典
-            signal_type: 信号类型
+            objective_function: 目标函数
+            param_space: 参数空间，格式为 {param_name: (min_val, max_val, type)}
+            n_trials: 试验次数
+            maximize: 是否最大化目标函数
         
         Returns:
-            交易信号
+            OptimizationResult: 优化结果
         """
-        if signal_type == 'MA':
-            fast_window = params.get('fast_window', 5)
-            slow_window = params.get('slow_window', 20)
-            
-            sma_fast = df['close'].rolling(window=fast_window).mean()
-            sma_slow = df['close'].rolling(window=slow_window).mean()
-            
-            signals = pd.Series(0, index=df.index)
-            signals[sma_fast > sma_slow] = 1
-            signals[sma_fast < sma_slow] = -1
-            
-            return signals
+        import time
+        start_time = time.time()
         
-        elif signal_type == 'MACD':
-            fast_period = params.get('fast_period', 12)
-            slow_period = params.get('slow_period', 26)
-            signal_period = params.get('signal_period', 9)
-            
-            # MACD 计算
-            ema_fast = df['close'].ewm(span=fast_period).mean()
-            ema_slow = df['close'].ewm(span=slow_period).mean()
-            macd = ema_fast - ema_slow
-            signal = macd.ewm(span=signal_period).mean()
-            
-            signals = pd.Series(0, index=df.index)
-            signals[macd > signal] = 1
-            signals[macd < signal] = -1
-            
-            return signals
-        
-        elif signal_type == 'RSI':
-            period = params.get('period', 14)
-            overbought = params.get('overbought', 70)
-            oversold = params.get('oversold', 30)
-            
-            # RSI 计算
-            delta = df['close'].diff()
-            gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-            rs = gain / loss
-            rsi = 100 - (100 / (1 + rs))
-            
-            signals = pd.Series(0, index=df.index)
-            signals[rsi < oversold] = 1
-            signals[rsi > overbought] = -1
-            
-            return signals
-        
-        else:
-            raise ValueError(f"不支持的信号类型: {signal_type}")
-    
-    def get_results_dataframe(self) -> pd.DataFrame:
-        """
-        获取搜索结果DataFrame
-        
-        Returns:
-            结果表格
-        """
-        if not self.results:
-            return pd.DataFrame()
-        
-        df = pd.DataFrame(self.results)
-        
-        # 展开参数列
-        params_df = pd.DataFrame(df['params'].tolist())
-        result_df = pd.concat([params_df, df.drop('params', axis=1)], axis=1)
-        
-        # 按优化指标排序
-        ascending = self.metric == 'max_drawdown'
-        result_df = result_df.sort_values(by=self.metric, ascending=ascending)
-        
-        return result_df
-    
-    def get_top_n(self, n: int = 5) -> List[Dict]:
-        """
-        获取前N个最优参数组合
-        
-        Args:
-            n: 返回数量
-        
-        Returns:
-            前N个结果
-        """
-        df = self.get_results_dataframe()
-        return df.head(n).to_dict('records')
-
-
-class BayesianOptimization:
-    """
-    贝叶斯优化 (简化版)
-    
-    用于更高效的参数搜索
-    """
-    
-    def __init__(self, backtest_engine, n_iter: int = 20):
-        """
-        初始化贝叶斯优化器
-        
-        Args:
-            backtest_engine: 回测引擎
-            n_iter: 迭代次数
-        """
-        self.engine = backtest_engine
-        self.n_iter = n_iter
-        self.history = []
-    
-    def optimize(
-        self,
-        symbol: str,
-        df: pd.DataFrame,
-        param_bounds: Dict[str, Tuple[int, int]],
-        signal_type: str = 'MA'
-    ) -> Dict[str, Any]:
-        """
-        执行贝叶斯优化
-        
-        Args:
-            symbol: 股票代码
-            df: K线数据
-            param_bounds: 参数边界
-            signal_type: 信号类型
-        
-        Returns:
-            最优参数
-        """
-        # 简化版: 随机搜索 + 局部优化
         best_params = None
-        best_score = -np.inf
+        best_value = float('-inf') if maximize else float('inf')
+        optimization_trace = []
         
-        for i in range(self.n_iter):
-            # 随机采样
+        print(f"开始随机搜索，共 {n_trials} 次试验")
+        
+        for i in range(n_trials):
+            # 随机生成参数
             params = {}
-            for param_name, (min_val, max_val) in param_bounds.items():
-                params[param_name] = np.random.randint(min_val, max_val + 1)
+            for param_name, (min_val, max_val, param_type) in param_space.items():
+                if param_type == 'int':
+                    value = random.randint(min_val, max_val)
+                elif param_type == 'float':
+                    value = random.uniform(min_val, max_val)
+                elif param_type == 'choice':
+                    # 假设min_val是可选值列表
+                    value = random.choice(min_val)
+                else:
+                    raise ValueError(f"不支持的参数类型: {param_type}")
+                
+                params[param_name] = value
             
             try:
-                # 生成信号
-                signals = self._generate_signals(df, params, signal_type)
+                value = objective_function(params)
                 
-                # 运行回测
-                metrics = self.engine.backtest(symbol, df, signals, signal_type)
-                score = metrics.sharpe_ratio
+                if maximize and value > best_value:
+                    best_value = value
+                    best_params = params.copy()
+                elif not maximize and value < best_value:
+                    best_value = value
+                    best_params = params.copy()
                 
-                self.history.append({'params': params, 'score': score})
+                optimization_trace.append((params.copy(), value))
                 
-                if score > best_score:
-                    best_score = score
-                    best_params = params
-                
-                logger.info(f"[{i+1}/{self.n_iter}] {params} -> Sharpe: {score:.4f}")
-            
+                if (i + 1) % 20 == 0:
+                    print(f"已完成 {i + 1}/{n_trials} 次试验")
+                    
             except Exception as e:
-                logger.error(f"参数组合 {params} 回测失败: {e}")
+                print(f"参数组合 {params} 评估失败: {e}")
                 continue
         
-        return {
-            'best_params': best_params,
-            'best_score': best_score,
-            'history': self.history
-        }
+        execution_time = time.time() - start_time
+        
+        return OptimizationResult(
+            best_params=best_params,
+            best_value=best_value,
+            optimization_trace=optimization_trace,
+            optimization_method='Random Search',
+            execution_time=execution_time
+        )
     
-    def _generate_signals(
-        self,
-        df: pd.DataFrame,
-        params: Dict[str, Any],
-        signal_type: str
-    ) -> pd.Series:
-        """生成信号 (复用ParameterGridSearch的逻辑)"""
-        grid_search = ParameterGridSearch(self.engine)
-        return grid_search._generate_signals(df, params, signal_type)
+    def differential_evolution_optimization(self, 
+                                          objective_function: Callable[[Dict[str, Any]], float], 
+                                          param_space: Dict[str, Tuple[float, float]],  # (min, max)
+                                          maximize: bool = True,
+                                          popsize: int = 15,
+                                          max_iter: int = 1000) -> OptimizationResult:
+        """
+        差分进化优化（需要scipy）
+        
+        Args:
+            objective_function: 目标函数
+            param_space: 参数空间，格式为 {param_name: (min_val, max_val)}
+            maximize: 是否最大化目标函数
+            popsize: 种群大小
+            max_iter: 最大迭代次数
+            
+        Returns:
+            OptimizationResult: 优化结果
+        """
+        if not SCIPY_AVAILABLE:
+            raise ImportError("需要安装scipy以使用差分进化优化")
+        
+        import time
+        start_time = time.time()
+        
+        # 将参数空间转换为差分进化所需的格式
+        bounds = list(param_space.values())
+        param_names = list(param_space.keys())
+        
+        # 定义优化目标函数
+        def opt_func(params_array):
+            # 将数组参数转换为字典
+            params = {name: val for name, val in zip(param_names, params_array)}
+            
+            try:
+                value = objective_function(params)
+                # 最小化算法，如果是最大化则取负值
+                return -value if maximize else value
+            except Exception:
+                # 如果评估失败，返回一个较差的值
+                return float('inf') if not maximize else float('-inf')
+        
+        # 执行差分进化优化
+        result = differential_evolution(
+            opt_func,
+            bounds,
+            maxiter=max_iter,
+            popsize=popsize,
+            seed=42,
+            disp=True
+        )
+        
+        # 获取最优参数
+        best_params = {name: val for name, val in zip(param_names, result.x)}
+        
+        # 计算最优值
+        final_value = objective_function(best_params)
+        if maximize:
+            final_value = -result.fun  # 转换回原始最大化问题的值
+        
+        execution_time = time.time() - start_time
+        
+        return OptimizationResult(
+            best_params=best_params,
+            best_value=final_value,
+            optimization_trace=[(best_params, final_value)],  # 差分进化返回最终结果
+            optimization_method='Differential Evolution',
+            execution_time=execution_time
+        )
+    
+    def genetic_algorithm_optimization(self, 
+                                     objective_function: Callable[[Dict[str, Any]], float], 
+                                     param_space: Dict[str, Tuple[Any, Any, str]],  # (min, max, type)
+                                     population_size: int = 50,
+                                     generations: int = 100,
+                                     mutation_rate: float = 0.1,
+                                     crossover_rate: float = 0.8,
+                                     maximize: bool = True) -> OptimizationResult:
+        """
+        遗传算法优化
+        
+        Args:
+            objective_function: 目标函数
+            param_space: 参数空间
+            population_size: 种群大小
+            generations: 代数
+            mutation_rate: 变异率
+            crossover_rate: 交叉率
+            maximize: 是否最大化目标函数
+            
+        Returns:
+            OptimizationResult: 优化结果
+        """
+        import time
+        start_time = time.time()
+        
+        def random_individual():
+            """随机生成个体（参数组合）"""
+            individual = {}
+            for param_name, (min_val, max_val, param_type) in param_space.items():
+                if param_type == 'int':
+                    value = random.randint(min_val, max_val)
+                elif param_type == 'float':
+                    value = random.uniform(min_val, max_val)
+                else:
+                    raise ValueError(f"不支持的参数类型: {param_type}")
+                individual[param_name] = value
+            return individual
+        
+        def evaluate_fitness(individual):
+            """评估个体适应度"""
+            try:
+                value = objective_function(individual)
+                return value if maximize else -value  # 最大化问题直接返回，最小化问题取负值
+            except Exception:
+                return float('-inf') if maximize else float('-inf')
+        
+        def select_parent(population, fitnesses):
+            """选择父代（轮盘赌选择）"""
+            total_fitness = sum(fitnesses)
+            if total_fitness <= 0:
+                # 如果所有适应度都非正，随机选择
+                return random.choice(population)
+            
+            pick = random.uniform(0, total_fitness)
+            current = 0
+            for individual, fitness in zip(population, fitnesses):
+                current += fitness
+                if current >= pick:
+                    return individual
+            return population[-1]  # 保险起见返回最后一个
+        
+        def crossover(parent1, parent2):
+            """交叉操作"""
+            if random.random() > crossover_rate:
+                return parent1.copy()
+            
+            child = {}
+            for param_name in param_space.keys():
+                if random.random() < 0.5:
+                    child[param_name] = parent1[param_name]
+                else:
+                    child[param_name] = parent2[param_name]
+            return child
+        
+        def mutate(individual):
+            """变异操作"""
+            mutated = individual.copy()
+            for param_name, (min_val, max_val, param_type) in param_space.items():
+                if random.random() < mutation_rate:
+                    if param_type == 'int':
+                        # 小幅度变异
+                        current_val = mutated[param_name]
+                        # 在一定范围内随机变化
+                        new_val = current_val + random.randint(-abs(max_val-min_val)//10, abs(max_val-min_val)//10)
+                        new_val = max(min_val, min(new_val, max_val))
+                        mutated[param_name] = new_val
+                    elif param_type == 'float':
+                        current_val = mutated[param_name]
+                        # 按比例变异
+                        range_val = max_val - min_val
+                        mutation_delta = random.uniform(-0.1 * range_val, 0.1 * range_val)
+                        new_val = current_val + mutation_delta
+                        new_val = max(min_val, min(new_val, max_val))
+                        mutated[param_name] = new_val
+            return mutated
+        
+        # 初始化种群
+        population = [random_individual() for _ in range(population_size)]
+        optimization_trace = []
+        
+        print(f"开始遗传算法优化，种群大小: {population_size}，代数: {generations}")
+        
+        for generation in range(generations):
+            # 计算适应度
+            fitnesses = [evaluate_fitness(individual) for individual in population]
+            
+            # 记录当前最优个体
+            best_idx = np.argmax(fitnesses) if maximize else np.argmin(fitnesses) if not maximize else np.argmax(fitnesses)
+            best_individual = population[best_idx]
+            best_fitness = fitnesses[best_idx]
+            
+            optimization_trace.append((best_individual.copy(), best_fitness if maximize else -best_fitness))
+            
+            if generation % 20 == 0:
+                print(f"第 {generation} 代，当前最优适应度: {best_fitness}")
+            
+            # 生成新种群
+            new_population = []
+            
+            # 精英保留
+            elite_count = max(1, population_size // 10)
+            elite_indices = np.argsort(fitnesses)[-elite_count:] if maximize else np.argsort(fitnesses)[:elite_count]
+            for idx in elite_indices:
+                new_population.append(population[idx].copy())
+            
+            # 通过选择、交叉、变异生成剩余个体
+            while len(new_population) < population_size:
+                parent1 = select_parent(population, fitnesses)
+                parent2 = select_parent(population, fitnesses)
+                child = crossover(parent1, parent2)
+                child = mutate(child)
+                new_population.append(child)
+            
+            population = new_population
+        
+        # 最终评估整个种群，找到最优个体
+        final_fitnesses = [evaluate_fitness(individual) for individual in population]
+        final_best_idx = np.argmax(final_fitnesses) if maximize else np.argmin(final_fitnesses) if not maximize else np.argmax(final_fitnesses)
+        best_params = population[final_best_idx]
+        best_value = final_fitnesses[final_best_idx] if maximize else -final_fitnesses[final_best_idx]
+        
+        execution_time = time.time() - start_time
+        
+        return OptimizationResult(
+            best_params=best_params,
+            best_value=best_value,
+            optimization_trace=optimization_trace,
+            optimization_method='Genetic Algorithm',
+            execution_time=execution_time
+        )
+    
+    def bayesian_optimization(self, 
+                            objective_function: Callable[[Dict[str, Any]], float], 
+                            param_space: Dict[str, Tuple[float, float]],  # (min, max)
+                            n_trials: int = 100,
+                            maximize: bool = True) -> OptimizationResult:
+        """
+        贝叶斯优化（需要optuna）
+        
+        Args:
+            objective_function: 目标函数
+            param_space: 参数空间
+            n_trials: 试验次数
+            maximize: 是否最大化目标函数
+        
+        Returns:
+            OptimizationResult: 优化结果
+        """
+        if not OPTUNA_AVAILABLE:
+            raise ImportError("需要安装optuna以使用贝叶斯优化")
+        
+        import time
+        start_time = time.time()
+        
+        optimization_trace = []
+        
+        def optuna_objective(trial):
+            # 根据参数空间建议参数
+            params = {}
+            for param_name, (min_val, max_val) in param_space.items():
+                if isinstance(min_val, int) and isinstance(max_val, int):
+                    params[param_name] = trial.suggest_int(param_name, min_val, max_val)
+                else:
+                    params[param_name] = trial.suggest_float(param_name, float(min_val), float(max_val))
+            
+            try:
+                value = objective_function(params)
+                optimization_trace.append((params.copy(), value))
+                return value if maximize else -value  # Optuna 默认最小化
+            except Exception as e:
+                print(f"参数 {params} 评估失败: {e}")
+                return float('inf') if maximize else float('-inf')  # 返回一个差值
+        
+        # 创建优化研究
+        study = optuna.create_study(direction='maximize' if maximize else 'minimize')
+        study.optimize(optuna_objective, n_trials=n_trials)
+        
+        # 获取最佳参数和值
+        best_params = study.best_params
+        best_value = study.best_value
+        if not maximize:  # 如果原问题是最大化，Optuna最小化的是负值
+            best_value = -best_value
+        
+        execution_time = time.time() - start_time
+        
+        return OptimizationResult(
+            best_params=best_params,
+            best_value=best_value,
+            optimization_trace=optimization_trace,
+            optimization_method='Bayesian Optimization (Optuna)',
+            execution_time=execution_time
+        )
+
+
+class BacktestObjectiveFunction:
+    """用于回测的优化目标函数生成器"""
+    
+    def __init__(self, strategy_factory, backtest_engine, data, target_metric='sharpe_ratio'):
+        self.strategy_factory = strategy_factory
+        self.backtest_engine = backtest_engine
+        self.data = data
+        self.target_metric = target_metric
+    
+    def create_objective_function(self, template_id: str):
+        """创建目标函数"""
+        def objective(params: Dict[str, Any]) -> float:
+            try:
+                # 创建策略
+                strategy = self.strategy_factory.create_strategy_from_template(template_id, params)
+                
+                # 运行回测
+                result = self.backtest_engine.run_backtest(strategy, self.data)
+                
+                # 返回目标指标值
+                metrics = result.metrics
+                return metrics.get(self.target_metric, 0.0)
+            except Exception as e:
+                # 如果回测失败，返回一个较差的值
+                print(f"回测失败: {e}")
+                return float('-inf') if self.target_metric in ['sharpe_ratio', 'total_return', 'win_rate'] else float('inf')
+        
+        return objective
+
+
+# 使用示例
+def demo_parameter_optimization():
+    """演示参数优化"""
+    print("=== 参数优化演示 ===")
+    
+    # 创建优化器
+    optimizer = ParameterOptimizer()
+    
+    # 示例目标函数：简单的二次函数
+    def sample_objective(params):
+        x = params.get('x', 0)
+        y = params.get('y', 0)
+        # 最大化 -(x-3)^2 -(y-2)^2 + 10（最大值在x=3, y=2处）
+        return -(x-3)**2 -(y-2)**2 + 10
+    
+    # 网格搜索
+    print("\n1. 网格搜索:")
+    param_grid = {
+        'x': [1, 2, 3, 4, 5],
+        'y': [1, 2, 3, 4]
+    }
+    grid_result = optimizer.grid_search(sample_objective, param_grid, maximize=True)
+    print(f"最佳参数: {grid_result.best_params}")
+    print(f"最佳值: {grid_result.best_value:.4f}")
+    print(f"执行时间: {grid_result.execution_time:.4f}秒")
+    
+    # 随机搜索
+    print("\n2. 随机搜索:")
+    param_space = {
+        'x': (1, 5, 'float'),  # (min, max, type)
+        'y': (1, 5, 'float')
+    }
+    random_result = optimizer.random_search(sample_objective, param_space, n_trials=50, maximize=True)
+    print(f"最佳参数: {random_result.best_params}")
+    print(f"最佳值: {random_result.best_value:.4f}")
+    
+    # 遗传算法（如果scipy可用）
+    if SCIPY_AVAILABLE:
+        print("\n3. 差分进化优化:")
+        bounds = {
+            'x': (1, 5),
+            'y': (1, 5)
+        }
+        try:
+            de_result = optimizer.differential_evolution_optimization(
+                sample_objective, bounds, maximize=True, max_iter=100
+            )
+            print(f"最佳参数: {de_result.best_params}")
+            print(f"最佳值: {de_result.best_value:.4f}")
+        except Exception as e:
+            print(f"差分进化优化失败: {e}")
+    
+    # 遗传算法
+    print("\n4. 遗传算法优化:")
+    ga_param_space = {
+        'x': (1, 5, 'float'),
+        'y': (1, 5, 'float')
+    }
+    ga_result = optimizer.genetic_algorithm_optimization(
+        sample_objective, ga_param_space, 
+        population_size=30, generations=50, maximize=True
+    )
+    print(f"最佳参数: {ga_result.best_params}")
+    print(f"最佳值: {ga_result.best_value:.4f}")
+    
+    # 如果optuna可用，演示贝叶斯优化
+    if OPTUNA_AVAILABLE:
+        print("\n5. 贝叶斯优化:")
+        bayes_bounds = {
+            'x': (1.0, 5.0),
+            'y': (1.0, 5.0)
+        }
+        try:
+            bayes_result = optimizer.bayesian_optimization(
+                sample_objective, bayes_bounds, n_trials=50, maximize=True
+            )
+            print(f"最佳参数: {bayes_result.best_params}")
+            print(f"最佳值: {bayes_result.best_value:.4f}")
+        except Exception as e:
+            print(f"贝叶斯优化失败: {e}")
+
+
+if __name__ == "__main__":
+    demo_parameter_optimization()
