@@ -43,6 +43,7 @@ from .strategy_factory_tab import render_strategy_factory_tab
 from .portfolio_optimizer_tab import render_portfolio_optimizer_tab
 from .trading_execution_tab import render_trading_execution_tab
 from .market_sentiment_tab import render_market_sentiment_tab
+from .sector_strength_tab import render_sector_strength_tab
 
 # 导入交互式分析器（仅在需要时导入）
 try:
