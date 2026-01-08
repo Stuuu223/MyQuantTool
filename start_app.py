@@ -41,15 +41,15 @@ def check_dependencies():
             missing_optional.append(package)
     
     if missing_required:
-        print(f"❌ 缺少必需依赖: {', '.join(missing_required)}")
+        print(f"[ERROR] 缺少必需依赖: {', '.join(missing_required)}")
         print("请运行: pip install -r requirements.txt")
         return False
     
     if missing_optional:
-        print(f"⚠️  缺少可选依赖: {', '.join(missing_optional)}")
+        print(f"[WARNING] 缺少可选依赖: {', '.join(missing_optional)}")
         print("部分功能可能不可用")
     
-    print("✅ 依赖检查通过")
+    print("[SUCCESS] 依赖检查通过")
     return True
 
 
@@ -60,10 +60,10 @@ def check_database():
     db_path = 'data/stock_data.db'
     
     if not os.path.exists(db_path):
-        print(f"⚠️  数据库不存在: {db_path}")
+        print(f"[WARNING] 数据库不存在: {db_path}")
         print("首次运行时将自动创建数据库")
     else:
-        print(f"✅ 数据库存在: {db_path}")
+        print(f"[SUCCESS] 数据库存在: {db_path}")
     
     return True
 
@@ -75,10 +75,10 @@ def check_config():
     config_file = 'config.json'
     
     if not os.path.exists(config_file):
-        print(f"⚠️  配置文件不存在: {config_file}")
+        print(f"[WARNING] 配置文件不存在: {config_file}")
         print("将使用默认配置")
     else:
-        print(f"✅ 配置文件存在: {config_file}")
+        print(f"[SUCCESS] 配置文件存在: {config_file}")
     
     return True
 
@@ -101,7 +101,7 @@ def start_app():
     if not check_config():
         return False
     
-    print("\n✅ 所有检查通过，启动应用...\n")
+    print("\n[SUCCESS] 所有检查通过，启动应用...\n")
     
     # 启动Streamlit
     try:
@@ -109,7 +109,7 @@ def start_app():
     except KeyboardInterrupt:
         print("\n\n应用已停止")
     except Exception as e:
-        print(f"\n❌ 启动失败: {e}")
+        print(f"\n[ERROR] 启动失败: {e}")
         return False
     
     return True

@@ -293,7 +293,7 @@ class IntegrationBenchmark:
 def run_full_benchmark(adapter, output_file: str = 'benchmark_report.json') -> None:
     """运行完整基准测试"""
     print("\n" + "="*50)
-    print("📈 MyQuantTool 性能基准测试")
+    print("[PERFORMANCE] MyQuantTool 性能基准测试")
     print("="*50)
     
     results = {
@@ -305,7 +305,7 @@ def run_full_benchmark(adapter, output_file: str = 'benchmark_report.json') -> N
     }
     
     # 1. 缓存性能测试
-    print("\n1️⃣ 测试缓存性能...")
+    print("\n[1] 测试缓存性能...")
     cache_bench = CacheBenchmark(adapter)
     results['cache_performance'] = cache_bench.test_cache_hit_rate(iterations=50)
     
@@ -317,20 +317,20 @@ def run_full_benchmark(adapter, output_file: str = 'benchmark_report.json') -> N
         print(f"    - 加速比: {stats['speedup']:.1f}x")
     
     # 2. 故障转移性能测试
-    print("\n2️⃣ 测试多源降级...")
+    print("\n[2] 测试多源降级...")
     results['failover_performance'] = cache_bench.test_multi_source_failover()
     print(f"  一级数据源: {results['failover_performance']['primary_source']}")
     print(f"  批量性能: {results['failover_performance']['batch_performance']}")
     
     # 3. 完整流程集成测试
-    print("\n3️⃣ 测试完整流程...")
+    print("\n[3] 测试完整流程...")
     integration_bench = IntegrationBenchmark(adapter)
     results['integration_performance'] = integration_bench.test_full_dashboard_load()
     print(f"  平均加载时间: {results['integration_performance']['mean_ms']:.2f}ms")
     print(f"  最大加载时间: {results['integration_performance']['max_ms']:.2f}ms")
     
     # 4. 数据一致性测试
-    print("\n4️⃣ 测试数据一致性...")
+    print("\n[4] 测试数据一致性...")
     results['data_consistency'] = integration_bench.test_data_consistency()
     print(f"  一致性: {results['data_consistency']['consistent']}")
     
@@ -339,7 +339,7 @@ def run_full_benchmark(adapter, output_file: str = 'benchmark_report.json') -> N
         json.dump(results, f, indent=2, default=str)
     
     print("\n" + "="*50)
-    print(f✓ 基准测试完成！结果保存到: {output_file}")
+    print(f基准测试完成！结果保存到: {output_file}")
     print("="*50 + "\n")
     
     return results

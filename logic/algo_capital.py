@@ -711,8 +711,7 @@ class CapitalAnalyzer:
    - 获取记录: {total_records} 条营业部数据
    - 耗时: {elapsed:.1f}秒
    - 速度: {len(lhb_df)/elapsed:.2f} 股票/秒
-   - 目标: < 15秒 {'✅' if elapsed < 15 else '⚠️' if elapsed < 20 else '❌'}
-""")
+           - 目标: < 15秒 {'[SUCCESS]' if elapsed < 15 else '[WARNING]' if elapsed < 20 else '[ERROR]'}""")
             
             if not all_seats:
                 logger.error("[ERROR] 所有股票的营业部明细查询均失败")

@@ -218,7 +218,7 @@ class DataManager:
                 cache_data = self.realtime_cache[symbol]
                 cache_age = (datetime.now() - cache_data['timestamp']).total_seconds()
                 if cache_age < self.cache_expire_seconds:
-                    print(f"📦 使用缓存数据 (剩余有效时间: {self.cache_expire_seconds - cache_age:.1f}秒)")
+                    print(f"[CACHE] 使用缓存数据 (剩余有效时间: {self.cache_expire_seconds - cache_age:.1f}秒)")
                     return cache_data['data']
 
             # 判断是否在交易时间内（9:30-11:30, 13:00-15:00）
@@ -281,7 +281,7 @@ class DataManager:
                         'data': result,
                         'timestamp': now
                     }
-                    print(f"✅ 1分钟K线数据获取成功: {result}")
+                    print(f"[SUCCESS] 1分钟K线数据获取成功: {result}")
                     return result
             else:
                 # 非交易时间，使用日线数据（昨天的收盘价）
@@ -327,14 +327,14 @@ class DataManager:
                         'data': result,
                         'timestamp': now
                     }
-                    logger.info(f"✅ 日线数据获取成功: {result}")
+                    logger.info(f"[SUCCESS] 日线数据获取成功: {result}")
                     return result
 
-            logger.warning(f"⚠️ 未找到股票数据: {symbol}")
+            logger.warning(f"[WARNING] 未找到股票数据: {symbol}")
             return None
 
         except Exception as e:
-            print(f"❌ 获取数据失败: {type(e).__name__}: {str(e)}")
+            print(f"[ERROR] 获取数据失败: {type(e).__name__}: {str(e)}")
             return None
 
     def close(self) -> None:

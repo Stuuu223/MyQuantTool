@@ -105,10 +105,10 @@ def test_email_alert():
         
         handler(test_alert)
         
-        print("✅ 测试邮件已发送")
+        print("[SUCCESS] 测试邮件已发送")
     
     except Exception as e:
-        print(f"❌ 测试失败: {e}")
+        print(f"[ERROR] 测试失败: {e}")
 
 
 def show_risk_config():
@@ -119,15 +119,14 @@ def show_risk_config():
     print("\n当前风险监控配置:")
     print("=" * 50)
     
-    print(f"启用状态: {'✅ 已启用' if risk_config.get('enabled') else '❌ 未启用'}")
+    print(f"启用状态: {'[SUCCESS] 已启用' if risk_config.get('enabled') else '[ERROR] 未启用'}")
     print(f"最大持仓比例: {risk_config.get('max_position_ratio', 0):.2%}")
     print(f"单日最大亏损: {risk_config.get('max_daily_loss_ratio', 0):.2%}")
     print(f"最大回撤: {risk_config.get('max_drawdown_ratio', 0):.2%}")
     print(f"最大连续亏损: {risk_config.get('max_consecutive_losses', 0)} 次")
     
     email_config = risk_config.get('email_alert', {})
-    print(f"邮件告警: {'✅ 已启用' if email_config.get('enabled') else '❌ 未启用'}")
-    
+    print(f"邮件告警: {'[SUCCESS] 已启用' if email_config.get('enabled') else '[ERROR] 未启用'}")    
     if email_config.get('enabled'):
         print(f"  SMTP服务器: {email_config.get('smtp_host', '')}:{email_config.get('smtp_port', '')}")
         print(f"  用户名: {email_config.get('username', '')}")

@@ -29,13 +29,15 @@ def render_parameter_optimization_tab(db, config):
         signal_type = st.selectbox(
             "信号类型",
             ["MA", "MACD", "RSI"],
-            help="选择要优化的策略类型"
+            help="选择要优化的策略类型",
+            key="signal_type"
         )
-        
+
         optimization_method = st.selectbox(
             "优化方法",
             ["网格搜索", "贝叶斯优化"],
-            help="选择参数优化方法"
+            help="选择参数优化方法",
+            key="optimization_method"
         )
         
         initial_capital = st.number_input(
@@ -43,46 +45,48 @@ def render_parameter_optimization_tab(db, config):
             min_value=10000,
             max_value=10000000,
             value=100000,
-            step=10000
+            step=10000,
+            key="opt_initial_capital"
         )
         
         # 优化目标
         optimization_target = st.selectbox(
             "优化目标",
             ["sharpe_ratio", "annual_return", "max_drawdown", "win_rate"],
-            help="选择优化目标指标"
+            help="选择优化目标指标",
+            key="optimization_target"
         )
         
         st.markdown("---")
         st.subheader("📊 参数范围")
         
         if signal_type == "MA":
-            fast_min = st.number_input("快线最小值", value=5, min_value=1, max_value=60)
-            fast_max = st.number_input("快线最大值", value=20, min_value=1, max_value=60)
-            slow_min = st.number_input("慢线最小值", value=20, min_value=1, max_value=120)
-            slow_max = st.number_input("慢线最大值", value=60, min_value=1, max_value=120)
-            
+            fast_min = st.number_input("快线最小值", value=5, min_value=1, max_value=60, key="ma_fast_min")
+            fast_max = st.number_input("快线最大值", value=20, min_value=1, max_value=60, key="ma_fast_max")
+            slow_min = st.number_input("慢线最小值", value=20, min_value=1, max_value=120, key="ma_slow_min")
+            slow_max = st.number_input("慢线最大值", value=60, min_value=1, max_value=120, key="ma_slow_max")
+
             param_grid = {
                 'fast_window': list(range(fast_min, fast_max + 1, 5)),
                 'slow_window': list(range(slow_min, slow_max + 1, 10))
             }
-        
+
         elif signal_type == "MACD":
-            fast_min = st.number_input("快线最小值", value=8, min_value=1, max_value=30)
-            fast_max = st.number_input("快线最大值", value=16, min_value=1, max_value=30)
-            slow_min = st.number_input("慢线最小值", value=20, min_value=1, max_value=60)
-            slow_max = st.number_input("慢线最大值", value=40, min_value=1, max_value=60)
-            
+            fast_min = st.number_input("快线最小值", value=8, min_value=1, max_value=30, key="macd_fast_min")
+            fast_max = st.number_input("快线最大值", value=16, min_value=1, max_value=30, key="macd_fast_max")
+            slow_min = st.number_input("慢线最小值", value=20, min_value=1, max_value=60, key="macd_slow_min")
+            slow_max = st.number_input("慢线最大值", value=40, min_value=1, max_value=60, key="macd_slow_max")
+
             param_grid = {
                 'fast_period': list(range(fast_min, fast_max + 1, 2)),
                 'slow_period': list(range(slow_min, slow_max + 1, 5)),
                 'signal_period': [9]
             }
-        
+
         elif signal_type == "RSI":
-            period_min = st.number_input("周期最小值", value=10, min_value=5, max_value=30)
-            period_max = st.number_input("周期最大值", value=20, min_value=5, max_value=30)
-            
+            period_min = st.number_input("周期最小值", value=10, min_value=5, max_value=30, key="rsi_period_min")
+            period_max = st.number_input("周期最大值", value=20, min_value=5, max_value=30, key="rsi_period_max")
+
             param_grid = {
                 'period': list(range(period_min, period_max + 1, 2))
             }

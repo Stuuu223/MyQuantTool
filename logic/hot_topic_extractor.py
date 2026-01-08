@@ -348,8 +348,7 @@ def demo_hot_topics():
     
     today = datetime.now().strftime('%Y-%m-%d')
     
-    print("\n🔥 从龙虎榜提取热点题材...")
-    topics = extractor.extract_topics_from_lhb(today)
+            print("\n[HOT] 从龙虎榜提取热点题材...")    topics = extractor.extract_topics_from_lhb(today)
     print(f"找到 {len(topics)} 个热点题材")
     
     # 显示前 5 个热点题材
@@ -359,13 +358,12 @@ def demo_hot_topics():
         reverse=True
     )[:5]
     
-    print("\n🏆 Top 5 热点题材:")
-    for topic_name, topic_obj in top_5:
+            print("\n[TOP] Top 5 热点题材:")    for topic_name, topic_obj in top_5:
         print(f"{topic_name}: 热度{topic_obj.heat:.0f}, 阶段{topic_obj.stage.value}")
     
     # 映射到股票
     if topics:
-        print("\n📊 映射股票...")
+        print("\n[CHART] 映射股票...")
         topic_stocks = extractor.map_topics_to_stocks(topics, today)
         
         for topic, stocks_info in list(topic_stocks.items())[:3]:

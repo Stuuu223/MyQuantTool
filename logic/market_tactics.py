@@ -4,7 +4,7 @@
 - 龙桀【定义】: 简敦上涨股 (次日收松)
 - 龙桀战法: 打板操作 (一字板、二字板)
 - 集合竞价分析: 开盘价格 → 需来布局
-- 洛乥偶收上干歴 (短期涨幅)
+- 弱势回调上干歴 (短期涨幅)
 - 接力竞争 (两愚相斗)
 """
 
@@ -27,7 +27,7 @@ class TacticsType(Enum):
     TWO_CHAR_BOARD = "two_char_board"  # 二字板
     SEALED_BOARD = "sealed_board"  # 字板（封板）
     BIDDING_STRATEGY = "bidding_strategy"  # 集合竞价布局
-    OVERNIGHT_RECOVERY = "overnight_recovery"  # 洛乥偶收（颜名深跌）
+    OVERNIGHT_RECOVERY = "overnight_recovery"  # 弱势回调（颜名深跌）
     POWER_COMPETITION = "power_competition"  # 接力竞争（两愚相斗）
 
 
@@ -257,7 +257,7 @@ class BiddingStrategyAnalyzer:
         buyers_sorted = buyers.sort_values('成交额', ascending=False)
         capital_layout = buyers_sorted['游资名称'].head(5).tolist()
         
-        # 计算球萄急算法踲港纺計采：股价洛乥涂趪、游资分散、版数多
+        # 计算球萄急算法踲港纺計采：股价弱势回调、游资分散、版数多
         total_amount = buyers['成交额'].sum()
         avg_amount = total_amount / max(len(buyers), 1)
         concentration = buyers['成交额'].max() / max(total_amount, 1)
@@ -320,7 +320,7 @@ class BiddingStrategyAnalyzer:
 
 class ShortTermTrendAnalyzer:
     """
-    短期趋势分析：洛乥偶收 + 接力竞争
+    短期趋势分析：弱势回调 + 接力竞争
     """
     
     def analyze_overnight_recovery(
@@ -332,7 +332,7 @@ class ShortTermTrendAnalyzer:
         price_current: float
     ) -> Optional[Dict]:
         """
-        分析「洛乥偶收」 (深跌后回春)
+        分析「弱势回调」 (深跌后回春)
         
         标准：
         - 上一交易日深跌 > 3%

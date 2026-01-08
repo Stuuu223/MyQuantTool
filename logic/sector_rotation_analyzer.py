@@ -436,7 +436,7 @@ def demo_sector_rotation():
     today = datetime.now().strftime('%Y-%m-%d')
     
     # 1. 计算所有板块强度
-    print("\n📈 计算所有板块强度...")
+    print("\n[CHART] 计算所有板块强度...")
     strength_scores = analyzer.calculate_sector_strength(today)
     
     if not strength_scores:
@@ -450,24 +450,24 @@ def demo_sector_rotation():
         reverse=True
     )[:5]
     
-    print("\n🏆 Top 5 强势板块:")
+    print("\n[TOP] Top 5 强势板块:")
     for sector, strength in top_5:
         print(f"{sector}: {strength.total_score:.1f} (阶段{strength.phase.value}, 变化{strength.delta:.1f})")
     
     # 2. 检测轮动信号
-    print("\n🔄 检测轮动信号...")
+    print("\n[ROTATE] 检测轮动信号...")
     signals = analyzer.detect_rotation_signals(today)
     print(f"上升中: {signals['rising'][:3] if signals['rising'] else '无'}")
     print(f"下降中: {signals['falling'][:3] if signals['falling'] else '无'}")
     
     # 3. 预测趋势
     if signals['leading']:
-        print(f"\n📈 预测 {signals['leading'][0]} 未来 5 天走向...")
+        print(f"\n[CHART] 预测 {signals['leading'][0]} 未来 5 天走向...")
         trend = analyzer.predict_rotation_trend(signals['leading'][0], days_ahead=5)
         print(f"趋势: {trend['trend']}, 置信度: {trend['confidence']:.2%}")
     
     # 4. 获取轮动机会
-    print("\n🎯 当前轮动机会...")
+    print("\n[GOAL] 当前轮动机会...")
     opportunity = analyzer.get_rotation_opportunity(today)
     if opportunity:
         print(f"{opportunity['action']}")

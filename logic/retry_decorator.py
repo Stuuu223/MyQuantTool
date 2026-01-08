@@ -47,7 +47,7 @@ def retry_with_backoff(max_retries: int = 3, backoff_factor: float = 2,
                         time.sleep(wait_time)
                     else:
                         logger.error(
-                            f"❌ {func.__name__} 在{max_retries}次重试后仍然失败: {str(e)}"
+                            f"[ERROR] {func.__name__} 在{max_retries}次重试后仍然失败: {str(e)}"
                         )
             
             raise last_exception
@@ -95,7 +95,7 @@ def retry_with_jitter(max_retries: int = 3, base_wait: float = 1):
                         time.sleep(wait_time)
                     else:
                         logger.error(
-                            f"❌ {func.__name__} 在{max_retries}次重试后仍然失败"
+                            f"[ERROR] {func.__name__} 在{max_retries}次重试后仍然失败"
                         )
             
             raise last_exception
@@ -144,7 +144,7 @@ class RetryManager:
                     time.sleep(wait_time)
                 else:
                     logger.error(
-                        f"❌ {func.__name__} 在{self.max_retries}次重试后仍然失败: {str(e)}"
+                        f"[ERROR] {func.__name__} 在{self.max_retries}次重试后仍然失败: {str(e)}"
                     )
         
         return None, False
@@ -180,6 +180,6 @@ if __name__ == '__main__':
     )
     
     if success:
-        print(f"✅ 成功获取数据: {len(data)} 条")
+        print(f"[SUCCESS] 成功获取数据: {len(data)} 条")
     else:
-        print(f"❌ 失败: {manager.get_retry_stats()}")
+        print(f"[ERROR] 失败: {manager.get_retry_stats()}")

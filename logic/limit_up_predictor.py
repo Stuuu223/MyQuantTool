@@ -528,14 +528,12 @@ def demo_limit_up_prediction():
     test_stocks = ['300059', '688688', '688888']
     today = datetime.now().strftime('%Y-%m-%d')
     
-    print("\n🔍 批量预测一字板...")
-    predictions = predictor.batch_predict_limit_ups(test_stocks, today)
+            print("\n[SEARCH] 批量预测一字板...")    predictions = predictor.batch_predict_limit_ups(test_stocks, today)
     
     print(f"\n预测 {len(predictions)} 个股票")
     
     # 批量筛选
-    print("\n🏆 推荐股票 (筛选条件: 概率>60% + 低中风险):")
-    candidates = predictor.rank_candidates(predictions)
+            print("\n[TOP] 推荐股票 (筛选条件: 概率>60% + 低中风险):")    candidates = predictor.rank_candidates(predictions)
     
     for rank, (code, pred) in enumerate(candidates, 1):
         print(f"{rank}. {code}")

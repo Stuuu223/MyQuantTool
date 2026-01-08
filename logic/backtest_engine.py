@@ -82,6 +82,7 @@ class Trade:
 
 
 @dataclass
+@dataclass
 class BacktestMetrics:
     """回测指标"""
     initial_capital: float
@@ -101,6 +102,28 @@ class BacktestMetrics:
     avg_holding_period: float
     benchmark_return: float
     excess_return: float
+
+    def _asdict(self):
+        """返回对象的字典表示，兼容 dataclass 的 asdict 功能"""
+        return {
+            'initial_capital': self.initial_capital,
+            'final_capital': self.final_capital,
+            'total_return': self.total_return,
+            'annual_return': self.annual_return,
+            'sharpe_ratio': self.sharpe_ratio,
+            'max_drawdown': self.max_drawdown,
+            'max_drawdown_duration': self.max_drawdown_duration,
+            'win_rate': self.win_rate,
+            'profit_factor': self.profit_factor,
+            'avg_win': self.avg_win,
+            'avg_loss': self.avg_loss,
+            'total_trades': self.total_trades,
+            'winning_trades': self.winning_trades,
+            'losing_trades': self.losing_trades,
+            'avg_holding_period': self.avg_holding_period,
+            'benchmark_return': self.benchmark_return,
+            'excess_return': self.excess_return
+        }
 
 
 class BacktestEngine:

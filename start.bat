@@ -5,6 +5,13 @@ echo MyQuantTool Start Script
 echo ========================================
 echo.
 
+REM Activate virtual environment
+if exist "venv\Scripts\activate.bat" (
+    call venv\Scripts\activate.bat
+    echo Virtual environment activated
+    echo.
+)
+
 echo [1/4] Checking Python...
 python --version
 if %errorlevel% neq 0 (
@@ -46,6 +53,6 @@ echo Application will open in browser
 echo Press Ctrl+C to stop
 echo.
 
-streamlit run main.py
+python -m streamlit run main.py
 
 pause

@@ -27,6 +27,13 @@ from .risk import render_risk_tab
 from .history import render_history_tab
 from .settings import render_settings_tab
 
+# 导入新增的UI模块
+from .capital_network import render_capital_network_tab
+from .capital_profiler import render_capital_profiler_tab
+from .short_term_trend import render_short_term_trend_tab
+from .opportunity_predictor import render_opportunity_predictor_tab
+from .data_monitor import render_data_monitor_tab
+
 __all__ = [
     'render_single_stock_tab',
     'render_multi_compare_tab',
@@ -47,4 +54,9 @@ __all__ = [
     'render_risk_tab',
     'render_history_tab',
     'render_settings_tab',
+    'render_capital_network_tab',
+    'render_capital_profiler_tab',
+    'render_short_term_trend_tab',
+    'render_opportunity_predictor_tab',
+    'render_data_monitor_tab',
 ]

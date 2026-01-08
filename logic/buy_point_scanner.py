@@ -1,0 +1,436 @@
+"""
+买点扫描器：实时扫描符合买点条件的股票
+
+参考文献：
+- https://caifuhao.eastmoney.com/news/20190816224355084524130
+- https://xueqiu.com/2307830329/356110729
+- http://www.10huang.cn/buy/54536.html
+
+核心逻辑：
+- 技术面突破
+- 资金流入
+- 情绪指标配合
+- 风险控制阈值
+"""
+
+import pandas as pd
+import numpy as np
+from typing import Dict, List, Tuple, Optional
+from dataclasses import dataclass
+from datetime import datetime
+import talib
+from .data_source_manager import DataSourceManager
+
+
+@dataclass
+class BuySignal:
+    """买点信号"""
+    stock_code: str
+    stock_name: str
+    scan_date: str
+    signal_type: str  # 信号类型
+    entry_price: float  # 入场价
+    stop_loss: float  # 止损价
+    target_price: float  # 目标价
+    signal_score: float  # 信号评分 0-100
+    risk_level: str  # 风险等级: '低', '中', '高'
+    reasons: List[str]  # 信号理由
+    technical_indicators: Dict[str, float]  # 关键技术指标值
+
+
+class BuyPointScanner:
+    """买点扫描器"""
+
+    def __init__(self, db=None):
+        """
+        初始化买点扫描器
+
+        Args:
+            db: 数据库连接
+        """
+        self.data_manager = DataSourceManager(db) if db else None
+
+    def scan_buy_signals(self, stock_list: List[str] = None, market: str = 'A') -> List[BuySignal]:
+        """
+        扫描买点信号
+
+        Args:
+            stock_list: 股票列表，如果为None则扫描全市场
+            market: 市场类型，'A'表示A股
+
+        Returns:
+            List[BuySignal]: 买点信号列表
+        """
+        if stock_list is None:
+            # 如果没有提供股票列表，可以获取全市场股票代码
+            # 这里简化处理，实际应用中需要从数据库或API获取
+            stock_list = self._get_stock_list(market)
+
+        signals = []
+        for stock_code in stock_list:
+            try:
+                # 获取股票数据
+                df = self._get_stock_data(stock_code)
+                if df is not None and len(df) >= 30:  # 确保有足够的数据
+                    signal = self._analyze_single_stock(df, stock_code)
+                    if signal:
+                        signals.append(signal)
+            except Exception as e:
+                # 记录错误但继续处理其他股票
+                print(f"处理股票 {stock_code} 时出错: {e}")
+                continue
+
+        # 按信号评分排序
+        signals.sort(key=lambda x: x.signal_score, reverse=True)
+
+        # 只返回评分较高的信号
+        return [s for s in signals if s.signal_score >= 60]
+
+    def _get_stock_list(self, market: str) -> List[str]:
+        """
+        获取股票列表（简化实现，实际应用中应从数据库或API获取）
+        """
+        # 这里仅作示例返回几个股票代码
+        # 实际应用中应连接数据库或API获取全市场股票代码
+        return ['000001', '000002', '600000', '600036']  # 示例股票
+
+    def _get_stock_data(self, stock_code: str, days: int = 60) -> Optional[pd.DataFrame]:
+        """
+        获取股票数据
+
+        Args:
+            stock_code: 股票代码
+            days: 获取天数
+
+        Returns:
+            pd.DataFrame: 股票数据
+        """
+        # 使用数据源管理器获取数据
+        if self.data_manager:
+            from datetime import datetime, timedelta
+            end_date = datetime.now().strftime('%Y-%m-%d')
+            start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+            return self.data_manager.get_stock_data(stock_code, start_date, end_date)
+        else:
+            # 如果没有数据管理器，返回None（实际应用中应该有其他方式获取数据）
+            return None
+
+    def _analyze_single_stock(self, df: pd.DataFrame, stock_code: str) -> Optional[BuySignal]:
+        """分析单个股票的买点信号"""
+        # 计算技术指标
+        df = self._calculate_technical_indicators(df)
+        latest = df.iloc[-1]
+
+        # 获取股票名称（简化处理）
+        stock_name = f"股票_{stock_code}"
+
+        # 检查各种买点模式
+        signals = []
+
+        # 1. 突破买点
+        breakout_signal = self._check_breakout_signal(df, stock_code, stock_name)
+        if breakout_signal:
+            signals.append(breakout_signal)
+
+        # 2. 回调买点
+        pullback_signal = self._check_pullback_signal(df, stock_code, stock_name)
+        if pullback_signal:
+            signals.append(pullback_signal)
+
+        # 3. 金叉买点
+        golden_cross_signal = self._check_golden_cross_signal(df, stock_code, stock_name)
+        if golden_cross_signal:
+            signals.append(golden_cross_signal)
+
+        # 4. 背离买点
+        divergence_signal = self._check_divergence_signal(df, stock_code, stock_name)
+        if divergence_signal:
+            signals.append(divergence_signal)
+
+        # 选择评分最高的信号
+        if signals:
+            best_signal = max(signals, key=lambda x: x.signal_score)
+            return best_signal
+
+        return None
+
+    def _calculate_technical_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
+        """计算技术指标"""
+        # 移动平均线
+        df['ma5'] = talib.SMA(df['close'].values, timeperiod=5)
+        df['ma10'] = talib.SMA(df['close'].values, timeperiod=10)
+        df['ma20'] = talib.SMA(df['close'].values, timeperiod=20)
+        df['ma60'] = talib.SMA(df['close'].values, timeperiod=60)
+
+        # 布林带
+        df['bb_upper'], df['bb_middle'], df['bb_lower'] = talib.BBANDS(
+            df['close'].values, timeperiod=20, nbdevup=2, nbdevdn=2, matype=0
+        )
+
+        # RSI
+        df['rsi'] = talib.RSI(df['close'].values, timeperiod=14)
+
+        # MACD
+        df['macd'], df['macdsignal'], df['macdhist'] = talib.MACD(
+            df['close'].values, fastperiod=12, slowperiod=26, signalperiod=9
+        )
+
+        # KDJ
+        df['k'], df['d'], df['j'] = talib.STOCH(
+            df['high'].values, df['low'].values, df['close'].values,
+            fastk_period=9, slowk_period=3, slowk_matype=0, slowd_period=3, slowd_matype=0
+        )
+
+        # 成交量指标
+        df['volume_ma5'] = talib.SMA(df['volume'].values, timeperiod=5)
+        df['volume_ratio'] = df['volume'] / df['volume_ma5']
+
+        # CCI
+        df['cci'] = talib.CCI(df['high'].values, df['low'].values, df['close'].values, timeperiod=14)
+
+        # 动量指标
+        df['mom'] = talib.MOM(df['close'].values, timeperiod=10)
+
+        # 波动率
+        df['volatility'] = df['close'].rolling(window=10).std()
+
+        return df
+
+    def _check_breakout_signal(self, df: pd.DataFrame, stock_code: str, stock_name: str) -> Optional[BuySignal]:
+        """检查突破买点信号"""
+        latest = df.iloc[-1]
+        prev = df.iloc[-2] if len(df) >= 2 else latest
+
+        # 检查向上突破
+        price_breakout = latest['close'] > latest['ma10'] and latest['close'] > latest['ma20']
+        volume_confirmation = latest['volume'] > latest['volume_ma5'] * 1.2  # 成交量确认
+        momentum_positive = latest['mom'] > 0  # 动量向上
+
+        if price_breakout and volume_confirmation and momentum_positive:
+            # 计算各项指标评分
+            score = 0
+            if latest['rsi'] < 70:  # 避免超买
+                score += 20
+            if latest['volume_ratio'] > 1.5:
+                score += 15
+            if latest['mom'] > np.mean(df['mom'].tail(5)):
+                score += 15
+
+            # 设置入场价、止损价、目标价
+            entry_price = latest['close']
+            stop_loss = latest['ma10'] * 0.97  # MA10下方3%作为止损
+            target_price = entry_price * 1.10  # 10%目标
+
+            # 计算风险等级
+            risk_level = self._determine_risk_level(abs(entry_price - stop_loss) / entry_price)
+
+            return BuySignal(
+                stock_code=stock_code,
+                stock_name=stock_name,
+                scan_date=latest.name.strftime('%Y-%m-%d') if hasattr(latest.name, 'strftime') else str(latest.name),
+                signal_type='突破买点',
+                entry_price=entry_price,
+                stop_loss=stop_loss,
+                target_price=target_price,
+                signal_score=min(score, 100),
+                risk_level=risk_level,
+                reasons=[
+                    f"向上突破MA10和MA20，确认突破有效",
+                    f"成交量放大{latest['volume_ratio']:.2f}倍",
+                    f"MOM动量指标向上确认趋势强度"
+                ],
+                technical_indicators={
+                    'rsi': latest['rsi'],
+                    'macd': latest['macd'],
+                    'volume_ratio': latest['volume_ratio']
+                }
+            )
+
+        return None
+
+    def _check_pullback_signal(self, df: pd.DataFrame, stock_code: str, stock_name: str) -> Optional[BuySignal]:
+        """检查回调买点信号"""
+        latest = df.iloc[-1]
+
+        # 检查是否在重要均线附近企稳
+        ma_support = (abs(latest['close'] - latest['ma5']) / latest['ma5'] < 0.02 or
+                      abs(latest['close'] - latest['ma10']) / latest['ma10'] < 0.02)
+
+        # RSI从超卖区域回升
+        rsi_improvement = (latest['rsi'] > 30 and latest['rsi'] > df['rsi'].iloc[-2] if len(df) >= 2 else False)
+
+        # 成交量萎缩后放大
+        volume_pattern = self._check_volume_pullback_pattern(df)
+
+        if ma_support and rsi_improvement and volume_pattern:
+            # 计算评分
+            score = 0
+            if ma_support:
+                score += 25
+            if 30 < latest['rsi'] < 50:
+                score += 20
+            if volume_pattern:
+                score += 20
+
+            # 设置入场价、止损价、目标价
+            entry_price = latest['close']
+            stop_loss = min(latest['low'], latest['ma10'] * 0.97)  # 较低的止损
+            target_price = entry_price * 1.08  # 8%目标
+
+            risk_level = self._determine_risk_level(abs(entry_price - stop_loss) / entry_price)
+
+            return BuySignal(
+                stock_code=stock_code,
+                stock_name=stock_name,
+                scan_date=latest.name.strftime('%Y-%m-%d') if hasattr(latest.name, 'strftime') else str(latest.name),
+                signal_type='回调买点',
+                entry_price=entry_price,
+                stop_loss=stop_loss,
+                target_price=target_price,
+                signal_score=min(score, 100),
+                risk_level=risk_level,
+                reasons=[
+                    f"价格在MA5/MA10附近企稳，获得均线支撑",
+                    f"RSI从超卖区回升至{latest['rsi']:.1f}，下跌动能减弱",
+                    f"成交量萎缩后放大，显示资金重新关注"
+                ],
+                technical_indicators={
+                    'rsi': latest['rsi'],
+                    'ma_support': 'MA5/MA10附近',
+                    'volume_ratio': latest['volume_ratio']
+                }
+            )
+
+        return None
+
+    def _check_volume_pullback_pattern(self, df: pd.DataFrame) -> bool:
+        """检查成交量回调模式（萎缩后放大）"""
+        if len(df) < 5:
+            return False
+
+        recent_volumes = df['volume'].tail(5).values
+
+        # 检查是否先萎缩后放大
+        volume_shrink = recent_volumes[-2] < recent_volumes[-3] and recent_volumes[-2] < recent_volumes[-4]
+        volume_expand = recent_volumes[-1] > recent_volumes[-2] * 1.3
+
+        return volume_shrink and volume_expand
+
+    def _check_golden_cross_signal(self, df: pd.DataFrame, stock_code: str, stock_name: str) -> Optional[BuySignal]:
+        """检查金叉买点信号（MACD或KDJ金叉）"""
+        if len(df) < 3:
+            return None
+
+        latest = df.iloc[-1]
+        prev = df.iloc[-2]
+
+        # MACD金叉
+        macd_golden = (latest['macdsignal'] > latest['macd']) and (prev['macdsignal'] <= prev['macd'])
+        # KDJ金叉
+        kdj_golden = (latest['k'] > latest['d']) and (prev['k'] <= prev['d']) and latest['k'] < 80
+
+        if macd_golden or kdj_golden:
+            # 计算评分
+            score = 0
+            if macd_golden:
+                score += 25
+            if kdj_golden:
+                score += 20
+            if latest['rsi'] > 30 and latest['rsi'] < 70:
+                score += 15
+
+            # 设置入场价、止损价、目标价
+            entry_price = latest['close']
+            stop_loss = latest['low'] * 0.96  # 最低价下方4%作为保守止损
+            target_price = entry_price * 1.12  # 12%目标
+
+            risk_level = self._determine_risk_level(abs(entry_price - stop_loss) / entry_price)
+
+            signal_type = "MACD金叉" if macd_golden else "KDJ金叉"
+            reasons = [
+                f"{signal_type}形成，显示短期上涨动能",
+                f"RSI处于{latest['rsi']:.1f}，技术指标健康",
+                "成交量配合良好，确认信号有效性"
+            ]
+
+            return BuySignal(
+                stock_code=stock_code,
+                stock_name=stock_name,
+                scan_date=latest.name.strftime('%Y-%m-%d') if hasattr(latest.name, 'strftime') else str(latest.name),
+                signal_type=signal_type,
+                entry_price=entry_price,
+                stop_loss=stop_loss,
+                target_price=target_price,
+                signal_score=min(score, 100),
+                risk_level=risk_level,
+                reasons=reasons,
+                technical_indicators={
+                    'rsi': latest['rsi'],
+                    'macd_hist': latest['macdhist'],
+                    'kdj_j': latest['j']
+                }
+            )
+
+        return None
+
+    def _check_divergence_signal(self, df: pd.DataFrame, stock_code: str, stock_name: str) -> Optional[BuySignal]:
+        """检查背离买点信号"""
+        if len(df) < 20:
+            return None
+
+        # 寻找价格新低但RSI不创新低的底背离
+        price_lowest = df['low'].tail(10).idxmin() == df.index[-1]  # 最近创近期新低
+        rsi_not_lowest = df['rsi'].tail(10).idxmin() != df.index[-1]  # 但RSI未创新低
+
+        if price_lowest and rsi_not_lowest:
+            # 计算评分
+            score = 30  # 底背离是较强的反转信号
+            if df['macdhist'].iloc[-1] > df['macdhist'].iloc[-2]:  # MACD柱状图向上
+                score += 20
+            if df['volume_ratio'].iloc[-1] > 1.0:  # 成交量配合
+                score += 15
+
+            # 设置入场价、止损价、目标价
+            entry_price = df['close'].iloc[-1]
+            stop_loss = df['low'].iloc[-1] * 0.95  # 当日最低价下方5%作为止损
+            target_price = entry_price * 1.15  # 15%目标（背离信号较强）
+
+            risk_level = self._determine_risk_level(abs(entry_price - stop_loss) / entry_price)
+
+            return BuySignal(
+                stock_code=stock_code,
+                stock_name=stock_name,
+                scan_date=df.index[-1].strftime('%Y-%m-%d') if hasattr(df.index[-1], 'strftime') else str(df.index[-1]),
+                signal_type='底背离买点',
+                entry_price=entry_price,
+                stop_loss=stop_loss,
+                target_price=target_price,
+                signal_score=min(score, 100),
+                risk_level=risk_level,
+                reasons=[
+                    f"价格创近期新低但RSI未创新低，形成底背离",
+                    f"技术指标与价格走势背离，显示下跌动能衰竭",
+                    f"MACD柱状图向上，显示上涨动能开始积聚"
+                ],
+                technical_indicators={
+                    'rsi': df['rsi'].iloc[-1],
+                    'price_lowest': True,
+                    'rsi_not_lowest': True
+                }
+            )
+
+        return None
+
+    def _determine_risk_level(self, risk_ratio: float) -> str:
+        """确定风险等级"""
+        if risk_ratio <= 0.05:
+            return '低'
+        elif risk_ratio <= 0.08:
+            return '中'
+        else:
+            return '高'
+
+    def get_top_signals(self, count: int = 10) -> List[BuySignal]:
+        """获取评分最高的买点信号"""
+        all_signals = self.scan_buy_signals()
+        return all_signals[:count]

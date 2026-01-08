@@ -99,6 +99,20 @@ def render_live_monitoring_tab(db, config):
         
         system = st.session_state.trading_system
         
+        # 检查是否有equity_curve属性（兼容旧版本）
+        if not hasattr(system, 'equity_curve'):
+            # 重新创建系统对象
+            st.session_state.trading_system = PaperTradingSystem(initial_capital=100000)
+            system = st.session_state.trading_system
+        
+        # 更新市场价格（如果有持仓）
+        positions = system.get_positions()
+        if positions:
+            # 模拟市场价格更新（实际应该从数据源获取）
+            # 这里使用当前市场价格作为示例
+            prices = {pos.symbol: pos.market_price for pos in positions}
+            system.update_market_prices(prices)
+        
         # 获取账户摘要
         account_summary = system.get_account_summary()
         
@@ -270,7 +284,7 @@ def render_live_monitoring_tab(db, config):
     st.subheader("📈 净值曲线")
     
     # 模拟净值曲线
-    if len(system.equity_curve) > 0:
+    if hasattr(system, 'equity_curve') and len(system.equity_curve) > 0:
         fig = go.Figure()
         
         fig.add_trace(go.Scatter(

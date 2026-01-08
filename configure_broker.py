@@ -131,36 +131,36 @@ def test_broker_api(broker_name):
             api = BrokerAPIFactory.create_api('futu', broker_config)
             
             if api and api.connect():
-                print("✅ 富途API连接成功")
+                print("[SUCCESS] 富途API连接成功")
                 api.disconnect()
             else:
-                print("❌ 富途API连接失败")
+                print("[ERROR] 富途API连接失败")
         
         elif broker_name == 'huatai':
             from logic.real_broker_api import HuataiRealAPI
             api = HuataiRealAPI(broker_config)
             
             if api.connect():
-                print("✅ 华泰API连接成功")
+                print("[SUCCESS] 华泰API连接成功")
                 api.disconnect()
             else:
-                print("❌ 华泰API连接失败")
+                print("[ERROR] 华泰API连接失败")
         
         elif broker_name == 'citic':
             from logic.real_broker_api import CiticRealAPI
             api = CiticRealAPI(broker_config)
             
             if api.connect():
-                print("✅ 中信API连接成功")
+                print("[SUCCESS] 中信API连接成功")
                 api.disconnect()
             else:
-                print("❌ 中信API连接失败")
+                print("[ERROR] 中信API连接失败")
         
         else:
-            print(f"❌ 不支持的券商: {broker_name}")
+            print(f"[ERROR] 不支持的券商: {broker_name}")
     
     except Exception as e:
-        print(f"❌ 测试失败: {e}")
+        print(f"[ERROR] 测试失败: {e}")
 
 
 def list_broker_configs():
@@ -173,7 +173,7 @@ def list_broker_configs():
     
     for broker_name, broker_config in broker_apis.items():
         enabled = broker_config.get('enabled', False)
-        status = "✅ 已启用" if enabled else "❌ 未启用"
+        status = "[SUCCESS] 已启用" if enabled else "[ERROR] 未启用"
         print(f"{broker_name}: {status}")
     
     print("=" * 50)

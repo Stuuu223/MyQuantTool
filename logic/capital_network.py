@@ -1,14 +1,75 @@
-"""
-游资关系图谱构建模块
-属性：
-- 二部图构建 (游资-股票)
-- 同一日共现上榜，变化为需来
-- 常流需来上榜分析
-- 游资-游资对手关系
-- 网络中心度、简敦线对手分析
-"""
+# Workaround for NetworkX + Pydantic v1 + Python 3.14 compatibility issue
+# The error occurs when Python 3.14's dataclass processing tries to access 
+# __annotate__ on wrapper_descriptor objects, which don't have this attribute
 
+import sys
+import dataclasses
+import types
+
+# Store the original _add_slots function BEFORE we modify it
+_original_add_slots = dataclasses._add_slots
+
+def _patched_add_slots(cls, frozen, weakref_slot, fields):
+    """Patched version to handle the __annotate__ attribute issue with wrapper_descriptor"""
+    # The issue occurs when trying to access __init__.__annotate__ on a wrapper_descriptor
+    # We need to replace wrapper_descriptor __init__ methods before processing
+    
+    init_method = cls.__init__
+    
+    if isinstance(init_method, types.WrapperDescriptorType):
+        # This is a wrapper_descriptor like object.__init__ which doesn't have __annotate__
+        # Create a new method with proper attributes
+        original_init = init_method
+        
+        # Create a new function that calls the original method
+        def new_init(self, *_, **__):
+            # For classes without custom __init__, the object.__init__ just does nothing
+            return original_init(self, *_, **__)
+        
+        # Copy any annotations
+        if hasattr(original_init, '__annotations__'):
+            new_init.__annotations__ = original_init.__annotations__.copy()
+        else:
+            new_init.__annotations__ = {}
+        
+        # The new function needs to be assigned to the class
+        cls.__init__ = new_init
+    
+    # Call the ORIGINAL function which should now work
+    try:
+        result = _original_add_slots(cls, frozen, weakref_slot, fields)
+        return result
+    except AttributeError as e:
+        if "__annotate__" in str(e) and "wrapper_descriptor" in str(e):
+            # If we still get the error, handle it by ensuring the class has proper attributes
+            # This is a fallback approach
+            if isinstance(init_method, types.WrapperDescriptorType):
+                original_init = init_method
+                def safe_init(self, *args, **kwargs):
+                    return original_init(self, *args, **kwargs)
+                
+                # Copy annotations
+                if hasattr(original_init, '__annotations__'):
+                    safe_init.__annotations__ = original_init.__annotations__.copy()
+                
+                # Set __annotate__ to the annotations as well
+                safe_init.__annotate__ = getattr(safe_init, '__annotations__', {})
+                
+                # Replace the __init__ in the class
+                cls.__init__ = safe_init
+            
+            # Retry using the ORIGINAL function  
+            return _original_add_slots(cls, frozen, weakref_slot, fields)
+        else:
+            # If it's a different error, re-raise it
+            raise
+
+# Apply the patch to the dataclasses module - make sure this is applied globally
+dataclasses._add_slots = _patched_add_slots
+
+# Now import NetworkX - this should work without the __annotate__ error
 import networkx as nx
+
 import pandas as pd
 import numpy as np
 from typing import Dict, List, Tuple, Optional, Set

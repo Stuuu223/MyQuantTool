@@ -136,6 +136,7 @@ class PaperTradingSystem:
         
         # 历史记录
         self.equity_history: List[Dict] = []
+        self.equity_curve: List[float] = [initial_capital]  # 净值曲线，用于实时监控，初始值为初始资金
     
     def submit_order(
         self,
@@ -404,6 +405,10 @@ class PaperTradingSystem:
                 pos.market_price = price
                 pos.market_value = pos.quantity * price
                 pos.unrealized_pnl = (price - pos.avg_cost) * pos.quantity
+        
+        # 更新净值曲线
+        status = self.get_account_status()
+        self.equity_curve.append(status.total_equity)
     
     def get_account_status(self) -> AccountStatus:
         """

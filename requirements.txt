@@ -11,6 +11,7 @@ pyecharts>=2.0.0
 streamlit-aggrid>=0.3.4
 fuzzywuzzy>=0.18.0
 python-Levenshtein>=0.20.0
+networkx>=3.0
 
 # 机器学习依赖
 tensorflow>=2.13.0

@@ -374,6 +374,9 @@ from ui.smart_recommend import render_smart_recommend_tab
 from ui.risk import render_risk_tab
 from ui.history import render_history_tab
 from ui.settings import render_settings_tab
+from ui.midway_strategy import render_midway_strategy_tab
+from ui.buy_point_scanner import render_buy_point_scanner_tab
+from ui.backtesting_review import render_backtesting_review_tab
 
 # --- 导入高级UI模块（延迟导入） ---
 # 以下模块将在需要时才导入，以提升启动速度
@@ -584,7 +587,7 @@ if app_mode == "📈 市场分析":
 
 elif app_mode == "🔥 交易策略":
     # 交易策略模块
-    t1, t2, t3, t4, t5 = st.tabs(["🔥 龙头战法", "📈 均线战法", "🎯 打板预测", "⚡ 集合竞价", "📊 量价关系"])
+    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12 = st.tabs(["🔥 龙头战法", "📈 均线战法", "🎯 打板预测", "⚡ 集合竞价", "📊 量价关系", "💰 游资席位", "🎯 半路战法", "🔍 买点扫描", "🕸️ 关系图谱", "👤 游资画像", "📈 短期涨跌", "🔮 机会预测"])
     with t1:
         render_dragon_strategy_tab(db, config)
     with t2:
@@ -595,6 +598,32 @@ elif app_mode == "🔥 交易策略":
         render_auction_tab(db, config)
     with t5:
         render_volume_price_tab(db, config)
+    with t6:
+        render_capital_tab(db, config)
+    with t7:
+        render_midway_strategy_tab(db, config)
+    with t8:
+        render_buy_point_scanner_tab(db, config)
+    with t9:
+        # 延迟导入关系图谱模块
+        with st.spinner("正在加载关系图谱引擎..."):
+            from ui.capital_network import render_capital_network_tab
+            render_capital_network_tab(db, config)
+    with t10:
+        # 延迟导入游资画像模块
+        with st.spinner("正在加载游资画像引擎..."):
+            from ui.capital_profiler import render_capital_profiler_tab
+            render_capital_profiler_tab(db, config)
+    with t11:
+        # 延迟导入短期涨跌模块
+        with st.spinner("正在加载短期涨跌分析引擎..."):
+            from ui.short_term_trend import render_short_term_trend_tab
+            render_short_term_trend_tab(db, config)
+    with t12:
+        # 延迟导入机会预测模块
+        with st.spinner("正在加载机会预测引擎..."):
+            from ui.opportunity_predictor import render_opportunity_predictor_tab
+            render_opportunity_predictor_tab(db, config)
 
 elif app_mode == "🧪 量化回测":
     # 量化回测模块 - 包含高级功能，使用延迟导入
@@ -624,19 +653,17 @@ elif app_mode == "🧪 量化回测":
 
 elif app_mode == "💰 资产管理":
     # 资产管理模块
-    t1, t2, t3, t4, t5 = st.tabs(["💰 模拟交易", "💰 游资席位", "⚠️ 风险管理", "🤖 智能推荐", "📡 实时监控"])
+    t1, t2, t3, t4 = st.tabs(["💰 模拟交易", "⚠️ 风险管理", "🤖 智能推荐", "📡 实时监控"])
     with t1:
         # 延迟导入模拟交易模块
         with st.spinner("正在加载模拟交易系统..."):
             from ui.paper_trading import render_paper_trading_tab
             render_paper_trading_tab(db, config)
     with t2:
-        render_capital_tab(db, config)
-    with t3:
         render_risk_tab(db, config)
-    with t4:
+    with t3:
         render_smart_recommend_tab(db, config)
-    with t5:
+    with t4:
         # 延迟导入实时监控模块
         with st.spinner("正在加载实时监控系统..."):
             from ui.live_monitoring import render_live_monitoring_tab
@@ -644,7 +671,7 @@ elif app_mode == "💰 资产管理":
 
 elif app_mode == "⚙️ 系统工具":
     # 系统工具模块
-    t1, t2, t3 = st.tabs(["⚡ 性能优化", "⚙️ 系统设置", "📜 历史记录"])
+    t1, t2, t3, t4, t5 = st.tabs(["⚡ 性能优化", "⚙️ 系统设置", "📋 复盘助手", "📜 历史记录", "🔍 数据监控"])
     with t1:
         # 延迟导入性能优化模块
         with st.spinner("正在加载性能优化工具..."):
@@ -653,6 +680,13 @@ elif app_mode == "⚙️ 系统工具":
     with t2:
         render_settings_tab(db, config)
     with t3:
+        render_backtesting_review_tab(db, config)
+    with t4:
         render_history_tab(db, config)
+    with t5:
+        # 延迟导入数据质量监控模块
+        with st.spinner("正在加载数据质量监控工具..."):
+            from ui.data_monitor import render_data_monitor_tab
+            render_data_monitor_tab(db, config)
 
 logger.info("应用渲染完成")

@@ -13,7 +13,7 @@ from collections import defaultdict
 
 @dataclass
 class PredictedCapital:
-    """预测的游资䯹象"""
+    """预测的游资对象"""
     capital_name: str
     appearance_probability: float  # 0-1
     predict_reasons: List[str]  # 预测理由
@@ -23,7 +23,7 @@ class PredictedCapital:
 
 @dataclass
 class PredictedStock:
-    """预测的股票䯹象"""
+    """预测的股票对象"""
     code: str
     name: str
     appearance_probability: float
@@ -37,9 +37,9 @@ class OpportunityPrediction:
     tomorrow_date: str
     overall_activity: int  # 0-100
     prediction_confidence: float  # 0-1
+    market_sentiment: str 
     predicted_capitals: List[PredictedCapital] = field(default_factory=list)
     predicted_stocks: List[PredictedStock] = field(default_factory=list)
-    market_sentiment: str  # '豪笕' / '中符' / '俊煦'
     key_insights: List[str] = field(default_factory=list)
 
 
@@ -81,7 +81,7 @@ class OpportunityPredictor:
             feature_3_sentiment['activity'] * 0.25
         )
         
-        # 決算置信度
+        # 计算置信度
         confidence = (
             feature_1_history.get('confidence', 0.5) * 0.4 +
             feature_2_technical.get('confidence', 0.5) * 0.35 +
@@ -101,7 +101,7 @@ class OpportunityPredictor:
         # 市场情緒
         market_sentiment = self._determine_sentiment(activity_score)
         
-        # 核心洛见
+        # 核心见解
         key_insights = self._generate_insights(
             activity_score, feature_1_history, feature_2_technical, feature_3_sentiment
         )
@@ -120,8 +120,8 @@ class OpportunityPredictor:
         """
         特征一: 历史规律 (40%)
         - 接近月末的活跃度
-        - 旧正查纠日的龙虎榜数量
-        - 月封檐加权
+        - 历史规律日的龙虎榜数量
+        - 月末加权
         """
         if '日期' not in df.columns or len(df) < self.min_history:
             return {'activity': 50, 'confidence': 0.5}
@@ -141,7 +141,7 @@ class OpportunityPredictor:
         else:
             month_end_bonus = 0
         
-        # 上一个月封 (28-31日) 的活跃效应
+        # 上一个月末 (28-31日) 的活跃效应
         last_month_end = latest_date.replace(day=1) - timedelta(days=1)
         last_month_end_activity = len(df_sorted[
             (pd.to_datetime(df_sorted['日期']) >= last_month_end.replace(day=25)) &
@@ -161,25 +161,25 @@ class OpportunityPredictor:
     def _feature_2_technical_signals(self, df: pd.DataFrame) -> Dict:
         """
         特征二: 技术面 (35%)
-        - 涨停板数鳶
+        - 涨停板数量
         - 探底信号 (低于10日均线)
-        - 融资余额增角
+        - 融资余额增长
         """
         if len(df) < self.min_history:
             return {'activity': 50, 'confidence': 0.5}
         
-        # 涨停板数鳶 (樑概估计: 每条记录表示1个袘材, 里面的涨停股数)
+        # 涨停板数量 (大概估计: 每条记录表示1个题材, 里面的涨停股数)
         # 帮助指标: 笔者有自己的股票数据接口
         daily_limit_count = 3  # TODO: 从 akshare 接入
-        daily_limit_score = min(daily_limit_count / 2 * 100, 100)  # 2个推股湔死
+        daily_limit_score = min(daily_limit_count / 2 * 100, 100)  # 2个涨停股以上
         
         # 探底信号 (获取股票余额校验)
-        # 帮助指标: 深世收弘陈丫浄烦下探底
-        bottom_signal_ratio = 0.3  # 每30%的股票推泪
+        # 帮助指标: 深市收红出现净买入下探底
+        bottom_signal_ratio = 0.3  # 30%的股票下跌
         bottom_signal_score = bottom_signal_ratio * 100
         
-        # 融资余额 (增角 = 行情轩炭)
-        financing_increase_ratio = 0.1  # 假设上涨 (死去一周)
+        # 融资余额 (增长 = 行情向好)
+        financing_increase_ratio = 0.1  # 假设上涨 (持续一周)
         financing_score = financing_increase_ratio * 100
         
         activity_score = (
@@ -192,10 +192,10 @@ class OpportunityPredictor:
     
     def _feature_3_sentiment_index(self, df: pd.DataFrame) -> Dict:
         """
-        特征三: 情緒指数 (25%)
-        - 短线买入比例高 = 看好 = 情緒阳性
-        - 游资大家级帮员情緒
-        - 龙虎榜涅浭次数增加
+        特征三: 情绪指数 (25%)
+        - 短线买入比例高 = 看好 = 情绪阳性
+        - 游资大家级成员情绪
+        - 龙虎榜活跃次数增加
         """
         if len(df) < self.min_history:
             return {'activity': 50, 'confidence': 0.5}
@@ -236,7 +236,7 @@ class OpportunityPredictor:
             if appearance_prob > 0.5:
                 reasons.append(f"历史平均频率{(freq/len(df)*100):.0f}%")
             if activity_score > 70:
-                reasons.append("秦地上涨动能关死游资")
+                reasons.append("强势上涨动能关联游资")
             
             # 风险等级
             if appearance_prob > 0.7:
@@ -247,7 +247,11 @@ class OpportunityPredictor:
                 risk_level = '低'
             
             # 预测成交额
-            expected_amount = (df[df['游资名称'] == capital_name]['成交额'].sum() / len(df)) * 2
+            if '成交额' in df.columns:
+                expected_amount = (df[df['游资名称'] == capital_name]['成交额'].sum() / len(df)) * 2
+            else:
+                # 如果没有成交额列，使用频率作为替代
+                expected_amount = (freq / len(df)) * 1000000  # 默认值
             
             result.append(PredictedCapital(
                 capital_name=capital_name,
@@ -281,36 +285,36 @@ class OpportunityPredictor:
                 name=name,
                 appearance_probability=appearance_prob,
                 likely_capitals=likely_capitals,
-                predicted_reason=f"历史{freq}次出现, 游资棒{', '.join(likely_capitals[:2])}"
+                predicted_reason=f"历史{freq}次出现, 游资{', '.join(likely_capitals[:2])}"
             ))
         
         return result
     
     def _determine_sentiment(self, activity_score: float) -> str:
-        """判決市场情緒"""
+        """判断市场情绪"""
         if activity_score >= 70:
-            return '豪笕'  # 看涨
+            return '乐观'  # 看涨
         elif activity_score >= 40:
-            return '中符'  # 中性
+            return '中性'  # 中性
         else:
-            return '俊煦'  # 看跌
+            return '悲观'  # 看跌
     
     def _generate_insights(self, activity_score: float, f1: Dict, f2: Dict, f3: Dict) -> List[str]:
-        """核心洛见"""
+        """核心见解"""
         insights = []
         
         if activity_score >= 70:
-            insights.append("明天龙虎榜活动可能轩炫, 建议关注野资动态")
+            insights.append("明天龙虎榜活动可能活跃, 建议关注游资动态")
         elif activity_score <= 30:
-            insights.append("明天龙虎榜活动较樥, 需等待新的上涨可为")
+            insights.append("明天龙虎榜活动较弱, 需等待新的上涨机会")
         
         if f1['activity'] > 70:
-            insights.append("历史袜鉴按上个月底边和月底浈动程序, 明日可能是非常时断")
+            insights.append("历史规律按上个月末和月末活跃程序, 明日可能是非常时刻")
         
         if f2['activity'] > 60:
-            insights.append("技术面消息采郊氧气充足, 市场情绝氧死")
+            insights.append("技术面消息参考比较充足, 市场情绪向好")
         
         if f3['activity'] > 60:
-            insights.append("情緒面正面感接游资帮员, 建议积极粗位")
+            insights.append("情绪面积极友善, 建议积极布局")
         
-        return insights or ["情形標汹正常, 中一標了"]
+        return insights or ["情况表明正常, 中一标了"]
