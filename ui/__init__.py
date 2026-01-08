@@ -37,6 +37,13 @@ from .midway_strategy import render_midway_strategy_tab
 from .buy_point_scanner import render_buy_point_scanner_tab
 from .backtesting_review import render_backtesting_review_tab
 
+# 导入策略相关模块
+from .strategy_comparison_tab import render_strategy_comparison_tab
+from .strategy_factory_tab import render_strategy_factory_tab
+from .portfolio_optimizer_tab import render_portfolio_optimizer_tab
+from .trading_execution_tab import render_trading_execution_tab
+from .market_sentiment_tab import render_market_sentiment_tab
+
 # 导入交互式分析器（仅在需要时导入）
 try:
     from .interactive_strategy_analyzer import InteractiveStrategyAnalyzer

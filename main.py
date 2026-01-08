@@ -397,7 +397,9 @@ with st.sidebar:
         "选择功能模块",
         [
             "📈 市场分析",   # 包含：单股、多股、板块、情绪、热点
+            "🧠 市场情绪",   # 包含：新闻、社交媒体、量价情绪分析
             "🔥 交易策略",   # 包含：龙头战法、均线、打板、竞价、量价
+            "💼 交易执行",   # 包含：自动化交易、订单管理、滑点优化
             "🧪 量化回测",   # 包含：策略回测、高级回测、K线形态、LSTM
             "💰 资产管理",   # 包含：虚拟交易、游资席位、风险、智能推荐
             "⚙️ 系统工具"    # 包含：性能优化、设置、历史记录
@@ -625,9 +627,27 @@ elif app_mode == "🔥 交易策略":
             from ui.opportunity_predictor import render_opportunity_predictor_tab
             render_opportunity_predictor_tab(db, config)
 
+elif app_mode == "🧠 市场情绪":
+    # 市场情绪分析模块
+    t1 = st.tabs(["🧠 市场情绪分析"])
+    with t1[0]:
+        # 延迟导入市场情绪分析模块
+        with st.spinner("正在加载市场情绪分析引擎..."):
+            from ui.market_sentiment_tab import render_market_sentiment_tab
+            render_market_sentiment_tab(db, config)
+
+elif app_mode == "💼 交易执行":
+    # 交易执行模块
+    t1 = st.tabs(["💼 交易执行"])
+    with t1[0]:
+        # 延迟导入交易执行模块
+        with st.spinner("正在加载交易执行引擎..."):
+            from ui.trading_execution_tab import render_trading_execution_tab
+            render_trading_execution_tab(db, config)
+
 elif app_mode == "🧪 量化回测":
     # 量化回测模块 - 包含高级功能，使用延迟导入
-    t1, t2, t3, t4, t5 = st.tabs(["🧪 策略回测", "🧪 高级回测", "🔧 参数优化", "📊 K线形态", "🧠 LSTM预测"])
+    t1, t2, t3, t4, t5, t6, t7, t8 = st.tabs(["🧪 策略回测", "🧪 高级回测", "🔧 参数优化", "📊 K线形态", "🧠 LSTM预测", "🧮 策略工厂", "⚖️ 组合优化", "📊 策略对比"])
     with t1:
         render_backtest_tab(db, config)
     with t2:
@@ -650,6 +670,21 @@ elif app_mode == "🧪 量化回测":
         with st.spinner("正在加载 AI 深度学习模型..."):
             from ui.lstm_predictor import render_lstm_predictor_tab
             render_lstm_predictor_tab(db, config)
+    with t6:
+        # 延迟导入策略工厂模块
+        with st.spinner("正在加载策略工厂引擎..."):
+            from ui.strategy_factory_tab import render_strategy_factory_tab
+            render_strategy_factory_tab(db, config)
+    with t7:
+        # 延迟导入组合优化模块
+        with st.spinner("正在加载组合优化引擎..."):
+            from ui.portfolio_optimizer_tab import render_portfolio_optimizer_tab
+            render_portfolio_optimizer_tab(db, config)
+    with t8:
+        # 延迟导入策略对比模块
+        with st.spinner("正在加载策略对比引擎..."):
+            from ui.strategy_comparison_tab import render_strategy_comparison_tab
+            render_strategy_comparison_tab(db, config)
 
 elif app_mode == "💰 资产管理":
     # 资产管理模块
