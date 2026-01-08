@@ -12,9 +12,12 @@ streamlit-aggrid>=0.3.4
 fuzzywuzzy>=0.18.0
 python-Levenshtein>=0.20.0
 networkx>=3.0
+matplotlib>=3.7.0
+seaborn>=0.13.0
+scipy>=1.10.0
+optuna>=3.0.0
 
 # 机器学习依赖
-tensorflow>=2.13.0
 xgboost>=2.0.0
 
 # 强化学习依赖
