@@ -33,9 +33,18 @@ from .capital_profiler import render_capital_profiler_tab
 from .short_term_trend import render_short_term_trend_tab
 from .opportunity_predictor import render_opportunity_predictor_tab
 from .data_monitor import render_data_monitor_tab
-from .interactive_strategy_analyzer import InteractiveStrategyAnalyzer
-from .real_time_fund_flow_visualizer import RealTimeFundFlowVisualizer, StreamlitFundFlowApp
-from .main_dashboard import main
+from .midway_strategy import render_midway_strategy_tab
+from .buy_point_scanner import render_buy_point_scanner_tab
+from .backtesting_review import render_backtesting_review_tab
+
+# 导入交互式分析器（仅在需要时导入）
+try:
+    from .interactive_strategy_analyzer import InteractiveStrategyAnalyzer
+    from .real_time_fund_flow_visualizer import RealTimeFundFlowVisualizer, StreamlitFundFlowApp
+    from .main_dashboard import main
+except ImportError as e:
+    # 如果导入失败，打印警告但不中断应用
+    print(f"警告: 无法导入高级分析模块: {e}")
 
 __all__ = [
     'render_single_stock_tab',
@@ -62,4 +71,7 @@ __all__ = [
     'render_short_term_trend_tab',
     'render_opportunity_predictor_tab',
     'render_data_monitor_tab',
+    'render_midway_strategy_tab',
+    'render_buy_point_scanner_tab',
+    'render_backtesting_review_tab',
 ]
