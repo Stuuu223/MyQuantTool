@@ -18,7 +18,7 @@ from abc import ABC, abstractmethod
 import inspect
 import copy
 
-from logic.backtest_engine import BacktestEngine, BacktestResult
+from logic.backtest_engine import BacktestEngine, BacktestMetrics
 from logic.parameter_optimizer import ParameterOptimizer  # 假设已存在参数优化器
 
 

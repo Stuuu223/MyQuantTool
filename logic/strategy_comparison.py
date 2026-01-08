@@ -17,7 +17,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 from logic.strategy_factory import Strategy, StrategyFactory
-from logic.backtest_engine import BacktestEngine, BacktestResult
+from logic.backtest_engine import BacktestEngine, BacktestMetrics
 
 
 class StrategyComparator:
