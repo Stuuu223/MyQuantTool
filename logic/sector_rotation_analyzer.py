@@ -56,14 +56,6 @@ class SectorRotationAnalyzer:
     接入 akshare 实时执行数据
     """
     
-    # 30 个行业板块
-    SECTORS = [
-        "电子", "计算机", "通信", "房地产", "建筑", "機械", "汽车", "纶织",
-        "食品", "农业", "医药生物", "化工", "电气设备", "有色金属", "钢铁",
-        "采篷", "电力公用", "石油石化", "煤炭", "非齦金融", "銀行", "保险",
-        "商业贸易", "批发零售", "消費者服务", "传媒", "电影", "环保", "公路", "航空轨道"
-    ]
-    
     def __init__(self, history_days: int = 30):
         """初始化分析器
         
@@ -72,9 +64,33 @@ class SectorRotationAnalyzer:
         """
         self.history_days = history_days
         # 保存历史强度数据 {sector -> deque(SectorStrength)}
+        # 从AkShare获取行业板块列表，如果获取失败则使用默认列表
+        self.SECTORS = self._get_sectors_from_akshare()
         self.history: Dict[str, deque] = {sector: deque(maxlen=history_days) for sector in self.SECTORS}
         # 缓存 akshare 数据
         self._industry_data_cache = None
+    
+    def _get_sectors_from_akshare(self) -> List[str]:
+        """从AkShare获取行业板块列表"""
+        try:
+            # 尝试从AkShare获取行业板块列表
+            sectors_df = DL.get_industry_spot()
+            if sectors_df is not None and not sectors_df.empty:
+                # 从数据中提取板块名称
+                sectors = sectors_df['名称'].unique().tolist()
+                if sectors:
+                    return sectors[:30]  # 只取前30个板块
+        except Exception as e:
+            logger.warning(f"从AkShare获取行业板块列表失败: {e}")
+        
+        # 如果从AkShare获取失败，返回默认列表
+        logger.info("使用默认行业板块列表")
+        return [
+            "电子", "计算机", "通信", "房地产", "建筑", "机械", "汽车", "纺织",
+            "食品", "农业", "医药生物", "化工", "电气设备", "有色金属", "钢铁",
+            "采掘", "电力公用", "石油石化", "煤炭", "非银金融", "银行", "保险",
+            "商业贸易", "批发零售", "消费者服务", "传媒", "电影", "环保", "公路", "航空轨道"
+        ]
         
     def _get_industry_data(self, force_refresh: bool = False) -> pd.DataFrame:
         """获取或缓存行业板块数据"""

@@ -139,33 +139,99 @@ class AdvancedAlgo:
             db = DataManager()
 
             # 获取板块历史数据
+            topic_df = None
+            
+            # 首先尝试获取概念板块历史数据
             try:
-                # 尝试获取概念板块历史数据
-                topic_df = ak.stock_board_concept_hist_em(
-                    symbol=topic_name,
-                    period="daily",
-                    start_date=(pd.Timestamp.now() - pd.Timedelta(days=days)).strftime("%Y%m%d"),
-                    end_date=pd.Timestamp.now().strftime("%Y%m%d")
-                )
-            except:
-                try:
-                    # 尝试获取行业板块历史数据
-                    topic_df = ak.stock_board_industry_hist_em(
-                        symbol=topic_name,
-                        period="daily",
-                        start_date=(pd.Timestamp.now() - pd.Timedelta(days=days)).strftime("%Y%m%d"),
-                        end_date=pd.Timestamp.now().strftime("%Y%m%d")
-                    )
-                except:
-                    return {
-                        '数据状态': '无法获取板块历史数据',
-                        '说明': '可能是数据源限制或板块名称错误'
-                    }
+                concept_boards = ak.stock_board_concept_name_em()
+                if not concept_boards.empty and '板块名称' in concept_boards.columns:
+                    # 尝试精确匹配或模糊匹配
+                    matched_board = concept_boards[concept_boards['板块名称'].str.contains(topic_name, na=False)]
+                    if not matched_board.empty:
+                        # 使用找到的板块名称
+                        actual_board_name = matched_board.iloc[0]['板块名称']
+                        topic_df = ak.stock_board_concept_hist_em(
+                            symbol=actual_board_name,
+                            period="daily",
+                            start_date=(pd.Timestamp.now() - pd.Timedelta(days=days)).strftime("%Y%m%d"),
+                            end_date=pd.Timestamp.now().strftime("%Y%m%d")
+                        )
+                        print(f"使用概念板块: {actual_board_name}")
+                    else:
+                        print(f"未在概念板块中找到: {topic_name}")
+            except Exception as e:
+                print(f"获取概念板块历史数据失败: {e}")
 
-            if topic_df.empty:
+            # 如果概念板块未找到，尝试行业板块
+            if topic_df is None or topic_df.empty:
+                try:
+                    industry_boards = ak.stock_board_industry_name_em()
+                    if not industry_boards.empty and '板块名称' in industry_boards.columns:
+                        # 尝试精确匹配或模糊匹配
+                        matched_board = industry_boards[industry_boards['板块名称'].str.contains(topic_name, na=False)]
+                        if not matched_board.empty:
+                            # 使用找到的板块名称
+                            actual_board_name = matched_board.iloc[0]['板块名称']
+                            topic_df = ak.stock_board_industry_hist_em(
+                                symbol=actual_board_name,
+                                period="daily",
+                                start_date=(pd.Timestamp.now() - pd.Timedelta(days=days)).strftime("%Y%m%d"),
+                                end_date=pd.Timestamp.now().strftime("%Y%m%d")
+                            )
+                            print(f"使用行业板块: {actual_board_name}")
+                        else:
+                            print(f"未在行业板块中找到: {topic_name}")
+                except Exception as e:
+                    print(f"获取行业板块历史数据失败: {e}")
+
+            # 如果仍然没有数据，尝试更宽松的匹配
+            if topic_df is None or topic_df.empty:
+                try:
+                    # 再次尝试概念板块，使用更宽松的匹配
+                    concept_boards = ak.stock_board_concept_name_em()
+                    if not concept_boards.empty and '板块名称' in concept_boards.columns:
+                        # 查找包含相似名称的板块
+                        for idx, row in concept_boards.iterrows():
+                            if topic_name.lower() in row['板块名称'].lower() or \
+                               row['板块名称'].lower() in topic_name.lower():
+                                actual_board_name = row['板块名称']
+                                topic_df = ak.stock_board_concept_hist_em(
+                                    symbol=actual_board_name,
+                                    period="daily",
+                                    start_date=(pd.Timestamp.now() - pd.Timedelta(days=days)).strftime("%Y%m%d"),
+                                    end_date=pd.Timestamp.now().strftime("%Y%m%d")
+                                )
+                                print(f"使用相似概念板块: {actual_board_name}")
+                                break
+                except Exception as e:
+                    print(f"宽松匹配概念板块失败: {e}")
+
+            # 如果仍然没有数据，尝试行业板块的宽松匹配
+            if topic_df is None or topic_df.empty:
+                try:
+                    industry_boards = ak.stock_board_industry_name_em()
+                    if not industry_boards.empty and '板块名称' in industry_boards.columns:
+                        # 查找包含相似名称的板块
+                        for idx, row in industry_boards.iterrows():
+                            if topic_name.lower() in row['板块名称'].lower() or \
+                               row['板块名称'].lower() in topic_name.lower():
+                                actual_board_name = row['板块名称']
+                                topic_df = ak.stock_board_industry_hist_em(
+                                    symbol=actual_board_name,
+                                    period="daily",
+                                    start_date=(pd.Timestamp.now() - pd.Timedelta(days=days)).strftime("%Y%m%d"),
+                                    end_date=pd.Timestamp.now().strftime("%Y%m%d")
+                                )
+                                print(f"使用相似行业板块: {actual_board_name}")
+                                break
+                except Exception as e:
+                    print(f"宽松匹配行业板块失败: {e}")
+
+            # 如果还是找不到数据，返回错误信息
+            if topic_df is None or topic_df.empty:
                 return {
-                    '数据状态': '无历史数据',
-                    '说明': '该板块可能刚上市或数据不足'
+                    '数据状态': '无法获取板块历史数据',
+                    '说明': f'可能是数据源限制、板块名称错误（尝试搜索："船舶制造", "船舶", "军工船舶"等）'
                 }
 
             # 计算持续度指标
@@ -205,10 +271,10 @@ class AdvancedAlgo:
                 # 获取板块成分股
                 stocks_df = None
                 try:
-                    stocks_df = ak.stock_board_concept_cons_em(symbol=topic_name)
+                    stocks_df = ak.stock_board_concept_cons_em(symbol=actual_board_name)
                 except:
                     try:
-                        stocks_df = ak.stock_board_industry_cons_em(symbol=topic_name)
+                        stocks_df = ak.stock_board_industry_cons_em(symbol=actual_board_name)
                     except:
                         pass
 
@@ -244,7 +310,8 @@ class AdvancedAlgo:
                 '趋势强度': round(trend_strength, 2),
                 '当前阶段': stage,
                 '操作建议': suggestion,
-                '龙头股': dragon_stocks
+                '龙头股': dragon_stocks,
+                '实际板块名称': actual_board_name  # 添加实际使用的板块名称
             }
 
         except Exception as e:

@@ -17,10 +17,11 @@ seaborn>=0.13.0
 scipy>=1.10.0
 optuna>=3.0.0
 jieba>=0.42.0
-cvxpy>=1.4.0
+# cvxpy>=1.4.0  # 注释掉，因为在Windows上编译有困难，如果需要可在支持的系统上安装
+xgboost>=2.0.0
+textblob>=0.19.0
 
 # 机器学习依赖
-xgboost>=2.0.0
 
 # 强化学习依赖
 gymnasium>=0.29.0

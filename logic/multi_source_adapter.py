@@ -117,16 +117,16 @@ class AkshareDataSource(BaseDataSource):
     def __init__(self):
         super().__init__("akshare")
     
-    @BaseDataSource.record_performance("get_market_overview")
     def get_market_overview(self) -> Dict[str, Any]:
         """从 akshare 获取市场概览"""
+        start = time.time()
         try:
             # 三大指数
             sh_index = ak.stock_zh_index_spot()[ak.stock_zh_index_spot()['symbol'] == 'sh000001'].iloc[0]
             sz_index = ak.stock_zh_index_spot()[ak.stock_zh_index_spot()['symbol'] == 'sz399001'].iloc[0]
             cy_index = ak.stock_zh_index_spot()[ak.stock_zh_index_spot()['symbol'] == 'sz399006'].iloc[0]
             
-            return {
+            result = {
                 'sh': {
                     'price': float(sh_index['price']),
                     'change': float(sh_index['percent']),
@@ -144,13 +144,22 @@ class AkshareDataSource(BaseDataSource):
                 },
                 'timestamp': datetime.now().isoformat()
             }
+            # 记录性能
+            elapsed = time.time() - start
+            self.perf_tracker.record("get_market_overview", elapsed)
+            logger.debug(f"{self.name}.get_market_overview took {elapsed:.3f}s")
+            return result
         except Exception as e:
+            # 记录性能
+            elapsed = time.time() - start
+            self.perf_tracker.record("get_market_overview", elapsed)
+            logger.debug(f"{self.name}.get_market_overview took {elapsed:.3f}s")
             logger.error(f"akshare market_overview failed: {e}")
             return None
     
-    @BaseDataSource.record_performance("get_stock_quote")
     def get_stock_quote(self, code: str) -> Optional[Dict[str, Any]]:
         """从 akshare 获取股票报价"""
+        start = time.time()
         try:
             # 确保代码格式正确
             if len(code) == 6:
@@ -163,24 +172,34 @@ class AkshareDataSource(BaseDataSource):
             
             df = ak.stock_individual_info_em(symbol=symbol)
             if df.empty:
-                return None
+                result = None
+            else:
+                row = df.iloc[0]
+                result = {
+                    'code': code,
+                    'name': row.get('股票简称', 'N/A'),
+                    'price': float(row.get('最新价', 0)),
+                    'change_percent': float(row.get('涨跌幅', 0)),
+                    'volume': float(row.get('成交量', 0)),
+                    'amount': float(row.get('成交额', 0)),
+                }
             
-            row = df.iloc[0]
-            return {
-                'code': code,
-                'name': row.get('股票简称', 'N/A'),
-                'price': float(row.get('最新价', 0)),
-                'change_percent': float(row.get('涨跌幅', 0)),
-                'volume': float(row.get('成交量', 0)),
-                'amount': float(row.get('成交额', 0)),
-            }
+            # 记录性能
+            elapsed = time.time() - start
+            self.perf_tracker.record("get_stock_quote", elapsed)
+            logger.debug(f"{self.name}.get_stock_quote took {elapsed:.3f}s")
+            return result
         except Exception as e:
+            # 记录性能
+            elapsed = time.time() - start
+            self.perf_tracker.record("get_stock_quote", elapsed)
+            logger.debug(f"{self.name}.get_stock_quote took {elapsed:.3f}s")
             logger.warning(f"akshare quote for {code} failed: {e}")
             return None
     
-    @BaseDataSource.record_performance("get_kline")
     def get_kline(self, code: str, start_date: str, end_date: str, period: str = '1d') -> Optional[pd.DataFrame]:
         """从 akshare 获取K线数据"""
+        start = time.time()
         try:
             # 转换代码格式
             if len(code) == 6:
@@ -199,23 +218,33 @@ class AkshareDataSource(BaseDataSource):
             )
             
             if df.empty:
-                return None
+                result = None
+            else:
+                result = df[['日期', '开盘', '最高', '最低', '收盘', '成交量']].rename(columns={
+                    '日期': 'Date',
+                    '开盘': 'Open',
+                    '最高': 'High',
+                    '最低': 'Low',
+                    '收盘': 'Close',
+                    '成交量': 'Volume'
+                })
             
-            return df[['日期', '开盘', '最高', '最低', '收盘', '成交量']].rename(columns={
-                '日期': 'Date',
-                '开盘': 'Open',
-                '最高': 'High',
-                '最低': 'Low',
-                '收盘': 'Close',
-                '成交量': 'Volume'
-            })
+            # 记录性能
+            elapsed = time.time() - start
+            self.perf_tracker.record("get_kline", elapsed)
+            logger.debug(f"{self.name}.get_kline took {elapsed:.3f}s")
+            return result
         except Exception as e:
+            # 记录性能
+            elapsed = time.time() - start
+            self.perf_tracker.record("get_kline", elapsed)
+            logger.debug(f"{self.name}.get_kline took {elapsed:.3f}s")
             logger.warning(f"akshare kline for {code} failed: {e}")
             return None
     
-    @BaseDataSource.record_performance("get_lhb")
     def get_lhb(self, date: Optional[str] = None) -> Optional[pd.DataFrame]:
         """从 akshare 获取龙虎榜"""
+        start = time.time()
         try:
             if date is None:
                 date = datetime.now().strftime('%Y%m%d')
@@ -223,28 +252,58 @@ class AkshareDataSource(BaseDataSource):
                 date = date.replace('-', '')
             
             df = ak.stock_lhb_detail_sina(date=date)
-            return df if not df.empty else None
+            result = df if not df.empty else None
+            
+            # 记录性能
+            elapsed = time.time() - start
+            self.perf_tracker.record("get_lhb", elapsed)
+            logger.debug(f"{self.name}.get_lhb took {elapsed:.3f}s")
+            return result
         except Exception as e:
+            # 记录性能
+            elapsed = time.time() - start
+            self.perf_tracker.record("get_lhb", elapsed)
+            logger.debug(f"{self.name}.get_lhb took {elapsed:.3f}s")
             logger.warning(f"akshare lhb failed: {e}")
             return None
     
-    @BaseDataSource.record_performance("get_limit_up_stocks")
     def get_limit_up_stocks(self, count: int = 50) -> Optional[pd.DataFrame]:
         """从 akshare 获取涨停股票"""
+        start = time.time()
         try:
             df = ak.stock_zh_a_spot()[ak.stock_zh_a_spot()['涨跌幅'] >= 9.95]
-            return df[['代码', '名称', '最新价', '涨跌幅', '成交量']].head(count) if not df.empty else None
+            result = df[['代码', '名称', '最新价', '涨跌幅', '成交量']].head(count) if not df.empty else None
+            
+            # 记录性能
+            elapsed = time.time() - start
+            self.perf_tracker.record("get_limit_up_stocks", elapsed)
+            logger.debug(f"{self.name}.get_limit_up_stocks took {elapsed:.3f}s")
+            return result
         except Exception as e:
+            # 记录性能
+            elapsed = time.time() - start
+            self.perf_tracker.record("get_limit_up_stocks", elapsed)
+            logger.debug(f"{self.name}.get_limit_up_stocks took {elapsed:.3f}s")
             logger.warning(f"akshare limit_up failed: {e}")
             return None
     
-    @BaseDataSource.record_performance("get_sector_performance")
     def get_sector_performance(self) -> Optional[pd.DataFrame]:
         """从 akshare 获取行业涨幅"""
+        start = time.time()
         try:
             df = ak.stock_sector_sina()
-            return df[['板块名称', '最新价', '涨跌幅', '成交量']] if not df.empty else None
+            result = df[['板块名称', '最新价', '涨跌幅', '成交量']] if not df.empty else None
+            
+            # 记录性能
+            elapsed = time.time() - start
+            self.perf_tracker.record("get_sector_performance", elapsed)
+            logger.debug(f"{self.name}.get_sector_performance took {elapsed:.3f}s")
+            return result
         except Exception as e:
+            # 记录性能
+            elapsed = time.time() - start
+            self.perf_tracker.record("get_sector_performance", elapsed)
+            logger.debug(f"{self.name}.get_sector_performance took {elapsed:.3f}s")
             logger.warning(f"akshare sector failed: {e}")
             return None
 
@@ -257,82 +316,182 @@ class DemoDataSource(BaseDataSource):
     
     def get_market_overview(self) -> Dict[str, Any]:
         """生成模拟市场概览"""
-        return {
-            'sh': {
-                'price': 3250.5 + np.random.randn() * 10,
-                'change': 1.2 + np.random.randn() * 0.5,
-                'name': '上证指数'
-            },
-            'sz': {
-                'price': 10850.2 + np.random.randn() * 20,
-                'change': 0.8 + np.random.randn() * 0.4,
-                'name': '深证成指'
-            },
-            'cy': {
-                'price': 2150.8 + np.random.randn() * 15,
-                'change': 2.1 + np.random.randn() * 0.6,
-                'name': '创业板指'
-            },
-            'timestamp': datetime.now().isoformat()
-        }
+        start = time.time()
+        try:
+            result = {
+                'sh': {
+                    'price': 3250.5 + np.random.randn() * 10,
+                    'change': 1.2 + np.random.randn() * 0.5,
+                    'name': '上证指数'
+                },
+                'sz': {
+                    'price': 10850.2 + np.random.randn() * 20,
+                    'change': 0.8 + np.random.randn() * 0.4,
+                    'name': '深证成指'
+                },
+                'cy': {
+                    'price': 2150.8 + np.random.randn() * 15,
+                    'change': 2.1 + np.random.randn() * 0.6,
+                    'name': '创业板指'
+                },
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            # 记录性能
+            elapsed = time.time() - start
+            self.perf_tracker.record("get_market_overview", elapsed)
+            logger.debug(f"{self.name}.get_market_overview took {elapsed:.3f}s")
+            return result
+        except Exception as e:
+            # 记录性能
+            elapsed = time.time() - start
+            self.perf_tracker.record("get_market_overview", elapsed)
+            logger.debug(f"{self.name}.get_market_overview took {elapsed:.3f}s")
+            logger.warning(f"demo get_market_overview failed: {e}")
+            raise
     
     def get_stock_quote(self, code: str) -> Dict[str, Any]:
         """生成模拟股票报价"""
-        np.random.seed(hash(code) % 2**32)
-        return {
-            'code': code,
-            'name': f'股票{code}',
-            'price': 100 + np.random.randn() * 50,
-            'change_percent': np.random.randn() * 5,
-            'volume': np.random.randint(1000000, 10000000),
-            'amount': np.random.randint(100000000, 1000000000),
-        }
+        start = time.time()
+        try:
+            np.random.seed(hash(code) % 2**32)
+            result = {
+                'code': code,
+                'name': f'股票{code}',
+                'price': 100 + np.random.randn() * 50,
+                'change_percent': np.random.randn() * 5,
+                'volume': np.random.randint(1000000, 10000000),
+                'amount': np.random.randint(100000000, 1000000000),
+            }
+            
+            # 记录性能
+            elapsed = time.time() - start
+            self.perf_tracker.record("get_stock_quote", elapsed)
+            logger.debug(f"{self.name}.get_stock_quote took {elapsed:.3f}s")
+            return result
+        except Exception as e:
+            # 记录性能
+            elapsed = time.time() - start
+            self.perf_tracker.record("get_stock_quote", elapsed)
+            logger.debug(f"{self.name}.get_stock_quote took {elapsed:.3f}s")
+            logger.warning(f"demo get_stock_quote failed: {e}")
+            raise
     
     def get_kline(self, code: str, start_date: str, end_date: str, period: str = '1d') -> pd.DataFrame:
         """生成模拟K线数据"""
-        dates = pd.date_range(start_date, end_date, freq='D')
-        n = len(dates)
-        np.random.seed(hash(code) % 2**32)
-        
-        prices = 1800 + np.cumsum(np.random.randn(n)) * 10
-        return pd.DataFrame({
-            'Date': dates,
-            'Open': prices + np.random.randn(n) * 5,
-            'High': prices + abs(np.random.randn(n) * 8),
-            'Low': prices - abs(np.random.randn(n) * 8),
-            'Close': prices,
-            'Volume': np.random.randint(1000000, 5000000, n)
-        })
+        start = time.time()
+        try:
+            dates = pd.date_range(start_date, end_date, freq='D')
+            n = len(dates)
+            np.random.seed(hash(code) % 2**32)
+            
+            prices = 1800 + np.cumsum(np.random.randn(n)) * 10
+            result = pd.DataFrame({
+                'Date': dates,
+                'Open': prices + np.random.randn(n) * 5,
+                'High': prices + abs(np.random.randn(n) * 8),
+                'Low': prices - abs(np.random.randn(n) * 8),
+                'Close': prices,
+                'Volume': np.random.randint(1000000, 5000000, n)
+            })
+            
+            # 记录性能
+            elapsed = time.time() - start
+            self.perf_tracker.record("get_kline", elapsed)
+            logger.debug(f"{self.name}.get_kline took {elapsed:.3f}s")
+            return result
+        except Exception as e:
+            # 记录性能
+            elapsed = time.time() - start
+            self.perf_tracker.record("get_kline", elapsed)
+            logger.debug(f"{self.name}.get_kline took {elapsed:.3f}s")
+            logger.warning(f"demo get_kline failed: {e}")
+            raise
     
     def get_lhb(self, date: Optional[str] = None) -> pd.DataFrame:
         """生成模拟龙虎榜"""
-        return pd.DataFrame({
-            '代码': ['600519', '000333', '600036', '601988'],
-            '名称': ['贵州茅台', '美的集团', '招商银行', '中国银行'],
-            '上榜次数': [3, 2, 1, 2],
-            '成交金额': [100000000, 80000000, 50000000, 70000000]
-        })
+        start = time.time()
+        try:
+            result = pd.DataFrame({
+                '代码': ['600519', '000333', '600036', '601988'],
+                '名称': ['贵州茅台', '美的集团', '招商银行', '中国银行'],
+                '上榜次数': [3, 2, 1, 2],
+                '成交金额': [100000000, 80000000, 50000000, 70000000]
+            })
+            
+            # 记录性能
+            elapsed = time.time() - start
+            self.perf_tracker.record("get_lhb", elapsed)
+            logger.debug(f"{self.name}.get_lhb took {elapsed:.3f}s")
+            return result
+        except Exception as e:
+            # 记录性能
+            elapsed = time.time() - start
+            self.perf_tracker.record("get_lhb", elapsed)
+            logger.debug(f"{self.name}.get_lhb took {elapsed:.3f}s")
+            logger.warning(f"demo get_lhb failed: {e}")
+            raise
     
     def get_limit_up_stocks(self, count: int = 50) -> pd.DataFrame:
         """生成模拟涨停股票"""
-        codes = [f'60{i:04d}' for i in range(1, count + 1)]
-        return pd.DataFrame({
-            '代码': codes[:count],
-            '名称': [f'股票{c}' for c in codes[:count]],
-            '最新价': np.random.uniform(10, 100, count),
-            '涨跌幅': [10.0] * count,
-            '成交量': np.random.randint(1000000, 10000000, count)
-        })
+        start = time.time()
+        try:
+            codes = [f'60{i:04d}' for i in range(1, count + 1)]
+            result = pd.DataFrame({
+                '代码': codes[:count],
+                '名称': [f'股票{c}' for c in codes[:count]],
+                '最新价': np.random.uniform(10, 100, count),
+                '涨跌幅': [10.0] * count,
+                '成交量': np.random.randint(1000000, 10000000, count)
+            })
+            
+            # 记录性能
+            elapsed = time.time() - start
+            self.perf_tracker.record("get_limit_up_stocks", elapsed)
+            logger.debug(f"{self.name}.get_limit_up_stocks took {elapsed:.3f}s")
+            return result
+        except Exception as e:
+            # 记录性能
+            elapsed = time.time() - start
+            self.perf_tracker.record("get_limit_up_stocks", elapsed)
+            logger.debug(f"{self.name}.get_limit_up_stocks took {elapsed:.3f}s")
+            logger.warning(f"demo get_limit_up_stocks failed: {e}")
+            raise
     
     def get_sector_performance(self) -> pd.DataFrame:
         """生成模拟行业涨幅"""
-        sectors = ['医药生物', '电子', '机械设备', '房地产', '化工', '电气设备']
-        return pd.DataFrame({
-            '板块名称': sectors,
-            '最新价': np.random.uniform(1000, 5000, len(sectors)),
-            '涨跌幅': np.random.uniform(-2, 5, len(sectors)),
-            '成交量': np.random.randint(10000000, 100000000, len(sectors))
-        })
+        start = time.time()
+        try:
+            # 尝试从真实数据源获取板块列表，如果获取失败则使用默认列表
+            try:
+                # 尝试获取真实的行业板块数据
+                sectors_df = ak.stock_sector_sina()
+                if sectors_df is not None and not sectors_df.empty and len(sectors_df) >= 6:
+                    sectors = sectors_df['板块名称'].head(6).tolist()
+                else:
+                    sectors = ['医药生物', '电子', '机械设备', '房地产', '化工', '电气设备']
+            except:
+                sectors = ['医药生物', '电子', '机械设备', '房地产', '化工', '电气设备']
+                
+            result = pd.DataFrame({
+                '板块名称': sectors,
+                '最新价': np.random.uniform(1000, 5000, len(sectors)),
+                '涨跌幅': np.random.uniform(-2, 5, len(sectors)),
+                '成交量': np.random.randint(10000000, 100000000, len(sectors))
+            })
+            
+            # 记录性能
+            elapsed = time.time() - start
+            self.perf_tracker.record("get_sector_performance", elapsed)
+            logger.debug(f"{self.name}.get_sector_performance took {elapsed:.3f}s")
+            return result
+        except Exception as e:
+            # 记录性能
+            elapsed = time.time() - start
+            self.perf_tracker.record("get_sector_performance", elapsed)
+            logger.debug(f"{self.name}.get_sector_performance took {elapsed:.3f}s")
+            logger.warning(f"demo get_sector_performance failed: {e}")
+            raise
 
 
 class MultiSourceDataAdapter:
