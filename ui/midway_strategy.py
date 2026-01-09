@@ -14,138 +14,152 @@ def render_midway_strategy_tab(db, config):
     st.caption("识别个股在上涨过程中的回调买点")
     st.markdown("---")
     
-    # 侧边栏配置
+    # 主内容区 - 配置面板
+    with st.expander("⚙️ 策略配置", expanded=True):
+        col_config1, col_config2, col_config3 = st.columns(3)
+        
+        with col_config1:
+            stock_count = st.slider(
+                "扫描股票数量",
+                min_value=10,
+                max_value=200,
+                value=50,
+                step=10,
+                help="按成交量排序选择前N只最活跃的股票进行扫描"
+            )
+        
+        with col_config2:
+            lookback_days = st.slider(
+                "回看天数",
+                min_value=20,
+                max_value=120,
+                value=30,
+                step=10,
+                help="分析历史数据的天数范围（建议值：30-60天）"
+            )
+            
+            signal_strength_threshold = st.slider(
+                "信号强度阈值",
+                0.0, 1.0, 0.6,
+                step=0.1,
+                help="信号强度低于此值将被过滤（建议值：0.4-0.6）"
+            )
+        
+        with col_config3:
+            risk_tolerance = st.selectbox(
+                "风险容忍度",
+                ["低", "中", "高"],
+                help="选择可接受的风险等级",
+                key="midway_strategy_risk_tolerance"
+            )
+    
+    # 主内容区 - 扫描结果
+    st.subheader("📊 半路战法信号")
+    
+    # 获取股票数据并分析
+    if st.button("🔍 扫描半路战法机会", key="scan_midway"):
+        with st.spinner('正在扫描半路战法机会...'):
+            try:
+                # 获取全市场数据（简化实现，实际应从数据库获取）
+                analyzer = MidwayStrategyAnalyzer(lookback_days=lookback_days)
+                
+                # 获取全市场股票列表
+                import akshare as ak
+                stock_list_df = ak.stock_zh_a_spot_em()
+                
+                # 按成交量排序，取成交量最大的N只股票（活跃股票）
+                if '成交量' in stock_list_df.columns:
+                    stock_list_df = stock_list_df.sort_values('成交量', ascending=False)
+                elif '成交额' in stock_list_df.columns:
+                    stock_list_df = stock_list_df.sort_values('成交额', ascending=False)
+                
+                stock_codes = stock_list_df['代码'].tolist()[:stock_count]  # 取成交量最大的N只
+                
+                # 创建数据管理器
+                data_manager = DataSourceManager(db)
+                
+                # 获取股票数据
+                stock_data = {}
+                stock_info = {}
+                
+                for code in stock_codes:
+                    # 获取最近lookback_days天的数据
+                    import datetime
+                    end_date = datetime.datetime.now().strftime('%Y%m%d')
+                    start_date = (datetime.datetime.now() - datetime.timedelta(days=lookback_days)).strftime('%Y%m%d')
+                    
+                    df = data_manager.get_stock_data(code, start_date, end_date)
+                    if df is not None and len(df) >= lookback_days:
+                        stock_data[code] = df
+                        # 从股票列表中获取真实股票名称
+                        stock_name = stock_list_df[stock_list_df['代码'] == code]['名称'].values[0] if code in stock_list_df['代码'].values else f"股票{code}"
+                        stock_info[code] = stock_name
+                
+                # 扫描半路战法信号
+                signals = analyzer.scan_midway_opportunities(stock_data, stock_info)
+                
+                # 过滤信号
+                filtered_signals = [s for s in signals if 
+                                  s.signal_strength >= signal_strength_threshold and
+                                  (risk_tolerance == "高" or s.risk_level in ["低", "中"][:["低", "中", "高"].index(risk_tolerance)+1])]
+                
+                if filtered_signals:
+                    st.success(f"✅ 发现 {len(filtered_signals)} 个半路战法信号")
+                    
+                    # 显示信号列表
+                    signal_df = pd.DataFrame([{
+                        '股票代码': s.stock_code,
+                        '股票名称': s.stock_name,
+                        '信号日期': s.signal_date,
+                        '入场价': f"¥{s.entry_price:.2f}",
+                        '止损价': f"¥{s.stop_loss:.2f}",
+                        '目标价': f"¥{s.target_price:.2f}",
+                        '信号强度': f"{s.signal_strength:.2f}",
+                        '风险等级': s.risk_level,
+                        '置信度': f"{s.confidence:.2f}"
+                    } for s in filtered_signals])
+                    
+                    st.dataframe(
+                        signal_df,
+                        use_container_width=True,
+                        hide_index=True
+                    )
+                    
+                    # 详细分析
+                    for i, signal in enumerate(filtered_signals[:5], 1):
+                        with st.expander(f"#{i} {signal.stock_name} ({signal.stock_code}) - 信号强度: {signal.signal_strength:.2f}"):
+                            col_a, col_b, col_c = st.columns(3)
+                            with col_a:
+                                st.metric("入场价", f"¥{signal.entry_price:.2f}")
+                            with col_b:
+                                st.metric("止损价", f"¥{signal.stop_loss:.2f}")
+                            with col_c:
+                                st.metric("目标价", f"¥{signal.target_price:.2f}")
+                            
+                            st.write(f"**风险等级**: {signal.risk_level}")
+                            st.write(f"**置信度**: {signal.confidence:.2f}")
+                            
+                            st.write("**信号理由**:")
+                            for reason in signal.reasons:
+                                st.write(f"- {reason}")
+                            
+                            # 绘制K线图
+                            if signal.stock_code in stock_data:
+                                fig = _plot_kline_with_signal(stock_data[signal.stock_code], signal)
+                                st.plotly_chart(fig, use_container_width=True)
+                    
+                else:
+                    st.info("👍 未发现符合条件的半路战法信号")
+                    
+            except Exception as e:
+                st.error(f"❌ 扫描失败: {str(e)}")
+                import traceback
+                st.error(traceback.format_exc())
+    
+    # 侧边栏 - 战术说明
     with st.sidebar:
-        st.subheader("⚙️ 策略配置")
-        
-        lookback_days = st.slider(
-            "回看天数",
-            10, 60, 30,
-            help="分析历史数据的天数范围"
-        )
-        
-        signal_strength_threshold = st.slider(
-            "信号强度阈值",
-            0.0, 1.0, 0.6,
-            help="信号强度低于此值将被过滤"
-        )
-        
-        risk_tolerance = st.selectbox(
-            "风险容忍度",
-            ["低", "中", "高"],
-            help="选择可接受的风险等级",
-            key="midway_strategy_risk_tolerance"
-        )
-        
         st.markdown("---")
-        st.subheader("💡 战术说明")
-        st.info("""
-        **半路战法核心逻辑**：
-        
-        1. **突破识别**：股价突破关键位置后回调
-        2. **支撑确认**：回调到支撑位附近获得支撑
-        3. **量价配合**：成交量萎缩后重新放量
-        4. **时机选择**：在合适的位置和时机入场
-        """)
-    
-    # 主内容区
-    col1, col2 = st.columns([3, 1])
-    
-    with col1:
-        st.subheader("📊 半路战法信号")
-        
-        # 获取股票数据并分析
-        if st.button("🔍 扫描半路战法机会", key="scan_midway"):
-            with st.spinner('正在扫描半路战法机会...'):
-                try:
-                    # 获取全市场数据（简化实现，实际应从数据库获取）
-                    analyzer = MidwayStrategyAnalyzer(lookback_days=lookback_days)
-                    
-                    # 假设我们有一些股票代码来演示
-                    # 在实际应用中，这里应该获取所有A股的股票数据
-                    stock_codes = ['000001', '000002', '600000', '600036', '000651']  # 示例股票代码
-                    
-                    # 创建数据管理器
-                    data_manager = DataSourceManager(db)
-                    
-                    # 获取股票数据
-                    stock_data = {}
-                    stock_info = {}
-                    
-                    for code in stock_codes:
-                        # 获取最近60天的数据
-                        import datetime
-                        end_date = datetime.datetime.now().strftime('%Y-%m-%d')
-                        start_date = (datetime.datetime.now() - datetime.timedelta(days=60)).strftime('%Y-%m-%d')
-                        
-                        df = data_manager.get_stock_data(code, start_date, end_date)
-                        if df is not None and len(df) >= lookback_days:
-                            stock_data[code] = df
-                            stock_info[code] = f"股票_{code}"  # 实际应用中应获取真实股票名称
-                    
-                    # 扫描半路战法信号
-                    signals = analyzer.scan_midway_opportunities(stock_data, stock_info)
-                    
-                    # 过滤信号
-                    filtered_signals = [s for s in signals if 
-                                      s.signal_strength >= signal_strength_threshold and
-                                      (risk_tolerance == "高" or s.risk_level in ["低", "中"][:["低", "中", "高"].index(risk_tolerance)+1])]
-                    
-                    if filtered_signals:
-                        st.success(f"✅ 发现 {len(filtered_signals)} 个半路战法信号")
-                        
-                        # 显示信号列表
-                        signal_df = pd.DataFrame([{
-                            '股票代码': s.stock_code,
-                            '股票名称': s.stock_name,
-                            '信号日期': s.signal_date,
-                            '入场价': f"¥{s.entry_price:.2f}",
-                            '止损价': f"¥{s.stop_loss:.2f}",
-                            '目标价': f"¥{s.target_price:.2f}",
-                            '信号强度': f"{s.signal_strength:.2f}",
-                            '风险等级': s.risk_level,
-                            '置信度': f"{s.confidence:.2f}"
-                        } for s in filtered_signals])
-                        
-                        st.dataframe(
-                            signal_df,
-                            use_container_width=True,
-                            hide_index=True
-                        )
-                        
-                        # 详细分析
-                        for i, signal in enumerate(filtered_signals[:5], 1):
-                            with st.expander(f"#{i} {signal.stock_name} ({signal.stock_code}) - 信号强度: {signal.signal_strength:.2f}"):
-                                col_a, col_b, col_c = st.columns(3)
-                                with col_a:
-                                    st.metric("入场价", f"¥{signal.entry_price:.2f}")
-                                with col_b:
-                                    st.metric("止损价", f"¥{signal.stop_loss:.2f}")
-                                with col_c:
-                                    st.metric("目标价", f"¥{signal.target_price:.2f}")
-                                
-                                st.write(f"**风险等级**: {signal.risk_level}")
-                                st.write(f"**置信度**: {signal.confidence:.2f}")
-                                
-                                st.write("**信号理由**:")
-                                for reason in signal.reasons:
-                                    st.write(f"- {reason}")
-                                
-                                # 绘制K线图
-                                if signal.stock_code in stock_data:
-                                    fig = _plot_kline_with_signal(stock_data[signal.stock_code], signal)
-                                    st.plotly_chart(fig, use_container_width=True)
-                        
-                    else:
-                        st.info("👍 未发现符合条件的半路战法信号")
-                        
-                except Exception as e:
-                    st.error(f"❌ 扫描失败: {str(e)}")
-                    import traceback
-                    st.error(traceback.format_exc())
-    
-    with col2:
-        st.subheader("🎯 战术要点")
+        st.subheader("📖 战术要点")
         
         st.info("""
         **入场条件**：

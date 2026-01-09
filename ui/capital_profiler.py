@@ -15,22 +15,22 @@ def render_capital_profiler_tab(db, config):
     st.caption("5维度综合评估：连续关注、资金实力、成功率、行业浓度、选时能力")
     st.markdown("---")
     
-    # 侧边栏配置
-    with st.sidebar:
-        st.subheader("⚙️ 画像配置")
+    # 主内容区 - 配置面板
+    with st.expander("⚙️ 画像配置", expanded=True):
+        col_config1, col_config2, col_config3 = st.columns(3)
         
-        min_operations = st.slider("最小操作次数", 3, 20, 5, help="游资最少操作次数才进行画像分析")
+        with col_config1:
+            min_operations = st.slider("最小操作次数", 3, 20, 5, help="游资最少操作次数才进行画像分析")
+            lookback_days = st.slider("回溯天数", 30, 365, 180, help="分析历史数据的天数")
         
-        lookback_days = st.slider("回溯天数", 30, 365, 180, help="分析历史数据的天数")
+        with col_config2:
+            weight_focus = st.slider("连续关注权重", 0.0, 1.0, 0.20, 0.05)
+            weight_strength = st.slider("资金实力权重", 0.0, 1.0, 0.25, 0.05)
         
-        st.markdown("---")
-        st.subheader("📊 评分权重")
-        
-        weight_focus = st.slider("连续关注权重", 0.0, 1.0, 0.20, 0.05)
-        weight_strength = st.slider("资金实力权重", 0.0, 1.0, 0.25, 0.05)
-        weight_success = st.slider("成功率权重", 0.0, 1.0, 0.30, 0.05)
-        weight_sector = st.slider("行业浓度权重", 0.0, 1.0, 0.10, 0.05)
-        weight_timing = st.slider("选时能力权重", 0.0, 1.0, 0.15, 0.05)
+        with col_config3:
+            weight_success = st.slider("成功率权重", 0.0, 1.0, 0.30, 0.05)
+            weight_sector = st.slider("行业浓度权重", 0.0, 1.0, 0.10, 0.05)
+            weight_timing = st.slider("选时能力权重", 0.0, 1.0, 0.15, 0.05)
         
         # 归一化权重
         total_weight = weight_focus + weight_strength + weight_success + weight_sector + weight_timing
@@ -40,22 +40,9 @@ def render_capital_profiler_tab(db, config):
             weight_success /= total_weight
             weight_sector /= total_weight
             weight_timing /= total_weight
-        
-        st.markdown("---")
-        st.subheader("💡 画像说明")
-        st.info(f"""
-        **5维度评分系统**：
-        
-        1. 连续关注 ({weight_focus:.0%})：操作频度
-        
-        2. 资金实力 ({weight_strength:.0%})：平均成交额
-        
-        3. 成功率 ({weight_success:.0%})：盈利能力
-        
-        4. 行业浓度 ({weight_sector:.0%})：专注程度
-        
-        5. 选时能力 ({weight_timing:.0%})：时机把握
-        """)
+    
+    # 主内容区 - 画像分析
+    st.subheader("📊 画像分析")
     
     # 主内容区
     col1, col2 = st.columns([3, 1])

@@ -72,6 +72,12 @@ class MidwayStrategyAnalyzer:
 
     def _calculate_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """计算技术指标"""
+        # 确保数据类型为float64（talib要求）
+        df = df.copy()
+        for col in ['open', 'high', 'low', 'close', 'volume']:
+            if col in df.columns:
+                df[col] = df[col].astype(float)
+
         # 移动平均线
         df['ma5'] = talib.SMA(df['close'].values, timeperiod=5)
         df['ma10'] = talib.SMA(df['close'].values, timeperiod=10)

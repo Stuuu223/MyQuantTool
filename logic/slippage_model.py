@@ -409,5 +409,161 @@ def demo_slippage_model():
     print(f"模拟执行滑点: {actual_slippage:.4f}")
     print(f"执行后卖盘: {list(zip(new_book.ask_prices[:3], new_book.ask_volumes[:3]))}")
 
+class RealisticSlippage(SlippageModel):
+    """现实滑点模型 - 模拟真实市场中的滑点行为"""
+    
+    def __init__(self, base_slippage_rate: float = 0.001):
+        """
+        初始化现实滑点模型
+        
+        Args:
+            base_slippage_rate: 基础滑点率
+        """
+        super().__init__()
+        self.base_slippage_rate = base_slippage_rate
+        self.slippage_history = []
+    
+    def calculate_realistic_slippage(self, 
+                                    order_size: float,
+                                    price: float,
+                                    is_buy: bool,
+                                    market_condition: str = 'normal') -> float:
+        """
+        计算现实滑点
+        
+        Args:
+            order_size: 订单规模（金额）
+            price: 当前价格
+            is_buy: 是否为买单
+            market_condition: 市场条件 ('normal', 'volatile', 'illiquid')
+            
+        Returns:
+            滑点金额
+        """
+        # 基础滑点
+        base_slippage = price * self.base_slippage_rate
+        
+        # 订单规模影响
+        size_factor = min(0.01, order_size / 10000000)  # 最大1%的额外滑点
+        
+        # 市场条件影响
+        condition_factor = {
+            'normal': 1.0,
+            'volatile': 1.5,
+            'illiquid': 2.0
+        }.get(market_condition, 1.0)
+        
+        # 随机波动（模拟市场噪声）
+        import random
+        noise_factor = random.uniform(0.9, 1.1)
+        
+        total_slippage = base_slippage * (1 + size_factor) * condition_factor * noise_factor
+        
+        # 记录历史
+        self.slippage_history.append(total_slippage)
+        if len(self.slippage_history) > 100:
+            self.slippage_history.pop(0)
+        
+        return total_slippage
+    
+    def get_average_slippage(self) -> float:
+        """获取平均滑点"""
+        if not self.slippage_history:
+            return 0.0
+        return sum(self.slippage_history) / len(self.slippage_history)
+
+
+class DynamicSlippage(SlippageModel):
+    """动态滑点模型 - 根据市场状态动态调整滑点"""
+    
+    def __init__(self):
+        """初始化动态滑点模型"""
+        super().__init__()
+        self.current_volatility = 0.02
+        self.current_spread = 0.001
+        self.liquidity_score = 1.0
+    
+    def update_market_state(self, 
+                           volatility: float,
+                           spread: float,
+                           liquidity_score: float):
+        """
+        更新市场状态
+        
+        Args:
+            volatility: 波动率
+            spread: 买卖价差
+            liquidity_score: 流动性得分（0-1，1表示最高流动性）
+        """
+        self.current_volatility = volatility
+        self.current_spread = spread
+        self.liquidity_score = liquidity_score
+    
+    def calculate_dynamic_slippage(self,
+                                  order_size: float,
+                                  price: float,
+                                  is_buy: bool) -> float:
+        """
+        计算动态滑点
+        
+        Args:
+            order_size: 订单规模
+            price: 当前价格
+            is_buy: 是否为买单
+            
+        Returns:
+            滑点金额
+        """
+        # 基础滑点基于价差
+        base_slippage = price * self.current_spread * 0.5
+        
+        # 波动率调整
+        volatility_factor = 1 + (self.current_volatility - 0.02) * 10
+        
+        # 流动性调整（流动性越差，滑点越大）
+        liquidity_factor = 2 - self.liquidity_score
+        
+        # 订单规模调整
+        size_impact = min(0.02, order_size / 5000000)  # 最大2%的额外滑点
+        
+        # 综合计算
+        total_slippage = base_slippage * volatility_factor * liquidity_factor * (1 + size_impact)
+        
+        return total_slippage
+    
+    def estimate_execution_time(self, order_size: float, market_depth: MarketDepth) -> float:
+        """
+        估计执行时间（分钟）
+        
+        Args:
+            order_size: 订单规模
+            market_depth: 市场深度
+            
+        Returns:
+            预计执行时间（分钟）
+        """
+        # 计算订单簿总深度
+        total_bid_volume = sum(market_depth.bid_volumes)
+        total_ask_volume = sum(market_depth.ask_volumes)
+        total_depth = total_bid_volume + total_ask_volume
+        
+        if total_depth == 0:
+            return 60.0  # 如果没有深度，估计需要60分钟
+        
+        # 订单占深度比例
+        depth_ratio = order_size / total_depth
+        
+        # 基础执行时间
+        base_time = 5.0  # 5分钟
+        
+        # 根据比例调整
+        execution_time = base_time * (1 + depth_ratio * 10)
+        
+        # 流动性调整
+        execution_time /= self.liquidity_score
+        
+        return min(execution_time, 240.0)  # 最多4小时
+
+
 if __name__ == "__main__":
     demo_slippage_model()

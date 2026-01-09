@@ -61,10 +61,33 @@ class AkShareDataSource(DataSourceBase):
         try:
             import akshare as ak
             df = ak.stock_zh_a_hist(symbol=symbol, start_date=start_date, end_date=end_date)
+            if df is None or df.empty:
+                logger.warning(f"AkShare 返回空数据: {symbol}")
+                self.mark_failure()
+                return None
+            
+            # 转换中文列名为英文列名
+            column_mapping = {
+                '日期': 'date',
+                '股票代码': 'symbol',
+                '开盘': 'open',
+                '收盘': 'close',
+                '最高': 'high',
+                '最低': 'low',
+                '成交量': 'volume',
+                '成交额': 'turnover',
+                '振幅': 'amplitude',
+                '涨跌幅': 'change_percent',
+                '涨跌额': 'change_amount',
+                '换手率': 'turnover_rate'
+            }
+            df = df.rename(columns=column_mapping)
+            
+            logger.info(f"AkShare 成功获取数据: {symbol}, 行数: {len(df)}")
             self.mark_success()
             return df
         except Exception as e:
-            logger.error(f"AkShare 获取数据失败: {e}")
+            logger.error(f"AkShare 获取数据失败: {symbol}, 错误: {e}")
             self.mark_failure()
             return None
     
@@ -93,7 +116,8 @@ class CacheDataSource(DataSourceBase):
     def get_stock_data(self, symbol: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
         """从缓存获取数据"""
         try:
-            df = self.db.get_stock_data(symbol, start_date, end_date)
+            # DataManager使用get_history_data方法
+            df = self.db.get_history_data(symbol, start_date, end_date)
             if df is not None and not df.empty:
                 self.mark_success()
                 return df

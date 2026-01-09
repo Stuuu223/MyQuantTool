@@ -15,35 +15,21 @@ def render_capital_network_tab(db, config):
     st.caption("构建游资-股票二部图，分析游资网络结构和对手关系")
     st.markdown("---")
     
-    # 侧边栏配置
-    with st.sidebar:
-        st.subheader("⚙️ 图谱配置")
+    # 主内容区 - 配置面板
+    with st.expander("⚙️ 图谱配置", expanded=True):
+        col_config1, col_config2 = st.columns(2)
         
-        lookback_days = st.slider("回溯天数", 7, 90, 30, help="分析最近多少天的龙虎榜数据")
+        with col_config1:
+            lookback_days = st.slider("回溯天数", 7, 90, 30, help="分析最近多少天的龙虎榜数据")
+            min_operations = st.slider("最小操作次数", 1, 10, 2, help="游资最少操作次数才纳入分析")
         
-        include_competitive = st.checkbox("包含对手关系", value=True, help="是否分析游资之间的竞争关系")
-        
-        min_operations = st.slider("最小操作次数", 1, 10, 2, help="游资最少操作次数才纳入分析")
-        
-        st.markdown("---")
-        st.subheader("📊 分析维度")
-        
-        analysis_mode = st.selectbox(
-            "分析模式",
-            ["网络概览", "中心节点分析", "对手关系分析", "群组聚类分析"],
-            help="选择不同的分析维度"
-        )
-        
-        st.markdown("---")
-        st.subheader("💡 图谱说明")
-        st.info("""
-        **游资关系图谱功能**：
-        
-        - 📈 二部图：游资-股票关系网络
-        - 🎯 中心节点：识别核心游资
-        - ⚔️ 对手关系：同一股票上的买卖博弈
-        - 📊 群组聚类：使用谱聚类算法分组
-        """)
+        with col_config2:
+            include_competitive = st.checkbox("包含对手关系", value=True, help="是否分析游资之间的竞争关系")
+            analysis_mode = st.selectbox(
+                "分析模式",
+                ["网络概览", "中心节点分析", "对手关系分析", "群组聚类分析"],
+                help="选择不同的分析维度"
+            )
     
     # 主内容区
     col1, col2 = st.columns([3, 1])
@@ -126,7 +112,7 @@ def render_capital_network_tab(db, config):
                         # 创建交互式网络图
                         fig = _create_network_plotly(graph, node_metrics)
                         st.plotly_chart(fig, use_container_width=True)
-                        
+                    
                     elif analysis_mode == "中心节点分析":
                         st.divider()
                         st.subheader("🎯 中心节点分析")
@@ -385,10 +371,12 @@ def _create_competitive_network_plotly(graph, node_metrics):
     
     # 只显示游资之间的竞争关系
     capital_nodes = [n for n in graph.nodes() if graph.nodes[n].get('node_type') == 'capital']
-    subgraph = graph.subgraph(capital_nodes).copy()
+    
+    # 创建只包含游资的子图
+    subgraph = graph.subgraph(capital_nodes)
     
     # 使用Spring布局
-    pos = nx.spring_layout(subgraph, k=1.5, iterations=50, seed=42)
+    pos = nx.spring_layout(subgraph, k=2.0, iterations=50, seed=42)
     
     # 创建节点轨迹
     node_trace = go.Scatter(

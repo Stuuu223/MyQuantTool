@@ -406,11 +406,10 @@ class StrategyOptimizer:
         
         return combinations
     
-    def _get_metric_value(self, backtest_result: BacktestResult, metric_name: str) -> float:
+    def _get_metric_value(self, backtest_result: BacktestMetrics, metric_name: str) -> float:
         """获取回测结果中的指标值"""
-        metrics = backtest_result.metrics
-        if metric_name in metrics:
-            return metrics[metric_name]
+        if hasattr(backtest_result, metric_name):
+            return getattr(backtest_result, metric_name)
         else:
             # 如果找不到指定指标，返回默认值
             return 0.0

@@ -5,7 +5,7 @@ AKShare 实时数据加载器
 """
 import akshare as ak
 import pandas as pd
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Any
 from datetime import datetime, timedelta
 import logging
 
@@ -137,10 +137,27 @@ class AKShareDataLoader:
                 - 成交额
         """
         try:
-            # 注意：ak.stock_board_industry_spot_em() 的返回格式已改变
-            # 暂时返回空数据，使用演示数据替代
-            logger.warning("akshare API 格式已改变，暂时使用演示数据")
-            return pd.DataFrame()
+            import akshare as ak
+            # 使用可用的接口获取行业板块数据
+            df = ak.stock_board_industry_name_em()
+            
+            if not df.empty:
+                # 使用列索引提取数据以避免编码问题
+                # 列顺序: 序号, 板块名称, 板块代码, 最新价, 涨跌额, 涨跌幅, 成交额, 换手率, 上涨家数, 下跌家数, 领涨股票, 领涨股票-涨跌幅
+                result = pd.DataFrame({
+                    '代码': df.iloc[:, 2],      # 板块代码
+                    '名称': df.iloc[:, 1],      # 板块名称
+                    '最新价': df.iloc[:, 3],    # 最新价
+                    '涨跌幅': df.iloc[:, 5],    # 涨跌幅
+                    '涨跌额': df.iloc[:, 4],    # 涨跌额
+                    '成交量': df.iloc[:, 6],    # 成交额
+                    '成交额': df.iloc[:, 6]     # 成交额
+                })
+                logger.info(f"成功获取{len(result)}个行业板块数据")
+                return result
+            else:
+                logger.warning("akshare返回空数据")
+                return pd.DataFrame()
         except Exception as e:
             logger.error(f"获取行业板块失败: {e}")
             return pd.DataFrame()
@@ -345,6 +362,178 @@ class AKShareDataLoader:
         }
 
 
+# ============================================================================
+    # 新增：板块详细数据 API
+    # ============================================================================
+    
+    @staticmethod
+    def get_sector_stock_stats(symbol: str = "BK0447") -> Dict[str, Any]:
+        """
+        获取板块内个股统计（涨跌家数、涨停/跌停家数等）
+        
+        Args:
+            symbol: 板块代码
+            
+        Returns:
+            Dict: 包含涨跌家数、涨停/跌停家数等统计信息
+        """
+        try:
+            import akshare as ak
+            # 获取板块成分股
+            df = ak.stock_board_industry_cons_em(symbol=symbol)
+            
+            if df.empty:
+                return {}
+            
+            # 统计涨跌家数
+            up_count = len(df[df['涨跌幅'] > 0])
+            down_count = len(df[df['涨跌幅'] < 0])
+            flat_count = len(df[df['涨跌幅'] == 0])
+            
+            # 统计涨停/跌停家数（涨停>9.8%，跌停<-9.8%）
+            limit_up_count = len(df[df['涨跌幅'] >= 9.8])
+            limit_down_count = len(df[df['涨跌幅'] <= -9.8])
+            
+            # 获取领涨股（涨幅最大的前5只）
+            top_stocks = df.nlargest(5, '涨跌幅')[['代码', '名称', '涨跌幅', '最新价']].to_dict('records')
+            
+            # 获取领跌股（跌幅最大的前5只）
+            bottom_stocks = df.nsmallest(5, '涨跌幅')[['代码', '名称', '涨跌幅', '最新价']].to_dict('records')
+            
+            stats = {
+                'total_count': len(df),
+                'up_count': up_count,
+                'down_count': down_count,
+                'flat_count': flat_count,
+                'limit_up_count': limit_up_count,
+                'limit_down_count': limit_down_count,
+                'top_stocks': top_stocks,
+                'bottom_stocks': bottom_stocks
+            }
+            
+            logger.info(f"成功获取板块 {symbol} 统计数据: {up_count}涨/{down_count}跌, {limit_up_count}涨停/{limit_down_count}跌停")
+            return stats
+            
+        except Exception as e:
+            logger.error(f"获取板块 {symbol} 统计数据失败: {e}")
+            return {}
+    
+    @staticmethod
+    def get_sector_capital_flow(symbol: str = "BK0447") -> Dict[str, float]:
+        """
+        获取板块资金流向数据
+        
+        Args:
+            symbol: 板块代码
+            
+        Returns:
+            Dict: 包含主力净流入、散户净流入等资金数据
+        """
+        try:
+            import akshare as ak
+            # 获取板块资金流向
+            df = ak.stock_sector_fund_flow_rank(indicator="今日", sector="行业")
+            
+            if df.empty:
+                return {}
+            
+            # 查找对应板块
+            sector_row = df[df['板块代码'] == symbol]
+            if sector_row.empty:
+                return {}
+            
+            row = sector_row.iloc[0]
+            
+            return {
+                'main_net_inflow': float(row.get('主力净流入', 0) or 0),
+                'main_inflow': float(row.get('主力流入', 0) or 0),
+                'main_outflow': float(row.get('主力流出', 0) or 0),
+                'retail_net_inflow': float(row.get('散户净流入', 0) or 0),
+                'retail_inflow': float(row.get('散户流入', 0) or 0),
+                'retail_outflow': float(row.get('散户流出', 0) or 0)
+            }
+            
+        except Exception as e:
+            logger.error(f"获取板块 {symbol} 资金流向失败: {e}")
+            return {}
+    
+    @staticmethod
+    def get_sector_index_kline(symbol: str = "BK0447", period: str = "daily", 
+                               start_date: str = None, end_date: str = None) -> pd.DataFrame:
+        """
+        获取板块指数K线数据
+        
+        Args:
+            symbol: 板块代码
+            period: 周期 (daily, weekly, monthly)
+            start_date: 开始日期 (YYYYMMDD)
+            end_date: 结束日期 (YYYYMMDD)
+            
+        Returns:
+            pd.DataFrame: K线数据
+        """
+        try:
+            import akshare as ak
+            from datetime import datetime, timedelta
+            
+            if start_date is None:
+                start_date = (datetime.now() - timedelta(days=365)).strftime("%Y%m%d")
+            if end_date is None:
+                end_date = datetime.now().strftime("%Y%m%d")
+            
+            # 获取板块历史数据
+            df = ak.stock_board_industry_hist_em(
+                symbol=symbol,
+                period=period,
+                start_date=start_date,
+                end_date=end_date,
+                adjust="qfq"
+            )
+            
+            if not df.empty:
+                logger.info(f"成功获取板块 {symbol} K线数据，共 {len(df)} 条")
+            else:
+                logger.warning(f"板块 {symbol} K线数据为空")
+                
+            return df
+            
+        except Exception as e:
+            logger.error(f"获取板块 {symbol} K线数据失败: {e}")
+            return pd.DataFrame()
+    
+    @staticmethod
+    def get_northbound_fund_flow() -> Dict[str, Any]:
+        """
+        获取北向资金流向数据
+        
+        Returns:
+            Dict: 包含北向资金流入流出数据
+        """
+        try:
+            import akshare as ak
+            # 获取北向资金流向
+            df = ak.stock_hsgt_hist_em(symbol="北向资金")
+            
+            if df.empty:
+                return {}
+            
+            # 获取最近一天的数据
+            latest = df.iloc[0]
+            
+            return {
+                'date': latest.get('日期', ''),
+                'north_net_inflow': float(latest.get('净流入', 0) or 0),
+                'north_inflow': float(latest.get('流入', 0) or 0),
+                'north_outflow': float(latest.get('流出', 0) or 0),
+                'sh_net_inflow': float(latest.get('沪股通净流入', 0) or 0),
+                'sz_net_inflow': float(latest.get('深股通净流入', 0) or 0)
+            }
+            
+        except Exception as e:
+            logger.error(f"获取北向资金数据失败: {e}")
+            return {}
+
+
 if __name__ == "__main__":
     # 测试
     loader = AKShareDataLoader()
@@ -364,3 +553,23 @@ if __name__ == "__main__":
     kline = loader.get_stock_daily("000001", "20260101", today)
     print(f"\n000001 K线数据 (\u5171 {len(kline)} 条):")
     print(kline.head())
+    
+    # 测试新增功能
+    print("\n=== 测试新增功能 ===")
+    
+    # 测试板块个股统计
+    stats = loader.get_sector_stock_stats("BK0447")
+    print(f"\n板块个股统计: {stats}")
+    
+    # 测试资金流向
+    flow = loader.get_sector_capital_flow("BK0447")
+    print(f"\n板块资金流向: {flow}")
+    
+    # 测试板块K线
+    sector_kline = loader.get_sector_index_kline("BK0447")
+    print(f"\n板块K线数据 (\u5171 {len(sector_kline)} 条):")
+    print(sector_kline.head())
+    
+    # 测试北向资金
+    north = loader.get_northbound_fund_flow()
+    print(f"\n北向资金数据: {north}")

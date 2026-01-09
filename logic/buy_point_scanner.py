@@ -108,8 +108,8 @@ class BuyPointScanner:
         # 使用数据源管理器获取数据
         if self.data_manager:
             from datetime import datetime, timedelta
-            end_date = datetime.now().strftime('%Y-%m-%d')
-            start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+            end_date = datetime.now().strftime('%Y%m%d')
+            start_date = (datetime.now() - timedelta(days=days)).strftime('%Y%m%d')
             return self.data_manager.get_stock_data(stock_code, start_date, end_date)
         else:
             # 如果没有数据管理器，返回None（实际应用中应该有其他方式获取数据）
@@ -117,45 +117,57 @@ class BuyPointScanner:
 
     def _analyze_single_stock(self, df: pd.DataFrame, stock_code: str) -> Optional[BuySignal]:
         """分析单个股票的买点信号"""
-        # 计算技术指标
-        df = self._calculate_technical_indicators(df)
-        latest = df.iloc[-1]
+        try:
+            # 计算技术指标
+            df = self._calculate_technical_indicators(df)
+            latest = df.iloc[-1]
 
-        # 获取股票名称（简化处理）
-        stock_name = f"股票_{stock_code}"
+            # 获取股票名称（简化处理）
+            stock_name = f"股票_{stock_code}"
 
-        # 检查各种买点模式
-        signals = []
+            # 检查各种买点模式
+            signals = []
 
-        # 1. 突破买点
-        breakout_signal = self._check_breakout_signal(df, stock_code, stock_name)
-        if breakout_signal:
-            signals.append(breakout_signal)
+            # 1. 突破买点
+            breakout_signal = self._check_breakout_signal(df, stock_code, stock_name)
+            if breakout_signal:
+                signals.append(breakout_signal)
 
-        # 2. 回调买点
-        pullback_signal = self._check_pullback_signal(df, stock_code, stock_name)
-        if pullback_signal:
-            signals.append(pullback_signal)
+            # 2. 回调买点
+            pullback_signal = self._check_pullback_signal(df, stock_code, stock_name)
+            if pullback_signal:
+                signals.append(pullback_signal)
 
-        # 3. 金叉买点
-        golden_cross_signal = self._check_golden_cross_signal(df, stock_code, stock_name)
-        if golden_cross_signal:
-            signals.append(golden_cross_signal)
+            # 3. 金叉买点
+            golden_cross_signal = self._check_golden_cross_signal(df, stock_code, stock_name)
+            if golden_cross_signal:
+                signals.append(golden_cross_signal)
 
-        # 4. 背离买点
-        divergence_signal = self._check_divergence_signal(df, stock_code, stock_name)
-        if divergence_signal:
-            signals.append(divergence_signal)
+            # 4. 背离买点
+            divergence_signal = self._check_divergence_signal(df, stock_code, stock_name)
+            if divergence_signal:
+                signals.append(divergence_signal)
 
-        # 选择评分最高的信号
-        if signals:
-            best_signal = max(signals, key=lambda x: x.signal_score)
-            return best_signal
+            # 选择评分最高的信号
+            if signals:
+                best_signal = max(signals, key=lambda x: x.signal_score)
+                return best_signal
 
-        return None
+            return None
+        except Exception as e:
+            import traceback
+            print(f"分析股票 {stock_code} 时出错: {type(e).__name__}: {e}")
+            print(f"堆栈: {traceback.format_exc()}")
+            return None
 
     def _calculate_technical_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """计算技术指标"""
+        # 确保数据类型为float64（talib要求）
+        df = df.copy()
+        for col in ['open', 'high', 'low', 'close', 'volume']:
+            if col in df.columns:
+                df[col] = df[col].astype(float)
+
         # 移动平均线
         df['ma5'] = talib.SMA(df['close'].values, timeperiod=5)
         df['ma10'] = talib.SMA(df['close'].values, timeperiod=10)
@@ -175,11 +187,14 @@ class BuyPointScanner:
             df['close'].values, fastperiod=12, slowperiod=26, signalperiod=9
         )
 
-        # KDJ
-        df['k'], df['d'], df['j'] = talib.STOCH(
+        # KDJ (使用STOCH计算，然后计算J值)
+        slowk, slowd = talib.STOCH(
             df['high'].values, df['low'].values, df['close'].values,
             fastk_period=9, slowk_period=3, slowk_matype=0, slowd_period=3, slowd_matype=0
         )
+        df['k'] = slowk
+        df['d'] = slowd
+        df['j'] = 3 * df['k'] - 2 * df['d']  # J = 3K - 2D
 
         # 成交量指标
         df['volume_ma5'] = talib.SMA(df['volume'].values, timeperiod=5)

@@ -291,8 +291,19 @@ class AkshareDataSource(BaseDataSource):
         """从 akshare 获取行业涨幅"""
         start = time.time()
         try:
-            df = ak.stock_sector_sina()
-            result = df[['板块名称', '最新价', '涨跌幅', '成交量']] if not df.empty else None
+            df = ak.stock_board_industry_name_em()
+            if not df.empty:
+                # 使用列索引来避免编码问题
+                # 列顺序: 序号, 板块名称, 板块代码, 最新价, 涨跌额, 涨跌幅, 成交额, 换手率, 上涨家数, 下跌家数, 领涨股票, 领涨股票-涨跌幅
+                # 我们需要: 板块名称(索引1), 最新价(索引3), 涨跌幅(索引5), 成交额(索引6)
+                result = pd.DataFrame({
+                    '板块名称': df.iloc[:, 1],  # 板块名称
+                    '最新价': df.iloc[:, 3],    # 最新价
+                    '涨跌幅': df.iloc[:, 5],    # 涨跌幅
+                    '成交量': df.iloc[:, 6]     # 成交额
+                })
+            else:
+                result = None
             
             # 记录性能
             elapsed = time.time() - start

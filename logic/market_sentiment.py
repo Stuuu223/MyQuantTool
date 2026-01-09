@@ -550,6 +550,43 @@ class MarketSentimentIndexCalculator:
         self.social_analyzer = SocialMediaSentiment()
         self.price_analyzer = PriceBasedSentiment()
         self.fund_flow_analyzer = FundFlowSentiment()
+        
+        # 各情绪指标的权重
+        self.news_weight = 0.3
+        self.social_weight = 0.2
+        self.volume_weight = 0.25
+        self.price_weight = 0.25
+    
+    def calculate_composite_index(self, 
+                                   news_sentiment,
+                                   social_sentiment,
+                                   volume_sentiment,
+                                   price_sentiment):
+        """
+        计算综合情绪指数
+        
+        Args:
+            news_sentiment: 新闻情绪分数（可以是标量或Series）
+            social_sentiment: 社交媒体情绪分数（可以是标量或Series）
+            volume_sentiment: 量价情绪分数（可以是标量或Series）
+            price_sentiment: 价格情绪分数（可以是标量或Series）
+            
+        Returns:
+            float or Series: 综合情绪指数 (-1 到 1)
+        """
+        import pandas as pd
+        
+        composite = (
+            news_sentiment * self.news_weight +
+            social_sentiment * self.social_weight +
+            volume_sentiment * self.volume_weight +
+            price_sentiment * self.price_weight
+        )
+        
+        # 限制在[-1, 1]范围内
+        # 使用numpy的clip函数，它可以处理标量和Series
+        import numpy as np
+        return np.clip(composite, -1.0, 1.0)
     
     def calculate_comprehensive_sentiment(self, 
                                        symbols: List[str], 
