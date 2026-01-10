@@ -43,7 +43,7 @@ class AKShareDataLoader:
                 - 美涨幅: 涨跌幅 (%)
         """
         try:
-            df = ak.stock_lhb_detail_em(date=date)
+            df = ak.stock_lhb_detail_em(start_date=date, end_date=date)
             logger.info(f"成功获取 {date} 龙虎榜数据, 共 {len(df)} 条记录")
             return df
         except Exception as e:
@@ -169,19 +169,25 @@ class AKShareDataLoader:
 
                         # 从返回的数据中提取值
                         for _, item_row in spot_df.iterrows():
-                            item_name = item_row['item']
+                            item_name = str(item_row['item'])
                             value = item_row['value']
 
-                            if '最新价' in item_name or '最新' in item_name:
+                            # 根据item名称匹配字段
+                            if item_name == '最新':
                                 sector_data['最新价'] = value
-                            elif '涨跌幅' in item_name:
+                            elif item_name == '涨跌幅':
                                 sector_data['涨跌幅'] = value
-                            elif '涨跌额' in item_name:
+                            elif item_name == '涨跌额':
                                 sector_data['涨跌额'] = value
-                            elif '成交量' in item_name:
+                            elif item_name == '成交量':
                                 sector_data['成交量'] = value
-                            elif '成交额' in item_name:
+                            elif item_name == '成交额':
                                 sector_data['成交额'] = value
+                            elif item_name == '换手率':
+                                sector_data['换手率'] = value
+
+                        # 调试日志
+                        logger.debug(f"板块 {sector_name} 提取的数据: 换手率={sector_data['换手率']}, 涨跌幅={sector_data['涨跌幅']}")
 
                         all_sectors.append(sector_data)
 

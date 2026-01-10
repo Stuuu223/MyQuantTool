@@ -141,24 +141,96 @@ class SectorRotationAnalyzer:
         except Exception as e:
             logger.debug(f"获取龙虎榜数据失败: {e}")
             return pd.DataFrame()
+
+    def _load_historical_data(self, date: str):
+        """从AkShare加载历史数据到缓存"""
+        try:
+            import akshare as ak
+            from datetime import datetime, timedelta
+
+            end_date = datetime.strptime(date, '%Y-%m-%d')
+            start_date = end_date - timedelta(days=self.history_days)
+
+            start_str = start_date.strftime('%Y%m%d')
+            end_str = end_date.strftime('%Y%m%d')
+
+            # 获取所有板块的历史数据
+            for sector in self.SECTORS:
+                try:
+                    hist_df = ak.stock_board_industry_hist_em(
+                        symbol=sector,
+                        start_date=start_str,
+                        end_date=end_str,
+                        period='日k'
+                    )
+
+                    if not hist_df.empty:
+                        # 从历史数据中提取每日强度
+                        for _, row in hist_df.iterrows():
+                            try:
+                                price_change = float(row.get('涨跌幅', 0))
+                                price_score = self._normalize_score(price_change, -10, 10) * 30
+
+                                volume = float(row.get('成交额', 0) or 0)
+                                capital_score = self._normalize_score(volume, 0, 1e10) * 25
+
+                                # 简化计算，只使用涨幅和资金因子
+                                total_score = min(price_score + capital_score, 100)
+
+                                # 确定轮动阶段
+                                phase = self._determine_phase(sector, total_score, 0)
+
+                                # 创建历史强度记录
+                                hist_strength = SectorStrength(
+                                    sector=sector,
+                                    date=row['日期'],
+                                    price_score=price_score,
+                                    capital_score=capital_score,
+                                    leader_score=0,
+                                    topic_score=0,
+                                    volume_score=0,
+                                    total_score=total_score,
+                                    phase=phase,
+                                    leading_stock=None,
+                                    delta=0
+                                )
+
+                                self.history[sector].append(hist_strength)
+                            except Exception as e:
+                                logger.debug(f"处理历史数据失败: {e}")
+                                continue
+
+                except Exception as e:
+                    logger.debug(f"获取板块 {sector} 历史数据失败: {e}")
+                    continue
+
+            logger.info(f"已加载历史数据到缓存")
+
+        except Exception as e:
+            logger.error(f"加载历史数据失败: {e}")
         
     def calculate_sector_strength(self, date: str) -> Dict[str, SectorStrength]:
         """计算所有板块的强度识别
-        
+
         Args:
             date: 计算日期 (YYYY-MM-DD)
-            
+
         Returns:
             {sector -> SectorStrength} 板块强度字典
         """
         strength_scores = {}
         industry_df = self._get_industry_data()
         lhb_df = self._get_lhb_data(date.replace('-', ''))
-        
+
         logger.info(f"开始计算板块强度，日期: {date}")
         logger.info(f"行业板块数据行数: {len(industry_df)}")
         logger.info(f"龙虎榜数据行数: {len(lhb_df)}")
-        
+
+        # 如果历史数据为空，尝试从AkShare加载
+        if all(len(history) == 0 for history in self.history.values()):
+            logger.info("历史数据为空，尝试从AkShare加载...")
+            self._load_historical_data(date)
+
         if industry_df.empty:
             logger.warning("行业板块执行数据为空。可能是非交易日")
             return strength_scores
@@ -427,14 +499,20 @@ class SectorRotationAnalyzer:
         delta: float
     ) -> RotationPhase:
         """确定板块轮动阶段"""
-        # 简化逻辑 - 实际应基于排名
+        # 优先根据强度变化判断
         if delta > 5:
             return RotationPhase.RISING
         elif delta < -5:
             return RotationPhase.FALLING
-        elif total_score > 70:
+        # 如果没有历史数据（delta=0），则根据综合评分判断
+        elif total_score >= 70:
             return RotationPhase.LEADING
-        elif total_score < 30:
+        elif total_score <= 30:
+            return RotationPhase.LAGGING
+        # 综合评分在30-70之间，根据评分细分
+        elif total_score >= 60:
+            return RotationPhase.LEADING
+        elif total_score <= 40:
             return RotationPhase.LAGGING
         else:
             return RotationPhase.STABLE

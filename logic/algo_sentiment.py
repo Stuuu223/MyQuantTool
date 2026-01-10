@@ -33,8 +33,18 @@ class MarketSentimentAnalyzer:
             
             # 统计涨停数据
             zt_count = len(limit_stocks)
-            zt_open_count = len(limit_stocks[limit_stocks['涨跌幅'] < 9.9])  # 涨停打开
-            zt_open_rate = (zt_open_count / zt_count * 100) if zt_count > 0 else 0
+            
+            # 计算封板强度（封单金额/成交额）
+            if '封单金额' in limit_stocks.columns and '成交额' in limit_stocks.columns:
+                # 计算平均封板强度
+                # 封板强度 = 封单金额 / 成交额
+                # >100% 说明封单金额超过成交额，资金抢筹意愿强
+                seal_strength = (limit_stocks['封单金额'] / limit_stocks['成交额']).mean()
+                zt_seal_strength = round(seal_strength * 100, 2)  # 转换为百分比
+            else:
+                # 如果没有封单数据，使用涨跌幅作为替代
+                avg_change = limit_stocks['涨跌幅'].mean()
+                zt_seal_strength = round(avg_change / 10 * 100, 2)  # 粗略估计
             
             # 统计连板高度
             if '连板数' in limit_stocks.columns:
@@ -54,8 +64,13 @@ class MarketSentimentAnalyzer:
             high_board_count = sum([count for height, count in board_heights.items() if height >= 3])
             board_score = min(high_board_count / 50 * 30, 30)
             
-            # 打开率评分 (越低越好)
-            open_score = max(30 - zt_open_rate * 0.3, 0)
+            # 打开率评分 (封板强度越高越好，转换为评分)
+            # 封板强度 > 0.5 为强，0.3-0.5 为中，<0.3 为弱
+            if 'zt_seal_strength' in locals():
+                seal_strength_value = zt_seal_strength / 100
+                open_score = min(seal_strength_value * 60, 30)  # 最多30分
+            else:
+                open_score = 15  # 默认中等
             
             # 涨跌幅评分
             avg_change = limit_stocks['涨跌幅'].mean()
@@ -86,8 +101,7 @@ class MarketSentimentAnalyzer:
                 '情绪等级': sentiment_level,
                 '情绪描述': sentiment_desc,
                 '涨停数量': zt_count,
-                '涨停打开数': zt_open_count,
-                '涨停打开率': round(zt_open_rate, 2),
+                '封板强度': zt_seal_strength,
                 '连板分布': board_heights,
                 '详细数据': limit_stocks
             }

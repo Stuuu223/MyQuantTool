@@ -45,8 +45,34 @@ def render_backtesting_review_tab(db, config):
                     import akshare as ak
                     from logic.algo_sentiment import MarketSentimentAnalyzer
                     from logic.sector_rotation_analyzer import get_sector_rotation_analyzer
+                    from datetime import datetime, timedelta
 
                     date_str = review_date.strftime("%Y%m%d")
+
+                    # 尝试获取数据，如果失败则向前查找最近的交易日
+                    max_tries = 5  # 最多尝试5天
+                    actual_date_str = date_str
+                    data_found = False
+
+                    for i in range(max_tries):
+                        current_date = review_date - timedelta(days=i)
+                        current_date_str = current_date.strftime("%Y%m%d")
+
+                        try:
+                            # 测试该日期是否有数据
+                            test_data = ak.stock_zt_pool_em(date=current_date_str)
+                            if not test_data.empty:
+                                actual_date_str = current_date_str
+                                data_found = True
+                                if i > 0:
+                                    st.info(f"💡 提示：{date_str} 无数据，使用最近交易日 {current_date_str} 的收盘数据")
+                                break
+                        except:
+                            continue
+
+                    if not data_found:
+                        st.warning(f"⚠️ 未找到最近{max_tries}个交易日的数据")
+                        return
 
                     # 获取市场数据
                     sentiment_analyzer = MarketSentimentAnalyzer()
@@ -77,8 +103,8 @@ def render_backtesting_review_tab(db, config):
                     st.subheader("🎯 涨跌停统计")
 
                     try:
-                        limit_up_data = ak.stock_zt_pool_em(date=date_str)
-                        limit_down_data = ak.stock_dt_pool_em(date=date_str)
+                        limit_up_data = ak.stock_zt_pool_em(date=actual_date_str)
+                        limit_down_data = ak.stock_zt_pool_dtgc_em(date=actual_date_str)
 
                         col_zt, col_dt = st.columns(2)
                         with col_zt:
@@ -105,7 +131,7 @@ def render_backtesting_review_tab(db, config):
                     st.subheader("🔥 热点板块分析")
 
                     try:
-                        sector_strength = sector_analyzer.calculate_sector_strength(date_str)
+                        sector_strength = sector_analyzer.calculate_sector_strength(actual_date_str)
 
                         if sector_strength:
                             # 转换为DataFrame并排序
@@ -150,7 +176,10 @@ def render_backtesting_review_tab(db, config):
                         else:
                             st.info("暂无板块数据")
                     except Exception as e:
+                        import traceback
                         st.warning(f"获取板块数据失败: {e}")
+                        with st.expander("查看详细错误信息"):
+                            st.error(traceback.format_exc())
 
                     st.markdown("---")
 
@@ -158,29 +187,46 @@ def render_backtesting_review_tab(db, config):
                     st.subheader("🏆 龙虎榜分析")
 
                     try:
-                        lhb_data = ak.stock_lhb_detail_em(date=date_str)
+                        # 尝试获取龙虎榜数据
+                        lhb_data = ak.stock_lhb_detail_em(start_date=actual_date_str, end_date=actual_date_str)
 
-                        if not lhb_data.empty:
-                            # 统计上榜次数
-                            stock_counts = lhb_data['代码'].value_counts().head(10)
+                        if lhb_data is not None and not lhb_data.empty:
+                            # 检查必要的列
+                            required_cols = ['代码', '名称']
+                            if '代码' not in lhb_data.columns or '名称' not in lhb_data.columns:
+                                st.warning("龙虎榜数据格式异常，缺少必要列")
+                                st.write(f"可用列: {lhb_data.columns.tolist()}")
+                            else:
+                                # 统计上榜次数
+                                stock_counts = lhb_data['代码'].value_counts().head(10)
 
-                            st.write("**上榜次数TOP10**:")
-                            for code, count in stock_counts.items():
-                                stock_name = lhb_data[lhb_data['代码'] == code]['名称'].iloc[0]
-                                st.write(f"• {stock_name} ({code}) - 上榜{count}次")
+                                st.write("**上榜次数TOP10**:")
+                                for code, count in stock_counts.items():
+                                    stock_name_series = lhb_data[lhb_data['代码'] == code]['名称']
+                                    if not stock_name_series.empty:
+                                        stock_name = stock_name_series.iloc[0]
+                                        st.write(f"• {stock_name} ({code}) - 上榜{count}次")
 
-                            # 净买入统计
-                            if '净买入' in lhb_data.columns:
-                                net_buy = lhb_data.groupby('代码')['净买入'].sum().sort_values(ascending=False).head(10)
+                                # 净买入统计
+                                if '净买入' in lhb_data.columns:
+                                    net_buy = lhb_data.groupby('代码')['净买入'].sum().sort_values(ascending=False).head(10)
 
-                                st.write("**净买入TOP10**:")
-                                for code, amount in net_buy.items():
-                                    stock_name = lhb_data[lhb_data['代码'] == code]['名称'].iloc[0]
-                                    st.write(f"• {stock_name} ({code}) - ¥{amount:,.0f}")
+                                    st.write("**净买入TOP10**:")
+                                    for code, amount in net_buy.items():
+                                        stock_name_series = lhb_data[lhb_data['代码'] == code]['名称']
+                                        if not stock_name_series.empty:
+                                            stock_name = stock_name_series.iloc[0]
+                                            st.write(f"• {stock_name} ({code}) - ¥{amount:,.0f}")
+                                else:
+                                    st.info("龙虎榜数据中无净买入信息")
                         else:
-                            st.info("当日无龙虎榜数据")
+                            st.info(f"当日无龙虎榜数据")
                     except Exception as e:
+                        import traceback
                         st.warning(f"获取龙虎榜数据失败: {e}")
+                        st.info(f"提示: 日期 {actual_date_str} 可能是非交易日或数据源无数据")
+                        with st.expander("查看详细错误信息"):
+                            st.error(traceback.format_exc())
 
                     st.markdown("---")
 
@@ -197,14 +243,36 @@ def render_backtesting_review_tab(db, config):
                             with col_sentiment[1]:
                                 st.metric("涨停数量", sentiment_data['涨停数量'])
                             with col_sentiment[2]:
-                                st.metric("跌停数量", sentiment_data['跌停数量'])
+                                if '封板强度' in sentiment_data:
+                                    seal_strength = sentiment_data['封板强度']
+                                    st.metric("封板强度", f"{seal_strength:.2f}%")
+                                    if seal_strength > 100:
+                                        st.caption("💡 封板强度>100%：资金抢筹意愿极强")
+                                else:
+                                    st.metric("封板强度", "N/A")
 
-                            st.write(f"**市场阶段**: {sentiment_data['市场阶段']}")
+                            st.write(f"**情绪等级**: {sentiment_data['情绪等级']}")
                             st.write(f"**情绪描述**: {sentiment_data['情绪描述']}")
+                            
+                            # 添加封板强度说明
+                            if '封板强度' in sentiment_data:
+                                st.info("""
+                                **📊 封板强度说明**：
+                                - 封板强度 = 封单金额 / 成交额
+                                - >100%：封单金额超过成交额，资金抢筹意愿极强
+                                - 50%-100%：封单充足，涨停板较稳
+                                - 30%-50%：封单一般，需注意风险
+                                - <30%：封单不足，容易被打开
+                                """)
                         else:
                             st.info("暂无情绪数据")
+                            if '错误信息' in sentiment_data:
+                                st.warning(f"错误: {sentiment_data['错误信息']}")
                     except Exception as e:
+                        import traceback
                         st.warning(f"获取情绪数据失败: {e}")
+                        with st.expander("查看详细错误信息"):
+                            st.error(traceback.format_exc())
 
                 except Exception as e:
                     st.error(f"❌ 生成市场复盘失败: {str(e)}")

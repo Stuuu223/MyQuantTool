@@ -10,6 +10,7 @@ import plotly.express as px
 from datetime import datetime
 from logic.sector_rotation_analyzer import get_sector_rotation_analyzer
 from logic.data_manager import DataManager
+from logic.formatter import Formatter
 
 
 def render_sector_rotation_tab(db, config):
@@ -87,16 +88,14 @@ def render_sector_rotation_tab(db, config):
                     strength_scores = analyzer.calculate_sector_strength(date_str)
                     
                     if strength_scores:
-                        # 检查是否使用了真实数据
-                        is_real_data = len(analyzer._get_industry_data()) > 0 and len(analyzer._get_industry_data()) > 10
-
-                        if is_real_data:
-                            st.info("💡 数据来源：AkShare 实时数据")
-                        else:
-                            st.warning("⚠️ 提示：当前使用演示数据，可能是非交易时间或数据源异常")
-
                         # 获取原始板块数据
                         industry_df = analyzer._get_industry_data()
+                        is_real_data = len(industry_df) > 0 and len(industry_df) > 10
+
+                        if is_real_data:
+                            st.info(f"💡 数据来源：AkShare 实时数据（共{len(industry_df)}个板块）")
+                        else:
+                            st.warning("⚠️ 提示：当前使用演示数据，可能是非交易时间或数据源异常")
 
                         # 转换为DataFrame，包含原始数据
                         df_strength = pd.DataFrame([
@@ -119,6 +118,19 @@ def render_sector_rotation_tab(db, config):
                             for sector, strength in strength_scores.items()
                         ])
 
+                        # 显示数据质量提示
+                        if is_real_data:
+                            zero_turnover = len(df_strength[df_strength['换手率'] == 0])
+                            zero_delta = len(df_strength[df_strength['强度变化'] == 0])
+
+                            if zero_turnover > 0 or zero_delta > 0:
+                                tips = []
+                                if zero_turnover > 0:
+                                    tips.append(f"{zero_turnover}个板块换手率为0（可能数据源未提供）")
+                                if zero_delta > 0:
+                                    tips.append(f"{zero_delta}个板块强度变化为0（首次运行无历史数据）")
+                                st.info("💡 数据提示：" + "；".join(tips))
+
                         # 从原始数据中填充实际值
                         for idx, row in df_strength.iterrows():
                             sector_name = row['板块']
@@ -134,12 +146,22 @@ def render_sector_rotation_tab(db, config):
                                 df_strength.at[idx, '换手率'] = sector_data.get('换手率', 0)
                                 df_strength.at[idx, '最新价'] = sector_data.get('最新价', 0)
 
+                        # 调试：检查换手率数据
+                        st.write(f"调试信息：换手率非0的板块数量: {len(df_strength[df_strength['换手率'] != 0])}")
+                        if len(df_strength[df_strength['换手率'] != 0]) > 0:
+                            st.write(f"换手率示例: {df_strength[df_strength['换手率'] != 0][['板块', '换手率']].head(3)}")
+
                         # 按综合评分排序
                         df_strength = df_strength.sort_values('综合评分', ascending=False)
 
-                        # 显示排行榜，包含更多关键数据
+                        # 格式化成交额
+                        df_strength['成交额_格式化'] = df_strength['成交额'].apply(Formatter.format_amount)
+                        # 格式化涨跌幅
+                        df_strength['涨跌幅_格式化'] = df_strength['涨跌幅'].apply(lambda x: f"{x:+.2f}%" if x != 0 else "0.00%")
+
+                        # 显示排行榜（精简版）
                         st.dataframe(
-                            df_strength.head(15)[['板块', '综合评分', '涨跌幅', '成交额', '换手率', '轮动阶段', '领跑股票', '强度变化']],
+                            df_strength.head(15)[['板块', '综合评分', '涨跌幅_格式化', '成交额_格式化', '轮动阶段']],
                             use_container_width=True,
                             hide_index=True,
                             column_config={
@@ -150,19 +172,32 @@ def render_sector_rotation_tab(db, config):
                                     min_value=0,
                                     max_value=100
                                 ),
-                                '涨跌幅': st.column_config.NumberColumn(
+                                '涨跌幅_格式化': st.column_config.TextColumn(
                                     '涨跌幅',
-                                    help='板块平均涨跌幅(%)',
-                                    format='%.2f%%'
+                                    help='板块平均涨跌幅'
                                 ),
-                                '成交额': st.column_config.NumberColumn(
+                                '成交额_格式化': st.column_config.TextColumn(
                                     '成交额',
-                                    help='板块总成交额(元)',
-                                    format='%.0f'
-                                ),
-                                '换手率': st.column_config.NumberColumn(
-                                    '换手率',
-                                    help='板块平均换手率(%)',
+                                    help='板块总成交额'
+                                )
+                            }
+                        )
+
+                        # 详细信息（可折叠）
+                        with st.expander("📊 查看详细数据"):
+                            st.dataframe(
+                                df_strength.head(15)[['板块', '综合评分', '涨跌幅', '成交额', '换手率', '轮动阶段', '领跑股票', '强度变化']],
+                                use_container_width=True,
+                                hide_index=True,
+                                column_config={
+                                    '成交额': st.column_config.NumberColumn(
+                                        '成交额',
+                                        help='板块总成交额(元)',
+                                        format='%.0f'
+                                    ),
+                                    '换手率': st.column_config.NumberColumn(
+                                        '换手率',
+                                        help='板块平均换手率(%)',
                                     format='%.2f%%'
                                 ),
                                 '强度变化': st.column_config.NumberColumn(
@@ -176,30 +211,41 @@ def render_sector_rotation_tab(db, config):
                         # 检测轮动信号
                         st.markdown("---")
                         st.subheader("🎯 轮动信号识别")
-                        
+
                         signals = analyzer.detect_rotation_signals(date_str)
-                        
+
+                        # 统计各阶段板块数量
+                        rising_count = len(signals['rising'])
+                        falling_count = len(signals['falling'])
+                        leading_count = len(signals['leading'])
+                        lagging_count = len(signals['lagging'])
+                        stable_count = len(strength_scores) - rising_count - falling_count - leading_count - lagging_count
+
                         col_a, col_b, col_c, col_d = st.columns(4)
-                        
+
                         with col_a:
-                            st.metric("📈 上升中", len(signals['rising']))
+                            st.metric("📈 上升中", rising_count)
                             if signals['rising']:
                                 st.write(", ".join(signals['rising'][:3]))
-                        
+
                         with col_b:
-                            st.metric("📉 下降中", len(signals['falling']))
+                            st.metric("📉 下降中", falling_count)
                             if signals['falling']:
                                 st.write(", ".join(signals['falling'][:3]))
-                        
+
                         with col_c:
-                            st.metric("🏆 领跑", len(signals['leading']))
+                            st.metric("🏆 领跑", leading_count)
                             if signals['leading']:
                                 st.write(", ".join(signals['leading'][:3]))
-                        
+
                         with col_d:
-                            st.metric("⚠️ 落后", len(signals['lagging']))
+                            st.metric("⚠️ 落后", lagging_count)
                             if signals['lagging']:
                                 st.write(", ".join(signals['lagging'][:3]))
+
+                        # 显示稳定板块数量
+                        if stable_count > 0:
+                            st.info(f"📊 稳定板块: {stable_count} 个")
                         
                         # 板块强度可视化
                         st.markdown("---")

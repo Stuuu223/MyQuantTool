@@ -572,7 +572,7 @@ with st.sidebar:
 # --- 按功能大类渲染（Lazy Rendering）---
 if app_mode == "📈 市场分析":
     # 市场分析模块 - 包含各种分析工具
-    t1, t2, t3, t4, t5 = st.tabs(["📈 单股分析", "📊 多股比较", "🔄 板块轮动", "🧠 情绪分析", "🔥 热点追踪"])
+    t1, t2, t3, t4, t5, t6 = st.tabs(["📈 单股分析", "📊 多股比较", "🔄 板块轮动", "🧠 情绪分析", "🔥 热点追踪", "📋 市场复盘"])
     with t1:
         # 延迟导入单股分析模块（重型模块）
         with st.spinner("正在加载单股分析引擎..."):
@@ -586,6 +586,8 @@ if app_mode == "📈 市场分析":
         render_sentiment_tab(db, config)
     with t5:
         render_hot_topics_tab(db, config)
+    with t6:
+        render_backtesting_review_tab(db, config)
 
 elif app_mode == "🔥 交易策略":
     # 交易策略模块
@@ -706,7 +708,7 @@ elif app_mode == "💰 资产管理":
 
 elif app_mode == "⚙️ 系统工具":
     # 系统工具模块
-    t1, t2, t3, t4, t5 = st.tabs(["⚡ 性能优化", "⚙️ 系统设置", "📋 复盘助手", "📜 历史记录", "🔍 数据监控"])
+    t1, t2, t3, t4 = st.tabs(["⚡ 性能优化", "⚙️ 系统设置", "📜 历史记录", "🔍 数据监控"])
     with t1:
         # 延迟导入性能优化模块
         with st.spinner("正在加载性能优化工具..."):
@@ -715,10 +717,8 @@ elif app_mode == "⚙️ 系统工具":
     with t2:
         render_settings_tab(db, config)
     with t3:
-        render_backtesting_review_tab(db, config)
-    with t4:
         render_history_tab(db, config)
-    with t5:
+    with t4:
         # 延迟导入数据质量监控模块
         with st.spinner("正在加载数据质量监控工具..."):
             from ui.data_monitor import render_data_monitor_tab
