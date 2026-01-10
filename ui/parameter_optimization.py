@@ -6,7 +6,7 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
-from logic.parameter_optimizer import ParameterGridSearch, BayesianOptimization
+from logic.parameter_optimizer import ParameterOptimizer
 from logic.backtest_engine import get_backtest_engine
 
 

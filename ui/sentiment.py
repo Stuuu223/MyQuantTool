@@ -81,7 +81,7 @@ def render_sentiment_tab(db, config):
                             title="连板高度分布",
                             xaxis_title="连板数",
                             yaxis_title="数量",
-                            height=400
+                            height=500
                         )
                         st.plotly_chart(fig_board, width="stretch")
                     
@@ -154,7 +154,7 @@ def render_sentiment_tab(db, config):
                             title="连板高度分布",
                             xaxis_title="连板数",
                             yaxis_title="数量",
-                            height=400
+                            height=500
                         )
                         st.plotly_chart(fig_board, width="stretch")
                     
@@ -192,10 +192,6 @@ def render_sentiment_tab(db, config):
                         st.subheader("🔥 龙头股列表")
 
                         dragon_df = pd.DataFrame(limit_data['龙头股'])
-
-                        # 打印调试信息
-                        print(f"龙头股数据列名: {dragon_df.columns.tolist()}")
-                        print(f"龙头股数据示例: {dragon_df.head(1).to_dict() if not dragon_df.empty else '空'}")
 
                         # 检查实际列名并选择要显示的列
                         available_cols = dragon_df.columns.tolist()
@@ -284,7 +280,7 @@ def render_sentiment_tab(db, config):
                             title="涨停板块分布",
                             xaxis_title="板块",
                             yaxis_title="数量",
-                            height=400
+                            height=600
                         )
                         st.plotly_chart(fig_sector, width="stretch")
                     
@@ -314,7 +310,7 @@ def render_sentiment_tab(db, config):
                             title="连板高度统计",
                             xaxis_title="连板数",
                             yaxis_title="数量",
-                            height=400
+                            height=600
                         )
                         st.plotly_chart(fig_board, width="stretch")
                     
@@ -589,19 +585,19 @@ def render_sentiment_tab(db, config):
                             title="板块热度排名",
                             xaxis_title="板块",
                             yaxis_title="热度评分",
-                            height=400
+                            height=500
                         )
                         st.plotly_chart(fig_heat, width="stretch")
             
             # 显示冷门板块
         if  sector_data.get('冷门板块'):
                 st.subheader("❄️ 冷门板块")
-                
+
                 # 格式化主力净流入
                 formatted_cold = []
                 for s in sector_data['冷门板块']:
                     formatted_s = s.copy()
-                    formatted_s['主力净流入'] = format_amount(s.get('主力净流入', 0))
+                    formatted_s['主力净流入'] = Formatter.format_amount(s.get('主力净流入', 0))
                     formatted_cold.append(formatted_s)
                 
                 cold_df = pd.DataFrame(formatted_cold)
@@ -685,20 +681,20 @@ def render_sentiment_tab(db, config):
                             title="不同板数胜率对比",
                             xaxis_title="连板数",
                             yaxis_title="胜率(%)",
-                            height=400
+                            height=500
                         )
                         st.plotly_chart(fig_win_rate, width="stretch")
                     
                     # 显示风险预警
-                    if board_data['风险预警']:
+                    if board_data.get('风险预警'):
                         st.subheader("⚠️ 风险预警")
                         for warning in board_data['风险预警']:
                             st.warning(warning)
-                    
+
                     # 显示连板特征
-                    if board_data['连板特征']:
+                    if board_data.get('连板特征'):
                         st.subheader("🔍 连板股特征分析")
-                        
+
                         feature_df = pd.DataFrame(board_data['连板特征'])
                         st.dataframe(feature_df, width="stretch")
                         
@@ -721,7 +717,7 @@ def render_sentiment_tab(db, config):
                             title="连板股风险等级分布",
                             xaxis_title="风险等级",
                             yaxis_title="数量",
-                            height=400
+                            height=500
                         )
                         st.plotly_chart(fig_risk, width="stretch")
                     

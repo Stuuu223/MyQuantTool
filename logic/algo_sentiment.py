@@ -138,7 +138,9 @@ class MarketSentimentAnalyzer:
                         '涨跌幅': row['涨跌幅'],
                         '封板强度': row['封板强度'],
                         '龙头评分': dragon_analysis['龙头评分'],
-                        '龙头评级': dragon_analysis['龙头评级']
+                        '龙头评级': dragon_analysis['龙头评级'],
+                        '成交额': row.get('成交额', 0),
+                        '换手率': row.get('换手率', 0)
                     })
             
             # 按龙头评分排序

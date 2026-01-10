@@ -125,7 +125,7 @@ class AKShareDataLoader:
     def get_industry_spot() -> pd.DataFrame:
         """
         获取东財行业板块实时行情
-        
+
         Returns:
             pd.DataFrame: 板块数据
                 - 代码
@@ -138,26 +138,65 @@ class AKShareDataLoader:
         """
         try:
             import akshare as ak
-            # 使用可用的接口获取行业板块数据
-            df = ak.stock_board_industry_name_em()
-            
-            if not df.empty:
-                # 使用列索引提取数据以避免编码问题
-                # 列顺序: 序号, 板块名称, 板块代码, 最新价, 涨跌额, 涨跌幅, 成交额, 换手率, 上涨家数, 下跌家数, 领涨股票, 领涨股票-涨跌幅
-                result = pd.DataFrame({
-                    '代码': df.iloc[:, 2],      # 板块代码
-                    '名称': df.iloc[:, 1],      # 板块名称
-                    '最新价': df.iloc[:, 3],    # 最新价
-                    '涨跌幅': df.iloc[:, 5],    # 涨跌幅
-                    '涨跌额': df.iloc[:, 4],    # 涨跌额
-                    '成交量': df.iloc[:, 6],    # 成交额
-                    '成交额': df.iloc[:, 6]     # 成交额
-                })
-                logger.info(f"成功获取{len(result)}个行业板块数据")
+            # 先获取板块列表
+            name_df = ak.stock_board_industry_name_em()
+
+            if name_df.empty:
+                logger.warning("获取板块列表失败")
+                return pd.DataFrame()
+
+            # 获取所有板块的实时数据
+            all_sectors = []
+            for _, row in name_df.iterrows():
+                try:
+                    sector_code = row['板块代码']
+                    sector_name = row['板块名称']
+
+                    # 获取单个板块的实时数据
+                    spot_df = ak.stock_board_industry_spot_em(symbol=sector_name)
+
+                    if not spot_df.empty:
+                        # 提取关键数据
+                        sector_data = {
+                            '代码': sector_code,
+                            '名称': sector_name,
+                            '最新价': 0,
+                            '涨跌幅': 0,
+                            '涨跌额': 0,
+                            '成交量': 0,
+                            '成交额': 0
+                        }
+
+                        # 从返回的数据中提取值
+                        for _, item_row in spot_df.iterrows():
+                            item_name = item_row['item']
+                            value = item_row['value']
+
+                            if '最新价' in item_name or '最新' in item_name:
+                                sector_data['最新价'] = value
+                            elif '涨跌幅' in item_name:
+                                sector_data['涨跌幅'] = value
+                            elif '涨跌额' in item_name:
+                                sector_data['涨跌额'] = value
+                            elif '成交量' in item_name:
+                                sector_data['成交量'] = value
+                            elif '成交额' in item_name:
+                                sector_data['成交额'] = value
+
+                        all_sectors.append(sector_data)
+
+                except Exception as e:
+                    logger.debug(f"获取板块 {row.get('板块名称', '')} 数据失败: {e}")
+                    continue
+
+            if all_sectors:
+                result = pd.DataFrame(all_sectors)
+                logger.info(f"成功获取{len(result)}个行业板块实时数据")
                 return result
             else:
-                logger.warning("akshare返回空数据")
+                logger.warning("未获取到任何板块数据")
                 return pd.DataFrame()
+
         except Exception as e:
             logger.error(f"获取行业板块失败: {e}")
             return pd.DataFrame()

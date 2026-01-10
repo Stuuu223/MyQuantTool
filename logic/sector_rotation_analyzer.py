@@ -113,12 +113,7 @@ class SectorRotationAnalyzer:
         if self._industry_data_cache is None or self._industry_data_cache.empty:
             logger.warning("缓存数据为空，重新生成演示数据")
             self._industry_data_cache = self._get_demo_industry_data()
-        
-        # 临时：强制使用演示数据进行测试
-        if len(self._industry_data_cache) == 0:
-            logger.info("强制使用演示数据")
-            self._industry_data_cache = self._get_demo_industry_data()
-        
+
         return self._industry_data_cache
     
     def _get_demo_industry_data(self) -> pd.DataFrame:
@@ -171,9 +166,9 @@ class SectorRotationAnalyzer:
         for sector in self.SECTORS:
             try:
                 # 1. 涨幅因子 (0-100) - 从 akshare 实时执行数据获取
-                # 采用锓正的匹配江靳的板块名称搜索
+                # 采用正确的匹配逻辑的板块名称搜索
                 sector_mask = industry_df.apply(
-                    lambda row: sector in str(row.get('名称', '')),
+                    lambda row: sector in str(row.get('名称', '') if row.get('名称', '') is not None else ''),
                     axis=1
                 )
                 

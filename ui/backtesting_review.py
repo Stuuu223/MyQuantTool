@@ -10,150 +10,204 @@ import json
 
 def render_backtesting_review_tab(db, config):
     """渲染复盘助手标签页"""
-    
-    st.subheader("📋 智能复盘助手")
-    st.caption("自动生成回测报告，分析策略优缺点，提供改进建议")
+
+    st.subheader("📋 A股市场复盘")
+    st.caption("自动生成市场复盘报告，分析市场走势、热点板块、资金流向")
     st.markdown("---")
-    
+
     # 侧边栏配置
     with st.sidebar:
         st.subheader("⚙️ 复盘配置")
-        
-        strategy_name = st.text_input("策略名称", "示例策略", help="要复盘的策略名称")
-        
-        start_date = st.date_input("回测开始日期", value=pd.to_datetime("2023-01-01").date())
-        end_date = st.date_input("回测结束日期", value=pd.to_datetime("2024-12-31").date())
-        
-        backtest_id = st.text_input("回测ID（可选）", help="指定特定回测进行复盘")
-        
+
+        review_date = st.date_input("复盘日期", value=pd.to_datetime("today").date(), help="选择要复盘的日期")
+
         st.markdown("---")
         st.subheader("💡 复盘内容")
         st.info("""
         **复盘包含**：
-        - 收益分析
-        - 风险评估
-        - 交易行为分析
-        - 策略改进建议
+        - 市场整体表现
+        - 热点板块分析
+        - 涨跌停统计
+        - 资金流向分析
+        - 龙虎榜分析
         """)
     
     # 主内容区
     col1, col2 = st.columns([3, 1])
-    
+
     with col1:
-        st.subheader("📊 复盘报告")
-        
+        st.subheader("📊 市场复盘报告")
+
         # 执行复盘
-        if st.button("🔍 生成复盘报告", key="generate_review"):
-            with st.spinner('正在生成复盘报告...'):
+        if st.button("🔍 生成市场复盘", key="generate_review"):
+            with st.spinner('正在生成市场复盘报告...'):
                 try:
-                    # 创建复盘助手
-                    reviewer = BacktestingReview()
-                    
-                    # 这里需要获取实际的交易记录和回测指标
-                    # 为了演示，我们创建一些示例数据
-                    # 在实际应用中，这里应该从数据库或回测引擎获取真实的交易记录
-                    trade_records = _generate_sample_trades()
-                    metrics = _generate_sample_metrics()
-                    
-                    # 生成复盘报告
-                    report = reviewer.generate_review_report(
-                        trade_records=trade_records,
-                        metrics=metrics,
-                        strategy_name=strategy_name,
-                        backtest_period=(str(start_date), str(end_date))
-                    )
-                    
-                    # 显示报告摘要
-                    col_a, col_b, col_c, col_d = st.columns(4)
-                    with col_a:
-                        st.metric("总收益率", f"{report.total_return:.2%}")
-                    with col_b:
-                        st.metric("年化收益率", f"{report.annual_return:.2%}")
-                    with col_c:
-                        st.metric("夏普比率", f"{report.sharpe_ratio:.2f}")
-                    with col_d:
-                        st.metric("最大回撤", f"{report.max_drawdown:.2%}")
-                    
-                    col_e, col_f, col_g, col_h = st.columns(4)
-                    with col_e:
-                        st.metric("胜率", f"{report.win_rate:.2%}")
-                    with col_f:
-                        st.metric("盈亏比", f"{report.profit_factor:.2f}")
-                    with col_g:
-                        st.metric("总交易数", report.total_trades)
-                    with col_h:
-                        st.metric("盈利交易", report.winning_trades)
-                    
+                    import akshare as ak
+                    from logic.algo_sentiment import MarketSentimentAnalyzer
+                    from logic.sector_rotation_analyzer import get_sector_rotation_analyzer
+
+                    date_str = review_date.strftime("%Y%m%d")
+
+                    # 获取市场数据
+                    sentiment_analyzer = MarketSentimentAnalyzer()
+                    sector_analyzer = get_sector_rotation_analyzer(history_days=30)
+
+                    # 1. 市场整体表现
+                    st.subheader("📈 市场整体表现")
+
+                    # 获取主要指数数据
+                    try:
+                        index_data = ak.stock_zh_index_spot_em()
+                        major_indices = index_data[index_data['代码'].isin(['000001', '399001', '399006'])]
+                        major_indices = major_indices[['名称', '最新价', '涨跌幅', '成交量', '成交额']]
+
+                        for _, row in major_indices.iterrows():
+                            change_color = "📈" if row['涨跌幅'] > 0 else "📉" if row['涨跌幅'] < 0 else "➡️"
+                            st.metric(
+                                f"{change_color} {row['名称']}",
+                                f"{row['最新价']:.2f}",
+                                f"{row['涨跌幅']:+.2f}%"
+                            )
+                    except Exception as e:
+                        st.warning(f"获取指数数据失败: {e}")
+
                     st.markdown("---")
-                    
-                    # 显示关键见解
-                    st.subheader("💡 关键见解")
-                    for insight in report.key_insights:
-                        st.info(insight)
-                    
+
+                    # 2. 涨跌停统计
+                    st.subheader("🎯 涨跌停统计")
+
+                    try:
+                        limit_up_data = ak.stock_zt_pool_em(date=date_str)
+                        limit_down_data = ak.stock_dt_pool_em(date=date_str)
+
+                        col_zt, col_dt = st.columns(2)
+                        with col_zt:
+                            st.metric("涨停数量", len(limit_up_data))
+                            if not limit_up_data.empty:
+                                st.write("**涨停TOP5**:")
+                                top5_zt = limit_up_data.head(5)
+                                for _, row in top5_zt.iterrows():
+                                    st.write(f"• {row['名称']} ({row['代码']}) {row['涨跌幅']:+.2f}%")
+
+                        with col_dt:
+                            st.metric("跌停数量", len(limit_down_data))
+                            if not limit_down_data.empty:
+                                st.write("**跌停TOP5**:")
+                                top5_dt = limit_down_data.head(5)
+                                for _, row in top5_dt.iterrows():
+                                    st.write(f"• {row['名称']} ({row['代码']}) {row['涨跌幅']:+.2f}%")
+                    except Exception as e:
+                        st.warning(f"获取涨跌停数据失败: {e}")
+
                     st.markdown("---")
-                    
-                    # 显示改进建议
-                    st.subheader("🔧 改进建议")
-                    for suggestion in report.improvement_suggestions:
-                        st.warning(suggestion)
-                    
+
+                    # 3. 热点板块分析
+                    st.subheader("🔥 热点板块分析")
+
+                    try:
+                        sector_strength = sector_analyzer.calculate_sector_strength(date_str)
+
+                        if sector_strength:
+                            # 转换为DataFrame并排序
+                            sector_df = pd.DataFrame([
+                                {
+                                    '板块': sector,
+                                    '综合评分': strength.total_score,
+                                    '涨幅因子': strength.price_score,
+                                    '资金因子': strength.capital_score,
+                                    '轮动阶段': strength.phase.value
+                                }
+                                for sector, strength in sector_strength.items()
+                            ])
+                            sector_df = sector_df.sort_values('综合评分', ascending=False)
+
+                            # 显示TOP10板块
+                            st.dataframe(
+                                sector_df.head(10),
+                                use_container_width=True,
+                                hide_index=True
+                            )
+
+                            # 板块强度图表
+                            fig = go.Figure()
+                            fig.add_trace(go.Bar(
+                                x=sector_df['板块'].head(10),
+                                y=sector_df['综合评分'].head(10),
+                                marker_color=sector_df['综合评分'].head(10).apply(
+                                    lambda x: '#00C853' if x >= 70 else '#FFC107' if x >= 50 else '#FF5252'
+                                ),
+                                text=sector_df['综合评分'].head(10).apply(lambda x: f'{x:.1f}'),
+                                textposition='auto',
+                            ))
+                            fig.update_layout(
+                                title='板块强度TOP10',
+                                xaxis_title='板块',
+                                yaxis_title='综合评分',
+                                yaxis_range=[0, 100],
+                                height=500
+                            )
+                            st.plotly_chart(fig, use_container_width=True)
+                        else:
+                            st.info("暂无板块数据")
+                    except Exception as e:
+                        st.warning(f"获取板块数据失败: {e}")
+
                     st.markdown("---")
-                    
-                    # 显示交易分析
-                    st.subheader("📈 交易分析")
-                    if report.trade_analysis:
-                        trade_analysis = report.trade_analysis
-                        
-                        # 显示交易统计
-                        stats_cols = st.columns(3)
-                        with stats_cols[0]:
-                            st.metric("总盈亏", f"¥{trade_analysis['total_pnl']:,.2f}")
-                            st.metric("平均盈亏", f"¥{trade_analysis['avg_pnl']:,.2f}")
-                        with stats_cols[1]:
-                            st.metric("最大盈利", f"¥{trade_analysis['max_profit']:,.2f}")
-                            st.metric("最大亏损", f"¥{trade_analysis['max_loss']:,.2f}")
-                        with stats_cols[2]:
-                            st.metric("胜率", f"{trade_analysis['win_rate']:.2%}")
-                            st.metric("盈亏比", f"{abs(trade_analysis['avg_win']/trade_analysis['avg_loss']):.2f}" if trade_analysis['avg_loss'] != 0 else "N/A")
-                        
-                        # 显示连续盈亏情况
-                        if 'consecutive_analysis' in trade_analysis:
-                            consec_cols = st.columns(2)
-                            with consec_cols[0]:
-                                st.metric("最大连盈", trade_analysis['consecutive_analysis']['max_consecutive_wins'])
-                            with consec_cols[1]:
-                                st.metric("最大连亏", trade_analysis['consecutive_analysis']['max_consecutive_losses'])
-                    
+
+                    # 4. 龙虎榜分析
+                    st.subheader("🏆 龙虎榜分析")
+
+                    try:
+                        lhb_data = ak.stock_lhb_detail_em(date=date_str)
+
+                        if not lhb_data.empty:
+                            # 统计上榜次数
+                            stock_counts = lhb_data['代码'].value_counts().head(10)
+
+                            st.write("**上榜次数TOP10**:")
+                            for code, count in stock_counts.items():
+                                stock_name = lhb_data[lhb_data['代码'] == code]['名称'].iloc[0]
+                                st.write(f"• {stock_name} ({code}) - 上榜{count}次")
+
+                            # 净买入统计
+                            if '净买入' in lhb_data.columns:
+                                net_buy = lhb_data.groupby('代码')['净买入'].sum().sort_values(ascending=False).head(10)
+
+                                st.write("**净买入TOP10**:")
+                                for code, amount in net_buy.items():
+                                    stock_name = lhb_data[lhb_data['代码'] == code]['名称'].iloc[0]
+                                    st.write(f"• {stock_name} ({code}) - ¥{amount:,.0f}")
+                        else:
+                            st.info("当日无龙虎榜数据")
+                    except Exception as e:
+                        st.warning(f"获取龙虎榜数据失败: {e}")
+
                     st.markdown("---")
-                    
-                    # 显示性能图表
-                    st.subheader("📈 性能图表")
-                    if report.performance_chart:
-                        st.plotly_chart(report.performance_chart, use_container_width=True)
-                    
-                    st.markdown("---")
-                    
-                    # 显示风险分析
-                    st.subheader("⚠️ 风险分析")
-                    if report.risk_analysis:
-                        risk_analysis = report.risk_analysis
-                        
-                        risk_cols = st.columns(3)
-                        with risk_cols[0]:
-                            st.metric("年化波动率", f"{risk_analysis['volatility']:.2%}")
-                            st.metric("下行标准差", f"{risk_analysis['downside_deviation']:.2%}")
-                        with risk_cols[1]:
-                            st.metric("索提诺比率", f"{risk_analysis['sortino_ratio']:.2f}")
-                            st.metric("95% VaR", f"{risk_analysis['var_95']:.2%}")
-                        with risk_cols[2]:
-                            st.metric("最大单笔损失", f"¥{risk_analysis['max_single_loss']:,.2f}")
-                            st.metric("期望不足", f"{risk_analysis['expected_shortfall_95']:.2%}")
-                        
-                        st.write(f"**风险总结**: {risk_analysis['risk_summary']}")
-                    
+
+                    # 5. 市场情绪
+                    st.subheader("😊 市场情绪")
+
+                    try:
+                        sentiment_data = sentiment_analyzer.get_market_sentiment_index()
+
+                        if sentiment_data['数据状态'] == '正常':
+                            col_sentiment = st.columns(3)
+                            with col_sentiment[0]:
+                                st.metric("情绪指数", f"{sentiment_data['情绪指数']:.1f}")
+                            with col_sentiment[1]:
+                                st.metric("涨停数量", sentiment_data['涨停数量'])
+                            with col_sentiment[2]:
+                                st.metric("跌停数量", sentiment_data['跌停数量'])
+
+                            st.write(f"**市场阶段**: {sentiment_data['市场阶段']}")
+                            st.write(f"**情绪描述**: {sentiment_data['情绪描述']}")
+                        else:
+                            st.info("暂无情绪数据")
+                    except Exception as e:
+                        st.warning(f"获取情绪数据失败: {e}")
+
                 except Exception as e:
-                    st.error(f"❌ 生成复盘报告失败: {str(e)}")
+                    st.error(f"❌ 生成市场复盘失败: {str(e)}")
                     import traceback
                     st.error(traceback.format_exc())
     
