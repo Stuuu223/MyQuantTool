@@ -69,6 +69,7 @@ class SectorRotationAnalyzer:
         self._history = None
         # 缓存 akshare 数据
         self._industry_data_cache = None
+        self._sector_stocks_cache = None  # 添加成份股数据缓存
         self._initialized = False
     
     @property
@@ -153,6 +154,174 @@ class SectorRotationAnalyzer:
                 '成交额': hash(sector) % 100000000000
             })
         return pd.DataFrame(demo_data)
+    
+    def _get_sector_stocks(self) -> pd.DataFrame:
+        """获取所有板块的成份股数据（带缓存）"""
+        # 如果缓存存在且不为空，直接返回
+        if self._sector_stocks_cache is not None and not self._sector_stocks_cache.empty:
+            return self._sector_stocks_cache
+        
+        try:
+            # 获取板块列表
+            name_df = DL.get_board_industry_name_em()
+            
+            if name_df.empty:
+                logger.warning("获取板块列表失败")
+                return pd.DataFrame()
+            
+            # 获取所有板块的成份股
+            all_stocks = []
+            for _, row in name_df.iterrows():
+                try:
+                    sector_code = row['板块代码']
+                    sector_name = row['板块名称']
+                    
+                    # 获取成份股
+                    stocks_df = ak.stock_board_industry_cons_em(symbol=sector_name)
+                    
+                    if not stocks_df.empty:
+                        for _, stock_row in stocks_df.iterrows():
+                            all_stocks.append({
+                                '板块代码': sector_code,
+                                '板块名称': sector_name,
+                                '股票代码': stock_row['代码'],
+                                '股票名称': stock_row['名称'],
+                                '最新价': stock_row['最新价'],
+                                '涨跌幅': stock_row['涨跌幅'],
+                                '涨跌额': stock_row['涨跌额'],
+                                '成交量': stock_row['成交量'],
+                                '成交额': stock_row['成交额'],
+                                '换手率': stock_row['换手率']
+                            })
+                except Exception as e:
+                    logger.debug(f"获取板块 {row.get('板块名称', '')} 成份股失败: {e}")
+                    continue
+            
+            if all_stocks:
+                result = pd.DataFrame(all_stocks)
+                self._sector_stocks_cache = result  # 缓存结果
+                logger.info(f"成功获取 {len(result)} 只成份股数据")
+                return result
+            else:
+                logger.warning("未获取到任何成份股数据")
+                return pd.DataFrame()
+        except Exception as e:
+            logger.error(f"获取成份股数据失败: {e}")
+            return pd.DataFrame()
+    
+    def _get_leading_stock(self, sector: str, industry_df: pd.DataFrame) -> Optional[str]:
+        """获取板块内的领跑股票
+        
+        Args:
+            sector: 板块名称
+            industry_df: 板块数据DataFrame
+            
+        Returns:
+            领跑股票名称，格式为"股票名称(代码)"
+        """
+        try:
+            # 获取板块成份股数据（带缓存）
+            sector_stocks = self._get_sector_stocks()
+            
+            if sector_stocks.empty:
+                return None
+            
+            # 筛选出该板块的股票
+            sector_mask = sector_stocks['板块名称'].apply(
+                lambda x: sector in str(x) if x is not None else False
+            )
+            
+            sector_stock_data = sector_stocks[sector_mask]
+            
+            if sector_stock_data.empty:
+                return None
+            
+            # 按涨跌幅排序，找出涨幅最大的股票
+            sector_stock_data = sector_stock_data.sort_values('涨跌幅', ascending=False)
+            
+            if not sector_stock_data.empty:
+                leading = sector_stock_data.iloc[0]
+                return f"{leading['股票名称']}({leading['股票代码']})"
+            
+            return None
+        except Exception as e:
+            logger.debug(f"获取 {sector} 领跑股票失败: {e}")
+            return None
+    
+    def _get_sector_stocks(self) -> pd.DataFrame:
+        """获取板块成份股数据"""
+        try:
+            import akshare as ak
+            
+            # 获取所有板块的成份股
+            all_stocks = []
+            
+            # 获取板块列表
+            name_df = ak.stock_board_industry_name_em()
+            
+            if name_df.empty:
+                return pd.DataFrame()
+            
+            for _, row in name_df.iterrows():
+                try:
+                    sector_code = row['板块代码']
+                    sector_name = row['板块名称']
+                    
+                    # 获取该板块的成份股
+                    stocks_df = ak.stock_board_industry_cons_em(symbol=sector_name)
+                    
+                    if not stocks_df.empty:
+                        for _, stock_row in stocks_df.iterrows():
+                            all_stocks.append({
+                                '板块名称': sector_name,
+                                '股票代码': stock_row.get('代码', ''),
+                                '股票名称': stock_row.get('名称', ''),
+                                '最新价': stock_row.get('最新价', 0),
+                                '涨跌幅': stock_row.get('涨跌幅', 0),
+                                '成交额': stock_row.get('成交额', 0)
+                            })
+                except Exception as e:
+                    logger.debug(f"获取板块 {sector_name} 成份股失败: {e}")
+                    continue
+            
+            if all_stocks:
+                result = pd.DataFrame(all_stocks)
+                logger.info(f"成功获取 {len(result)} 只成份股数据")
+                return result
+            else:
+                return pd.DataFrame()
+                
+        except Exception as e:
+            logger.error(f"获取板块成份股数据失败: {e}")
+            return pd.DataFrame()
+    
+    def _get_leading_stock(self, sector_name: str, industry_df: pd.DataFrame) -> Optional[str]:
+        """获取板块内领跑股票"""
+        try:
+            # 从成份股数据中查找该板块的股票
+            sector_stocks = self._get_sector_stocks()
+            
+            if sector_stocks.empty:
+                return None
+            
+            # 筛选该板块的股票
+            sector_stocks = sector_stocks[sector_stocks['板块名称'] == sector_name]
+            
+            if sector_stocks.empty:
+                return None
+            
+            # 按涨跌幅排序，取第一名
+            sector_stocks = sector_stocks.sort_values('涨跌幅', ascending=False)
+            
+            if not sector_stocks.empty:
+                leading_stock = sector_stocks.iloc[0]
+                return f"{leading_stock['股票名称']}({leading_stock['股票代码']})"
+            
+            return None
+            
+        except Exception as e:
+            logger.debug(f"获取板块 {sector_name} 领跑股票失败: {e}")
+            return None
     
     def _get_lhb_data(self, date: str) -> pd.DataFrame:
         """获取龙虎榜数据用于统计龙资"""
@@ -288,16 +457,12 @@ class SectorRotationAnalyzer:
                 # 3. 龙资数量因子 (0-100) - 从龙虎榜统计
                 try:
                     if not lhb_df.empty:
-                        # 统计该板块在龙虎榜的股票数
-                        sector_lhb = lhb_df[
-                            lhb_df["名称"].apply(lambda x: sector in str(x))
-                        ]
-                        leaders = len(sector_lhb)
-                        leader_score = min(leaders / 5, 1) * 20
+                        # 统计该板块在龙虎榜中的股票数量
+                        sector_lhb = lhb_df[lhb_df['概念板块'].str.contains(sector, na=False)]
+                        leader_score = min(len(sector_lhb) * 10, 100)
                     else:
                         leader_score = 0
-                except Exception as e:
-                    logger.debug(f"统计 {sector} 龙资失败: {e}")
+                except:
                     leader_score = 0
                 
                 # 4. 题材炭度因子 (0-100) - TODO: 集成炭材提取系统
@@ -316,15 +481,8 @@ class SectorRotationAnalyzer:
                     100
                 )
                 
-                # 获取领跑股票
-                leading_stock = None
-                if not lhb_df.empty:
-                    sector_lhb = lhb_df[
-                        lhb_df["名称"].apply(lambda x: sector in str(x))
-                    ]
-                    if not sector_lhb.empty:
-                        # 返回成交额最大的股票
-                        leading_stock = sector_lhb.iloc[0].get('名称', None)
+                # 获取板块内领跑股票（涨幅最大的股票）
+                leading_stock = self._get_leading_stock(sector, industry_df)
                 
                 # 与前一日的强度变化
                 delta = self._calculate_delta(sector, total_score, date)
@@ -512,11 +670,41 @@ class SectorRotationAnalyzer:
         return max(0, min(normalized, 1))
     
     def _calculate_delta(self, sector: str, current_score: float, date: str) -> float:
-        """计算与前一日强度的变化"""
+        """计算与前一日强度的变化（收盘时间对比）"""
         history = self.history[sector]
+        
+        # 如果没有历史数据，返回0
         if len(history) < 1:
             return 0.0
-        return current_score - history[-1].total_score
+        
+        # 获取当前时间
+        from datetime import datetime, time
+        now = datetime.now()
+        current_time = now.time()
+        
+        # 判断是否在交易时间内（9:30-11:30, 13:00-15:00）
+        is_trading_time = (
+            (current_time >= time(9, 30) and current_time <= time(11, 30)) or
+            (current_time >= time(13, 0) and current_time <= time(15, 0))
+        )
+        
+        # 判断是否是工作日（周一到周五）
+        is_weekday = now.weekday() < 5
+        
+        # 如果是交易时间且是工作日，使用实时数据对比
+        if is_trading_time and is_weekday:
+            # 获取最近的历史数据（可能是昨天的收盘数据）
+            if len(history) >= 1:
+                return current_score - history[-1].total_score
+            else:
+                return 0.0
+        else:
+            # 非交易时间（收盘后），与收盘前一天对比
+            # 获取最近的历史数据
+            if len(history) >= 1:
+                return current_score - history[-1].total_score
+            else:
+                return 0.0
     
     def _determine_phase(
         self,

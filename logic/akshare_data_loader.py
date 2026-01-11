@@ -122,6 +122,25 @@ class AKShareDataLoader:
             return pd.DataFrame()
     
     @staticmethod
+    def get_board_industry_name_em() -> pd.DataFrame:
+        """
+        获取东方财富行业板块名称列表
+        
+        Returns:
+            pd.DataFrame: 板块名称列表
+                - 板块代码
+                - 板块名称
+        """
+        try:
+            import akshare as ak
+            df = ak.stock_board_industry_name_em()
+            logger.info(f"成功获取{len(df)}个行业板块名称")
+            return df
+        except Exception as e:
+            logger.error(f"获取行业板块名称失败: {e}")
+            return pd.DataFrame()
+    
+    @staticmethod
     def get_industry_spot() -> pd.DataFrame:
         """
         获取东財行业板块实时行情

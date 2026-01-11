@@ -122,16 +122,17 @@ def render_sector_rotation_tab(db, config):
 
                     # 显示数据质量提示
                     if is_real_data:
-                        zero_turnover = len(df_strength[df_strength['换手率'] == 0])
+                        zero_leading = len(df_strength[df_strength['领跑股票'] == '-'])
                         zero_delta = len(df_strength[df_strength['强度变化'] == 0])
 
-                        if zero_turnover > 0 or zero_delta > 0:
-                            tips = []
-                            if zero_turnover > 0:
-                                tips.append(f"{zero_turnover}个板块换手率为0（可能数据源未提供）")
-                            if zero_delta > 0:
-                                tips.append(f"{zero_delta}个板块强度变化为0（首次运行无历史数据）")
-                            st.info("💡 数据提示：" + "；".join(tips))
+                        tips = []
+                        if zero_leading > 0:
+                            tips.append(f"{zero_leading}个板块暂无领跑股票数据")
+                        if zero_delta > 0:
+                            tips.append(f"{zero_delta}个板块强度变化为0（首次运行或非交易日）")
+                        
+                        if tips:
+                            st.info("💡 提示：" + "；".join(tips))
 
                     # 从原始数据中填充实际值
                     for idx, row in df_strength.iterrows():
@@ -151,40 +152,67 @@ def render_sector_rotation_tab(db, config):
                     # 按综合评分排序
                     df_strength = df_strength.sort_values('综合评分', ascending=False)
 
-                    # 格式化成交额、涨跌幅、换手率
+# 格式化成交额、涨跌幅、换手率
                     df_strength['成交额_格式化'] = df_strength['成交额'].apply(Formatter.format_amount)
                     df_strength['涨跌幅_格式化'] = df_strength['涨跌幅'].apply(lambda x: f"{x:+.2f}%" if x != 0 else "0.00%")
                     df_strength['换手率_格式化'] = df_strength['换手率'].apply(lambda x: f"{x:.2f}%" if x != 0 else "0.00%")
+                    
+                    # 格式化强度变化（添加箭头和颜色标识）
+                    def format_delta(delta):
+                        if delta == 0:
+                            return "0.0"
+                        elif delta > 0:
+                            return f"↗ +{delta:.1f}"
+                        else:
+                            return f"↘ {delta:.1f}"
+                    
+                    df_strength['强度变化_格式化'] = df_strength['强度变化'].apply(format_delta)
+                    
+                    # 格式化领跑股票
+                    df_strength['领跑股票_格式化'] = df_strength['领跑股票'].apply(lambda x: x if x != '-' else '暂无数据')
 
-                    # 显示排行榜（包含换手率的完整版）
+                    # 显示排行榜（优化版）
                     st.dataframe(
-                        df_strength.head(15)[['板块', '综合评分', '涨跌幅_格式化', '成交额_格式化', '换手率_格式化', '轮动阶段', '领跑股票', '强度变化']],
+                        df_strength.head(15)[['板块', '综合评分', '涨跌幅_格式化', '成交额_格式化', '换手率_格式化', '领跑股票_格式化', '强度变化_格式化']],
                         use_container_width=True,
                         hide_index=True,
                         column_config={
+                            '板块': st.column_config.TextColumn(
+                                '板块',
+                                width='medium'
+                            ),
                             '综合评分': st.column_config.ProgressColumn(
                                 '综合评分',
                                 help='0-100分，分数越高板块越强',
                                 format='%.1f',
                                 min_value=0,
-                                max_value=100
+                                max_value=100,
+                                width='medium'
                             ),
                             '涨跌幅_格式化': st.column_config.TextColumn(
                                 '涨跌幅',
-                                help='板块平均涨跌幅'
+                                help='板块平均涨跌幅',
+                                width='small'
                             ),
                             '成交额_格式化': st.column_config.TextColumn(
                                 '成交额',
-                                help='板块总成交额'
+                                help='板块总成交额',
+                                width='medium'
                             ),
                             '换手率_格式化': st.column_config.TextColumn(
                                 '换手率',
-                                help='板块平均换手率'
+                                help='板块平均换手率',
+                                width='small'
                             ),
-                            '强度变化': st.column_config.NumberColumn(
+                            '领跑股票_格式化': st.column_config.TextColumn(
+                                '领跑股票',
+                                help='板块内表现最好的股票',
+                                width='medium'
+                            ),
+                            '强度变化_格式化': st.column_config.TextColumn(
                                 '强度变化',
                                 help='与前一日的强度变化',
-                                format='%.1f'
+                                width='small'
                             )
                         }
                     )                        
