@@ -8,7 +8,6 @@ import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
 from datetime import datetime
-from logic.sector_rotation_analyzer import get_sector_rotation_analyzer
 from logic.data_manager import DataManager
 from logic.formatter import Formatter
 
@@ -18,9 +17,6 @@ def render_sector_rotation_tab(db, config):
     
     st.header("🔄 板块轮动分析")
     st.caption("30个行业板块实时强度评分 | 5因子加权模型 | 轮动机会识别")
-    
-    # 初始化分析器
-    analyzer = get_sector_rotation_analyzer(history_days=30)
     
     # 侧边栏配置
     with st.sidebar:
@@ -84,6 +80,12 @@ def render_sector_rotation_tab(db, config):
         # 自动加载分析数据
         with st.spinner("正在分析板块轮动..."):
             try:
+                # 延迟导入分析器
+                from logic.sector_rotation_analyzer import get_sector_rotation_analyzer
+                
+                # 延迟初始化分析器
+                analyzer = get_sector_rotation_analyzer(history_days=30)
+                
                 # 计算板块强度
                 strength_scores = analyzer.calculate_sector_strength(date_str)
                 

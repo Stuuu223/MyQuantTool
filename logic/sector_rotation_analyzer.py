@@ -64,11 +64,34 @@ class SectorRotationAnalyzer:
         """
         self.history_days = history_days
         # 保存历史强度数据 {sector -> deque(SectorStrength)}
-        # 从AkShare获取行业板块列表，如果获取失败则使用默认列表
-        self.SECTORS = self._get_sectors_from_akshare()
-        self.history: Dict[str, deque] = {sector: deque(maxlen=history_days) for sector in self.SECTORS}
+        # 延迟获取行业板块列表
+        self._SECTORS = None
+        self._history = None
         # 缓存 akshare 数据
         self._industry_data_cache = None
+        self._initialized = False
+    
+    @property
+    def SECTORS(self) -> List[str]:
+        """延迟获取行业板块列表"""
+        if self._SECTORS is None:
+            self._SECTORS = self._get_sectors_from_akshare()
+        return self._SECTORS
+    
+    @property
+    def history(self) -> Dict[str, deque]:
+        """延迟初始化历史数据"""
+        if self._history is None:
+            self._history = {sector: deque(maxlen=self.history_days) for sector in self.SECTORS}
+        return self._history
+    
+    def _ensure_initialized(self):
+        """确保分析器已初始化"""
+        if not self._initialized:
+            # 触发延迟加载
+            _ = self.SECTORS
+            _ = self.history
+            self._initialized = True
     
     def _get_sectors_from_akshare(self) -> List[str]:
         """从AkShare获取行业板块列表"""
@@ -218,6 +241,9 @@ class SectorRotationAnalyzer:
         Returns:
             {sector -> SectorStrength} 板块强度字典
         """
+        # 确保已初始化
+        self._ensure_initialized()
+        
         strength_scores = {}
         industry_df = self._get_industry_data()
         lhb_df = self._get_lhb_data(date.replace('-', ''))
@@ -564,7 +590,7 @@ def demo_sector_rotation():
 
 
 def get_sector_rotation_analyzer(history_days: int = 30) -> SectorRotationAnalyzer:
-    """获取板块轮动分析器实例
+    """获取板块轮动分析器实例（带缓存）
     
     Args:
         history_days: 历史数据保留天数
@@ -572,7 +598,9 @@ def get_sector_rotation_analyzer(history_days: int = 30) -> SectorRotationAnalyz
     Returns:
         SectorRotationAnalyzer 实例
     """
-    return SectorRotationAnalyzer(history_days=history_days)
+    if not hasattr(get_sector_rotation_analyzer, '_instance'):
+        get_sector_rotation_analyzer._instance = SectorRotationAnalyzer(history_days=history_days)
+    return get_sector_rotation_analyzer._instance
 
 
 if __name__ == '__main__':

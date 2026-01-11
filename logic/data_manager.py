@@ -10,16 +10,45 @@ from logic.error_handler import handle_errors, DataError, NetworkError, Validati
 logger = get_logger(__name__)
 
 class DataManager:
+    _instance = None
+    _initialized = False
+    
+    def __new__(cls, db_path: str = 'data/stock_data.db'):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+    
     def __init__(self, db_path: str = 'data/stock_data.db') -> None:
+        # 避免重复初始化
+        if DataManager._initialized:
+            return
+        
         logger.info(f"初始化 DataManager，数据库路径: {db_path}")
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
-        self.conn = sqlite3.connect(db_path, check_same_thread=False)
-        self.init_db()
-        self.update_db_schema()
+        
+        # 使用 WAL 模式提升并发性能
+        self.conn = sqlite3.connect(db_path, check_same_thread=False, timeout=30.0)
+        self.conn.execute('PRAGMA journal_mode=WAL')
+        self.conn.execute('PRAGMA synchronous=NORMAL')
+        self.conn.execute('PRAGMA cache_size=-64000')  # 64MB 缓存
+        
+        # 延迟初始化数据库结构（首次使用时才初始化）
+        self._db_initialized = False
+        self._db_path = db_path
+        
         # 实时数据缓存：{symbol: {'data': {...}, 'timestamp': datetime}}
         self.realtime_cache: Dict[str, Dict[str, Any]] = {}
         self.cache_expire_seconds: int = 60  # 缓存60秒
+        
+        DataManager._initialized = True
         logger.info("DataManager 初始化完成")
+    
+    def _ensure_db_initialized(self):
+        """确保数据库已初始化（延迟初始化）"""
+        if not self._db_initialized:
+            self.init_db()
+            self.update_db_schema()
+            self._db_initialized = True
 
     def init_db(self) -> None:
         """初始化数据库表结构
@@ -108,6 +137,8 @@ class DataManager:
             >>> print(df.head())
         """
         try:
+            # 延迟初始化数据库
+            self._ensure_db_initialized()
             # 验证股票代码
             if not symbol or len(symbol) != 6:
                 raise ValidationError(f"股票代码格式错误: {symbol}")
@@ -211,6 +242,9 @@ class DataManager:
             数据缓存60秒，60秒内重复查询会返回缓存数据
         """
         try:
+            # 延迟初始化数据库
+            self._ensure_db_initialized()
+            
             import time
 
             # 检查缓存

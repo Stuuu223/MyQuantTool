@@ -20,6 +20,7 @@ from logic.logger import get_logger
 from logic.error_handler import handle_errors, ValidationError
 from config import Config
 import streamlit as st
+import importlib
 
 # 初始化日志系统
 logger = get_logger(__name__)
@@ -116,13 +117,41 @@ def get_backtest_engine():
     """获取回测引擎实例（缓存）"""
     return BacktestEngine()
 
-# 初始化组件
-db = get_db()
-ai_agent = get_ai_agent()
-comparator = get_comparator()
-backtest_engine = get_backtest_engine()
+# 延迟初始化组件（在首次使用时才初始化）
+_db = None
+_ai_agent = None
+_comparator = None
+_backtest_engine = None
 
-logger.info("核心组件初始化完成")
+def get_db_instance():
+    """获取数据库实例（延迟初始化）"""
+    global _db
+    if _db is None:
+        _db = get_db()
+    return _db
+
+def get_ai_agent_instance():
+    """获取AI代理实例（延迟初始化）"""
+    global _ai_agent
+    if _ai_agent is None:
+        _ai_agent = get_ai_agent()
+    return _ai_agent
+
+def get_comparator_instance():
+    """获取股票对比器实例（延迟初始化）"""
+    global _comparator
+    if _comparator is None:
+        _comparator = get_comparator()
+    return _comparator
+
+def get_backtest_engine_instance():
+    """获取回测引擎实例（延迟初始化）"""
+    global _backtest_engine
+    if _backtest_engine is None:
+        _backtest_engine = get_backtest_engine()
+    return _backtest_engine
+
+logger.info("核心组件初始化函数已定义（延迟加载）")
 
 # --- Session State 集中管理 ---
 class SessionStateManager:
@@ -163,6 +192,15 @@ class SessionStateManager:
         st.session_state.pattern_combination_result = None
 
         logger.info("所有缓存已清理")
+    
+    @staticmethod
+    def clear_data_cache():
+        """仅清理数据缓存，保留结果缓存"""
+        # 只清理数据相关的缓存，保留计算结果
+        st.cache_data.clear()
+        st.session_state.cache_hits = 0
+        st.session_state.cache_misses = 0
+        logger.info("数据缓存已清理")
 
 # 初始化 session state
 SessionStateManager.init()
@@ -232,7 +270,7 @@ def ensure_list(value, name="value"):
     return []
 
 
-@st.cache_data(ttl=3600)  # 缓存 1 小时
+@st.cache_data(ttl=86400)  # 缓存 24 小时
 def get_safe_stock_name(code):
     """
     安全地获取股票名称，有双层缓存
@@ -322,7 +360,7 @@ class PerformanceMonitor:
 # --- 自动刷新管理 ---
 class AutoRefreshManager:
     """自动刷新管理器"""
-    REFRESH_INTERVAL = config.get('auto_refresh_interval', 300)  # 个性化
+    REFRESH_INTERVAL = config.get('auto_refresh_interval', 600)  # 默认10分钟，减少刷新频率
     
     @staticmethod
     def should_refresh(force=False):
@@ -354,40 +392,14 @@ class ConfigManager:
         default = ConfigManager.DEFAULT_CONFIGS.get(key)
         return config.get(key, default)
 
-# --- 导入基础UI模块（轻量级） ---
-# 注意：ui.single_stock 导入时间较长（~1.6s），已改为延迟导入
-from ui.multi_compare import render_multi_compare_tab
-from ui.sector_rotation import render_sector_rotation_tab
-from ui.backtest import render_backtest_tab
-from ui.long_hu_bang import render_long_hu_bang_tab
-from ui.dragon_strategy import render_dragon_strategy_tab
-from ui.auction import render_auction_tab
-from ui.sentiment import render_sentiment_tab
-from ui.hot_topics import render_hot_topics_tab
-from ui.alert import render_alert_tab
-from ui.volume_price import render_volume_price_tab
-from ui.ma_strategy import render_ma_strategy_tab
-from ui.new_stock import render_new_stock_tab
-from ui.capital import render_capital_tab
-from ui.limit_up import render_limit_up_tab
-from ui.smart_recommend import render_smart_recommend_tab
-from ui.risk import render_risk_tab
-from ui.history import render_history_tab
-from ui.settings import render_settings_tab
-from ui.midway_strategy import render_midway_strategy_tab
-from ui.buy_point_scanner import render_buy_point_scanner_tab
-from ui.backtesting_review import render_backtesting_review_tab
+# --- UI模块延迟加载函数 ---
+# 所有UI模块都改为延迟导入，大幅提升启动速度
+# 只在实际使用时才加载对应模块
 
-# --- 导入高级UI模块（延迟导入） ---
-# 以下模块将在需要时才导入，以提升启动速度
-# from ui.single_stock import render_single_stock_tab  # 重型模块，延迟导入
-# from ui.kline_patterns import render_kline_patterns_tab
-# from ui.advanced_backtest import render_advanced_backtest_tab
-# from ui.paper_trading import render_paper_trading_tab
-# from ui.performance_optimizer import render_performance_optimizer_tab
-# from ui.lstm_predictor import render_lstm_predictor_tab
-# from ui.hot_topics_enhanced import render_hot_topics_enhanced_tab
-# from ui.limit_up_enhanced import render_limit_up_enhanced_tab
+def load_ui_module(module_name, function_name):
+    """动态加载UI模块并返回渲染函数"""
+    module = importlib.import_module(module_name)
+    return getattr(module, function_name)
 
 # --- 侧边栏 ---
 with st.sidebar:
@@ -491,7 +503,7 @@ with st.sidebar:
     col_refresh, col_auto = st.columns([1, 1])
     with col_refresh:
         if st.button("🔄 刷新数据"):
-            SessionStateManager.clear_cache()
+            SessionStateManager.clear_data_cache()
             st.success("✅ 数据已刷新")
             st.rerun()
     
@@ -504,13 +516,13 @@ with st.sidebar:
     st.markdown("---")
     
     # 自动刷新
-    auto_refresh = st.checkbox("自动刷新（每5分钟）", value=st.session_state.get('auto_refresh', False))
+    auto_refresh = st.checkbox("自动刷新（每10分钟）", value=st.session_state.get('auto_refresh', False))
     st.session_state.auto_refresh = auto_refresh
     if auto_refresh:
         last_refresh = st.session_state.get('last_refresh', 0)
         current_time = pd.Timestamp.now().timestamp()
-        if current_time - last_refresh > 300:
-            SessionStateManager.clear_cache()
+        if current_time - last_refresh > 600:
+            SessionStateManager.clear_data_cache()
             st.info("⏱️ 自动刷新中...")
             st.rerun()
     
@@ -576,58 +588,97 @@ if app_mode == "📈 市场分析":
     with t1:
         # 延迟导入单股分析模块（重型模块）
         with st.spinner("正在加载单股分析引擎..."):
-            from ui.single_stock import render_single_stock_tab
-            render_single_stock_tab(db, config)
+            render_single_stock_tab = load_ui_module('ui.single_stock', 'render_single_stock_tab')
+            render_single_stock_tab(get_db_instance(), config)
     with t2:
-        render_multi_compare_tab(db, config)
+        # 延迟导入多股比较模块
+        with st.spinner("正在加载多股比较引擎..."):
+            render_multi_compare_tab = load_ui_module('ui.multi_compare', 'render_multi_compare_tab')
+            render_multi_compare_tab(get_db_instance(), config)
     with t3:
-        render_sector_rotation_tab(db, config)
+        # 延迟导入板块轮动模块
+        with st.spinner("正在加载板块轮动引擎..."):
+            render_sector_rotation_tab = load_ui_module('ui.sector_rotation', 'render_sector_rotation_tab')
+            render_sector_rotation_tab(get_db_instance(), config)
     with t4:
-        render_sentiment_tab(db, config)
+        # 延迟导入情绪分析模块
+        with st.spinner("正在加载情绪分析引擎..."):
+            render_sentiment_tab = load_ui_module('ui.sentiment', 'render_sentiment_tab')
+            render_sentiment_tab(get_db_instance(), config)
     with t5:
-        render_hot_topics_tab(db, config)
+        # 延迟导入热点追踪模块
+        with st.spinner("正在加载热点追踪引擎..."):
+            render_hot_topics_tab = load_ui_module('ui.hot_topics', 'render_hot_topics_tab')
+            render_hot_topics_tab(get_db_instance(), config)
     with t6:
-        render_backtesting_review_tab(db, config)
+        # 延迟导入市场复盘模块
+        with st.spinner("正在加载市场复盘引擎..."):
+            render_backtesting_review_tab = load_ui_module('ui.backtesting_review', 'render_backtesting_review_tab')
+            render_backtesting_review_tab(get_db_instance(), config)
 
 elif app_mode == "🔥 交易策略":
     # 交易策略模块
     t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12 = st.tabs(["🔥 龙头战法", "📈 均线战法", "🎯 打板预测", "⚡ 集合竞价", "📊 量价关系", "💰 游资席位", "🎯 半路战法", "🔍 买点扫描", "🕸️ 关系图谱", "👤 游资画像", "📈 短期涨跌", "🔮 机会预测"])
     with t1:
-        render_dragon_strategy_tab(db, config)
+        # 延迟导入龙头战法模块
+        with st.spinner("正在加载龙头战法引擎..."):
+            dragon_strategy = __import__('ui.dragon_strategy', fromlist=['render_dragon_strategy_tab'])
+            dragon_strategy.render_dragon_strategy_tab(get_db_instance(), config)
     with t2:
-        render_ma_strategy_tab(db, config)
+        # 延迟导入均线战法模块
+        with st.spinner("正在加载均线战法引擎..."):
+            ma_strategy = __import__('ui.ma_strategy', fromlist=['render_ma_strategy_tab'])
+            ma_strategy.render_ma_strategy_tab(get_db_instance(), config)
     with t3:
-        render_limit_up_tab(db, config)
+        # 延迟导入打板预测模块
+        with st.spinner("正在加载打板预测引擎..."):
+            limit_up = __import__('ui.limit_up', fromlist=['render_limit_up_tab'])
+            limit_up.render_limit_up_tab(get_db_instance(), config)
     with t4:
-        render_auction_tab(db, config)
+        # 延迟导入集合竞价模块
+        with st.spinner("正在加载集合竞价引擎..."):
+            auction = __import__('ui.auction', fromlist=['render_auction_tab'])
+            auction.render_auction_tab(get_db_instance(), config)
     with t5:
-        render_volume_price_tab(db, config)
+        # 延迟导入量价关系模块
+        with st.spinner("正在加载量价关系引擎..."):
+            volume_price = __import__('ui.volume_price', fromlist=['render_volume_price_tab'])
+            volume_price.render_volume_price_tab(get_db_instance(), config)
     with t6:
-        render_capital_tab(db, config)
+        # 延迟导入游资席位模块
+        with st.spinner("正在加载游资席位引擎..."):
+            capital = __import__('ui.capital', fromlist=['render_capital_tab'])
+            capital.render_capital_tab(get_db_instance(), config)
     with t7:
-        render_midway_strategy_tab(db, config)
+        # 延迟导入半路战法模块
+        with st.spinner("正在加载半路战法引擎..."):
+            midway_strategy = __import__('ui.midway_strategy', fromlist=['render_midway_strategy_tab'])
+            midway_strategy.render_midway_strategy_tab(get_db_instance(), config)
     with t8:
-        render_buy_point_scanner_tab(db, config)
+        # 延迟导入买点扫描模块
+        with st.spinner("正在加载买点扫描引擎..."):
+            buy_point_scanner = __import__('ui.buy_point_scanner', fromlist=['render_buy_point_scanner_tab'])
+            buy_point_scanner.render_buy_point_scanner_tab(get_db_instance(), config)
     with t9:
         # 延迟导入关系图谱模块
         with st.spinner("正在加载关系图谱引擎..."):
-            from ui.capital_network import render_capital_network_tab
-            render_capital_network_tab(db, config)
+            capital_network = __import__('ui.capital_network', fromlist=['render_capital_network_tab'])
+            capital_network.render_capital_network_tab(get_db_instance(), config)
     with t10:
         # 延迟导入游资画像模块
         with st.spinner("正在加载游资画像引擎..."):
-            from ui.capital_profiler import render_capital_profiler_tab
-            render_capital_profiler_tab(db, config)
+            capital_profiler = __import__('ui.capital_profiler', fromlist=['render_capital_profiler_tab'])
+            capital_profiler.render_capital_profiler_tab(get_db_instance(), config)
     with t11:
         # 延迟导入短期涨跌模块
         with st.spinner("正在加载短期涨跌分析引擎..."):
-            from ui.short_term_trend import render_short_term_trend_tab
-            render_short_term_trend_tab(db, config)
+            short_term_trend = __import__('ui.short_term_trend', fromlist=['render_short_term_trend_tab'])
+            short_term_trend.render_short_term_trend_tab(get_db_instance(), config)
     with t12:
         # 延迟导入机会预测模块
         with st.spinner("正在加载机会预测引擎..."):
-            from ui.opportunity_predictor import render_opportunity_predictor_tab
-            render_opportunity_predictor_tab(db, config)
+            opportunity_predictor = __import__('ui.opportunity_predictor', fromlist=['render_opportunity_predictor_tab'])
+            opportunity_predictor.render_opportunity_predictor_tab(get_db_instance(), config)
 
 elif app_mode == "🧠 市场情绪":
     # 市场情绪分析模块
@@ -635,8 +686,8 @@ elif app_mode == "🧠 市场情绪":
     with t1[0]:
         # 延迟导入市场情绪分析模块
         with st.spinner("正在加载市场情绪分析引擎..."):
-            from ui.market_sentiment_tab import render_market_sentiment_tab
-            render_market_sentiment_tab(db, config)
+            market_sentiment_tab = __import__('ui.market_sentiment_tab', fromlist=['render_market_sentiment_tab'])
+            market_sentiment_tab.render_market_sentiment_tab(get_db_instance(), config)
 
 elif app_mode == "💼 交易执行":
     # 交易执行模块
@@ -644,49 +695,52 @@ elif app_mode == "💼 交易执行":
     with t1[0]:
         # 延迟导入交易执行模块
         with st.spinner("正在加载交易执行引擎..."):
-            from ui.trading_execution_tab import render_trading_execution_tab
-            render_trading_execution_tab(db, config)
+            trading_execution_tab = __import__('ui.trading_execution_tab', fromlist=['render_trading_execution_tab'])
+            trading_execution_tab.render_trading_execution_tab(get_db_instance(), config)
 
 elif app_mode == "🧪 量化回测":
     # 量化回测模块 - 包含高级功能，使用延迟导入
     t1, t2, t3, t4, t5, t6, t7, t8 = st.tabs(["🧪 策略回测", "🧪 高级回测", "🔧 参数优化", "📊 K线形态", "🧠 LSTM预测", "🧮 策略工厂", "⚖️ 组合优化", "📊 策略对比"])
     with t1:
-        render_backtest_tab(db, config)
+        # 延迟导入策略回测模块
+        with st.spinner("正在加载策略回测引擎..."):
+            backtest = __import__('ui.backtest', fromlist=['render_backtest_tab'])
+            backtest.render_backtest_tab(get_db_instance(), config)
     with t2:
         # 延迟导入高级回测模块
         with st.spinner("正在加载高级回测引擎..."):
-            from ui.advanced_backtest import render_advanced_backtest_tab
-            render_advanced_backtest_tab(db, config)
+            advanced_backtest = __import__('ui.advanced_backtest', fromlist=['render_advanced_backtest_tab'])
+            advanced_backtest.render_advanced_backtest_tab(get_db_instance(), config)
     with t3:
         # 延迟导入参数优化模块
         with st.spinner("正在加载参数优化引擎..."):
-            from ui.parameter_optimization import render_parameter_optimization_tab
-            render_parameter_optimization_tab(db, config)
+            parameter_optimization = __import__('ui.parameter_optimization', fromlist=['render_parameter_optimization_tab'])
+            parameter_optimization.render_parameter_optimization_tab(get_db_instance(), config)
     with t4:
         # 延迟导入 K线形态模块
         with st.spinner("正在加载 K线形态识别引擎..."):
-            from ui.kline_patterns import render_kline_patterns_tab
-            render_kline_patterns_tab(db, config)
+            kline_patterns = __import__('ui.kline_patterns', fromlist=['render_kline_patterns_tab'])
+            kline_patterns.render_kline_patterns_tab(get_db_instance(), config)
     with t5:
         # 延迟导入 LSTM 预测模块（最重）
         with st.spinner("正在加载 AI 深度学习模型..."):
-            from ui.lstm_predictor import render_lstm_predictor_tab
-            render_lstm_predictor_tab(db, config)
+            lstm_predictor = __import__('ui.lstm_predictor', fromlist=['render_lstm_predictor_tab'])
+            lstm_predictor.render_lstm_predictor_tab(get_db_instance(), config)
     with t6:
         # 延迟导入策略工厂模块
         with st.spinner("正在加载策略工厂引擎..."):
-            from ui.strategy_factory_tab import render_strategy_factory_tab
-            render_strategy_factory_tab(db, config)
+            strategy_factory_tab = __import__('ui.strategy_factory_tab', fromlist=['render_strategy_factory_tab'])
+            strategy_factory_tab.render_strategy_factory_tab(get_db_instance(), config)
     with t7:
         # 延迟导入组合优化模块
         with st.spinner("正在加载组合优化引擎..."):
-            from ui.portfolio_optimizer_tab import render_portfolio_optimizer_tab
-            render_portfolio_optimizer_tab(db, config)
+            portfolio_optimizer_tab = __import__('ui.portfolio_optimizer_tab', fromlist=['render_portfolio_optimizer_tab'])
+            portfolio_optimizer_tab.render_portfolio_optimizer_tab(get_db_instance(), config)
     with t8:
         # 延迟导入策略对比模块
         with st.spinner("正在加载策略对比引擎..."):
-            from ui.strategy_comparison_tab import render_strategy_comparison_tab
-            render_strategy_comparison_tab(db, config)
+            strategy_comparison_tab = __import__('ui.strategy_comparison_tab', fromlist=['render_strategy_comparison_tab'])
+            strategy_comparison_tab.render_strategy_comparison_tab(get_db_instance(), config)
 
 elif app_mode == "💰 资产管理":
     # 资产管理模块
@@ -694,17 +748,23 @@ elif app_mode == "💰 资产管理":
     with t1:
         # 延迟导入模拟交易模块
         with st.spinner("正在加载模拟交易系统..."):
-            from ui.paper_trading import render_paper_trading_tab
-            render_paper_trading_tab(db, config)
+            paper_trading = __import__('ui.paper_trading', fromlist=['render_paper_trading_tab'])
+            paper_trading.render_paper_trading_tab(get_db_instance(), config)
     with t2:
-        render_risk_tab(db, config)
+        # 延迟导入风险管理模块
+        with st.spinner("正在加载风险管理引擎..."):
+            risk = __import__('ui.risk', fromlist=['render_risk_tab'])
+            risk.render_risk_tab(get_db_instance(), config)
     with t3:
-        render_smart_recommend_tab(db, config)
+        # 延迟导入智能推荐模块
+        with st.spinner("正在加载智能推荐引擎..."):
+            smart_recommend = __import__('ui.smart_recommend', fromlist=['render_smart_recommend_tab'])
+            smart_recommend.render_smart_recommend_tab(get_db_instance(), config)
     with t4:
         # 延迟导入实时监控模块
         with st.spinner("正在加载实时监控系统..."):
-            from ui.live_monitoring import render_live_monitoring_tab
-            render_live_monitoring_tab(db, config)
+            live_monitoring = __import__('ui.live_monitoring', fromlist=['render_live_monitoring_tab'])
+            live_monitoring.render_live_monitoring_tab(get_db_instance(), config)
 
 elif app_mode == "⚙️ 系统工具":
     # 系统工具模块
@@ -712,16 +772,22 @@ elif app_mode == "⚙️ 系统工具":
     with t1:
         # 延迟导入性能优化模块
         with st.spinner("正在加载性能优化工具..."):
-            from ui.performance_optimizer import render_performance_optimizer_tab
-            render_performance_optimizer_tab(db, config)
+            performance_optimizer = __import__('ui.performance_optimizer', fromlist=['render_performance_optimizer_tab'])
+            performance_optimizer.render_performance_optimizer_tab(get_db_instance(), config)
     with t2:
-        render_settings_tab(db, config)
+        # 延迟导入系统设置模块
+        with st.spinner("正在加载系统设置引擎..."):
+            settings = __import__('ui.settings', fromlist=['render_settings_tab'])
+            settings.render_settings_tab(get_db_instance(), config)
     with t3:
-        render_history_tab(db, config)
+        # 延迟导入历史记录模块
+        with st.spinner("正在加载历史记录引擎..."):
+            history = __import__('ui.history', fromlist=['render_history_tab'])
+            history.render_history_tab(get_db_instance(), config)
     with t4:
         # 延迟导入数据质量监控模块
         with st.spinner("正在加载数据质量监控工具..."):
-            from ui.data_monitor import render_data_monitor_tab
-            render_data_monitor_tab(db, config)
+            data_monitor = __import__('ui.data_monitor', fromlist=['render_data_monitor_tab'])
+            data_monitor.render_data_monitor_tab(get_db_instance(), config)
 
 logger.info("应用渲染完成")
