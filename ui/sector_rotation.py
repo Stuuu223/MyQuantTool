@@ -81,291 +81,269 @@ def render_sector_rotation_tab(db, config):
     with col1:
         st.subheader("📊 板块强度排行")
         
-        if st.button("🔄 刷新分析", key="refresh_sector", type="primary"):
-            with st.spinner("正在分析板块轮动..."):
-                try:
-                    # 计算板块强度
-                    strength_scores = analyzer.calculate_sector_strength(date_str)
-                    
-                    if strength_scores:
-                        # 获取原始板块数据
-                        industry_df = analyzer._get_industry_data()
-                        is_real_data = len(industry_df) > 0 and len(industry_df) > 10
-
-                        if is_real_data:
-                            st.info(f"💡 数据来源：AkShare 实时数据（共{len(industry_df)}个板块）")
-                        else:
-                            st.warning("⚠️ 提示：当前使用演示数据，可能是非交易时间或数据源异常")
-
-                        # 转换为DataFrame，包含原始数据
-                        df_strength = pd.DataFrame([
-                            {
-                                '板块': sector,
-                                '综合评分': strength.total_score,
-                                '涨跌幅': 0,
-                                '成交额': 0,
-                                '换手率': 0,
-                                '最新价': 0,
-                                '涨幅因子': strength.price_score,
-                                '资金因子': strength.capital_score,
-                                '龙头因子': strength.leader_score,
-                                '题材因子': strength.topic_score,
-                                '成交因子': strength.volume_score,
-                                '轮动阶段': strength.phase.value,
-                                '领跑股票': strength.leading_stock or '-',
-                                '强度变化': strength.delta
-                            }
-                            for sector, strength in strength_scores.items()
-                        ])
-
-                        # 显示数据质量提示
-                        if is_real_data:
-                            zero_turnover = len(df_strength[df_strength['换手率'] == 0])
-                            zero_delta = len(df_strength[df_strength['强度变化'] == 0])
-
-                            if zero_turnover > 0 or zero_delta > 0:
-                                tips = []
-                                if zero_turnover > 0:
-                                    tips.append(f"{zero_turnover}个板块换手率为0（可能数据源未提供）")
-                                if zero_delta > 0:
-                                    tips.append(f"{zero_delta}个板块强度变化为0（首次运行无历史数据）")
-                                st.info("💡 数据提示：" + "；".join(tips))
-
-                        # 从原始数据中填充实际值
-                        for idx, row in df_strength.iterrows():
-                            sector_name = row['板块']
-                            # 查找匹配的板块数据
-                            mask = industry_df.apply(
-                                lambda r: sector_name in str(r.get('名称', '') if r.get('名称', '') is not None else ''),
-                                axis=1
-                            )
-                            if mask.any():
-                                sector_data = industry_df[mask].iloc[0]
-                                df_strength.at[idx, '涨跌幅'] = sector_data.get('涨跌幅', 0)
-                                df_strength.at[idx, '成交额'] = sector_data.get('成交额', 0)
-                                df_strength.at[idx, '换手率'] = sector_data.get('换手率', 0)
-                                df_strength.at[idx, '最新价'] = sector_data.get('最新价', 0)
-
-                        # 调试：检查换手率数据
-                        st.write(f"调试信息：换手率非0的板块数量: {len(df_strength[df_strength['换手率'] != 0])}")
-                        if len(df_strength[df_strength['换手率'] != 0]) > 0:
-                            st.write(f"换手率示例: {df_strength[df_strength['换手率'] != 0][['板块', '换手率']].head(3)}")
-
-                        # 按综合评分排序
-                        df_strength = df_strength.sort_values('综合评分', ascending=False)
-
-                        # 格式化成交额
-                        df_strength['成交额_格式化'] = df_strength['成交额'].apply(Formatter.format_amount)
-                        # 格式化涨跌幅
-                        df_strength['涨跌幅_格式化'] = df_strength['涨跌幅'].apply(lambda x: f"{x:+.2f}%" if x != 0 else "0.00%")
-
-                        # 显示排行榜（精简版）
-                        st.dataframe(
-                            df_strength.head(15)[['板块', '综合评分', '涨跌幅_格式化', '成交额_格式化', '轮动阶段']],
-                            use_container_width=True,
-                            hide_index=True,
-                            column_config={
-                                '综合评分': st.column_config.ProgressColumn(
-                                    '综合评分',
-                                    help='0-100分，分数越高板块越强',
-                                    format='%.1f',
-                                    min_value=0,
-                                    max_value=100
-                                ),
-                                '涨跌幅_格式化': st.column_config.TextColumn(
-                                    '涨跌幅',
-                                    help='板块平均涨跌幅'
-                                ),
-                                '成交额_格式化': st.column_config.TextColumn(
-                                    '成交额',
-                                    help='板块总成交额'
-                                )
-                            }
-                        )
-
-                        # 详细信息（可折叠）
-                        with st.expander("📊 查看详细数据"):
-                            st.dataframe(
-                                df_strength.head(15)[['板块', '综合评分', '涨跌幅', '成交额', '换手率', '轮动阶段', '领跑股票', '强度变化']],
-                                use_container_width=True,
-                                hide_index=True,
-                                column_config={
-                                    '成交额': st.column_config.NumberColumn(
-                                        '成交额',
-                                        help='板块总成交额(元)',
-                                        format='%.0f'
-                                    ),
-                                    '换手率': st.column_config.NumberColumn(
-                                        '换手率',
-                                        help='板块平均换手率(%)',
-                                    format='%.2f%%'
-                                ),
-                                '强度变化': st.column_config.NumberColumn(
-                                    '强度变化',
-                                    help='与前一日的强度变化',
-                                    format='%.1f'
-                                )
-                            }
-                        )
-                        
-                        # 检测轮动信号
-                        st.markdown("---")
-                        st.subheader("🎯 轮动信号识别")
-
-                        signals = analyzer.detect_rotation_signals(date_str)
-
-                        # 统计各阶段板块数量
-                        rising_count = len(signals['rising'])
-                        falling_count = len(signals['falling'])
-                        leading_count = len(signals['leading'])
-                        lagging_count = len(signals['lagging'])
-                        stable_count = len(strength_scores) - rising_count - falling_count - leading_count - lagging_count
-
-                        col_a, col_b, col_c, col_d = st.columns(4)
-
-                        with col_a:
-                            st.metric("📈 上升中", rising_count)
-                            if signals['rising']:
-                                st.write(", ".join(signals['rising'][:3]))
-
-                        with col_b:
-                            st.metric("📉 下降中", falling_count)
-                            if signals['falling']:
-                                st.write(", ".join(signals['falling'][:3]))
-
-                        with col_c:
-                            st.metric("🏆 领跑", leading_count)
-                            if signals['leading']:
-                                st.write(", ".join(signals['leading'][:3]))
-
-                        with col_d:
-                            st.metric("⚠️ 落后", lagging_count)
-                            if signals['lagging']:
-                                st.write(", ".join(signals['lagging'][:3]))
-
-                        # 显示稳定板块数量
-                        if stable_count > 0:
-                            st.info(f"📊 稳定板块: {stable_count} 个")
-                        
-                        # 板块强度可视化
-                        st.markdown("---")
-                        st.subheader("📈 板块强度可视化")
-                        
-                        fig = go.Figure()
-                        
-                        # 添加柱状图
-                        fig.add_trace(go.Bar(
-                            x=df_strength['板块'].head(15),
-                            y=df_strength['综合评分'].head(15),
-                            marker_color=df_strength['综合评分'].head(15).apply(
-                                lambda x: '#00C853' if x >= 70 else '#FFC107' if x >= 50 else '#FF5252'
-                            ),
-                            text=df_strength['综合评分'].head(15).apply(lambda x: f'{x:.1f}'),
-                            textposition='auto',
-                        ))
-                        
-                        fig.update_layout(
-                            title='板块综合评分TOP15',
-                            xaxis_title='板块',
-                            yaxis_title='综合评分',
-                            yaxis_range=[0, 100],
-                            height=500
-                        )
-                        st.plotly_chart(fig, use_container_width=True)
-
-                        # 板块涨跌幅分析
-                        st.markdown("---")
-                        st.subheader("📊 板块涨跌幅分析")
-
-                        fig_change = go.Figure()
-                        fig_change.add_trace(go.Bar(
-                            x=df_strength['板块'].head(15),
-                            y=df_strength['涨跌幅'].head(15),
-                            marker_color=df_strength['涨跌幅'].head(15).apply(
-                                lambda x: '#00C853' if x > 0 else '#FF5252' if x < 0 else '#9E9E9E'
-                            ),
-                            text=df_strength['涨跌幅'].head(15).apply(lambda x: f'{x:+.2f}%'),
-                            textposition='auto',
-                        ))
-                        fig_change.update_layout(
-                            title='板块涨跌幅TOP15',
-                            xaxis_title='板块',
-                            yaxis_title='涨跌幅(%)',
-                            height=500
-                        )
-                        st.plotly_chart(fig_change, use_container_width=True)
-
-                        # 板块资金流入分析（成交额）
-                        st.markdown("---")
-                        st.subheader("💰 板块资金流入分析")
-
-                        fig_capital = go.Figure()
-                        fig_capital.add_trace(go.Bar(
-                            x=df_strength['板块'].head(15),
-                            y=df_strength['成交额'].head(15),
-                            marker_color='#2196F3',
-                            text=df_strength['成交额'].head(15).apply(lambda x: f'¥{x/1e8:.2f}亿' if x > 0 else '¥0'),
-                            textposition='auto',
-                        ))
-                        fig_capital.update_layout(
-                            title='板块成交额TOP15（资金热度）',
-                            xaxis_title='板块',
-                            yaxis_title='成交额(元)',
-                            height=500
-                        )
-                        st.plotly_chart(fig_capital, use_container_width=True)
-
-                        # 板块活跃度分析（换手率）
-                        st.markdown("---")
-                        st.subheader("🔄 板块活跃度分析")
-
-                        fig_turnover = go.Figure()
-                        fig_turnover.add_trace(go.Bar(
-                            x=df_strength['板块'].head(15),
-                            y=df_strength['换手率'].head(15),
-                            marker_color='#FF9800',
-                            text=df_strength['换手率'].head(15).apply(lambda x: f'{x:.2f}%'),
-                            textposition='auto',
-                        ))
-                        fig_turnover.update_layout(
-                            title='板块换手率TOP15',
-                            xaxis_title='板块',
-                            yaxis_title='换手率(%)',
-                            height=500
-                        )
-                        st.plotly_chart(fig_turnover, use_container_width=True)
-
-                        # 因子雷达图
-                        st.markdown("---")
-                        st.subheader("📊 TOP3板块因子分析")
-
-                        top3_sectors = df_strength.head(3)
-
-                        for _, row in top3_sectors.iterrows():
-                            with st.expander(f"🏆 {row['板块']} - {row['综合评分']:.1f}分"):
-                                col_f1, col_f2, col_f3 = st.columns(3)
-
-                                col_f1.metric("涨幅因子", f"{row['涨幅因子']:.1f}")
-                                col_f2.metric("资金因子", f"{row['资金因子']:.1f}")
-                                col_f3.metric("龙头因子", f"{row['龙头因子']:.1f}")
-                                
-                                col_f4, col_f5 = st.columns(2)
-                                col_f4.metric("题材因子", f"{row['题材因子']:.1f}")
-                                col_f5.metric("成交因子", f"{row['成交因子']:.1f}")
-                                
-                                if row['领跑股票'] != '-':
-                                    st.info(f"📌 领跑股票: {row['领跑股票']}")
-                                
-                                if row['强度变化'] > 5:
-                                    st.success(f"📈 强度快速上升 (+{row['强度变化']:.1f})")
-                                elif row['强度变化'] < -5:
-                                    st.warning(f"📉 强度快速下降 ({row['强度变化']:.1f})")
-                        
-                    else:
-                        st.warning("⚠️ 未能获取板块数据，请稍后重试")
+        # 自动加载分析数据
+        with st.spinner("正在分析板块轮动..."):
+            try:
+                # 计算板块强度
+                strength_scores = analyzer.calculate_sector_strength(date_str)
                 
-                except Exception as e:
-                    st.error(f"❌ 分析失败: {str(e)}")
+                if strength_scores:
+                    # 获取原始板块数据
+                    industry_df = analyzer._get_industry_data()
+                    is_real_data = len(industry_df) > 0 and len(industry_df) > 10
+
+                    if is_real_data:
+                        st.info(f"💡 数据来源：AkShare 实时数据（共{len(industry_df)}个板块）")
+                    else:
+                        st.warning("⚠️ 提示：当前使用演示数据，可能是非交易时间或数据源异常")
+
+                    # 转换为DataFrame，包含原始数据
+                    df_strength = pd.DataFrame([
+                        {
+                            '板块': sector,
+                            '综合评分': strength.total_score,
+                            '涨跌幅': 0,
+                            '成交额': 0,
+                            '换手率': 0,
+                            '最新价': 0,
+                            '涨幅因子': strength.price_score,
+                            '资金因子': strength.capital_score,
+                            '龙头因子': strength.leader_score,
+                            '题材因子': strength.topic_score,
+                            '成交因子': strength.volume_score,
+                            '轮动阶段': strength.phase.value,
+                            '领跑股票': strength.leading_stock or '-',
+                            '强度变化': strength.delta
+                        }
+                        for sector, strength in strength_scores.items()
+                    ])
+
+                    # 显示数据质量提示
+                    if is_real_data:
+                        zero_turnover = len(df_strength[df_strength['换手率'] == 0])
+                        zero_delta = len(df_strength[df_strength['强度变化'] == 0])
+
+                        if zero_turnover > 0 or zero_delta > 0:
+                            tips = []
+                            if zero_turnover > 0:
+                                tips.append(f"{zero_turnover}个板块换手率为0（可能数据源未提供）")
+                            if zero_delta > 0:
+                                tips.append(f"{zero_delta}个板块强度变化为0（首次运行无历史数据）")
+                            st.info("💡 数据提示：" + "；".join(tips))
+
+                    # 从原始数据中填充实际值
+                    for idx, row in df_strength.iterrows():
+                        sector_name = row['板块']
+                        # 查找匹配的板块数据
+                        mask = industry_df.apply(
+                            lambda r: sector_name in str(r.get('名称', '') if r.get('名称', '') is not None else ''),
+                            axis=1
+                        )
+                        if mask.any():
+                            sector_data = industry_df[mask].iloc[0]
+                            df_strength.at[idx, '涨跌幅'] = sector_data.get('涨跌幅', 0)
+                            df_strength.at[idx, '成交额'] = sector_data.get('成交额', 0)
+                            df_strength.at[idx, '换手率'] = sector_data.get('换手率', 0)
+                            df_strength.at[idx, '最新价'] = sector_data.get('最新价', 0)
+
+                    # 按综合评分排序
+                    df_strength = df_strength.sort_values('综合评分', ascending=False)
+
+                    # 格式化成交额、涨跌幅、换手率
+                    df_strength['成交额_格式化'] = df_strength['成交额'].apply(Formatter.format_amount)
+                    df_strength['涨跌幅_格式化'] = df_strength['涨跌幅'].apply(lambda x: f"{x:+.2f}%" if x != 0 else "0.00%")
+                    df_strength['换手率_格式化'] = df_strength['换手率'].apply(lambda x: f"{x:.2f}%" if x != 0 else "0.00%")
+
+                    # 显示排行榜（包含换手率的完整版）
+                    st.dataframe(
+                        df_strength.head(15)[['板块', '综合评分', '涨跌幅_格式化', '成交额_格式化', '换手率_格式化', '轮动阶段', '领跑股票', '强度变化']],
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            '综合评分': st.column_config.ProgressColumn(
+                                '综合评分',
+                                help='0-100分，分数越高板块越强',
+                                format='%.1f',
+                                min_value=0,
+                                max_value=100
+                            ),
+                            '涨跌幅_格式化': st.column_config.TextColumn(
+                                '涨跌幅',
+                                help='板块平均涨跌幅'
+                            ),
+                            '成交额_格式化': st.column_config.TextColumn(
+                                '成交额',
+                                help='板块总成交额'
+                            ),
+                            '换手率_格式化': st.column_config.TextColumn(
+                                '换手率',
+                                help='板块平均换手率'
+                            ),
+                            '强度变化': st.column_config.NumberColumn(
+                                '强度变化',
+                                help='与前一日的强度变化',
+                                format='%.1f'
+                            )
+                        }
+                    )                        
+                    # 检测轮动信号
+                    st.markdown("---")
+                    st.subheader("🎯 轮动信号识别")
+
+                    signals = analyzer.detect_rotation_signals(date_str)
+
+                    # 统计各阶段板块数量
+                    rising_count = len(signals['rising'])
+                    falling_count = len(signals['falling'])
+                    leading_count = len(signals['leading'])
+                    lagging_count = len(signals['lagging'])
+                    stable_count = len(strength_scores) - rising_count - falling_count - leading_count - lagging_count
+
+                    col_a, col_b, col_c, col_d = st.columns(4)
+
+                    with col_a:
+                        st.metric("📈 上升中", rising_count)
+                        if signals['rising']:
+                            st.write(", ".join(signals['rising'][:3]))
+
+                    with col_b:
+                        st.metric("📉 下降中", falling_count)
+                        if signals['falling']:
+                            st.write(", ".join(signals['falling'][:3]))
+
+                    with col_c:
+                        st.metric("🏆 领跑", leading_count)
+                        if signals['leading']:
+                            st.write(", ".join(signals['leading'][:3]))
+
+                    with col_d:
+                        st.metric("⚠️ 落后", lagging_count)
+                        if signals['lagging']:
+                            st.write(", ".join(signals['lagging'][:3]))
+
+                    # 显示稳定板块数量
+                    if stable_count > 0:
+                        st.info(f"📊 稳定板块: {stable_count} 个")
+                    
+                    # 板块强度可视化
+                    st.markdown("---")
+                    st.subheader("📈 板块强度可视化")
+                    
+                    fig = go.Figure()
+                    
+                    # 添加柱状图
+                    fig.add_trace(go.Bar(
+                        x=df_strength['板块'].head(15),
+                        y=df_strength['综合评分'].head(15),
+                        marker_color=df_strength['综合评分'].head(15).apply(
+                            lambda x: '#00C853' if x >= 70 else '#FFC107' if x >= 50 else '#FF5252'
+                        ),
+                        text=df_strength['综合评分'].head(15).apply(lambda x: f'{x:.1f}'),
+                        textposition='auto',
+                    ))
+                    
+                    fig.update_layout(
+                        title='板块综合评分TOP15',
+                        xaxis_title='板块',
+                        yaxis_title='综合评分',
+                        yaxis_range=[0, 100],
+                        height=500
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+
+                    # 板块涨跌幅分析
+                    st.markdown("---")
+                    st.subheader("📊 板块涨跌幅分析")
+
+                    fig_change = go.Figure()
+                    fig_change.add_trace(go.Bar(
+                        x=df_strength['板块'].head(15),
+                        y=df_strength['涨跌幅'].head(15),
+                        marker_color=df_strength['涨跌幅'].head(15).apply(
+                            lambda x: '#00C853' if x > 0 else '#FF5252' if x < 0 else '#9E9E9E'
+                        ),
+                        text=df_strength['涨跌幅'].head(15).apply(lambda x: f'{x:+.2f}%'),
+                        textposition='auto',
+                    ))
+                    fig_change.update_layout(
+                        title='板块涨跌幅TOP15',
+                        xaxis_title='板块',
+                        yaxis_title='涨跌幅(%)',
+                        height=500
+                    )
+                    st.plotly_chart(fig_change, use_container_width=True)
+
+                    # 板块资金流入分析（成交额）
+                    st.markdown("---")
+                    st.subheader("💰 板块资金流入分析")
+
+                    fig_capital = go.Figure()
+                    fig_capital.add_trace(go.Bar(
+                        x=df_strength['板块'].head(15),
+                        y=df_strength['成交额'].head(15),
+                        marker_color='#2196F3',
+                        text=df_strength['成交额'].head(15).apply(lambda x: f'¥{x/1e8:.2f}亿' if x > 0 else '¥0'),
+                        textposition='auto',
+                    ))
+                    fig_capital.update_layout(
+                        title='板块成交额TOP15（资金热度）',
+                        xaxis_title='板块',
+                        yaxis_title='成交额(元)',
+                        height=500
+                    )
+                    st.plotly_chart(fig_capital, use_container_width=True)
+
+                    # 板块活跃度分析（换手率）
+                    st.markdown("---")
+                    st.subheader("🔄 板块活跃度分析")
+
+                    fig_turnover = go.Figure()
+                    fig_turnover.add_trace(go.Bar(
+                        x=df_strength['板块'].head(15),
+                        y=df_strength['换手率'].head(15),
+                        marker_color='#FF9800',
+                        text=df_strength['换手率'].head(15).apply(lambda x: f'{x:.2f}%'),
+                        textposition='auto',
+                    ))
+                    fig_turnover.update_layout(
+                        title='板块换手率TOP15',
+                        xaxis_title='板块',
+                        yaxis_title='换手率(%)',
+                        height=500
+                    )
+                    st.plotly_chart(fig_turnover, use_container_width=True)
+
+                    # 因子雷达图
+                    st.markdown("---")
+                    st.subheader("📊 TOP3板块因子分析")
+
+                    top3_sectors = df_strength.head(3)
+
+                    for _, row in top3_sectors.iterrows():
+                        with st.expander(f"🏆 {row['板块']} - {row['综合评分']:.1f}分"):
+                            col_f1, col_f2, col_f3 = st.columns(3)
+
+                            col_f1.metric("涨幅因子", f"{row['涨幅因子']:.1f}")
+                            col_f2.metric("资金因子", f"{row['资金因子']:.1f}")
+                            col_f3.metric("龙头因子", f"{row['龙头因子']:.1f}")
+                            
+                            col_f4, col_f5 = st.columns(2)
+                            col_f4.metric("题材因子", f"{row['题材因子']:.1f}")
+                            col_f5.metric("成交因子", f"{row['成交因子']:.1f}")
+                            
+                            if row['领跑股票'] != '-':
+                                st.info(f"📌 领跑股票: {row['领跑股票']}")
+                            
+                            if row['强度变化'] > 5:
+                                st.success(f"📈 强度快速上升 (+{row['强度变化']:.1f})")
+                            elif row['强度变化'] < -5:
+                                st.warning(f"📉 强度快速下降 ({row['强度变化']:.1f})")
+                    
+                else:
+                    st.warning("⚠️ 未能获取板块数据，请稍后重试")
+            
+            except Exception as e:
+                st.error(f"❌ 分析失败: {str(e)}")
     
     with col2:
         st.subheader("📋 操作建议")
