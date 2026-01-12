@@ -107,7 +107,14 @@ def render_buy_point_scanner_tab(db, config):
                             stock_list = None
                     else:
                         stock_list = None
-                
+
+                # 创建股票信息字典（股票代码 -> 股票名称）
+                stock_info = {}
+                if scan_type in ["全市场", "自选股"]:
+                    stock_info = dict(zip(stock_list_df['代码'], stock_list_df['名称']))
+                elif scan_type == "板块" and constituents_df is not None:
+                    stock_info = dict(zip(constituents_df['代码'], constituents_df['名称']))
+
                 # 执行扫描
                 signals = scanner.scan_buy_signals(stock_list=stock_list, stock_info=stock_info)
                 
