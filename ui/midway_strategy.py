@@ -55,7 +55,10 @@ def render_midway_strategy_tab(db, config):
     
     # 主内容区 - 扫描结果
     st.subheader("📊 半路战法信号")
-    
+
+    # 添加调试模式开关
+    debug_mode = st.checkbox("调试模式（显示详细日志）", value=False, key="midway_debug_mode")
+
     # 获取股票数据并分析
     if st.button("🔍 扫描半路战法机会", key="scan_midway"):
         with st.spinner('正在扫描半路战法机会...'):
@@ -81,27 +84,86 @@ def render_midway_strategy_tab(db, config):
                 # 获取股票数据
                 stock_data = {}
                 stock_info = {}
-                
-                for code in stock_codes:
+
+                if debug_mode:
+                    st.info(f"[调试] 开始获取 {len(stock_codes)} 只股票的数据...")
+
+                for idx, code in enumerate(stock_codes):
                     # 获取最近lookback_days天的数据
                     import datetime
                     end_date = datetime.datetime.now().strftime('%Y%m%d')
-                    start_date = (datetime.datetime.now() - datetime.timedelta(days=lookback_days)).strftime('%Y%m%d')
-                    
+                    start_date = (datetime.datetime.now() - datetime.timedelta(days=lookback_days + 10)).strftime('%Y%m%d')  # 多取10天确保有足够数据
+
                     df = data_manager.get_stock_data(code, start_date, end_date)
-                    if df is not None and len(df) >= lookback_days:
+                    if df is not None and len(df) >= 20:  # 降低要求到20天
                         stock_data[code] = df
                         # 从股票列表中获取真实股票名称
                         stock_name = stock_list_df[stock_list_df['代码'] == code]['名称'].values[0] if code in stock_list_df['代码'].values else f"股票{code}"
                         stock_info[code] = stock_name
+
+                        if debug_mode and idx < 5:  # 只打印前5个
+                            st.text(f"[调试] {code} - {stock_name}, 数据行数: {len(df)}")
+                    else:
+                        if debug_mode and idx < 5:  # 只打印前5个
+                            st.text(f"[调试] {code} - 数据不足或为空 (len={len(df) if df is not None else 0})")
+
+                if debug_mode:
+                    st.info(f"[调试] 成功获取 {len(stock_data)} 只股票的数据")
                 
                 # 扫描半路战法信号
+                if debug_mode:
+                    st.info(f"[调试] 开始扫描 {len(stock_data)} 只股票...")
+
                 signals = analyzer.scan_midway_opportunities(stock_data, stock_info)
-                
+
+                if debug_mode:
+                    st.info(f"[调试] 扫描完成，发现 {len(signals)} 个原始信号")
+
                 # 过滤信号
-                filtered_signals = [s for s in signals if 
-                                  s.signal_strength >= signal_strength_threshold and
-                                  (risk_tolerance == "高" or s.risk_level in ["低", "中"][:["低", "中", "高"].index(risk_tolerance)+1])]
+                if debug_mode:
+                    st.info(f"[调试] 开始过滤信号...")
+                    st.text(f"[调试] 信号强度阈值: {signal_strength_threshold}")
+                    st.text(f"[调试] 风险容忍度: {risk_tolerance}")
+
+                filtered_signals = []
+                for s in signals:
+                    # 检查信号强度
+                    if s.signal_strength < signal_strength_threshold:
+                        if debug_mode:
+                            st.text(f"[调试] {s.stock_code} - 信号强度不足: {s.signal_strength:.2f}")
+                        continue
+
+                    # 检查风险等级
+                    if risk_tolerance == "低" and s.risk_level != "低":
+                        if debug_mode:
+                            st.text(f"[调试] {s.stock_code} - 风险等级不符合: {s.risk_level}")
+                        continue
+                    elif risk_tolerance == "中" and s.risk_level == "高":
+                        if debug_mode:
+                            st.text(f"[调试] {s.stock_code} - 风险等级不符合: {s.risk_level}")
+                        continue
+                    # "高" 风险容忍度接受所有风险等级
+
+                    filtered_signals.append(s)
+                    if debug_mode:
+                        st.text(f"[调试] {s.stock_code} - 通过过滤: 强度={s.signal_strength:.2f}, 风险={s.risk_level}")
+
+                if debug_mode:
+                    st.info(f"[调试] 过滤完成，保留 {len(filtered_signals)} 个信号")
+                filtered_signals = []
+                for s in signals:
+                    # 检查信号强度
+                    if s.signal_strength < signal_strength_threshold:
+                        continue
+
+                    # 检查风险等级
+                    if risk_tolerance == "低" and s.risk_level != "低":
+                        continue
+                    elif risk_tolerance == "中" and s.risk_level == "高":
+                        continue
+                    # "高" 风险容忍度接受所有风险等级
+
+                    filtered_signals.append(s)
                 
                 if filtered_signals:
                     st.success(f"✅ 发现 {len(filtered_signals)} 个半路战法信号")

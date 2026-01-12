@@ -6,10 +6,16 @@
 - https://xueqiu.com/8189550582/174332015
 - http://www.10huang.cn/zhangting/54879.html
 
+四大核心模式：
+1. 平台突破战法（胜率最高）
+2. 上影线反包战法
+3. 阴线反包战法
+4. 涨停加一阳战法（乌云盖顶/空中加油）
+
 核心逻辑：
-1. 股价突破关键位置后回调
-2. 回调到支撑位附近
-3. 成交量萎缩后重新放量
+- 逻辑面 > 情绪面 > 资金面 > 技术面
+- 大盘 > 板块 > 个股
+- 日线结构是大方向，分时是切入点
 """
 
 import pandas as pd
@@ -26,6 +32,7 @@ class MidwaySignal:
     stock_code: str
     stock_name: str
     signal_date: str
+    signal_type: str  # 信号类型：平台突破、上影线反包、阴线反包、涨停加一阳
     entry_price: float
     stop_loss: float
     target_price: float
@@ -33,6 +40,7 @@ class MidwaySignal:
     risk_level: str  # 风险等级: '低', '中', '高'
     reasons: List[str]  # 信号理由
     confidence: float  # 置信度 0-1
+    technical_indicators: Dict[str, float]  # 关键技术指标
 
 
 class MidwayStrategyAnalyzer:
@@ -59,16 +67,48 @@ class MidwayStrategyAnalyzer:
         Returns:
             MidwaySignal: 半路战法信号，如果没有信号则返回None
         """
-        if len(df) < self.lookback_days:
+        if len(df) < 20:  # 至少需要20天数据
+            print(f"[{stock_code}] 数据不足: {len(df)} < 20")
             return None
 
         # 计算技术指标
         df = self._calculate_indicators(df)
 
-        # 检查是否满足半路战法条件
-        signal = self._check_midway_conditions(df, stock_code, stock_name)
+        # 检查是否是衰竭形态（必须规避）
+        if self._check_exhaustion_pattern(df):
+            print(f"[{stock_code}] 衰竭形态，规避")
+            return None
 
-        return signal
+        # 检查四大核心模式
+        signals = []
+
+        # 1. 平台突破战法
+        platform_signal = self._check_platform_breakout(df, stock_code, stock_name)
+        if platform_signal:
+            signals.append(platform_signal)
+
+        # 2. 上影线反包战法
+        shadow_signal = self._check_shadow_reversal(df, stock_code, stock_name)
+        if shadow_signal:
+            signals.append(shadow_signal)
+
+        # 3. 阴线反包战法
+        bearish_signal = self._check_bearish_reversal(df, stock_code, stock_name)
+        if bearish_signal:
+            signals.append(bearish_signal)
+
+        # 4. 涨停加一阳战法
+        limit_up_signal = self._check_limit_up_one_yang(df, stock_code, stock_name)
+        if limit_up_signal:
+            signals.append(limit_up_signal)
+
+        # 选择评分最高的信号
+        if signals:
+            best_signal = max(signals, key=lambda x: x.signal_strength)
+            return best_signal
+
+        print(f"[{stock_code}] 未发现任何模式信号")
+        return None
 
     def _calculate_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """计算技术指标"""
@@ -77,6 +117,11 @@ class MidwayStrategyAnalyzer:
         for col in ['open', 'high', 'low', 'close', 'volume']:
             if col in df.columns:
                 df[col] = df[col].astype(float)
+
+        # 如果有date列但没有设置为索引，则设置为索引
+        if 'date' in df.columns and not isinstance(df.index, pd.DatetimeIndex):
+            df['date'] = pd.to_datetime(df['date'])
+            df.set_index('date', inplace=True)
 
         # 移动平均线
         df['ma5'] = talib.SMA(df['close'].values, timeperiod=5)
@@ -103,128 +148,393 @@ class MidwayStrategyAnalyzer:
         # 波动率
         df['volatility'] = df['close'].rolling(window=10).std()
 
+        # 检查最新数据是否有NaN值
+        latest = df.iloc[-1]
+        nan_cols = [col for col in ['ma5', 'ma10', 'ma20', 'rsi', 'macd', 'volume_ratio'] if pd.isna(latest.get(col, None))]
+        if nan_cols:
+            print(f"[警告] {len(df)} 行数据中，最新行存在NaN值的列: {nan_cols}")
+
         return df
 
-    def _check_midway_conditions(self, df: pd.DataFrame, stock_code: str, stock_name: str) -> Optional[MidwaySignal]:
-        """检查半路战法条件"""
-        latest = df.iloc[-1]
-        prev = df.iloc[-2] if len(df) >= 2 else df.iloc[-1]
-        prev2 = df.iloc[-3] if len(df) >= 3 else prev
-
-        # 条件1: 近期有明显上涨（突破关键位置）
-        recent_high = df['high'].tail(10).max()
-        current_close = latest['close']
-        price_rally = (current_close - recent_high) / recent_high
-
-        # 条件2: 当前处于回调状态（从高点回调一定幅度，但未破位）
-        recent_peak = df['close'].tail(5).max()
-        pullback_ratio = (recent_peak - current_close) / recent_peak
-
-        # 条件3: 回调到支撑位附近（如MA10, MA20, 布林带下轨等）
-        support_nearby = self._check_support_resistance(latest, current_close)
-
-        # 条件4: 成交量萎缩后重新放量
-        volume_condition = self._check_volume_pattern(df)
-
-        # 条件5: RSI在合理区间（不超买不超卖）
-        rsi_condition = 30 <= latest['rsi'] <= 60
-
-        # 条件6: MACD有底背离或金叉迹象
-        macd_condition = self._check_macd_condition(df)
-
-        # 综合判断
-        if (price_rally > 0.05 and  # 近期上涨超过5%
-            0.02 < pullback_ratio < 0.15 and  # 回调幅度适中
-            support_nearby and
-            volume_condition and
-            rsi_condition and
-            macd_condition):
-
-            # 计算入场点、止损点和目标价
-            entry_price = current_close
-            stop_loss = min(latest['low'], latest['ma10'], latest['bb_lower'])  # 取最低的支撑位
-            target_price = current_close * 1.08  # 暂定8%目标
-
-            # 计算信号强度
-            signal_strength = self._calculate_signal_strength(
-                pullback_ratio, volume_condition, rsi_condition, macd_condition
-            )
-
-            # 风险等级
-            risk_level = self._determine_risk_level(signal_strength, stop_loss, entry_price)
-
-            # 信号理由
-            reasons = self._generate_signal_reasons(df)
-
-            return MidwaySignal(
-                stock_code=stock_code,
-                stock_name=stock_name,
-                signal_date=latest.name.strftime('%Y-%m-%d') if hasattr(latest.name, 'strftime') else str(latest.name),
-                entry_price=entry_price,
-                stop_loss=stop_loss,
-                target_price=target_price,
-                signal_strength=signal_strength,
-                risk_level=risk_level,
-                reasons=reasons,
-                confidence=min(signal_strength, 1.0)
-            )
-
-        return None
-
-    def _check_support_resistance(self, latest: pd.Series, current_price: float) -> bool:
-        """检查是否接近支撑位"""
-        # 检查是否接近均线支撑
-        ma_support = abs(current_price - latest['ma10']) / latest['ma10'] < 0.03 or \
-                     abs(current_price - latest['ma20']) / latest['ma20'] < 0.03
-
-        # 检查是否接近布林带下轨支撑
-        bb_support = abs(current_price - latest['bb_lower']) / latest['bb_lower'] < 0.02
-
-        return ma_support or bb_support
-
-    def _check_volume_pattern(self, df: pd.DataFrame) -> bool:
-        """检查成交量模式（萎缩后放量）"""
-        recent_volumes = df['volume'].tail(5).values
-        if len(recent_volumes) < 5:
+    def _check_exhaustion_pattern(self, df: pd.DataFrame) -> bool:
+        """检查是否是衰竭形态（必须规避）"""
+        if len(df) < 10:
             return False
 
-        # 前几日成交量萎缩，最新一日放量
-        volume_shrink = recent_volumes[-3] < recent_volumes[-4] and recent_volumes[-2] < recent_volumes[-4]
-        volume_expand = recent_volumes[-1] > recent_volumes[-2] * 1.2 and recent_volumes[-1] > df['volume_ma5'].iloc[-1]
-
-        return volume_shrink and volume_expand
-
-    def _check_macd_condition(self, df: pd.DataFrame) -> bool:
-        """检查MACD条件"""
         latest = df.iloc[-1]
-        prev = df.iloc[-2] if len(df) >= 2 else latest
+        recent_high = df['high'].tail(10).max()
 
-        # MACD金叉或接近金叉
-        golden_cross = (latest['macdsignal'] > latest['macd']) and (prev['macdsignal'] <= prev['macd'])
-        # 或者MACD柱状图由负转正
-        hist_positive = latest['macdhist'] > 0 and prev['macdhist'] <= 0
+        # 检查是否创了近期新高但出现回落上影或放量阴线
+        if latest['high'] >= recent_high:
+            # 检查是否是上影线
+            upper_shadow = latest['high'] - max(latest['open'], latest['close'])
+            body = abs(latest['close'] - latest['open'])
 
-        return golden_cross or hist_positive
+            # 上影线远长于实体，且放量
+            if upper_shadow > body * 2 and latest['volume'] > df['volume_ma5'].iloc[-1] * 1.5:
+                return True
 
-    def _calculate_signal_strength(self, pullback_ratio: float, volume_condition: bool, rsi_condition: bool, macd_condition: bool) -> float:
-        """计算信号强度"""
-        strength = 0.5  # 基础强度
+            # 检查是否是放量阴线
+            if latest['close'] < latest['open'] and latest['volume'] > df['volume_ma5'].iloc[-1] * 1.5:
+                return True
 
-        # 回调幅度适中加分
-        if 0.05 <= pullback_ratio <= 0.10:
-            strength += 0.2
-        elif 0.02 <= pullback_ratio <= 0.15:
-            strength += 0.1
+        return False
 
-        # 各条件满足加分
-        if volume_condition:
-            strength += 0.1
-        if rsi_condition:
-            strength += 0.1
-        if macd_condition:
-            strength += 0.1
+    def _check_platform_breakout(self, df: pd.DataFrame, stock_code: str, stock_name: str) -> Optional[MidwaySignal]:
+        """检查平台突破战法（胜率最高）"""
+        if len(df) < 20:
+            return None
 
-        return min(strength, 1.0)
+        latest = df.iloc[-1]
+        prev = df.iloc[-2]
+
+        # 检查是否突破平台
+        # 定义平台：最近5-10天价格在窄幅震荡
+        recent_prices = df['close'].tail(10).values
+        price_range = (recent_prices.max() - recent_prices.min()) / recent_prices.mean()
+
+        # 价格震荡幅度小于3%，认为是平台
+        if price_range > 0.03:
+            print(f"[{stock_code}] 平台突破: 价格震荡幅度过大 {price_range*100:.1f}%")
+            return None
+
+        # 检查今天是否突破
+        if latest['close'] <= recent_prices.max():
+            print(f"[{stock_code}] 平台突破: 未突破平台高点 {latest['close']:.2f} <= {recent_prices.max():.2f}")
+            return None
+
+        # 检查成交量是否放大
+        if latest['volume'] < df['volume_ma5'].iloc[-1] * 1.2:
+            print(f"[{stock_code}] 平台突破: 成交量不足 {latest['volume']:.0f} < {df['volume_ma5'].iloc[-1]*1.2:.0f}")
+            return None
+
+        # 检查RSI是否合理
+        if latest['rsi'] > 80:
+            print(f"[{stock_code}] 平台突破: RSI过高 {latest['rsi']:.1f}")
+            return None
+
+        # 计算信号强度
+        signal_strength = 0.6  # 基础分
+
+        # 成交量越大，信号越强
+        if latest['volume'] > df['volume_ma5'].iloc[-1] * 2:
+            signal_strength += 0.2
+        elif latest['volume'] > df['volume_ma5'].iloc[-1] * 1.5:
+            signal_strength += 0.1
+
+        # RSI在合理区间加分
+        if 40 < latest['rsi'] < 70:
+            signal_strength += 0.1
+
+        # MACD配合加分
+        if latest['macdhist'] > 0:
+            signal_strength += 0.1
+
+        signal_strength = min(signal_strength, 1.0)
+
+        # 计算入场点、止损点和目标价
+        entry_price = latest['close']
+        stop_loss = recent_prices.min()  # 平台下沿
+        target_price = entry_price * 1.10  # 10%目标
+
+        risk_level = self._determine_risk_level(signal_strength, stop_loss, entry_price)
+
+        reasons = [
+            f"突破{10}天平台，平台震荡幅度{price_range*100:.1f}%",
+            f"成交量放大{latest['volume']/df['volume_ma5'].iloc[-1]:.2f}倍",
+            f"RSI={latest['rsi']:.1f}，处于合理区间"
+        ]
+
+        print(f"[平台突破] {stock_code} - 信号强度: {signal_strength:.2f}")
+
+        return MidwaySignal(
+            stock_code=stock_code,
+            stock_name=stock_name,
+            signal_date=latest.name.strftime('%Y-%m-%d') if hasattr(latest.name, 'strftime') else str(latest.name),
+            signal_type='平台突破',
+            entry_price=entry_price,
+            stop_loss=stop_loss,
+            target_price=target_price,
+            signal_strength=signal_strength,
+            risk_level=risk_level,
+            reasons=reasons,
+            confidence=signal_strength,
+            technical_indicators={
+                'rsi': latest['rsi'],
+                'volume_ratio': latest['volume'] / df['volume_ma5'].iloc[-1],
+                'macd_hist': latest['macdhist']
+            }
+        )
+
+    def _check_shadow_reversal(self, df: pd.DataFrame, stock_code: str, stock_name: str) -> Optional[MidwaySignal]:
+        """检查上影线反包战法"""
+        if len(df) < 5:
+            return None
+
+        latest = df.iloc[-1]
+        prev = df.iloc[-2]
+
+        # 检查前一天是否是长上影线
+        prev_upper_shadow = prev['high'] - max(prev['open'], prev['close'])
+        prev_body = abs(prev['close'] - prev['open'])
+
+        # 上影线长度大于实体2倍
+        if prev_upper_shadow < prev_body * 2:
+            return None
+
+        # 检查今天是否反包（收盘价超过前一天的最高价）
+        if latest['close'] <= prev['high']:
+            return None
+
+        # 检查成交量
+        if latest['volume'] < df['volume_ma5'].iloc[-1]:
+            return None
+
+        # 检查RSI
+        if latest['rsi'] > 75:
+            return None
+
+        # 计算信号强度
+        signal_strength = 0.5  # 基础分
+
+        # 上影线越长，信号越强
+        if prev_upper_shadow > prev_body * 3:
+            signal_strength += 0.15
+        elif prev_upper_shadow > prev_body * 2:
+            signal_strength += 0.1
+
+        # 成交量放大加分
+        if latest['volume'] > df['volume_ma5'].iloc[-1] * 1.5:
+            signal_strength += 0.15
+        elif latest['volume'] > df['volume_ma5'].iloc[-1] * 1.2:
+            signal_strength += 0.1
+
+        # RSI合理加分
+        if 40 < latest['rsi'] < 70:
+            signal_strength += 0.1
+
+        # MACD配合加分
+        if latest['macdhist'] > 0:
+            signal_strength += 0.1
+
+        signal_strength = min(signal_strength, 1.0)
+
+        # 计算入场点、止损点和目标价
+        entry_price = latest['close']
+        stop_loss = prev['low']  # 前一天最低价
+        target_price = entry_price * 1.10  # 10%目标
+
+        risk_level = self._determine_risk_level(signal_strength, stop_loss, entry_price)
+
+        reasons = [
+            f"上影线反包，上影线长度{prev_upper_shadow:.2f}，实体{prev_body:.2f}",
+            f"收盘价突破前高{prev['high']:.2f}",
+            f"成交量放大{latest['volume']/df['volume_ma5'].iloc[-1]:.2f}倍"
+        ]
+
+        print(f"[上影线反包] {stock_code} - 信号强度: {signal_strength:.2f}")
+
+        return MidwaySignal(
+            stock_code=stock_code,
+            stock_name=stock_name,
+            signal_date=latest.name.strftime('%Y-%m-%d') if hasattr(latest.name, 'strftime') else str(latest.name),
+            signal_type='上影线反包',
+            entry_price=entry_price,
+            stop_loss=stop_loss,
+            target_price=target_price,
+            signal_strength=signal_strength,
+            risk_level=risk_level,
+            reasons=reasons,
+            confidence=signal_strength,
+            technical_indicators={
+                'rsi': latest['rsi'],
+                'volume_ratio': latest['volume'] / df['volume_ma5'].iloc[-1],
+                'macd_hist': latest['macdhist']
+            }
+        )
+
+    def _check_bearish_reversal(self, df: pd.DataFrame, stock_code: str, stock_name: str) -> Optional[MidwaySignal]:
+        """检查阴线反包战法"""
+        if len(df) < 5:
+            return None
+
+        latest = df.iloc[-1]
+        prev = df.iloc[-2]
+
+        # 检查前一天是否是阴线
+        if prev['close'] >= prev['open']:
+            return None
+
+        # 检查前一天是否缩量
+        if prev['volume'] > df['volume_ma5'].iloc[-2] * 1.2:
+            return None
+
+        # 检查今天是否反包（收盘价超过前一天的开盘价）
+        if latest['close'] <= prev['open']:
+            return None
+
+        # 检查今天是否放量
+        if latest['volume'] < df['volume_ma5'].iloc[-1] * 1.2:
+            return None
+
+        # 检查RSI
+        if latest['rsi'] > 75:
+            return None
+
+        # 计算信号强度
+        signal_strength = 0.5  # 基础分
+
+        # 前一天缩量越多，信号越强
+        if prev['volume'] < df['volume_ma5'].iloc[-2] * 0.7:
+            signal_strength += 0.15
+        elif prev['volume'] < df['volume_ma5'].iloc[-2] * 0.9:
+            signal_strength += 0.1
+
+        # 今天放量越多，信号越强
+        if latest['volume'] > df['volume_ma5'].iloc[-1] * 2:
+            signal_strength += 0.15
+        elif latest['volume'] > df['volume_ma5'].iloc[-1] * 1.5:
+            signal_strength += 0.1
+
+        # RSI合理加分
+        if 35 < latest['rsi'] < 65:
+            signal_strength += 0.1
+
+        # MACD配合加分
+        if latest['macdhist'] > 0:
+            signal_strength += 0.1
+
+        signal_strength = min(signal_strength, 1.0)
+
+        # 计算入场点、止损点和目标价
+        entry_price = latest['close']
+        stop_loss = prev['low']  # 前一天最低价
+        target_price = entry_price * 1.10  # 10%目标
+
+        risk_level = self._determine_risk_level(signal_strength, stop_loss, entry_price)
+
+        reasons = [
+            f"阴线反包，前一天缩量下跌{abs(prev['close']-prev['open'])/prev['open']*100:.1f}%",
+            f"今天放量反包，成交量放大{latest['volume']/df['volume_ma5'].iloc[-1]:.2f}倍",
+            f"RSI={latest['rsi']:.1f}，处于合理区间"
+        ]
+
+        print(f"[阴线反包] {stock_code} - 信号强度: {signal_strength:.2f}")
+
+        return MidwaySignal(
+            stock_code=stock_code,
+            stock_name=stock_name,
+            signal_date=latest.name.strftime('%Y-%m-%d') if hasattr(latest.name, 'strftime') else str(latest.name),
+            signal_type='阴线反包',
+            entry_price=entry_price,
+            stop_loss=stop_loss,
+            target_price=target_price,
+            signal_strength=signal_strength,
+            risk_level=risk_level,
+            reasons=reasons,
+            confidence=signal_strength,
+            technical_indicators={
+                'rsi': latest['rsi'],
+                'volume_ratio': latest['volume'] / df['volume_ma5'].iloc[-1],
+                'macd_hist': latest['macdhist']
+            }
+        )
+
+    def _check_limit_up_one_yang(self, df: pd.DataFrame, stock_code: str, stock_name: str) -> Optional[MidwaySignal]:
+        """检查涨停加一阳战法（空中加油/乌云盖顶）"""
+        if len(df) < 5:
+            return None
+
+        latest = df.iloc[-1]
+        prev = df.iloc[-2]
+        prev2 = df.iloc[-3] if len(df) >= 3 else None
+
+        # 检查前2天是否涨停（涨幅接近10%）
+        if prev2 is None:
+            return None
+
+        prev2_change = (prev2['close'] - prev2['open']) / prev2['open']
+        if prev2_change < 0.09:  # 涨幅小于9%，不算涨停
+            return None
+
+        # 检查前一天是否是上影线或小阳线
+        prev_upper_shadow = prev['high'] - max(prev['open'], prev['close'])
+        prev_body = abs(prev['close'] - prev['open'])
+
+        # 前一天是上影线或小阳线（上涨但涨幅不大）
+        if prev['close'] < prev['open']:  # 阴线也可以，但要是高开低走的假阴
+            return None
+
+        # 检查今天是否上涨
+        if latest['close'] <= prev['close']:
+            return None
+
+        # 检查成交量
+        if latest['volume'] < df['volume_ma5'].iloc[-1]:
+            return None
+
+        # 检查RSI
+        if latest['rsi'] > 80:
+            return None
+
+        # 计算信号强度
+        signal_strength = 0.5  # 基础分
+
+        # 前一天上影线加分
+        if prev_upper_shadow > prev_body:
+            signal_strength += 0.1
+
+        # 成交量放大加分
+        if latest['volume'] > df['volume_ma5'].iloc[-1] * 1.5:
+            signal_strength += 0.15
+        elif latest['volume'] > df['volume_ma5'].iloc[-1] * 1.2:
+            signal_strength += 0.1
+
+        # RSI合理加分
+        if 40 < latest['rsi'] < 70:
+            signal_strength += 0.15
+        elif 30 < latest['rsi'] <= 40:
+            signal_strength += 0.1
+
+        # MACD配合加分
+        if latest['macdhist'] > 0:
+            signal_strength += 0.1
+
+        signal_strength = min(signal_strength, 1.0)
+
+        # 计算入场点、止损点和目标价
+        entry_price = latest['close']
+        stop_loss = prev2['low']  # 涨停日的最低价
+        target_price = entry_price * 1.12  # 12%目标（空中加油模式目标更高）
+
+        risk_level = self._determine_risk_level(signal_strength, stop_loss, entry_price)
+
+        reasons = [
+            f"涨停加一阳，前日涨停{prev2_change*100:.1f}%",
+            f"昨日调整后今日上涨{abs(latest['close']-prev['close'])/prev['close']*100:.1f}%",
+            f"成交量放大{latest['volume']/df['volume_ma5'].iloc[-1]:.2f}倍"
+        ]
+
+        print(f"[涨停加一阳] {stock_code} - 信号强度: {signal_strength:.2f}")
+
+        return MidwaySignal(
+            stock_code=stock_code,
+            stock_name=stock_name,
+            signal_date=latest.name.strftime('%Y-%m-%d') if hasattr(latest.name, 'strftime') else str(latest.name),
+            signal_type='涨停加一阳',
+            entry_price=entry_price,
+            stop_loss=stop_loss,
+            target_price=target_price,
+            signal_strength=signal_strength,
+            risk_level=risk_level,
+            reasons=reasons,
+            confidence=signal_strength,
+            technical_indicators={
+                'rsi': latest['rsi'],
+                'volume_ratio': latest['volume'] / df['volume_ma5'].iloc[-1],
+                'macd_hist': latest['macdhist']
+            }
+        )
 
     def _determine_risk_level(self, signal_strength: float, stop_loss: float, entry_price: float) -> str:
         """确定风险等级"""
@@ -236,23 +546,6 @@ class MidwayStrategyAnalyzer:
             return '中'
         else:
             return '高'
-
-    def _generate_signal_reasons(self, df: pd.DataFrame) -> List[str]:
-        """生成信号理由"""
-        latest = df.iloc[-1]
-        reasons = []
-
-        # 根据当前指标状态生成理由
-        if latest['rsi'] < 40:
-            reasons.append("RSI处于相对低位，下跌动能减弱")
-        if latest['macdhist'] > 0:
-            reasons.append("MACD柱状图转正，上涨动能增强")
-        if latest['volume_ratio'] > 1.5:
-            reasons.append("成交量明显放大，资金关注度提升")
-        if abs(latest['close'] - latest['ma10']) / latest['ma10'] < 0.02:
-            reasons.append("价格接近MA10支撑")
-
-        return reasons or ["技术面出现阶段性企稳迹象"]
 
     def scan_midway_opportunities(self, stock_data: Dict[str, pd.DataFrame], stock_info: Dict[str, str]) -> List[MidwaySignal]:
         """
@@ -267,13 +560,22 @@ class MidwayStrategyAnalyzer:
         """
         signals = []
 
+        print(f"[扫描统计] 开始扫描 {len(stock_data)} 只股票...")
+
         for code, df in stock_data.items():
             if code in stock_info:
-                signal = self.analyze_midway_opportunity(df, code, stock_info[code])
-                if signal:
-                    signals.append(signal)
+                try:
+                    signal = self.analyze_midway_opportunity(df, code, stock_info[code])
+                    if signal:
+                        signals.append(signal)
+                        print(f"[发现信号] {code} - 信号强度: {signal.signal_strength:.2f}")
+                except Exception as e:
+                    print(f"[错误] 分析股票 {code} 时出错: {e}")
+                    continue
 
         # 按信号强度排序
         signals.sort(key=lambda x: x.signal_strength, reverse=True)
+
+        print(f"[扫描统计] 共扫描 {len(stock_data)} 只股票，发现 {len(signals)} 个半路战法信号")
 
         return signals

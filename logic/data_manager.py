@@ -43,8 +43,23 @@ class DataManager:
         DataManager._initialized = True
         logger.info("DataManager 初始化完成")
     
+    def _ensure_connection_open(self):
+        """确保数据库连接是打开的，如果已关闭则重新连接"""
+        try:
+            # 尝试执行一个简单的查询来测试连接
+            self.conn.execute("SELECT 1")
+        except sqlite3.ProgrammingError:
+            # 连接已关闭，重新连接
+            logger.warning("数据库连接已关闭，正在重新连接...")
+            self.conn = sqlite3.connect(self._db_path, check_same_thread=False, timeout=30.0)
+            self.conn.execute('PRAGMA journal_mode=WAL')
+            self.conn.execute('PRAGMA synchronous=NORMAL')
+            self.conn.execute('PRAGMA cache_size=-64000')
+            logger.info("数据库连接已重新建立")
+
     def _ensure_db_initialized(self):
         """确保数据库已初始化（延迟初始化）"""
+        self._ensure_connection_open()
         if not self._db_initialized:
             self.init_db()
             self.update_db_schema()
