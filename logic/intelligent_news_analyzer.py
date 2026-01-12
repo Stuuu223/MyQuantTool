@@ -11,7 +11,7 @@ from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 from datetime import datetime
 import re
-from llm_interface import LLMManager, LLMMessage, get_llm_manager
+from .llm_interface import LLMManager, LLMMessage, get_llm_manager
 
 
 @dataclass
