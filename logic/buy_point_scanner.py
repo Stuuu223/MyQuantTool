@@ -65,12 +65,13 @@ class BuyPointScanner:
         """
         self.data_manager = DataSourceManager(db) if db else None
 
-    def scan_buy_signals(self, stock_list: List[str] = None, market: str = 'A') -> List[BuySignal]:
+    def scan_buy_signals(self, stock_list: List[str] = None, stock_info: Dict[str, str] = None, market: str = 'A') -> List[BuySignal]:
         """
         扫描买点信号
 
         Args:
-            stock_list: 股票列表，如果为None则扫描全市场
+            stock_list: 股票代码列表，如果为None则扫描全市场
+            stock_info: 股票信息字典 {股票代码: 股票名称}
             market: 市场类型，'A'表示A股
 
         Returns:
@@ -81,13 +82,17 @@ class BuyPointScanner:
             # 这里简化处理，实际应用中需要从数据库或API获取
             stock_list = self._get_stock_list(market)
 
+        if stock_info is None:
+            stock_info = {}
+
         signals = []
         for stock_code in stock_list:
             try:
                 # 获取股票数据
                 df = self._get_stock_data(stock_code)
                 if df is not None and len(df) >= 30:  # 确保有足够的数据
-                    signal = self._analyze_single_stock(df, stock_code)
+                    stock_name = stock_info.get(stock_code, None)
+                    signal = self._analyze_single_stock(df, stock_code, stock_name)
                     if signal:
                         signals.append(signal)
             except Exception as e:
@@ -137,15 +142,22 @@ class BuyPointScanner:
             # 如果没有数据管理器，返回None（实际应用中应该有其他方式获取数据）
             return None
 
-    def _analyze_single_stock(self, df: pd.DataFrame, stock_code: str) -> Optional[BuySignal]:
-        """分析单个股票的买点信号"""
+    def _analyze_single_stock(self, df: pd.DataFrame, stock_code: str, stock_name: str = None) -> Optional[BuySignal]:
+        """分析单个股票的买点信号
+        
+        Args:
+            df: 股票数据
+            stock_code: 股票代码
+            stock_name: 股票名称（可选）
+        """
         try:
             # 计算技术指标
             df = self._calculate_technical_indicators(df)
             latest = df.iloc[-1]
 
-            # 获取股票名称（简化处理）
-            stock_name = f"股票_{stock_code}"
+            # 获取股票名称
+            if stock_name is None:
+                stock_name = f"股票_{stock_code}"
 
             # 检查各种买点模式
             signals = []

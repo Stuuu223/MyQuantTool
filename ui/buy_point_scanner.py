@@ -109,7 +109,7 @@ def render_buy_point_scanner_tab(db, config):
                         stock_list = None
                 
                 # 执行扫描
-                signals = scanner.scan_buy_signals(stock_list=stock_list)
+                signals = scanner.scan_buy_signals(stock_list=stock_list, stock_info=stock_info)
                 
                 # 过滤信号
                 filtered_signals = [s for s in signals if 
@@ -118,22 +118,40 @@ def render_buy_point_scanner_tab(db, config):
                 
                 if filtered_signals:
                     st.success(f"✅ 发现 {len(filtered_signals)} 个买点信号")
-                    
+
+                    # 获取今日涨跌幅
+                    import akshare as ak
+                    stock_spot_df = ak.stock_zh_a_spot_em()
+                    stock_spot_dict = dict(zip(stock_spot_df['代码'], stock_spot_df['涨跌幅']))
+
                     # 显示信号列表
                     signal_df = pd.DataFrame([{
                         '股票代码': s.stock_code,
                         '股票名称': s.stock_name,
                         '信号类型': s.signal_type,
-                        '扫描日期': s.scan_date,
+                        '今日涨跌幅': f"{stock_spot_dict.get(s.stock_code, 0):.2f}%",
                         '入场价': f"¥{s.entry_price:.2f}",
                         '止损价': f"¥{s.stop_loss:.2f}",
                         '目标价': f"¥{s.target_price:.2f}",
                         '信号评分': s.signal_score,
                         '风险等级': s.risk_level
                     } for s in filtered_signals])
-                    
+
+                    # 根据涨跌幅设置颜色
+                    def highlight_change(val):
+                        if isinstance(val, str) and '%' in val:
+                            change = float(val.replace('%', ''))
+                            if change > 0:
+                                return 'color: red'
+                            elif change < 0:
+                                return 'color: green'
+                        return ''
+
+                    # 应用样式
+                    styled_df = signal_df.style.applymap(highlight_change, subset=['今日涨跌幅'])
+
                     st.dataframe(
-                        signal_df,
+                        styled_df,
                         use_container_width=True,
                         hide_index=True
                     )
