@@ -329,7 +329,7 @@ def render_intelligent_news_analysis_tab(db, config):
                 st.markdown("---")
                 st.subheader("📈 综合评分可视化")
                 
-                fig = _create_score_chart(result)
+                fig = _create_score_chart(result, quality_threshold, relevance_threshold, impact_threshold)
                 st.plotly_chart(fig, use_container_width=True)
                 
             except Exception as e:
@@ -378,7 +378,7 @@ def render_intelligent_news_analysis_tab(db, config):
         """)
 
 
-def _create_score_chart(result: NewsAnalysisResult):
+def _create_score_chart(result: NewsAnalysisResult, quality_threshold: float, relevance_threshold: float, impact_threshold: float):
     """创建评分图表"""
     fig = go.Figure()
     
@@ -399,12 +399,12 @@ def _create_score_chart(result: NewsAnalysisResult):
     ))
     
     # 添加阈值线
-    fig.add_hline(y=result.quality_threshold, line_dash="dash", line_color="orange", 
-                 annotation_text=f"质量阈值 {result.quality_threshold}")
-    fig.add_hline(y=result.relevance_threshold, line_dash="dash", line_color="green", 
-                 annotation_text=f"相关性阈值 {result.relevance_threshold}")
-    fig.add_hline(y=result.impact_threshold, line_dash="dash", line_color="blue", 
-                 annotation_text=f"影响度阈值 {result.impact_threshold}")
+    fig.add_hline(y=quality_threshold, line_dash="dash", line_color="orange", 
+                 annotation_text=f"质量阈值 {quality_threshold}")
+    fig.add_hline(y=relevance_threshold, line_dash="dash", line_color="green", 
+                 annotation_text=f"相关性阈值 {relevance_threshold}")
+    fig.add_hline(y=impact_threshold, line_dash="dash", line_color="blue", 
+                 annotation_text=f"影响度阈值 {impact_threshold}")
     
     fig.update_layout(
         title="新闻分析评分对比",
