@@ -618,7 +618,7 @@ if app_mode == "📈 市场分析":
 
 elif app_mode == "🔥 交易策略":
     # 交易策略模块
-    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13 = st.tabs(["🔥 龙头战法", "📈 均线战法", "🎯 打板预测", "⚡ 集合竞价", "📊 量价关系", "💰 游资席位", "🎯 半路战法", "🔍 买点扫描", "🕸️ 关系图谱", "👤 游资画像", "📈 短期涨跌", "🔮 机会预测", "🤖 多智能体"])
+    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14 = st.tabs(["🔥 龙头战法", "📈 均线战法", "🎯 打板预测", "⚡ 集合竞价", "📊 量价关系", "💰 游资席位", "🎯 半路战法", "🔍 买点扫描", "🕸️ 关系图谱", "👤 游资画像", "📈 短期涨跌", "🔮 机会预测", "🤖 多智能体", "📰 智能新闻"])
     with t1:
         # 延迟导入龙头战法模块
         with st.spinner("正在加载龙头战法引擎..."):
@@ -684,6 +684,11 @@ elif app_mode == "🔥 交易策略":
         with st.spinner("正在加载多智能体分析引擎..."):
             multi_agent_analysis = __import__('ui.multi_agent_analysis', fromlist=['render_multi_agent_analysis_tab'])
             multi_agent_analysis.render_multi_agent_analysis_tab(get_db_instance(), config)
+    with t14:
+        # 延迟导入智能新闻分析模块
+        with st.spinner("正在加载智能新闻分析引擎..."):
+            intelligent_news_analysis = __import__('ui.intelligent_news_analysis', fromlist=['render_intelligent_news_analysis_tab'])
+            intelligent_news_analysis.render_intelligent_news_analysis_tab(get_db_instance(), config)
 
 elif app_mode == "🧠 市场情绪":
     # 市场情绪分析模块
