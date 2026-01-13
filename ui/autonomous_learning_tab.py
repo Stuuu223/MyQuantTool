@@ -136,11 +136,11 @@ def render_autonomous_learning_tab(db: DataManager, config):
                     # 加载数据
                     if data_source == "AkShare真实数据":
                         loader = AKShareDataLoader()
-                        data = loader.get_stock_data(
-                            stock_code=stock_code,
-                            period=period,
+                        data = loader.get_stock_daily(
+                            code=stock_code,
                             start_date=(datetime.now() - timedelta(days=n_days*2)).strftime('%Y%m%d'),
-                            end_date=datetime.now().strftime('%Y%m%d')
+                            end_date=datetime.now().strftime('%Y%m%d'),
+                            adjust="qfq"
                         )
                         
                         if data is None or len(data) == 0:
@@ -429,11 +429,11 @@ def render_autonomous_learning_tab(db: DataManager, config):
                         if data_source == "AkShare真实数据":
                             # 获取最新数据
                             loader = AKShareDataLoader()
-                            new_data = loader.get_stock_data(
-                                stock_code=stock_code,
-                                period=period,
+                            new_data = loader.get_stock_daily(
+                                code=stock_code,
                                 start_date=datetime.now().strftime('%Y%m%d'),
-                                end_date=(datetime.now() + timedelta(days=1)).strftime('%Y%m%d')
+                                end_date=(datetime.now() + timedelta(days=1)).strftime('%Y%m%d'),
+                                adjust="qfq"
                             )
                         else:
                             # 模拟新数据
