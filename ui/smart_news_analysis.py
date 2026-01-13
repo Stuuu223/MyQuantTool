@@ -9,7 +9,7 @@ import plotly.graph_objects as go
 from datetime import datetime
 import os
 
-from logic.news_crawler_enhanced import NewsCrawlerManager, NewsItem
+from logic.news_crawler_practical import NewsCrawlerManager, NewsItem
 from logic.ml_news_analyzer import MLNewsAnalyzer, MLPredictionResult
 from logic.feedback_learning import FeedbackLearningSystem
 
