@@ -7,7 +7,7 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
-from logic.rl_optimization_system import RLOptimizationSystem, TradingEnvironment, SimpleModel
+from logic.rl_optimization_system import RLOptimizationSystem, TradingEnvironment
 from logic.data_manager import DataManager
 
 
