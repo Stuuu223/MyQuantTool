@@ -454,9 +454,18 @@ class MetaLearningSystem:
         
         for epoch in range(n_epochs):
             # 随机采样任务
-            sampled_tasks = np.random.choice(self.tasks, 
+            if len(self.tasks) == 0:
+                logger.warning("没有可用的任务，跳过训练")
+                break
+            
+            sampled_tasks = np.random.choice(self.tasks,
                                           min(tasks_per_epoch, len(self.tasks)),
                                           replace=False)
+            
+            # 检查是否有采样的任务
+            if len(sampled_tasks) == 0:
+                logger.warning(f"Epoch {epoch + 1}: 没有采样的任务，跳过")
+                continue
             
             # 元更新
             self.model.meta_update(sampled_tasks)
