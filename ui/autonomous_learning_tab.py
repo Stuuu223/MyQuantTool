@@ -40,63 +40,63 @@ def render_autonomous_learning_tab(db: DataManager, config):
     
     system = st.session_state.autonomous_system
     
-    # 侧边栏控制
+    # 侧边栏控制 - 优化布局
     with st.sidebar:
         st.header("⚙️ 控制面板")
-        
+
         # 数据源选择
-        st.subheader("📊 数据源")
-        data_source = st.selectbox(
-            "选择数据源",
-            ["AkShare真实数据", "模拟数据"],
-            help="选择使用真实数据还是模拟数据"
-        )
-        
-        # 股票代码
-        if data_source == "AkShare真实数据":
-            stock_code = st.text_input(
-                "股票代码",
-                value="000001",
-                help="股票代码，例如：000001（平安银行）"
+        with st.expander("📊 数据源", expanded=True):
+            data_source = st.selectbox(
+                "选择数据源",
+                ["AkShare真实数据", "模拟数据"],
+                help="选择使用真实数据还是模拟数据"
             )
-            
-            period = st.selectbox(
-                "时间周期",
-                ["daily", "weekly", "monthly"],
-                index=0,
-                help="K线周期"
-            )
-        
+
+            # 股票代码
+            if data_source == "AkShare真实数据":
+                stock_code = st.text_input(
+                    "股票代码",
+                    value="000001",
+                    help="股票代码，例如：000001（平安银行）"
+                )
+
+                period = st.selectbox(
+                    "时间周期",
+                    ["daily", "weekly", "monthly"],
+                    index=0,
+                    help="K线周期"
+                )
+
         # 训练参数
-        st.subheader("🎓 训练参数")
-        n_days = st.slider(
-            "训练天数",
-            min_value=30,
-            max_value=365,
-            value=180,
-            step=30,
-            help="用于训练的历史数据天数"
-        )
-        
+        with st.expander("🎓 训练参数"):
+            n_days = st.slider(
+                "训练天数",
+                min_value=30,
+                max_value=365,
+                value=180,
+                step=30,
+                help="用于训练的历史数据天数"
+            )
+
         # 交易信号参数
-        st.subheader("📈 交易信号")
-        buy_threshold = st.slider(
-            "买入阈值",
-            min_value=-0.05,
-            max_value=0.05,
-            value=0.02,
-            step=0.005,
-            help="预测上涨超过此阈值时买入"
-        )
-        
-        sell_threshold = st.slider(
-            "卖出阈值",
-            min_value=-0.05,
-            max_value=0.05,
-            value=-0.02,
-            step=0.005,
-            help="预测下跌超过此阈值时卖出"
-        )
+        with st.expander("📈 交易信号"):
+            buy_threshold = st.slider(
+                "买入阈值",
+                min_value=-0.05,
+                max_value=0.05,
+                value=0.02,
+                step=0.005,
+                help="预测上涨超过此阈值时买入"
+            )
+
+            sell_threshold = st.slider(
+                "卖出阈值",
+                min_value=-0.05,
+                max_value=0.05,
+                value=-0.02,
+                step=0.005,
+                help="预测下跌超过此阈值时卖出"
+            )
         
         # 系统状态
         st.subheader("📊 系统状态")
@@ -142,13 +142,53 @@ def render_autonomous_learning_tab(db: DataManager, config):
                             end_date=datetime.now().strftime('%Y%m%d'),
                             adjust="qfq"
                         )
-                        
+
                         if data is None or len(data) == 0:
                             st.error(f"无法获取股票 {stock_code} 的数据")
                             return
-                        
+
+                        # 检查数据列名
+                        st.info(f"获取到的数据列: {list(data.columns)}")
+
                         # 只取最近n_days天
                         data = data.tail(n_days).reset_index(drop=True)
+
+                        # 确保数据包含必要的列
+                        required_columns = ['日期', '开盘', '收盘', '最高', '最低', '成交量']
+                        missing_columns = [col for col in required_columns if col not in data.columns]
+
+                        if missing_columns:
+                            st.error(f"数据缺少必要的列: {missing_columns}")
+                            st.error(f"可用列: {list(data.columns)}")
+                            return
+
+                        # 重命名列以匹配系统期望的格式
+                        column_mapping = {
+                            '日期': 'date',
+                            '开盘': 'open',
+                            '收盘': 'close',
+                            '最高': 'high',
+                            '最低': 'low',
+                            '成交量': 'volume',
+                            '成交额': 'amount'
+                        }
+                        data = data.rename(columns=column_mapping)
+
+                        st.success(f"成功获取 {len(data)} 条真实数据")
+                    else:
+                        # 使用模拟数据
+                        np.random.seed(42)
+                        dates = pd.date_range(start=datetime.now() - timedelta(days=n_days), periods=n_days)
+                        data = pd.DataFrame({
+                            'date': dates,
+                            'open': 100 + np.cumsum(np.random.normal(0, 1, n_days)),
+                            'high': 100 + np.cumsum(np.random.normal(0, 1, n_days)) + np.random.uniform(0, 2, n_days),
+                            'low': 100 + np.cumsum(np.random.normal(0, 1, n_days)) - np.random.uniform(0, 2, n_days),
+                            'close': 100 + np.cumsum(np.random.normal(0, 1, n_days)),
+                            'volume': np.random.uniform(1000000, 5000000, n_days),
+                            'amount': (100 + np.cumsum(np.random.normal(0, 1, n_days))) * np.random.uniform(1000000, 5000000, n_days)
+                        })
+                        st.success(f"生成 {len(data)} 条模拟数据")
                     else:
                         # 使用模拟数据
                         np.random.seed(42)

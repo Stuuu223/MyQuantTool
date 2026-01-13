@@ -47,14 +47,23 @@ def render_sector_rotation_tab(db, config):
             st.markdown("---")
             st.subheader("🎯 涨跌停统计")
 
-            limit_up = ak.stock_zt_pool_em(date=date_str)
-            limit_down = ak.stock_dt_pool_em(date=date_str)
+            try:
+                limit_up = ak.stock_zt_pool_em(date=date_str)
+                limit_down = ak.stock_zt_pool_em(date=date_str, ftype="跌停")
 
-            col_zt, col_dt = st.columns(2)
-            with col_zt:
-                st.metric("涨停", len(limit_up))
-            with col_dt:
-                st.metric("跌停", len(limit_down))
+                col_zt, col_dt = st.columns(2)
+                with col_zt:
+                    st.metric("涨停", len(limit_up))
+                with col_dt:
+                    st.metric("跌停", len(limit_down))
+            except Exception as e:
+                st.warning(f"获取涨跌停数据失败: {e}")
+                # 使用默认值
+                col_zt, col_dt = st.columns(2)
+                with col_zt:
+                    st.metric("涨停", "N/A")
+                with col_dt:
+                    st.metric("跌停", "N/A")
 
         except Exception as e:
             st.warning(f"获取市场数据失败: {e}")
