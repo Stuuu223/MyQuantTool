@@ -9,7 +9,7 @@ import plotly.graph_objects as go
 from datetime import datetime
 import os
 
-from logic.news_crawler_practical import NewsCrawlerManager, NewsItem
+from logic.news_crawler_akshare import NewsCrawlerManager, NewsItem
 from logic.ml_news_analyzer import MLNewsAnalyzer, MLPredictionResult
 from logic.feedback_learning import FeedbackLearningSystem
 
@@ -52,13 +52,20 @@ def render_smart_news_analysis_tab(db, config):
             st.write("**选择新闻源**")
             crawler_manager = NewsCrawlerManager()
             available_sources = crawler_manager.get_available_sources()
+            source_names = crawler_manager.get_source_names()
             
-            selected_sources = st.multiselect(
+            # 使用中文名称显示
+            source_options = [source_names.get(s, s) for s in available_sources]
+            
+            selected_source_names = st.multiselect(
                 "选择要爬取的新闻源",
-                available_sources,
-                default=available_sources,
+                source_options,
+                default=source_options,
                 help="可以选择多个新闻源"
             )
+            
+            # 转换为代码
+            selected_sources = [s for s in available_sources if source_names.get(s) in selected_source_names]
         
         with col2:
             st.write("**爬取配置**")
