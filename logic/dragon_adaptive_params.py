@@ -68,9 +68,9 @@ class BayesianOptimizer:
         
         # 在最佳参数附近采样
         new_params = {}
-        for name in self.param_names:
+        for i, name in enumerate(self.param_names):
             min_val, max_val = self.param_bounds[name]
-            best_val = best_params[name]
+            best_val = best_params[i]  # 使用索引而不是参数名
             
             # Beta分布采样
             scale = (max_val - min_val) * 0.2
