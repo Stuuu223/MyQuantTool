@@ -729,8 +729,130 @@ elif app_mode == "💼 交易执行":
             trading_execution_tab.render_trading_execution_tab(get_db_instance(), config)
 
 elif app_mode == "🧪 量化回测":
-    # 量化回测模块 - 包含高级功能，使用延迟导入
-    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17 = st.tabs(["🧪 策略回测", "🧪 高级回测", "🔧 参数优化", "📊 K线形态", "🧠 LSTM预测", "🧮 策略工厂", "⚖️ 组合优化", "📊 策略对比", "🔀 多模态融合", "🧠 自适应权重", "🐉 龙头自适应", "🎓 元学习", "🎮 强化学习", "🖥️ 分布式训练", "🔐 联邦学习", "🧬 自主进化", "🤖 自主学习"])
+    # 量化回测模块 - 优化后的标签结构（融合方案：6个主标签）
+    # 主标签：5个常用功能 + 1个"更多功能"
+    t1, t2, t3, t4, t5, t6 = st.tabs(["🧪 策略回测", "🧪 高级回测", "🧠 LSTM预测", "⚖️ 组合优化", "🤖 自主学习", "📋 更多功能"])
+
+    with t1:
+        # 延迟导入策略回测模块
+        with st.spinner("正在加载策略回测引擎..."):
+            backtest = __import__('ui.backtest', fromlist=['render_backtest_tab'])
+            backtest.render_backtest_tab(get_db_instance(), config)
+
+    with t2:
+        # 延迟导入高级回测模块
+        with st.spinner("正在加载高级回测引擎..."):
+            advanced_backtest = __import__('ui.advanced_backtest', fromlist=['render_advanced_backtest_tab'])
+            advanced_backtest.render_advanced_backtest_tab(get_db_instance(), config)
+
+    with t3:
+        # 延迟导入 LSTM 预测模块
+        with st.spinner("正在加载 AI 深度学习模型..."):
+            lstm_predictor = __import__('ui.lstm_predictor', fromlist=['render_lstm_predictor_tab'])
+            lstm_predictor.render_lstm_predictor_tab(get_db_instance(), config)
+
+    with t4:
+        # 延迟导入组合优化模块
+        with st.spinner("正在加载组合优化引擎..."):
+            portfolio_optimizer_tab = __import__('ui.portfolio_optimizer_tab', fromlist=['render_portfolio_optimizer_tab'])
+            portfolio_optimizer_tab.render_portfolio_optimizer_tab(get_db_instance(), config)
+
+    with t5:
+        # 延迟导入自主学习系统
+        with st.spinner("正在加载自主学习系统..."):
+            autonomous_learning_tab = __import__('ui.autonomous_learning_tab', fromlist=['render_autonomous_learning_tab'])
+            autonomous_learning_tab.render_autonomous_learning_tab(get_db_instance(), config)
+
+    with t6:
+        st.subheader("📋 更多功能")
+        st.info("选择下面的功能模块：")
+
+        # 使用selectbox选择功能，按分组显示
+        function_category = st.selectbox(
+            "选择功能类别",
+            ["🔧 基础工具", "🧮 策略系统", "🤖 AI智能系统", "🖥️ 分布式系统"],
+            key="more_function_category"
+        )
+
+        if function_category == "🔧 基础工具":
+            selected_function = st.selectbox(
+                "选择功能",
+                ["参数优化", "K线形态识别"],
+                key="basic_tools_function"
+            )
+
+            if selected_function == "参数优化":
+                with st.spinner("正在加载参数优化引擎..."):
+                    parameter_optimization = __import__('ui.parameter_optimization', fromlist=['render_parameter_optimization_tab'])
+                    parameter_optimization.render_parameter_optimization_tab(get_db_instance(), config)
+            elif selected_function == "K线形态识别":
+                with st.spinner("正在加载 K线形态识别引擎..."):
+                    kline_patterns = __import__('ui.kline_patterns', fromlist=['render_kline_patterns_tab'])
+                    kline_patterns.render_kline_patterns_tab(get_db_instance(), config)
+
+        elif function_category == "🧮 策略系统":
+            selected_function = st.selectbox(
+                "选择功能",
+                ["策略工厂", "策略对比"],
+                key="strategy_systems_function"
+            )
+
+            if selected_function == "策略工厂":
+                with st.spinner("正在加载策略工厂引擎..."):
+                    strategy_factory_tab = __import__('ui.strategy_factory_tab', fromlist=['render_strategy_factory_tab'])
+                    strategy_factory_tab.render_strategy_factory_tab(get_db_instance(), config)
+            elif selected_function == "策略对比":
+                with st.spinner("正在加载策略对比引擎..."):
+                    strategy_comparison_tab = __import__('ui.strategy_comparison_tab', fromlist=['render_strategy_comparison_tab'])
+                    strategy_comparison_tab.render_strategy_comparison_tab(get_db_instance(), config)
+
+        elif function_category == "🤖 AI智能系统":
+            selected_function = st.selectbox(
+                "选择功能",
+                ["多模态融合", "自适应权重", "龙头自适应", "元学习", "强化学习"],
+                key="ai_systems_function"
+            )
+
+            if selected_function == "多模态融合":
+                with st.spinner("正在加载多模态融合决策系统..."):
+                    multimodal_fusion_tab = __import__('ui.multimodal_fusion_tab', fromlist=['render_multimodal_fusion_tab'])
+                    multimodal_fusion_tab.render_multimodal_fusion_tab(get_db_instance(), config)
+            elif selected_function == "自适应权重":
+                with st.spinner("正在加载自适应情绪权重系统..."):
+                    adaptive_sentiment_weights_tab = __import__('ui.adaptive_sentiment_weights_tab', fromlist=['render_adaptive_sentiment_weights_tab'])
+                    adaptive_sentiment_weights_tab.render_adaptive_sentiment_weights_tab(get_db_instance(), config)
+            elif selected_function == "龙头自适应":
+                with st.spinner("正在加载龙头战法自适应参数系统..."):
+                    dragon_adaptive_params_tab = __import__('ui.dragon_adaptive_params_tab', fromlist=['render_dragon_adaptive_params_tab'])
+                    dragon_adaptive_params_tab.render_dragon_adaptive_params_tab(get_db_instance(), config)
+            elif selected_function == "元学习":
+                with st.spinner("正在加载元学习系统..."):
+                    meta_learning_tab = __import__('ui.meta_learning_tab', fromlist=['render_meta_learning_tab'])
+                    meta_learning_tab.render_meta_learning_tab(get_db_instance(), config)
+            elif selected_function == "强化学习":
+                with st.spinner("正在加载强化学习优化系统..."):
+                    rl_optimization_tab = __import__('ui.rl_optimization_tab', fromlist=['render_rl_optimization_tab'])
+                    rl_optimization_tab.render_rl_optimization_tab(get_db_instance(), config)
+
+        elif function_category == "🖥️ 分布式系统":
+            selected_function = st.selectbox(
+                "选择功能",
+                ["分布式训练", "联邦学习", "自主进化"],
+                key="distributed_systems_function"
+            )
+
+            if selected_function == "分布式训练":
+                with st.spinner("正在加载分布式训练系统..."):
+                    distributed_training_tab = __import__('ui.distributed_training_tab', fromlist=['render_distributed_training_tab'])
+                    distributed_training_tab.render_distributed_training_tab(get_db_instance(), config)
+            elif selected_function == "联邦学习":
+                with st.spinner("正在加载联邦学习系统..."):
+                    federated_learning_tab = __import__('ui.federated_learning_tab', fromlist=['render_federated_learning_tab'])
+                    federated_learning_tab.render_federated_learning_tab(get_db_instance(), config)
+            elif selected_function == "自主进化":
+                with st.spinner("正在加载自主进化系统..."):
+                    autonomous_evolution_tab = __import__('ui.autonomous_evolution_tab', fromlist=['render_autonomous_evolution_tab'])
+                    autonomous_evolution_tab.render_autonomous_evolution_tab(get_db_instance(), config)
     with t1:
         # 延迟导入策略回测模块
         with st.spinner("正在加载策略回测引擎..."):
