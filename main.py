@@ -730,7 +730,7 @@ elif app_mode == "💼 交易执行":
 
 elif app_mode == "🧪 量化回测":
     # 量化回测模块 - 包含高级功能，使用延迟导入
-    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12 = st.tabs(["🧪 策略回测", "🧪 高级回测", "🔧 参数优化", "📊 K线形态", "🧠 LSTM预测", "🧮 策略工厂", "⚖️ 组合优化", "📊 策略对比", "🔀 多模态融合", "🧠 自适应权重", "🐉 龙头自适应", "🎓 元学习"])
+    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16 = st.tabs(["🧪 策略回测", "🧪 高级回测", "🔧 参数优化", "📊 K线形态", "🧠 LSTM预测", "🧮 策略工厂", "⚖️ 组合优化", "📊 策略对比", "🔀 多模态融合", "🧠 自适应权重", "🐉 龙头自适应", "🎓 元学习", "🎮 强化学习", "🖥️ 分布式训练", "🔐 联邦学习", "🧬 自主进化"])
     with t1:
         # 延迟导入策略回测模块
         with st.spinner("正在加载策略回测引擎..."):
@@ -791,6 +791,26 @@ elif app_mode == "🧪 量化回测":
         with st.spinner("正在加载元学习系统..."):
             meta_learning_tab = __import__('ui.meta_learning_tab', fromlist=['render_meta_learning_tab'])
             meta_learning_tab.render_meta_learning_tab(get_db_instance(), config)
+    with t13:
+        # 延迟导入强化学习优化系统
+        with st.spinner("正在加载强化学习优化系统..."):
+            rl_optimization_tab = __import__('ui.rl_optimization_tab', fromlist=['render_rl_optimization_tab'])
+            rl_optimization_tab.render_rl_optimization_tab(get_db_instance(), config)
+    with t14:
+        # 延迟导入分布式训练系统
+        with st.spinner("正在加载分布式训练系统..."):
+            distributed_training_tab = __import__('ui.distributed_training_tab', fromlist=['render_distributed_training_tab'])
+            distributed_training_tab.render_distributed_training_tab(get_db_instance(), config)
+    with t15:
+        # 延迟导入联邦学习系统
+        with st.spinner("正在加载联邦学习系统..."):
+            federated_learning_tab = __import__('ui.federated_learning_tab', fromlist=['render_federated_learning_tab'])
+            federated_learning_tab.render_federated_learning_tab(get_db_instance(), config)
+    with t16:
+        # 延迟导入自主进化系统
+        with st.spinner("正在加载自主进化系统..."):
+            autonomous_evolution_tab = __import__('ui.autonomous_evolution_tab', fromlist=['render_autonomous_evolution_tab'])
+            autonomous_evolution_tab.render_autonomous_evolution_tab(get_db_instance(), config)
 
 elif app_mode == "💰 资产管理":
     # 资产管理模块
