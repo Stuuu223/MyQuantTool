@@ -31,14 +31,14 @@ def render_federated_learning_tab(db: DataManager, config):
         
         # 训练参数
         st.subheader("🎓 训练参数")
-        n_rounds = st.slider("训练轮数", 5, 50, 10, 5, help="联邦训练轮数")
-        client_fraction = st.slider("客户端选择比例", 0.1, 1.0, 1.0, 0.1, help="每轮选择的客户端比例")
-        learning_rate = st.slider("学习率", 0.001, 0.1, 0.01, 0.001, help="学习率")
-        
+        n_rounds = st.slider("训练轮数", 5, 50, 10, 5, help="联邦训练轮数", key="federated_n_rounds")
+        client_fraction = st.slider("客户端选择比例", 0.1, 1.0, 1.0, 0.1, help="每轮选择的客户端比例", key="federated_client_fraction")
+        learning_rate = st.slider("学习率", 0.001, 0.1, 0.01, 0.001, help="学习率", key="federated_learning_rate")
+
         # 隐私保护
         st.subheader("🔒 隐私保护")
-        use_dp = st.checkbox("使用差分隐私", value=False, help="是否添加差分隐私噪声")
-        dp_epsilon = st.slider("隐私参数(ε)", 0.1, 10.0, 1.0, 0.1, help="差分隐私参数")
+        use_dp = st.checkbox("使用差分隐私", value=False, help="是否添加差分隐私噪声", key="federated_use_dp")
+        dp_epsilon = st.slider("隐私参数(ε)", 0.1, 10.0, 1.0, 0.1, help="差分隐私参数", key="federated_dp_epsilon")
         
         # 聚合策略
         st.subheader("🔄 聚合策略")
