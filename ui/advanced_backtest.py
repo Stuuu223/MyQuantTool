@@ -25,11 +25,11 @@ def render_advanced_backtest_tab(db, config):
     # 侧边栏配置
     with st.sidebar:
         st.subheader("⚙️ 回测配置")
-        
-        symbol = st.text_input("股票代码", value="600519", help="输入6位A股代码", key="backtest_symbol")
-        
-        start_date = st.date_input("开始日期", value=pd.to_datetime("2024-01-01"), key="backtest_start")
-        end_date = st.date_input("结束日期", value=pd.to_datetime("2024-12-31"), key="backtest_end")
+
+        symbol = st.text_input("股票代码", value="600519", help="输入6位A股代码", key="advanced_backtest_symbol")
+
+        start_date = st.date_input("开始日期", value=pd.to_datetime("2024-01-01"), key="advanced_backtest_start")
+        end_date = st.date_input("结束日期", value=pd.to_datetime("2024-12-31"), key="advanced_backtest_end")
         
         initial_capital = st.number_input(
             "初始资金",
