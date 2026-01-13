@@ -465,8 +465,17 @@ def render_autonomous_learning_tab(db: DataManager, config):
                         else:
                             # 模拟新数据
                             last_price = st.session_state.trained_data['close'].iloc[-1]
+                            last_date = st.session_state.trained_data['date'].iloc[-1]
+                            # 确保last_date是datetime对象
+                            if hasattr(last_date, 'to_pydatetime'):
+                                last_date = last_date.to_pydatetime()
+                            elif isinstance(last_date, pd.Timestamp):
+                                last_date = last_date.to_pydatetime()
+                            elif not isinstance(last_date, datetime):
+                                last_date = datetime.combine(last_date, datetime.min.time())
+
                             new_dates = pd.date_range(
-                                start=st.session_state.trained_data['date'].iloc[-1] + timedelta(days=1),
+                                start=last_date + timedelta(days=1),
                                 periods=n_new
                             )
                             new_data = pd.DataFrame({

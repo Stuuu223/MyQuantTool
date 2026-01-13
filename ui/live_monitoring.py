@@ -246,8 +246,8 @@ def render_live_monitoring_tab(db, config):
         
         # 快速下单
         st.subheader("⚡ 快速下单")
-        
-        symbol = st.text_input("股票代码", value="600519")
+
+        symbol = st.text_input("股票代码", value="600519", key="live_monitoring_symbol")
         direction = st.selectbox("方向", ["买入", "卖出"])
         order_type = st.selectbox("订单类型", ["市价单", "限价单"])
         quantity = st.number_input("数量", value=100, step=100)
