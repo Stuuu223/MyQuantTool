@@ -70,9 +70,9 @@ def render_strategy_comparison_tab(db, config):
     
     # 数据设置
     st.subheader("回测设置")
-    start_date = st.date_input("开始日期", value=datetime.now() - timedelta(days=365))
-    end_date = st.date_input("结束日期", value=datetime.now())
-    initial_capital = st.number_input("初始资金", value=100000, min_value=1000, step=1000)
+    start_date = st.date_input("开始日期", value=datetime.now() - timedelta(days=365), key="strategy_comparison_start_date")
+    end_date = st.date_input("结束日期", value=datetime.now(), key="strategy_comparison_end_date")
+    initial_capital = st.number_input("初始资金", value=100000, min_value=1000, step=1000, key="strategy_comparison_initial_capital")
     
     if st.button("开始对比回测") and strategies:
         with st.spinner("正在运行对比回测..."):

@@ -19,7 +19,7 @@ def render_backtesting_review_tab(db, config):
     with st.sidebar:
         st.subheader("⚙️ 复盘配置")
 
-        review_date = st.date_input("复盘日期", value=pd.to_datetime("today").date(), help="选择要复盘的日期")
+        review_date = st.date_input("复盘日期", value=pd.to_datetime("today").date(), help="选择要复盘的日期", key="backtesting_review_date")
 
         st.markdown("---")
         st.subheader("💡 复盘内容")

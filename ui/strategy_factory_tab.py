@@ -58,9 +58,9 @@ def render_strategy_factory_tab(db, config):
     
     # 生成模拟数据进行回测
     st.subheader("策略回测")
-    start_date = st.date_input("开始日期", value=datetime.now() - timedelta(days=365))
-    end_date = st.date_input("结束日期", value=datetime.now())
-    initial_capital = st.number_input("初始资金", value=100000, min_value=1000, step=1000)
+    start_date = st.date_input("开始日期", value=datetime.now() - timedelta(days=365), key="strategy_factory_backtest_start")
+    end_date = st.date_input("结束日期", value=datetime.now(), key="strategy_factory_backtest_end")
+    initial_capital = st.number_input("初始资金", value=100000, min_value=1000, step=1000, key="strategy_factory_backtest_capital")
     
     if st.button("运行回测"):
         with st.spinner("正在运行回测..."):

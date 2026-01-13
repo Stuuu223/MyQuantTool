@@ -145,9 +145,9 @@ class InteractiveStrategyAnalyzer:
         
         # 生成模拟数据
         st.subheader("回测设置")
-        start_date = st.date_input("开始日期", value=datetime.now() - timedelta(days=365))
-        end_date = st.date_input("结束日期", value=datetime.now())
-        initial_capital = st.number_input("初始资金", value=100000, min_value=1000, step=1000)
+        start_date = st.date_input("开始日期", value=datetime.now() - timedelta(days=365), key="interactive_analyzer_backtest1_start")
+        end_date = st.date_input("结束日期", value=datetime.now(), key="interactive_analyzer_backtest1_end")
+        initial_capital = st.number_input("初始资金", value=100000, min_value=1000, step=1000, key="interactive_analyzer_backtest1_capital")
         
         if st.button("开始回测"):
             with st.spinner("正在运行回测..."):
@@ -371,9 +371,9 @@ class InteractiveStrategyAnalyzer:
         
         # 数据设置
         st.subheader("回测设置")
-        start_date = st.date_input("开始日期", value=datetime.now() - timedelta(days=365))
-        end_date = st.date_input("结束日期", value=datetime.now())
-        initial_capital = st.number_input("初始资金", value=100000, min_value=1000, step=1000)
+        start_date = st.date_input("开始日期", value=datetime.now() - timedelta(days=365), key="interactive_analyzer_backtest2_start")
+        end_date = st.date_input("结束日期", value=datetime.now(), key="interactive_analyzer_backtest2_end")
+        initial_capital = st.number_input("初始资金", value=100000, min_value=1000, step=1000, key="interactive_analyzer_backtest2_capital")
         
         if st.button("开始对比回测") and strategies:
             with st.spinner("正在运行对比回测..."):
