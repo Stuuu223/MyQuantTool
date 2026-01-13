@@ -618,7 +618,7 @@ if app_mode == "📈 市场分析":
 
 elif app_mode == "🔥 交易策略":
     # 交易策略模块
-    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14 = st.tabs(["🔥 龙头战法", "📈 均线战法", "🎯 打板预测", "⚡ 集合竞价", "📊 量价关系", "💰 游资席位", "🎯 半路战法", "🔍 买点扫描", "🕸️ 关系图谱", "👤 游资画像", "📈 短期涨跌", "🔮 机会预测", "🤖 多智能体", "📰 智能新闻"])
+    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18 = st.tabs(["🔥 龙头战法", "📈 均线战法", "🎯 打板预测", "⚡ 集合竞价", "📊 量价关系", "💰 游资席位", "🎯 半路战法", "🔍 买点扫描", "🕸️ 关系图谱", "👤 游资画像", "📈 短期涨跌", "🔮 机会预测", "🤖 多智能体", "📰 智能新闻", "🧠 实时情绪感知", "🐉 龙头识别跟踪", "⚡ 竞价预测系统", "🔧 在线参数调整"])
     with t1:
         # 延迟导入龙头战法模块
         with st.spinner("正在加载龙头战法引擎..."):
@@ -689,6 +689,26 @@ elif app_mode == "🔥 交易策略":
         with st.spinner("正在加载智能新闻分析引擎..."):
             smart_news_analysis = __import__('ui.smart_news_analysis', fromlist=['render_smart_news_analysis_tab'])
             smart_news_analysis.render_smart_news_analysis_tab(get_db_instance(), config)
+    with t15:
+        # 延迟导入实时情绪感知系统模块
+        with st.spinner("正在加载实时情绪感知引擎..."):
+            realtime_sentiment_tab = __import__('ui.realtime_sentiment_tab', fromlist=['render_realtime_sentiment_tab'])
+            realtime_sentiment_tab.render_realtime_sentiment_tab(get_db_instance(), config)
+    with t16:
+        # 延迟导入龙头识别与跟踪系统模块
+        with st.spinner("正在加载龙头识别跟踪引擎..."):
+            dragon_tracking_tab = __import__('ui.dragon_tracking_tab', fromlist=['render_dragon_tracking_tab'])
+            dragon_tracking_tab.render_dragon_tracking_tab(get_db_instance(), config)
+    with t17:
+        # 延迟导入集合竞价预测系统模块
+        with st.spinner("正在加载竞价预测引擎..."):
+            auction_prediction_tab = __import__('ui.auction_prediction_tab', fromlist=['render_auction_prediction_tab'])
+            auction_prediction_tab.render_auction_prediction_tab(get_db_instance(), config)
+    with t18:
+        # 延迟导入在线参数调整系统模块
+        with st.spinner("正在加载在线参数调整引擎..."):
+            online_parameter_tab = __import__('ui.online_parameter_tab', fromlist=['render_online_parameter_tab'])
+            online_parameter_tab.render_online_parameter_tab(get_db_instance(), config)
 
 elif app_mode == "🧠 市场情绪":
     # 市场情绪分析模块
@@ -710,7 +730,7 @@ elif app_mode == "💼 交易执行":
 
 elif app_mode == "🧪 量化回测":
     # 量化回测模块 - 包含高级功能，使用延迟导入
-    t1, t2, t3, t4, t5, t6, t7, t8 = st.tabs(["🧪 策略回测", "🧪 高级回测", "🔧 参数优化", "📊 K线形态", "🧠 LSTM预测", "🧮 策略工厂", "⚖️ 组合优化", "📊 策略对比"])
+    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12 = st.tabs(["🧪 策略回测", "🧪 高级回测", "🔧 参数优化", "📊 K线形态", "🧠 LSTM预测", "🧮 策略工厂", "⚖️ 组合优化", "📊 策略对比", "🔀 多模态融合", "🧠 自适应权重", "🐉 龙头自适应", "🎓 元学习"])
     with t1:
         # 延迟导入策略回测模块
         with st.spinner("正在加载策略回测引擎..."):
@@ -751,6 +771,26 @@ elif app_mode == "🧪 量化回测":
         with st.spinner("正在加载策略对比引擎..."):
             strategy_comparison_tab = __import__('ui.strategy_comparison_tab', fromlist=['render_strategy_comparison_tab'])
             strategy_comparison_tab.render_strategy_comparison_tab(get_db_instance(), config)
+    with t9:
+        # 延迟导入多模态融合决策系统
+        with st.spinner("正在加载多模态融合决策系统..."):
+            multimodal_fusion_tab = __import__('ui.multimodal_fusion_tab', fromlist=['render_multimodal_fusion_tab'])
+            multimodal_fusion_tab.render_multimodal_fusion_tab(get_db_instance(), config)
+    with t10:
+        # 延迟导入自适应情绪权重系统
+        with st.spinner("正在加载自适应情绪权重系统..."):
+            adaptive_sentiment_weights_tab = __import__('ui.adaptive_sentiment_weights_tab', fromlist=['render_adaptive_sentiment_weights_tab'])
+            adaptive_sentiment_weights_tab.render_adaptive_sentiment_weights_tab(get_db_instance(), config)
+    with t11:
+        # 延迟导入龙头战法自适应参数系统
+        with st.spinner("正在加载龙头战法自适应参数系统..."):
+            dragon_adaptive_params_tab = __import__('ui.dragon_adaptive_params_tab', fromlist=['render_dragon_adaptive_params_tab'])
+            dragon_adaptive_params_tab.render_dragon_adaptive_params_tab(get_db_instance(), config)
+    with t12:
+        # 延迟导入元学习系统
+        with st.spinner("正在加载元学习系统..."):
+            meta_learning_tab = __import__('ui.meta_learning_tab', fromlist=['render_meta_learning_tab'])
+            meta_learning_tab.render_meta_learning_tab(get_db_instance(), config)
 
 elif app_mode == "💰 资产管理":
     # 资产管理模块
