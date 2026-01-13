@@ -189,20 +189,7 @@ def render_autonomous_learning_tab(db: DataManager, config):
                             'amount': (100 + np.cumsum(np.random.normal(0, 1, n_days))) * np.random.uniform(1000000, 5000000, n_days)
                         })
                         st.success(f"生成 {len(data)} 条模拟数据")
-                    else:
-                        # 使用模拟数据
-                        np.random.seed(42)
-                        dates = pd.date_range(start=datetime.now() - timedelta(days=n_days), periods=n_days)
-                        data = pd.DataFrame({
-                            'date': dates,
-                            'open': 100 + np.cumsum(np.random.normal(0, 1, n_days)),
-                            'high': 100 + np.cumsum(np.random.normal(0, 1, n_days)) + np.random.uniform(0, 2, n_days),
-                            'low': 100 + np.cumsum(np.random.normal(0, 1, n_days)) - np.random.uniform(0, 2, n_days),
-                            'close': 100 + np.cumsum(np.random.normal(0, 1, n_days)),
-                            'volume': np.random.uniform(1000000, 5000000, n_days),
-                            'amount': (100 + np.cumsum(np.random.normal(0, 1, n_days))) * np.random.uniform(1000000, 5000000, n_days)
-                        })
-                    
+
                     st.session_state.trained_data = data
                     
                     # 训练系统
