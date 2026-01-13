@@ -7,7 +7,8 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
-from logic.federated_learning_system import FederatedLearningSystem, SimpleModel
+from logic.federated_learning_system import FederatedLearningSystem
+from logic.distributed_training_system import SimpleModel
 from logic.data_manager import DataManager
 
 
