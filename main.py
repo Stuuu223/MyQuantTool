@@ -685,10 +685,10 @@ elif app_mode == "🔥 交易策略":
             multi_agent_analysis = __import__('ui.multi_agent_analysis', fromlist=['render_multi_agent_analysis_tab'])
             multi_agent_analysis.render_multi_agent_analysis_tab(get_db_instance(), config)
     with t14:
-        # 延迟导入智能新闻分析模块
+        # 延迟导入智能新闻分析模块（新版：支持自主爬取和机器学习）
         with st.spinner("正在加载智能新闻分析引擎..."):
-            intelligent_news_analysis = __import__('ui.intelligent_news_analysis', fromlist=['render_intelligent_news_analysis_tab'])
-            intelligent_news_analysis.render_intelligent_news_analysis_tab(get_db_instance(), config)
+            smart_news_analysis = __import__('ui.smart_news_analysis', fromlist=['render_smart_news_analysis_tab'])
+            smart_news_analysis.render_smart_news_analysis_tab(get_db_instance(), config)
 
 elif app_mode == "🧠 市场情绪":
     # 市场情绪分析模块

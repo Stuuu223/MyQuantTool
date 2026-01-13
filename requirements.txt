@@ -28,6 +28,7 @@ gymnasium>=0.29.0
 
 # HTTP请求
 requests>=2.31.0
+beautifulsoup4>=4.12.0
 
 # 测试依赖
 pytest>=7.4.0
