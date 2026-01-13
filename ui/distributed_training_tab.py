@@ -59,7 +59,7 @@ def render_distributed_training_tab(db: DataManager, config):
     col1, col2 = st.columns([1, 1])
     
     with col1:
-        if st.button("🌍 设置环境", use_container_width=True):
+        if st.button("🌍 设置环境", key="distributed_setup_env", use_container_width=True):
             with st.spinner("正在设置环境..."):
                 # 生成模拟数据
                 dates = pd.date_range(start=datetime.now() - timedelta(days=100), periods=100)
@@ -77,7 +77,7 @@ def render_distributed_training_tab(db: DataManager, config):
                 st.success(f"环境设置成功！数据量: {len(data)} 条，工作节点: {n_workers}")
     
     with col2:
-        if st.button("🚀 开始训练", use_container_width=True):
+        if st.button("🚀 开始训练", key="distributed_start_training", use_container_width=True):
             with st.spinner("正在训练..."):
                 # 简化的训练函数
                 def train_func(model, data, epochs):

@@ -98,7 +98,7 @@ def render_rl_optimization_tab(db: DataManager, config):
     col1, col2 = st.columns([1, 1])
     
     with col1:
-        if st.button("🚀 开始训练", use_container_width=True):
+        if st.button("🚀 开始训练", key="rl_start_training", use_container_width=True):
             with st.spinner("正在训练..."):
                 if algorithm == "DQN":
                     result = system.train_dqn('main_env', 'main_agent', n_episodes, max_steps)
