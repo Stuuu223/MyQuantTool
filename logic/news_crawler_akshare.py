@@ -164,6 +164,156 @@ class AkshareNewsCrawler:
             print(f"财联社爬取失败: {str(e)}")
         
         return news_list
+    
+    def crawl_news_cctv(self, limit: int = 20) -> List[NewsItem]:
+        """爬取央视新闻"""
+        news_list = []
+        
+        try:
+            # 使用akshare获取央视新闻
+            df = ak.news_cctv()
+            
+            # 限制数量
+            df = df.head(limit)
+            
+            for _, row in df.iterrows():
+                try:
+                    # 提取信息
+                    title = row.get('title', '')
+                    content = row.get('content', '')
+                    time_str = row.get('time', '')
+                    url = row.get('url', '')
+                    
+                    if not title:
+                        continue
+                    
+                    # 解析时间
+                    publish_time = self._parse_time(time_str) if time_str else datetime.now()
+                    
+                    # 从内容中提取股票代码
+                    related_stocks = self._extract_stock_codes(title + ' ' + content) if content else []
+                    
+                    news = NewsItem(
+                        title=title,
+                        content=content or title,
+                        source="央视新闻",
+                        publish_time=publish_time,
+                        url=url,
+                        related_stocks=related_stocks
+                    )
+                    
+                    news_list.append(news)
+                    
+                except Exception as e:
+                    print(f"解析新闻失败: {str(e)}")
+                    continue
+            
+            print(f"从央视新闻爬取了 {len(news_list)} 条新闻")
+            
+        except Exception as e:
+            print(f"央视新闻爬取失败: {str(e)}")
+        
+        return news_list
+    
+    def crawl_news_economic_baidu(self, limit: int = 20) -> List[NewsItem]:
+        """爬取百度经济新闻"""
+        news_list = []
+        
+        try:
+            # 使用akshare获取百度经济新闻
+            df = ak.news_economic_baidu()
+            
+            # 限制数量
+            df = df.head(limit)
+            
+            for _, row in df.iterrows():
+                try:
+                    # 提取信息
+                    title = row.get('title', '')
+                    content = row.get('content', '')
+                    time_str = row.get('time', '')
+                    url = row.get('url', '')
+                    
+                    if not title:
+                        continue
+                    
+                    # 解析时间
+                    publish_time = self._parse_time(time_str) if time_str else datetime.now()
+                    
+                    # 从内容中提取股票代码
+                    related_stocks = self._extract_stock_codes(title + ' ' + content) if content else []
+                    
+                    news = NewsItem(
+                        title=title,
+                        content=content or title,
+                        source="百度经济新闻",
+                        publish_time=publish_time,
+                        url=url,
+                        related_stocks=related_stocks
+                    )
+                    
+                    news_list.append(news)
+                    
+                except Exception as e:
+                    print(f"解析新闻失败: {str(e)}")
+                    continue
+            
+            print(f"从百度经济新闻爬取了 {len(news_list)} 条新闻")
+            
+        except Exception as e:
+            print(f"百度经济新闻爬取失败: {str(e)}")
+        
+        return news_list
+    
+    def crawl_futures_news_shmet(self, limit: int = 20) -> List[NewsItem]:
+        """爬取上海有色网期货新闻"""
+        news_list = []
+        
+        try:
+            # 使用akshare获取上海有色网期货新闻
+            df = ak.futures_news_shmet()
+            
+            # 限制数量
+            df = df.head(limit)
+            
+            for _, row in df.iterrows():
+                try:
+                    # 提取信息
+                    title = row.get('title', '')
+                    content = row.get('content', '')
+                    time_str = row.get('time', '')
+                    url = row.get('url', '')
+                    
+                    if not title:
+                        continue
+                    
+                    # 解析时间
+                    publish_time = self._parse_time(time_str) if time_str else datetime.now()
+                    
+                    # 从内容中提取股票代码
+                    related_stocks = self._extract_stock_codes(title + ' ' + content) if content else []
+                    
+                    news = NewsItem(
+                        title=title,
+                        content=content or title,
+                        source="上海有色网",
+                        publish_time=publish_time,
+                        url=url,
+                        related_stocks=related_stocks
+                    )
+                    
+                    news_list.append(news)
+                    
+                except Exception as e:
+                    print(f"解析新闻失败: {str(e)}")
+                    continue
+            
+            print(f"从上海有色网爬取了 {len(news_list)} 条新闻")
+            
+        except Exception as e:
+            print(f"上海有色网爬取失败: {str(e)}")
+        
+        return news_list
 
 
 class MockCrawler:
@@ -266,6 +416,12 @@ class NewsCrawlerManager:
             return self.akshare_crawler.crawl_stock_news_em(limit)
         elif source == 'cx':
             return self.akshare_crawler.crawl_stock_news_main_cx(limit)
+        elif source == 'cctv':
+            return self.akshare_crawler.crawl_news_cctv(limit)
+        elif source == 'baidu':
+            return self.akshare_crawler.crawl_news_economic_baidu(limit)
+        elif source == 'shmet':
+            return self.akshare_crawler.crawl_futures_news_shmet(limit)
         elif source == 'mock':
             return self.mock_crawler.crawl(limit)
         else:
@@ -289,6 +445,27 @@ class NewsCrawlerManager:
         except Exception as e:
             print(f"财联社爬取失败: {str(e)}")
         
+        # 爬取央视新闻
+        try:
+            news = self.akshare_crawler.crawl_news_cctv(limit_per_source)
+            all_news.extend(news)
+        except Exception as e:
+            print(f"央视新闻爬取失败: {str(e)}")
+        
+        # 爬取百度经济新闻
+        try:
+            news = self.akshare_crawler.crawl_news_economic_baidu(limit_per_source)
+            all_news.extend(news)
+        except Exception as e:
+            print(f"百度经济新闻爬取失败: {str(e)}")
+        
+        # 爬取上海有色网期货新闻
+        try:
+            news = self.akshare_crawler.crawl_futures_news_shmet(limit_per_source)
+            all_news.extend(news)
+        except Exception as e:
+            print(f"上海有色网爬取失败: {str(e)}")
+        
         # 按时间排序
         all_news.sort(key=lambda x: x.publish_time, reverse=True)
         
@@ -296,13 +473,16 @@ class NewsCrawlerManager:
     
     def get_available_sources(self) -> List[str]:
         """获取可用的新闻源"""
-        return ['em', 'cx', 'mock']
+        return ['em', 'cx', 'cctv', 'baidu', 'shmet', 'mock']
     
     def get_source_names(self) -> Dict[str, str]:
         """获取新闻源名称映射"""
         return {
             'em': '东方财富网',
             'cx': '财联社',
+            'cctv': '央视新闻',
+            'baidu': '百度经济新闻',
+            'shmet': '上海有色网',
             'mock': '模拟数据'
         }
 
