@@ -443,23 +443,23 @@ class MetaLearningSystem:
         """
         if tasks is None:
             tasks = self.tasks
-        
+
         if len(tasks) == 0:
             return {
                 'success': False,
                 'message': '没有可用的任务'
             }
-        
+
         training_history = []
-        
+
         for epoch in range(n_epochs):
             # 随机采样任务
-            if len(self.tasks) == 0:
+            if len(tasks) == 0:
                 logger.warning("没有可用的任务，跳过训练")
                 break
-            
-            sampled_tasks = np.random.choice(self.tasks,
-                                          min(tasks_per_epoch, len(self.tasks)),
+
+            sampled_tasks = np.random.choice(tasks,
+                                          min(tasks_per_epoch, len(tasks)),
                                           replace=False)
             
             # 检查是否有采样的任务

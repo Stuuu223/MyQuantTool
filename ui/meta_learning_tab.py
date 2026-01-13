@@ -69,23 +69,37 @@ def render_meta_learning_tab(db: DataManager, config):
         if st.button("🚀 开始元训练", use_container_width=True):
             with st.spinner("正在训练..."):
                 # 创建训练任务
+                from logic.meta_learning_system import Task
+
                 n_tasks = 20
                 n_samples_per_task = 20
                 n_features = 10
-                
+
                 tasks = []
                 for i in range(n_tasks):
-                    X = np.random.randn(n_samples_per_task, n_features)
-                    y = np.random.randn(n_samples_per_task, 1)
-                    tasks.append({'X': X, 'y': y})
-                
+                    # 创建训练数据
+                    X_train = np.random.randn(n_samples_per_task, n_features)
+                    y_train = np.random.randn(n_samples_per_task, 1)
+                    train_data = pd.DataFrame(np.hstack([X_train, y_train]),
+                                            columns=[f'feature_{j}' for j in range(n_features)] + ['target'])
+
+                    # 创建测试数据
+                    X_test = np.random.randn(n_samples_per_task, n_features)
+                    y_test = np.random.randn(n_samples_per_task, 1)
+                    test_data = pd.DataFrame(np.hstack([X_test, y_test]),
+                                           columns=[f'feature_{j}' for j in range(n_features)] + ['target'])
+
+                    # 创建Task对象
+                    task = Task(task_id=f'task_{i}', train_data=train_data, test_data=test_data)
+                    tasks.append(task)
+
                 # 训练
                 training_result = system.meta_train(
                     tasks=tasks,
                     n_epochs=n_epochs,
                     tasks_per_epoch=tasks_per_epoch
                 )
-                
+
                 st.session_state.meta_training_result = training_result
                 st.success("训练完成！")
     
