@@ -124,8 +124,22 @@ def render_parameter_optimization_tab(db, config):
                     if df is not None and not df.empty:
                         # 执行优化
                         if optimization_method == "网格搜索":
-                            optimizer = ParameterGridSearch(engine, metric=optimization_target)
-                            result = optimizer.search(symbol, df, param_grid, signal_type)
+                            # 创建目标函数
+                            def objective(params):
+                                # 生成信号
+                                signals = engine.generate_signals(df, signal_type, **params)
+                                # 回测
+                                metrics = engine.backtest(symbol, df, signals, signal_type)
+                                return metrics.get(optimization_target, 0)
+
+                            # 创建优化器
+                            optimizer = ParameterOptimizer()
+                            result = optimizer.grid_search(objective, param_grid, maximize=True)
+
+                            # 转换结果格式
+                            best_params = result.best_params
+                            best_metrics = {}  # 需要从回测中获取
+                            all_results = result.optimization_trace
                         else:
                             optimizer = BayesianOptimization(engine, n_iter=20)
                             param_bounds = {k: (min(v), max(v)) for k, v in param_grid.items()}
@@ -133,49 +147,42 @@ def render_parameter_optimization_tab(db, config):
                         
                         # 显示最优参数
                         st.success("✅ 优化完成！")
-                        
+
                         st.subheader("🏆 最优参数")
-                        
-                        best_params = result.get('best_params', {})
-                        best_metrics = result.get('best_metrics', {})
-                        
+
                         col_a, col_b = st.columns(2)
-                        
+
                         with col_a:
                             st.markdown("**参数配置**")
                             for param, value in best_params.items():
                                 st.write(f"- {param}: {value}")
-                        
+
                         with col_b:
                             st.markdown("**优化指标**")
-                            if best_metrics:
-                                st.metric("夏普比率", f"{best_metrics.get('sharpe_ratio', 0):.4f}")
-                                st.metric("年化收益", f"{best_metrics.get('annual_return', 0):.2%}")
-                                st.metric("最大回撤", f"{best_metrics.get('max_drawdown', 0):.2%}")
-                                st.metric("胜率", f"{best_metrics.get('win_rate', 0):.2%}")
-                        
+                            st.metric("最优值", f"{result.best_value:.4f}")
+                            st.metric("执行时间", f"{result.execution_time:.2f}秒")
+
                         # 显示所有结果
                         if optimization_method == "网格搜索":
-                            results_df = optimizer.get_results_dataframe()
-                            
+                            # 转换优化轨迹为DataFrame
+                            results_list = []
+                            for params, value in all_results:
+                                row = params.copy()
+                                row[optimization_target] = value
+                                results_list.append(row)
+
+                            results_df = pd.DataFrame(results_list)
+
                             st.subheader("📋 所有参数组合")
                             st.dataframe(
                                 results_df,
-                                column_config={
-                                    "fast_window": "快线",
-                                    "slow_window": "慢线",
-                                    "sharpe_ratio": st.column_config.NumberColumn("夏普比率", format="%.4f"),
-                                    "annual_return": st.column_config.NumberColumn("年化收益", format="%.2%"),
-                                    "max_drawdown": st.column_config.NumberColumn("最大回撤", format="%.2%"),
-                                    "win_rate": st.column_config.NumberColumn("胜率", format="%.2%")
-                                },
                                 use_container_width=True
                             )
                             
                             # 参数热力图
-                            if signal_type == "MA":
+                            if signal_type == "MA" and 'fast_window' in results_df.columns and 'slow_window' in results_df.columns:
                                 st.subheader("🔥 参数热力图")
-                                
+
                                 # 透视表
                                 pivot_df = results_df.pivot_table(
                                     index='fast_window',
@@ -183,7 +190,7 @@ def render_parameter_optimization_tab(db, config):
                                     values=optimization_target,
                                     aggfunc='mean'
                                 )
-                                
+
                                 fig = px.imshow(
                                     pivot_df,
                                     labels=dict(x="慢线", y="快线", color=optimization_target),
@@ -192,33 +199,35 @@ def render_parameter_optimization_tab(db, config):
                                 )
                                 fig.update_layout(height=500)
                                 st.plotly_chart(fig, use_container_width=True)
-                            
+
                             # 参数散点图
-                            st.subheader("📈 参数散点图")
-                            
-                            fig = px.scatter(
-                                results_df,
-                                x='fast_window' if 'fast_window' in results_df.columns else results_df.columns[0],
-                                y='slow_window' if 'slow_window' in results_df.columns else results_df.columns[1],
-                                size=optimization_target,
-                                color=optimization_target,
-                                title="参数组合分布",
-                                color_continuous_scale='Viridis'
-                            )
-                            fig.update_layout(height=500)
-                            st.plotly_chart(fig, use_container_width=True)
-                            
+                            if len(results_df.columns) >= 2:
+                                st.subheader("📈 参数散点图")
+
+                                x_col = results_df.columns[0] if results_df.columns[0] != optimization_target else results_df.columns[1]
+                                y_col = results_df.columns[1] if results_df.columns[1] != optimization_target else results_df.columns[2]
+
+                                fig = px.scatter(
+                                    results_df,
+                                    x=x_col,
+                                    y=y_col,
+                                    size=optimization_target if optimization_target in results_df.columns else None,
+                                    color=optimization_target if optimization_target in results_df.columns else None,
+                                    title="参数组合分布",
+                                    color_continuous_scale='Viridis'
+                                )
+                                fig.update_layout(height=500)
+                                st.plotly_chart(fig, use_container_width=True)
+
                             # Top 10 参数组合
                             st.subheader("🥇 Top 10 参数组合")
-                            top_10 = optimizer.get_top_n(10)
-                            
-                            for i, result in enumerate(top_10, 1):
-                                with st.expander(f"#{i} - {optimization_target}: {result[optimization_target]:.4f}"):
-                                    st.write(f"**参数**: {result.get('params', {})}")
-                                    st.write(f"夏普比率: {result.get('sharpe_ratio', 0):.4f}")
-                                    st.write(f"年化收益: {result.get('annual_return', 0):.2%}")
-                                    st.write(f"最大回撤: {result.get('max_drawdown', 0):.2%}")
-                                    st.write(f"胜率: {result.get('win_rate', 0):.2%}")
+                            top_10 = results_df.nlargest(10, optimization_target)
+
+                            for i, (_, row) in enumerate(top_10.iterrows(), 1):
+                                with st.expander(f"#{i} - {optimization_target}: {row[optimization_target]:.4f}"):
+                                    for col in results_df.columns:
+                                        if col != optimization_target:
+                                            st.write(f"{col}: {row[col]}")
                         
                         else:  # 贝叶斯优化
                             history = result.get('history', [])
