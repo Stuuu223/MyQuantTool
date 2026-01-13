@@ -423,19 +423,28 @@ class MetaLearningSystem:
         self.tasks.append(task)
     
     def meta_train(self, 
+                   tasks: List[Dict] = None,
                    n_epochs: int = 100,
-                   tasks_per_epoch: int = 5) -> Dict:
+                   tasks_per_epoch: int = 5,
+                   n_support: int = 5,
+                   n_query: int = 5) -> Dict:
         """
         元训练
         
         Args:
+            tasks: 任务列表（可选，如果不提供则使用self.tasks）
             n_epochs: 训练轮数
             tasks_per_epoch: 每轮任务数
+            n_support: 支持集大小
+            n_query: 查询集大小
             
         Returns:
             训练结果
         """
-        if len(self.tasks) == 0:
+        if tasks is None:
+            tasks = self.tasks
+        
+        if len(tasks) == 0:
             return {
                 'success': False,
                 'message': '没有可用的任务'

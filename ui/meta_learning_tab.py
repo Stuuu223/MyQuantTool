@@ -83,9 +83,7 @@ def render_meta_learning_tab(db: DataManager, config):
                 training_result = system.meta_train(
                     tasks=tasks,
                     n_epochs=n_epochs,
-                    tasks_per_epoch=tasks_per_epoch,
-                    n_support=n_support,
-                    n_query=n_query
+                    tasks_per_epoch=tasks_per_epoch
                 )
                 
                 st.session_state.meta_training_result = training_result
