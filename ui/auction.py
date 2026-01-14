@@ -52,11 +52,12 @@ def render_auction_tab(db, config):
                         st.subheader("🔥 强势股票（重点关注）")
                         for stock in strong_stocks:
                             with st.expander(f"{stock['评级']} {stock['名称']} ({stock['代码']}) - 评分: {stock['评分']}"):
-                                col1, col2, col3, col4 = st.columns(4)
+                                col1, col2, col3, col4, col5 = st.columns(5)
                                 col1.metric("最新价", f"¥{stock['最新价']:.2f}")
                                 col2.metric("涨跌幅", f"{stock['涨跌幅']:.2f}%")
                                 col3.metric("量比", stock['量比'])
                                 col4.metric("换手率", f"{stock['换手率']:.2f}%")
+                                col5.metric("竞价量", f"{stock.get('竞价量', 0)} 手")
                                 
                                 # 显示信号
                                 st.write("**竞价信号：**")

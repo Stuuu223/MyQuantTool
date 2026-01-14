@@ -2053,35 +2053,84 @@ class QuantAlgo:
         """
         获取集合竞价数据
         返回当前市场所有股票的集合竞价信息
+        使用 Easyquotation 极速接口
         """
         try:
+            from logic.data_manager import DataManager
+            
+            # 使用 Easyquotation 获取实时数据
+            db = DataManager()
+            
+            # 获取股票列表
             import akshare as ak
+            stock_list_df = ak.stock_info_a_code_name()
             
-            # 获取A股实时行情数据（包含集合竞价信息）
-            stock_df = ak.stock_zh_a_spot_em()
-            
-            if stock_df.empty:
+            if stock_list_df.empty:
+                db.close()
                 return {
-                    '数据状态': '无法获取数据',
+                    '数据状态': '无法获取股票列表',
                     '说明': '可能是数据源限制'
+                }
+            
+            stock_list = stock_list_df['code'].tolist()
+            
+            # 使用 Easyquotation 极速获取实时数据
+            realtime_data = db.get_fast_price(stock_list)
+            
+            if not realtime_data:
+                db.close()
+                return {
+                    '数据状态': '无法获取实时数据',
+                    '说明': 'Easyquotation 未初始化或网络问题'
                 }
             
             # 筛选需要的列
             auction_stocks = []
-            for _, row in stock_df.iterrows():
-                auction_stocks.append({
-                    '代码': row['代码'],
-                    '名称': row['名称'],
-                    '最新价': row['最新价'],
-                    '涨跌幅': row['涨跌幅'],
-                    '成交量': row['成交量'],
-                    '成交额': row['成交额'],
-                    '量比': row['量比'],
-                    '换手率': row['换手率'],
-                    '市盈率': row['市盈率-动态'],
-                    '总市值': row['总市值'],
-                    '流通市值': row['流通市值']
-                })
+            for full_code, data in realtime_data.items():
+                try:
+                    # 提取股票代码
+                    if len(full_code) == 6:
+                        code = full_code
+                    elif len(full_code) > 6:
+                        code = full_code[2:]
+                    else:
+                        continue
+                    
+                    current_price = float(data.get('now', 0))
+                    last_close = float(data.get('close', 0))
+                    
+                    if current_price == 0 or last_close == 0:
+                        continue
+                    
+                    pct_change = (current_price - last_close) / last_close * 100
+                    
+                    # 获取竞价量（买一量 + 卖一量）
+                    bid1_volume = data.get('bid1_volume', 0)
+                    ask1_volume = data.get('ask1_volume', 0)
+                    auction_volume = (bid1_volume + ask1_volume) / 100  # 转换为手
+                    
+                    # 获取成交量（Easyquotation 返回的是股数，需要转换为手数）
+                    volume = data.get('volume', 0) / 100  # 转换为手
+                    
+                    auction_stocks.append({
+                        '代码': code,
+                        '名称': data.get('name', ''),
+                        '最新价': current_price,
+                        '涨跌幅': pct_change,
+                        '成交量': volume,
+                        '成交额': data.get('turnover', 0) / 10000,  # 转换为万元
+                        '量比': 0,  # 需要从历史数据计算
+                        '换手率': 0,  # 需要从历史数据计算
+                        '竞价量': int(auction_volume),
+                        '买一量': int(bid1_volume / 100),
+                        '卖一量': int(ask1_volume / 100),
+                        '买一价': data.get('bid1', 0),
+                        '卖一价': data.get('ask1', 0)
+                    })
+                except Exception as e:
+                    continue
+            
+            db.close()
             
             return {
                 '数据状态': '正常',
@@ -2316,63 +2365,130 @@ class QuantAlgo:
         """
         集合竞价选股扫描
         综合运用竞价弱转强和集合竞价扩散法
+        使用 Easyquotation 极速接口
         
         limit: 扫描的股票数量限制
         """
         try:
-            import akshare as ak
             from logic.data_manager import DataManager
             
-            # 获取实时行情数据
-            stock_df = ak.stock_zh_a_spot_em()
+            # 获取股票列表
+            import akshare as ak
+            stock_list_df = ak.stock_info_a_code_name()
             
-            if stock_df.empty:
+            if stock_list_df.empty:
                 return {
-                    '数据状态': '无法获取数据',
+                    '数据状态': '无法获取股票列表',
                     '说明': '可能是数据源限制'
                 }
             
-            # 快速初筛：过滤掉明显不符合集合竞价特征的股票
-            # 1. 排除ST、*ST股票
-            # 2. 排除跌停股票（涨跌幅 <= -9.5%）
-            # 3. 排除停牌股票（成交量为0）
-            # 4. 排除价格异常（最新价 <= 0）
-            # 5. 只保留有竞价特征的股票：量比>1 或 涨跌幅>1%
-            pre_filtered = stock_df[
-                (~stock_df['名称'].str.contains('ST|退', na=False)) &  # 排除ST和退市股
-                (stock_df['涨跌幅'] > -9.5) &  # 排除跌停
-                (stock_df['成交量'] > 0) &  # 排除停牌
-                (stock_df['最新价'] > 0) &  # 排除价格异常
-                ((stock_df['量比'] > 1) | (stock_df['涨跌幅'] > 1))  # 有竞价特征
-            ]
+            stock_list = stock_list_df['code'].tolist()
             
-            if pre_filtered.empty:
+            # 使用 Easyquotation 极速获取实时数据
+            db = DataManager()
+            realtime_data = db.get_fast_price(stock_list)
+            
+            if not realtime_data:
+                db.close()
                 return {
-                    '数据状态': '无符合条件的股票',
-                    '说明': '初筛后无符合条件的股票'
+                    '数据状态': '无法获取实时数据',
+                    '说明': 'Easyquotation 未初始化或网络问题'
                 }
             
-            # 按综合指标排序（量比和涨跌幅加权），取前limit只进行深度分析
-            pre_filtered['综合得分'] = pre_filtered['量比'] * 0.6 + pre_filtered['涨跌幅'] * 0.4
-            filtered_stocks = pre_filtered.nlargest(limit, '综合得分')
+            # 转换为列表格式
+            all_stocks = []
+            for full_code, data in realtime_data.items():
+                try:
+                    # 提取股票代码
+                    if len(full_code) == 6:
+                        code = full_code
+                    elif len(full_code) > 6:
+                        code = full_code[2:]
+                    else:
+                        continue
+                    
+                    # 只保留 A 股股票（6位数字，以 0、3、6 开头）
+                    if not (len(code) == 6 and code.isdigit() and code[0] in ['0', '3', '6']):
+                        continue
+                    
+                    name = data.get('name', '')
+                    
+                    # 排除 ST 股
+                    if 'ST' in name or '*ST' in name:
+                        continue
+                    
+                    current_price = float(data.get('now', 0))
+                    last_close = float(data.get('close', 0))
+                    
+                    if current_price == 0 or last_close == 0:
+                        continue
+                    
+                    pct_change = (current_price - last_close) / last_close * 100
+                    
+                    # 获取成交量（Easyquotation 返回的是股数，需要转换为手数）
+                    volume = data.get('volume', 0) / 100
+                    
+                    # 获取竞价量（买一量 + 卖一量）
+                    bid1_volume = data.get('bid1_volume', 0)
+                    ask1_volume = data.get('ask1_volume', 0)
+                    auction_volume = (bid1_volume + ask1_volume) / 100  # 转换为手
+                    
+                    # 快速初筛：只保留有竞价特征的股票
+                    # 条件：有成交量 且 (竞价量 > 0 或 涨跌幅 > 1%)
+                    if volume > 0 and (auction_volume > 0 or pct_change > 1):
+                        all_stocks.append({
+                            '代码': code,
+                            '名称': name,
+                            '最新价': current_price,
+                            '涨跌幅': pct_change,
+                            '成交量': volume,
+                            '竞价量': int(auction_volume)
+                        })
+                except Exception as e:
+                    continue
             
-            if filtered_stocks.empty:
+            db.close()
+            
+            if not all_stocks:
                 return {
                     '数据状态': '无符合条件的股票',
                     '说明': '当前市场无放量或涨幅明显的股票'
                 }
             
+            # 按综合指标排序（竞价量和涨跌幅加权），取前limit只进行深度分析
+            for stock in all_stocks:
+                # 计算量比（需要历史数据）
+                try:
+                    df = db.get_history_data(stock['代码'])
+                    if not df.empty and len(df) > 5:
+                        avg_volume = df['volume'].tail(5).mean()
+                        if avg_volume > 0:
+                            stock['量比'] = stock['成交量'] / avg_volume
+                        else:
+                            stock['量比'] = 1
+                    else:
+                        stock['量比'] = 1
+                except:
+                    stock['量比'] = 1
+            
+            # 计算综合得分
+            for stock in all_stocks:
+                stock['综合得分'] = stock['量比'] * 0.6 + stock['涨跌幅'] * 0.4
+            
+            # 按综合得分排序，取前 limit 只
+            filtered_stocks = sorted(all_stocks, key=lambda x: x['综合得分'], reverse=True)[:limit]
+            
             # 分析每只股票
             db = DataManager()
             auction_stocks = []
             
-            for _, row in filtered_stocks.iterrows():
-                symbol = row['代码']
-                name = row['名称']
-                current_price = row['最新价']
-                change_pct = row['涨跌幅']
-                volume_ratio = row['量比']
-                turnover_rate = row['换手率']
+            for stock in filtered_stocks:
+                symbol = stock['代码']
+                name = stock['名称']
+                current_price = stock['最新价']
+                change_pct = stock['涨跌幅']
+                volume_ratio = stock['量比']
+                auction_volume = stock['竞价量']
                 
                 try:
                     # 获取历史数据
@@ -2381,6 +2497,11 @@ class QuantAlgo:
                     if not df.empty and len(df) > 5:
                         # 检测竞价弱转强
                         weak_to_strong = QuantAlgo.detect_auction_weak_to_strong(df, symbol)
+                        
+                        # 获取换手率
+                        turnover_rate = 0
+                        if 'turnover_rate' in df.columns:
+                            turnover_rate = df['turnover_rate'].iloc[-1]
                         
                         # 计算综合评分
                         score = 0
@@ -2416,6 +2537,14 @@ class QuantAlgo:
                             score += 15
                             signals.append(f"换手率较高（{turnover_rate:.2f}%）")
                         
+                        # 竞价量评分（新增）
+                        if auction_volume > 1000:  # 竞价量超过1000手
+                            score += 10
+                            signals.append(f"竞价量充足（{auction_volume}手）")
+                        elif auction_volume > 100:
+                            score += 5
+                            signals.append(f"竞价量一般（{auction_volume}手）")
+                        
                         # 弱转强加分
                         if weak_to_strong.get('是否弱转强'):
                             score += 20
@@ -2440,8 +2569,9 @@ class QuantAlgo:
                             '名称': name,
                             '最新价': current_price,
                             '涨跌幅': change_pct,
-                            '量比': volume_ratio,
-                            '换手率': turnover_rate,
+                            '量比': round(volume_ratio, 2),
+                            '换手率': round(turnover_rate, 2),
+                            '竞价量': auction_volume,
                             '评分': score,
                             '评级': rating,
                             '信号': signals,
