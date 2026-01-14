@@ -50,7 +50,7 @@ def render_dragon_strategy_tab(db, config):
             scan_result = QuantAlgo.scan_dragon_stocks(limit=scan_limit, min_score=min_score)
         
         if scan_result['数据状态'] == '正常':
-            st.success(f"扫描完成！共扫描 {scan_result['扫描数量']} 只股票，发现 {scan_result['符合条件数量']} 只潜在龙头股")
+            st.success(f"扫描完成！共扫描 {scan_result['扫描数量']} 只股票，发现 {scan_result['涨停板数量']} 只涨停板股票，其中 {scan_result['符合条件数量']} 只符合龙头战法条件")
             
             if scan_result['龙头股列表']:
                 # 按评级分组显示
