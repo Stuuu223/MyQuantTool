@@ -18,15 +18,18 @@ logger = logging.getLogger(__name__)
 
 class IncrementalLearningEngine:
     """
-    增量学习引擎
-    支持模型的持续微调，无需完整重训
+    增量学习引擎（改进版）
+    支持模型的持续微调，防止灾难性遗忘
     """
 
     def __init__(self,
                  model: Any,
                  update_interval: int = 1,
                  window_size: int = 1000,
-                 min_samples: int = 100):
+                 min_samples: int = 100,
+                 memory_size: int = 2000,
+                 enable_validation: bool = True,
+                 validation_ratio: float = 0.2):
         """
         初始化增量学习引擎
 
@@ -35,19 +38,33 @@ class IncrementalLearningEngine:
             update_interval: 更新间隔（天数）
             window_size: 滑动窗口大小
             min_samples: 最小样本数
+            memory_size: 历史记忆库大小（防止灾难性遗忘）
+            enable_validation: 是否启用验证集回滚
+            validation_ratio: 验证集比例
         """
         self.model = model
         self.update_interval = update_interval
         self.window_size = window_size
         self.min_samples = min_samples
+        self.memory_size = memory_size
+        self.enable_validation = enable_validation
+        self.validation_ratio = validation_ratio
 
-        # 数据缓冲区
+        # 数据缓冲区（新数据）
         self.data_buffer = []
         self.last_update_date = None
+
+        # 历史记忆库（防止灾难性遗忘）
+        self.memory_bank = []
+        self.memory_bank_size = memory_size
 
         # 性能追踪
         self.update_history = []
         self.performance_metrics = []
+
+        # 模型备份（用于回滚）
+        self.model_backup = None
+        self.best_validation_score = None
 
     def add_data(self, X: np.ndarray, y: np.ndarray):
         """
@@ -67,7 +84,14 @@ class IncrementalLearningEngine:
 
         # 限制缓冲区大小（滑动窗口）
         if len(self.data_buffer) > self.window_size:
+            # 将溢出的数据移到记忆库
+            overflow = self.data_buffer[:-self.window_size]
+            self.memory_bank.extend(overflow)
             self.data_buffer = self.data_buffer[-self.window_size:]
+
+        # 限制记忆库大小
+        if len(self.memory_bank) > self.memory_bank_size:
+            self.memory_bank = self.memory_bank[-self.memory_bank_size:]
 
     def should_update(self) -> bool:
         """
@@ -89,7 +113,7 @@ class IncrementalLearningEngine:
 
     def update_model(self) -> Dict[str, Any]:
         """
-        增量更新模型
+        增量更新模型（带验证集回滚）
 
         Returns:
             更新结果
@@ -99,48 +123,97 @@ class IncrementalLearningEngine:
             return {'updated': False, 'reason': 'Not enough data or too soon'}
 
         try:
-            # 准备训练数据
-            X_new = np.array([item['features'] for item in self.data_buffer])
-            y_new = np.array([item['target'] for item in self.data_buffer])
+            # 备份当前模型
+            import copy
+            self.model_backup = copy.deepcopy(self.model)
 
-            logger.info(f"开始增量更新，样本数: {len(X_new)}")
+            # 准备训练数据（新数据 + 记忆库）
+            X_buffer = np.array([item['features'] for item in self.data_buffer])
+            y_buffer = np.array([item['target'] for item in self.data_buffer])
 
-            # 根据模型类型进行增量更新
-            if hasattr(self.model, 'fit'):
-                # LightGBM/XGBoost/CatBoost 支持增量训练
-                if hasattr(self.model, 'refit'):
-                    # LightGBM refit
-                    self.model.refit(X_new, y_new)
-                elif hasattr(self.model, 'update'):
-                    # XGBoost update
-                    self.model.update(X_new, y_new)
-                else:
-                    # 重新 fit（使用 warm_start）
-                    self.model.fit(X_new, y_new)
+            if len(self.memory_bank) > 0:
+                X_memory = np.array([item['features'] for item in self.memory_bank])
+                y_memory = np.array([item['target'] for item in self.memory_bank])
+                # 混合新数据和记忆库数据
+                X_train = np.vstack([X_buffer, X_memory])
+                y_train = np.hstack([y_buffer, y_memory])
+            else:
+                X_train = X_buffer
+                y_train = y_buffer
+
+            logger.info(f"开始增量更新，新数据: {len(X_buffer)}, 记忆库: {len(self.memory_bank)}, 总计: {len(X_train)}")
+
+            # 如果启用验证集，划分训练集和验证集
+            if self.enable_validation and len(X_train) >= self.min_samples * 2:
+                split_idx = int(len(X_train) * (1 - self.validation_ratio))
+                X_train_split, X_val = X_train[:split_idx], X_train[split_idx:]
+                y_train_split, y_val = y_train[:split_idx], y_train[split_idx:]
+
+                # 训练模型
+                if hasattr(self.model, 'fit'):
+                    if hasattr(self.model, 'refit'):
+                        self.model.refit(X_train_split, y_train_split)
+                    elif hasattr(self.model, 'update'):
+                        self.model.update(X_train_split, y_train_split)
+                    else:
+                        self.model.fit(X_train_split, y_train_split)
+
+                # 验证模型
+                y_pred = self.model.predict(X_val)
+                validation_score = np.mean((y_val - y_pred) ** 2)  # MSE
+
+                # 如果验证集性能下降，回滚模型
+                if self.best_validation_score is not None and validation_score > self.best_validation_score * 1.1:
+                    logger.warning(f"验证集性能下降 ({validation_score:.4f} vs {self.best_validation_score:.4f})，回滚模型")
+                    self.model = copy.deepcopy(self.model_backup)
+                    return {
+                        'updated': False,
+                        'reason': 'Validation score degraded, model rolled back',
+                        'validation_score': validation_score,
+                        'best_score': self.best_validation_score
+                    }
+
+                # 更新最佳分数
+                self.best_validation_score = validation_score
+                logger.info(f"验证集 MSE: {validation_score:.4f}")
+
+            else:
+                # 不使用验证集，直接训练
+                if hasattr(self.model, 'fit'):
+                    if hasattr(self.model, 'refit'):
+                        self.model.refit(X_train, y_train)
+                    elif hasattr(self.model, 'update'):
+                        self.model.update(X_train, y_train)
+                    else:
+                        self.model.fit(X_train, y_train)
 
             # 记录更新历史
             update_record = {
                 'timestamp': datetime.now(),
-                'samples_used': len(X_new),
-                'buffer_size': len(self.data_buffer)
+                'samples_used': len(X_train),
+                'buffer_size': len(self.data_buffer),
+                'memory_size': len(self.memory_bank)
             }
 
             self.update_history.append(update_record)
             self.last_update_date = datetime.now()
 
-            # 清空缓冲区
+            # 清空缓冲区（保留记忆库）
             self.data_buffer = []
 
             logger.info("增量更新完成")
 
             return {
                 'updated': True,
-                'samples_used': len(X_new),
+                'samples_used': len(X_train),
                 'timestamp': datetime.now()
             }
 
         except Exception as e:
             logger.error(f"增量更新失败: {str(e)}")
+            # 回滚模型
+            if self.model_backup is not None:
+                self.model = copy.deepcopy(self.model_backup)
             return {
                 'updated': False,
                 'error': str(e)

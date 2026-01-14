@@ -307,17 +307,18 @@ class CatBoostPredictor(MLPredictorBase):
         super().__init__("CatBoost预测器")
         self.depth = depth
         self.learning_rate = learning_rate
+        self.feature_names = None  # 保存特征名称
 
-    def prepare_data(self, df: pd.DataFrame, lookback: int = 20) -> Tuple[np.ndarray, np.ndarray]:
+    def prepare_data(self, df: pd.DataFrame, lookback: int = 20) -> Tuple[pd.DataFrame, np.ndarray]:
         """
-        准备训练数据
+        准备训练数据（返回 DataFrame 保留列名）
 
         Args:
             df: K线数据
             lookback: 回看窗口
 
         Returns:
-            (X, y) 特征和标签
+            (X, y) 特征 DataFrame 和标签数组
         """
         df = df.sort_values('date').reset_index(drop=True)
         df = self._calculate_indicators(df, lookback)
@@ -331,8 +332,13 @@ class CatBoostPredictor(MLPredictorBase):
         ]
 
         df_clean = df.dropna(subset=features + ['target']).copy()
-        X = df_clean[features].values
+
+        # 返回 DataFrame 而不是 numpy array，保留列名
+        X = df_clean[features]
         y = df_clean['target'].values
+
+        # 保存特征名称
+        self.feature_names = features
 
         return X, y
 
@@ -370,7 +376,7 @@ class CatBoostPredictor(MLPredictorBase):
 
     def train(self, df: pd.DataFrame, lookback: int = 20):
         """
-        训练 CatBoost 模型
+        训练 CatBoost 模型（使用 DataFrame 保留列名）
 
         Args:
             df: 训练数据
@@ -403,14 +409,24 @@ class CatBoostPredictor(MLPredictorBase):
             eval_set=(X_val, y_val),
             early_stopping_rounds=20,
             verbose=False
+            # 如果有类别特征，可以在这里指定:
+            # cat_features=['sector', 'concept']
         )
 
         self.is_trained = True
+
+        # 保存特征重要性（使用特征名称）
+        if self.feature_names:
+            self.feature_importance = dict(zip(
+                self.feature_names,
+                self.model.feature_importances_
+            ))
+
         logger.info(f"{self.name} 训练完成！")
 
     def predict(self, df: pd.DataFrame, lookback: int = 20) -> np.ndarray:
         """
-        预测
+        预测（确保特征顺序与训练时一致）
 
         Args:
             df: K线数据
@@ -424,6 +440,11 @@ class CatBoostPredictor(MLPredictorBase):
             return np.array([])
 
         X, _ = self.prepare_data(df, lookback)
+
+        # 确保特征顺序与训练时一致
+        if self.feature_names is not None:
+            X = X[self.feature_names]
+
         predictions = self.model.predict(X)
 
         return predictions

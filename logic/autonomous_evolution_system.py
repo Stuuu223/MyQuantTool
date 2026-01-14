@@ -51,16 +51,28 @@ class StrategyOptimizer:
                  study_name: Optional[str] = None,
                  storage: Optional[str] = None) -> Dict[str, Any]:
         """
-        执行超参数优化
+        执行超参数优化（支持剪枝）
 
         Args:
             objective_func: 目标函数，接收 trial 对象和参数，返回评分
+                           如果需要剪枝，可以在函数内部调用 trial.report() 和 trial.should_prune()
             param_space: 参数空间定义
             study_name: 研究名称（用于持久化）
             storage: 存储路径（用于持久化）
 
         Returns:
             包含最佳参数和优化历史的字典
+
+        注意：
+        - 如果 objective_func 需要剪枝支持，应该在回测过程中调用 trial.report(intermediate_value, step)
+        - 当 trial.should_prune() 返回 True 时，应该抛出 optuna.TrialPruned() 异常
+        - 示例：
+          def objective_with_pruning(trial, params):
+              for step, result in enumerate(backtest_loop()):
+                  trial.report(result['profit'], step)
+                  if trial.should_prune():
+                      raise optuna.TrialPruned()
+              return final_score
         """
         # 创建 Optuna study
         sampler = TPESampler(seed=42)
@@ -96,6 +108,8 @@ class StrategyOptimizer:
 
         # 执行优化
         logger.info(f"开始优化，预计 {self.n_trials} 次试验...")
+        logger.info(f"剪枝器: MedianPruner (n_startup_trials=5, n_warmup_steps=10)")
+
         self.study.optimize(
             wrapped_objective,
             n_trials=self.n_trials,
@@ -108,13 +122,17 @@ class StrategyOptimizer:
         self.best_params = self.study.best_params
         self.best_score = self.study.best_value
 
+        # 统计剪枝信息
+        pruned_count = sum(1 for trial in self.study.trials if trial.state == optuna.trial.TrialState.PRUNED)
         logger.info(f"优化完成！最佳评分: {self.best_score:.4f}")
         logger.info(f"最佳参数: {self.best_params}")
+        logger.info(f"剪枝试验数: {pruned_count}/{len(self.study.trials)}")
 
         return {
             'best_params': self.best_params,
             'best_score': self.best_score,
             'n_trials': len(self.study.trials),
+            'pruned_trials': pruned_count,
             'history': self._get_optimization_history()
         }
 

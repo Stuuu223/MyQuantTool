@@ -45,7 +45,8 @@ class RealAIAgent:
                      symbol: str,
                      price_data: Dict[str, Any],
                      technical_data: Dict[str, Any],
-                     market_context: Optional[Dict[str, Any]] = None) -> str:
+                     market_context: Optional[Dict[str, Any]] = None,
+                     return_json: bool = True) -> Dict[str, Any]:
         """
         使用 LLM 分析股票
 
@@ -54,12 +55,13 @@ class RealAIAgent:
             price_data: 价格数据（当前价格、涨跌幅等）
             technical_data: 技术指标数据
             market_context: 市场上下文（可选）
+            return_json: 是否返回 JSON 格式（默认 True）
 
         Returns:
-            分析报告
+            分析结果（JSON 格式字典）
         """
         if self.llm is None:
-            return self._fallback_analysis(symbol, price_data, technical_data)
+            return self._fallback_analysis_json(symbol, price_data, technical_data)
 
         # 构建上下文
         context = self._build_context(symbol, price_data, technical_data, market_context)
@@ -70,10 +72,19 @@ class RealAIAgent:
         try:
             # 调用 LLM
             response = self.llm.chat(prompt, model=self.model)
-            return response
+
+            # 解析 JSON
+            if return_json:
+                result = self._parse_llm_response(response)
+                result['symbol'] = symbol
+                result['timestamp'] = pd.Timestamp.now()
+                return result
+            else:
+                return {'raw_response': response, 'symbol': symbol}
+
         except Exception as e:
             logger.error(f"LLM 调用失败: {str(e)}")
-            return self._fallback_analysis(symbol, price_data, technical_data)
+            return self._fallback_analysis_json(symbol, price_data, technical_data)
 
     def _build_context(self,
                       symbol: str,
@@ -153,7 +164,7 @@ class RealAIAgent:
 
     def _build_prompt(self, context: str) -> str:
         """
-        构建 LLM 提示词
+        构建 LLM 提示词（强制 JSON 输出）
 
         Args:
             context: 上下文字符串
@@ -161,37 +172,155 @@ class RealAIAgent:
         Returns:
             完整的提示词
         """
-        prompt = f"""你是一位顶级的游资操盘手，拥有10年以上的A股实战经验。
-
-请基于以下股票数据进行专业分析：
+        prompt = f"""你是一个量化交易决策系统。请基于以下数据分析该股票：
 
 {context}
 
-请按照以下格式输出分析报告（不要包含其他废话）：
-
-━━━━━━━━━━━━━━━━━━━━━━━━
-【情绪评分】
-0-100分（0极度悲观，100极度乐观）
-
-【技术面分析】
-简要分析技术指标形态和趋势
-
-【潜在风险】
-列出1-3个主要风险点
-
-【操作建议】
-买入 / 观望 / 卖出（三选一）
-
-【理由】
-用1-2句话说明理由
-━━━━━━━━━━━━━━━━━━━━━━━━
+请务必只返回标准的 JSON 格式，不要包含 markdown 标记或其他文字。格式如下：
+{{
+    "score": 0-100之间的整数,
+    "signal": "BUY" | "SELL" | "HOLD",
+    "risk_level": "LOW" | "MEDIUM" | "HIGH",
+    "reason": "简短理由(50字内)",
+    "suggested_position": 0.0-1.0之间的建议仓位
+}}
 
 注意：
-1. 只输出上述格式的内容，不要添加任何开场白或结束语
-2. 评分和建议要基于数据，不要凭空猜测
-3. 如果数据不足，明确说明
+1. 只输出 JSON，不要有任何其他文字
+2. score: 0-100，越高越看好
+3. signal: BUY(买入), SELL(卖出), HOLD(观望)
+4. risk_level: LOW(低风险), MEDIUM(中风险), HIGH(高风险)
+5. suggested_position: 0.0-1.0，建议仓位比例
 """
         return prompt
+
+    def _parse_llm_response(self, response_text: str) -> Dict[str, Any]:
+        """
+        解析 LLM 返回的 JSON 响应
+
+        Args:
+            response_text: LLM 返回的文本
+
+        Returns:
+            解析后的字典
+        """
+        import re
+        try:
+            # 尝试清洗 markdown 标记 (```json ... ```)
+            cleaned = re.sub(r'```json\s*|\s*```', '', response_text).strip()
+            result = json.loads(cleaned)
+
+            # 验证必需字段
+            required_fields = ['score', 'signal', 'risk_level', 'reason', 'suggested_position']
+            for field in required_fields:
+                if field not in result:
+                    logger.warning(f"缺少必需字段: {field}")
+                    result[field] = self._get_default_value(field)
+
+            # 验证数据类型
+            if not isinstance(result['score'], (int, float)):
+                result['score'] = 50
+            if result['signal'] not in ['BUY', 'SELL', 'HOLD']:
+                result['signal'] = 'HOLD'
+            if result['risk_level'] not in ['LOW', 'MEDIUM', 'HIGH']:
+                result['risk_level'] = 'MEDIUM'
+            if not isinstance(result['suggested_position'], (int, float)):
+                result['suggested_position'] = 0.5
+
+            return result
+
+        except Exception as e:
+            logger.error(f"JSON 解析失败: {e}")
+            # 返回兜底数据
+            return {
+                "score": 50,
+                "signal": "HOLD",
+                "risk_level": "HIGH",
+                "reason": "解析失败",
+                "suggested_position": 0.0
+            }
+
+    def _get_default_value(self, field: str) -> Any:
+        """获取字段的默认值"""
+        defaults = {
+            'score': 50,
+            'signal': 'HOLD',
+            'risk_level': 'MEDIUM',
+            'reason': '数据不足',
+            'suggested_position': 0.0
+        }
+        return defaults.get(field, None)
+
+    def _fallback_analysis_json(self,
+                                symbol: str,
+                                price_data: Dict[str, Any],
+                                technical_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        降级分析（返回 JSON 格式）
+
+        Args:
+            symbol: 股票代码
+            price_data: 价格数据
+            technical_data: 技术指标数据
+
+        Returns:
+            JSON 格式的分析结果
+        """
+        # 计算综合得分
+        score = 0
+
+        # 涨跌幅
+        change = price_data.get('change_percent', 0)
+        if change > 5:
+            score += 20
+        elif change > 0:
+            score += 10
+        elif change > -3:
+            score += 5
+
+        # RSI
+        rsi = technical_data.get('rsi', {}).get('RSI', 50)
+        if rsi < 30:
+            score += 15
+        elif rsi > 70:
+            score -= 10
+        elif 40 <= rsi <= 60:
+            score += 10
+
+        # MACD
+        macd_trend = technical_data.get('macd', {}).get('Trend', '')
+        if macd_trend == '多头':
+            score += 15
+        elif macd_trend == '空头':
+            score -= 15
+
+        # 资金流向
+        money_flow = technical_data.get('money_flow', {}).get('资金流向', '')
+        if money_flow == '大幅流入':
+            score += 20
+        elif money_flow == '流入':
+            score += 10
+        elif money_flow == '流出':
+            score -= 10
+
+        # 生成信号
+        if score >= 50:
+            signal = 'BUY'
+            risk_level = 'LOW' if score >= 70 else 'MEDIUM'
+        elif score >= 30:
+            signal = 'HOLD'
+            risk_level = 'MEDIUM'
+        else:
+            signal = 'SELL'
+            risk_level = 'HIGH'
+
+        return {
+            'score': min(max(score, 0), 100),
+            'signal': signal,
+            'risk_level': risk_level,
+            'reason': '规则分析',
+            'suggested_position': min(score / 100, 1.0)
+        }
 
     def _fallback_analysis(self,
                           symbol: str,
@@ -293,7 +422,7 @@ class RealAIAgent:
                      stocks: List[Dict[str, Any]],
                      market_context: Optional[Dict[str, Any]] = None) -> List[Dict[str, str]]:
         """
-        批量分析股票
+        批量分析股票（同步方式）
 
         Args:
             stocks: 股票列表，每个元素包含 symbol, price_data, technical_data
@@ -328,6 +457,79 @@ class RealAIAgent:
                 })
 
         return results
+
+    async def async_batch_analyze(self,
+                                   stocks: List[Dict[str, Any]],
+                                   market_context: Optional[Dict[str, Any]] = None,
+                                   max_concurrent: int = 10) -> List[Dict[str, Any]]:
+        """
+        异步批量分析股票（高性能）
+
+        Args:
+            stocks: 股票列表，每个元素包含 symbol, price_data, technical_data
+            market_context: 市场上下文
+            max_concurrent: 最大并发数
+
+        Returns:
+            分析结果列表（JSON 格式）
+        """
+        import asyncio
+
+        async def analyze_single(stock):
+            """分析单只股票"""
+            try:
+                result = self.analyze_stock(
+                    symbol=stock['symbol'],
+                    price_data=stock['price_data'],
+                    technical_data=stock['technical_data'],
+                    market_context=market_context,
+                    return_json=True
+                )
+                return result
+            except Exception as e:
+                logger.error(f"分析股票 {stock['symbol']} 失败: {str(e)}")
+                return {
+                    'symbol': stock['symbol'],
+                    'score': 50,
+                    'signal': 'HOLD',
+                    'risk_level': 'HIGH',
+                    'reason': f"分析失败: {str(e)}",
+                    'suggested_position': 0.0,
+                    'timestamp': pd.Timestamp.now()
+                }
+
+        # 创建信号量控制并发
+        semaphore = asyncio.Semaphore(max_concurrent)
+
+        async def analyze_with_semaphore(stock):
+            async with semaphore:
+                # 模拟异步（实际 LLM 调用可能是同步的）
+                return await asyncio.get_event_loop().run_in_executor(
+                    None, lambda: asyncio.create_task(analyze_single(stock))
+                )
+
+        # 执行批量分析
+        tasks = [analyze_single(stock) for stock in stocks]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # 处理结果
+        formatted_results = []
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                logger.error(f"股票 {stocks[i]['symbol']} 分析异常: {str(result)}")
+                formatted_results.append({
+                    'symbol': stocks[i]['symbol'],
+                    'score': 50,
+                    'signal': 'HOLD',
+                    'risk_level': 'HIGH',
+                    'reason': f"异常: {str(result)}",
+                    'suggested_position': 0.0,
+                    'timestamp': pd.Timestamp.now()
+                })
+            else:
+                formatted_results.append(result)
+
+        return formatted_results
 
 
 class RuleBasedAgent:
