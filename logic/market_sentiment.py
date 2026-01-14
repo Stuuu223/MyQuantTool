@@ -319,3 +319,7 @@ class MarketSentiment:
         """关闭数据库连接"""
         if self.db:
             self.db.close()
+
+
+# 别名，保持向后兼容
+MarketSentimentIndexCalculator = MarketSentiment
