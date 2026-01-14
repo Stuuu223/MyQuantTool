@@ -1171,34 +1171,72 @@ class QuantAlgo:
             import akshare as ak
             from logic.data_manager import DataManager
             
-            # 获取涨停板股票
-            limit_up_df = ak.stock_zh_a_spot_em()
+            # 获取涨停板股票（使用 Easyquotation 极速接口）
+            db = DataManager()
             
-            if limit_up_df.empty:
+            # 使用 akshare 获取股票列表
+            stock_list_df = ak.stock_info_a_code_name()
+            if stock_list_df.empty:
                 return {
-                    '数据状态': '无法获取数据',
+                    '数据状态': '无法获取股票列表',
                     '说明': '可能是数据源限制'
                 }
             
-            # 筛选涨停板股票（涨跌幅 >= 9.9%）
-            limit_up_stocks = limit_up_df[limit_up_df['涨跌幅'] >= 9.9].head(limit)
+            # 获取前 limit 只股票的代码
+            stock_list = stock_list_df['code'].head(limit * 2).tolist()  # 多取一些，因为不是所有都会涨停
             
-            if limit_up_stocks.empty:
+            # 使用 Easyquotation 极速获取实时数据
+            realtime_data = db.get_fast_price(stock_list)
+            
+            if not realtime_data:
+                return {
+                    '数据状态': '无法获取实时数据',
+                    '说明': 'Easyquotation 未初始化或网络问题'
+                }
+            
+            # 筛选涨停板股票（涨跌幅 >= 9.9%）
+            limit_up_stocks = []
+            for full_code, data in realtime_data.items():
+                try:
+                    current_price = float(data.get('now', 0))
+                    last_close = float(data.get('close', 0))
+                    
+                    if current_price == 0 or last_close == 0:
+                        continue
+                    
+                    pct_change = (current_price - last_close) / last_close * 100
+                    
+                    if pct_change >= 9.9:
+                        # 提取股票代码（去掉前缀）
+                        code = full_code[2:] if len(full_code) > 2 else full_code
+                        name = data.get('name', '')
+                        
+                        limit_up_stocks.append({
+                            '代码': code,
+                            '名称': name,
+                            '最新价': current_price,
+                            '涨跌幅': pct_change
+                        })
+                except Exception as e:
+                    continue
+            
+            if not limit_up_stocks:
                 return {
                     '数据状态': '无涨停板股票',
                     '说明': '当前市场无涨停板股票'
                 }
             
+            # 只取前 limit 只
+            limit_up_stocks = limit_up_stocks[:limit]
+            
             # 分析每只涨停板股票
-            db = DataManager()
             dragon_stocks = []
             
-            st_count = 0
-            for _, row in limit_up_stocks.iterrows():
-                st_count += 1
-                symbol = row['代码']
-                name = row['名称']
-                current_price = row['最新价']
+            st_count = len(limit_up_stocks)
+            for stock_info in limit_up_stocks:
+                symbol = stock_info['代码']
+                name = stock_info['名称']
+                current_price = stock_info['最新价']
                 
                 try:
                     # 获取历史数据
@@ -1214,7 +1252,7 @@ class QuantAlgo:
                                 '代码': symbol,
                                 '名称': name,
                                 '最新价': current_price,
-                                '涨跌幅': row['涨跌幅'],
+                                '涨跌幅': stock_info['涨跌幅'],
                                 '龙头评级': dragon_analysis['龙头评级'],
                                 '评级得分': dragon_analysis['评级得分'],
                                 '评级说明': dragon_analysis['评级说明'],
@@ -1223,8 +1261,6 @@ class QuantAlgo:
                 except Exception as e:
                     print(f"分析股票 {symbol} 失败: {e}")
                     continue
-            
-            db.close()
             
             # 按评分排序
             dragon_stocks.sort(key=lambda x: x['评级得分'], reverse=True)
