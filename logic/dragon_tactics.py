@@ -396,50 +396,79 @@ class DragonTactics:
         
         results['role'] = role
         
-        # 决策逻辑
-        if role == '核心龙' and auction_score >= 80:
-            # 核心龙 + 竞价爆量
+        # 决策逻辑（改进版，降低门槛）
+        if role == '核心龙' and auction_score >= 60:
+            # 核心龙 + 竞价抢筹
             if is_20cm and current_change > 10:
                 results['signal'] = 'BUY_AGGRESSIVE'
                 results['action'] = '扫板/排板'
                 results['position'] = '满仓/重仓'
                 results['confidence'] = 'HIGH'
-                results['reason'] = '核心龙头，竞价爆量，20cm突破平台，直接猛干'
+                results['reason'] = '核心龙头，竞价抢筹，20cm突破平台，直接猛干'
             elif current_change > 5:
                 results['signal'] = 'BUY_AGGRESSIVE'
                 results['action'] = '扫板/排板'
                 results['position'] = '满仓/重仓'
                 results['confidence'] = 'HIGH'
-                results['reason'] = '核心龙头，竞价爆量，直接猛干'
-            else:
-                results['signal'] = 'BUY_DIP'
-                results['action'] = '低吸博弈'
+                results['reason'] = '核心龙头，竞价抢筹，直接猛干'
+            elif current_change > 3:
+                results['signal'] = 'BUY'
+                results['action'] = '打板/跟随'
                 results['position'] = '半仓'
                 results['confidence'] = 'MEDIUM'
-                results['reason'] = '核心龙头，但涨幅不够，低吸博弈'
+                results['reason'] = '核心龙头，但涨幅一般，跟随买入'
+            else:
+                results['signal'] = 'WAIT'
+                results['action'] = '观望'
+                results['position'] = '0'
+                results['confidence'] = 'MEDIUM'
+                results['reason'] = '核心龙头，但涨幅不够，观望'
         
-        elif role == '核心龙' and weak_to_strong_score >= 70:
-            # 核心龙 + 弱转强
+        elif role == '核心龙' and weak_to_strong_score >= 50:
+            # 核心龙 + 弱转强（降低门槛从70到50）
             results['signal'] = 'BUY_DIP'
             results['action'] = '低吸博弈'
             results['position'] = '半仓'
             results['confidence'] = 'HIGH'
             results['reason'] = '核心龙头，弱转强形态，低吸博弈'
         
-        elif role == '中军' and total_score >= 70:
-            # 中军 + 综合评分高
-            results['signal'] = 'BUY'
-            results['action'] = '打板/跟随'
-            results['position'] = '半仓'
-            results['confidence'] = 'MEDIUM'
-            results['reason'] = '中军标的，图形漂亮，跟随买入'
+        elif role == '中军' and total_score >= 50:
+            # 中军 + 综合评分高（降低门槛从70到50）
+            if current_change > 5:
+                results['signal'] = 'BUY'
+                results['action'] = '打板/跟随'
+                results['position'] = '半仓'
+                results['confidence'] = 'MEDIUM'
+                results['reason'] = '中军标的，涨幅较好，跟随买入'
+            else:
+                results['signal'] = 'WAIT'
+                results['action'] = '观望'
+                results['position'] = '0'
+                results['confidence'] = 'MEDIUM'
+                results['reason'] = '中军标的，但涨幅一般，观望'
         
-        elif role == '跟风':
+        elif role == '跟风' and total_score >= 40:
+            # 跟风 + 综合评分高（新增）
+            if current_change > 3:
+                results['signal'] = 'WAIT'
+                results['action'] = '只看不买'
+                results['position'] = '0'
+                results['confidence'] = 'MEDIUM'
+                results['reason'] = '跟风标的，涨幅较好，但只做套利，不做格局'
+            else:
+                results['signal'] = 'WAIT'
+                results['action'] = '只看不买'
+                results['position'] = '0'
+                results['confidence'] = 'LOW'
+                results['reason'] = '跟风标的，只做套利，不做格局'
+        
+        elif total_score >= 30:
+            # 综合评分一般，观望
             results['signal'] = 'WAIT'
-            results['action'] = '只看不买'
+            results['action'] = '观望'
             results['position'] = '0'
             results['confidence'] = 'LOW'
-            results['reason'] = '跟风标的，只做套利，不做格局'
+            results['reason'] = '综合评分一般，观望'
         
         else:  # 杂毛
             results['signal'] = 'SELL'

@@ -566,11 +566,17 @@ class DragonLifecycleManager:
 class DragonTrackingSystem:
     """龙头跟踪系统（整合类）"""
     
-    def __init__(self):
-        """初始化系统"""
+    def __init__(self, data_manager=None):
+        """
+        初始化系统
+        
+        Args:
+            data_manager: DataManager 实例，用于获取实时数据
+        """
         self.feature_extractor = DragonFeatureExtractor()
         self.scoring_model = DragonScoringModel()
         self.lifecycle_manager = DragonLifecycleManager()
+        self.data_manager = data_manager
     
     def analyze_stock(self, 
                      stock_code: str,
@@ -670,6 +676,165 @@ class DragonTrackingSystem:
         dragons.sort(key=lambda x: x['limit_up_days'], reverse=True)
         
         return dragons[:limit]
+    
+    def scan_market(self, stock_list: list, min_score: int = 40) -> List[Dict]:
+        """
+        极速扫描市场，寻找龙头股票
+        
+        使用 Easyquotation 批量极速接口，一次网络请求可获取数百只股票数据，
+        相比逐个调用 Akshare 快 100 倍以上。
+        
+        Args:
+            stock_list: 股票代码列表，如 ['300063', '000001', '600519']
+            min_score: 最低评分门槛（0-100），低于此分数的股票将不返回
+            
+        Returns:
+            符合条件的股票列表，每个元素包含：
+            - code: 股票代码
+            - name: 股票名称
+            - price: 最新价
+            - change_percent: 涨跌幅
+            - score: 综合评分
+            - role: 角色（核心龙/中军/跟风/杂毛）
+            - signal: 信号（BUY/BUY_AGGRESSIVE/WAIT/SELL）
+            - action: 操作建议
+            - confidence: 置信度
+            - reason: 原因
+            
+        Note:
+            使用 Easyquotation 的新浪接口，数据包含：
+            - name: 股票名称
+            - open: 开盘价
+            - close: 昨收价
+            - now: 最新价
+            - high: 最高价
+            - low: 最低价
+            - bid1_volume: 买一量（股数）
+            - ask1_volume: 卖一量（股数）
+            - volume: 成交量（手）
+            - turnover: 换手率
+            
+        Example:
+            >>> from logic.data_manager import DataManager
+            >>> dm = DataManager()
+            >>> system = DragonTrackingSystem(dm)
+            >>> results = system.scan_market(['300063', '000001'], min_score=60)
+            >>> for r in results:
+            ...     print(f"{r['name']}: {r['score']}分 - {r['signal']}")
+        """
+        if not self.data_manager:
+            logger.error("DataManager 未初始化，无法进行市场扫描")
+            return []
+        
+        if not stock_list:
+            logger.warning("股票列表为空")
+            return []
+        
+        results = []
+        
+        # 🔥🔥🔥 改造开始：使用批量极速接口 🔥🔥🔥
+        
+        # 1. 既然你有 N 只票，不要 for 循环去请求网络！
+        # 直接调用 DataManager 的新方法
+        logger.info(f"🚀 正在极速扫描 {len(stock_list)} 只标的...")
+        
+        realtime_data_map = self.data_manager.get_fast_price(stock_list)
+        
+        if not realtime_data_map:
+            logger.warning("未获取到任何实时数据")
+            return []
+        
+        # 2. 遍历本地数据字典 (速度极快)
+        for full_code, data in realtime_data_map.items():
+            # data 是 easyquotation 返回的字典，字段如下：
+            # 'name', 'open', 'close' (昨收), 'now', 'high', 'low', 
+            # 'bid1_volume' (买一量), 'ask1_volume' (卖一量), 'turnover' (换手)
+            
+            try:
+                # 提取关键数据用于 V3.0 判定
+                current_price = float(data.get('now', 0))
+                last_close = float(data.get('close', 0))
+                open_price = float(data.get('open', 0))
+                high_price = float(data.get('high', 0))
+                low_price = float(data.get('low', 0))
+                
+                # 停牌或是僵尸股
+                if current_price == 0 or last_close == 0:
+                    continue
+                
+                # 计算涨幅
+                pct_change = (current_price - last_close) / last_close * 100
+                
+                # 计算竞价/量比
+                # Easyquotation 的 bid1_volume 是股数，需要除以 100 变成手
+                bid_vol = int(data.get('bid1_volume', 0)) / 100
+                ask_vol = int(data.get('ask1_volume', 0)) / 100
+                
+                # 判断是否为 20cm（创业板、科创板）
+                is_20cm = full_code.startswith('sz30') or full_code.startswith('sh688')
+                
+                # 构造符合 DragonTactics 接口的数据包
+                stock_info = {
+                    'code': full_code[2:],  # 去掉前缀，只保留6位代码
+                    'name': data.get('name', ''),
+                    'price': current_price,
+                    'open': open_price,
+                    'pre_close': last_close,
+                    'high': high_price,
+                    'low': low_price,
+                    'bid_volume': bid_vol,  # 传入买一量作为竞价参考
+                    'ask_volume': ask_vol,
+                    'volume': float(data.get('volume', 0)),
+                    'turnover': float(data.get('turnover', 0)),
+                    'volume_ratio': 0,  # 如果没有量比字段，暂时置0
+                    'prev_pct_change': 0,  # 这里可能需要额外获取昨天的涨幅，或者简化逻辑
+                    'is_20cm': is_20cm
+                }
+                
+                # 使用 DragonTactics V3.0 进行评分
+                from logic.dragon_tactics import DragonTacticsV3
+                tactics = DragonTacticsV3()
+                check = tactics.check_dragon_criteria(stock_info)
+                
+                # 计算综合评分
+                total_score = check.get('total_score', 0)
+                
+                # 过滤低于最低分数的股票
+                if total_score < min_score:
+                    continue
+                
+                # 构造返回结果
+                result = {
+                    'code': full_code[2:],
+                    'name': data.get('name', ''),
+                    'price': current_price,
+                    'change_percent': round(pct_change, 2),
+                    'score': total_score,
+                    'role': check.get('role', '杂毛'),
+                    'signal': check.get('signal', 'WAIT'),
+                    'action': check.get('action', '观望'),
+                    'confidence': check.get('confidence', 'LOW'),
+                    'reason': check.get('reason', ''),
+                    'sector_role': check.get('sector_role', ''),
+                    'auction_intensity': check.get('auction_intensity', ''),
+                    'weak_to_strong': check.get('weak_to_strong', False),
+                    'intraday_support': check.get('intraday_support', ''),
+                    'is_20cm': is_20cm
+                }
+                
+                logger.info(f"✅ 发现目标: {data.get('name', '')} - {check.get('reason', '')}")
+                results.append(result)
+                
+            except Exception as e:
+                logger.error(f"处理股票 {full_code} 时出错: {e}")
+                continue
+        
+        # 按评分排序
+        results.sort(key=lambda x: x['score'], reverse=True)
+        
+        logger.info(f"扫描完成！共扫描 {len(stock_list)} 只股票，发现 {len(results)} 只符合条件股票")
+        
+        return results
 
 
 # 使用示例
