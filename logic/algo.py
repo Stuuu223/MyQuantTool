@@ -1249,6 +1249,10 @@ class QuantAlgo:
                         # 龙头战法分析
                         dragon_analysis = QuantAlgo.analyze_dragon_stock(df, current_price)
                         
+                        # 添加调试信息
+                        score = dragon_analysis.get('评级得分', 0)
+                        print(f"{name}({symbol}) - 涨幅:{stock_info['涨跌幅']:.2f}% - 评分:{score} - {dragon_analysis['龙头评级']}")
+                        
                         # 只保留评分达到门槛的股票
                         if dragon_analysis.get('评级得分', 0) >= min_score:
                             dragon_stocks.append({
