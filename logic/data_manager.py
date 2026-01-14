@@ -1,5 +1,8 @@
 import akshare as ak
-import easyquotation
+try:
+    import easyquotation
+except ImportError:
+    easyquotation = None
 import pandas as pd
 import sqlite3
 import os
@@ -42,13 +45,17 @@ class DataManager:
         self.cache_expire_seconds: int = 60  # 缓存60秒
         
         # 🔥🔥🔥 激活 Easyquotation 极速行情引擎 🔥🔥🔥
-        try:
-            logger.info("正在启动极速行情引擎 Easyquotation...")
-            # 使用新浪接口（最快，带买一卖一量）
-            self.quotation = easyquotation.use('sina')
-            logger.info("✅ Easyquotation 启动成功！")
-        except Exception as e:
-            logger.warning(f"❌ Easyquotation 启动失败: {e}，将回退到 Akshare")
+        if easyquotation is not None:
+            try:
+                logger.info("正在启动极速行情引擎 Easyquotation...")
+                # 使用新浪接口（最快，带买一卖一量）
+                self.quotation = easyquotation.use('sina')
+                logger.info("✅ Easyquotation 启动成功！")
+            except Exception as e:
+                logger.warning(f"❌ Easyquotation 启动失败: {e}，将回退到 Akshare")
+                self.quotation = None
+        else:
+            logger.warning("❌ Easyquotation 未安装，将使用 Akshare")
             self.quotation = None
         
         DataManager._initialized = True
@@ -142,35 +149,43 @@ class DataManager:
     @handle_errors(show_user_message=False)
     def get_history_data(self, symbol: str, start_date: str = "20240101", end_date: str = "20251231") -> pd.DataFrame:
         """获取股票历史数据
-        
+
         从本地数据库获取历史数据，如果缓存未命中则从 akshare 获取并缓存。
-        
+        使用内存缓存加速重复查询。
+
         Args:
             symbol: 股票代码（6位数字）
             start_date: 开始日期，格式 YYYYMMDD，默认 20240101
             end_date: 结束日期，格式 YYYYMMDD，默认 20251231
-            
+
         Returns:
             包含历史数据的 DataFrame，包含列：symbol, date, open, high, low, close, volume, turnover_rate
-            
+
         Raises:
             ValidationError: 股票代码格式错误
             DataError: 获取数据失败
-            
+
         Example:
             >>> db = DataManager()
             >>> df = db.get_history_data('600519', '20240101', '20241231')
             >>> print(df.head())
         """
         try:
+            # 🚀 先检查内存缓存
+            from logic.history_cache import get_history_cache
+            cache = get_history_cache()
+            cached_df = cache.get(symbol)
+            if cached_df is not None and not cached_df.empty:
+                return cached_df
+
             # 延迟初始化数据库
             self._ensure_db_initialized()
             # 验证股票代码
             if not symbol or len(symbol) != 6:
                 raise ValidationError(f"股票代码格式错误: {symbol}")
-            
+
             df = pd.read_sql(f"SELECT * FROM daily_bars WHERE symbol='{symbol}'", self.conn)
-            
+
             # 检查是否需要重新获取数据
             need_fetch = False
             if df.empty or len(df) < 5:
@@ -179,29 +194,33 @@ class DataManager:
                 need_fetch = True
             elif df['turnover_rate'].isna().all():
                 need_fetch = True
-            
+
             if need_fetch:
                 logger.info(f"本地缓存未命中，正在下载 {symbol} ...")
                 df_api = ak.stock_zh_a_hist(symbol=symbol, period="daily", start_date=start_date, end_date=end_date, adjust="qfq")
-                
+
                 if df_api.empty:
                     raise DataError(f"获取股票数据失败: {symbol}")
-                
+
                 df_api = df_api.rename(columns={
-                    '日期': 'date', '开盘': 'open', '最高': 'high', 
+                    '日期': 'date', '开盘': 'open', '最高': 'high',
                     '最低': 'low', '收盘': 'close', '成交量': 'volume', '换手率': 'turnover_rate'
                 })
                 df_api['symbol'] = symbol
-                
+
                 # 删除旧数据
                 self.conn.execute(f"DELETE FROM daily_bars WHERE symbol='{symbol}'")
                 self.conn.commit()
-                
+
                 # 插入新数据
                 cols = ['symbol', 'date', 'open', 'high', 'low', 'close', 'volume', 'turnover_rate']
                 df_api[cols].to_sql('daily_bars', self.conn, if_exists='append', index=False)
-                return df_api
-            
+                df = df_api
+
+            # 🚀 存入内存缓存
+            if not df.empty:
+                cache.set(symbol, df)
+
             return df
         except Exception as e:
             logger.error(f"数据获取异常: {e}", exc_info=True)
@@ -407,16 +426,17 @@ class DataManager:
     def get_fast_price(self, stock_list: list) -> dict:
         """
         极速批量获取行情 (专门给龙头扫描用)
-        
-        使用 Easyquotation 批量获取实时行情，一次网络请求可获取数百只股票数据，
+
+        优先使用 Easyquotation 批量获取实时行情，一次网络请求可获取数百只股票数据，
         耗时仅需 0.5-1 秒，相比逐个调用 Akshare 快 100 倍以上。
-        
+        如果 Easyquotation 不可用，则回退到使用 Akshare。
+
         Args:
             stock_list: 股票代码列表，如 ['300063', '000001', '600519']
-            
+
         Returns:
             字典，key 为带前缀的股票代码（如 'sz300063'），value 为行情数据字典
-            
+
             行情数据包含：
             - name: 股票名称
             - open: 开盘价
@@ -428,39 +448,101 @@ class DataManager:
             - ask1_volume: 卖一量（股数）
             - volume: 成交量（手）
             - turnover: 换手率
-            
+
         Note:
-            如果 Easyquotation 未初始化，返回空字典
-            
+            如果 Easyquotation 未初始化，会回退到使用 Akshare
+
         Example:
             >>> db = DataManager()
             >>> data = db.get_fast_price(['300063', '000001'])
             >>> print(data['sz300063']['name'])
         """
-        if not self.quotation:
-            logger.warning("Easyquotation 未初始化，无法使用极速接口")
-            return {}
-        
         if not stock_list:
             return {}
-        
-        # 转换代码格式 (easyquotation 需要 sh/sz 前缀)
-        full_codes = []
-        for code in stock_list:
-            if code.startswith('6'):
-                prefix = 'sh'
-            elif code.startswith('8') or code.startswith('4'):
-                prefix = 'bj'
-            else:
-                prefix = 'sz'
-            full_codes.append(f"{prefix}{code}")
-        
+
+        # 优先使用 Easyquotation
+        if self.quotation:
+            try:
+                # 转换代码格式 (easyquotation 需要 sh/sz 前缀)
+                full_codes = []
+                for code in stock_list:
+                    if code.startswith('6'):
+                        prefix = 'sh'
+                    elif code.startswith('8') or code.startswith('4'):
+                        prefix = 'bj'
+                    else:
+                        prefix = 'sz'
+                    full_codes.append(f"{prefix}{code}")
+
+                # 🚀 批量获取，避免一次请求过多股票导致连接失败
+                result = {}
+                batch_size = 500  # 每次最多 500 只股票
+                total_batches = (len(full_codes) + batch_size - 1) // batch_size
+
+                logger.info(f"正在使用 Easyquotation 极速获取 {len(full_codes)} 只股票的实时行情（分 {total_batches} 批）...")
+
+                for i in range(0, len(full_codes), batch_size):
+                    batch = full_codes[i:i + batch_size]
+                    batch_num = i // batch_size + 1
+                    try:
+                        logger.info(f"正在获取第 {batch_num}/{total_batches} 批数据 ({len(batch)} 只股票)...")
+                        batch_result = self.quotation.stocks(batch)
+                        result.update(batch_result)
+                        logger.info(f"✅ 第 {batch_num} 批获取完成，获取到 {len(batch_result)} 只股票")
+                    except Exception as e:
+                        logger.warning(f"第 {batch_num} 批获取失败: {e}，继续下一批")
+                        continue
+
+                logger.info(f"✅ Easyquotation 极速获取完成，共获取 {len(result)} 只股票")
+                return result
+            except Exception as e:
+                logger.error(f"Easyquotation 极速获取行情失败: {e}")
+                # 回退到 Akshare
+
+        # 回退方案：使用 Akshare
+        logger.warning("Easyquotation 不可用，回退到使用 Akshare 获取实时行情...")
         try:
-            # 🚀 一次网络请求获取所有股票，耗时仅需 0.5-1秒！
-            logger.info(f"正在极速获取 {len(full_codes)} 只股票的实时行情...")
-            result = self.quotation.stocks(full_codes)
-            logger.info(f"✅ 极速获取完成，耗时 < 1秒")
+            result = {}
+
+            # 使用 Akshare 获取实时行情
+            import time
+            start_time = time.time()
+
+            # 批量获取，每次最多 300 只股票
+            batch_size = 300
+            for i in range(0, len(stock_list), batch_size):
+                batch = stock_list[i:i + batch_size]
+                logger.info(f"正在使用 Akshare 获取第 {i//batch_size + 1} 批数据 ({len(batch)} 只股票)...")
+
+                for code in batch:
+                    try:
+                        # 使用 Akshare 获取实时数据
+                        realtime_data = self.get_realtime_data(code)
+                        if realtime_data:
+                            # 转换为与 easyquotation 相同的格式
+                            full_code = f"sh{code}" if code.startswith('6') else f"sz{code}"
+                            result[full_code] = {
+                                'name': '',  # Akshare 实时数据不包含名称
+                                'open': realtime_data.get('open', 0),
+                                'close': realtime_data.get('pre_close', 0),
+                                'now': realtime_data.get('price', 0),
+                                'high': realtime_data.get('high', 0),
+                                'low': realtime_data.get('low', 0),
+                                'volume': realtime_data.get('volume', 0),
+                                'turnover': realtime_data.get('turnover_rate', 0),
+                                'bid1_volume': 0,  # Akshare 实时数据不包含盘口数据
+                                'ask1_volume': 0,
+                                'bid1': 0,
+                                'ask1': 0
+                            }
+                    except Exception as e:
+                        logger.warning(f"获取股票 {code} 数据失败: {e}")
+                        continue
+
+            elapsed = time.time() - start_time
+            logger.info(f"✅ Akshare 获取完成，共 {len(result)} 只股票，耗时 {elapsed:.2f}秒")
             return result
+
         except Exception as e:
-            logger.error(f"极速获取行情失败: {e}")
+            logger.error(f"Akshare 获取行情失败: {e}")
             return {}

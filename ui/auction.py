@@ -62,17 +62,50 @@ def render_auction_tab(db, config):
                                 # 显示买卖盘口数据
                                 st.write("**买卖盘口：**")
                                 col6, col7, col8, col9 = st.columns(4)
-                                col6.metric("买一价", f"¥{stock.get('买一价', 0):.2f}")
-                                col7.metric("卖一价", f"¥{stock.get('卖一价', 0):.2f}")
-                                col8.metric("买一量", f"{stock.get('买一量', 0)} 手")
-                                col9.metric("卖一量", f"{stock.get('卖一量', 0)} 手")
                                 
-                                # 显示开盘涨幅和竞价抢筹度
+                                # 判断是否涨停
+                                symbol = stock.get('代码', '')
+                                change_pct = stock.get('涨跌幅', 0)
+                                
+                                # 根据股票代码判断涨停阈值
+                                if symbol.startswith('30') or symbol.startswith('68'):
+                                    # 创业板/科创板：20% 涨停
+                                    is_limit_up = change_pct >= 19.5
+                                else:
+                                    # 主板：10% 涨停
+                                    is_limit_up = change_pct >= 9.5
+                                
+                                if is_limit_up:
+                                    col6.metric("买一价", f"¥{stock.get('买一价', 0):.2f}", delta="涨停")
+                                    col7.metric("卖一价", "涨停板", delta="无卖单")
+                                    col8.metric("买一量", f"{stock.get('买一量', 0)} 手", delta="封单")
+                                    col9.metric("卖一量", "0 手", delta="无卖单")
+                                else:
+                                    col6.metric("买一价", f"¥{stock.get('买一价', 0):.2f}")
+                                    col7.metric("卖一价", f"¥{stock.get('卖一价', 0):.2f}")
+                                    col8.metric("买一量", f"{stock.get('买一量', 0)} 手")
+                                    col9.metric("卖一量", f"{stock.get('卖一量', 0)} 手")
+                                
+                                # 显示开盘涨幅、竞价抢筹度和买卖价差
                                 st.write("**其他指标：**")
-                                col10, col11, col12 = st.columns(3)
+                                col10, col11, col12, col13 = st.columns(4)
                                 col10.metric("开盘涨幅", f"{stock.get('开盘涨幅', 0):.2f}%")
                                 col11.metric("竞价抢筹度", f"{stock.get('竞价抢筹度', 0):.2%}")
-                                col12.metric("封单金额", f"¥{stock.get('封单金额', 0):.2f} 万")
+                                
+                                if is_limit_up:
+                                    # 涨停时，封单金额 = 买一量 * 价格
+                                    seal_amount = stock.get('买一量', 0) * stock.get('最新价', 0) / 10000  # 转换为万
+                                    col12.metric("封单金额", f"¥{seal_amount:.2f} 万", delta="涨停封单")
+                                    col13.metric("买卖价差", "N/A", delta="涨停")
+                                else:
+                                    col12.metric("封单金额", f"¥{stock.get('封单金额', 0):.2f} 万")
+                                    # 买卖价差
+                                    price_gap = stock.get('买一价', 0) and stock.get('卖一价', 0)
+                                    if price_gap and stock.get('买一价', 0) > 0:
+                                        gap_pct = (stock.get('卖一价', 0) - stock.get('买一价', 0)) / stock.get('买一价', 0) * 100
+                                        col13.metric("买卖价差", f"{gap_pct:.2f}%")
+                                    else:
+                                        col13.metric("买卖价差", "N/A")
                                 
                                 # 显示信号
                                 st.write("**竞价信号：**")
@@ -100,37 +133,106 @@ def render_auction_tab(db, config):
                     if active_stocks:
                         st.divider()
                         st.subheader("🟡 活跃股票（可关注）")
-                        df_active = pd.DataFrame([
-                            {
-                                '代码': s['代码'],
-                                '名称': s['名称'],
-                                '最新价': f"¥{s['最新价']:.2f}",
-                                '涨跌幅': f"{s['涨跌幅']:.2f}%",
-                                '量比': s['量比'],
-                                '换手率': f"{s['换手率']:.2f}%",
-                                '评分': s['评分'],
-                                '评级': s['评级']
-                            }
-                            for s in active_stocks
-                        ])
-                        st.dataframe(df_active, width="stretch", hide_index=True)
+                        for stock in active_stocks:
+                            with st.expander(f"{stock['评级']} {stock['名称']} ({stock['代码']}) - 评分: {stock['评分']}"):
+                                col1, col2 = st.columns(2)
+                                col1.metric("最新价", f"¥{stock['最新价']:.2f}")
+                                col2.metric("涨跌幅", f"{stock['涨跌幅']:.2f}%")
+                                
+                                # 显示量比、换手率、竞价量
+                                st.write("**实时数据：**")
+                                col3, col4, col5, col6 = st.columns(4)
+                                col3.metric("量比", f"{stock.get('量比', 0):.2f}")
+                                col4.metric("换手率", f"{stock.get('换手率', 0):.2f}%")
+                                col5.metric("竞价量", f"{stock.get('竞价量', 0)} 手")
+                                col6.metric("竞价抢筹度", f"{stock.get('竞价抢筹度', 0):.2%}")
+                                
+                                # 显示买卖盘口数据
+                                st.write("**买卖盘口：**")
+                                col7, col8, col9, col10 = st.columns(4)
+                                col7.metric("买一价", f"¥{stock.get('买一价', 0):.2f}")
+                                col8.metric("卖一价", f"¥{stock.get('卖一价', 0):.2f}")
+                                col9.metric("买一量", f"{stock.get('买一量', 0)} 手")
+                                col10.metric("卖一量", f"{stock.get('卖一量', 0)} 手")
+                                
+                                # 显示开盘涨幅、封单金额和买卖价差
+                                st.write("**其他指标：**")
+                                col11, col12, col13, col14 = st.columns(4)
+                                col11.metric("开盘涨幅", f"{stock.get('开盘涨幅', 0):.2f}%")
+                                col12.metric("封单金额", f"¥{stock.get('封单金额', 0):.2f} 万")
+                                col13.metric("买卖价差", f"{stock.get('买卖价差', 0):.2f}%")
+                                col14.metric("评分", f"{stock['评分']}/100")
+                                
+                                # 显示信号
+                                st.write("**竞价信号：**")
+                                for signal in stock['信号']:
+                                    st.write(f"- {signal}")
+                                
+                                # 显示操作建议
+                                st.info(f"**操作建议：** {stock['操作建议']}")
+                                
+                                # 弱转强标记
+                                if stock['弱转强']:
+                                    st.success("🔄 竞价弱转强！")
+                                
+                                # 添加到自选股按钮
+                                if st.button(f"⭐ 添加到自选", key=f"add_active_{stock['代码']}"):
+                                    watchlist = config.get('watchlist', [])
+                                    if stock['代码'] not in watchlist:
+                                        watchlist.append(stock['代码'])
+                                        config.set('watchlist', watchlist)
+                                        st.success(f"已添加 {stock['名称']} ({stock['代码']}) 到自选股")
+                                    else:
+                                        st.info(f"{stock['名称']} ({stock['代码']}) 已在自选股中")
                     
                     # 一般股票
                     if normal_stocks:
                         st.divider()
                         st.subheader("🟢 一般股票（观望）")
-                        df_normal = pd.DataFrame([
-                            {
-                                '代码': s['代码'],
-                                '名称': s['名称'],
-                                '最新价': f"¥{s['最新价']:.2f}",
-                                '涨跌幅': f"{s['涨跌幅']:.2f}%",
-                                '量比': s['量比'],
-                                '评分': s['评分']
-                            }
-                            for s in normal_stocks
-                        ])
-                        st.dataframe(df_normal, width="stretch", hide_index=True)
+                        for stock in normal_stocks[:20]:  # 最多显示20只，避免页面过长
+                            with st.expander(f"{stock['评级']} {stock['名称']} ({stock['代码']}) - 评分: {stock['评分']}"):
+                                col1, col2 = st.columns(2)
+                                col1.metric("最新价", f"¥{stock['最新价']:.2f}")
+                                col2.metric("涨跌幅", f"{stock['涨跌幅']:.2f}%")
+                                
+                                # 显示量比、换手率、竞价量
+                                st.write("**实时数据：**")
+                                col3, col4, col5, col6 = st.columns(4)
+                                col3.metric("量比", f"{stock.get('量比', 0):.2f}")
+                                col4.metric("换手率", f"{stock.get('换手率', 0):.2f}%")
+                                col5.metric("竞价量", f"{stock.get('竞价量', 0)} 手")
+                                col6.metric("竞价抢筹度", f"{stock.get('竞价抢筹度', 0):.2%}")
+                                
+                                # 显示买卖盘口数据
+                                st.write("**买卖盘口：**")
+                                col7, col8, col9, col10 = st.columns(4)
+                                col7.metric("买一价", f"¥{stock.get('买一价', 0):.2f}")
+                                col8.metric("卖一价", f"¥{stock.get('卖一价', 0):.2f}")
+                                col9.metric("买一量", f"{stock.get('买一量', 0)} 手")
+                                col10.metric("卖一量", f"{stock.get('卖一量', 0)} 手")
+                                
+                                # 显示开盘涨幅、封单金额和买卖价差
+                                st.write("**其他指标：**")
+                                col11, col12, col13, col14 = st.columns(4)
+                                col11.metric("开盘涨幅", f"{stock.get('开盘涨幅', 0):.2f}%")
+                                col12.metric("封单金额", f"¥{stock.get('封单金额', 0):.2f} 万")
+                                col13.metric("买卖价差", f"{stock.get('买卖价差', 0):.2f}%")
+                                col14.metric("评分", f"{stock['评分']}/100")
+                                
+                                # 显示信号
+                                st.write("**竞价信号：**")
+                                for signal in stock['信号']:
+                                    st.write(f"- {signal}")
+                                
+                                # 显示操作建议
+                                st.info(f"**操作建议：** {stock['操作建议']}")
+                                
+                                # 弱转强标记
+                                if stock['弱转强']:
+                                    st.success("🔄 竞价弱转强！")
+                        
+                        if len(normal_stocks) > 20:
+                            st.info(f"还有 {len(normal_stocks) - 20} 只一般股票未显示，请提高评分门槛以筛选更优质的股票")
                 else:
                     st.warning("⚠️ 未发现符合条件的竞价股票")
                     st.info("💡 提示：当前市场可能没有明显的竞价异动")

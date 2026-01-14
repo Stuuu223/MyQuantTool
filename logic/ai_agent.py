@@ -1396,6 +1396,10 @@ class DragonAIAgent:
     
     def _build_dragon_prompt(self, context: str) -> str:
         """构建龙头战法提示词（V3.0 暴力版）"""
+        # 提取赛道信息（避免在 f-string 中使用反斜杠）
+        sector = context.split('赛道: ')[1].split('\n')[0] if '赛道:' in context else '未知'
+        newline = '\n'
+
         prompt = f"""【角色定义】
 你不是传统的价值投资者，也不是看教科书的技术分析师。
 你是A股顶级游资操盘手。你的唯一目标是：捕捉市场最强龙头的加速段。
@@ -1408,7 +1412,7 @@ class DragonAIAgent:
 
 【分析流程】
 第一步：身份核查 (Code Check)
-- 代码前缀：{context.split('赛道: ')[1].split('\n')[0] if '赛道:' in context else '未知'}
+- 代码前缀：{sector}
 - 是否为 ST：检查代码中是否包含 ST
 
 第二步：龙头辨识度

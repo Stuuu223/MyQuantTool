@@ -1,6 +1,9 @@
 import pandas as pd
 import numpy as np
 from sklearn.cluster import KMeans
+from logic.logger import get_logger
+
+logger = get_logger(__name__)
 
 class QuantAlgo:
 
@@ -1291,9 +1294,11 @@ class QuantAlgo:
             
             # 获取全市场所有股票
             stock_list = stock_list_df['code'].tolist()
-            
-            # 使用 Easyquotation 极速获取实时数据
+
+            # 使用 Easyquotation 极速获取全市场实时数据
+            logger.info(f"开始扫描全市场 {len(stock_list)} 只股票的实时行情...")
             realtime_data = db.get_fast_price(stock_list)
+            logger.info(f"✅ 实时行情获取完成，获取到 {len(realtime_data)} 只股票数据")
             
             if not realtime_data:
                 return {
@@ -1333,18 +1338,29 @@ class QuantAlgo:
                         '代码': code,
                         '名称': name,
                         '最新价': current_price,
-                        '涨跌幅': pct_change
+                        '涨跌幅': pct_change,
+                        # 保存完整的实时数据，包括买卖盘口
+                        '买一价': data.get('bid1', 0),
+                        '卖一价': data.get('ask1', 0),
+                        '买一量': data.get('bid1_volume', 0),
+                        '卖一量': data.get('ask1_volume', 0),
+                        '成交量': data.get('volume', 0) / 100,  # 转换为手
+                        '成交额': data.get('turnover', 0),
+                        '开盘价': data.get('open', 0),
+                        '昨收价': data.get('close', 0),
+                        '最高价': data.get('high', 0),
+                        '最低价': data.get('low', 0)
                     })
                 except Exception as e:
                     continue
             
             # 筛选涨停板股票（涨跌幅 >= 9.9%）
             limit_up_stocks = [s for s in all_stocks if s['涨跌幅'] >= 9.9]
-            
+
             # 按涨跌幅排序，取前 limit 只
             limit_up_stocks.sort(key=lambda x: x['涨跌幅'], reverse=True)
             stocks_to_analyze = limit_up_stocks[:limit]
-            
+
             if not stocks_to_analyze:
                 return {
                     '数据状态': '无涨停板股票',
@@ -1352,29 +1368,44 @@ class QuantAlgo:
                     '扫描数量': len(stock_list),
                     '涨停板数量': len(limit_up_stocks)
                 }
-            
-            # 分析每只涨停板股票
-            dragon_stocks = []
-            
+
+            # 🚀 批量预加载历史数据，避免每次都查询数据库
+            logger.info(f"开始批量加载 {len(stocks_to_analyze)} 只涨停板股票的历史数据...")
+            history_data_cache = {}
+            for stock in stocks_to_analyze:
+                symbol = stock['代码']
+                try:
+                    df = db.get_history_data(symbol)
+                    if not df.empty and len(df) > 20:
+                        history_data_cache[symbol] = df
+                except Exception as e:
+                    logger.warning(f"加载股票 {symbol} 历史数据失败: {e}")
+            logger.info(f"✅ 历史数据加载完成，成功加载 {len(history_data_cache)} 只股票")
+
+            # 🚀 使用多线程并行分析
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            import threading
+
             # 构建股票代码到实时数据的映射（方便查找）
             realtime_map = {}
             for full_code, data in realtime_data.items():
                 code = full_code if len(full_code) == 6 else full_code[2:]
                 realtime_map[code] = data
-            
-            for stock_info in stocks_to_analyze:
+
+            # 定义分析函数
+            def analyze_single_stock(stock_info):
+                """分析单只股票"""
                 symbol = stock_info['代码']
                 name = stock_info['名称']
                 current_price = stock_info['最新价']
-                
+
                 # 过滤 ST 股
                 if 'ST' in name or '*ST' in name:
-                    print(f"⚠️ 跳过 ST 股: {name}({symbol})")
-                    continue
-                
+                    return None
+
                 try:
-                    # 获取历史数据
-                    df = db.get_history_data(symbol)
+                    # 从缓存中获取历史数据
+                    df = history_data_cache.get(symbol)
                     
                     if not df.empty and len(df) > 20:
                         # 龙头战法分析（传入股票代码和涨跌幅）
@@ -1382,6 +1413,12 @@ class QuantAlgo:
                         
                         # 获取实时数据（用于计算量比、换手率等）
                         realtime_data_item = realtime_map.get(symbol, {})
+                        
+                        # 优先使用 stock_info 中的买卖盘口数据，如果没有则使用 realtime_data_item
+                        bid1_volume = stock_info.get('买一量', 0) or realtime_data_item.get('bid1_volume', 0)
+                        ask1_volume = stock_info.get('卖一量', 0) or realtime_data_item.get('ask1_volume', 0)
+                        bid1_price = stock_info.get('买一价', 0) or realtime_data_item.get('bid1', 0)
+                        ask1_price = stock_info.get('卖一价', 0) or realtime_data_item.get('ask1', 0)
                         
                         # 计算开盘涨幅
                         open_price = realtime_data_item.get('open', 0)
@@ -1394,10 +1431,18 @@ class QuantAlgo:
                         # 计算量比（使用成交额来计算，更准确）
                         volume_ratio = 0
                         if not df.empty and len(df) > 5:
-                            avg_turnover = df['turnover'].tail(5).mean()  # 5日平均成交额
-                            current_turnover = realtime_data_item.get('turnover', 0)  # 当前成交额
-                            if avg_turnover > 0:
-                                volume_ratio = current_turnover / avg_turnover
+                            # 检查是否有 turnover 列
+                            if 'turnover' in df.columns:
+                                avg_turnover = df['turnover'].tail(5).mean()  # 5日平均成交额
+                                current_turnover = realtime_data_item.get('turnover', 0)  # 当前成交额
+                                if avg_turnover > 0:
+                                    volume_ratio = current_turnover / avg_turnover
+                            else:
+                                # 如果没有 turnover 列，使用成交量计算
+                                avg_volume = df['volume'].tail(5).mean()  # 5日平均成交量
+                                current_volume = realtime_data_item.get('volume', 0)  # 当前成交量
+                                if avg_volume > 0:
+                                    volume_ratio = current_volume / avg_volume
                         
                         # 计算换手率（使用历史数据中的换手率）
                         turnover_rate = 0
@@ -1421,21 +1466,23 @@ class QuantAlgo:
                         
                         # 计算封单金额（针对涨停股）
                         seal_amount = 0
-                        if stock_info['涨跌幅'] >= 9.5:  # 涨停或接近涨停
-                            seal_amount = ask1_volume * current_price / 100  # 卖一量 * 价格（估算封单金额）
-                        
+                        # 只有当卖一价为 0（真正涨停）时才计算封单金额
+                        if ask1_price == 0 and stock_info['涨跌幅'] >= 9.5:  # 涨停板
+                            # 涨停时，封单金额 = 买一量 * 价格（买一量就是封单量）
+                            seal_amount = bid1_volume * current_price / 10000  # 转换为万
+
                         # 计算买卖盘口价差
                         price_gap = 0
                         if bid1_price > 0 and ask1_price > 0:
                             price_gap = (ask1_price - bid1_price) / bid1_price * 100
-                        
+
                         # 添加调试信息
                         score = dragon_analysis.get('评级得分', 0)
                         print(f"{name}({symbol}) - 涨幅:{stock_info['涨跌幅']:.2f}% - 评分:{score} - {dragon_analysis['龙头评级']}")
-                        
+
                         # 只保留评分达到门槛的股票
                         if dragon_analysis.get('评级得分', 0) >= min_score:
-                            dragon_stocks.append({
+                            return {
                                 '代码': symbol,
                                 '名称': name,
                                 '最新价': current_price,
@@ -1455,10 +1502,31 @@ class QuantAlgo:
                                 '开盘涨幅': round(open_gap_pct, 2),
                                 '封单金额': round(seal_amount, 2),
                                 '买卖价差': round(price_gap, 2)
-                            })
+                            }
                 except Exception as e:
                     print(f"分析股票 {symbol} 失败: {e}")
-                    continue
+                    return None
+
+            # 🚀 使用线程池并行分析
+            dragon_stocks = []
+            max_workers = min(8, len(stocks_to_analyze))  # 最多 8 个线程
+
+            logger.info(f"开始并行分析 {len(stocks_to_analyze)} 只股票（使用 {max_workers} 个线程）...")
+
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # 提交所有分析任务
+                future_to_stock = {
+                    executor.submit(analyze_single_stock, stock): stock
+                    for stock in stocks_to_analyze
+                }
+
+                # 收集结果
+                for future in as_completed(future_to_stock):
+                    result = future.result()
+                    if result is not None:
+                        dragon_stocks.append(result)
+
+            logger.info(f"✅ 并行分析完成，找到 {len(dragon_stocks)} 只符合条件的股票")
             
             # 按评分排序
             dragon_stocks.sort(key=lambda x: x['评级得分'], reverse=True)
@@ -2153,8 +2221,10 @@ class QuantAlgo:
                     
                     # 计算封单金额（针对涨停股）
                     seal_amount = 0
-                    if pct_change >= 9.5:  # 涨停或接近涨停
-                        seal_amount = ask1_volume * current_price / 100  # 卖一量 * 价格（估算封单金额）
+                    # 只有当卖一价为 0（真正涨停）时才计算封单金额
+                    ask1_price = data.get('ask1', 0)
+                    if ask1_price == 0 and pct_change >= 9.5:  # 涨停板
+                        seal_amount = bid1_volume * current_price / 10000  # 买一量 * 价格（转换为万）
                     
                     # 计算买卖盘口价差
                     bid1_price = data.get('bid1', 0)
@@ -2438,10 +2508,12 @@ class QuantAlgo:
                 }
             
             stock_list = stock_list_df['code'].tolist()
-            
-            # 使用 Easyquotation 极速获取实时数据
+
+            # 使用 Easyquotation 极速获取全市场实时数据
             db = DataManager()
+            logger.info(f"开始扫描全市场 {len(stock_list)} 只股票的集合竞价数据...")
             realtime_data = db.get_fast_price(stock_list)
+            logger.info(f"✅ 集合竞价数据获取完成，获取到 {len(realtime_data)} 只股票数据")
             
             if not realtime_data:
                 db.close()
@@ -2497,25 +2569,50 @@ class QuantAlgo:
                             '最新价': current_price,
                             '涨跌幅': pct_change,
                             '成交量': volume,
-                            '竞价量': int(auction_volume)
+                            '竞价量': int(auction_volume),
+                            '买一价': data.get('bid1', 0),
+                            '卖一价': data.get('ask1', 0),
+                            '买一量': bid1_volume,
+                            '卖一量': ask1_volume
                         })
                 except Exception as e:
                     continue
             
-            db.close()
-            
+            # 不要关闭数据库连接，后面还要用
+            # db.close()
+
             if not all_stocks:
                 return {
                     '数据状态': '无符合条件的股票',
                     '说明': '当前市场无放量或涨幅明显的股票'
                 }
-            
+
+            # 🚀 优化：先按涨跌幅和竞价量初步排序，限制候选股票数量
+            # 避免加载过多历史数据导致超时
+            max_candidates = min(200, len(all_stocks))  # 最多 200 只候选股票
+            all_stocks.sort(key=lambda x: (x['涨跌幅'], x['竞价量']), reverse=True)
+            all_stocks = all_stocks[:max_candidates]
+            logger.info(f"初步筛选后保留 {len(all_stocks)} 只候选股票")
+
             # 按综合指标排序（竞价量和涨跌幅加权），取前limit只进行深度分析
+            # 🚀 批量预加载历史数据
+            logger.info(f"开始批量加载 {len(all_stocks)} 只候选股票的历史数据...")
+            history_data_cache = {}
             for stock in all_stocks:
-                # 计算量比（需要历史数据）
+                symbol = stock['代码']
                 try:
-                    df = db.get_history_data(stock['代码'])
+                    df = db.get_history_data(symbol)
                     if not df.empty and len(df) > 5:
+                        history_data_cache[symbol] = df
+                except Exception as e:
+                    logger.warning(f"加载股票 {symbol} 历史数据失败: {e}")
+            logger.info(f"✅ 历史数据加载完成，成功加载 {len(history_data_cache)} 只股票")
+
+            for stock in all_stocks:
+                # 计算量比（使用缓存的历史数据）
+                try:
+                    df = history_data_cache.get(stock['代码'])
+                    if df is not None and not df.empty and len(df) > 5:
                         avg_volume = df['volume'].tail(5).mean()
                         if avg_volume > 0:
                             stock['量比'] = stock['成交量'] / avg_volume
@@ -2532,150 +2629,181 @@ class QuantAlgo:
             
             # 按综合得分排序，取前 limit 只
             filtered_stocks = sorted(all_stocks, key=lambda x: x['综合得分'], reverse=True)[:limit]
-            
-            # 分析每只股票
-            db = DataManager()
-            auction_stocks = []
-            
-            for stock in filtered_stocks:
-                symbol = stock['代码']
-                name = stock['名称']
-                current_price = stock['最新价']
-                change_pct = stock['涨跌幅']
-                volume_ratio = stock['量比']
-                auction_volume = stock['竞价量']
-                
-                # 获取实时数据（用于计算额外指标）
-                        realtime_data = realtime_map.get(symbol, {})
-                        
-                        # 计算开盘涨幅
-                        open_price = realtime_data.get('open', 0)
-                        last_close = realtime_data.get('close', 0)
-                        if open_price > 0 and last_close > 0:
-                            open_gap_pct = (open_price - last_close) / last_close * 100
-                        else:
-                            open_gap_pct = 0
-                        
-                        # 获取买卖盘口数据
-                        bid1_volume = realtime_data.get('bid1_volume', 0)  # 买一量（股数）
-                        ask1_volume = realtime_data.get('ask1_volume', 0)  # 卖一量（股数）
-                        bid1_price = realtime_data.get('bid1', 0)  # 买一价
-                        ask1_price = realtime_data.get('ask1', 0)  # 卖一价
-                        
-                        # 计算竞价抢筹度（竞价量 / 昨日成交量）
-                        auction_ratio = 0
-                        if not df.empty and len(df) > 1:
-                            yesterday_volume = df['volume'].iloc[-2]  # 昨日成交量（手数）
-                            if yesterday_volume > 0:
-                                auction_ratio = auction_volume / yesterday_volume
-                        
-                        # 计算封单金额（针对涨停股）
-                        seal_amount = 0
-                        if change_pct >= 9.5:  # 涨停或接近涨停
-                            seal_amount = ask1_volume * current_price / 100  # 卖一量 * 价格（估算封单金额）
-                        
-                        # 计算买卖盘口价差
-                        price_gap = 0
-                        if bid1_price > 0 and ask1_price > 0:
-                            price_gap = (ask1_price - bid1_price) / bid1_price * 100
-                        
-                        # 检测竞价弱转强
-                        weak_to_strong = QuantAlgo.detect_auction_weak_to_strong(df, symbol)
-                        
-                        # 获取换手率
-                        turnover_rate = 0
-                        if 'turnover_rate' in df.columns:
-                            turnover_rate = df['turnover_rate'].iloc[-1]
-                        
-                        # 计算综合评分
-                        score = 0
-                        signals = []
-                        
-                        # 量比评分
-                        if volume_ratio > 3:
-                            score += 30
-                            signals.append(f"大幅放量（量比{volume_ratio:.2f}）")
-                        elif volume_ratio > 2:
-                            score += 25
-                            signals.append(f"放量（量比{volume_ratio:.2f}）")
-                        elif volume_ratio > 1.5:
-                            score += 20
-                            signals.append(f"温和放量（量比{volume_ratio:.2f}）")
-                        
-                        # 涨跌幅评分
-                        if change_pct > 5:
-                            score += 25
-                            signals.append(f"大幅高开{change_pct:.2f}%")
-                        elif change_pct > 3:
-                            score += 20
-                            signals.append(f"高开{change_pct:.2f}%")
-                        elif change_pct > 0:
-                            score += 15
-                            signals.append(f"小幅高开{change_pct:.2f}%")
-                        
-                        # 换手率评分
-                        if 2 <= turnover_rate <= 10:
-                            score += 25
-                            signals.append(f"换手率适中（{turnover_rate:.2f}%）")
-                        elif turnover_rate > 10:
-                            score += 15
-                            signals.append(f"换手率较高（{turnover_rate:.2f}%）")
-                        
-                        # 竞价量评分（新增）
-                        if auction_volume > 1000:  # 竞价量超过1000手
-                            score += 10
-                            signals.append(f"竞价量充足（{auction_volume}手）")
-                        elif auction_volume > 100:
-                            score += 5
-                            signals.append(f"竞价量一般（{auction_volume}手）")
-                        
-                        # 弱转强加分
-                        if weak_to_strong.get('是否弱转强'):
-                            score += 20
-                            signals.append("竞价弱转强")
-                        
-                        # 评级
-                        if score >= 80:
-                            rating = "🔥 强势"
-                            suggestion = "重点关注，竞价强势，可考虑参与"
-                        elif score >= 60:
-                            rating = "🟡 活跃"
-                            suggestion = "关注，竞价活跃，观察盘中走势"
-                        elif score >= 40:
-                            rating = "🟢 一般"
-                            suggestion = "一般，信号较弱，观望为主"
-                        else:
-                            rating = "⚪ 弱势"
-                            suggestion = "弱势，不建议参与"
-                        
-                        auction_stocks.append({
-                            '代码': symbol,
-                            '名称': name,
-                            '最新价': current_price,
-                            '涨跌幅': change_pct,
-                            '量比': round(volume_ratio, 2),
-                            '换手率': round(turnover_rate, 2),
-                            '竞价量': auction_volume,
-                            '买一价': round(bid1_price, 2),
-                            '卖一价': round(ask1_price, 2),
-                            '买一量': int(bid1_volume / 100),
-                            '卖一量': int(ask1_volume / 100),
-                            '竞价抢筹度': round(auction_ratio, 4),
-                            '开盘涨幅': round(open_gap_pct, 2),
-                            '封单金额': round(seal_amount, 2),
-                            '买卖价差': round(price_gap, 2),
-                            '评分': score,
-                            '评级': rating,
-                            '信号': signals,
-                            '操作建议': suggestion,
-                            '弱转强': weak_to_strong.get('是否弱转强', False)
-                        })
+
+            # 🚀 使用多线程并行分析
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+
+            # 构建股票代码到实时数据的映射（方便查找）
+            realtime_map = {}
+            for full_code, data in realtime_data.items():
+                code = full_code if len(full_code) == 6 else full_code[2:]
+                realtime_map[code] = data
+
+            # 定义分析函数
+            def analyze_auction_stock(stock):
+                """分析单只集合竞价股票"""
+                try:
+                    symbol = stock['代码']
+                    name = stock['名称']
+                    current_price = stock['最新价']
+                    change_pct = stock['涨跌幅']
+                    volume_ratio = stock['量比']
+                    auction_volume = stock['竞价量']
+
+                    # 获取实时数据（用于计算额外指标）
+                    realtime_data_item = realtime_map.get(symbol, {})
+
+                    # 计算开盘涨幅
+                    open_price = realtime_data_item.get('open', 0)
+                    last_close = realtime_data_item.get('close', 0)
+                    if open_price > 0 and last_close > 0:
+                        open_gap_pct = (open_price - last_close) / last_close * 100
+                    else:
+                        open_gap_pct = 0
+
+                    # 获取买卖盘口数据
+                    bid1_volume = realtime_data_item.get('bid1_volume', 0)  # 买一量（股数）
+                    ask1_volume = realtime_data_item.get('ask1_volume', 0)  # 卖一量（股数）
+                    bid1_price = realtime_data_item.get('bid1', 0)  # 买一价
+                    ask1_price = realtime_data_item.get('ask1', 0)  # 卖一价
+
+                    # 计算竞价抢筹度（竞价量 / 昨日成交量）
+                    auction_ratio = 0
+                    if not df.empty and len(df) > 1:
+                        yesterday_volume = df['volume'].iloc[-2]  # 昨日成交量（手数）
+                        if yesterday_volume > 0:
+                            auction_ratio = auction_volume / yesterday_volume
+
+                    # 计算封单金额（针对涨停股）
+                    seal_amount = 0
+                    # 只有当卖一价为 0（真正涨停）时才计算封单金额
+                    if ask1_price == 0 and change_pct >= 9.5:  # 涨停板
+                        # 涨停时，封单金额 = 买一量 * 价格（买一量就是封单量）
+                        seal_amount = bid1_volume * current_price / 10000  # 转换为万
+
+                    # 计算买卖盘口价差
+                    price_gap = 0
+                    if bid1_price > 0 and ask1_price > 0:
+                        price_gap = (ask1_price - bid1_price) / bid1_price * 100
+
+                    # 检测竞价弱转强
+                    weak_to_strong = QuantAlgo.detect_auction_weak_to_strong(df, symbol)
+
+                    # 获取换手率
+                    turnover_rate = 0
+                    if 'turnover_rate' in df.columns:
+                        turnover_rate = df['turnover_rate'].iloc[-1]
+
+                    # 计算综合评分
+                    score = 0
+                    signals = []
+
+                    # 量比评分
+                    if volume_ratio > 3:
+                        score += 30
+                        signals.append(f"大幅放量（量比{volume_ratio:.2f}）")
+                    elif volume_ratio > 2:
+                        score += 25
+                        signals.append(f"放量（量比{volume_ratio:.2f}）")
+                    elif volume_ratio > 1.5:
+                        score += 20
+                        signals.append(f"温和放量（量比{volume_ratio:.2f}）")
+
+                    # 涨跌幅评分
+                    if change_pct > 5:
+                        score += 25
+                        signals.append(f"大幅高开{change_pct:.2f}%")
+                    elif change_pct > 3:
+                        score += 20
+                        signals.append(f"高开{change_pct:.2f}%")
+                    elif change_pct > 0:
+                        score += 15
+                        signals.append(f"小幅高开{change_pct:.2f}%")
+
+                    # 换手率评分
+                    if 2 <= turnover_rate <= 10:
+                        score += 25
+                        signals.append(f"换手率适中（{turnover_rate:.2f}%）")
+                    elif turnover_rate > 10:
+                        score += 15
+                        signals.append(f"换手率较高（{turnover_rate:.2f}%）")
+
+                    # 竞价量评分（新增）
+                    if auction_volume > 1000:  # 竞价量超过1000手
+                        score += 10
+                        signals.append(f"竞价量充足（{auction_volume}手）")
+                    elif auction_volume > 100:
+                        score += 5
+                        signals.append(f"竞价量一般（{auction_volume}手）")
+
+                    # 弱转强加分
+                    if weak_to_strong.get('是否弱转强'):
+                        score += 20
+                        signals.append("竞价弱转强")
+
+                    # 评级
+                    if score >= 80:
+                        rating = "🔥 强势"
+                        suggestion = "重点关注，竞价强势，可考虑参与"
+                    elif score >= 60:
+                        rating = "🟡 活跃"
+                        suggestion = "关注，竞价活跃，观察盘中走势"
+                    elif score >= 40:
+                        rating = "🟢 一般"
+                        suggestion = "一般，信号较弱，观望为主"
+                    else:
+                        rating = "⚪ 弱势"
+                        suggestion = "弱势，不建议参与"
+
+                    return {
+                        '代码': symbol,
+                        '名称': name,
+                        '最新价': current_price,
+                        '涨跌幅': change_pct,
+                        '量比': round(volume_ratio, 2),
+                        '换手率': round(turnover_rate, 2),
+                        '竞价量': auction_volume,
+                        '买一价': round(bid1_price, 2),
+                        '卖一价': round(ask1_price, 2),
+                        '买一量': int(bid1_volume / 100),
+                        '卖一量': int(ask1_volume / 100),
+                        '竞价抢筹度': round(auction_ratio, 4),
+                        '开盘涨幅': round(open_gap_pct, 2),
+                        '封单金额': round(seal_amount, 2),
+                        '买卖价差': round(price_gap, 2),
+                        '评分': score,
+                        '评级': rating,
+                        '信号': signals,
+                        '操作建议': suggestion,
+                        '弱转强': weak_to_strong.get('是否弱转强', False)
+                    }
                 except Exception as e:
                     print(f"分析股票 {symbol} 失败: {e}")
-                    continue
-            
+                    return None
+
+            # 🚀 使用线程池并行分析
+            auction_stocks = []
+            max_workers = min(8, len(filtered_stocks))  # 最多 8 个线程
+
+            logger.info(f"开始并行分析 {len(filtered_stocks)} 只集合竞价股票（使用 {max_workers} 个线程）...")
+
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # 提交所有分析任务
+                future_to_stock = {
+                    executor.submit(analyze_auction_stock, stock): stock
+                    for stock in filtered_stocks
+                }
+
+                # 收集结果
+                for future in as_completed(future_to_stock):
+                    result = future.result()
+                    if result is not None:
+                        auction_stocks.append(result)
+
+            logger.info(f"✅ 并行分析完成，找到 {len(auction_stocks)} 只符合条件的股票")
+
             db.close()
-            
+
             # 按评分排序
             auction_stocks.sort(key=lambda x: x['评分'], reverse=True)
             
