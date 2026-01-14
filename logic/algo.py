@@ -1208,8 +1208,19 @@ class QuantAlgo:
                     pct_change = (current_price - last_close) / last_close * 100
                     
                     # 提取股票代码（去掉前缀）
-                    code = full_code[2:] if len(full_code) > 2 else full_code
+                    # Easyquotation 返回的 key 可能是 '000001' 或 'sz000001'
+                    if len(full_code) == 6:
+                        code = full_code  # 直接使用
+                    elif len(full_code) > 6:
+                        code = full_code[2:]  # 去掉前缀
+                    else:
+                        continue  # 代码格式不对
+                    
                     name = data.get('name', '')
+                    
+                    # 只保留 A 股股票（6位数字，以 0、3、6 开头）
+                    if not (len(code) == 6 and code.isdigit() and code[0] in ['0', '3', '6']):
+                        continue
                     
                     all_stocks.append({
                         '代码': code,
@@ -1220,26 +1231,33 @@ class QuantAlgo:
                 except Exception as e:
                     continue
             
-            # 按涨跌幅排序
-            all_stocks.sort(key=lambda x: x['涨跌幅'], reverse=True)
+            # 筛选涨停板股票（涨跌幅 >= 9.9%）
+            limit_up_stocks = [s for s in all_stocks if s['涨跌幅'] >= 9.9]
             
-            # 只分析前 limit 只股票（避免分析太多）
-            stocks_to_analyze = all_stocks[:limit]
+            # 按涨跌幅排序，取前 limit 只
+            limit_up_stocks.sort(key=lambda x: x['涨跌幅'], reverse=True)
+            stocks_to_analyze = limit_up_stocks[:limit]
             
             if not stocks_to_analyze:
                 return {
-                    '数据状态': '无股票数据',
-                    '说明': '未获取到任何股票数据',
-                    '扫描数量': len(stock_list)
+                    '数据状态': '无涨停板股票',
+                    '说明': '当前市场无涨停板股票',
+                    '扫描数量': len(stock_list),
+                    '涨停板数量': len(limit_up_stocks)
                 }
             
-            # 分析每只股票（不限制涨跌幅）
+            # 分析每只涨停板股票
             dragon_stocks = []
             
             for stock_info in stocks_to_analyze:
                 symbol = stock_info['代码']
                 name = stock_info['名称']
                 current_price = stock_info['最新价']
+                
+                # 过滤 ST 股
+                if 'ST' in name or '*ST' in name:
+                    print(f"⚠️ 跳过 ST 股: {name}({symbol})")
+                    continue
                 
                 try:
                     # 获取历史数据
@@ -1275,6 +1293,7 @@ class QuantAlgo:
             return {
                 '数据状态': '正常',
                 '扫描数量': len(stock_list),
+                '涨停板数量': len(limit_up_stocks),
                 '分析数量': len(stocks_to_analyze),
                 '符合条件数量': len(dragon_stocks),
                 '龙头股列表': dragon_stocks
