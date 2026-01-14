@@ -412,11 +412,11 @@ class DragonTactics:
         
         pct_change = (current_price - pre_close) / pre_close * 100
         
-        # 3. 竞价分析（使用涨跌幅作为代理）
-        if pct_change > 5:
+        # 3. 竞价分析（使用涨跌幅作为代理，降低门槛）
+        if pct_change > 3:
             auction_score = 80
             auction_intensity = '强'
-        elif pct_change > 3:
+        elif pct_change > 2:
             auction_score = 60
             auction_intensity = '中等'
         elif pct_change > 1:
@@ -429,14 +429,14 @@ class DragonTactics:
             auction_score = 0
             auction_intensity = '极弱'
         
-        # 4. 板块地位分析（使用涨跌幅作为代理）
-        if pct_change > 7:
+        # 4. 板块地位分析（使用涨跌幅作为代理，降低门槛）
+        if pct_change > 5:
             sector_role_score = 80
             sector_role = '龙一（推断）'
-        elif pct_change > 5:
+        elif pct_change > 3:
             sector_role_score = 70
             sector_role = '前三（推断）'
-        elif pct_change > 3:
+        elif pct_change > 2:
             sector_role_score = 60
             sector_role = '中军（推断）'
         elif pct_change > 1:
@@ -449,15 +449,23 @@ class DragonTactics:
             sector_role_score = 0
             sector_role = '杂毛'
         
-        # 5. 弱转强分析（简化版，基于开盘价）
+        # 5. 弱转强分析（基于昨日和今日涨跌幅，增加更多情况）
         prev_pct_change = stock_info.get('prev_pct_change', 0)
-        if prev_pct_change < 0 and pct_change > 0:
-            # 昨天跌，今天涨
+        if prev_pct_change < -3 and pct_change > 0:
+            # 昨天大跌，今天涨
             weak_to_strong_score = 100
             weak_to_strong = True
-        elif prev_pct_change > 5 and pct_change > 3:
+        elif prev_pct_change < 0 and pct_change > 0:
+            # 昨天跌，今天涨
+            weak_to_strong_score = 80
+            weak_to_strong = True
+        elif prev_pct_change > 5 and pct_change > 0:
             # 昨天大涨，今天继续涨（强更强）
             weak_to_strong_score = 90
+            weak_to_strong = True
+        elif prev_pct_change > 0 and pct_change > 0:
+            # 昨天涨，今天涨（连板）
+            weak_to_strong_score = 60
             weak_to_strong = True
         else:
             weak_to_strong_score = 0
@@ -544,8 +552,8 @@ class DragonTactics:
         results['role'] = role
         
         # 决策逻辑（改进版，降低门槛）
-        if role == '核心龙' and auction_score >= 60:
-            # 核心龙 + 竞价抢筹
+        if role == '核心龙' and auction_score >= 50:
+            # 核心龙 + 竞价抢筹（降低门槛从60到50）
             if is_20cm and current_change > 10:
                 results['signal'] = 'BUY_AGGRESSIVE'
                 results['action'] = '扫板/排板'
@@ -571,16 +579,16 @@ class DragonTactics:
                 results['confidence'] = 'MEDIUM'
                 results['reason'] = '核心龙头，但涨幅不够，观望'
         
-        elif role == '核心龙' and weak_to_strong_score >= 50:
-            # 核心龙 + 弱转强（降低门槛从70到50）
+        elif role == '核心龙' and weak_to_strong_score >= 40:
+            # 核心龙 + 弱转强（降低门槛从50到40）
             results['signal'] = 'BUY_DIP'
             results['action'] = '低吸博弈'
             results['position'] = '半仓'
             results['confidence'] = 'HIGH'
             results['reason'] = '核心龙头，弱转强形态，低吸博弈'
         
-        elif role == '中军' and total_score >= 50:
-            # 中军 + 综合评分高（降低门槛从70到50）
+        elif role == '中军' and total_score >= 40:
+            # 中军 + 综合评分高（降低门槛从50到40）
             if current_change > 5:
                 results['signal'] = 'BUY'
                 results['action'] = '打板/跟随'
@@ -594,8 +602,8 @@ class DragonTactics:
                 results['confidence'] = 'MEDIUM'
                 results['reason'] = '中军标的，但涨幅一般，观望'
         
-        elif role == '跟风' and total_score >= 40:
-            # 跟风 + 综合评分高（新增）
+        elif role == '跟风' and total_score >= 30:
+            # 跟风 + 综合评分高（降低门槛从40到30）
             if current_change > 3:
                 results['signal'] = 'WAIT'
                 results['action'] = '只看不买'
@@ -609,7 +617,13 @@ class DragonTactics:
                 results['confidence'] = 'LOW'
                 results['reason'] = '跟风标的，只做套利，不做格局'
         
-        elif total_score >= 30:
+        elif total_score >= 20:
+            # 综合评分一般（降低门槛从30到20）
+            results['signal'] = 'WAIT'
+            results['action'] = '观望'
+            results['position'] = '0'
+            results['confidence'] = 'LOW'
+            results['reason'] = '综合评分一般，观望'
             # 综合评分一般，观望
             results['signal'] = 'WAIT'
             results['action'] = '观望'
