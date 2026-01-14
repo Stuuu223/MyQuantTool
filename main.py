@@ -209,6 +209,138 @@ SessionStateManager.init()
 st.title("🚀 个人化A股智能投研终端")
 st.markdown("基于 DeepSeek AI & AkShare 数据")
 
+# --- V6.0 逻辑深化：市场情绪周期和主线识别展示 ---
+@st.cache_resource
+def get_market_cycle_manager():
+    """获取市场周期管理器实例（缓存）"""
+    try:
+        from logic.market_cycle import MarketCycleManager
+        return MarketCycleManager()
+    except Exception as e:
+        logger.warning(f"市场周期管理器初始化失败: {e}")
+        return None
+
+@st.cache_resource
+def get_theme_detector():
+    """获取主线识别器实例（缓存）"""
+    try:
+        from logic.theme_detector import ThemeDetector
+        return ThemeDetector()
+    except Exception as e:
+        logger.warning(f"主线识别器初始化失败: {e}")
+        return None
+
+# 显示市场情绪周期和主线识别
+def show_market_weather():
+    """在主页显示市场"天气"（情绪周期和主线）"""
+    try:
+        # 获取实例
+        cycle_manager = get_market_cycle_manager()
+        theme_detector = get_theme_detector()
+        
+        if not cycle_manager and not theme_detector:
+            return
+        
+        # 创建三列布局
+        col1, col2, col3 = st.columns([2, 2, 1])
+        
+        # 周期类型对应的显示名称和颜色
+        cycle_display = {
+            'BOOM': {'name': '🔥 高潮期', 'color': '#FF6B6B'},
+            'MAIN_RISE': {'name': '🚀 主升期', 'color': '#4ECDC4'},
+            'CHAOS': {'name': '🌊 混沌期', 'color': '#FFD93D'},
+            'ICE': {'name': '🧊 冰点期', 'color': '#6BCB77'},
+            'DECLINE': {'name': '📉 退潮期', 'color': '#FF8C42'}
+        }
+        
+        with col1:
+            if cycle_manager:
+                cycle_info = cycle_manager.get_current_phase()
+                cycle_type = cycle_info.get('cycle', 'CHAOS')
+                display_info = cycle_display.get(cycle_type, cycle_display['CHAOS'])
+                
+                st.markdown(f"""
+                <div style="
+                    background-color: {display_info['color']};
+                    padding: 15px;
+                    border-radius: 10px;
+                    margin-bottom: 10px;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                ">
+                    <h3 style="color: white; margin: 0; font-size: 18px;">
+                        🌤️ 今日天气：{display_info['name']}
+                    </h3>
+                    <p style="color: white; margin: 5px 0 0 0; font-size: 14px;">
+                        {cycle_info.get('description', '')}
+                    </p>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # 显示策略建议
+                st.info(f"💡 策略建议：{cycle_info.get('strategy', '')}")
+                
+                # 显示风险警告
+                risk_warning = cycle_manager.get_risk_warning()
+                if risk_warning:
+                    st.warning(risk_warning)
+        
+        with col2:
+            if theme_detector:
+                # 获取涨停股票
+                limit_up_stocks = []
+                if cycle_manager:
+                    limit_up_stocks = cycle_manager.market_indicators.get('limit_up_stocks', [])
+                
+                theme_info = theme_detector.analyze_main_theme(limit_up_stocks)
+                
+                st.markdown(f"""
+                <div style="
+                    background-color: #667EEA;
+                    padding: 15px;
+                    border-radius: 10px;
+                    margin-bottom: 10px;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                ">
+                    <h3 style="color: white; margin: 0; font-size: 18px;">
+                        🎯 今日主线：{theme_info.get('main_theme', '未知')}
+                    </h3>
+                    <p style="color: white; margin: 5px 0 0 0; font-size: 14px;">
+                        热度：{theme_info.get('theme_heat', 0):.1%}
+                    </p>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # 显示投资建议
+                st.info(f"💡 {theme_info.get('suggestion', '')}")
+        
+        with col3:
+            # 显示核心指标
+            if cycle_manager:
+                indicators = cycle_manager.get_market_emotion()
+                
+                st.markdown("### 📊 核心指标")
+                
+                metrics = [
+                    ("涨停家数", indicators.get('limit_up_count', 0), "🔥"),
+                    ("跌停家数", indicators.get('limit_down_count', 0), "❄️"),
+                    ("最高板", indicators.get('highest_board', 0), "🏔️"),
+                    ("平均溢价", f"{indicators.get('avg_profit', 0):.1%}", "💰"),
+                    ("炸板率", f"{indicators.get('burst_rate', 0):.1%}", "💥"),
+                    ("晋级率", f"{indicators.get('promotion_rate', 0):.1%}", "⬆️")
+                ]
+                
+                for label, value, emoji in metrics:
+                    st.metric(label, f"{emoji} {value}")
+        
+        st.markdown("---")
+    
+    except Exception as e:
+        logger.error(f"显示市场天气失败: {e}")
+        st.error(f"市场天气显示失败: {e}")
+
+# 调用显示函数
+show_market_weather()
+
 # --- 辅助函数 ---
 def parse_selected_stock(selected_stock, fallback_symbol=None):
     """

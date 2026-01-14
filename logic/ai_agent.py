@@ -250,13 +250,70 @@ class RealAIAgent:
             context_parts.append(f"主力净流入: {money_flow.get('主力净流入', 'N/A')}")
 
         # 市场上下文
-        if market_context:
-            context_parts.append("\n【市场环境】")
-            context_parts.append(f"大盘指数: {market_context.get('index', 'N/A')}")
-            context_parts.append(f"大盘涨跌幅: {market_context.get('index_change', 'N/A')}%")
-            context_parts.append(f"市场情绪: {market_context.get('sentiment', 'N/A')}")
 
-        return "\n".join(context_parts)
+                if market_context:
+
+                    context_parts.append("\n【市场环境】")
+
+                    context_parts.append(f"大盘指数: {market_context.get('index', 'N/A')}")
+
+                    context_parts.append(f"大盘涨跌幅: {market_context.get('index_change', 'N/A')}%")
+
+                    context_parts.append(f"市场情绪: {market_context.get('sentiment', 'N/A')}")
+
+                
+
+                # 🆕 V6.0 新增：市场情绪周期和主线识别
+
+                market_cycle = market_context.get('market_cycle', {}) if market_context else {}
+
+                if market_cycle:
+
+                    cycle_type = market_cycle.get('cycle', 'UNKNOWN')
+
+                    cycle_desc = market_cycle.get('description', '')
+
+                    cycle_strategy = market_cycle.get('strategy', '')
+
+                    risk_level = market_cycle.get('risk_level', 3)
+
+                    
+
+                    context_parts.append("\n【🌤️ 今日市场天气】")
+
+                    context_parts.append(f"市场周期: {cycle_type}")
+
+                    context_parts.append(f"周期描述: {cycle_desc}")
+
+                    context_parts.append(f"风险等级: {risk_level}/5")
+
+                    context_parts.append(f"周期策略: {cycle_strategy}")
+
+                
+
+                main_theme = market_context.get('main_theme', {}) if market_context else {}
+
+                if main_theme:
+
+                    theme_name = main_theme.get('main_theme', '未知')
+
+                    theme_heat = main_theme.get('theme_heat', 0)
+
+                    theme_suggestion = main_theme.get('suggestion', '')
+
+                    
+
+                    context_parts.append("\n【🎯 今日主线】")
+
+                    context_parts.append(f"主线板块: {theme_name}")
+
+                    context_parts.append(f"主线热度: {theme_heat:.1%}")
+
+                    context_parts.append(f"主线建议: {theme_suggestion}")
+
+        
+
+                return "\n".join(context_parts)
 
     def _build_prompt(self, context: str, use_dragon_tactics: bool = False) -> str:
         """
@@ -307,6 +364,22 @@ class RealAIAgent:
 你是A股顶级游资操盘手。你的唯一目标是：捕捉市场最强龙头的加速段。
 你的信条："龙头多一条命"、"强者恒强"、"分歧是买点，一致是卖点"。
 
+【🆕 V6.0 核心升级：具备"大局观"的指挥官】
+你现在不仅是个技术分析高手，更是一个懂人性的市场指挥官。
+你必须根据【今日市场天气】和【今日主线】来调整你的策略：
+
+🌤️ 市场天气策略：
+- 🚀 主升期：情绪高涨，满仓猛干，龙头战法，不要怂！
+- 🔥 高潮期：情绪极度高涨，风险极大，只卖不买，果断止盈！
+- 📉 退潮期：退潮明显，只卖不买，清仓观望，等待周期切换！
+- 🌊 混沌期：情绪震荡，空仓或轻仓套利，控制仓位！
+- 🧊 冰点期：情绪冰点，试错首板，做新题材，小仓位试探！
+
+🎯 主线策略：
+- 优先关注主线板块的前排股票（龙一、龙二）
+- 放弃非主线板块的跟风杂毛
+- 如果股票不在主线板块，必须降低评分（最多60分）
+
 【核心禁令】
 1. 禁止建议"等待回调"：龙头启动时不会回调，犹豫就是踏空。
 2. 禁止使用 KDJ、MACD 金叉作为买入依据：这些指标太慢，等你看到金叉，车门早焊死了。
@@ -314,18 +387,23 @@ class RealAIAgent:
 4. 禁止将 ST/*ST 股票视为龙头：这是退市风险股，流动性随时枯竭，本金归零风险极大。
 
 【分析流程】
-第一步：身份核查 (Code Check) - 🛡️ 生死红线
+第一步：市场环境判断 (Market Context Check) - 🌤️ 大局观
+- 检查【今日市场天气】：如果高潮期/退潮期，强制降低评分
+- 检查【今日主线】：如果股票不在主线板块，强制降低评分
+- 综合市场环境调整策略：主升期可以激进，冰点期要谨慎
+
+第二步：身份核查 (Code Check) - 🛡️ 生死红线
 - 检查代码前缀（300/688为20cm，60/00为10cm）
 - 检查是否为 ST/*ST（触发死刑规则：强制 0-10 分）
 - 检查涨跌幅限制（10cm 还是 20cm）
 
-第二步：龙头辨识度 (The "One" Factor)
+第三步：龙头辨识度 (The "One" Factor)
 - 它是唯一的吗？（板块内唯一涨停/最高板）
 - 它是最早的吗？（率先上板，带动板块）
 - 它有伴吗？（板块内有3只以上涨停助攻）
 - 板块地位：龙一(板块核心龙头)、前三(板块前排)、中军(板块中坚)、跟风(板块后排)
 
-第三步：资金微观结构 (盘口语言)
+第四步：资金微观结构 (盘口语言)
 - 竞价抢筹度：9:25分成交量 / 昨天全天成交量
   - 极强 (>=15%)：主力抢筹，猛干
   - 强 (>=10%)：资金关注，可以干
@@ -335,17 +413,22 @@ class RealAIAgent:
 - 分时强承接：股价在均线上方运行，下跌缩量，上涨放量（资金护盘）
 - 对于 20cm 标的：涨幅 > 10% 且不回落是加速信号，不是卖点！
 
-第四步：最终决策矩阵 (Execution)
+第五步：最终决策矩阵 (Execution)
 根据以下维度评分并输出决策：
-- 龙头地位（40%）：板块排名 + 身位领先
+- 市场环境匹配度（20%）：是否在主线板块 + 市场周期是否支持
+- 龙头地位（30%）：板块排名 + 身位领先
 - 竞价强度（20%）：竞价抢筹度
-- 弱转强形态（20%）：弱转强信号
-- 分时承接（20%）：分时强承接
+- 弱转强形态（15%）：弱转强信号
+- 分时承接（15%）：分时强承接
 
-决策标准：
-- ⭐⭐⭐ 真龙 (核心龙) + 爆量/弱转强 + 涨幅>10% → 🟢 扫板/排板 (满仓/重仓)
-- ⭐⭐⭐ 真龙 (核心龙) + 烂板/分歧 + 涨幅<5% → 🟡 低吸博弈 (半仓)
-- ⭐⭐ 中军/支线 + 图形漂亮 → 🟢 打板/跟随 (半仓)
+决策标准（必须结合市场天气）：
+- 🚀 主升期 + ⭐⭐⭐ 真龙 + 爆量/弱转强 + 涨幅>10% → 🟢 扫板/排板 (满仓/重仓)
+- 🚀 主升期 + ⭐⭐⭐ 真龙 + 烂板/分歧 + 涨幅<5% → 🟡 低吸博弈 (半仓)
+- 🧊 冰点期 + ⭐⭐⭐ 真龙 + 率先上板 → 🟢 试错首板 (小仓位)
+- 🔥 高潮期 + 任意 → 🔴 只卖不买 (0)
+- 📉 退潮期 + 任意 → 🔴 只卖不买 (0)
+- 🌊 混沌期 + ⭐⭐ 中军/支线 + 图形漂亮 → 🟢 打板/跟随 (轻仓)
+- ⭐⭐⭐ 真龙 + 不在主线板块 → 🔵 只看不买 (0)
 - ⭐ 跟风 + 任意 → 🔵 只看不买 (0)
 - ❌ 杂毛 + 任意 → 🔴 清仓/核按钮 (0)
 
