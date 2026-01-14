@@ -1,6 +1,7 @@
 """
-机器学习预测模型（Lite 版）
+机器学习预测模型（Lite 版 + 深度特征工程）
 使用 LightGBM/CatBoost 替代深度学习，速度提升 100 倍+
+集成高级特征工程，从"拟合数据"进化为"寻找 Alpha"
 """
 
 import pandas as pd
@@ -12,25 +13,30 @@ import pickle
 import os
 from datetime import datetime
 
+from logic.feature_engineer import FeatureEngineer
+
 logger = logging.getLogger(__name__)
 
 
 class MLPredictorBase(ABC):
     """
-    机器学习预测器基类
+    机器学习预测器基类（增强版）
     """
 
-    def __init__(self, name: str):
+    def __init__(self, name: str, use_feature_engineering: bool = True):
         """
         初始化预测器
 
         Args:
             name: 模型名称
+            use_feature_engineering: 是否使用特征工程
         """
         self.name = name
         self.model = None
         self.is_trained = False
         self.feature_importance = None
+        self.use_feature_engineering = use_feature_engineering
+        self.feature_engineer = FeatureEngineer() if use_feature_engineering else None
 
     @abstractmethod
     def prepare_data(self, df: pd.DataFrame, lookback: int = 20) -> Tuple[np.ndarray, np.ndarray]:
@@ -117,18 +123,18 @@ class MLPredictorBase(ABC):
 
 class LightGBMPredictor(MLPredictorBase):
     """
-    LightGBM 预测器
-    速度最快，适合表格数据
+    LightGBM 预测器（增强版）
+    速度最快，适合表格数据，集成深度特征工程
     """
 
-    def __init__(self, objective: str = 'regression', num_leaves: int = 31):
-        super().__init__("LightGBM预测器")
+    def __init__(self, objective: str = 'regression', num_leaves: int = 31, use_feature_engineering: bool = True):
+        super().__init__("LightGBM预测器", use_feature_engineering)
         self.objective = objective
         self.num_leaves = num_leaves
 
     def prepare_data(self, df: pd.DataFrame, lookback: int = 20) -> Tuple[np.ndarray, np.ndarray]:
         """
-        准备训练数据 - 创建技术指标特征
+        准备训练数据 - 使用深度特征工程
 
         Args:
             df: K线数据
@@ -140,25 +146,35 @@ class LightGBMPredictor(MLPredictorBase):
         # 确保数据按时间排序
         df = df.sort_values('date').reset_index(drop=True)
 
-        # 计算技术指标
-        df = self._calculate_indicators(df, lookback)
+        if self.use_feature_engineering and self.feature_engineer:
+            # 使用特征工程器计算所有特征
+            df = self.feature_engineer.calculate_technical_features(df)
+            df = self.feature_engineer.calculate_cross_sectional_features(df)
+            df = self.feature_engineer.calculate_microstructure_features(df)
+            df = self.feature_engineer.calculate_multi_targets(df)
 
-        # 创建特征
-        features = [
-            'close', 'volume', 'amplitude',
-            'ma_short', 'ma_long', 'ma_diff',
-            'rsi', 'macd', 'macd_signal', 'macd_hist',
-            'bb_upper', 'bb_middle', 'bb_lower', 'bb_width',
-            'momentum', 'roc', 'volatility'
-        ]
+            # 使用高级特征列表
+            features = self.feature_engineer.get_feature_list()
+            target = 'target_next_return'  # 使用多目标中的主要目标
+        else:
+            # 使用基础特征（向后兼容）
+            df = self._calculate_indicators(df, lookback)
+            features = [
+                'close', 'volume', 'amplitude',
+                'ma_short', 'ma_long', 'ma_diff',
+                'rsi', 'macd', 'macd_signal', 'macd_hist',
+                'bb_upper', 'bb_middle', 'bb_lower', 'bb_width',
+                'momentum', 'roc', 'volatility'
+            ]
+            target = 'target'
 
         # 删除包含 NaN 的行
-        df_clean = df.dropna(subset=features + ['target']).copy()
+        df_clean = df.dropna(subset=features + [target]).copy()
 
         X = df_clean[features].values
-        y = df_clean['target'].values
+        y = df_clean[target].values
 
-        logger.info(f"准备数据完成: X shape={X.shape}, y shape={y.shape}")
+        logger.info(f"准备数据完成: X shape={X.shape}, y shape={y.shape}, features={len(features)}")
 
         return X, y
 
@@ -299,46 +315,61 @@ class LightGBMPredictor(MLPredictorBase):
 
 class CatBoostPredictor(MLPredictorBase):
     """
-    CatBoost 预测器
-    对类别特征友好，无需大量调参
+    CatBoost 预测器（增强版）
+    原生支持类别特征，无需 One-Hot 编码，集成深度特征工程
     """
 
-    def __init__(self, depth: int = 6, learning_rate: float = 0.1):
-        super().__init__("CatBoost预测器")
-        self.depth = depth
-        self.learning_rate = learning_rate
-        self.feature_names = None  # 保存特征名称
+    def __init__(self, use_feature_engineering: bool = True):
+        super().__init__("CatBoost预测器", use_feature_engineering)
+        self.feature_names = None
 
-    def prepare_data(self, df: pd.DataFrame, lookback: int = 20) -> Tuple[pd.DataFrame, np.ndarray]:
+    def prepare_data(self, df: pd.DataFrame, lookback: int = 20) -> Tuple[pd.DataFrame, pd.Series]:
         """
-        准备训练数据（返回 DataFrame 保留列名）
+        准备训练数据 - 使用深度特征工程，返回 DataFrame 保留列名
 
         Args:
             df: K线数据
             lookback: 回看窗口
 
         Returns:
-            (X, y) 特征 DataFrame 和标签数组
+            (X, y) 特征 DataFrame 和标签 Series
         """
+        # 确保数据按时间排序
         df = df.sort_values('date').reset_index(drop=True)
-        df = self._calculate_indicators(df, lookback)
 
-        features = [
-            'close', 'volume', 'amplitude',
-            'ma_short', 'ma_long', 'ma_diff',
-            'rsi', 'macd', 'macd_signal', 'macd_hist',
-            'bb_upper', 'bb_middle', 'bb_lower', 'bb_width',
-            'momentum', 'roc', 'volatility'
-        ]
+        if self.use_feature_engineering and self.feature_engineer:
+            # 使用特征工程器计算所有特征
+            df = self.feature_engineer.calculate_technical_features(df)
+            df = self.feature_engineer.calculate_cross_sectional_features(df)
+            df = self.feature_engineer.calculate_microstructure_features(df)
+            df = self.feature_engineer.calculate_multi_targets(df)
 
-        df_clean = df.dropna(subset=features + ['target']).copy()
+            # 使用高级特征列表
+            features = self.feature_engineer.get_feature_list()
+            target = 'target_next_return'
+        else:
+            # 使用基础特征（向后兼容）
+            df = self._calculate_indicators(df, lookback)
+            features = [
+                'close', 'volume', 'amplitude',
+                'ma_short', 'ma_long', 'ma_diff',
+                'rsi', 'macd', 'macd_signal', 'macd_hist',
+                'bb_upper', 'bb_middle', 'bb_lower', 'bb_width',
+                'momentum', 'roc', 'volatility'
+            ]
+            df['target'] = df['close'].pct_change().shift(-1) * 100
+            target = 'target'
 
-        # 返回 DataFrame 而不是 numpy array，保留列名
+        # 删除包含 NaN 的行
+        df_clean = df.dropna(subset=features + [target]).copy()
+
         X = df_clean[features]
-        y = df_clean['target'].values
+        y = df_clean[target]
 
         # 保存特征名称
         self.feature_names = features
+
+        logger.info(f"准备数据完成: X shape={X.shape}, y shape={y.shape}, features={len(features)}")
 
         return X, y
 
