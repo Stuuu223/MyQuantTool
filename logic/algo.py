@@ -978,12 +978,16 @@ class QuantAlgo:
             }
     
     @staticmethod
-    def analyze_dragon_stock(df, current_price=None):
+    def analyze_dragon_stock(df, current_price=None, symbol=None, current_pct=None):
         """
-        龙头战法分析
-        根据文章中的五个条件和识别特征进行综合分析
-        df: 历史数据DataFrame
-        current_price: 当前价格（可选）
+        龙头战法分析 V4.0 - 游资掠食者版
+        根据五个条件和识别特征进行综合分析，区分 20cm 和 10cm
+        
+        Args:
+            df: 历史数据DataFrame
+            current_price: 当前价格（可选）
+            symbol: 股票代码（用于区分 20cm 和 10cm）
+            current_pct: 当前涨跌幅（用于判断是否涨停）
         """
         try:
             if df.empty or len(df) < 20:
@@ -993,28 +997,46 @@ class QuantAlgo:
                     '不符合原因': '数据不足，无法分析'
                 }
             
-            # 1. 检查是否从涨停板开始
+            # 判断是否为 20cm 标的
+            is_20cm = symbol and (symbol.startswith('30') or symbol.startswith('68'))
+            
+            # 设置涨停阈值
+            if is_20cm:
+                limit_threshold = 19.5
+                acc_threshold = 10.0  # 加速段阈值
+            else:
+                limit_threshold = 9.8
+                acc_threshold = 5.0   # 加速段阈值
+            
+            # 判断是否涨停
+            is_limit_up = current_pct and current_pct >= limit_threshold
+            # 判断是否在加速段
+            in_acc_zone = current_pct and acc_threshold <= current_pct < limit_threshold
+            
+            # 1. 检查是否从涨停板开始（调整为 20cm 适配）
             limit_up_info = QuantAlgo.check_limit_up(df)
             condition1_score = 0
             condition1_desc = []
             
-            if limit_up_info['是否涨停']:
+            # 如果当前已经涨停，直接给满分
+            if is_limit_up:
+                condition1_score = 25  # 涨停给满分（25分）
+                condition1_desc.append(f"✅ 当前已涨停（{current_pct:.2f}%），真龙特征")
+            # 如果在加速段（尤其是 20cm），也给高分
+            elif in_acc_zone:
                 condition1_score = 20
+                condition1_desc.append(f"✅ 处于加速逼空段（{current_pct:.2f}%），主力做多意愿强")
+            # 否则检查历史涨停记录
+            elif limit_up_info['是否涨停']:
+                condition1_score = 15
                 condition1_desc.append(f"✅ 有涨停板记录（{limit_up_info['涨停次数']}次）")
             else:
-                condition1_desc.append("❌ 无涨停板记录，不能做龙头")
+                condition1_desc.append("❌ 无涨停板记录，当前不在涨停板，不能做龙头")
             
-            # 2. 检查价格（不超过10元）
+            # 2. 价格评分（移除价格歧视）
             current_price = current_price if current_price else df.iloc[-1]['close']
-            condition2_score = 20 if current_price <= 10 else 10 if current_price <= 15 else 0
-            condition2_desc = []
-            
-            if current_price <= 10:
-                condition2_desc.append(f"✅ 价格低廉（¥{current_price:.2f}），具备炒作空间")
-            elif current_price <= 15:
-                condition2_desc.append(f"⚠️ 价格适中（¥{current_price:.2f}），炒作空间一般")
-            else:
-                condition2_desc.append(f"❌ 价格过高（¥{current_price:.2f}），不具备炒作空间")
+            condition2_score = 20  # 龙头战法不看价格，直接给满分
+            condition2_desc = [f"✅ 价格 ¥{current_price:.2f}，龙头就是用来创新高的"]
             
             # 3. 检查成交量（攻击性放量）
             volume_data = QuantAlgo.analyze_volume(df)
@@ -1022,27 +1044,32 @@ class QuantAlgo:
             condition3_desc = []
             
             if volume_data['量比'] > 2:
-                condition3_score = 20
-                condition3_desc.append(f"✅ 攻击性放量（量比{volume_data['量比']}）")
+                condition3_score = 25  # 放量给更高分
+                condition3_desc.append(f"✅ 攻击性放量（量比{volume_data['量比']}），资金合力强")
             elif volume_data['量比'] > 1.5:
+                condition3_score = 20
+                condition3_desc.append(f"✅ 温和放量（量比{volume_data['量比']}），资金活跃")
+            elif volume_data['量比'] > 1.0:
                 condition3_score = 15
-                condition3_desc.append(f"⚠️ 温和放量（量比{volume_data['量比']}）")
+                condition3_desc.append(f"⚠️ 正常放量（量比{volume_data['量比']}）")
             else:
-                condition3_desc.append(f"❌ 缩量或正常（量比{volume_data['量比']}）")
+                condition3_desc.append(f"❌ 缩量（量比{volume_data['量比']}），资金不活跃")
             
-            # 4. 检查KDJ金叉
-            kdj_data = QuantAlgo.calculate_kdj(df)
+            # 4. 20cm 半路博弈逻辑（替代 KDJ）
             condition4_score = 0
             condition4_desc = []
             
-            if "金叉" in kdj_data['信号']:
+            if is_20cm and in_acc_zone:
+                condition4_score = 25
+                condition4_desc.append(f"✅ 20cm 加速逼空段（{current_pct:.2f}%），半路博弈最佳时机")
+            elif is_limit_up:
                 condition4_score = 20
-                condition4_desc.append(f"✅ KDJ金叉（K:{kdj_data['K']}, D:{kdj_data['D']}, J:{kdj_data['J']}）")
-            elif kdj_data['K'] < 30:
-                condition4_score = 10
-                condition4_desc.append(f"⚠️ KDJ低位（K:{kdj_data['K']}, D:{kdj_data['D']}, J:{kdj_data['J']}）")
+                condition4_desc.append(f"✅ 涨停封死，龙头确立")
+            elif current_pct and current_pct >= 5:
+                condition4_score = 15
+                condition4_desc.append(f"✅ 涨幅 {current_pct:.2f}%，具备上涨动能")
             else:
-                condition4_desc.append(f"❌ KDJ不在低位（K:{kdj_data['K']}, D:{kdj_data['D']}, J:{kdj_data['J']}）")
+                condition4_desc.append(f"❌ 涨幅不足（{current_pct:.2f}%），缺乏辨识度")
             
             # 5. 检查换手率
             turnover_data = QuantAlgo.get_turnover_rate(df)
@@ -1065,16 +1092,21 @@ class QuantAlgo:
             else:
                 condition5_desc.append("❌ 换手率数据缺失")
             
-            # 计算总分和评级
+            # 计算总分（满分 115 分，需要归一化到 100 分）
             total_score = condition1_score + condition2_score + condition3_score + condition4_score + condition5_score
+            normalized_score = int(total_score / 115 * 100)
             
-            if total_score >= 80:
+            # 评级标准（调整后）
+            if normalized_score >= 90:
+                rating = "🔥🔥 真龙/妖股"
+                rating_desc = "监管安全 + 板块核心 + 竞价爆量/加速中，猛干"
+            elif normalized_score >= 80:
                 rating = "🔥 强龙头"
                 rating_desc = "符合龙头战法大部分条件，重点关注"
-            elif total_score >= 60:
+            elif normalized_score >= 60:
                 rating = "📈 潜力龙头"
                 rating_desc = "具备龙头股特征，可关注"
-            elif total_score >= 40:
+            elif normalized_score >= 40:
                 rating = "⚠️ 弱龙头"
                 rating_desc = "部分符合条件，谨慎关注"
             else:
@@ -1083,20 +1115,25 @@ class QuantAlgo:
             
             # 综合分析
             analysis = []
-            if condition1_score > 0:
+            if condition1_score >= 20:
                 analysis.append("该股具备涨停板特征，是龙头的发源地")
             if condition2_score > 0:
                 analysis.append("价格适中，具备炒作空间，容易得到市场追捧")
             if condition3_score > 0:
                 analysis.append("成交量放大，显示主力资金活跃")
             if condition4_score > 0:
-                analysis.append("技术指标金叉，具备上涨动能")
+                if is_20cm and in_acc_zone:
+                    analysis.append("20cm 加速逼空段，半路博弈最佳时机")
+                elif is_limit_up:
+                    analysis.append("涨停封死，龙头确立")
+                else:
+                    analysis.append("具备上涨动能")
             if condition5_score > 0:
                 analysis.append("换手率适中，资金参与度较高")
             
             return {
                 '龙头评级': rating,
-                '评级得分': total_score,
+                '评级得分': normalized_score,
                 '评级说明': rating_desc,
                 '条件1_涨停板': {
                     '得分': condition1_score,
@@ -1110,7 +1147,7 @@ class QuantAlgo:
                     '得分': condition3_score,
                     '说明': condition3_desc
                 },
-                '条件4_KDJ': {
+                '条件4_加速段': {
                     '得分': condition4_score,
                     '说明': condition4_desc
                 },
@@ -1119,7 +1156,7 @@ class QuantAlgo:
                     '说明': condition5_desc
                 },
                 '综合分析': analysis,
-                '操作建议': QuantAlgo.get_dragon_operation_suggestion(total_score, limit_up_info, kdj_data)
+                '操作建议': QuantAlgo.get_dragon_operation_suggestion_v4(normalized_score, is_limit_up, in_acc_zone, is_20cm, current_pct)
             }
         except Exception as e:
             return {
@@ -1156,6 +1193,76 @@ class QuantAlgo:
             suggestions.append("❌ **非龙头建议**")
             suggestions.append("1. 不建议操作：不符合龙头战法条件")
             suggestions.append("2. 观望等待：等待出现更好的机会")
+        
+        return suggestions
+    
+    @staticmethod
+    def get_dragon_operation_suggestion_v4(score, is_limit_up, in_acc_zone, is_20cm, current_pct):
+        """
+        根据龙头战法 V4.0 游资掠食者版给出操作建议
+        
+        Args:
+            score: 评分（归一化后的 0-100 分）
+            is_limit_up: 是否涨停
+            in_acc_zone: 是否在加速段
+            is_20cm: 是否为 20cm 标的
+            current_pct: 当前涨跌幅
+        """
+        suggestions = []
+        
+        if score >= 90:
+            # 真龙/妖股
+            suggestions.append("🔥🔥 **真龙/妖股策略**")
+            suggestions.append("1. 🟢 猛干（扫板/排板）：监管安全 + 板块核心 + 竞价爆量/加速中")
+            suggestions.append("2. 仓位：重仓")
+            
+            if is_20cm and is_limit_up:
+                suggestions.append("3. 20cm 涨停封死：持有，关注明天溢价")
+            elif is_20cm and in_acc_zone:
+                suggestions.append("3. 20cm 加速逼空段：半路扫货，无需等待，直接博弈封板！")
+            elif is_limit_up:
+                suggestions.append("3. 10cm 涨停封死：排板确认，关注明天溢价")
+        
+        elif score >= 80:
+            # 强龙头
+            suggestions.append("🔥 **强龙头策略**")
+            suggestions.append("1. 🟢 博弈（半路/跟随）：逻辑正宗 + 形态好")
+            suggestions.append("2. 仓位：半仓")
+            
+            if is_20cm and in_acc_zone:
+                suggestions.append("3. 20cm 半路（12-18%）：分时承接极强，无需等待，直接博弈封板！")
+            elif is_20cm and is_limit_up:
+                suggestions.append("3. 20cm 涨停封死：持有，关注明天溢价")
+            elif is_limit_up:
+                suggestions.append("3. 10cm 涨停：打板确认")
+        
+        elif score >= 60:
+            # 潜力龙头
+            suggestions.append("📈 **潜力龙头策略**")
+            suggestions.append("1. 🟡 低吸/观望：没涨停但板块热，或涨幅<5%等待补涨")
+            suggestions.append("2. 仓位：轻仓")
+            
+            if is_20cm and in_acc_zone:
+                suggestions.append("3. 20cm 加速段：关注分时承接，确认强势后再加仓")
+            elif is_20cm and current_pct < 10:
+                suggestions.append("3. 20cm 低位：等待突破 10% 加速段")
+            elif current_pct < 5:
+                suggestions.append("3. 低位：等待补涨机会")
+        
+        elif score >= 40:
+            # 弱龙头
+            suggestions.append("⚠️ **弱龙头策略**")
+            suggestions.append("1. 🔵 只看不买：跟风回落，谨慎关注")
+            suggestions.append("2. 仓位：观望")
+            
+            if current_pct < 5:
+                suggestions.append("3. 涨幅不足：缺乏辨识度，不建议参与")
+        
+        else:
+            # 非龙头
+            suggestions.append("❌ **非龙头建议**")
+            suggestions.append("1. 🔴 跑/核按钮：ST / 监管雷 / 跟风回落 / 趋势向下")
+            suggestions.append("2. 仓位：空仓")
         
         return suggestions
     
@@ -1270,8 +1377,8 @@ class QuantAlgo:
                     df = db.get_history_data(symbol)
                     
                     if not df.empty and len(df) > 20:
-                        # 龙头战法分析
-                        dragon_analysis = QuantAlgo.analyze_dragon_stock(df, current_price)
+                        # 龙头战法分析（传入股票代码和涨跌幅）
+                        dragon_analysis = QuantAlgo.analyze_dragon_stock(df, current_price, symbol, stock_info['涨跌幅'])
                         
                         # 获取实时数据（用于计算量比、换手率等）
                         realtime_data_item = realtime_map.get(symbol, {})

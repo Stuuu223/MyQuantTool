@@ -80,10 +80,10 @@ def render_dragon_strategy_tab(db, config):
                             # 显示五个条件得分
                             st.write("**五个条件得分：**")
                             details = stock['详情']
-                            st.write(f"- 涨停板: {details['条件1_涨停板']['得分']}/20")
+                            st.write(f"- 涨停板: {details['条件1_涨停板']['得分']}/25")
                             st.write(f"- 价格: {details['条件2_价格']['得分']}/20")
-                            st.write(f"- 成交量: {details['条件3_成交量']['得分']}/20")
-                            st.write(f"- KDJ: {details['条件4_KDJ']['得分']}/20")
+                            st.write(f"- 成交量: {details['条件3_成交量']['得分']}/25")
+                            st.write(f"- 加速段: {details['条件4_加速段']['得分']}/25")
                             st.write(f"- 换手率: {details['条件5_换手率']['得分']}/20")
                             
                             # 显示操作建议
