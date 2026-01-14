@@ -1,573 +1,387 @@
 """
-性能优化器 - 向量化+并行+参数优化
-功能：
-- NumPy向量化计算
-- 并行回测执行
-- 网格搜索参数优化
-- 性能基准测试
-- 内存优化
+性能优化模块
+
+优化数据库查询和并发处理
 """
 
-import numpy as np
-import pandas as pd
-from typing import Dict, List, Tuple, Optional, Callable, Any
-from dataclasses import dataclass
-from concurrent.futures import ProcessPoolExecutor, as_completed
-from functools import partial
-import time
-import multiprocessing as mp
+import sqlite3
+import threading
+from functools import lru_cache
+from typing import List, Dict, Any, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from logic.logger import get_logger
 
-
-@dataclass
-class OptimizationResult:
-    """优化结果"""
-    best_params: Dict[str, Any]
-    best_score: float
-    all_results: List[Dict[str, Any]]
-    optimization_time: float
-
-
-@dataclass
-class BenchmarkResult:
-    """基准测试结果"""
-    operation: str
-    execution_time: float
-    memory_usage: float
-    throughput: float
+logger = get_logger(__name__)
 
 
 class PerformanceOptimizer:
-    """性能优化器"""
+    """
+    性能优化器
     
-    def __init__(self, num_workers: Optional[int] = None):
-        """
-        Args:
-            num_workers: 并行工作进程数（None表示使用CPU核心数）
-        """
-        self.num_workers = num_workers or mp.cpu_count()
+    功能：
+    1. 数据库连接池管理
+    2. 批量查询优化
+    3. 缓存管理
+    4. 并发处理优化
+    """
     
-    def vectorized_ma(
-        self,
-        prices: np.ndarray,
-        periods: List[int]
-    ) -> Dict[int, np.ndarray]:
+    def __init__(self, db_path: str, pool_size: int = 5):
         """
-        向量化计算移动平均线
+        初始化性能优化器
         
         Args:
-            prices: 价格序列
-            periods: 周期列表
+            db_path: 数据库路径
+            pool_size: 连接池大小
+        """
+        self.db_path = db_path
+        self.pool_size = pool_size
+        self.connection_pool = []
+        self.pool_lock = threading.Lock()
+        self.cache = {}
+        self.cache_lock = threading.Lock()
+        
+        # 初始化连接池
+        self._initialize_pool()
+    
+    def _initialize_pool(self):
+        """初始化连接池"""
+        for _ in range(self.pool_size):
+            conn = sqlite3.connect(self.db_path, check_same_thread=False)
+            conn.row_factory = sqlite3.Row
+            self.connection_pool.append(conn)
+        
+        logger.info(f"初始化连接池，大小: {self.pool_size}")
+    
+    def get_connection(self) -> sqlite3.Connection:
+        """
+        从连接池获取连接
         
         Returns:
-            周期到MA数组的映射
+            sqlite3.Connection: 数据库连接
         """
-        results = {}
-        for period in periods:
-            # 使用卷积计算移动平均
-            kernel = np.ones(period) / period
-            ma = np.convolve(prices, kernel, mode='valid')
-            # 填充前period-1个值为NaN
-            ma_padded = np.full_like(prices, np.nan, dtype=float)
-            ma_padded[period-1:] = ma
-            results[period] = ma_padded
-        
-        return results
+        with self.pool_lock:
+            if self.connection_pool:
+                return self.connection_pool.pop()
+            else:
+                # 连接池为空，创建新连接
+                conn = sqlite3.connect(self.db_path, check_same_thread=False)
+                conn.row_factory = sqlite3.Row
+                return conn
     
-    def vectorized_rsi(
-        self,
-        prices: np.ndarray,
-        period: int = 14
-    ) -> np.ndarray:
+    def return_connection(self, conn: sqlite3.Connection):
         """
-        向量化计算RSI指标
+        归还连接到连接池
         
         Args:
-            prices: 价格序列
-            period: 周期
-        
-        Returns:
-            RSI序列
+            conn: 数据库连接
         """
-        # 计算价格变化
-        deltas = np.diff(prices)
-        
-        # 分离涨跌
-        gains = np.where(deltas > 0, deltas, 0)
-        losses = np.where(deltas < 0, -deltas, 0)
-        
-        # 计算平均涨跌
-        avg_gains = np.convolve(gains, np.ones(period)/period, mode='valid')
-        avg_losses = np.convolve(losses, np.ones(period)/period, mode='valid')
-        
-        # 计算RSI
-        rs = avg_gains / (avg_losses + 1e-10)  # 避免除零
-        rsi = 100 - (100 / (1 + rs))
-        
-        # 填充前period个值为NaN
-        rsi_padded = np.full_like(prices, np.nan, dtype=float)
-        rsi_padded[period:] = rsi
-        
-        return rsi_padded
+        with self.pool_lock:
+            if len(self.connection_pool) < self.pool_size:
+                self.connection_pool.append(conn)
+            else:
+                conn.close()
     
-    def vectorized_macd(
-        self,
-        prices: np.ndarray,
-        fast_period: int = 12,
-        slow_period: int = 26,
-        signal_period: int = 9
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def batch_query(self, queries: List[str]) -> List[Dict]:
         """
-        向量化计算MACD指标
+        批量查询
         
         Args:
-            prices: 价格序列
-            fast_period: 快线周期
-            slow_period: 慢线周期
-            signal_period: 信号线周期
+            queries: 查询语句列表
         
         Returns:
-            (DIF, DEA, MACD)
+            list: 查询结果列表
         """
-        # 计算EMA
-        ema_fast = self._vectorized_ema(prices, fast_period)
-        ema_slow = self._vectorized_ema(prices, slow_period)
+        results = []
         
-        # DIF
-        dif = ema_fast - ema_slow
-        
-        # DEA
-        dea = self._vectorized_ema(dif, signal_period)
-        
-        # MACD
-        macd = 2 * (dif - dea)
-        
-        return dif, dea, macd
-    
-    def _vectorized_ema(
-        self,
-        data: np.ndarray,
-        period: int,
-        alpha: Optional[float] = None
-    ) -> np.ndarray:
-        """
-        向量化计算EMA
-        
-        Args:
-            data: 数据序列
-            period: 周期
-            alpha: 平滑系数（None则自动计算）
-        
-        Returns:
-            EMA序列
-        """
-        if alpha is None:
-            alpha = 2 / (period + 1)
-        
-        ema = np.zeros_like(data)
-        ema[0] = data[0]
-        
-        for i in range(1, len(data)):
-            ema[i] = alpha * data[i] + (1 - alpha) * ema[i-1]
-        
-        return ema
-    
-    def vectorized_atr(
-        self,
-        high: np.ndarray,
-        low: np.ndarray,
-        close: np.ndarray,
-        period: int = 14
-    ) -> np.ndarray:
-        """
-        向量化计算ATR指标
-        
-        Args:
-            high: 最高价序列
-            low: 最低价序列
-            close: 收盘价序列
-            period: 周期
-        
-        Returns:
-            ATR序列
-        """
-        # 计算真实波幅
-        high_low = high - low
-        high_close = np.abs(high - np.roll(close, 1))
-        low_close = np.abs(low - np.roll(close, 1))
-        
-        tr = np.maximum(high_low, np.maximum(high_close, low_close))
-        
-        # 计算ATR（使用RMA）
-        atr = self._vectorized_rma(tr, period)
-        
-        return atr
-    
-    def _vectorized_rma(
-        self,
-        data: np.ndarray,
-        period: int
-    ) -> np.ndarray:
-        """
-        向量化计算RMA（Wilder's Smoothing）
-        
-        Args:
-            data: 数据序列
-            period: 周期
-        
-        Returns:
-            RMA序列
-        """
-        alpha = 1 / period
-        rma = np.zeros_like(data)
-        rma[0] = data[0]
-        
-        for i in range(1, len(data)):
-            rma[i] = alpha * data[i] + (1 - alpha) * rma[i-1]
-        
-        return rma
-    
-    def parallel_backtest(
-        self,
-        codes: List[str],
-        backtest_func: Callable[[str, Any], Dict],
-        signals_list: Optional[List[Any]] = None,
-        **kwargs
-    ) -> List[Dict]:
-        """
-        并行回测多只股票
-        
-        Args:
-            codes: 股票代码列表
-            backtest_func: 回测函数
-            signals_list: 信号列表（可选）
-            **kwargs: 其他参数
-        
-        Returns:
-            回测结果列表
-        """
-        results = [None] * len(codes)
-        
-        # 创建任务
-        tasks = []
-        if signals_list:
-            for code, signals in zip(codes, signals_list):
-                task = partial(backtest_func, code, signals, **kwargs)
-                tasks.append((code, task))
-        else:
-            for code in codes:
-                task = partial(backtest_func, code, **kwargs)
-                tasks.append((code, task))
-        
-        # 并行执行
-        with ProcessPoolExecutor(max_workers=self.num_workers) as executor:
-            future_to_code = {
-                executor.submit(task): code
-                for code, task in tasks
+        with ThreadPoolExecutor(max_workers=min(len(queries), self.pool_size)) as executor:
+            future_to_query = {
+                executor.submit(self._execute_query, query): query
+                for query in queries
             }
             
-            for future in as_completed(future_to_code):
-                code = future_to_code[future]
+            for future in as_completed(future_to_query):
+                query = future_to_query[future]
                 try:
                     result = future.result()
-                    idx = codes.index(code)
-                    results[idx] = result
+                    results.append(result)
                 except Exception as e:
-                    print(f"回测 {code} 失败: {e}")
-                    results[codes.index(code)] = {'error': str(e)}
+                    logger.error(f"批量查询失败: {query}, 错误: {e}")
+                    results.append(None)
         
         return results
     
-    def grid_search(
-        self,
-        param_grid: Dict[str, List[Any]],
-        objective_func: Callable[..., float],
-        maximize: bool = True,
-        verbose: bool = True
-    ) -> OptimizationResult:
+    def _execute_query(self, query: str) -> Optional[Dict]:
         """
-        网格搜索参数优化
+        执行单个查询
         
         Args:
-            param_grid: 参数网格
-            objective_func: 目标函数
-            maximize: 是否最大化目标函数
-            verbose: 是否打印进度
+            query: 查询语句
         
         Returns:
-            优化结果
+            dict: 查询结果
         """
-        start_time = time.time()
-        
-        # 生成所有参数组合
-        import itertools
-        param_names = list(param_grid.keys())
-        param_values = list(param_grid.values())
-        all_combinations = list(itertools.product(*param_values))
-        
-        all_results = []
-        best_score = float('-inf') if maximize else float('inf')
-        best_params = {}
-        
-        # 评估每个参数组合
-        for i, combination in enumerate(all_combinations):
-            params = dict(zip(param_names, combination))
+        conn = None
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute(query)
+            rows = cursor.fetchall()
             
-            try:
-                score = objective_func(**params)
-                
-                result = {
-                    'params': params.copy(),
-                    'score': score
-                }
-                all_results.append(result)
-                
-                # 更新最佳参数
-                if (maximize and score > best_score) or (not maximize and score < best_score):
-                    best_score = score
-                    best_params = params.copy()
-                
-                if verbose and (i + 1) % 10 == 0:
-                    print(f"已完成 {i + 1}/{len(all_combinations)} 次，当前最佳: {best_score:.4f}")
+            # 转换为字典列表
+            result = [dict(row) for row in rows]
             
-            except Exception as e:
-                if verbose:
-                    print(f"参数组合 {params} 评估失败: {e}")
-                all_results.append({
-                    'params': params.copy(),
-                    'score': None,
-                    'error': str(e)
-                })
+            return result
         
-        optimization_time = time.time() - start_time
+        except Exception as e:
+            logger.error(f"执行查询失败: {query}, 错误: {e}")
+            return None
         
-        return OptimizationResult(
-            best_params=best_params,
-            best_score=best_score,
-            all_results=all_results,
-            optimization_time=optimization_time
-        )
+        finally:
+            if conn:
+                self.return_connection(conn)
     
-    def parallel_grid_search(
-        self,
-        param_grid: Dict[str, List[Any]],
-        objective_func: Callable[..., float],
-        maximize: bool = True,
-        verbose: bool = True
-    ) -> OptimizationResult:
+    def cached_query(self, query: str, cache_key: str = None, ttl: int = 300) -> Optional[Dict]:
         """
-        并行网格搜索参数优化
+        缓存查询
         
         Args:
-            param_grid: 参数网格
-            objective_func: 目标函数
-            maximize: 是否最大化目标函数
-            verbose: 是否打印进度
+            query: 查询语句
+            cache_key: 缓存键
+            ttl: 缓存时间（秒）
         
         Returns:
-            优化结果
+            dict: 查询结果
         """
-        start_time = time.time()
+        import time
         
-        # 生成所有参数组合
-        import itertools
-        param_names = list(param_grid.keys())
-        param_values = list(param_grid.values())
-        all_combinations = list(itertools.product(*param_values))
+        # 生成缓存键
+        if cache_key is None:
+            cache_key = query
         
-        # 并行评估
-        all_results = []
-        with ProcessPoolExecutor(max_workers=self.num_workers) as executor:
-            future_to_params = {
-                executor.submit(objective_func, **dict(zip(param_names, combination))): combination
-                for combination in all_combinations
+        # 检查缓存
+        with self.cache_lock:
+            if cache_key in self.cache:
+                cached_data, timestamp = self.cache[cache_key]
+                if time.time() - timestamp < ttl:
+                    logger.debug(f"缓存命中: {cache_key}")
+                    return cached_data
+        
+        # 执行查询
+        result = self._execute_query(query)
+        
+        # 更新缓存
+        with self.cache_lock:
+            self.cache[cache_key] = (result, time.time())
+        
+        return result
+    
+    def clear_cache(self):
+        """清空缓存"""
+        with self.cache_lock:
+            self.cache.clear()
+        
+        logger.info("清空缓存")
+    
+    def batch_insert(self, table: str, data: List[Dict]) -> bool:
+        """
+        批量插入
+        
+        Args:
+            table: 表名
+            data: 数据列表
+        
+        Returns:
+            bool: 是否成功
+        """
+        if not data:
+            return True
+        
+        conn = None
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            # 获取字段名
+            columns = list(data[0].keys())
+            placeholders = ','.join(['?' for _ in columns])
+            columns_str = ','.join(columns)
+            
+            # 准备数据
+            values = [tuple(row[col] for col in columns) for row in data]
+            
+            # 批量插入
+            cursor.executemany(
+                f"INSERT INTO {table} ({columns_str}) VALUES ({placeholders})",
+                values
+            )
+            
+            conn.commit()
+            
+            logger.info(f"批量插入 {len(data)} 条数据到 {table}")
+            return True
+        
+        except Exception as e:
+            logger.error(f"批量插入失败: {e}")
+            return False
+        
+        finally:
+            if conn:
+                self.return_connection(conn)
+    
+    def optimize_database(self):
+        """优化数据库"""
+        conn = None
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            # 分析数据库
+            cursor.execute("ANALYZE")
+            
+            # 重建索引
+            cursor.execute("REINDEX")
+            
+            # 压缩数据库
+            cursor.execute("VACUUM")
+            
+            conn.commit()
+            
+            logger.info("数据库优化完成")
+        
+        except Exception as e:
+            logger.error(f"数据库优化失败: {e}")
+        
+        finally:
+            if conn:
+                self.return_connection(conn)
+    
+    def close(self):
+        """关闭连接池"""
+        with self.pool_lock:
+            for conn in self.connection_pool:
+                conn.close()
+            
+            self.connection_pool = []
+        
+        logger.info("关闭连接池")
+
+
+class ConcurrentProcessor:
+    """
+    并发处理器
+    
+    功能：
+    1. 并发执行任务
+    2. 任务队列管理
+    3. 结果收集
+    """
+    
+    def __init__(self, max_workers: int = 8):
+        """
+        初始化并发处理器
+        
+        Args:
+            max_workers: 最大工作线程数
+        """
+        self.max_workers = max_workers
+        self.executor = ThreadPoolExecutor(max_workers=max_workers)
+        self.active_tasks = {}
+        self.task_lock = threading.Lock()
+    
+    def submit_task(self, task_id: str, func, *args, **kwargs):
+        """
+        提交任务
+        
+        Args:
+            task_id: 任务ID
+            func: 任务函数
+            *args: 位置参数
+            **kwargs: 关键字参数
+        
+        Returns:
+            Future: 任务Future对象
+        """
+        future = self.executor.submit(func, *args, **kwargs)
+        
+        with self.task_lock:
+            self.active_tasks[task_id] = {
+                'future': future,
+                'status': 'RUNNING',
+                'submitted_at': time.time()
             }
-            
-            for future in as_completed(future_to_params):
-                combination = future_to_params[future]
-                try:
-                    score = future.result()
-                    result = {
-                        'params': dict(zip(param_names, combination)),
-                        'score': score
-                    }
-                    all_results.append(result)
-                except Exception as e:
-                    if verbose:
-                        print(f"参数组合评估失败: {e}")
-                    all_results.append({
-                        'params': dict(zip(param_names, combination)),
-                        'score': None,
-                        'error': str(e)
-                    })
         
-        # 找到最佳参数
-        valid_results = [r for r in all_results if r['score'] is not None]
-        if valid_results:
-            if maximize:
-                best_result = max(valid_results, key=lambda x: x['score'])
-            else:
-                best_result = min(valid_results, key=lambda x: x['score'])
-            
-            best_params = best_result['params']
-            best_score = best_result['score']
+        # 添加回调
+        future.add_done_callback(lambda f: self._task_done(task_id))
+        
+        return future
+    
+    def _task_done(self, task_id: str):
+        """
+        任务完成回调
+        
+        Args:
+            task_id: 任务ID
+        """
+        with self.task_lock:
+            if task_id in self.active_tasks:
+                self.active_tasks[task_id]['status'] = 'DONE'
+    
+    def get_task_status(self, task_id: str) -> Optional[Dict]:
+        """
+        获取任务状态
+        
+        Args:
+            task_id: 任务ID
+        
+        Returns:
+            dict: 任务状态信息
+        """
+        with self.task_lock:
+            return self.active_tasks.get(task_id)
+    
+    def wait_for_task(self, task_id: str, timeout: Optional[float] = None) -> Any:
+        """
+        等待任务完成
+        
+        Args:
+            task_id: 任务ID
+            timeout: 超时时间（秒）
+        
+        Returns:
+            Any: 任务结果
+        """
+        with self.task_lock:
+            task_info = self.active_tasks.get(task_id)
+        
+        if task_info:
+            return task_info['future'].result(timeout=timeout)
         else:
-            best_params = {}
-            best_score = float('-inf') if maximize else float('inf')
-        
-        optimization_time = time.time() - start_time
-        
-        return OptimizationResult(
-            best_params=best_params,
-            best_score=best_score,
-            all_results=all_results,
-            optimization_time=optimization_time
-        )
+            raise ValueError(f"任务不存在: {task_id}")
     
-    def benchmark_operation(
-        self,
-        operation: Callable,
-        *args,
-        iterations: int = 100,
-        **kwargs
-    ) -> BenchmarkResult:
+    def cancel_task(self, task_id: str) -> bool:
         """
-        基准测试操作性能
+        取消任务
         
         Args:
-            operation: 要测试的操作
-            *args: 操作参数
-            iterations: 迭代次数
-            **kwargs: 操作关键字参数
+            task_id: 任务ID
         
         Returns:
-            基准测试结果
+            bool: 是否成功取消
         """
-        import sys
-        import tracemalloc
+        with self.task_lock:
+            task_info = self.active_tasks.get(task_id)
         
-        # 预热
-        for _ in range(5):
-            operation(*args, **kwargs)
-        
-        # 内存测试
-        tracemalloc.start()
-        operation(*args, **kwargs)
-        current, peak = tracemalloc.get_traced_memory()
-        tracemalloc.stop()
-        
-        # 时间测试
-        start_time = time.time()
-        for _ in range(iterations):
-            operation(*args, **kwargs)
-        end_time = time.time()
-        
-        execution_time = (end_time - start_time) / iterations
-        memory_usage = peak / (1024 * 1024)  # MB
-        throughput = 1 / execution_time if execution_time > 0 else 0
-        
-        return BenchmarkResult(
-            operation=operation.__name__,
-            execution_time=execution_time,
-            memory_usage=memory_usage,
-            throughput=throughput
-        )
+        if task_info:
+            return task_info['future'].cancel()
+        else:
+            return False
     
-    def optimize_dataframe_memory(self, df: pd.DataFrame) -> pd.DataFrame:
+    def shutdown(self, wait: bool = True):
         """
-        优化DataFrame内存使用
+        关闭执行器
         
         Args:
-            df: 输入DataFrame
-        
-        Returns:
-            优化后的DataFrame
+            wait: 是否等待任务完成
         """
-        df_optimized = df.copy()
-        
-        for col in df_optimized.columns:
-            col_type = df_optimized[col].dtype
-            
-            if col_type == 'object':
-                # 尝试转换为category
-                if df_optimized[col].nunique() / len(df_optimized[col]) < 0.5:
-                    df_optimized[col] = df_optimized[col].astype('category')
-            
-            elif col_type == 'float64':
-                # 尝试转换为float32
-                df_optimized[col] = df_optimized[col].astype('float32')
-            
-            elif col_type == 'int64':
-                # 尝试转换为更小的整数类型
-                col_min = df_optimized[col].min()
-                col_max = df_optimized[col].max()
-                
-                if col_min >= 0:
-                    if col_max < 256:
-                        df_optimized[col] = df_optimized[col].astype('uint8')
-                    elif col_max < 65536:
-                        df_optimized[col] = df_optimized[col].astype('uint16')
-                    elif col_max < 4294967296:
-                        df_optimized[col] = df_optimized[col].astype('uint32')
-                else:
-                    if col_min >= -128 and col_max < 128:
-                        df_optimized[col] = df_optimized[col].astype('int8')
-                    elif col_min >= -32768 and col_max < 32768:
-                        df_optimized[col] = df_optimized[col].astype('int16')
-                    elif col_min >= -2147483648 and col_max < 2147483648:
-                        df_optimized[col] = df_optimized[col].astype('int32')
-        
-        return df_optimized
-    
-    def batch_vectorized_indicators(
-        self,
-        df: pd.DataFrame,
-        indicators: List[str]
-    ) -> pd.DataFrame:
-        """
-        批量计算技术指标（向量化）
-        
-        Args:
-            df: K线数据
-            indicators: 指标列表 ['MA5', 'MA10', 'MA20', 'RSI', 'MACD', 'ATR']
-        
-        Returns:
-            包含指标的DataFrame
-        """
-        result_df = df.copy()
-        
-        prices = df['close'].values
-        high = df['high'].values
-        low = df['low'].values
-        
-        for indicator in indicators:
-            if indicator.startswith('MA'):
-                period = int(indicator[2:])
-                ma_dict = self.vectorized_ma(prices, [period])
-                result_df[indicator] = ma_dict[period]
-            
-            elif indicator == 'RSI':
-                result_df['RSI'] = self.vectorized_rsi(prices)
-            
-            elif indicator == 'MACD':
-                dif, dea, macd = self.vectorized_macd(prices)
-                result_df['DIF'] = dif
-                result_df['DEA'] = dea
-                result_df['MACD'] = macd
-            
-            elif indicator == 'ATR':
-                result_df['ATR'] = self.vectorized_atr(high, low, prices)
-        
-        return result_df
-
-
-def get_performance_optimizer(num_workers: Optional[int] = None) -> PerformanceOptimizer:
-    """
-    获取性能优化器实例
-    
-    Args:
-        num_workers: 并行工作进程数
-    
-    Returns:
-        PerformanceOptimizer实例
-    """
-    return PerformanceOptimizer(num_workers=num_workers)
+        self.executor.shutdown(wait=wait)
+        logger.info("关闭并发处理器")
