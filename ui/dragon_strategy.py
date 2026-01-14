@@ -7,10 +7,98 @@
 import streamlit as st
 import pandas as pd
 from logic.algo import QuantAlgo
+from logic.market_sentiment import MarketSentiment
+from logic.position_manager import PositionManager
+from logic.trade_log import TradeLog
 from logic.logger import get_logger
 from config import Config
 
 logger = get_logger(__name__)
+
+
+def render_market_weather_panel():
+    """
+    渲染市场天气面板
+    """
+    st.divider()
+    st.subheader("🌤️ 市场天气")
+    
+    # 创建市场情绪分析器
+    market_sentiment = MarketSentiment()
+    
+    # 获取市场状态
+    with st.spinner("正在分析市场天气..."):
+        regime_info = market_sentiment.get_market_regime()
+    
+    # 显示市场天气图标
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        weather_icon = market_sentiment.get_market_weather_icon()
+        st.metric("市场天气", weather_icon)
+    
+    with col2:
+        st.metric("市场状态", regime_info['description'])
+    
+    with col3:
+        st.metric("策略建议", regime_info['strategy'])
+    
+    # 显示详细指标
+    market_data = regime_info.get('market_data', {})
+    if market_data:
+        st.write("**市场指标：**")
+        col4, col5, col6 = st.columns(3)
+        col4.metric("涨停家数", f"{market_data.get('limit_up_count', 0)} 家")
+        col5.metric("跌停家数", f"{market_data.get('limit_down_count', 0)} 家")
+        col6.metric("昨日溢价", f"{market_data.get('prev_profit', 0):.2%}")
+        
+        if market_data.get('max_board', 0) > 0:
+            st.metric("最高板数", f"{market_data.get('max_board', 0)} 板")
+    
+    # 显示当前策略参数
+    strategy_params = market_sentiment.get_strategy_parameters(regime_info['regime'])
+    st.write("**当前策略参数：**")
+    
+    with st.expander("查看详细参数"):
+        if "龙头" in st.session_state.get('strategy_mode', ''):
+            params = strategy_params['dragon']
+        elif "趋势" in st.session_state.get('strategy_mode', ''):
+            params = strategy_params['trend']
+        else:
+            params = strategy_params['halfway']
+        
+        st.json(params)
+    
+    market_sentiment.close()
+
+
+def render_position_management_panel():
+    """
+    渲染资金管理面板
+    """
+    st.divider()
+    st.subheader("💰 资金管理")
+    
+    # 获取账户资金
+    account_value = st.number_input("账户总资金（元）", value=100000, min_value=10000)
+    
+    # 创建仓位管理器
+    position_manager = PositionManager(account_value)
+    
+    # 显示风险敞口
+    risk_exposure = position_manager.get_risk_exposure()
+    
+    col1, col2, col3 = st.columns(3)
+    col1.metric("总仓位", f"{risk_exposure['total_position_ratio']:.2%}")
+    col2.metric("可用资金", f"¥{risk_exposure['available_cash']:,.2f}")
+    col3.metric("持仓数量", f"{risk_exposure['position_count']} 只")
+    
+    # 显示风险控制参数
+    st.info(f"""
+    **风险控制参数：**
+    - 单笔交易最大亏损：{position_manager.MAX_SINGLE_LOSS_RATIO * 100}%（¥{account_value * position_manager.MAX_SINGLE_LOSS_RATIO:,.2f}）
+    - 最大总仓位：{position_manager.MAX_TOTAL_POSITION * 100}%
+    - 默认止损比例：{position_manager.DEFAULT_STOP_LOSS_RATIO * 100}%
+    """)
 
 
 def render_dragon_strategy_tab(db, config):
@@ -24,6 +112,12 @@ def render_dragon_strategy_tab(db, config):
     st.subheader("🏹 游资/机构双模作战系统")
     st.caption("基于财联社龙头战法精髓：快、狠、准、捕食")
     
+    # 显示市场天气面板
+    render_market_weather_panel()
+    
+    # 显示资金管理面板
+    render_position_management_panel()
+    
     # 1. 模式选择
     st.divider()
     strategy_mode = st.radio(
@@ -32,6 +126,9 @@ def render_dragon_strategy_tab(db, config):
         index=0,
         horizontal=True
     )
+    
+    # 保存选择的模式
+    st.session_state.strategy_mode = strategy_mode
     
     # 根据模式显示不同的说明
     if "龙头" in strategy_mode:
