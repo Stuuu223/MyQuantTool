@@ -786,3 +786,8 @@ if __name__ == "__main__":
     # 分析
     report = rule_agent.analyze_stock("000001", price_data, technical_data)
     print(report)
+
+
+# 向后兼容：DeepSeekAgent 作为 RuleBasedAgent 的别名
+# 保持与旧代码的兼容性
+DeepSeekAgent = RuleBasedAgent
