@@ -39,7 +39,7 @@ def render_dragon_strategy_tab(db, config):
     with col_scan1:
         scan_limit = st.slider("扫描股票数量", 10, 100, 50, 10, key="dragon_scan_limit")
     with col_scan2:
-        min_score = st.slider("最低评分门槛", 60, 90, 75, 5, key="dragon_min_score")
+        min_score = st.slider("最低评分门槛", 50, 90, 60, 5, key="dragon_min_score")
     with col_scan3:
         show_only_dragon = st.checkbox("只显示龙头股", value=True, key="show_only_dragon")
     with col_scan4:
@@ -89,31 +89,89 @@ def render_dragon_strategy_tab(db, config):
                                 # 跳过 ST 股
                                 continue
 
-                            # 2. 竞价分析（模拟数据）
+                            # 2. 竞价分析（使用涨跌幅作为竞价强度的代理）
                             prev_day_volume = stock_data.iloc[-2].get('volume', 1) if len(stock_data) > 1 else 1
                             prev_day_amount = stock_data.iloc[-2].get('amount', 1) if len(stock_data) > 1 else 1
 
+                            # 如果涨跌幅 > 5%，说明竞价抢筹度较高
+                            change_percent = latest.get('pct_chg', 0)
+                            if change_percent > 5:
+                                # 涨幅 > 5%，假设竞价量比为 3%
+                                auction_ratio = 0.03
+                            elif change_percent > 3:
+                                # 涨幅 > 3%，假设竞价量比为 2%
+                                auction_ratio = 0.02
+                            elif change_percent > 0:
+                                # 涨幅 > 0%，假设竞价量比为 1%
+                                auction_ratio = 0.01
+                            else:
+                                # 跌幅，假设竞价量比为 0.5%
+                                auction_ratio = 0.005
+
                             auction_analysis = tactics.analyze_call_auction(
-                                current_open_volume=latest.get('volume', 0) * 0.1,  # 假设竞价量为成交量的10%
+                                current_open_volume=prev_day_volume * auction_ratio,
                                 prev_day_total_volume=prev_day_volume,
-                                current_open_amount=latest.get('amount', 0) * 0.1,
+                                current_open_amount=prev_day_amount * auction_ratio,
                                 prev_day_total_amount=prev_day_amount
                             )
 
-                            # 3. 板块地位分析（模拟数据）
+                            # 3. 板块地位分析（使用涨跌幅作为代理）
+                            # 如果没有板块数据，根据涨跌幅推断板块地位
+                            if change_percent > 7:
+                                # 涨幅 > 7%，可能是龙一
+                                sector_role_score = 80
+                                sector_role = '龙一（推断）'
+                            elif change_percent > 5:
+                                # 涨幅 > 5%，可能是前三
+                                sector_role_score = 60
+                                sector_role = '前三（推断）'
+                            elif change_percent > 3:
+                                # 涨幅 > 3%，可能是中军
+                                sector_role_score = 40
+                                sector_role = '中军（推断）'
+                            elif change_percent > 0:
+                                # 涨幅 > 0%，可能是跟风
+                                sector_role_score = 20
+                                sector_role = '跟风（推断）'
+                            else:
+                                # 跌幅，杂毛
+                                sector_role_score = 0
+                                sector_role = '杂毛'
+
                             sector_analysis = tactics.analyze_sector_rank(
                                 symbol=symbol,
-                                sector='未知板块',  # 这里应该从数据库获取板块信息
-                                current_change=latest.get('pct_chg', 0),
+                                sector='未知板块',
+                                current_change=change_percent,
                                 sector_stocks_data=None,
-                                limit_up_count=1  # 模拟数据
+                                limit_up_count=1
                             )
+
+                            # 覆盖板块地位评分
+                            sector_analysis['role_score'] = sector_role_score
+                            sector_analysis['role'] = sector_role
 
                             # 4. 弱转强分析
                             weak_to_strong_analysis = tactics.analyze_weak_to_strong(df=stock_data)
 
-                            # 5. 分时承接分析（模拟数据）
-                            intraday_support_analysis = tactics.analyze_intraday_support(intraday_data=stock_data)
+                            # 5. 分时承接分析（使用 K 线数据作为代理）
+                            # 如果收盘价 > 开盘价，说明全天上涨，可能有强承接
+                            if latest.get('close', 0) > latest.get('open', 0):
+                                # 收盘价 > 开盘价，全天上涨
+                                intraday_support_score = 80
+                                intraday_support = True
+                            elif latest.get('close', 0) > latest.get('low', 0):
+                                # 收盘价 > 最低价，部分上涨
+                                intraday_support_score = 60
+                                intraday_support = True
+                            else:
+                                # 收盘价 <= 最低价，全天下跌
+                                intraday_support_score = 20
+                                intraday_support = False
+
+                            intraday_support_analysis = {
+                                'intraday_support': intraday_support,
+                                'intraday_support_score': intraday_support_score
+                            }
 
                             # 6. 决策矩阵
                             is_20cm = code_check.get('max_limit', 10) == 20
