@@ -146,9 +146,66 @@ class RealAIAgent:
 
         # 基本信息
         context_parts.append(f"股票代码: {symbol}")
+        context_parts.append(f"股票名称: {price_data.get('name', 'N/A')}")
         context_parts.append(f"当前价格: {price_data.get('current_price', 'N/A')}")
         context_parts.append(f"今日涨跌幅: {price_data.get('change_percent', 'N/A')}%")
         context_parts.append(f"成交量: {price_data.get('volume', 'N/A')}")
+
+        # 🆕 竞价量比 (Call Auction Ratio)
+        open_volume = price_data.get('open_volume', 0)
+        prev_day_volume = price_data.get('prev_day_volume', 1)
+        if open_volume > 0 and prev_day_volume > 0:
+            call_auction_ratio = open_volume / prev_day_volume
+            if call_auction_ratio >= 0.15:
+                intensity = "极强 (主力抢筹)"
+            elif call_auction_ratio >= 0.10:
+                intensity = "强 (资金关注)"
+            elif call_auction_ratio >= 0.05:
+                intensity = "中等"
+            else:
+                intensity = "弱"
+            context_parts.append(f"竞价抢筹度: {call_auction_ratio:.2%} ({intensity})")
+        else:
+            context_parts.append("竞价抢筹度: N/A")
+
+        # 🆕 板块地位 (Sector Rank)
+        sector = price_data.get('sector', 'N/A')
+        sector_rank = price_data.get('sector_rank', None)
+        sector_total = price_data.get('sector_total', None)
+        if sector_rank is not None and sector_total is not None:
+            if sector_rank == 1:
+                role_desc = "👑 龙一 (板块核心龙头)"
+            elif sector_rank <= 3:
+                role_desc = "⭐ 前三 (板块前排)"
+            elif sector_rank <= 5:
+                role_desc = "中军 (板块中坚)"
+            else:
+                role_desc = "跟风 (板块后排)"
+            context_parts.append(f"板块: {sector}")
+            context_parts.append(f"板块地位: 排名 {sector_rank}/{sector_total} ({role_desc})")
+        elif sector:
+            context_parts.append(f"板块: {sector}")
+            context_parts.append("板块地位: N/A")
+
+        # 🆕 弱转强 (Weak to Strong)
+        weak_to_strong = price_data.get('weak_to_strong', None)
+        if weak_to_strong is not None:
+            if weak_to_strong:
+                context_parts.append("弱转强: ✅ 是 (昨天炸板/大阴，今天高开逾越压力位)")
+            else:
+                context_parts.append("弱转强: ❌ 否")
+        else:
+            context_parts.append("弱转强: N/A")
+
+        # 🆕 分时强承接 (Intraday Support)
+        intraday_support = price_data.get('intraday_support', None)
+        if intraday_support is not None:
+            if intraday_support:
+                context_parts.append("分时强承接: ✅ 是 (股价在均线上方，下跌缩量上涨放量)")
+            else:
+                context_parts.append("分时强承接: ❌ 否")
+        else:
+            context_parts.append("分时强承接: N/A")
 
         # 技术指标
         context_parts.append("\n【技术指标】")
@@ -262,22 +319,35 @@ class RealAIAgent:
 - 检查是否为 ST/*ST（触发死刑规则：强制 0-10 分）
 - 检查涨跌幅限制（10cm 还是 20cm）
 
-第二步：龙头辨识度
+第二步：龙头辨识度 (The "One" Factor)
 - 它是唯一的吗？（板块内唯一涨停/最高板）
 - 它是最早的吗？（率先上板，带动板块）
 - 它有伴吗？（板块内有3只以上涨停助攻）
+- 板块地位：龙一(板块核心龙头)、前三(板块前排)、中军(板块中坚)、跟风(板块后排)
 
-第三步：资金微观结构
-- 竞价爆量：9:25分成交量 / 昨天全天成交量 > 10%
-- 弱转强：昨天炸板/大阴线，今天高开逾越压力位
-- 分时强承接：股价在均线上方运行，下跌缩量，上涨放量
+第三步：资金微观结构 (盘口语言)
+- 竞价抢筹度：9:25分成交量 / 昨天全天成交量
+  - 极强 (>=15%)：主力抢筹，猛干
+  - 强 (>=10%)：资金关注，可以干
+  - 中等 (>=5%)：一般
+  - 弱 (<5%)：不关注
+- 弱转强：昨天炸板/大阴线，今天高开逾越压力位（最强买点）
+- 分时强承接：股价在均线上方运行，下跌缩量，上涨放量（资金护盘）
+- 对于 20cm 标的：涨幅 > 10% 且不回落是加速信号，不是卖点！
 
-第四步：最终决策矩阵
+第四步：最终决策矩阵 (Execution)
 根据以下维度评分并输出决策：
-- 龙头地位（40%）
-- 竞价强度（20%）
-- 弱转强形态（20%）
-- 分时承接（20%）
+- 龙头地位（40%）：板块排名 + 身位领先
+- 竞价强度（20%）：竞价抢筹度
+- 弱转强形态（20%）：弱转强信号
+- 分时承接（20%）：分时强承接
+
+决策标准：
+- ⭐⭐⭐ 真龙 (核心龙) + 爆量/弱转强 + 涨幅>10% → 🟢 扫板/排板 (满仓/重仓)
+- ⭐⭐⭐ 真龙 (核心龙) + 烂板/分歧 + 涨幅<5% → 🟡 低吸博弈 (半仓)
+- ⭐⭐ 中军/支线 + 图形漂亮 → 🟢 打板/跟随 (半仓)
+- ⭐ 跟风 + 任意 → 🔵 只看不买 (0)
+- ❌ 杂毛 + 任意 → 🔴 清仓/核按钮 (0)
 
 {special_instructions}
 
@@ -291,7 +361,7 @@ class RealAIAgent:
     "role": "龙头" | "中军" | "跟风" | "杂毛",
     "signal": "BUY_AGGRESSIVE" (猛干) | "BUY_DIP" (低吸) | "WAIT" (观望) | "SELL" (跑),
     "confidence": "HIGH" | "MEDIUM" | "LOW",
-    "reason": "简短理由，例如：'AI眼镜核心龙头，20cm突破平台，竞价爆量弱转强，直接扫板'",
+    "reason": "简短理由，例如：'AI眼镜核心龙头，20cm突破平台，竞价爆量弱转强，KDJ失效不看，直接扫板'",
     "stop_loss_price": [具体止损价]
 }}
 
@@ -1231,6 +1301,8 @@ class DragonAIAgent:
                 response_text = response.content
             else:
                 response_text = str(response)
+
+            logger.info(f"LLM 响应内容: {response_text[:500]}...")
 
             # 解析 JSON
             result = self._parse_dragon_response(response_text)
