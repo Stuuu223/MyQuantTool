@@ -70,6 +70,13 @@ def render_dragon_strategy_tab(db, config):
                             col2.metric("涨跌幅", f"{stock['涨跌幅']:.2f}%")
                             col3.metric("评级得分", f"{stock['评级得分']}/100")
                             
+                            # 显示量比、换手率、竞价量
+                            st.write("**实时数据：**")
+                            col4, col5, col6 = st.columns(3)
+                            col4.metric("量比", f"{stock.get('量比', 0):.2f}")
+                            col5.metric("换手率", f"{stock.get('换手率', 0):.2f}%")
+                            col6.metric("竞价量", f"{stock.get('竞价量', 0)} 手")
+                            
                             # 显示五个条件得分
                             st.write("**五个条件得分：**")
                             details = stock['详情']
@@ -104,6 +111,13 @@ def render_dragon_strategy_tab(db, config):
                             col1.metric("最新价", f"¥{stock['最新价']:.2f}")
                             col2.metric("涨跌幅", f"{stock['涨跌幅']:.2f}%")
                             
+                            # 显示量比、换手率、竞价量
+                            st.write("**实时数据：**")
+                            col3, col4, col5 = st.columns(3)
+                            col3.metric("量比", f"{stock.get('量比', 0):.2f}")
+                            col4.metric("换手率", f"{stock.get('换手率', 0):.2f}%")
+                            col5.metric("竞价量", f"{stock.get('竞价量', 0)} 手")
+                            
                             st.write(f"评级得分: {stock['评级得分']}/100")
                             st.info(f"评级说明: {stock['评级说明']}")
                             
@@ -133,7 +147,10 @@ def render_dragon_strategy_tab(db, config):
                             '最新价': f"¥{s['最新价']:.2f}",
                             '涨跌幅': f"{s['涨跌幅']:.2f}%",
                             '评级得分': s['评级得分'],
-                            '评级说明': s['评级说明']
+                            '评级说明': s['评级说明'],
+                            '量比': f"{s.get('量比', 0):.2f}",
+                            '换手率': f"{s.get('换手率', 0):.2f}%",
+                            '竞价量': f"{s.get('竞价量', 0)} 手"
                         }
                         for s in weak_dragons
                     ])

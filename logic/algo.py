@@ -1249,6 +1249,12 @@ class QuantAlgo:
             # 分析每只涨停板股票
             dragon_stocks = []
             
+            # 构建股票代码到实时数据的映射（方便查找）
+            realtime_map = {}
+            for full_code, data in realtime_data.items():
+                code = full_code if len(full_code) == 6 else full_code[2:]
+                realtime_map[code] = data
+            
             for stock_info in stocks_to_analyze:
                 symbol = stock_info['代码']
                 name = stock_info['名称']
@@ -1267,6 +1273,29 @@ class QuantAlgo:
                         # 龙头战法分析
                         dragon_analysis = QuantAlgo.analyze_dragon_stock(df, current_price)
                         
+                        # 获取实时数据（用于计算量比、换手率等）
+                        realtime_data_item = realtime_map.get(symbol, {})
+                        
+                        # 计算量比
+                        volume_ratio = 0
+                        if not df.empty and len(df) > 5:
+                            avg_volume = df['volume'].tail(5).mean()  # 5日平均成交量
+                            current_volume = realtime_data_item.get('volume', 0)
+                            if avg_volume > 0:
+                                volume_ratio = current_volume / avg_volume
+                        
+                        # 计算换手率（使用历史数据中的换手率）
+                        turnover_rate = 0
+                        if not df.empty:
+                            # 使用最近一天的换手率
+                            turnover_rate = df['turnover_rate'].iloc[-1] if 'turnover_rate' in df.columns else 0
+                        
+                        # 获取竞价量（买一量 + 卖一量）
+                        auction_volume = 0
+                        bid1_volume = realtime_data_item.get('bid1_volume', 0)
+                        ask1_volume = realtime_data_item.get('ask1_volume', 0)
+                        auction_volume = (bid1_volume + ask1_volume) / 100  # 转换为手
+                        
                         # 添加调试信息
                         score = dragon_analysis.get('评级得分', 0)
                         print(f"{name}({symbol}) - 涨幅:{stock_info['涨跌幅']:.2f}% - 评分:{score} - {dragon_analysis['龙头评级']}")
@@ -1281,7 +1310,10 @@ class QuantAlgo:
                                 '龙头评级': dragon_analysis['龙头评级'],
                                 '评级得分': dragon_analysis['评级得分'],
                                 '评级说明': dragon_analysis['评级说明'],
-                                '详情': dragon_analysis
+                                '详情': dragon_analysis,
+                                '量比': round(volume_ratio, 2),
+                                '换手率': round(turnover_rate, 2),
+                                '竞价量': int(auction_volume)
                             })
                 except Exception as e:
                     print(f"分析股票 {symbol} 失败: {e}")
