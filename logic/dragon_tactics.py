@@ -169,28 +169,29 @@ class DragonTactics:
         
         return results
     
-    def check_code_prefix(self, symbol: str) -> Dict[str, Any]:
+    def check_code_prefix(self, symbol: str, name: str = '') -> Dict[str, Any]:
         """
         检查股票代码前缀，判断赛道
-        
+
         Args:
             symbol: 股票代码
-            
+            name: 股票名称（可选，用于检测 ST 标志）
+
         Returns:
             代码前缀分析结果
         """
         results = {}
-        
-        # 检查是否为 ST
-        if 'ST' in symbol or '*ST' in symbol:
+
+        # 检查是否为 ST（检查代码和名称）
+        if 'ST' in symbol or '*ST' in symbol or 'ST' in name or '*ST' in name:
             results['is_st'] = True
             results['banned'] = True
-            results['banned_reason'] = 'ST股票，禁止交易'
+            results['banned_reason'] = 'ST/退市风险股，禁止交易'
             return results
-        
+
         results['is_st'] = False
         results['banned'] = False
-        
+
         # 检查前缀
         if symbol.startswith('300') or symbol.startswith('688'):
             results['prefix_type'] = '20cm战队'
@@ -207,7 +208,7 @@ class DragonTactics:
             results['limit_type'] = '未知'
             results['max_limit'] = 10
             results['volatility'] = '未知'
-        
+
         return results
     
     def analyze_weak_to_strong(self,

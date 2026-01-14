@@ -48,8 +48,16 @@ class RealAIAgent:
     def _init_llm(self):
         """初始化 LLM 接口"""
         try:
-            from logic.llm_interface import LLMManager
-            return LLMManager(self.api_key, provider=self.provider)
+            from logic.llm_interface import DeepSeekProvider, OpenAIProvider
+
+            # 根据提供商选择对应的类
+            if self.provider == 'deepseek':
+                return DeepSeekProvider(api_key=self.api_key)
+            elif self.provider == 'openai':
+                return OpenAIProvider(api_key=self.api_key)
+            else:
+                # 默认使用 DeepSeek
+                return DeepSeekProvider(api_key=self.api_key)
         except ImportError:
             logger.error("无法导入 LLM 接口，请检查 llm_interface.py")
             return None
@@ -91,19 +99,27 @@ class RealAIAgent:
             # 调用 LLM
             response = self.llm.chat(prompt, model=self.model)
 
+            # 提取响应内容
+            if hasattr(response, 'content'):
+                response_text = response.content
+            else:
+                response_text = str(response)
+
+            logger.info(f"LLM 响应内容: {response_text[:500]}...")
+
             # 解析 JSON
             if return_json:
                 if use_dragon:
-                    result = self._parse_dragon_response(response)
+                    result = self._parse_dragon_response(response_text)
                 else:
-                    result = self._parse_llm_response(response)
-                
+                    result = self._parse_llm_response(response_text)
+
                 result['symbol'] = symbol
                 result['timestamp'] = pd.Timestamp.now()
                 result['use_dragon_tactics'] = use_dragon
                 return result
             else:
-                return {'raw_response': response, 'symbol': symbol}
+                return {'raw_response': response_text, 'symbol': symbol}
 
         except Exception as e:
             logger.error(f"LLM 调用失败: {str(e)}")
@@ -197,6 +213,37 @@ class RealAIAgent:
             完整的提示词
         """
         if use_dragon_tactics:
+            # --- 🛡️ V3.0 新增：前置硬规则过滤 (Hard Rules) ---
+            # 动态生成特殊指令
+            special_instructions = ""
+
+            # 检测 ST/*ST
+            if "ST" in context or "*ST" in context:
+                special_instructions += """
+🚨🚨🚨 触发生死红线规则 🚨🚨🚨
+严重警告：检测到该股为 ST/退市风险股。
+【强制执行】：
+1. 评分不得超过 10 分
+2. role 必须为 "杂毛"
+3. signal 必须为 "SELL" 或 "WAIT"
+4. reason 必须包含 "退市风险" 或 "流动性风险"
+5. suggested_position 必须为 0.0
+
+除非有明确的"摘帽"内幕逻辑，否则一律视为【垃圾】，直接【🔴跑】。
+有命赚没命花，本金安全第一！
+"""
+
+            # 检测创业板/科创板（20cm）
+            if "300" in context or "688" in context:
+                special_instructions += """
+⚡ 波动率提示：这是 20cm 标的（创业板/科创板）。
+【强制执行】：
+1. 涨停判断标准：涨幅 >= 19.8% 才算封板
+2. 涨幅 10%-15% 属于"烂板"或"严重分歧"，必须扣分
+3. 涨幅 < 8% 不算强势，直接给低分
+4. 严禁将 13% 的涨幅误判为"涨停板"
+"""
+
             # 使用 V3.0 龙头暴力版 Prompt
             prompt = f"""【角色定义】
 你不是传统的价值投资者，也不是看教科书的技术分析师。
@@ -207,11 +254,13 @@ class RealAIAgent:
 1. 禁止建议"等待回调"：龙头启动时不会回调，犹豫就是踏空。
 2. 禁止使用 KDJ、MACD 金叉作为买入依据：这些指标太慢，等你看到金叉，车门早焊死了。
 3. 禁止看市盈率 (PE/PB)：短线博弈只看情绪和资金，基本面只看有没有雷。
+4. 禁止将 ST/*ST 股票视为龙头：这是退市风险股，流动性随时枯竭，本金归零风险极大。
 
 【分析流程】
-第一步：身份核查 (Code Check)
+第一步：身份核查 (Code Check) - 🛡️ 生死红线
 - 检查代码前缀（300/688为20cm，60/00为10cm）
-- 检查是否为 ST（禁止交易）
+- 检查是否为 ST/*ST（触发死刑规则：强制 0-10 分）
+- 检查涨跌幅限制（10cm 还是 20cm）
 
 第二步：龙头辨识度
 - 它是唯一的吗？（板块内唯一涨停/最高板）
@@ -229,6 +278,8 @@ class RealAIAgent:
 - 竞价强度（20%）
 - 弱转强形态（20%）
 - 分时承接（20%）
+
+{special_instructions}
 
 【当前数据】
 {context}
@@ -330,6 +381,58 @@ class RealAIAgent:
             'risk_level': 'MEDIUM',
             'reason': '数据不足',
             'suggested_position': 0.0
+        }
+        return defaults.get(field, None)
+
+    def _parse_dragon_response(self, response_text: str) -> Dict[str, Any]:
+        """解析龙头战法 LLM 响应"""
+        import re
+        try:
+            logger.debug(f"LLM 原始响应: {response_text[:500]}...")
+            cleaned = re.sub(r'```json\s*|\s*```', '', response_text).strip()
+            logger.debug(f"清洗后的响应: {cleaned[:500]}...")
+            result = json.loads(cleaned)
+
+            # 验证必需字段
+            required_fields = ['score', 'role', 'signal', 'confidence', 'reason', 'stop_loss_price']
+            for field in required_fields:
+                if field not in result:
+                    logger.warning(f"缺少必需字段: {field}")
+                    result[field] = self._get_dragon_default_value(field)
+
+            # 验证数据类型
+            if not isinstance(result['score'], (int, float)):
+                result['score'] = 50
+            if result['role'] not in ['龙头', '中军', '跟风', '杂毛']:
+                result['role'] = '跟风'
+            if result['signal'] not in ['BUY_AGGRESSIVE', 'BUY_DIP', 'WAIT', 'SELL']:
+                result['signal'] = 'WAIT'
+            if result['confidence'] not in ['HIGH', 'MEDIUM', 'LOW']:
+                result['confidence'] = 'MEDIUM'
+
+            return result
+
+        except Exception as e:
+            logger.error(f"JSON 解析失败: {e}")
+            # 返回兜底数据
+            return {
+                "score": 50,
+                "role": "跟风",
+                "signal": "WAIT",
+                "confidence": "MEDIUM",
+                "reason": "解析失败",
+                "stop_loss_price": 0
+            }
+
+    def _get_dragon_default_value(self, field: str) -> Any:
+        """获取龙头战法字段的默认值"""
+        defaults = {
+            'score': 50,
+            'role': '跟风',
+            'signal': 'WAIT',
+            'confidence': 'MEDIUM',
+            'reason': '数据不足',
+            'stop_loss_price': 0
         }
         return defaults.get(field, None)
 
@@ -541,77 +644,215 @@ class RealAIAgent:
         return results
 
     async def async_batch_analyze(self,
-                                   stocks: List[Dict[str, Any]],
-                                   market_context: Optional[Dict[str, Any]] = None,
-                                   max_concurrent: int = 10) -> List[Dict[str, Any]]:
-        """
-        异步批量分析股票（高性能）
 
-        Args:
-            stocks: 股票列表，每个元素包含 symbol, price_data, technical_data
-            market_context: 市场上下文
-            max_concurrent: 最大并发数
+                                       stocks: List[Dict[str, Any]],
 
-        Returns:
-            分析结果列表（JSON 格式）
-        """
-        import asyncio
+                                       market_context: Optional[Dict[str, Any]] = None,
 
-        async def analyze_single(stock):
-            """分析单只股票"""
-            try:
-                result = self.analyze_stock(
-                    symbol=stock['symbol'],
-                    price_data=stock['price_data'],
-                    technical_data=stock['technical_data'],
-                    market_context=market_context,
-                    return_json=True
-                )
-                return result
-            except Exception as e:
-                logger.error(f"分析股票 {stock['symbol']} 失败: {str(e)}")
-                return {
-                    'symbol': stock['symbol'],
-                    'score': 50,
-                    'signal': 'HOLD',
-                    'risk_level': 'HIGH',
-                    'reason': f"分析失败: {str(e)}",
-                    'suggested_position': 0.0,
-                    'timestamp': pd.Timestamp.now()
-                }
+                                       max_concurrent: int = 10,
 
-        # 创建信号量控制并发
-        semaphore = asyncio.Semaphore(max_concurrent)
+                                       use_sentiment_monitor: bool = True) -> List[Dict[str, Any]]:
 
-        async def analyze_with_semaphore(stock):
-            async with semaphore:
-                # 模拟异步（实际 LLM 调用可能是同步的）
-                return await asyncio.get_event_loop().run_in_executor(
-                    None, lambda: asyncio.create_task(analyze_single(stock))
-                )
+            """
 
-        # 执行批量分析
-        tasks = [analyze_single(stock) for stock in stocks]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+            异步批量分析股票（高性能）
 
-        # 处理结果
-        formatted_results = []
-        for i, result in enumerate(results):
-            if isinstance(result, Exception):
-                logger.error(f"股票 {stocks[i]['symbol']} 分析异常: {str(result)}")
-                formatted_results.append({
-                    'symbol': stocks[i]['symbol'],
-                    'score': 50,
-                    'signal': 'HOLD',
-                    'risk_level': 'HIGH',
-                    'reason': f"异常: {str(result)}",
-                    'suggested_position': 0.0,
-                    'timestamp': pd.Timestamp.now()
-                })
-            else:
-                formatted_results.append(result)
+            
 
-        return formatted_results
+            Args:
+
+                stocks: 股票列表，每个元素包含 symbol, price_data, technical_data
+
+                market_context: 市场上下文
+
+                max_concurrent: 最大并发数
+
+                use_sentiment_monitor: 是否使用情绪监控（默认 True）
+
+                
+
+            Returns:
+
+                分析结果列表（JSON 格式）
+
+            """
+
+            import asyncio
+
+            
+
+            # 情绪监控：检查市场结构
+
+            sentiment_result = None
+
+            if use_sentiment_monitor and self.dragon_tactics:
+
+                try:
+
+                    from logic.market_sentiment_monitor import MarketSentimentMonitor, CircuitBreaker
+
+                    
+
+                    monitor = MarketSentimentMonitor()
+
+                    breaker = CircuitBreaker(monitor)
+
+                    
+
+                    # 检查市场结构
+
+                    stocks_with_scores = []
+
+                    for stock in stocks:
+
+                        # 临时评分（这里可以先用规则评分，或者等分析完成后再评分）
+
+                        stocks_with_scores.append({
+
+                            'symbol': stock['symbol'],
+
+                            'score': 50,  # 临时评分，后续会更新
+
+                            'change_percent': stock.get('price_data', {}).get('change_percent', 0),
+
+                            'amount': stock.get('price_data', {}).get('amount', 0)
+
+                        })
+
+                    
+
+                    breaker_result = breaker.check_and_break(stocks_with_scores)
+
+                    sentiment_result = breaker_result['market_structure']
+
+                    
+
+                    # 如果触发熔断，返回警告
+
+                    if breaker_result['is_triggered']:
+
+                        logger.warning(f"⚠️ 情绪熔断触发：{breaker_result['trigger_reason']}")
+
+                        logger.warning(f"市场状态：{sentiment_result['market_state']}")
+
+                        logger.warning("停止开仓，建议观望")
+
+                        
+
+                        # 返回警告信息
+
+                        return [{
+
+                            'symbol': 'MARKET_WARNING',
+
+                            'score': 0,
+
+                            'signal': 'WAIT',
+
+                            'confidence': 'HIGH',
+
+                            'reason': f"情绪熔断：{breaker_result['trigger_reason']}",
+
+                            'market_state': sentiment_result['market_state'],
+
+                            'market_warning': True,
+
+                            'timestamp': pd.Timestamp.now()
+
+                        }]
+
+                    
+
+                except ImportError:
+
+                    logger.warning("无法导入 MarketSentimentMonitor，情绪监控功能不可用")
+
+            
+
+            async def analyze_single(stock):
+
+                """分析单只股票"""
+
+                try:
+
+                    result = self.analyze_stock(
+
+                        symbol=stock['symbol'],
+
+                        price_data=stock['price_data'],
+
+                        technical_data=stock['technical_data'],
+
+                        market_context=market_context,
+
+                        return_json=True
+
+                    )
+
+                    return result
+
+                except Exception as e:
+
+                    logger.error(f"分析股票 {stock['symbol']} 失败: {str(e)}")
+
+                    return {
+
+                        'symbol': stock['symbol'],
+
+                        'score': 50,
+
+                        'signal': 'HOLD',
+
+                        'risk_level': 'HIGH',
+
+                        'reason': f"分析失败: {str(e)}",
+
+                        'suggested_position': 0.0,
+
+                        'timestamp': pd.Timestamp.now()
+
+                    }
+
+    
+
+            # 创建信号量控制并发
+
+            semaphore = asyncio.Semaphore(max_concurrent)
+
+    
+
+            async def analyze_with_semaphore(stock):
+
+                async with semaphore:
+
+                    # 模拟异步（实际 LLM 调用可能是同步的）
+
+                    return await asyncio.get_event_loop().run_in_executor(
+
+                        None, lambda: asyncio.create_task(analyze_single(stock)))
+
+            # 执行批量分析
+            tasks = [analyze_single(stock) for stock in stocks]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # 处理结果
+            formatted_results = []
+            for i, result in enumerate(results):
+                if isinstance(result, Exception):
+                    logger.error(f"股票 {stocks[i]['symbol']} 分析异常: {str(result)}")
+                    formatted_results.append({
+                        'symbol': stocks[i]['symbol'],
+                        'score': 50,
+                        'signal': 'HOLD',
+                        'risk_level': 'HIGH',
+                        'reason': f"异常: {str(result)}",
+                        'suggested_position': 0.0,
+                        'timestamp': pd.Timestamp.now()
+                    })
+                else:
+                    formatted_results.append(result)
+
+            return formatted_results
 
 
 class RuleBasedAgent:
@@ -873,8 +1114,16 @@ class DragonAIAgent:
     def _init_llm(self):
         """初始化 LLM 接口"""
         try:
-            from logic.llm_interface import LLMManager
-            return LLMManager(self.api_key, provider=self.provider)
+            from logic.llm_interface import DeepSeekProvider, OpenAIProvider
+
+            # 根据提供商选择对应的类
+            if self.provider == 'deepseek':
+                return DeepSeekProvider(api_key=self.api_key)
+            elif self.provider == 'openai':
+                return OpenAIProvider(api_key=self.api_key)
+            else:
+                # 默认使用 DeepSeek
+                return DeepSeekProvider(api_key=self.api_key)
         except ImportError:
             logger.error("无法导入 LLM 接口")
             return None
@@ -886,10 +1135,11 @@ class DragonAIAgent:
                             auction_data: Optional[Dict[str, Any]] = None,
                             sector_data: Optional[Dict[str, Any]] = None,
                             kline_data: Optional[pd.DataFrame] = None,
-                            intraday_data: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
+                            intraday_data: Optional[pd.DataFrame] = None,
+                            name: str = '') -> Dict[str, Any]:
         """
         使用龙头战法分析股票
-        
+
         Args:
             symbol: 股票代码
             price_data: 价格数据
@@ -898,15 +1148,16 @@ class DragonAIAgent:
             sector_data: 板块数据（可选）
             kline_data: K线数据（可选）
             intraday_data: 分时数据（可选）
-            
+            name: 股票名称（可选，用于检测 ST 标志）
+
         Returns:
             分析结果（JSON 格式）
         """
         if self.llm is None:
             return self._fallback_dragon_analysis(symbol, price_data, technical_data)
-        
-        # 1. 代码前缀检查
-        code_check = self.dragon_tactics.check_code_prefix(symbol) if self.dragon_tactics else {}
+
+        # 1. 代码前缀检查（包括 ST 检查）
+        code_check = self.dragon_tactics.check_code_prefix(symbol, name) if self.dragon_tactics else {}
         if code_check.get('banned', False):
             return {
                 'score': 0,
@@ -974,10 +1225,16 @@ class DragonAIAgent:
         try:
             # 调用 LLM
             response = self.llm.chat(prompt, model=self.model)
-            
+
+            # 提取响应内容
+            if hasattr(response, 'content'):
+                response_text = response.content
+            else:
+                response_text = str(response)
+
             # 解析 JSON
-            result = self._parse_dragon_response(response)
-            
+            result = self._parse_dragon_response(response_text)
+
             # 合并决策矩阵的结果
             result.update({
                 'symbol': symbol,
@@ -988,9 +1245,9 @@ class DragonAIAgent:
                 'sector_role': sector_analysis.get('role', '未知'),
                 'sector_heat': sector_analysis.get('sector_heat', '未知')
             })
-            
+
             return result
-            
+
         except Exception as e:
             logger.error(f"LLM 调用失败: {str(e)}")
             # 返回决策矩阵的结果
