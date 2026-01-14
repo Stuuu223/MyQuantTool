@@ -8,8 +8,41 @@ logger = get_logger(__name__)
 class QuantAlgo:
 
     # 股票名称缓存
-
     _stock_names_cache = {}
+
+    @staticmethod
+    def check_limit_status(code, current_pct, name=""):
+        """
+        精准判定涨停状态
+        返回: (is_limit_up, is_20cm, status_text)
+        """
+        # 1. 判定是否为 20cm 标的 (创业板 30/科创板 68)
+        is_20cm = code.startswith(('30', '68'))
+
+        # 2. 判定是否为 ST (5% 涨停)
+        is_st = 'ST' in name.upper()
+
+        # 3. 设定阈值
+        if is_20cm:
+            limit_threshold = 19.5
+        elif is_st:
+            limit_threshold = 4.8
+        else:
+            limit_threshold = 9.5
+
+        is_limit_up = current_pct >= limit_threshold
+
+        # 4. 生成状态文本
+        if is_limit_up:
+            status_text = "涨停封死"
+        elif is_20cm and 10.0 <= current_pct < 19.5:
+            status_text = "半路板（加速逼空）"
+        elif current_pct >= 9.5:
+            status_text = "接近涨停"
+        else:
+            status_text = "正常交易"
+
+        return is_limit_up, is_20cm, status_text
 
     
 
@@ -2806,7 +2839,7 @@ class QuantAlgo:
 
             # 按评分排序
             auction_stocks.sort(key=lambda x: x['评分'], reverse=True)
-            
+
             return {
                 '数据状态': '正常',
                 '扫描数量': len(filtered_stocks),
@@ -2814,6 +2847,557 @@ class QuantAlgo:
                 '竞价股票列表': auction_stocks
             }
         except Exception as e:
+            return {
+                '数据状态': '获取失败',
+                '错误信息': str(e),
+                '说明': '可能是网络问题或数据源限制'
+            }
+
+    @staticmethod
+    def scan_trend_stocks(limit=100, min_score=60):
+        """
+        趋势中军扫描模式 (专门抓 诺思格/宁德时代 这类机构票)
+        特征：不一定天天涨停，但沿着 5日线/10日线不停涨
+        资金：主要靠机构推土机式买入，而不是游资一日游
+        """
+        try:
+            from logic.data_manager import DataManager
+
+            # 获取股票列表
+            import akshare as ak
+            stock_list_df = ak.stock_info_a_code_name()
+
+            if stock_list_df.empty:
+                return {
+                    '数据状态': '无法获取股票列表',
+                    '说明': '可能是数据源限制'
+                }
+
+            stock_list = stock_list_df['code'].tolist()
+
+            # 使用 Easyquotation 极速获取全市场实时数据
+            db = DataManager()
+            logger.info(f"🚀 开始扫描趋势中军 (Pool: {len(stock_list)})...")
+            realtime_data = db.get_fast_price(stock_list)
+            logger.info(f"✅ 实时数据获取完成，获取到 {len(realtime_data)} 只股票数据")
+
+            if not realtime_data:
+                db.close()
+                return {
+                    '数据状态': '无法获取实时数据',
+                    '说明': 'Easyquotation 未初始化或网络问题'
+                }
+
+            # 转换为列表格式
+            all_stocks = []
+            for full_code, data in realtime_data.items():
+                try:
+                    # 提取股票代码
+                    if len(full_code) == 6:
+                        code = full_code
+                    elif len(full_code) > 6:
+                        code = full_code[2:]
+                    else:
+                        continue
+
+                    # 只保留 A 股股票
+                    if not (len(code) == 6 and code.isdigit() and code[0] in ['0', '3', '6']):
+                        continue
+
+                    name = data.get('name', '')
+
+                    # 排除 ST 股
+                    if 'ST' in name or '*ST' in name:
+                        continue
+
+                    current_price = float(data.get('now', 0))
+                    last_close = float(data.get('close', 0))
+
+                    if current_price == 0 or last_close == 0:
+                        continue
+
+                    pct_change = (current_price - last_close) / last_close * 100
+
+                    # 趋势初筛规则
+                    # 1. 拒绝暴涨暴跌 (趋势股通常涨 2% - 7%)
+                    if pct_change < 1.5 or pct_change > 10:
+                        continue
+
+                    # 2. 获取成交量
+                    volume = data.get('volume', 0) / 100  # 转换为手
+
+                    all_stocks.append({
+                        '代码': code,
+                        '名称': name,
+                        '最新价': current_price,
+                        '涨跌幅': pct_change,
+                        '成交量': volume,
+                        '买一价': data.get('bid1', 0),
+                        '卖一价': data.get('ask1', 0),
+                        '买一量': data.get('bid1_volume', 0),
+                        '卖一量': data.get('ask1_volume', 0)
+                    })
+                except Exception as e:
+                    continue
+
+            if not all_stocks:
+                return {
+                    '数据状态': '无符合条件的股票',
+                    '说明': '当前市场无符合趋势特征的股票'
+                }
+
+            # 限制候选股票数量
+            max_candidates = min(200, len(all_stocks))
+            all_stocks.sort(key=lambda x: x['涨跌幅'], reverse=True)
+            all_stocks = all_stocks[:max_candidates]
+            logger.info(f"初步筛选后保留 {len(all_stocks)} 只候选股票")
+
+            # 批量加载历史数据
+            logger.info(f"开始批量加载 {len(all_stocks)} 只候选股票的历史数据...")
+            history_data_cache = {}
+            for stock in all_stocks:
+                symbol = stock['代码']
+                try:
+                    df = db.get_history_data(symbol)
+                    if not df.empty and len(df) > 5:
+                        history_data_cache[symbol] = df
+                except Exception as e:
+                    logger.warning(f"加载股票 {symbol} 历史数据失败: {e}")
+            logger.info(f"✅ 历史数据加载完成，成功加载 {len(history_data_cache)} 只股票")
+
+            # 计算量比
+            for stock in all_stocks:
+                try:
+                    df = history_data_cache.get(stock['代码'])
+                    if df is not None and not df.empty and len(df) > 5:
+                        avg_volume = df['volume'].tail(5).mean()
+                        if avg_volume > 0:
+                            stock['量比'] = stock['成交量'] / avg_volume
+                        else:
+                            stock['量比'] = 1
+                    else:
+                        stock['量比'] = 1
+                except:
+                    stock['量比'] = 1
+
+            # 计算综合得分
+            for stock in all_stocks:
+                trend_score = 60  # 基础分
+
+                # 1. 涨幅评分 (2% - 7% 是最佳趋势涨幅)
+                pct = stock['涨跌幅']
+                if 2.0 <= pct <= 6.0:
+                    trend_score += 15  # 最佳趋势涨幅
+                elif 6.0 < pct <= 8.0:
+                    trend_score += 10  # 较强趋势
+                elif 1.5 <= pct < 2.0:
+                    trend_score += 5  # 弱趋势启动
+
+                # 2. 量比评分 (机构喜欢温和放量 1.0 - 3.0)
+                volume_ratio = stock['量比']
+                if 1.0 <= volume_ratio <= 3.0:
+                    trend_score += 15  # 温和放量
+                elif 3.0 < volume_ratio <= 5.0:
+                    trend_score += 10  # 较强放量
+                elif volume_ratio > 5.0:
+                    trend_score -= 5  # 爆量，可能是游资
+
+                # 3. 价格评分 (机构喜欢高价股)
+                price = stock['最新价']
+                if price > 50:
+                    trend_score += 10  # 机构偏好高价股
+                elif price > 20:
+                    trend_score += 5
+
+                # 4. 板块加分
+                code = stock['代码']
+                if code.startswith('30'):
+                    trend_score += 5  # 创业板弹性加分
+
+                stock['趋势评分'] = trend_score
+
+            # 按评分排序，取前 limit 只
+            filtered_stocks = sorted(all_stocks, key=lambda x: x['趋势评分'], reverse=True)[:limit]
+
+            # 使用多线程并行分析
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+
+            # 构建股票代码到实时数据的映射
+            realtime_map = {}
+            for full_code, data in realtime_data.items():
+                code = full_code if len(full_code) == 6 else full_code[2:]
+                realtime_map[code] = data
+
+            def analyze_trend_stock(stock):
+                """分析单只趋势股票"""
+                try:
+                    symbol = stock['代码']
+                    name = stock['名称']
+                    current_price = stock['最新价']
+                    change_pct = stock['涨跌幅']
+                    volume_ratio = stock['量比']
+
+                    # 获取历史数据
+                    df = history_data_cache.get(symbol)
+                    if df is None or df.empty:
+                        return None
+
+                    # 计算均线多头排列
+                    ma5 = df['close'].tail(5).mean()
+                    ma10 = df['close'].tail(10).mean()
+                    ma20 = df['close'].tail(20).mean()
+
+                    is_bullish = current_price > ma5 > ma10 > ma20
+
+                    # 获取换手率
+                    turnover_rate = 0
+                    if 'turnover_rate' in df.columns:
+                        turnover_rate = df['turnover_rate'].iloc[-1]
+
+                    # 计算评分
+                    score = stock['趋势评分']
+                    signals = []
+
+                    # 均线多头排列加分
+                    if is_bullish:
+                        score += 20
+                        signals.append("均线多头排列")
+
+                    # 换手率评分
+                    if 2 <= turnover_rate <= 10:
+                        score += 15
+                        signals.append(f"换手率适中（{turnover_rate:.2f}%）")
+                    elif turnover_rate > 10:
+                        score += 10
+                        signals.append(f"换手率较高（{turnover_rate:.2f}%）")
+
+                    # 评级
+                    if score >= 90:
+                        level = "🔥 强趋势中军"
+                    elif score >= 80:
+                        level = "📈 趋势中军"
+                    elif score >= 70:
+                        level = "⚠️ 弱趋势"
+                    else:
+                        level = "❌ 不符合"
+
+                    if score >= min_score:
+                        return {
+                            '代码': symbol,
+                            '名称': name,
+                            '最新价': current_price,
+                            '涨跌幅': change_pct,
+                            '评分': score,
+                            '评级': level,
+                            '信号': ', '.join(signals),
+                            '量比': round(volume_ratio, 2),
+                            '换手率': round(turnover_rate, 2),
+                            'MA5': round(ma5, 2),
+                            'MA10': round(ma10, 2),
+                            'MA20': round(ma20, 2),
+                            '买一价': round(stock['买一价'], 2),
+                            '卖一价': round(stock['卖一价'], 2),
+                            '买一量': int(stock['买一量'] / 100),
+                            '卖一量': int(stock['卖一量'] / 100)
+                        }
+                    return None
+                except Exception as e:
+                    logger.error(f"分析趋势股票 {stock['代码']} 失败: {e}")
+                    return None
+
+            # 并行分析
+            trend_stocks = []
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                futures = {executor.submit(analyze_trend_stock, stock): stock for stock in filtered_stocks}
+                for future in as_completed(futures):
+                    result = future.result()
+                    if result:
+                        trend_stocks.append(result)
+
+            logger.info(f"✅ 并行分析完成，找到 {len(trend_stocks)} 只符合条件的股票")
+
+            db.close()
+
+            # 按评分排序
+            trend_stocks.sort(key=lambda x: x['评分'], reverse=True)
+
+            return {
+                '数据状态': '正常',
+                '扫描数量': len(filtered_stocks),
+                '符合条件数量': len(trend_stocks),
+                '趋势股票列表': trend_stocks
+            }
+        except Exception as e:
+            logger.error(f"趋势中军扫描失败: {e}")
+            return {
+                '数据状态': '获取失败',
+                '错误信息': str(e),
+                '说明': '可能是网络问题或数据源限制'
+            }
+
+    @staticmethod
+    def scan_halfway_stocks(limit=100, min_score=60):
+        """
+        半路战法扫描模式 (专门抓 20cm 股票在 10%-19% 区间的半路板)
+        特征：20cm 股票在加速逼空段，但还未封板
+        机会：半路扫货，博弈 20% 涨停
+        """
+        try:
+            from logic.data_manager import DataManager
+
+            # 获取股票列表
+            import akshare as ak
+            stock_list_df = ak.stock_info_a_code_name()
+
+            if stock_list_df.empty:
+                return {
+                    '数据状态': '无法获取股票列表',
+                    '说明': '可能是数据源限制'
+                }
+
+            stock_list = stock_list_df['code'].tolist()
+
+            # 使用 Easyquotation 极速获取全市场实时数据
+            db = DataManager()
+            logger.info(f"🚀 开始扫描半路板 (Pool: {len(stock_list)})...")
+            realtime_data = db.get_fast_price(stock_list)
+            logger.info(f"✅ 实时数据获取完成，获取到 {len(realtime_data)} 只股票数据")
+
+            if not realtime_data:
+                db.close()
+                return {
+                    '数据状态': '无法获取实时数据',
+                    '说明': 'Easyquotation 未初始化或网络问题'
+                }
+
+            # 转换为列表格式
+            all_stocks = []
+            for full_code, data in realtime_data.items():
+                try:
+                    # 提取股票代码
+                    if len(full_code) == 6:
+                        code = full_code
+                    elif len(full_code) > 6:
+                        code = full_code[2:]
+                    else:
+                        continue
+
+                    # 只保留 20cm 标的 (创业板 30/科创板 68)
+                    if not (len(code) == 6 and code.isdigit() and code[0] in ['3', '6']):
+                        continue
+
+                    name = data.get('name', '')
+
+                    # 排除 ST 股
+                    if 'ST' in name or '*ST' in name:
+                        continue
+
+                    current_price = float(data.get('now', 0))
+                    last_close = float(data.get('close', 0))
+
+                    if current_price == 0 or last_close == 0:
+                        continue
+
+                    pct_change = (current_price - last_close) / last_close * 100
+
+                    # 半路板初筛规则：10% - 19.5%
+                    if not (10.0 <= pct_change < 19.5):
+                        continue
+
+                    # 获取成交量
+                    volume = data.get('volume', 0) / 100  # 转换为手
+
+                    all_stocks.append({
+                        '代码': code,
+                        '名称': name,
+                        '最新价': current_price,
+                        '涨跌幅': pct_change,
+                        '成交量': volume,
+                        '买一价': data.get('bid1', 0),
+                        '卖一价': data.get('ask1', 0),
+                        '买一量': data.get('bid1_volume', 0),
+                        '卖一量': data.get('ask1_volume', 0)
+                    })
+                except Exception as e:
+                    continue
+
+            if not all_stocks:
+                return {
+                    '数据状态': '无符合条件的股票',
+                    '说明': '当前市场无半路板机会'
+                }
+
+            # 限制候选股票数量
+            max_candidates = min(100, len(all_stocks))
+            all_stocks.sort(key=lambda x: x['涨跌幅'], reverse=True)
+            all_stocks = all_stocks[:max_candidates]
+            logger.info(f"初步筛选后保留 {len(all_stocks)} 只候选股票")
+
+            # 批量加载历史数据
+            logger.info(f"开始批量加载 {len(all_stocks)} 只候选股票的历史数据...")
+            history_data_cache = {}
+            for stock in all_stocks:
+                symbol = stock['代码']
+                try:
+                    df = db.get_history_data(symbol)
+                    if not df.empty and len(df) > 5:
+                        history_data_cache[symbol] = df
+                except Exception as e:
+                    logger.warning(f"加载股票 {symbol} 历史数据失败: {e}")
+            logger.info(f"✅ 历史数据加载完成，成功加载 {len(history_data_cache)} 只股票")
+
+            # 计算量比
+            for stock in all_stocks:
+                try:
+                    df = history_data_cache.get(stock['代码'])
+                    if df is not None and not df.empty and len(df) > 5:
+                        avg_volume = df['volume'].tail(5).mean()
+                        if avg_volume > 0:
+                            stock['量比'] = stock['成交量'] / avg_volume
+                        else:
+                            stock['量比'] = 1
+                    else:
+                        stock['量比'] = 1
+                except:
+                    stock['量比'] = 1
+
+            # 计算综合得分
+            for stock in all_stocks:
+                halfway_score = 60  # 基础分
+
+                # 1. 涨幅评分 (15% - 19% 是最佳半路区间)
+                pct = stock['涨跌幅']
+                if 15.0 <= pct < 19.5:
+                    halfway_score += 20  # 最佳半路区间
+                elif 12.0 <= pct < 15.0:
+                    halfway_score += 15  # 较好半路区间
+                elif 10.0 <= pct < 12.0:
+                    halfway_score += 10  # 启动区间
+
+                # 2. 量比评分 (半路板需要攻击性放量)
+                volume_ratio = stock['量比']
+                if volume_ratio > 5.0:
+                    halfway_score += 20  # 攻击性放量
+                elif volume_ratio > 3.0:
+                    halfway_score += 15  # 较强放量
+                elif volume_ratio > 2.0:
+                    halfway_score += 10  # 温和放量
+
+                # 3. 买卖盘口评分 (买一量大，卖一量小)
+                bid1_volume = stock['买一量']
+                ask1_volume = stock['卖一量']
+                if ask1_volume == 0:
+                    halfway_score += 15  # 无卖压
+                elif bid1_volume > ask1_volume * 2:
+                    halfway_score += 10  # 买盘强
+
+                stock['半路评分'] = halfway_score
+
+            # 按评分排序，取前 limit 只
+            filtered_stocks = sorted(all_stocks, key=lambda x: x['半路评分'], reverse=True)[:limit]
+
+            # 使用多线程并行分析
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+
+            # 构建股票代码到实时数据的映射
+            realtime_map = {}
+            for full_code, data in realtime_data.items():
+                code = full_code if len(full_code) == 6 else full_code[2:]
+                realtime_map[code] = data
+
+            def analyze_halfway_stock(stock):
+                """分析单只半路板股票"""
+                try:
+                    symbol = stock['代码']
+                    name = stock['名称']
+                    current_price = stock['最新价']
+                    change_pct = stock['涨跌幅']
+                    volume_ratio = stock['量比']
+
+                    # 获取历史数据
+                    df = history_data_cache.get(symbol)
+                    if df is None or df.empty:
+                        return None
+
+                    # 获取换手率
+                    turnover_rate = 0
+                    if 'turnover_rate' in df.columns:
+                        turnover_rate = df['turnover_rate'].iloc[-1]
+
+                    # 计算评分
+                    score = stock['半路评分']
+                    signals = []
+
+                    # 量比评分
+                    if volume_ratio > 5.0:
+                        signals.append(f"攻击性放量（量比{volume_ratio:.2f}）")
+                    elif volume_ratio > 3.0:
+                        signals.append(f"较强放量（量比{volume_ratio:.2f}）")
+
+                    # 换手率评分
+                    if 5 <= turnover_rate <= 15:
+                        score += 15
+                        signals.append(f"换手率适中（{turnover_rate:.2f}%）")
+                    elif turnover_rate > 15:
+                        score += 10
+                        signals.append(f"换手率较高（{turnover_rate:.2f}%）")
+
+                    # 评级
+                    if score >= 90:
+                        level = "🔥 强半路板"
+                    elif score >= 80:
+                        level = "📈 半路板"
+                    elif score >= 70:
+                        level = "⚠️ 弱半路板"
+                    else:
+                        level = "❌ 不符合"
+
+                    if score >= min_score:
+                        return {
+                            '代码': symbol,
+                            '名称': name,
+                            '最新价': current_price,
+                            '涨跌幅': change_pct,
+                            '评分': score,
+                            '评级': level,
+                            '信号': ', '.join(signals),
+                            '量比': round(volume_ratio, 2),
+                            '换手率': round(turnover_rate, 2),
+                            '买一价': round(stock['买一价'], 2),
+                            '卖一价': round(stock['卖一价'], 2),
+                            '买一量': int(stock['买一量'] / 100),
+                            '卖一量': int(stock['卖一量'] / 100),
+                            '操作建议': "🚀 半路扫货。当前处于加速逼空段，是上车博弈 20% 的机会，不要等回调！"
+                        }
+                    return None
+                except Exception as e:
+                    logger.error(f"分析半路板股票 {stock['代码']} 失败: {e}")
+                    return None
+
+            # 并行分析
+            halfway_stocks = []
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                futures = {executor.submit(analyze_halfway_stock, stock): stock for stock in filtered_stocks}
+                for future in as_completed(futures):
+                    result = future.result()
+                    if result:
+                        halfway_stocks.append(result)
+
+            logger.info(f"✅ 并行分析完成，找到 {len(halfway_stocks)} 只符合条件的股票")
+
+            db.close()
+
+            # 按评分排序
+            halfway_stocks.sort(key=lambda x: x['评分'], reverse=True)
+
+            return {
+                '数据状态': '正常',
+                '扫描数量': len(filtered_stocks),
+                '符合条件数量': len(halfway_stocks),
+                '半路板列表': halfway_stocks
+            }
+        except Exception as e:
+            logger.error(f"半路战法扫描失败: {e}")
             return {
                 '数据状态': '获取失败',
                 '错误信息': str(e),
