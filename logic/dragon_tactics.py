@@ -62,19 +62,19 @@ class DragonTactics:
             call_auction_amount_ratio = current_open_amount / prev_day_total_amount
             results['call_auction_amount_ratio'] = call_auction_amount_ratio
         
-        # 判断竞价强度
+        # 判断竞价强度（修正：降低阈值，更符合现实情况）
         if 'call_auction_ratio' in results:
             ratio = results['call_auction_ratio']
-            if ratio > 0.15:
+            if ratio > 0.05:  # 5% 以上：爆量高开
                 results['auction_intensity'] = '极强'
                 results['auction_score'] = 100
-            elif ratio > 0.10:
+            elif ratio > 0.03:  # 3% 以上：强抢筹
                 results['auction_intensity'] = '强'
                 results['auction_score'] = 80
-            elif ratio > 0.05:
+            elif ratio > 0.02:  # 2% 以上：中等抢筹
                 results['auction_intensity'] = '中等'
                 results['auction_score'] = 60
-            elif ratio > 0.02:
+            elif ratio > 0.01:  # 1% 以上：弱抢筹
                 results['auction_intensity'] = '弱'
                 results['auction_score'] = 40
             else:
@@ -240,6 +240,11 @@ class DragonTactics:
         else:
             results['yesterday_crash'] = False
         
+        # 昨天是否涨停（用于判断"强更强"）
+        yesterday_is_limit_up = yesterday_change >= 9.8  # 涨停板（10cm）
+        if yesterday_change >= 19.8:  # 20cm 涨停
+            yesterday_is_limit_up = True
+        
         # 今天是否高开
         today_open_change = (today['open'] - yesterday['close']) / yesterday['close'] * 100
         if today_open_change > 3:  # 今天高开超过3%
@@ -248,18 +253,36 @@ class DragonTactics:
             results['today_high_open'] = False
         
         # 判断弱转强
+        is_weak_to_strong = False
+        is_strong_to_strong = False
+        
         if results.get('yesterday_crash', False) and results.get('today_high_open', False):
             results['weak_to_strong'] = True
             results['weak_to_strong_score'] = 100
             results['weak_to_strong_desc'] = '昨日大跌，今日高开，弱转强形态'
+            is_weak_to_strong = True
         elif yesterday_change < 0 and today_open_change > 0:
             results['weak_to_strong'] = True
             results['weak_to_strong_score'] = 70
             results['weak_to_strong_desc'] = '昨日收阴，今日高开，有弱转强迹象'
+            is_weak_to_strong = True
+        elif yesterday_is_limit_up and today_open_change > 0:
+            # ✅ 新增：强更强逻辑（昨天涨停 + 今天高开）
+            results['weak_to_strong'] = True
+            results['weak_to_strong_score'] = 90
+            results['weak_to_strong_desc'] = '昨日涨停，今日高开，强更强形态（连板加速）'
+            results['is_strong_to_strong'] = True
+            is_strong_to_strong = True
+        elif yesterday_is_limit_up:
+            # 昨天涨停，今天平开或低开
+            results['weak_to_strong'] = True
+            results['weak_to_strong_score'] = 60
+            results['weak_to_strong_desc'] = '昨日涨停，今日维持高位，连板形态'
+            is_strong_to_strong = True
         else:
             results['weak_to_strong'] = False
             results['weak_to_strong_score'] = 0
-            results['weak_to_strong_desc'] = '无明显弱转强'
+            results['weak_to_strong_desc'] = '无明显弱转强或强更强'
         
         return results
     

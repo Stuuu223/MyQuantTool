@@ -26,7 +26,7 @@ def test_dragon_glasses():
     print(f"股票名称：博士眼镜")
     print(f"板块：AI眼镜")
     print(f"板块地位：龙一 (板块核心龙头)")
-    print(f"竞价抢筹度：0.18 (极强)")
+    print(f"竞价抢筹度：0.03 (强)  # 修改为 3%，符合新的阈值")
     print(f"弱转强：是")
     print(f"分时强承接：是")
     print(f"涨跌幅：+19.80% (20cm 封板)")
@@ -41,12 +41,12 @@ def test_dragon_glasses():
     print(f"  是否ST: {code_check.get('is_st', 'N/A')}")
     print(f"  是否禁止: {code_check.get('banned', 'N/A')}")
 
-    # 2. 竞价分析
+# 竞价分析（使用新的阈值）
     auction_analysis = tactics.analyze_call_auction(
-        current_open_volume=144000000,
-        prev_day_total_volume=800000000,
-        current_open_amount=368640000,
-        prev_day_total_amount=2048000000
+        current_open_volume=144000000,  # 3% 的昨天成交量
+        prev_day_total_volume=4800000000,  # 昨天成交量
+        current_open_amount=369600000,
+        prev_day_total_amount=12288000000
     )
     print(f"\n【竞价分析】")
     print(f"  竞价量比: {auction_analysis.get('call_auction_ratio', 'N/A'):.2%}")
