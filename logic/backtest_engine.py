@@ -8,12 +8,30 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
+from dataclasses import dataclass
 from logic.logger import get_logger
 from logic.data_manager import DataManager
 from logic.data_cleaner import DataCleaner
 from logic.position_manager import PositionManager
 
 logger = get_logger(__name__)
+
+
+@dataclass
+class BacktestMetrics:
+    """回测指标"""
+    initial_capital: float
+    final_equity: float
+    total_return: float
+    annual_return: float
+    max_drawdown: float
+    sharpe_ratio: float
+    win_rate: float
+    total_trades: int
+    profit_trades: int
+    avg_profit: float
+    avg_loss: float
+    profit_loss_ratio: float
 
 
 class BacktestEngine:
