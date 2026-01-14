@@ -37,11 +37,13 @@ def render_dragon_strategy_tab(db, config):
     # 扫描参数
     col_scan1, col_scan2, col_scan3, col_scan4 = st.columns(4)
     with col_scan1:
-        scan_limit = st.slider("扫描股票数量", 10, 100, 50, 10, key="dragon_scan_limit")
+        scan_limit = st.slider("扫描股票数量", 10, 500, 100, 10, key="dragon_scan_limit")
     with col_scan2:
         min_score = st.slider("最低评分门槛", 50, 90, 60, 5, key="dragon_min_score")
     with col_scan3:
         show_only_dragon = st.checkbox("只显示龙头股", value=True, key="show_only_dragon")
+    with col_scan4:
+        scan_scope = st.selectbox("扫描范围", ["自选股", "全市场（前N只）"], key="scan_scope")
     with col_scan4:
         if st.button("🔍 开始扫描", key="dragon_scan_btn"):
             st.session_state.scan_dragon = True
@@ -57,24 +59,48 @@ def render_dragon_strategy_tab(db, config):
                 # 创建 DragonTactics 实例
                 tactics = DragonTactics()
 
-                # 从配置文件获取股票列表
-                stock_list = config.get('watchlist', [])
-
-                st.info(f"📋 配置文件中的股票列表：{stock_list}")
+                # 根据扫描范围获取股票列表
+                if scan_scope == "自选股":
+                    stock_list = config.get('watchlist', [])
+                    st.info(f"📋 配置文件中的股票列表：{stock_list}")
+                else:
+                    # 全市场扫描：使用 akshare 获取股票列表
+                    st.info("📡 正在获取全市场股票列表...")
+                    try:
+                        import akshare as ak
+                        # 获取所有A股列表
+                        stock_list_df = ak.stock_info_a_code_name()
+                        # 只取前 scan_limit 只股票
+                        stock_list = stock_list_df['code'].head(scan_limit).tolist()
+                        st.info(f"📋 获取到 {len(stock_list)} 只股票（全市场前{scan_limit}只）")
+                    except Exception as e:
+                        st.error(f"❌ 获取股票列表失败：{str(e)}")
+                        logger.error(f"获取股票列表失败: {str(e)}")
+                        # 重置扫描状态
+                        st.session_state.scan_dragon = False
+                        return
 
                 if not stock_list:
-                    st.warning("⚠️ 配置文件中没有股票列表，请先添加股票到自选股")
-                    st.info("💡 可以在「🔍 买点扫描」标签页中添加股票到自选股")
+                    st.warning("⚠️ 没有股票列表，请先添加股票到自选股或检查网络连接")
                     # 重置扫描状态
                     st.session_state.scan_dragon = False
                 else:
+                    # 添加进度条
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
+
                     # 限制扫描数量
                     stock_list = stock_list[:scan_limit]
 
                     # 分析每只股票
                     analyzed_stocks = []
-                    for symbol in stock_list:
+                    for i, symbol in enumerate(stock_list):
                         try:
+                            # 更新进度
+                            progress = (i + 1) / len(stock_list)
+                            progress_bar.progress(progress)
+                            status_text.text(f"正在分析第 {i + 1}/{len(stock_list)} 只股票：{symbol}")
+
                             # 从数据库获取股票数据
                             from datetime import datetime, timedelta
                             end_date = datetime.now().strftime('%Y%m%d')
@@ -227,6 +253,10 @@ def render_dragon_strategy_tab(db, config):
                         except Exception as e:
                             logger.error(f"分析股票 {symbol} 失败: {str(e)}")
                             continue
+
+                    # 清除进度条
+                    progress_bar.empty()
+                    status_text.empty()
 
                     # 过滤和排序
                     if show_only_dragon:
