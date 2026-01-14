@@ -49,6 +49,9 @@ def render_dragon_strategy_tab(db, config):
 
     # 执行扫描
     if st.session_state.get('scan_dragon', False):
+        # 添加调试信息
+        st.info("🔍 开始扫描...")
+
         with st.spinner('正在扫描市场中的潜在龙头股...'):
             try:
                 # 创建 DragonTactics 实例
@@ -57,9 +60,13 @@ def render_dragon_strategy_tab(db, config):
                 # 从配置文件获取股票列表
                 stock_list = config.get('watchlist', [])
 
+                st.info(f"📋 配置文件中的股票列表：{stock_list}")
+
                 if not stock_list:
                     st.warning("⚠️ 配置文件中没有股票列表，请先添加股票到自选股")
                     st.info("💡 可以在「🔍 买点扫描」标签页中添加股票到自选股")
+                    # 重置扫描状态
+                    st.session_state.scan_dragon = False
                 else:
                     # 限制扫描数量
                     stock_list = stock_list[:scan_limit]
@@ -170,7 +177,8 @@ def render_dragon_strategy_tab(db, config):
 
                             intraday_support_analysis = {
                                 'intraday_support': intraday_support,
-                                'intraday_support_score': intraday_support_score
+                                'intraday_support_score': intraday_support_score,
+                                'has_strong_support': intraday_support
                             }
 
                             # 6. 决策矩阵
@@ -298,6 +306,77 @@ def render_dragon_strategy_tab(db, config):
                                     st.warning(f"**🛡️ 止损价：** ¥{stock['stop_loss']:.2f}")
 
                                     # 添加到自选股按钮
+                                    if st.button(f"➕ 添加到自选", key=f"add_dragon_{stock['symbol']}"):
+                                        watchlist = config.get('watchlist', [])
+                                        if stock['symbol'] not in watchlist:
+                                            watchlist.append(stock['symbol'])
+                                            config.set('watchlist', watchlist)
+                                            st.success(f"已添加 {stock['name']} ({stock['symbol']}) 到自选股")
+                                        else:
+                                            st.info(f"{stock['name']} ({stock['symbol']}) 已在自选股中")
+
+                        # 潜力龙头
+                        if potential_dragons:
+                            st.divider()
+                            st.subheader("📈 潜力龙头（关注）")
+                            for stock in potential_dragons:
+                                with st.expander(f"{stock['name']} ({stock['symbol']}) - 评分: {stock['total_score']:.1f}"):
+                                    # 基本信息
+                                    col1, col2, col3 = st.columns(3)
+                                    col1.metric("最新价", f"¥{stock['price']:.2f}")
+                                    col2.metric("涨跌幅", f"{stock['change_percent']:.2f}%")
+                                    col3.metric("评分", f"{stock['total_score']:.1f}/100")
+
+                                    # 核心特征
+                                    st.write("**🎯 核心特征：**")
+                                    col1, col2, col3, col4 = st.columns(4)
+
+                                    with col1:
+                                        if stock['auction_ratio'] >= 0.10:
+                                            st.success(f"💪 竞价: {stock['auction_ratio']:.1%}")
+                                        else:
+                                            st.warning(f"⚠️ 竞价: {stock['auction_ratio']:.1%}")
+
+                                    with col2:
+                                        st.info(f"📍 地位: {stock['sector_role']}")
+
+                                    with col3:
+                                        if stock['weak_to_strong']:
+                                            st.success("✅ 弱转强")
+                                        else:
+                                            st.info("❌ 无弱转强")
+
+                                    with col4:
+                                        if stock['intraday_support']:
+                                            st.success("✅ 强承接")
+                                        else:
+                                            st.info("❌ 无强承接")
+
+                                    # 操作建议
+                                    st.info(f"**💡 操作建议：** {stock['reason']}")
+                                    st.warning(f"**🛡️ 止损价：** ¥{stock['stop_loss']:.2f}")
+
+                                    # 添加到自选股按钮
+                                    if st.button(f"➕ 添加到自选", key=f"add_potential_{stock['symbol']}"):
+                                        watchlist = config.get('watchlist', [])
+                                        if stock['symbol'] not in watchlist:
+                                            watchlist.append(stock['symbol'])
+                                            config.set('watchlist', watchlist)
+                                            st.success(f"已添加 {stock['name']} ({stock['symbol']}) 到自选股")
+                                        else:
+                                            st.info(f"{stock['name']} ({stock['symbol']}) 已在自选股中")
+                    else:
+                        st.warning("未发现符合条件的龙头股")
+                        st.info("💡 提示：可以降低最低评分门槛或增加扫描数量")
+
+                    # 重置扫描状态
+                    st.session_state.scan_dragon = False
+
+            except Exception as e:
+                st.error(f"❌ 扫描失败：{str(e)}")
+                logger.error(f"龙头战法扫描失败: {str(e)}")
+                # 重置扫描状态
+                st.session_state.scan_dragon = False
                                     if st.button(f"➕ 添加到自选", key=f"add_dragon_{stock['symbol']}"):
                                         watchlist = config.get('watchlist', [])
                                         if stock['symbol'] not in watchlist:
