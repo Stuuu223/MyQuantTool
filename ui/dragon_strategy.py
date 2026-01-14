@@ -31,7 +31,7 @@ def render_dragon_strategy_tab(db, config):
     - 📊 关注攻击性放量
     - 📈 等待KDJ金叉
     - 🔄 换手率适中（5-15%）
-    - 🚀 **扫描全市场（至少1000只），筛选涨幅 >= 7% 的股票**
+    - 🚀 **扫描全市场，按涨跌幅排序，分析前N只**
     """)
     
     # 扫描参数
@@ -51,7 +51,7 @@ def render_dragon_strategy_tab(db, config):
             scan_result = QuantAlgo.scan_dragon_stocks(limit=scan_limit, min_score=min_score)
         
         if scan_result['数据状态'] == '正常':
-            st.success(f"扫描完成！共扫描 {scan_result['扫描数量']} 只股票，发现 {scan_result['涨停板数量']} 只涨幅 >= 7% 的股票，其中 {scan_result['符合条件数量']} 只符合龙头战法条件")
+            st.success(f"扫描完成！共扫描 {scan_result['扫描数量']} 只股票，分析了 {scan_result['分析数量']} 只，发现 {scan_result['符合条件数量']} 只符合龙头战法条件")
             
             if scan_result['龙头股列表']:
                 # 按评级分组显示

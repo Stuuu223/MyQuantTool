@@ -1182,9 +1182,8 @@ class QuantAlgo:
                     '说明': '可能是数据源限制'
                 }
             
-            # 获取全市场股票列表（至少1000只）
-            scan_limit = max(limit, 1000)
-            stock_list = stock_list_df['code'].head(scan_limit).tolist()
+            # 获取全市场所有股票
+            stock_list = stock_list_df['code'].tolist()
             
             # 使用 Easyquotation 极速获取实时数据
             realtime_data = db.get_fast_price(stock_list)
@@ -1196,8 +1195,8 @@ class QuantAlgo:
                     '扫描数量': len(stock_list)
                 }
             
-            # 筛选涨停板和即将涨停的股票（涨跌幅 >= 7%）
-            limit_up_stocks = []
+            # 转换为列表格式
+            all_stocks = []
             for full_code, data in realtime_data.items():
                 try:
                     current_price = float(data.get('now', 0))
@@ -1208,36 +1207,36 @@ class QuantAlgo:
                     
                     pct_change = (current_price - last_close) / last_close * 100
                     
-                    # 降低门槛：涨跌幅 >= 7%（包括即将涨停的股票）
-                    if pct_change >= 7.0:
-                        # 提取股票代码（去掉前缀）
-                        code = full_code[2:] if len(full_code) > 2 else full_code
-                        name = data.get('name', '')
-                        
-                        limit_up_stocks.append({
-                            '代码': code,
-                            '名称': name,
-                            '最新价': current_price,
-                            '涨跌幅': pct_change
-                        })
+                    # 提取股票代码（去掉前缀）
+                    code = full_code[2:] if len(full_code) > 2 else full_code
+                    name = data.get('name', '')
+                    
+                    all_stocks.append({
+                        '代码': code,
+                        '名称': name,
+                        '最新价': current_price,
+                        '涨跌幅': pct_change
+                    })
                 except Exception as e:
                     continue
             
-            if not limit_up_stocks:
+            # 按涨跌幅排序
+            all_stocks.sort(key=lambda x: x['涨跌幅'], reverse=True)
+            
+            # 只分析前 limit 只股票（避免分析太多）
+            stocks_to_analyze = all_stocks[:limit]
+            
+            if not stocks_to_analyze:
                 return {
-                    '数据状态': '无涨停板股票',
-                    '说明': f'已扫描 {len(stock_list)} 只股票，但未发现涨幅 >= 7% 的股票',
+                    '数据状态': '无股票数据',
+                    '说明': '未获取到任何股票数据',
                     '扫描数量': len(stock_list)
                 }
             
-            # 分析每只涨幅 >= 7% 的股票（包括即将涨停的股票）
-            limit_up_stocks.sort(key=lambda x: x['涨跌幅'], reverse=True)
-            limit_up_stocks = limit_up_stocks[:limit]
-            
-            # 分析每只涨停板股票
+            # 分析每只股票（不限制涨跌幅）
             dragon_stocks = []
             
-            for stock_info in limit_up_stocks:
+            for stock_info in stocks_to_analyze:
                 symbol = stock_info['代码']
                 name = stock_info['名称']
                 current_price = stock_info['最新价']
@@ -1272,7 +1271,7 @@ class QuantAlgo:
             return {
                 '数据状态': '正常',
                 '扫描数量': len(stock_list),
-                '涨停板数量': len(limit_up_stocks),
+                '分析数量': len(stocks_to_analyze),
                 '符合条件数量': len(dragon_stocks),
                 '龙头股列表': dragon_stocks
             }
