@@ -84,7 +84,11 @@ class BacktestEngine:
                 df = db.get_history_data(code)
                 if not df.empty:
                     # 过滤日期范围
-                    df = df[(df.index >= start_date) & (df.index <= end_date)]
+                    df = df.copy()
+                    df.index = pd.to_datetime(df.index)
+                    start_dt = pd.to_datetime(start_date)
+                    end_dt = pd.to_datetime(end_date)
+                    df = df[(df.index >= start_dt) & (df.index <= end_dt)]
                     if not df.empty:
                         all_data[code] = df
             

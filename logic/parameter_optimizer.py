@@ -261,19 +261,33 @@ class ParameterOptimizer:
         """
         # 转换适应度为正数
         min_score = min(fitness_scores)
-        adjusted_scores = [s - min_score + 1 for s in fitness_scores]
+        adjusted_scores = []
+        for s in fitness_scores:
+            if np.isnan(s):
+                adjusted_scores.append(0)
+            elif np.isinf(s):
+                adjusted_scores.append(0)
+            else:
+                adjusted_scores.append(s - min_score + 1)
         
         # 计算概率
         total = sum(adjusted_scores)
-        probabilities = [s / total for s in adjusted_scores]
-        
-        # 轮盘赌选择
-        selected_indices = np.random.choice(
-            len(population),
-            size=num_selected,
-            replace=True,
-            p=probabilities
-        )
+        if total == 0:
+            # 如果所有适应度都是无效的，随机选择
+            selected_indices = np.random.choice(
+                len(population),
+                size=num_selected,
+                replace=True
+            )
+        else:
+            probabilities = [s / total for s in adjusted_scores]
+            # 轮盘赌选择
+            selected_indices = np.random.choice(
+                len(population),
+                size=num_selected,
+                replace=True,
+                p=probabilities
+            )
         
         return [population[i] for i in selected_indices]
     
