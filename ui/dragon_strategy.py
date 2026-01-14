@@ -1,15 +1,12 @@
 """
-龙头战法模块 V3.0 增强版
+龙头战法模块
 
-基于游资战法精髓：竞价抢筹、板块地位、弱转强、分时强承接
+基于财联社龙头战法精髓：快、狠、准、捕食
 """
 
 import streamlit as st
 import pandas as pd
-import numpy as np
-from logic.dragon_tactics import DragonTactics
-from logic.dragon_tracking_system import DragonTrackingSystem
-from logic.data_manager import DataManager
+from logic.algo import QuantAlgo
 from logic.logger import get_logger
 from config import Config
 
@@ -18,292 +15,211 @@ logger = get_logger(__name__)
 
 def render_dragon_strategy_tab(db, config):
     """
-    渲染龙头战法标签页（V3.0 增强版）
-
+    渲染龙头战法标签页
+    
     Args:
         db: 数据管理器实例
         config: 配置实例
     """
-    st.subheader("🔥 龙头战法 V3.0 - 捕捉市场最强龙头")
-    st.caption("基于游资战法精髓：竞价抢筹、板块地位、弱转强、分时强承接")
-
+    st.subheader("🔥 龙头战法 - 捕捉潜在龙头股")
+    st.caption("基于财联社龙头战法精髓：快、狠、准、捕食")
+    
     st.info("""
-    **龙头战法 V3.0 核心要点：**
-    - 🎯 **竞价抢筹度**：9:25分成交量 / 昨天全天成交量 ≥ 2%（极强≥5%，强≥3%）
-    - 👑 **板块地位**：龙一（板块核心龙头）、前三（板块前排）
-    - 🔄 **弱转强/强更强**：昨天炸板/大阴线+今天高开，或昨天涨停+今天高开（连板加速）
-    - 📊 **分时强承接**：股价在均线上方，下跌缩量，上涨放量
-    - 🚫 **ST股过滤**：自动过滤 ST/*ST 退市风险股
+    **龙头战法核心要点：**
+    - 🎯 只做涨停板股票
+    - 💰 优选低价股（≤10元）
+    - 📊 关注攻击性放量
+    - 📈 等待KDJ金叉
+    - 🔄 换手率适中（5-15%）
     """)
-
+    
     # 扫描参数
-    col_scan1, col_scan2, col_scan3, col_scan4 = st.columns(4)
+    col_scan1, col_scan2, col_scan3 = st.columns(3)
     with col_scan1:
-        scan_limit = st.slider("扫描股票数量", 10, 500, 100, 10, key="dragon_scan_limit")
+        scan_limit = st.slider("扫描股票数量", 10, 100, 50, 10, key="dragon_scan_limit")
     with col_scan2:
-        min_score = st.slider("最低评分门槛", 30, 90, 40, 5, key="dragon_min_score")
+        min_score = st.slider("最低评分门槛", 40, 80, 60, 5, key="dragon_min_score")
     with col_scan3:
-        show_only_dragon = st.checkbox("只显示龙头股", value=False, key="show_only_dragon")
-    with col_scan4:
-        scan_scope = st.selectbox("扫描范围", ["自选股", "全市场（前N只）"], key="scan_scope")
-    with col_scan4:
         if st.button("🔍 开始扫描", key="dragon_scan_btn"):
             st.session_state.scan_dragon = True
             st.rerun()
-
+    
     # 执行扫描
     if st.session_state.get('scan_dragon', False):
-        # 添加调试信息
-        st.info("🔍 开始扫描...")
-
         with st.spinner('正在扫描市场中的潜在龙头股...'):
-            try:
-                # 根据扫描范围获取股票列表
-                if scan_scope == "自选股":
-                    stock_list = config.get('watchlist', [])
-                    st.info(f"📋 配置文件中的股票列表：{stock_list}")
-                else:
-                    # 全市场扫描：使用 akshare 获取股票列表
-                    st.info("📡 正在获取全市场股票列表...")
-                    try:
-                        import akshare as ak
-                        # 获取所有A股列表
-                        stock_list_df = ak.stock_info_a_code_name()
-                        # 只取前 scan_limit 只股票
-                        stock_list = stock_list_df['code'].head(scan_limit).tolist()
-                        st.info(f"📋 获取到 {len(stock_list)} 只股票（全市场前{scan_limit}只）")
-                    except Exception as e:
-                        st.error(f"❌ 获取股票列表失败：{str(e)}")
-                        logger.error(f"获取股票列表失败: {str(e)}")
-                        # 重置扫描状态
-                        st.session_state.scan_dragon = False
-                        return
-
-                if not stock_list:
-                    st.warning("⚠️ 没有股票列表，请先添加股票到自选股或检查网络连接")
-                    # 重置扫描状态
-                    st.session_state.scan_dragon = False
-                else:
-                    # 🔥🔥🔥 使用极速批量接口扫描市场 🔥🔥🔥
-                    st.info(f"🚀 正在极速扫描 {len(stock_list)} 只标的...")
-                    
-                    # 初始化 DataManager 和 DragonTrackingSystem
-                    data_manager = DataManager()
-                    tracking_system = DragonTrackingSystem(data_manager)
-                    
-                    # 使用极速批量接口扫描
-                    results = tracking_system.scan_market(stock_list, min_score=min_score)
-                    
-                    # 重置扫描状态
-                    st.session_state.scan_dragon = False
-                    
-                    # 过滤
-                    if show_only_dragon:
-                        # 只显示龙头股（角色为核心龙）
-                        filtered_stocks = [s for s in results if s['role'] == '核心龙']
-                    else:
-                        # 显示所有符合条件的股票
-                        filtered_stocks = results
-
-                    # 显示结果
-                    st.success(f"扫描完成！共扫描 {len(stock_list)} 只股票，发现 {len(filtered_stocks)} 只符合条件股票")
-
-                    if filtered_stocks:
-                        # 按评分分组显示
-                        strong_dragons = [s for s in filtered_stocks if s['score'] >= 85]
-                        potential_dragons = [s for s in filtered_stocks if 75 <= s['score'] < 85]
-
-                        # 强龙头
-                        if strong_dragons:
-                            st.divider()
-                            st.subheader("🔥 真龙（猛干）")
-                            for stock in strong_dragons:
-                                with st.expander(f"{stock['name']} ({stock['code']}) - 评分: {stock['score']:.1f}"):
-                                    # 基本信息
-                                    col1, col2, col3, col4 = st.columns(4)
-                                    col1.metric("最新价", f"¥{stock['price']:.2f}")
-                                    col2.metric("涨跌幅", f"{stock['change_percent']:.2f}%", delta_color="normal")
-                                    col3.metric("评分", f"{stock['score']:.1f}/100")
-                                    col4.metric("信号", stock['signal'])
-
-                                    # 核心特征
-                                    st.write("**🎯 核心特征：**")
-                                    col1, col2, col3, col4 = st.columns(4)
-
-                                    with col1:
-                                        if stock['auction_intensity'] == '极强':
-                                            st.success(f"🔥 竞价: {stock['auction_intensity']}")
-                                        elif stock['auction_intensity'] == '强':
-                                            st.info(f"💪 竞价: {stock['auction_intensity']}")
-                                        else:
-                                            st.warning(f"⚠️ 竞价: {stock['auction_intensity']}")
-
-                                    with col2:
-                                        if stock['sector_role'] == '龙一' or '龙一' in stock['sector_role']:
-                                            st.success(f"👑 地位: {stock['sector_role']}")
-                                        elif '前三' in stock['sector_role']:
-                                            st.info(f"⭐ 地位: {stock['sector_role']}")
-                                        else:
-                                            st.warning(f"📍 地位: {stock['sector_role']}")
-
-                                    with col3:
-                                        if stock['weak_to_strong']:
-                                            st.success("✅ 弱转强")
-                                        else:
-                                            st.info("❌ 无弱转强")
-
-                                    with col4:
-                                        if stock['intraday_support'] == '强' or stock['intraday_support'] == '极强':
-                                            st.success("✅ 强承接")
-                                        else:
-                                            st.info("❌ 无强承接")
-
-                                    # 操作建议
-                                    st.info(f"**💡 操作建议：** {stock['reason']}")
-                                    st.info(f"**📏 建议仓位：** {stock.get('position', '观望')}")
-                                    st.warning(f"**🎯 置信度：** {stock['confidence']}")
-
-                                    # 20cm 标记
-                                    if stock.get('is_20cm'):
-                                        st.info("🚀 20cm 创业板/科创板标的")
-
-                        # 潜力龙头
-                        if potential_dragons:
-                            st.divider()
-                            st.subheader("⭐ 潜力龙头（关注）")
-                            for stock in potential_dragons:
-                                with st.expander(f"{stock['name']} ({stock['code']}) - 评分: {stock['score']:.1f}"):
-                                    # 基本信息
-                                    col1, col2, col3, col4 = st.columns(4)
-                                    col1.metric("最新价", f"¥{stock['price']:.2f}")
-                                    col2.metric("涨跌幅", f"{stock['change_percent']:.2f}%", delta_color="normal")
-                                    col3.metric("评分", f"{stock['score']:.1f}/100")
-                                    col4.metric("信号", stock['signal'])
-
-                                    # 核心特征
-                                    st.write("**🎯 核心特征：**")
-                                    col1, col2, col3, col4 = st.columns(4)
-
-                                    with col1:
-                                        st.info(f"📊 竞价: {stock['auction_intensity']}")
-
-                                    with col2:
-                                        st.info(f"📍 地位: {stock['sector_role']}")
-
-                                    with col3:
-                                        if stock['weak_to_strong']:
-                                            st.success("✅ 弱转强")
-                                        else:
-                                            st.info("❌ 无弱转强")
-
-                                    with col4:
-                                        st.info(f"📈 承接: {stock['intraday_support']}")
-
-                                    # 操作建议
-                                    st.info(f"**💡 操作建议：** {stock['reason']}")
-                                    st.info(f"**📏 建议仓位：** {stock.get('position', '观望')}")
-                                    st.warning(f"**🎯 置信度：** {stock['confidence']}")
-
-                        # 其他股票
-                        other_stocks = [s for s in filtered_stocks if s['score'] < 75]
-                        if other_stocks:
-                            st.divider()
-                            st.subheader("📋 其他符合条件股票")
+            scan_result = QuantAlgo.scan_dragon_stocks(limit=scan_limit, min_score=min_score)
+        
+        if scan_result['数据状态'] == '正常':
+            st.success(f"扫描完成！共扫描 {scan_result['扫描数量']} 只股票，发现 {scan_result['符合条件数量']} 只潜在龙头股")
+            
+            if scan_result['龙头股列表']:
+                # 按评级分组显示
+                strong_dragons = [s for s in scan_result['龙头股列表'] if s['评级得分'] >= 80]
+                potential_dragons = [s for s in scan_result['龙头股列表'] if 60 <= s['评级得分'] < 80]
+                weak_dragons = [s for s in scan_result['龙头股列表'] if 40 <= s['评级得分'] < 60]
+                
+                # 强龙头
+                if strong_dragons:
+                    st.divider()
+                    st.subheader("🔥 强龙头（重点关注）")
+                    for stock in strong_dragons:
+                        with st.expander(f"{stock['龙头评级']} {stock['名称']} ({stock['代码']}) - 评分: {stock['评级得分']}"):
+                            col1, col2, col3 = st.columns(3)
+                            col1.metric("最新价", f"¥{stock['最新价']:.2f}")
+                            col2.metric("涨跌幅", f"{stock['涨跌幅']:.2f}%")
+                            col3.metric("评级得分", f"{stock['评级得分']}/100")
                             
-                            # 使用表格显示
-                            df = pd.DataFrame(other_stocks)
-                            display_cols = ['code', 'name', 'price', 'change_percent', 'score', 'role', 'signal']
-                            df_display = df[display_cols].copy()
-                            df_display.columns = ['代码', '名称', '最新价', '涨跌幅', '评分', '角色', '信号']
-                            st.dataframe(df_display, use_container_width=True)
-                    else:
-                        st.warning("⚠️ 未发现符合条件股票")
-                        st.info("💡 建议：降低最低评分门槛或扩大扫描范围")
-
-            except Exception as e:
-                st.error(f"❌ 扫描失败：{str(e)}")
-                logger.error(f"扫描失败: {str(e)}", exc_info=True)
-                # 重置扫描状态
-                st.session_state.scan_dragon = False
+                            # 显示五个条件得分
+                            st.write("**五个条件得分：**")
+                            details = stock['详情']
+                            st.write(f"- 涨停板: {details['条件1_涨停板']['得分']}/20")
+                            st.write(f"- 价格: {details['条件2_价格']['得分']}/20")
+                            st.write(f"- 成交量: {details['条件3_成交量']['得分']}/20")
+                            st.write(f"- KDJ: {details['条件4_KDJ']['得分']}/20")
+                            st.write(f"- 换手率: {details['条件5_换手率']['得分']}/20")
+                            
+                            # 显示操作建议
+                            st.info("**操作建议：**")
+                            for suggestion in details['操作建议']:
+                                st.write(suggestion)
+                            
+                            # 添加到自选股按钮
+                            if st.button(f"添加到自选", key=f"add_dragon_{stock['代码']}"):
+                                watchlist = config.get('watchlist', [])
+                                if stock['代码'] not in watchlist:
+                                    watchlist.append(stock['代码'])
+                                    config.set('watchlist', watchlist)
+                                    st.success(f"已添加 {stock['名称']} ({stock['代码']}) 到自选股")
+                                else:
+                                    st.info(f"{stock['名称']} ({stock['代码']}) 已在自选股中")
+                
+                # 潜力龙头
+                if potential_dragons:
+                    st.divider()
+                    st.subheader("📈 潜力龙头（可关注）")
+                    for stock in potential_dragons:
+                        with st.expander(f"{stock['龙头评级']} {stock['名称']} ({stock['代码']}) - 评分: {stock['评级得分']}"):
+                            col1, col2 = st.columns(2)
+                            col1.metric("最新价", f"¥{stock['最新价']:.2f}")
+                            col2.metric("涨跌幅", f"{stock['涨跌幅']:.2f}%")
+                            
+                            st.write(f"评级得分: {stock['评级得分']}/100")
+                            st.info(f"评级说明: {stock['评级说明']}")
+                            
+                            # 显示操作建议
+                            st.info("**操作建议：**")
+                            for suggestion in stock['详情']['操作建议']:
+                                st.write(suggestion)
+                            
+                            # 添加到自选股按钮
+                            if st.button(f"添加到自选", key=f"add_potential_{stock['代码']}"):
+                                watchlist = config.get('watchlist', [])
+                                if stock['代码'] not in watchlist:
+                                    watchlist.append(stock['代码'])
+                                    config.set('watchlist', watchlist)
+                                    st.success(f"已添加 {stock['名称']} ({stock['代码']}) 到自选股")
+                                else:
+                                    st.info(f"{stock['名称']} ({stock['代码']}) 已在自选股中")
+                
+                # 弱龙头
+                if weak_dragons:
+                    st.divider()
+                    st.subheader("⚠️ 弱龙头（谨慎关注）")
+                    df_weak = pd.DataFrame([
+                        {
+                            '代码': s['代码'],
+                            '名称': s['名称'],
+                            '最新价': f"¥{s['最新价']:.2f}",
+                            '涨跌幅': f"{s['涨跌幅']:.2f}%",
+                            '评级得分': s['评级得分'],
+                            '评级说明': s['评级说明']
+                        }
+                        for s in weak_dragons
+                    ])
+                    st.dataframe(df_weak, width="stretch", hide_index=True)
+            else:
+                st.warning("未发现符合条件的龙头股")
+                st.info("💡 提示：可以降低最低评分门槛或增加扫描数量")
+        else:
+            st.error(f"❌ {scan_result['数据状态']}")
+            if '错误信息' in scan_result:
+                st.caption(scan_result['错误信息'])
+            if '说明' in scan_result:
+                st.info(scan_result['说明'])
+        
+        # 重置扫描状态
+        st.session_state.scan_dragon = False
     else:
         st.info("👆 点击「开始扫描」按钮，系统将自动扫描市场中的潜在龙头股")
-
+        
         # 显示龙头战法说明
         st.divider()
-        st.subheader("📖 龙头战法 V3.0 详解")
-
-        with st.expander("🎯 决策矩阵"):
+        st.subheader("📖 龙头战法详解")
+        
+        with st.expander("🎯 龙头股五个条件"):
             st.markdown("""
-            **1. 龙头地位（40%）**
-            - 龙一（板块核心龙头）：80-100分
-            - 前三（板块前排）：60-80分
-            - 中军（板块中坚）：40-60分
-            - 跟风（板块后排）：0-40分
-
-            **2. 竞价强度（20%）**
-            - 极强（≥5%）：100分 - 爆量高开
-            - 强（≥3%）：80分 - 强抢筹
-            - 中等（≥2%）：60分 - 中等抢筹
-            - 弱（≥1%）：40分 - 弱抢筹
-            - 极弱（<1%）：20分
-
-            **3. 弱转强形态（20%）**
-            - 昨天大跌，今天高开：100分 - 弱转强
-            - 昨日收阴，今日高开：70分 - 弱转强迹象
-            - 昨天涨停，今天高开：90分 - 强更强（连板加速）
-            - 昨天涨停，今天维持：60分 - 连板形态
-            - 无明显特征：0分
-
-            **4. 分时承接（20%）**
-            - 股价在均线上方，下跌缩量，上涨放量：100分
-            - 股价在均线下方：0分
+            **1. 涨停板（20分）**
+            - 必须从涨停板开始
+            - 涨停板是多空双方最准确的攻击信号
+            - 是所有黑马的摇篮，是龙头的发源地
+            
+            **2. 价格（20分）**
+            - 低价股（≤10元）：20分
+            - 适中价格（10-15元）：10分
+            - 高价股（>15元）：0分
+            - 高价股不具备炒作空间，只有低价股才能得到股民追捧
+            
+            **3. 成交量（20分）**
+            - 攻击性放量（量比>2）：20分
+            - 温和放量（量比1.5-2）：15分
+            - 缩量或正常：0分
+            - 龙头一般出现三日以上的攻击性放量特征
+            
+            **4. KDJ（20分）**
+            - KDJ金叉：20分
+            - KDJ低位（K<30）：10分
+            - KDJ不在低位：0分
+            - 日线、周线、月线KDJ同时低位金叉更安全
+            
+            **5. 换手率（20分）**
+            - 适中换手率（5-15%）：20分
+            - 偏低换手率（2-5%）：15分
+            - 过高或过低换手率：10分或0分
+            - 换手率适中显示资金活跃度
             """)
-
+        
         with st.expander("💡 买入技巧"):
             st.markdown("""
             **买入时机：**
-
-            **1. 真龙 + 竞价极强 + 涨幅>10%**
-            - 🟢 扫板/排板（满仓/重仓）
-            - 直接追，不要犹豫
-
-            **2. 真龙 + 烂板/分歧 + 涨幅<5%**
-            - 🟡 低吸博弈（半仓）
-            - 水下捞，等待回封
-
-            **3. 中军 + 图形漂亮**
-            - 🟢 打板/跟随（半仓）
-            - 趋势交易
-
-            **4. 跟风 + 任意**
-            - 🔵 只看不买（0）
-            - 避免接盘
-
+            
+            **1. 涨停开闸放水时买入**
+            - 涨停板打开时，如果量能充足，可以介入
+            
+            **2. 高开时买入**
+            - 未开板的个股，第二天若高开1.5-3.5%，可以买入
+            
+            **3. 回调买入**
+            - 龙头股回到第一个涨停板的启涨点，构成回调买点
+            - 比第一个买点更稳、更准、更狠
+            
             **操作要点：**
-            - 禁止建议"等待回调"：龙头启动时不会回调
-            - 禁止使用 KDJ、MACD 金叉：这些指标太慢
-            - 禁止看市盈率：短线博弈只看情绪和资金
-            - 禁止 ST 股：退市风险股，流动性枯竭
+            - 只做第一个涨停板
+            - 只做第一次放量的涨停板
+            - 相对股价不高，流通市值不大
+            - 指标从低位上穿，短线日KDJ低位金叉
             """)
-
+        
         with st.expander("⚠️ 风险控制"):
             st.markdown("""
             **止损点设定：**
-
-            **真龙（核心龙）：**
-            - 止损价：当前价格 × 0.95
-            - 或：跌破 5 日均线
-
-            **中军/支线：**
-            - 止损价：当前价格 × 0.93
-            - 或：跌破 10 日均线
-
-            **跟风：**
-            - 不建议持有
-            - 如果买入，止损价：当前价格 × 0.90
-
+            
+            **强势市场：**
+            - 以该股的第一个涨停板为止损点
+            
+            **弱势市场：**
+            - 以3%为止损点
+            
             **严格纪律：**
             - 绝对不允许个股跌幅超过10%
-            - 如果跌幅超过10%，立即止损
-            - 情绪过热时（群魔乱舞），停止开仓
+            - 如果跌幅超过10%，立即止损，不要找任何理由
             """)
