@@ -10,6 +10,9 @@ from typing import Dict, List, Tuple, Optional
 import sqlite3
 from collections import deque
 import json
+from logic.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class DragonFeatureExtractor:
