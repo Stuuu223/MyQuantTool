@@ -1281,26 +1281,29 @@ class QuantAlgo:
             # 获取涨停板股票（使用 Easyquotation 极速接口）
             db = DataManager()
             
-            # 使用 akshare 获取股票列表
-            stock_list_df = ak.stock_info_a_code_name()
-            if stock_list_df.empty:
-                return {
-                    '数据状态': '无法获取股票列表',
-                    '说明': '可能是数据源限制'
-                }
-            
-            # 获取全市场所有股票
-            stock_list = stock_list_df['code'].tolist()
-            
-            # 使用 Easyquotation 极速获取实时数据
-            realtime_data = db.get_fast_price(stock_list)
-            
-            if not realtime_data:
-                return {
-                    '数据状态': '无法获取实时数据',
-                    '说明': 'Easyquotation 未初始化或网络问题',
-                    '扫描数量': len(stock_list)
-                }
+            try:
+                # 使用 akshare 获取股票列表
+                stock_list_df = ak.stock_info_a_code_name()
+                if stock_list_df.empty:
+                    db.close()
+                    return {
+                        '数据状态': '无法获取股票列表',
+                        '说明': '可能是数据源限制'
+                    }
+                
+                # 获取全市场所有股票
+                stock_list = stock_list_df['code'].tolist()
+                
+                # 使用 Easyquotation 极速获取实时数据
+                realtime_data = db.get_fast_price(stock_list)
+                
+                if not realtime_data:
+                    db.close()
+                    return {
+                        '数据状态': '无法获取实时数据',
+                        '说明': 'Easyquotation 未初始化或网络问题',
+                        '扫描数量': len(stock_list)
+                    }
             
             # 转换为列表格式
             all_stocks = []
@@ -1346,6 +1349,7 @@ class QuantAlgo:
             stocks_to_analyze = limit_up_stocks[:limit]
             
             if not stocks_to_analyze:
+                db.close()
                 return {
                     '数据状态': '无涨停板股票',
                     '说明': '当前市场无涨停板股票',
@@ -1429,6 +1433,9 @@ class QuantAlgo:
             # 按评分排序
             dragon_stocks.sort(key=lambda x: x['评级得分'], reverse=True)
             
+            # 关闭数据库连接
+            db.close()
+            
             return {
                 '数据状态': '正常',
                 '扫描数量': len(stock_list),
@@ -1438,6 +1445,12 @@ class QuantAlgo:
                 '龙头股列表': dragon_stocks
             }
         except Exception as e:
+            # 确保在异常情况下也关闭数据库连接
+            try:
+                db.close()
+            except:
+                pass
+            
             return {
                 '数据状态': '获取失败',
                 '错误信息': str(e),
