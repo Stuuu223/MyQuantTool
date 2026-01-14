@@ -59,6 +59,21 @@ def render_auction_tab(db, config):
                                 col4.metric("换手率", f"{stock['换手率']:.2f}%")
                                 col5.metric("竞价量", f"{stock.get('竞价量', 0)} 手")
                                 
+                                # 显示买卖盘口数据
+                                st.write("**买卖盘口：**")
+                                col6, col7, col8, col9 = st.columns(4)
+                                col6.metric("买一价", f"¥{stock.get('买一价', 0):.2f}")
+                                col7.metric("卖一价", f"¥{stock.get('卖一价', 0):.2f}")
+                                col8.metric("买一量", f"{stock.get('买一量', 0)} 手")
+                                col9.metric("卖一量", f"{stock.get('卖一量', 0)} 手")
+                                
+                                # 显示开盘涨幅和竞价抢筹度
+                                st.write("**其他指标：**")
+                                col10, col11, col12 = st.columns(3)
+                                col10.metric("开盘涨幅", f"{stock.get('开盘涨幅', 0):.2f}%")
+                                col11.metric("竞价抢筹度", f"{stock.get('竞价抢筹度', 0):.2%}")
+                                col12.metric("封单金额", f"¥{stock.get('封单金额', 0):.2f} 万")
+                                
                                 # 显示信号
                                 st.write("**竞价信号：**")
                                 for signal in stock['信号']:

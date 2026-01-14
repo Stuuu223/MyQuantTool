@@ -113,10 +113,26 @@ def render_dragon_strategy_tab(db, config):
                             
                             # 显示量比、换手率、竞价量
                             st.write("**实时数据：**")
-                            col3, col4, col5 = st.columns(3)
+                            col3, col4, col5, col6 = st.columns(4)
                             col3.metric("量比", f"{stock.get('量比', 0):.2f}")
                             col4.metric("换手率", f"{stock.get('换手率', 0):.2f}%")
                             col5.metric("竞价量", f"{stock.get('竞价量', 0)} 手")
+                            col6.metric("竞价抢筹度", f"{stock.get('竞价抢筹度', 0):.2%}")
+                            
+                            # 显示买卖盘口数据
+                            st.write("**买卖盘口：**")
+                            col7, col8, col9, col10 = st.columns(4)
+                            col7.metric("买一价", f"¥{stock.get('买一价', 0):.2f}")
+                            col8.metric("卖一价", f"¥{stock.get('卖一价', 0):.2f}")
+                            col9.metric("买一量", f"{stock.get('买一量', 0)} 手")
+                            col10.metric("卖一量", f"{stock.get('卖一量', 0)} 手")
+                            
+                            # 显示开盘涨幅和封单金额
+                            st.write("**其他指标：**")
+                            col11, col12, col13 = st.columns(3)
+                            col11.metric("开盘涨幅", f"{stock.get('开盘涨幅', 0):.2f}%")
+                            col12.metric("封单金额", f"¥{stock.get('封单金额', 0):.2f} 万")
+                            col13.metric("买卖价差", f"{stock.get('买卖价差', 0):.2f}%")
                             
                             st.write(f"评级得分: {stock['评级得分']}/100")
                             st.info(f"评级说明: {stock['评级说明']}")

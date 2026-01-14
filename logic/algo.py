@@ -1383,15 +1383,21 @@ class QuantAlgo:
                         # 获取实时数据（用于计算量比、换手率等）
                         realtime_data_item = realtime_map.get(symbol, {})
                         
-                        # 计算量比
+                        # 计算开盘涨幅
+                        open_price = realtime_data_item.get('open', 0)
+                        last_close = realtime_data_item.get('close', 0)
+                        if open_price > 0 and last_close > 0:
+                            open_gap_pct = (open_price - last_close) / last_close * 100
+                        else:
+                            open_gap_pct = 0
+                        
+                        # 计算量比（使用成交额来计算，更准确）
                         volume_ratio = 0
                         if not df.empty and len(df) > 5:
-                            avg_volume = df['volume'].tail(5).mean()  # 5日平均成交量（手数）
-                            current_volume = realtime_data_item.get('volume', 0)  # 当前成交量（股数）
-                            # Easyquotation 返回的是股数，需要转换为手数（1手=100股）
-                            current_volume_in_lots = current_volume / 100
-                            if avg_volume > 0:
-                                volume_ratio = current_volume_in_lots / avg_volume
+                            avg_turnover = df['turnover'].tail(5).mean()  # 5日平均成交额
+                            current_turnover = realtime_data_item.get('turnover', 0)  # 当前成交额
+                            if avg_turnover > 0:
+                                volume_ratio = current_turnover / avg_turnover
                         
                         # 计算换手率（使用历史数据中的换手率）
                         turnover_rate = 0
@@ -1399,11 +1405,29 @@ class QuantAlgo:
                             # 使用最近一天的换手率
                             turnover_rate = df['turnover_rate'].iloc[-1] if 'turnover_rate' in df.columns else 0
                         
-                        # 获取竞价量（买一量 + 卖一量）
-                        auction_volume = 0
-                        bid1_volume = realtime_data_item.get('bid1_volume', 0)
-                        ask1_volume = realtime_data_item.get('ask1_volume', 0)
+                        # 获取竞价数据
+                        bid1_volume = realtime_data_item.get('bid1_volume', 0)  # 买一量（股数）
+                        ask1_volume = realtime_data_item.get('ask1_volume', 0)  # 卖一量（股数）
+                        bid1_price = realtime_data_item.get('bid1', 0)  # 买一价
+                        ask1_price = realtime_data_item.get('ask1', 0)  # 卖一价
                         auction_volume = (bid1_volume + ask1_volume) / 100  # 转换为手
+                        
+                        # 计算竞价抢筹度（竞价量 / 昨日成交量）
+                        auction_ratio = 0
+                        if not df.empty and len(df) > 1:
+                            yesterday_volume = df['volume'].iloc[-2]  # 昨日成交量（手数）
+                            if yesterday_volume > 0:
+                                auction_ratio = auction_volume / yesterday_volume
+                        
+                        # 计算封单金额（针对涨停股）
+                        seal_amount = 0
+                        if stock_info['涨跌幅'] >= 9.5:  # 涨停或接近涨停
+                            seal_amount = ask1_volume * current_price / 100  # 卖一量 * 价格（估算封单金额）
+                        
+                        # 计算买卖盘口价差
+                        price_gap = 0
+                        if bid1_price > 0 and ask1_price > 0:
+                            price_gap = (ask1_price - bid1_price) / bid1_price * 100
                         
                         # 添加调试信息
                         score = dragon_analysis.get('评级得分', 0)
@@ -1422,7 +1446,15 @@ class QuantAlgo:
                                 '详情': dragon_analysis,
                                 '量比': round(volume_ratio, 2),
                                 '换手率': round(turnover_rate, 2),
-                                '竞价量': int(auction_volume)
+                                '竞价量': int(auction_volume),
+                                '买一价': round(bid1_price, 2),
+                                '卖一价': round(ask1_price, 2),
+                                '买一量': int(bid1_volume / 100),
+                                '卖一量': int(ask1_volume / 100),
+                                '竞价抢筹度': round(auction_ratio, 4),
+                                '开盘涨幅': round(open_gap_pct, 2),
+                                '封单金额': round(seal_amount, 2),
+                                '买卖价差': round(price_gap, 2)
                             })
                 except Exception as e:
                     print(f"分析股票 {symbol} 失败: {e}")
@@ -2112,6 +2144,25 @@ class QuantAlgo:
                     # 获取成交量（Easyquotation 返回的是股数，需要转换为手数）
                     volume = data.get('volume', 0) / 100  # 转换为手
                     
+                    # 计算开盘涨幅
+                    open_price = data.get('open', 0)
+                    if open_price > 0 and last_close > 0:
+                        open_gap_pct = (open_price - last_close) / last_close * 100
+                    else:
+                        open_gap_pct = 0
+                    
+                    # 计算封单金额（针对涨停股）
+                    seal_amount = 0
+                    if pct_change >= 9.5:  # 涨停或接近涨停
+                        seal_amount = ask1_volume * current_price / 100  # 卖一量 * 价格（估算封单金额）
+                    
+                    # 计算买卖盘口价差
+                    bid1_price = data.get('bid1', 0)
+                    ask1_price = data.get('ask1', 0)
+                    price_gap = 0
+                    if bid1_price > 0 and ask1_price > 0:
+                        price_gap = (ask1_price - bid1_price) / bid1_price * 100
+                    
                     auction_stocks.append({
                         '代码': code,
                         '名称': data.get('name', ''),
@@ -2124,8 +2175,12 @@ class QuantAlgo:
                         '竞价量': int(auction_volume),
                         '买一量': int(bid1_volume / 100),
                         '卖一量': int(ask1_volume / 100),
-                        '买一价': data.get('bid1', 0),
-                        '卖一价': data.get('ask1', 0)
+                        '买一价': bid1_price,
+                        '卖一价': ask1_price,
+                        '竞价抢筹度': 0,  # 需要从历史数据计算
+                        '开盘涨幅': round(open_gap_pct, 2),
+                        '封单金额': round(seal_amount, 2),
+                        '买卖价差': round(price_gap, 2)
                     })
                 except Exception as e:
                     continue
@@ -2490,11 +2545,40 @@ class QuantAlgo:
                 volume_ratio = stock['量比']
                 auction_volume = stock['竞价量']
                 
-                try:
-                    # 获取历史数据
-                    df = db.get_history_data(symbol)
-                    
-                    if not df.empty and len(df) > 5:
+                # 获取实时数据（用于计算额外指标）
+                        realtime_data = realtime_map.get(symbol, {})
+                        
+                        # 计算开盘涨幅
+                        open_price = realtime_data.get('open', 0)
+                        last_close = realtime_data.get('close', 0)
+                        if open_price > 0 and last_close > 0:
+                            open_gap_pct = (open_price - last_close) / last_close * 100
+                        else:
+                            open_gap_pct = 0
+                        
+                        # 获取买卖盘口数据
+                        bid1_volume = realtime_data.get('bid1_volume', 0)  # 买一量（股数）
+                        ask1_volume = realtime_data.get('ask1_volume', 0)  # 卖一量（股数）
+                        bid1_price = realtime_data.get('bid1', 0)  # 买一价
+                        ask1_price = realtime_data.get('ask1', 0)  # 卖一价
+                        
+                        # 计算竞价抢筹度（竞价量 / 昨日成交量）
+                        auction_ratio = 0
+                        if not df.empty and len(df) > 1:
+                            yesterday_volume = df['volume'].iloc[-2]  # 昨日成交量（手数）
+                            if yesterday_volume > 0:
+                                auction_ratio = auction_volume / yesterday_volume
+                        
+                        # 计算封单金额（针对涨停股）
+                        seal_amount = 0
+                        if change_pct >= 9.5:  # 涨停或接近涨停
+                            seal_amount = ask1_volume * current_price / 100  # 卖一量 * 价格（估算封单金额）
+                        
+                        # 计算买卖盘口价差
+                        price_gap = 0
+                        if bid1_price > 0 and ask1_price > 0:
+                            price_gap = (ask1_price - bid1_price) / bid1_price * 100
+                        
                         # 检测竞价弱转强
                         weak_to_strong = QuantAlgo.detect_auction_weak_to_strong(df, symbol)
                         
@@ -2572,6 +2656,14 @@ class QuantAlgo:
                             '量比': round(volume_ratio, 2),
                             '换手率': round(turnover_rate, 2),
                             '竞价量': auction_volume,
+                            '买一价': round(bid1_price, 2),
+                            '卖一价': round(ask1_price, 2),
+                            '买一量': int(bid1_volume / 100),
+                            '卖一量': int(ask1_volume / 100),
+                            '竞价抢筹度': round(auction_ratio, 4),
+                            '开盘涨幅': round(open_gap_pct, 2),
+                            '封单金额': round(seal_amount, 2),
+                            '买卖价差': round(price_gap, 2),
                             '评分': score,
                             '评级': rating,
                             '信号': signals,
