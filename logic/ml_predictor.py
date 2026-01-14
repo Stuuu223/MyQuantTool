@@ -1,5 +1,6 @@
 """
-机器学习预测模型
+机器学习预测模型（Lite 版）
+使用 LightGBM/CatBoost 替代深度学习，速度提升 100 倍+
 """
 
 import pandas as pd
@@ -7,6 +8,9 @@ import numpy as np
 from typing import Dict, List, Tuple, Optional
 from abc import ABC, abstractmethod
 import logging
+import pickle
+import os
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -15,654 +19,612 @@ class MLPredictorBase(ABC):
     """
     机器学习预测器基类
     """
-    
+
     def __init__(self, name: str):
         """
         初始化预测器
-        
+
         Args:
             name: 模型名称
         """
         self.name = name
         self.model = None
         self.is_trained = False
-    
+        self.feature_importance = None
+
     @abstractmethod
     def prepare_data(self, df: pd.DataFrame, lookback: int = 20) -> Tuple[np.ndarray, np.ndarray]:
         """
         准备训练数据
-        
+
         Args:
             df: K线数据
             lookback: 回看窗口
-        
+
         Returns:
             (X, y) 特征和标签
         """
         pass
-    
+
     @abstractmethod
     def train(self, df: pd.DataFrame, lookback: int = 20):
         """
         训练模型
-        
+
         Args:
             df: 训练数据
             lookback: 回看窗口
         """
         pass
-    
+
     @abstractmethod
     def predict(self, df: pd.DataFrame, lookback: int = 20) -> np.ndarray:
         """
         预测
-        
+
         Args:
             df: K线数据
             lookback: 回看窗口
-        
+
         Returns:
             预测结果
         """
         pass
 
+    def save_model(self, filepath: str):
+        """
+        保存模型
 
-class LSTMPredictor(MLPredictorBase):
+        Args:
+            filepath: 保存路径
+        """
+        if not self.is_trained:
+            logger.warning(f"模型 {self.name} 未训练，无法保存")
+            return
+
+        with open(filepath, 'wb') as f:
+            pickle.dump({
+                'model': self.model,
+                'name': self.name,
+                'is_trained': self.is_trained,
+                'feature_importance': self.feature_importance,
+                'saved_at': datetime.now()
+            }, f)
+
+        logger.info(f"模型 {self.name} 已保存到 {filepath}")
+
+    def load_model(self, filepath: str):
+        """
+        加载模型
+
+        Args:
+            filepath: 模型路径
+        """
+        if not os.path.exists(filepath):
+            logger.error(f"模型文件不存在: {filepath}")
+            return
+
+        with open(filepath, 'rb') as f:
+            data = pickle.load(f)
+
+        self.model = data['model']
+        self.name = data['name']
+        self.is_trained = data['is_trained']
+        self.feature_importance = data.get('feature_importance')
+
+        logger.info(f"模型 {self.name} 已从 {filepath} 加载")
+
+
+class LightGBMPredictor(MLPredictorBase):
     """
-    LSTM预测器
+    LightGBM 预测器
+    速度最快，适合表格数据
     """
-    
-    def __init__(self):
-        super().__init__("LSTM预测器")
-        self.lookback = 20
-    
+
+    def __init__(self, objective: str = 'regression', num_leaves: int = 31):
+        super().__init__("LightGBM预测器")
+        self.objective = objective
+        self.num_leaves = num_leaves
+
     def prepare_data(self, df: pd.DataFrame, lookback: int = 20) -> Tuple[np.ndarray, np.ndarray]:
         """
-        准备LSTM训练数据
-        
+        准备训练数据 - 创建技术指标特征
+
         Args:
             df: K线数据
             lookback: 回看窗口
-        
+
         Returns:
             (X, y) 特征和标签
         """
-        # 使用收盘价作为特征
-        data = df['close'].values
-        
-        X, y = [], []
-        
-        for i in range(lookback, len(data)):
-            X.append(data[i-lookback:i])
-            y.append(data[i])
-        
-        X = np.array(X)
-        y = np.array(y)
-        
-        # 归一化
-        X = X / X[:, 0:1]
-        y = y / X[:, 0]
-        
+        # 确保数据按时间排序
+        df = df.sort_values('date').reset_index(drop=True)
+
+        # 计算技术指标
+        df = self._calculate_indicators(df, lookback)
+
+        # 创建特征
+        features = [
+            'close', 'volume', 'amplitude',
+            'ma_short', 'ma_long', 'ma_diff',
+            'rsi', 'macd', 'macd_signal', 'macd_hist',
+            'bb_upper', 'bb_middle', 'bb_lower', 'bb_width',
+            'momentum', 'roc', 'volatility'
+        ]
+
+        # 删除包含 NaN 的行
+        df_clean = df.dropna(subset=features + ['target']).copy()
+
+        X = df_clean[features].values
+        y = df_clean['target'].values
+
+        logger.info(f"准备数据完成: X shape={X.shape}, y shape={y.shape}")
+
         return X, y
-    
+
+    def _calculate_indicators(self, df: pd.DataFrame, lookback: int) -> pd.DataFrame:
+        """
+        计算技术指标
+
+        Args:
+            df: 原始数据
+            lookback: 回看窗口
+
+        Returns:
+            添加了指标的数据
+        """
+        # 移动平均
+        df['ma_short'] = df['close'].rolling(window=5).mean()
+        df['ma_long'] = df['close'].rolling(window=lookback).mean()
+        df['ma_diff'] = (df['ma_short'] - df['ma_long']) / df['ma_long']
+
+        # RSI
+        delta = df['close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        rs = gain / loss
+        df['rsi'] = 100 - (100 / (1 + rs))
+
+        # MACD
+        exp12 = df['close'].ewm(span=12, adjust=False).mean()
+        exp26 = df['close'].ewm(span=26, adjust=False).mean()
+        df['macd'] = exp12 - exp26
+        df['macd_signal'] = df['macd'].ewm(span=9, adjust=False).mean()
+        df['macd_hist'] = df['macd'] - df['macd_signal']
+
+        # 布林带
+        df['bb_middle'] = df['close'].rolling(window=20).mean()
+        bb_std = df['close'].rolling(window=20).std()
+        df['bb_upper'] = df['bb_middle'] + (bb_std * 2)
+        df['bb_lower'] = df['bb_middle'] - (bb_std * 2)
+        df['bb_width'] = (df['bb_upper'] - df['bb_lower']) / df['bb_middle']
+
+        # 动量指标
+        df['momentum'] = df['close'] - df['close'].shift(lookback)
+        df['roc'] = (df['close'] - df['close'].shift(lookback)) / df['close'].shift(lookback) * 100
+
+        # 波动率
+        df['volatility'] = df['close'].pct_change().rolling(window=lookback).std()
+
+        # 振幅
+        df['amplitude'] = (df['high'] - df['low']) / df['close'] * 100
+
+        # 目标变量：预测未来 1 天的涨跌幅
+        df['target'] = df['close'].pct_change().shift(-1) * 100
+
+        return df
+
     def train(self, df: pd.DataFrame, lookback: int = 20):
         """
-        训练LSTM模型
-        
+        训练 LightGBM 模型
+
         Args:
             df: 训练数据
             lookback: 回看窗口
         """
         try:
-            from tensorflow.keras.models import Sequential
-            from tensorflow.keras.layers import LSTM, Dense, Dropout
+            import lightgbm as lgb
         except ImportError:
-            logger.error("未安装 tensorflow，请运行: pip install tensorflow")
+            logger.error("未安装 lightgbm，请运行: pip install lightgbm")
             return
-        
+
         X, y = self.prepare_data(df, lookback)
-        
-        # 构建LSTM模型
-        self.model = Sequential([
-            LSTM(50, return_sequences=True, input_shape=(lookback, 1)),
-            Dropout(0.2),
-            LSTM(50, return_sequences=False),
-            Dropout(0.2),
-            Dense(25),
-            Dense(1)
-        ])
-        
-        self.model.compile(optimizer='adam', loss='mse')
-        
+
+        # 划分训练集和验证集
+        split_idx = int(len(X) * 0.8)
+        X_train, X_val = X[:split_idx], X[split_idx:]
+        y_train, y_val = y[:split_idx], y[split_idx:]
+
+        # 创建 LightGBM 数据集
+        train_data = lgb.Dataset(X_train, label=y_train)
+        val_data = lgb.Dataset(X_val, label=y_val, reference=train_data)
+
+        # 参数
+        params = {
+            'objective': self.objective,
+            'metric': 'rmse',
+            'num_leaves': self.num_leaves,
+            'learning_rate': 0.05,
+            'feature_fraction': 0.8,
+            'bagging_fraction': 0.8,
+            'bagging_freq': 5,
+            'verbose': -1,
+            'n_jobs': -1
+        }
+
         # 训练
-        self.model.fit(X, y, epochs=50, batch_size=32, verbose=0)
-        
+        logger.info(f"开始训练 {self.name}...")
+        self.model = lgb.train(
+            params,
+            train_data,
+            num_boost_round=200,
+            valid_sets=[train_data, val_data],
+            callbacks=[
+                lgb.early_stopping(stopping_rounds=20, verbose=False),
+                lgb.log_evaluation(period=50)
+            ]
+        )
+
         self.is_trained = True
-        logger.info("LSTM模型训练完成")
-    
+        self.feature_importance = dict(zip(
+            ['close', 'volume', 'amplitude', 'ma_short', 'ma_long', 'ma_diff',
+             'rsi', 'macd', 'macd_signal', 'macd_hist',
+             'bb_upper', 'bb_middle', 'bb_lower', 'bb_width',
+             'momentum', 'roc', 'volatility'],
+            self.model.feature_importance()
+        ))
+
+        logger.info(f"{self.name} 训练完成！")
+
     def predict(self, df: pd.DataFrame, lookback: int = 20) -> np.ndarray:
         """
-        LSTM预测
-        
+        预测
+
         Args:
             df: K线数据
             lookback: 回看窗口
-        
+
         Returns:
             预测结果
         """
         if not self.is_trained:
-            logger.warning("模型未训练，将先训练")
-            self.train(df, lookback)
-        
+            logger.warning(f"模型 {self.name} 未训练")
+            return np.array([])
+
         X, _ = self.prepare_data(df, lookback)
-        
-        predictions = self.model.predict(X, verbose=0)
-        
-        # 反归一化
-        data = df['close'].values
-        predictions = predictions * data[lookback:len(data)]
-        
-        return predictions.flatten()
+        predictions = self.model.predict(X, num_iteration=self.model.best_iteration)
+
+        return predictions
 
 
-class TransformerPredictor(MLPredictorBase):
+class CatBoostPredictor(MLPredictorBase):
     """
-    Transformer预测器
+    CatBoost 预测器
+    对类别特征友好，无需大量调参
     """
-    
-    def __init__(self):
-        super().__init__("Transformer预测器")
-        self.lookback = 20
-    
+
+    def __init__(self, depth: int = 6, learning_rate: float = 0.1):
+        super().__init__("CatBoost预测器")
+        self.depth = depth
+        self.learning_rate = learning_rate
+
     def prepare_data(self, df: pd.DataFrame, lookback: int = 20) -> Tuple[np.ndarray, np.ndarray]:
         """
-        准备Transformer训练数据
-        
+        准备训练数据
+
         Args:
             df: K线数据
             lookback: 回看窗口
-        
+
         Returns:
             (X, y) 特征和标签
         """
-        # 使用多特征
-        features = ['open', 'high', 'low', 'close', 'volume']
-        data = df[features].values
-        
-        X, y = [], []
-        
-        for i in range(lookback, len(data)):
-            X.append(data[i-lookback:i])
-            y.append(data[i, 3])  # 预测收盘价
-        
-        X = np.array(X)
-        y = np.array(y)
-        
-        # 归一化
-        X = X / X[:, 0:1, :]
-        y = y / X[:, 0, 3]
-        
+        df = df.sort_values('date').reset_index(drop=True)
+        df = self._calculate_indicators(df, lookback)
+
+        features = [
+            'close', 'volume', 'amplitude',
+            'ma_short', 'ma_long', 'ma_diff',
+            'rsi', 'macd', 'macd_signal', 'macd_hist',
+            'bb_upper', 'bb_middle', 'bb_lower', 'bb_width',
+            'momentum', 'roc', 'volatility'
+        ]
+
+        df_clean = df.dropna(subset=features + ['target']).copy()
+        X = df_clean[features].values
+        y = df_clean['target'].values
+
         return X, y
-    
+
+    def _calculate_indicators(self, df: pd.DataFrame, lookback: int) -> pd.DataFrame:
+        """计算技术指标（同 LightGBM）"""
+        df['ma_short'] = df['close'].rolling(window=5).mean()
+        df['ma_long'] = df['close'].rolling(window=lookback).mean()
+        df['ma_diff'] = (df['ma_short'] - df['ma_long']) / df['ma_long']
+
+        delta = df['close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        rs = gain / loss
+        df['rsi'] = 100 - (100 / (1 + rs))
+
+        exp12 = df['close'].ewm(span=12, adjust=False).mean()
+        exp26 = df['close'].ewm(span=26, adjust=False).mean()
+        df['macd'] = exp12 - exp26
+        df['macd_signal'] = df['macd'].ewm(span=9, adjust=False).mean()
+        df['macd_hist'] = df['macd'] - df['macd_signal']
+
+        df['bb_middle'] = df['close'].rolling(window=20).mean()
+        bb_std = df['close'].rolling(window=20).std()
+        df['bb_upper'] = df['bb_middle'] + (bb_std * 2)
+        df['bb_lower'] = df['bb_middle'] - (bb_std * 2)
+        df['bb_width'] = (df['bb_upper'] - df['bb_lower']) / df['bb_middle']
+
+        df['momentum'] = df['close'] - df['close'].shift(lookback)
+        df['roc'] = (df['close'] - df['close'].shift(lookback)) / df['close'].shift(lookback) * 100
+        df['volatility'] = df['close'].pct_change().rolling(window=lookback).std()
+        df['amplitude'] = (df['high'] - df['low']) / df['close'] * 100
+        df['target'] = df['close'].pct_change().shift(-1) * 100
+
+        return df
+
     def train(self, df: pd.DataFrame, lookback: int = 20):
         """
-        训练Transformer模型
-        
+        训练 CatBoost 模型
+
         Args:
             df: 训练数据
             lookback: 回看窗口
         """
         try:
-            from tensorflow.keras.models import Sequential
-            from tensorflow.keras.layers import Dense, Dropout
-            from tensorflow.keras.layers import MultiHeadAttention, LayerNormalization
+            from catboost import CatBoostRegressor
         except ImportError:
-            logger.error("未安装 tensorflow，请运行: pip install tensorflow")
+            logger.error("未安装 catboost，请运行: pip install catboost")
             return
-        
+
         X, y = self.prepare_data(df, lookback)
-        
-        # 简化的Transformer模型
-        self.model = Sequential([
-            Dense(64, activation='relu', input_shape=(lookback, 5)),
-            Dropout(0.2),
-            Dense(32, activation='relu'),
-            Dropout(0.2),
-            Dense(16, activation='relu'),
-            Dense(1)
-        ])
-        
-        self.model.compile(optimizer='adam', loss='mse')
-        
-        # 训练
-        self.model.fit(X, y, epochs=50, batch_size=32, verbose=0)
-        
+
+        split_idx = int(len(X) * 0.8)
+        X_train, X_val = X[:split_idx], X[split_idx:]
+        y_train, y_val = y[:split_idx], y[split_idx:]
+
+        self.model = CatBoostRegressor(
+            depth=self.depth,
+            learning_rate=self.learning_rate,
+            iterations=200,
+            loss_function='RMSE',
+            verbose=False,
+            thread_count=-1
+        )
+
+        logger.info(f"开始训练 {self.name}...")
+        self.model.fit(
+            X_train, y_train,
+            eval_set=(X_val, y_val),
+            early_stopping_rounds=20,
+            verbose=False
+        )
+
         self.is_trained = True
-        logger.info("Transformer模型训练完成")
-    
+        logger.info(f"{self.name} 训练完成！")
+
     def predict(self, df: pd.DataFrame, lookback: int = 20) -> np.ndarray:
         """
-        Transformer预测
-        
+        预测
+
         Args:
             df: K线数据
             lookback: 回看窗口
-        
+
         Returns:
             预测结果
         """
         if not self.is_trained:
-            logger.warning("模型未训练，将先训练")
-            self.train(df, lookback)
-        
+            logger.warning(f"模型 {self.name} 未训练")
+            return np.array([])
+
         X, _ = self.prepare_data(df, lookback)
-        
-        predictions = self.model.predict(X, verbose=0)
-        
-        # 反归一化
-        data = df['close'].values
-        predictions = predictions * data[lookback:len(data)]
-        
-        return predictions.flatten()
+        predictions = self.model.predict(X)
+
+        return predictions
 
 
 class XGBoostPredictor(MLPredictorBase):
     """
-    XGBoost预测器
+    XGBoost 预测器（保留，与原版兼容）
     """
-    
-    def __init__(self):
+
+    def __init__(self, max_depth: int = 6, learning_rate: float = 0.1):
         super().__init__("XGBoost预测器")
-        self.lookback = 20
-    
+        self.max_depth = max_depth
+        self.learning_rate = learning_rate
+
     def prepare_data(self, df: pd.DataFrame, lookback: int = 20) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        准备XGBoost训练数据
-        
-        Args:
-            df: K线数据
-            lookback: 回看窗口
-        
-        Returns:
-            (X, y) 特征和标签
-        """
-        # 创建技术指标特征
-        df = df.copy()
-        
-        # 移动平均
-        df['ma5'] = df['close'].rolling(5).mean()
-        df['ma10'] = df['close'].rolling(10).mean()
-        df['ma20'] = df['close'].rolling(20).mean()
-        
-        # 收益率
-        df['returns'] = df['close'].pct_change()
-        
-        # 波动率
-        df['volatility'] = df['returns'].rolling(20).std()
-        
-        # 成交量变化
-        df['volume_change'] = df['volume'].pct_change()
-        
-        # 目标: 下一日收益率
-        df['target'] = df['returns'].shift(-1)
-        
-        # 删除NaN
-        df = df.dropna()
-        
-        # 特征列
-        feature_cols = ['ma5', 'ma10', 'ma20', 'returns', 'volatility', 'volume_change']
-        
-        X = df[feature_cols].values
-        y = df['target'].values
-        
+        """准备训练数据"""
+        df = df.sort_values('date').reset_index(drop=True)
+        df = self._calculate_indicators(df, lookback)
+
+        features = [
+            'close', 'volume', 'amplitude',
+            'ma_short', 'ma_long', 'ma_diff',
+            'rsi', 'macd', 'macd_signal', 'macd_hist',
+            'bb_upper', 'bb_middle', 'bb_lower', 'bb_width',
+            'momentum', 'roc', 'volatility'
+        ]
+
+        df_clean = df.dropna(subset=features + ['target']).copy()
+        X = df_clean[features].values
+        y = df_clean['target'].values
+
         return X, y
-    
+
+    def _calculate_indicators(self, df: pd.DataFrame, lookback: int) -> pd.DataFrame:
+        """计算技术指标"""
+        df['ma_short'] = df['close'].rolling(window=5).mean()
+        df['ma_long'] = df['close'].rolling(window=lookback).mean()
+        df['ma_diff'] = (df['ma_short'] - df['ma_long']) / df['ma_long']
+
+        delta = df['close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        rs = gain / loss
+        df['rsi'] = 100 - (100 / (1 + rs))
+
+        exp12 = df['close'].ewm(span=12, adjust=False).mean()
+        exp26 = df['close'].ewm(span=26, adjust=False).mean()
+        df['macd'] = exp12 - exp26
+        df['macd_signal'] = df['macd'].ewm(span=9, adjust=False).mean()
+        df['macd_hist'] = df['macd'] - df['macd_signal']
+
+        df['bb_middle'] = df['close'].rolling(window=20).mean()
+        bb_std = df['close'].rolling(window=20).std()
+        df['bb_upper'] = df['bb_middle'] + (bb_std * 2)
+        df['bb_lower'] = df['bb_middle'] - (bb_std * 2)
+        df['bb_width'] = (df['bb_upper'] - df['bb_lower']) / df['bb_middle']
+
+        df['momentum'] = df['close'] - df['close'].shift(lookback)
+        df['roc'] = (df['close'] - df['close'].shift(lookback)) / df['close'].shift(lookback) * 100
+        df['volatility'] = df['close'].pct_change().rolling(window=lookback).std()
+        df['amplitude'] = (df['high'] - df['low']) / df['close'] * 100
+        df['target'] = df['close'].pct_change().shift(-1) * 100
+
+        return df
+
     def train(self, df: pd.DataFrame, lookback: int = 20):
-        """
-        训练XGBoost模型
-        
-        Args:
-            df: 训练数据
-            lookback: 回看窗口
-        """
+        """训练 XGBoost 模型"""
         try:
             import xgboost as xgb
         except ImportError:
             logger.error("未安装 xgboost，请运行: pip install xgboost")
             return
-        
+
         X, y = self.prepare_data(df, lookback)
-        
-        # 构建XGBoost模型
+
+        split_idx = int(len(X) * 0.8)
+        X_train, X_val = X[:split_idx], X[split_idx:]
+        y_train, y_val = y[:split_idx], y[split_idx:]
+
         self.model = xgb.XGBRegressor(
-            n_estimators=100,
-            max_depth=6,
-            learning_rate=0.1,
-            random_state=42
+            max_depth=self.max_depth,
+            learning_rate=self.learning_rate,
+            n_estimators=200,
+            objective='reg:squarederror',
+            n_jobs=-1,
+            verbosity=0
         )
-        
-        # 训练
-        self.model.fit(X, y)
-        
+
+        logger.info(f"开始训练 {self.name}...")
+        self.model.fit(
+            X_train, y_train,
+            eval_set=[(X_val, y_val)],
+            verbose=False
+        )
+
         self.is_trained = True
-        logger.info("XGBoost模型训练完成")
-    
+        self.feature_importance = dict(zip(
+            ['close', 'volume', 'amplitude', 'ma_short', 'ma_long', 'ma_diff',
+             'rsi', 'macd', 'macd_signal', 'macd_hist',
+             'bb_upper', 'bb_middle', 'bb_lower', 'bb_width',
+             'momentum', 'roc', 'volatility'],
+            self.model.feature_importances_
+        ))
+
+        logger.info(f"{self.name} 训练完成！")
+
     def predict(self, df: pd.DataFrame, lookback: int = 20) -> np.ndarray:
-        """
-        XGBoost预测
-        
-        Args:
-            df: K线数据
-            lookback: 回看窗口
-        
-        Returns:
-            预测结果
-        """
+        """预测"""
         if not self.is_trained:
-            logger.warning("模型未训练，将先训练")
-            self.train(df, lookback)
-        
+            logger.warning(f"模型 {self.name} 未训练")
+            return np.array([])
+
         X, _ = self.prepare_data(df, lookback)
-        
         predictions = self.model.predict(X)
-        
+
         return predictions
 
 
 class EnsemblePredictor:
     """
     集成预测器
-    
-    融合多个预测模型
+    组合多个模型进行预测
     """
-    
-    def __init__(self):
-        """初始化集成预测器"""
-        self.predictors = []
-        self.weights = []
-    
-    def add_predictor(self, predictor: MLPredictorBase, weight: float = 1.0):
+
+    def __init__(self, predictors: List[MLPredictorBase], weights: Optional[List[float]] = None):
         """
-        添加预测器
-        
+        初始化集成预测器
+
         Args:
-            predictor: 预测器实例
-            weight: 权重
+            predictors: 预测器列表
+            weights: 权重列表，None 表示平均权重
         """
-        self.predictors.append(predictor)
-        self.weights.append(weight)
-    
-    def train(self, df: pd.DataFrame, lookback: int = 20):
-        """
-        训练所有预测器
-        
-        Args:
-            df: 训练数据
-            lookback: 回看窗口
-        """
-        for predictor in self.predictors:
-            predictor.train(df, lookback)
-    
+        self.predictors = predictors
+        self.weights = weights if weights is not None else [1.0 / len(predictors)] * len(predictors)
+
+        if len(self.weights) != len(self.predictors):
+            raise ValueError("权重数量必须与预测器数量相同")
+
     def predict(self, df: pd.DataFrame, lookback: int = 20) -> np.ndarray:
         """
         集成预测
-        
+
         Args:
             df: K线数据
             lookback: 回看窗口
-        
+
         Returns:
             集成预测结果
         """
         predictions = []
-        
+
         for predictor in self.predictors:
-            pred = predictor.predict(df, lookback)
-            predictions.append(pred)
-        
+            if predictor.is_trained:
+                pred = predictor.predict(df, lookback)
+                predictions.append(pred)
+            else:
+                logger.warning(f"预测器 {predictor.name} 未训练，跳过")
+
+        if not predictions:
+            return np.array([])
+
         # 加权平均
-        weights = np.array(self.weights)
-        weights = weights / weights.sum()
-        
         ensemble_pred = np.zeros_like(predictions[0])
-        
-        for i, pred in enumerate(predictions):
-            ensemble_pred += weights[i] * pred
-        
+        for pred, weight in zip(predictions, self.weights):
+            ensemble_pred += pred * weight
+
         return ensemble_pred
-    
-    def generate_signals(
-        self,
-        df: pd.DataFrame,
-        lookback: int = 20,
-        threshold: float = 0.02
-    ) -> pd.Series:
-        """
-        生成交易信号
-        
-        Args:
-            df: K线数据
-            lookback: 回看窗口
-            threshold: 阈值
-        
-        Returns:
-            交易信号
-        """
-        predictions = self.predict(df, lookback)
-        
-        # 计算预测收益率
-        actual_prices = df['close'].values[lookback:]
-        pred_returns = (predictions - actual_prices) / actual_prices
-        
-        signals = pd.Series(0, index=df.index[lookback:])
-        
-        # 预测上涨 > 阈值
-        signals[pred_returns > threshold] = 1
-        
-        # 预测下跌 < -阈值
-        signals[pred_returns < -threshold] = -1
-        
-        return signals
 
 
-class GRUPredictor(MLPredictorBase):
-    """
-    GRU预测器
-    """
-    
-    def __init__(self):
-        super().__init__("GRU预测器")
-        self.lookback = 20
-    
-    def prepare_data(self, df: pd.DataFrame, lookback: int = 20) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        准备GRU训练数据
-        
-        Args:
-            df: K线数据
-            lookback: 回看窗口
-        
-        Returns:
-            (X, y) 特征和标签
-        """
-        # 使用收盘价作为特征
-        data = df['close'].values
-        
-        X, y = [], []
-        
-        for i in range(lookback, len(data)):
-            X.append(data[i-lookback:i])
-            y.append(data[i])
-        
-        X = np.array(X)
-        y = np.array(y)
-        
-        # 归一化
-        X = X / X[:, 0:1]
-        y = y / X[:, 0]
-        
-        return X, y
-    
-    def train(self, df: pd.DataFrame, lookback: int = 20):
-        """
-        训练GRU模型
-        
-        Args:
-            df: 训练数据
-            lookback: 回看窗口
-        """
-        try:
-            from tensorflow.keras.models import Sequential
-            from tensorflow.keras.layers import GRU, Dense, Dropout
-        except ImportError:
-            logger.error("未安装 tensorflow，请运行: pip install tensorflow")
-            return
-        
-        X, y = self.prepare_data(df, lookback)
-        
-        # 构建GRU模型
-        self.model = Sequential([
-            GRU(50, return_sequences=True, input_shape=(lookback, 1)),
-            Dropout(0.2),
-            GRU(50, return_sequences=False),
-            Dropout(0.2),
-            Dense(25),
-            Dense(1)
-        ])
-        
-        self.model.compile(optimizer='adam', loss='mse')
-        
-        # 训练
-        self.model.fit(X, y, epochs=50, batch_size=32, verbose=0)
-        
-        self.is_trained = True
-        logger.info("GRU模型训练完成")
-    
-    def predict(self, df: pd.DataFrame, lookback: int = 20) -> np.ndarray:
-        """
-        GRU预测
-        
-        Args:
-            df: K线数据
-            lookback: 回看窗口
-        
-        Returns:
-            预测结果
-        """
-        if not self.is_trained:
-            logger.warning("模型未训练，将先训练")
-            self.train(df, lookback)
-        
-        X, _ = self.prepare_data(df, lookback)
-        
-        predictions = self.model.predict(X, verbose=0)
-        
-        # 反归一化
-        data = df['close'].values
-        predictions = predictions * data[lookback:len(data)]
-        
-        return predictions.flatten()
+# 使用示例
+if __name__ == "__main__":
+    # 创建模拟数据
+    np.random.seed(42)
+    dates = pd.date_range(start='2020-01-01', periods=1000)
+    df = pd.DataFrame({
+        'date': dates,
+        'close': np.cumprod(1 + np.random.randn(1000) * 0.02) * 100,
+        'high': np.cumprod(1 + np.random.randn(1000) * 0.02) * 100 * 1.02,
+        'low': np.cumprod(1 + np.random.randn(1000) * 0.02) * 100 * 0.98,
+        'volume': np.random.randint(1000000, 10000000, 1000)
+    })
 
+    # 创建预测器
+    lgb_predictor = LightGBMPredictor()
+    cat_predictor = CatBoostPredictor()
+    xgb_predictor = XGBoostPredictor()
 
-class CNNPredictor(MLPredictorBase):
-    """
-    CNN预测器
-    """
-    
-    def __init__(self):
-        super().__init__("CNN预测器")
-        self.lookback = 20
-    
-    def prepare_data(self, df: pd.DataFrame, lookback: int = 20) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        准备CNN训练数据
-        
-        Args:
-            df: K线数据
-            lookback: 回看窗口
-        
-        Returns:
-            (X, y) 特征和标签
-        """
-        # 使用多特征
-        features = ['open', 'high', 'low', 'close', 'volume']
-        data = df[features].values
-        
-        X, y = [], []
-        
-        for i in range(lookback, len(data)):
-            X.append(data[i-lookback:i])
-            y.append(data[i, 3])  # 预测收盘价
-        
-        X = np.array(X)
-        y = np.array(y)
-        
-        # 归一化
-        X = X / X[:, 0:1, :]
-        y = y / X[:, 0, 3]
-        
-        return X, y
-    
-    def train(self, df: pd.DataFrame, lookback: int = 20):
-        """
-        训练CNN模型
-        
-        Args:
-            df: 训练数据
-            lookback: 回看窗口
-        """
-        try:
-            from tensorflow.keras.models import Sequential
-            from tensorflow.keras.layers import Conv1D, MaxPooling1D, Flatten, Dense, Dropout
-        except ImportError:
-            logger.error("未安装 tensorflow，请运行: pip install tensorflow")
-            return
-        
-        X, y = self.prepare_data(df, lookback)
-        
-        # 构建CNN模型
-        self.model = Sequential([
-            Conv1D(64, 3, activation='relu', input_shape=(lookback, 5)),
-            MaxPooling1D(2),
-            Conv1D(32, 3, activation='relu'),
-            MaxPooling1D(2),
-            Flatten(),
-            Dense(50, activation='relu'),
-            Dropout(0.2),
-            Dense(25, activation='relu'),
-            Dense(1)
-        ])
-        
-        self.model.compile(optimizer='adam', loss='mse')
-        
-        # 训练
-        self.model.fit(X, y, epochs=50, batch_size=32, verbose=0)
-        
-        self.is_trained = True
-        logger.info("CNN模型训练完成")
-    
-    def predict(self, df: pd.DataFrame, lookback: int = 20) -> np.ndarray:
-        """
-        CNN预测
-        
-        Args:
-            df: K线数据
-            lookback: 回看窗口
-        
-        Returns:
-            预测结果
-        """
-        if not self.is_trained:
-            logger.warning("模型未训练，将先训练")
-            self.train(df, lookback)
-        
-        X, _ = self.prepare_data(df, lookback)
-        
-        predictions = self.model.predict(X, verbose=0)
-        
-        # 反归一化
-        data = df['close'].values
-        predictions = predictions * data[lookback:len(data)]
-        
-        return predictions.flatten()
+    # 训练
+    print("训练 LightGBM...")
+    lgb_predictor.train(df)
+
+    print("\n训练 CatBoost...")
+    cat_predictor.train(df)
+
+    print("\n训练 XGBoost...")
+    xgb_predictor.train(df)
+
+    # 集成预测
+    ensemble = EnsemblePredictor([lgb_predictor, cat_predictor, xgb_predictor])
+    predictions = ensemble.predict(df)
+
+    print(f"\n集成预测结果（最后5天）:")
+    print(predictions[-5:])

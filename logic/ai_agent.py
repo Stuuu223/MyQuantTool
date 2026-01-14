@@ -1,63 +1,395 @@
+"""
+AI 智能代理（Lite 版）
+使用 LLM API 替代硬编码规则，实现真正的智能分析
+"""
+
 import pandas as pd
 import numpy as np
+from typing import Dict, List, Optional, Any
+import logging
+import json
 
-class DeepSeekAgent:
+logger = logging.getLogger(__name__)
+
+
+class RealAIAgent:
     """
-    本地智能分析系统
-    基于规则和机器学习的股票分析，不依赖外部 API
+    真正的 AI 智能代理
+    基于 LLM API 的股票分析系统
     """
-    def __init__(self, api_key=None):
-        # 保留 api_key 参数以兼容主程序，但实际不使用
-        self.api_key = api_key
-        # 可以在这里加载预训练的模型（如果需要）
-        self.model = None
-    
-    def analyze_stock(self, symbol, price_change, technical_data):
+
+    def __init__(self, api_key: str, provider: str = 'openai', model: str = 'gpt-4'):
         """
-        本地智能分析股票
-        
+        初始化 AI 代理
+
+        Args:
+            api_key: API 密钥
+            provider: 提供商 ('openai', 'anthropic', 'deepseek', 'zhipu' 等)
+            model: 模型名称
+        """
+        self.api_key = api_key
+        self.provider = provider
+        self.model = model
+        self.llm = self._init_llm()
+
+    def _init_llm(self):
+        """初始化 LLM 接口"""
+        try:
+            from logic.llm_interface import LLMManager
+            return LLMManager(self.api_key, provider=self.provider)
+        except ImportError:
+            logger.error("无法导入 LLM 接口，请检查 llm_interface.py")
+            return None
+
+    def analyze_stock(self,
+                     symbol: str,
+                     price_data: Dict[str, Any],
+                     technical_data: Dict[str, Any],
+                     market_context: Optional[Dict[str, Any]] = None) -> str:
+        """
+        使用 LLM 分析股票
+
         Args:
             symbol: 股票代码
-            price_change: 涨跌幅
-            technical_data: 技术指标字典
+            price_data: 价格数据（当前价格、涨跌幅等）
+            technical_data: 技术指标数据
+            market_context: 市场上下文（可选）
+
+        Returns:
+            分析报告
         """
+        if self.llm is None:
+            return self._fallback_analysis(symbol, price_data, technical_data)
+
+        # 构建上下文
+        context = self._build_context(symbol, price_data, technical_data, market_context)
+
+        # 构建提示词
+        prompt = self._build_prompt(context)
+
         try:
-            # 1. 计算各项指标得分
-            scores = self._calculate_scores(price_change, technical_data)
-            
-            # 2. 判断市场状态
-            market_state = self._judge_market_state(scores, price_change)
-            
-            # 3. 识别风险点
-            risks = self._identify_risks(technical_data, scores)
-            
-            # 4. 生成操作建议
-            operation = self._generate_operation(scores, market_state, risks, technical_data)
-            
-            # 5. 组装分析报告
-            report = self._format_report(symbol, technical_data, market_state, risks, operation)
-            
-            return report
+            # 调用 LLM
+            response = self.llm.chat(prompt, model=self.model)
+            return response
         except Exception as e:
-            return f"❌ 分析失败: {str(e)}"
-    
-    def _calculate_scores(self, price_change, technical_data):
+            logger.error(f"LLM 调用失败: {str(e)}")
+            return self._fallback_analysis(symbol, price_data, technical_data)
+
+    def _build_context(self,
+                      symbol: str,
+                      price_data: Dict[str, Any],
+                      technical_data: Dict[str, Any],
+                      market_context: Optional[Dict[str, Any]]) -> str:
+        """
+        构建分析上下文
+
+        Args:
+            symbol: 股票代码
+            price_data: 价格数据
+            technical_data: 技术指标数据
+            market_context: 市场上下文
+
+        Returns:
+            格式化的上下文字符串
+        """
+        context_parts = []
+
+        # 基本信息
+        context_parts.append(f"股票代码: {symbol}")
+        context_parts.append(f"当前价格: {price_data.get('current_price', 'N/A')}")
+        context_parts.append(f"今日涨跌幅: {price_data.get('change_percent', 'N/A')}%")
+        context_parts.append(f"成交量: {price_data.get('volume', 'N/A')}")
+
+        # 技术指标
+        context_parts.append("\n【技术指标】")
+
+        # RSI
+        rsi = technical_data.get('rsi', {})
+        if rsi:
+            context_parts.append(f"RSI: {rsi.get('RSI', 'N/A')}")
+
+        # MACD
+        macd = technical_data.get('macd', {})
+        if macd:
+            context_parts.append(f"MACD: {macd.get('Trend', 'N/A')}")
+            context_parts.append(f"MACD柱: {macd.get('Histogram', 'N/A')}")
+
+        # 布林带
+        bollinger = technical_data.get('bollinger', {})
+        if bollinger:
+            current_price = price_data.get('current_price', 0)
+            upper = bollinger.get('上轨', 0)
+            lower = bollinger.get('下轨', 0)
+            if upper > 0 and lower > 0:
+                position = ((current_price - lower) / (upper - lower) * 100)
+                context_parts.append(f"布林带位置: {position:.1f}%")
+
+        # KDJ
+        kdj = technical_data.get('kdj', {})
+        if kdj:
+            context_parts.append(f"KDJ: K={kdj.get('K', 'N/A')}, D={kdj.get('D', 'N/A')}, J={kdj.get('J', 'N/A')}")
+
+        # 均线
+        ma = technical_data.get('ma', {})
+        if ma:
+            context_parts.append(f"MA5: {ma.get('MA5', 'N/A')}")
+            context_parts.append(f"MA10: {ma.get('MA10', 'N/A')}")
+            context_parts.append(f"MA20: {ma.get('MA20', 'N/A')}")
+
+        # 资金流向
+        money_flow = technical_data.get('money_flow', {})
+        if money_flow:
+            context_parts.append(f"资金流向: {money_flow.get('资金流向', 'N/A')}")
+            context_parts.append(f"主力净流入: {money_flow.get('主力净流入', 'N/A')}")
+
+        # 市场上下文
+        if market_context:
+            context_parts.append("\n【市场环境】")
+            context_parts.append(f"大盘指数: {market_context.get('index', 'N/A')}")
+            context_parts.append(f"大盘涨跌幅: {market_context.get('index_change', 'N/A')}%")
+            context_parts.append(f"市场情绪: {market_context.get('sentiment', 'N/A')}")
+
+        return "\n".join(context_parts)
+
+    def _build_prompt(self, context: str) -> str:
+        """
+        构建 LLM 提示词
+
+        Args:
+            context: 上下文字符串
+
+        Returns:
+            完整的提示词
+        """
+        prompt = f"""你是一位顶级的游资操盘手，拥有10年以上的A股实战经验。
+
+请基于以下股票数据进行专业分析：
+
+{context}
+
+请按照以下格式输出分析报告（不要包含其他废话）：
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+【情绪评分】
+0-100分（0极度悲观，100极度乐观）
+
+【技术面分析】
+简要分析技术指标形态和趋势
+
+【潜在风险】
+列出1-3个主要风险点
+
+【操作建议】
+买入 / 观望 / 卖出（三选一）
+
+【理由】
+用1-2句话说明理由
+━━━━━━━━━━━━━━━━━━━━━━━━
+
+注意：
+1. 只输出上述格式的内容，不要添加任何开场白或结束语
+2. 评分和建议要基于数据，不要凭空猜测
+3. 如果数据不足，明确说明
+"""
+        return prompt
+
+    def _fallback_analysis(self,
+                          symbol: str,
+                          price_data: Dict[str, Any],
+                          technical_data: Dict[str, Any]) -> str:
+        """
+        降级分析（当 LLM 不可用时使用简化规则）
+
+        Args:
+            symbol: 股票代码
+            price_data: 价格数据
+            technical_data: 技术指标数据
+
+        Returns:
+            简化分析报告
+        """
+        # 计算综合得分
+        score = 0
+        signals = []
+
+        # 涨跌幅
+        change = price_data.get('change_percent', 0)
+        if change > 5:
+            score += 20
+            signals.append("强势上涨")
+        elif change > 0:
+            score += 10
+            signals.append("小幅上涨")
+        elif change > -3:
+            score += 5
+            signals.append("小幅下跌")
+        else:
+            signals.append("大幅下跌")
+
+        # RSI
+        rsi = technical_data.get('rsi', {}).get('RSI', 50)
+        if rsi < 30:
+            score += 15
+            signals.append("RSI超卖")
+        elif rsi > 70:
+            score -= 10
+            signals.append("RSI超买")
+        elif 40 <= rsi <= 60:
+            score += 10
+            signals.append("RSI中性")
+
+        # MACD
+        macd_trend = technical_data.get('macd', {}).get('Trend', '')
+        if macd_trend == '多头':
+            score += 15
+            signals.append("MACD多头")
+        elif macd_trend == '空头':
+            score -= 15
+            signals.append("MACD空头")
+
+        # 资金流向
+        money_flow = technical_data.get('money_flow', {}).get('资金流向', '')
+        if money_flow == '大幅流入':
+            score += 20
+            signals.append("资金大幅流入")
+        elif money_flow == '流入':
+            score += 10
+            signals.append("资金流入")
+        elif money_flow == '流出':
+            score -= 10
+            signals.append("资金流出")
+
+        # 生成建议
+        if score >= 50:
+            suggestion = "买入"
+        elif score >= 30:
+            suggestion = "观望"
+        else:
+            suggestion = "卖出"
+
+        # 格式化输出
+        report = f"""━━━━━━━━━━━━━━━━━━━━━━━━
+【情绪评分】
+{min(max(score, 0), 100)}分
+
+【技术面分析】
+{', '.join(signals)}
+
+【潜在风险】
+市场波动风险
+
+【操作建议】
+{suggestion}
+
+【理由】
+基于技术指标综合评分
+━━━━━━━━━━━━━━━━━━━━━━━━
+
+*注：当前使用简化规则分析，配置 LLM API 后可获得更智能的分析*"""
+
+        return report
+
+    def batch_analyze(self,
+                     stocks: List[Dict[str, Any]],
+                     market_context: Optional[Dict[str, Any]] = None) -> List[Dict[str, str]]:
+        """
+        批量分析股票
+
+        Args:
+            stocks: 股票列表，每个元素包含 symbol, price_data, technical_data
+            market_context: 市场上下文
+
+        Returns:
+            分析结果列表
+        """
+        results = []
+
+        for stock in stocks:
+            try:
+                analysis = self.analyze_stock(
+                    symbol=stock['symbol'],
+                    price_data=stock['price_data'],
+                    technical_data=stock['technical_data'],
+                    market_context=market_context
+                )
+
+                results.append({
+                    'symbol': stock['symbol'],
+                    'analysis': analysis,
+                    'timestamp': pd.Timestamp.now()
+                })
+
+            except Exception as e:
+                logger.error(f"分析股票 {stock['symbol']} 失败: {str(e)}")
+                results.append({
+                    'symbol': stock['symbol'],
+                    'analysis': f"分析失败: {str(e)}",
+                    'timestamp': pd.Timestamp.now()
+                })
+
+        return results
+
+
+class RuleBasedAgent:
+    """
+    规则代理（保留用于快速分析）
+    基于简化规则的快速分析
+    """
+
+    def __init__(self):
+        """初始化规则代理"""
+        pass
+
+    def analyze_stock(self,
+                     symbol: str,
+                     price_data: Dict[str, Any],
+                     technical_data: Dict[str, Any]) -> str:
+        """
+        基于规则分析股票
+
+        Args:
+            symbol: 股票代码
+            price_data: 价格数据
+            technical_data: 技术指标数据
+
+        Returns:
+            分析报告
+        """
+        # 计算各项指标得分
+        scores = self._calculate_scores(price_data, technical_data)
+
+        # 判断市场状态
+        market_state = self._judge_market_state(scores, price_data)
+
+        # 识别风险点
+        risks = self._identify_risks(technical_data, scores)
+
+        # 生成操作建议
+        operation = self._generate_operation(scores, market_state, risks, technical_data)
+
+        # 组装分析报告
+        report = self._format_report(symbol, technical_data, market_state, risks, operation)
+
+        return report
+
+    def _calculate_scores(self, price_data: Dict[str, Any], technical_data: Dict[str, Any]) -> Dict[str, int]:
         """计算各项技术指标的得分"""
         scores = {}
-        
-        # 1. 涨跌幅得分
-        if price_change > 5:
+
+        # 涨跌幅得分
+        change = price_data.get('change_percent', 0)
+        if change > 5:
             scores['涨跌幅'] = 20
-        elif price_change > 3:
+        elif change > 3:
             scores['涨跌幅'] = 15
-        elif price_change > 0:
+        elif change > 0:
             scores['涨跌幅'] = 10
-        elif price_change > -3:
+        elif change > -3:
             scores['涨跌幅'] = 5
         else:
             scores['涨跌幅'] = 0
-        
-        # 2. MACD 得分
+
+        # MACD 得分
         macd = technical_data.get('macd', {})
         if macd.get('Trend') == '多头':
             scores['MACD'] = 20
@@ -65,8 +397,8 @@ class DeepSeekAgent:
             scores['MACD'] = 0
         else:
             scores['MACD'] = 10
-        
-        # 3. RSI 得分
+
+        # RSI 得分
         rsi = technical_data.get('rsi', {})
         rsi_value = rsi.get('RSI', 50)
         if 30 <= rsi_value <= 70:
@@ -77,13 +409,13 @@ class DeepSeekAgent:
             scores['RSI'] = 5   # 超买，风险高
         else:
             scores['RSI'] = 10
-        
-        # 4. 布林带得分
+
+        # 布林带得分
         bollinger = technical_data.get('bollinger', {})
-        current_price = technical_data.get('current_price', 0)
+        current_price = price_data.get('current_price', 0)
         lower_band = bollinger.get('下轨', 0)
         upper_band = bollinger.get('上轨', 0)
-        
+
         if lower_band > 0 and upper_band > 0:
             position = (current_price - lower_band) / (upper_band - lower_band) * 100
             if position < 20:
@@ -94,167 +426,161 @@ class DeepSeekAgent:
                 scores['布林带'] = 15  # 中间区域
         else:
             scores['布林带'] = 10
-        
-        # 5. 资金流向得分
+
+        # 资金流向得分
         money_flow = technical_data.get('money_flow', {})
         flow_type = money_flow.get('资金流向', '')
-        if flow_type == '净流入':
+
+        if flow_type == '大幅流入':
             scores['资金流向'] = 20
-        elif flow_type == '净流出':
-            scores['资金流向'] = 0
+        elif flow_type == '流入':
+            scores['资金流向'] = 15
+        elif flow_type == '流出':
+            scores['资金流向'] = 5
         else:
             scores['资金流向'] = 10
-        
-        # 6. 成交量得分
-        volume = technical_data.get('volume', {})
-        volume_ratio = volume.get('量比', 1)
-        if volume_ratio > 2:
-            scores['成交量'] = 20
-        elif volume_ratio > 1.5:
-            scores['成交量'] = 15
-        elif volume_ratio > 1:
-            scores['成交量'] = 10
+
+        # KDJ 得分
+        kdj = technical_data.get('kdj', {})
+        k_value = kdj.get('K', 50)
+        d_value = kdj.get('D', 50)
+
+        if k_value < 20 and d_value < 20:
+            scores['KDJ'] = 20  # 超卖
+        elif k_value > 80 and d_value > 80:
+            scores['KDJ'] = 5   # 超买
+        elif k_value > d_value:
+            scores['KDJ'] = 15  # 金叉
         else:
-            scores['成交量'] = 5
-        
-        # 7. 形态识别得分
-        patterns = technical_data.get('patterns', {})
-        pattern_score = 10
-        if patterns.get('double_bottom', {}).get('is_double_bottom'):
-            pattern_score = 20
-        elif patterns.get('double_top', {}).get('is_double_top'):
-            pattern_score = 0
-        elif patterns.get('head_shoulders', {}).get('pattern') == 'head_shoulders_bottom':
-            pattern_score = 20
-        elif patterns.get('head_shoulders', {}).get('pattern') == 'head_shoulders_top':
-            pattern_score = 0
-        scores['形态'] = pattern_score
-        
+            scores['KDJ'] = 10
+
         return scores
-    
-    def _judge_market_state(self, scores, price_change):
+
+    def _judge_market_state(self, scores: Dict[str, int], price_data: Dict[str, Any]) -> str:
         """判断市场状态"""
         total_score = sum(scores.values())
-        max_score = len(scores) * 20
-        
-        # 计算得分比例
-        score_ratio = total_score / max_score
-        
-        if score_ratio >= 0.7:
-            return "强势上涨"
-        elif score_ratio >= 0.5:
-            return "温和上涨"
-        elif score_ratio >= 0.3:
-            return "震荡整理"
-        elif score_ratio >= 0.2:
-            return "弱势下跌"
+
+        if total_score >= 80:
+            return "强势"
+        elif total_score >= 60:
+            return "偏强"
+        elif total_score >= 40:
+            return "震荡"
+        elif total_score >= 20:
+            return "偏弱"
         else:
-            return "深度调整"
-    
-    def _identify_risks(self, technical_data, scores):
+            return "弱势"
+
+    def _identify_risks(self, technical_data: Dict[str, Any], scores: Dict[str, int]) -> List[str]:
         """识别风险点"""
         risks = []
-        
-        # 1. RSI 超买风险
-        rsi = technical_data.get('rsi', {})
-        if rsi.get('RSI', 50) > 70:
-            risks.append("RSI超买，短期可能回调")
-        
-        # 2. 接近阻力位
-        resistance = technical_data.get('resistance_levels', [])
-        current_price = technical_data.get('current_price', 0)
-        if resistance and current_price > 0:
-            nearest_resistance = min([r for r in resistance if r > current_price], default=None)
-            if nearest_resistance and nearest_resistance - current_price < current_price * 0.02:
-                risks.append(f"接近阻力位¥{nearest_resistance:.2f}")
-        
-        # 3. 资金流出风险
-        money_flow = technical_data.get('money_flow', {})
-        if money_flow.get('资金流向') == '净流出':
-            risks.append("资金净流出，主力在撤退")
-        
-        # 4. 高位风险
+
+        # RSI 超买风险
+        rsi = technical_data.get('rsi', {}).get('RSI', 50)
+        if rsi > 80:
+            risks.append("RSI严重超买，短期回调风险高")
+
+        # MACD 顶背离风险
+        macd = technical_data.get('macd', {})
+        if macd.get('Trend') == '空头':
+            risks.append("MACD进入空头趋势，注意风险")
+
+        # 布林带上轨风险
         bollinger = technical_data.get('bollinger', {})
-        if bollinger.get('当前位置', 50) > 80:
-            risks.append("价格接近布林带上轨，存在回调风险")
-        
-        # 5. 形态风险
-        patterns = technical_data.get('patterns', {})
-        if patterns.get('double_top', {}).get('is_double_top'):
-            risks.append("双顶形态，可能见顶")
-        elif patterns.get('head_shoulders', {}).get('pattern') == 'head_shoulders_top':
-            risks.append("头肩顶形态，注意风险")
-        
-        return risks if risks else ["无明显风险"]
-    
-    def _generate_operation(self, scores, market_state, risks, technical_data):
+        current_price = technical_data.get('current_price', 0)
+        upper_band = bollinger.get('上轨', 0)
+
+        if upper_band > 0 and current_price > upper_band:
+            risks.append("价格突破布林带上轨，谨防回调")
+
+        # 资金流出风险
+        money_flow = technical_data.get('money_flow', {}).get('资金流向', '')
+        if money_flow == '流出' or money_flow == '大幅流出':
+            risks.append("资金持续流出，需谨慎")
+
+        if not risks:
+            risks.append("无明显风险信号")
+
+        return risks
+
+    def _generate_operation(self,
+                           scores: Dict[str, int],
+                           market_state: str,
+                           risks: List[str],
+                           technical_data: Dict[str, Any]) -> str:
         """生成操作建议"""
         total_score = sum(scores.values())
-        max_score = len(scores) * 20
-        score_ratio = total_score / max_score
-        
-        operation = {
-            '建议': '',
-            '理由': '',
-            '参考价位': []
-        }
-        
-        # 根据得分和市场状态给出建议
-        if score_ratio >= 0.7:
-            operation['建议'] = '买入'
-            operation['理由'] = f'各项指标向好，{market_state}趋势明确，建议积极介入'
-        elif score_ratio >= 0.5:
-            operation['建议'] = '持有'
-            operation['理由'] = f'整体走势平稳，{market_state}中，建议继续持有'
-        elif score_ratio >= 0.3:
-            operation['建议'] = '观望'
-            operation['理由'] = f'市场处于{market_state}状态，建议观望等待明确信号'
+
+        # 检查是否有严重风险
+        severe_risks = [r for r in risks if '严重' in r or '高' in r]
+
+        if severe_risks:
+            return "卖出（风险较高）"
+
+        if total_score >= 80:
+            return "买入"
+        elif total_score >= 60:
+            return "轻仓买入"
+        elif total_score >= 40:
+            return "观望"
+        elif total_score >= 20:
+            return "减仓"
         else:
-            operation['建议'] = '卖出'
-            operation['理由'] = f'多项指标走弱，{market_state}中，建议减仓或清仓'
-        
-        # 参考价位
-        current_price = technical_data.get('current_price', 0)
-        support = technical_data.get('support_levels', [])
-        resistance = technical_data.get('resistance_levels', [])
-        
-        if current_price > 0:
-            if operation['建议'] == '买入':
-                # 买入参考位：支撑位附近
-                if support:
-                    nearest_support = max([s for s in support if s < current_price], default=current_price * 0.98)
-                    operation['参考价位'].append(f'买入参考：¥{nearest_support:.2f}')
-                operation['参考价位'].append(f'止损参考：¥{current_price * 0.95:.2f}')
-            
-            elif operation['建议'] == '卖出':
-                # 卖出参考位：阻力位附近
-                if resistance:
-                    nearest_resistance = min([r for r in resistance if r > current_price], default=current_price * 1.02)
-                    operation['参考价位'].append(f'止盈参考：¥{nearest_resistance:.2f}')
-                operation['参考价位'].append(f'止损参考：¥{current_price * 0.95:.2f}')
-        
-        return operation
-    
-    def _format_report(self, symbol, technical_data, market_state, risks, operation):
+            return "回避"
+
+    def _format_report(self,
+                      symbol: str,
+                      technical_data: Dict[str, Any],
+                      market_state: str,
+                      risks: List[str],
+                      operation: str) -> str:
         """格式化分析报告"""
-        current_price = technical_data.get('current_price', 0)
-        
-        # 构建报告
-        report_parts = []
-        
-        # 1. 当前状态
-        report_parts.append(f"📊 **当前状态**：{market_state}")
-        report_parts.append(f"当前价格 ¥{current_price:.2f}，整体走势{'向好' if '上涨' in market_state else '走弱' if '下跌' in market_state else '平稳'}。")
-        
-        # 2. 风险提示
-        report_parts.append(f"\n⚠️ **风险提示**：{'; '.join(risks)}")
-        
-        # 3. 操作建议
-        report_parts.append(f"\n🎯 **操作建议**：{operation['建议']}")
-        report_parts.append(operation['理由'])
-        
-        # 4. 参考价位
-        if operation['参考价位']:
-            report_parts.append(f"\n💰 **参考价位**：{' | '.join(operation['参考价位'])}")
-        
-        return '\n'.join(report_parts)
+        report = f"""━━━━━━━━━━━━━━━━━━━━━━━━
+【股票】{symbol}
+
+【市场状态】{market_state}
+
+【技术指标】
+- RSI: {technical_data.get('rsi', {}).get('RSI', 'N/A')}
+- MACD: {technical_data.get('macd', {}).get('Trend', 'N/A')}
+- 布林带: {technical_data.get('bollinger', {}).get('Trend', 'N/A')}
+- 资金流向: {technical_data.get('money_flow', {}).get('资金流向', 'N/A')}
+
+【风险提示】
+{chr(10).join([f'• {r}' for r in risks])}
+
+【操作建议】
+{operation}
+━━━━━━━━━━━━━━━━━━━━━━━━
+
+*注：当前使用规则分析，配置 LLM API 可获得更智能的分析*"""
+
+        return report
+
+
+# 使用示例
+if __name__ == "__main__":
+    # 使用 LLM 代理（需要配置 API Key）
+    # ai_agent = RealAIAgent(api_key="your-api-key", provider="openai", model="gpt-4")
+
+    # 使用规则代理（无需 API）
+    rule_agent = RuleBasedAgent()
+
+    # 模拟数据
+    price_data = {
+        'current_price': 10.50,
+        'change_percent': 3.2,
+        'volume': 5000000
+    }
+
+    technical_data = {
+        'rsi': {'RSI': 65},
+        'macd': {'Trend': '多头', 'Histogram': 0.05},
+        'bollinger': {'上轨': 10.80, '下轨': 9.50, 'Trend': '上行'},
+        'money_flow': {'资金流向': '流入', '主力净流入': 1000000},
+        'kdj': {'K': 60, 'D': 55, 'J': 70}
+    }
+
+    # 分析
+    report = rule_agent.analyze_stock("000001", price_data, technical_data)
+    print(report)
