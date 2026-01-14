@@ -18,7 +18,7 @@ class RealAIAgent:
     基于 LLM API 的股票分析系统
     """
 
-    def __init__(self, api_key: str, provider: str = 'openai', model: str = 'gpt-4'):
+    def __init__(self, api_key: str, provider: str = 'openai', model: str = 'gpt-4', use_dragon_tactics: bool = False):
         """
         初始化 AI 代理
 
@@ -26,11 +26,24 @@ class RealAIAgent:
             api_key: API 密钥
             provider: 提供商 ('openai', 'anthropic', 'deepseek', 'zhipu' 等)
             model: 模型名称
+            use_dragon_tactics: 是否使用龙头战法（V3.0 暴力版）
         """
         self.api_key = api_key
         self.provider = provider
         self.model = model
+        self.use_dragon_tactics = use_dragon_tactics
         self.llm = self._init_llm()
+        
+        # 初始化龙头战法
+        if use_dragon_tactics:
+            try:
+                from logic.dragon_tactics import DragonTactics
+                self.dragon_tactics = DragonTactics()
+            except ImportError:
+                logger.warning("无法导入 DragonTactics，龙头战法功能不可用")
+                self.dragon_tactics = None
+        else:
+            self.dragon_tactics = None
 
     def _init_llm(self):
         """初始化 LLM 接口"""
@@ -46,7 +59,8 @@ class RealAIAgent:
                      price_data: Dict[str, Any],
                      technical_data: Dict[str, Any],
                      market_context: Optional[Dict[str, Any]] = None,
-                     return_json: bool = True) -> Dict[str, Any]:
+                     return_json: bool = True,
+                     use_dragon_tactics: Optional[bool] = None) -> Dict[str, Any]:
         """
         使用 LLM 分析股票
 
@@ -56,6 +70,7 @@ class RealAIAgent:
             technical_data: 技术指标数据
             market_context: 市场上下文（可选）
             return_json: 是否返回 JSON 格式（默认 True）
+            use_dragon_tactics: 是否使用龙头战法（可选，默认使用初始化时的设置）
 
         Returns:
             分析结果（JSON 格式字典）
@@ -63,11 +78,14 @@ class RealAIAgent:
         if self.llm is None:
             return self._fallback_analysis_json(symbol, price_data, technical_data)
 
+        # 确定是否使用龙头战法
+        use_dragon = use_dragon_tactics if use_dragon_tactics is not None else self.use_dragon_tactics
+
         # 构建上下文
         context = self._build_context(symbol, price_data, technical_data, market_context)
 
         # 构建提示词
-        prompt = self._build_prompt(context)
+        prompt = self._build_prompt(context, use_dragon_tactics=use_dragon)
 
         try:
             # 调用 LLM
@@ -75,9 +93,14 @@ class RealAIAgent:
 
             # 解析 JSON
             if return_json:
-                result = self._parse_llm_response(response)
+                if use_dragon:
+                    result = self._parse_dragon_response(response)
+                else:
+                    result = self._parse_llm_response(response)
+                
                 result['symbol'] = symbol
                 result['timestamp'] = pd.Timestamp.now()
+                result['use_dragon_tactics'] = use_dragon
                 return result
             else:
                 return {'raw_response': response, 'symbol': symbol}
@@ -162,17 +185,76 @@ class RealAIAgent:
 
         return "\n".join(context_parts)
 
-    def _build_prompt(self, context: str) -> str:
+    def _build_prompt(self, context: str, use_dragon_tactics: bool = False) -> str:
         """
         构建 LLM 提示词（强制 JSON 输出）
 
         Args:
             context: 上下文字符串
+            use_dragon_tactics: 是否使用龙头战法 Prompt
 
         Returns:
             完整的提示词
         """
-        prompt = f"""你是一个量化交易决策系统。请基于以下数据分析该股票：
+        if use_dragon_tactics:
+            # 使用 V3.0 龙头暴力版 Prompt
+            prompt = f"""【角色定义】
+你不是传统的价值投资者，也不是看教科书的技术分析师。
+你是A股顶级游资操盘手。你的唯一目标是：捕捉市场最强龙头的加速段。
+你的信条："龙头多一条命"、"强者恒强"、"分歧是买点，一致是卖点"。
+
+【核心禁令】
+1. 禁止建议"等待回调"：龙头启动时不会回调，犹豫就是踏空。
+2. 禁止使用 KDJ、MACD 金叉作为买入依据：这些指标太慢，等你看到金叉，车门早焊死了。
+3. 禁止看市盈率 (PE/PB)：短线博弈只看情绪和资金，基本面只看有没有雷。
+
+【分析流程】
+第一步：身份核查 (Code Check)
+- 检查代码前缀（300/688为20cm，60/00为10cm）
+- 检查是否为 ST（禁止交易）
+
+第二步：龙头辨识度
+- 它是唯一的吗？（板块内唯一涨停/最高板）
+- 它是最早的吗？（率先上板，带动板块）
+- 它有伴吗？（板块内有3只以上涨停助攻）
+
+第三步：资金微观结构
+- 竞价爆量：9:25分成交量 / 昨天全天成交量 > 10%
+- 弱转强：昨天炸板/大阴线，今天高开逾越压力位
+- 分时强承接：股价在均线上方运行，下跌缩量，上涨放量
+
+第四步：最终决策矩阵
+根据以下维度评分并输出决策：
+- 龙头地位（40%）
+- 竞价强度（20%）
+- 弱转强形态（20%）
+- 分时承接（20%）
+
+【当前数据】
+{context}
+
+【输出格式】
+请务必只返回标准的 JSON 格式，不要包含 markdown 标记或其他文字：
+{{
+    "score": [0-100的评分, 龙头股必须给85分以上],
+    "role": "龙头" | "中军" | "跟风" | "杂毛",
+    "signal": "BUY_AGGRESSIVE" (猛干) | "BUY_DIP" (低吸) | "WAIT" (观望) | "SELL" (跑),
+    "confidence": "HIGH" | "MEDIUM" | "LOW",
+    "reason": "简短理由，例如：'AI眼镜核心龙头，20cm突破平台，竞价爆量弱转强，直接扫板'",
+    "stop_loss_price": [具体止损价]
+}}
+
+注意：
+1. 只输出 JSON，不要有任何其他文字
+2. score: 0-100，龙头股必须给85分以上
+3. signal: BUY_AGGRESSIVE(猛干), BUY_DIP(低吸), WAIT(观望), SELL(跑)
+4. role: 龙头/中军/跟风/杂毛
+5. confidence: HIGH/MEDIUM/LOW
+6. stop_loss_price: 具体止损价
+"""
+        else:
+            # 使用标准 Prompt
+            prompt = f"""你是一个量化交易决策系统。请基于以下数据分析该股票：
 
 {context}
 
@@ -758,6 +840,373 @@ class RuleBasedAgent:
 *注：当前使用规则分析，配置 LLM API 可获得更智能的分析*"""
 
         return report
+
+
+class DragonAIAgent:
+    """
+    龙头战法 AI 代理（V3.0 暴力版）
+    专门用于捕捉市场最强龙头的加速段
+    """
+    
+    def __init__(self, api_key: str, provider: str = 'openai', model: str = 'gpt-4'):
+        """
+        初始化龙头战法 AI 代理
+        
+        Args:
+            api_key: API 密钥
+            provider: 提供商
+            model: 模型名称
+        """
+        self.api_key = api_key
+        self.provider = provider
+        self.model = model
+        self.llm = self._init_llm()
+        
+        # 初始化龙头战法分析器
+        try:
+            from logic.dragon_tactics import DragonTactics
+            self.dragon_tactics = DragonTactics()
+        except ImportError:
+            logger.warning("无法导入 DragonTactics")
+            self.dragon_tactics = None
+    
+    def _init_llm(self):
+        """初始化 LLM 接口"""
+        try:
+            from logic.llm_interface import LLMManager
+            return LLMManager(self.api_key, provider=self.provider)
+        except ImportError:
+            logger.error("无法导入 LLM 接口")
+            return None
+    
+    def analyze_stock_dragon(self,
+                            symbol: str,
+                            price_data: Dict[str, Any],
+                            technical_data: Dict[str, Any],
+                            auction_data: Optional[Dict[str, Any]] = None,
+                            sector_data: Optional[Dict[str, Any]] = None,
+                            kline_data: Optional[pd.DataFrame] = None,
+                            intraday_data: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
+        """
+        使用龙头战法分析股票
+        
+        Args:
+            symbol: 股票代码
+            price_data: 价格数据
+            technical_data: 技术指标数据
+            auction_data: 竞价数据（可选）
+            sector_data: 板块数据（可选）
+            kline_data: K线数据（可选）
+            intraday_data: 分时数据（可选）
+            
+        Returns:
+            分析结果（JSON 格式）
+        """
+        if self.llm is None:
+            return self._fallback_dragon_analysis(symbol, price_data, technical_data)
+        
+        # 1. 代码前缀检查
+        code_check = self.dragon_tactics.check_code_prefix(symbol) if self.dragon_tactics else {}
+        if code_check.get('banned', False):
+            return {
+                'score': 0,
+                'role': '杂毛',
+                'signal': 'SELL',
+                'confidence': 'HIGH',
+                'reason': code_check.get('banned_reason', '禁止交易'),
+                'stop_loss_price': price_data.get('current_price', 0)
+            }
+        
+        # 2. 竞价分析
+        auction_analysis = {}
+        if auction_data and self.dragon_tactics:
+            auction_analysis = self.dragon_tactics.analyze_call_auction(
+                auction_data.get('open_volume', 0),
+                auction_data.get('prev_day_volume', 1),
+                auction_data.get('open_amount', 0),
+                auction_data.get('prev_day_amount', 1)
+            )
+        
+        # 3. 板块地位分析
+        sector_analysis = {}
+        if sector_data and self.dragon_tactics:
+            sector_analysis = self.dragon_tactics.analyze_sector_rank(
+                symbol,
+                sector_data.get('sector', ''),
+                price_data.get('change_percent', 0),
+                sector_data.get('sector_stocks'),
+                sector_data.get('limit_up_count', 0)
+            )
+        
+        # 4. 弱转强分析
+        weak_to_strong_analysis = {}
+        if kline_data is not None and self.dragon_tactics:
+            weak_to_strong_analysis = self.dragon_tactics.analyze_weak_to_strong(kline_data)
+        
+        # 5. 分时承接分析
+        intraday_support_analysis = {}
+        if intraday_data is not None and self.dragon_tactics:
+            intraday_support_analysis = self.dragon_tactics.analyze_intraday_support(intraday_data)
+        
+        # 6. 决策矩阵
+        decision = {}
+        if self.dragon_tactics:
+            decision = self.dragon_tactics.make_decision_matrix(
+                sector_analysis.get('role_score', 0),
+                auction_analysis.get('auction_score', 0),
+                weak_to_strong_analysis.get('weak_to_strong_score', 0),
+                intraday_support_analysis.get('intraday_support_score', 0),
+                price_data.get('change_percent', 0),
+                code_check.get('max_limit', 10) == 20
+            )
+        
+        # 7. 构建上下文
+        context = self._build_dragon_context(
+            symbol, price_data, technical_data,
+            auction_analysis, sector_analysis,
+            weak_to_strong_analysis, intraday_support_analysis,
+            code_check
+        )
+        
+        # 8. 构建提示词（V3.0 暴力版）
+        prompt = self._build_dragon_prompt(context)
+        
+        try:
+            # 调用 LLM
+            response = self.llm.chat(prompt, model=self.model)
+            
+            # 解析 JSON
+            result = self._parse_dragon_response(response)
+            
+            # 合并决策矩阵的结果
+            result.update({
+                'symbol': symbol,
+                'timestamp': pd.Timestamp.now(),
+                'code_prefix': code_check.get('prefix_type', '未知'),
+                'is_20cm': code_check.get('max_limit', 10) == 20,
+                'auction_intensity': auction_analysis.get('auction_intensity', '未知'),
+                'sector_role': sector_analysis.get('role', '未知'),
+                'sector_heat': sector_analysis.get('sector_heat', '未知')
+            })
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"LLM 调用失败: {str(e)}")
+            # 返回决策矩阵的结果
+            return {
+                'score': decision.get('total_score', 50),
+                'role': decision.get('role', '未知'),
+                'signal': decision.get('signal', 'WAIT'),
+                'confidence': decision.get('confidence', 'MEDIUM'),
+                'reason': decision.get('reason', 'LLM分析失败，使用规则决策'),
+                'stop_loss_price': price_data.get('current_price', 0) * 0.95,
+                'symbol': symbol,
+                'timestamp': pd.Timestamp.now()
+            }
+    
+    def _build_dragon_context(self,
+                             symbol: str,
+                             price_data: Dict[str, Any],
+                             technical_data: Dict[str, Any],
+                             auction_analysis: Dict[str, Any],
+                             sector_analysis: Dict[str, Any],
+                             weak_to_strong_analysis: Dict[str, Any],
+                             intraday_support_analysis: Dict[str, Any],
+                             code_check: Dict[str, Any]) -> str:
+        """构建龙头战法上下文"""
+        context_parts = []
+        
+        # 基本信息
+        context_parts.append(f"股票代码: {symbol}")
+        context_parts.append(f"当前价格: {price_data.get('current_price', 'N/A')}")
+        context_parts.append(f"今日涨跌幅: {price_data.get('change_percent', 'N/A')}%")
+        context_parts.append(f"赛道: {code_check.get('prefix_type', '未知')}")
+        
+        # 竞价数据
+        if auction_analysis:
+            context_parts.append(f"\n【竞价数据】")
+            context_parts.append(f"竞价抢筹度: {auction_analysis.get('call_auction_ratio', 0):.2%}")
+            context_parts.append(f"竞价强度: {auction_analysis.get('auction_intensity', '未知')}")
+        
+        # 板块地位
+        if sector_analysis:
+            context_parts.append(f"\n【板块地位】")
+            context_parts.append(f"板块: {sector_analysis.get('sector', '未知')}")
+            context_parts.append(f"角色: {sector_analysis.get('role', '未知')}")
+            context_parts.append(f"板块热度: {sector_analysis.get('sector_heat', '未知')}")
+            if 'rank_in_sector' in sector_analysis:
+                context_parts.append(f"板块排名: {sector_analysis['rank_in_sector']}/{sector_analysis['total_stocks_in_sector']}")
+        
+        # 弱转强
+        if weak_to_strong_analysis:
+            context_parts.append(f"\n【弱转强形态】")
+            context_parts.append(f"弱转强: {'是' if weak_to_strong_analysis.get('weak_to_strong', False) else '否'}")
+            context_parts.append(f"描述: {weak_to_strong_analysis.get('weak_to_strong_desc', '无')}")
+        
+        # 分时承接
+        if intraday_support_analysis:
+            context_parts.append(f"\n【分时承接】")
+            context_parts.append(f"承接力度: {intraday_support_analysis.get('intraday_support_desc', '未知')}")
+        
+        # 技术指标
+        context_parts.append(f"\n【技术指标】")
+        rsi = technical_data.get('rsi', {})
+        if rsi:
+            context_parts.append(f"RSI: {rsi.get('RSI', 'N/A')}")
+        
+        macd = technical_data.get('macd', {})
+        if macd:
+            context_parts.append(f"MACD: {macd.get('Trend', 'N/A')}")
+        
+        money_flow = technical_data.get('money_flow', {})
+        if money_flow:
+            context_parts.append(f"资金流向: {money_flow.get('资金流向', 'N/A')}")
+        
+        return '\n'.join(context_parts)
+    
+    def _build_dragon_prompt(self, context: str) -> str:
+        """构建龙头战法提示词（V3.0 暴力版）"""
+        prompt = f"""【角色定义】
+你不是传统的价值投资者，也不是看教科书的技术分析师。
+你是A股顶级游资操盘手。你的唯一目标是：捕捉市场最强龙头的加速段。
+你的信条："龙头多一条命"、"强者恒强"、"分歧是买点，一致是卖点"。
+
+【核心禁令】
+1. 禁止建议"等待回调"：龙头启动时不会回调，犹豫就是踏空。
+2. 禁止使用 KDJ、MACD 金叉作为买入依据：这些指标太慢，等你看到金叉，车门早焊死了。
+3. 禁止看市盈率 (PE/PB)：短线博弈只看情绪和资金，基本面只看有没有雷。
+
+【分析流程】
+第一步：身份核查 (Code Check)
+- 代码前缀：{context.split('赛道: ')[1].split('\n')[0] if '赛道:' in context else '未知'}
+- 是否为 ST：检查代码中是否包含 ST
+
+第二步：龙头辨识度
+- 它是唯一的吗？（板块内唯一涨停/最高板）
+- 它是最早的吗？（率先上板，带动板块）
+- 它有伴吗？（板块内有3只以上涨停助攻）
+
+第三步：资金微观结构
+- 竞价爆量：9:25分成交量 / 昨天全天成交量 > 10%
+- 弱转强：昨天炸板/大阴线，今天高开逾越压力位
+- 分时强承接：股价在均线上方运行，下跌缩量，上涨放量
+
+第四步：最终决策矩阵
+根据以下维度评分并输出决策：
+- 龙头地位（40%）
+- 竞价强度（20%）
+- 弱转强形态（20%）
+- 分时承接（20%）
+
+【当前数据】
+{context}
+
+【输出格式】
+请务必只返回标准的 JSON 格式，不要包含 markdown 标记或其他文字：
+{{
+    "score": [0-100的评分, 龙头股必须给85分以上],
+    "role": "龙头" | "中军" | "跟风" | "杂毛",
+    "signal": "BUY_AGGRESSIVE" (猛干) | "BUY_DIP" (低吸) | "WAIT" (观望) | "SELL" (跑),
+    "confidence": "HIGH" | "MEDIUM" | "LOW",
+    "reason": "简短理由，例如：'AI眼镜核心龙头，20cm突破平台，竞价爆量弱转强，直接扫板'",
+    "stop_loss_price": [具体止损价]
+}}
+
+注意：
+1. 只输出 JSON，不要有任何其他文字
+2. score: 0-100，龙头股必须给85分以上
+3. signal: BUY_AGGRESSIVE(猛干), BUY_DIP(低吸), WAIT(观望), SELL(跑)
+4. role: 龙头/中军/跟风/杂毛
+5. confidence: HIGH/MEDIUM/LOW
+6. stop_loss_price: 具体止损价
+"""
+        return prompt
+    
+    def _parse_dragon_response(self, response_text: str) -> Dict[str, Any]:
+        """解析龙头战法 LLM 响应"""
+        import re
+        try:
+            cleaned = re.sub(r'```json\s*|\s*```', '', response_text).strip()
+            result = json.loads(cleaned)
+            
+            # 验证必需字段
+            required_fields = ['score', 'role', 'signal', 'confidence', 'reason', 'stop_loss_price']
+            for field in required_fields:
+                if field not in result:
+                    logger.warning(f"缺少必需字段: {field}")
+                    result[field] = self._get_dragon_default_value(field)
+            
+            # 验证数据类型
+            if not isinstance(result['score'], (int, float)):
+                result['score'] = 50
+            if result['role'] not in ['龙头', '中军', '跟风', '杂毛']:
+                result['role'] = '跟风'
+            if result['signal'] not in ['BUY_AGGRESSIVE', 'BUY_DIP', 'WAIT', 'SELL']:
+                result['signal'] = 'WAIT'
+            if result['confidence'] not in ['HIGH', 'MEDIUM', 'LOW']:
+                result['confidence'] = 'MEDIUM'
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"JSON 解析失败: {e}")
+            return {
+                "score": 50,
+                "role": "跟风",
+                "signal": "WAIT",
+                "confidence": "MEDIUM",
+                "reason": "解析失败",
+                "stop_loss_price": 0
+            }
+    
+    def _get_dragon_default_value(self, field: str) -> Any:
+        """获取龙头战法字段的默认值"""
+        defaults = {
+            'score': 50,
+            'role': '跟风',
+            'signal': 'WAIT',
+            'confidence': 'MEDIUM',
+            'reason': '数据不足',
+            'stop_loss_price': 0
+        }
+        return defaults.get(field, None)
+    
+    def _fallback_dragon_analysis(self,
+                                   symbol: str,
+                                   price_data: Dict[str, Any],
+                                   technical_data: Dict[str, Any]) -> Dict[str, Any]:
+        """降级龙头战法分析"""
+        # 简单规则
+        change = price_data.get('change_percent', 0)
+        
+        if change >= 9.9:
+            return {
+                'score': 85,
+                'role': '龙头',
+                'signal': 'BUY_AGGRESSIVE',
+                'confidence': 'HIGH',
+                'reason': '涨停，疑似龙头',
+                'stop_loss_price': price_data.get('current_price', 0) * 0.95
+            }
+        elif change >= 5:
+            return {
+                'score': 70,
+                'role': '中军',
+                'signal': 'BUY',
+                'confidence': 'MEDIUM',
+                'reason': '大涨，中军标的',
+                'stop_loss_price': price_data.get('current_price', 0) * 0.95
+            }
+        else:
+            return {
+                'score': 50,
+                'role': '跟风',
+                'signal': 'WAIT',
+                'confidence': 'LOW',
+                'reason': '涨幅不够，观望',
+                'stop_loss_price': price_data.get('current_price', 0) * 0.95
+            }
 
 
 # 使用示例
