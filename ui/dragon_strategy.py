@@ -26,19 +26,20 @@ def render_dragon_strategy_tab(db, config):
     
     st.info("""
     **龙头战法核心要点：**
-    - 🎯 只做涨停板股票
+    - 🎯 只做涨停板股票或即将涨停的股票（涨幅 >= 7%）
     - 💰 优选低价股（≤10元）
     - 📊 关注攻击性放量
     - 📈 等待KDJ金叉
     - 🔄 换手率适中（5-15%）
+    - 🚀 **扫描全市场（至少1000只），筛选涨幅 >= 7% 的股票**
     """)
     
     # 扫描参数
     col_scan1, col_scan2, col_scan3 = st.columns(3)
     with col_scan1:
-        scan_limit = st.slider("扫描股票数量", 10, 100, 50, 10, key="dragon_scan_limit")
+        scan_limit = st.slider("扫描股票数量", 10, 500, 100, 10, key="dragon_scan_limit")
     with col_scan2:
-        min_score = st.slider("最低评分门槛", 40, 80, 60, 5, key="dragon_min_score")
+        min_score = st.slider("最低评分门槛", 30, 90, 40, 5, key="dragon_min_score")
     with col_scan3:
         if st.button("🔍 开始扫描", key="dragon_scan_btn"):
             st.session_state.scan_dragon = True
@@ -50,7 +51,7 @@ def render_dragon_strategy_tab(db, config):
             scan_result = QuantAlgo.scan_dragon_stocks(limit=scan_limit, min_score=min_score)
         
         if scan_result['数据状态'] == '正常':
-            st.success(f"扫描完成！共扫描 {scan_result['扫描数量']} 只股票，发现 {scan_result['涨停板数量']} 只涨停板股票，其中 {scan_result['符合条件数量']} 只符合龙头战法条件")
+            st.success(f"扫描完成！共扫描 {scan_result['扫描数量']} 只股票，发现 {scan_result['涨停板数量']} 只涨幅 >= 7% 的股票，其中 {scan_result['符合条件数量']} 只符合龙头战法条件")
             
             if scan_result['龙头股列表']:
                 # 按评级分组显示

@@ -1182,8 +1182,9 @@ class QuantAlgo:
                     '说明': '可能是数据源限制'
                 }
             
-            # 获取前 limit 只股票的代码
-            stock_list = stock_list_df['code'].head(limit).tolist()
+            # 获取全市场股票列表（至少1000只）
+            scan_limit = max(limit, 1000)
+            stock_list = stock_list_df['code'].head(scan_limit).tolist()
             
             # 使用 Easyquotation 极速获取实时数据
             realtime_data = db.get_fast_price(stock_list)
@@ -1195,7 +1196,7 @@ class QuantAlgo:
                     '扫描数量': len(stock_list)
                 }
             
-            # 筛选涨停板股票（涨跌幅 >= 9.9%）
+            # 筛选涨停板和即将涨停的股票（涨跌幅 >= 7%）
             limit_up_stocks = []
             for full_code, data in realtime_data.items():
                 try:
@@ -1207,7 +1208,8 @@ class QuantAlgo:
                     
                     pct_change = (current_price - last_close) / last_close * 100
                     
-                    if pct_change >= 9.9:
+                    # 降低门槛：涨跌幅 >= 7%（包括即将涨停的股票）
+                    if pct_change >= 7.0:
                         # 提取股票代码（去掉前缀）
                         code = full_code[2:] if len(full_code) > 2 else full_code
                         name = data.get('name', '')
@@ -1224,9 +1226,13 @@ class QuantAlgo:
             if not limit_up_stocks:
                 return {
                     '数据状态': '无涨停板股票',
-                    '说明': f'已扫描 {len(stock_list)} 只股票，但未发现涨停板股票',
+                    '说明': f'已扫描 {len(stock_list)} 只股票，但未发现涨幅 >= 7% 的股票',
                     '扫描数量': len(stock_list)
                 }
+            
+            # 分析每只涨幅 >= 7% 的股票（包括即将涨停的股票）
+            limit_up_stocks.sort(key=lambda x: x['涨跌幅'], reverse=True)
+            limit_up_stocks = limit_up_stocks[:limit]
             
             # 分析每只涨停板股票
             dragon_stocks = []
