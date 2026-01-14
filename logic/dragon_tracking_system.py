@@ -795,8 +795,8 @@ class DragonTrackingSystem:
                 }
                 
                 # 使用 DragonTactics V3.0 进行评分
-                from logic.dragon_tactics import DragonTacticsV3
-                tactics = DragonTacticsV3()
+                from logic.dragon_tactics import DragonTactics
+                tactics = DragonTactics()
                 check = tactics.check_dragon_criteria(stock_info)
                 
                 # 计算综合评分

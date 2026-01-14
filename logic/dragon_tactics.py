@@ -349,6 +349,153 @@ class DragonTactics:
         
         return results
     
+    def check_dragon_criteria(self, stock_info: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        检查龙头战法标准（基于实时数据）
+        
+        Args:
+            stock_info: 股票信息字典，包含：
+                - code: 股票代码
+                - name: 股票名称
+                - price: 最新价
+                - open: 开盘价
+                - pre_close: 昨收价
+                - high: 最高价
+                - low: 最低价
+                - bid_volume: 买一量
+                - ask_volume: 卖一量
+                - volume: 成交量
+                - turnover: 换手率
+                - volume_ratio: 量比
+                - prev_pct_change: 昨日涨跌幅
+                - is_20cm: 是否为20cm标的
+                
+        Returns:
+            评分结果字典
+        """
+        # 1. 代码前缀检查
+        code_check = self.check_code_prefix(stock_info.get('code', ''), stock_info.get('name', ''))
+        if code_check.get('banned', False):
+            return {
+                'total_score': 0,
+                'role': '杂毛',
+                'signal': 'SELL',
+                'action': '清仓/核按钮',
+                'confidence': 'HIGH',
+                'reason': f"{code_check.get('banned_reason', '禁止交易')}",
+                'sector_role': '杂毛',
+                'auction_intensity': '极弱',
+                'weak_to_strong': False,
+                'intraday_support': '弱'
+            }
+        
+        # 2. 计算涨跌幅
+        current_price = stock_info.get('price', 0)
+        pre_close = stock_info.get('pre_close', 0)
+        open_price = stock_info.get('open', 0)
+        high_price = stock_info.get('high', 0)
+        low_price = stock_info.get('low', 0)
+        
+        if pre_close == 0:
+            return {
+                'total_score': 0,
+                'role': '杂毛',
+                'signal': 'WAIT',
+                'action': '观望',
+                'confidence': 'LOW',
+                'reason': '昨收价为0，无法计算涨跌幅',
+                'sector_role': '杂毛',
+                'auction_intensity': '极弱',
+                'weak_to_strong': False,
+                'intraday_support': '弱'
+            }
+        
+        pct_change = (current_price - pre_close) / pre_close * 100
+        
+        # 3. 竞价分析（使用涨跌幅作为代理）
+        if pct_change > 5:
+            auction_score = 80
+            auction_intensity = '强'
+        elif pct_change > 3:
+            auction_score = 60
+            auction_intensity = '中等'
+        elif pct_change > 1:
+            auction_score = 40
+            auction_intensity = '弱'
+        elif pct_change > 0:
+            auction_score = 20
+            auction_intensity = '极弱'
+        else:
+            auction_score = 0
+            auction_intensity = '极弱'
+        
+        # 4. 板块地位分析（使用涨跌幅作为代理）
+        if pct_change > 7:
+            sector_role_score = 80
+            sector_role = '龙一（推断）'
+        elif pct_change > 5:
+            sector_role_score = 70
+            sector_role = '前三（推断）'
+        elif pct_change > 3:
+            sector_role_score = 60
+            sector_role = '中军（推断）'
+        elif pct_change > 1:
+            sector_role_score = 40
+            sector_role = '跟风（推断）'
+        elif pct_change > 0:
+            sector_role_score = 20
+            sector_role = '跟风（推断）'
+        else:
+            sector_role_score = 0
+            sector_role = '杂毛'
+        
+        # 5. 弱转强分析（简化版，基于开盘价）
+        prev_pct_change = stock_info.get('prev_pct_change', 0)
+        if prev_pct_change < 0 and pct_change > 0:
+            # 昨天跌，今天涨
+            weak_to_strong_score = 100
+            weak_to_strong = True
+        elif prev_pct_change > 5 and pct_change > 3:
+            # 昨天大涨，今天继续涨（强更强）
+            weak_to_strong_score = 90
+            weak_to_strong = True
+        else:
+            weak_to_strong_score = 0
+            weak_to_strong = False
+        
+        # 6. 分时承接分析（使用 K 线数据作为代理）
+        if current_price > open_price:
+            intraday_support_score = 80
+            intraday_support = '强'
+        elif current_price >= open_price:
+            intraday_support_score = 60
+            intraday_support = '中等'
+        elif current_price > low_price:
+            intraday_support_score = 40
+            intraday_support = '弱'
+        else:
+            intraday_support_score = 20
+            intraday_support = '极弱'
+        
+        # 7. 决策矩阵
+        is_20cm = stock_info.get('is_20cm', False)
+        decision = self.make_decision_matrix(
+            role_score=sector_role_score,
+            auction_score=auction_score,
+            weak_to_strong_score=weak_to_strong_score,
+            intraday_support_score=intraday_support_score,
+            current_change=pct_change,
+            is_20cm=is_20cm
+        )
+        
+        # 添加额外字段
+        decision['sector_role'] = sector_role
+        decision['auction_intensity'] = auction_intensity
+        decision['weak_to_strong'] = weak_to_strong
+        decision['intraday_support'] = intraday_support
+        
+        return decision
+    
     def make_decision_matrix(self,
                            role_score: int,
                            auction_score: int,
