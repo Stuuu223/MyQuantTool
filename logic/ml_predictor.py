@@ -132,13 +132,14 @@ class LightGBMPredictor(MLPredictorBase):
         self.objective = objective
         self.num_leaves = num_leaves
 
-    def prepare_data(self, df: pd.DataFrame, lookback: int = 20) -> Tuple[np.ndarray, np.ndarray]:
+    def prepare_data(self, df: pd.DataFrame, lookback: int = 20, benchmark_df: Optional[pd.DataFrame] = None) -> Tuple[np.ndarray, np.ndarray]:
         """
-        准备训练数据 - 使用深度特征工程
+        准备训练数据 - 使用深度特征工程（增强版）
 
         Args:
             df: K线数据
             lookback: 回看窗口
+            benchmark_df: 大盘或板块指数数据（可选）
 
         Returns:
             (X, y) 特征和标签
@@ -147,10 +148,10 @@ class LightGBMPredictor(MLPredictorBase):
         df = df.sort_values('date').reset_index(drop=True)
 
         if self.use_feature_engineering and self.feature_engineer:
-            # 使用特征工程器计算所有特征
-            df = self.feature_engineer.calculate_technical_features(df)
-            df = self.feature_engineer.calculate_cross_sectional_features(df)
-            df = self.feature_engineer.calculate_microstructure_features(df)
+            # 使用特征工程器的 transform 方法（一键生成所有特征）
+            df = self.feature_engineer.transform(df, benchmark_df=benchmark_df)
+            
+            # 计算多目标
             df = self.feature_engineer.calculate_multi_targets(df)
 
             # 使用高级特征列表
@@ -166,7 +167,8 @@ class LightGBMPredictor(MLPredictorBase):
                 'bb_upper', 'bb_middle', 'bb_lower', 'bb_width',
                 'momentum', 'roc', 'volatility'
             ]
-            target = 'target'
+            df['target_next_return'] = df['close'].pct_change().shift(-1) * 100
+            target = 'target_next_return'
 
         # 删除包含 NaN 的行
         df_clean = df.dropna(subset=features + [target]).copy()
