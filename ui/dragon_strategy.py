@@ -225,12 +225,6 @@ def render_dragon_strategy_tab(db, config):
                 logger.error(f"扫描失败: {str(e)}", exc_info=True)
                 # 重置扫描状态
                 st.session_state.scan_dragon = False
-
-            except Exception as e:
-                st.error(f"❌ 扫描失败：{str(e)}")
-                logger.error(f"扫描失败: {str(e)}", exc_info=True)
-                # 重置扫描状态
-                st.session_state.scan_dragon = False
     else:
         st.info("👆 点击「开始扫描」按钮，系统将自动扫描市场中的潜在龙头股")
 
