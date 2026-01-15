@@ -3505,13 +3505,18 @@ class QuantAlgo:
                 result = predator.analyze_stock(stock_info, realtime_data)
                 predator_results[symbol] = result
                 
-                # 如果触发生死红线或身份与涨幅错配，直接排除
-                if result['signal'] == 'SELL':
-                    logger.warning(f"🦖 V9.0排除：{symbol} {name} - {result['reason']}")
+                # 🆕 V9.2 修复：半路战法只排除触发生死红线的股票
+                # 忽略"身份与涨幅错配"检查，因为半路战法就是要抓涨幅在10%-19.5%之间的股票
+                if result['signal'] == 'SELL' and '生死红线' in result['reason']:
+                    logger.warning(f"🦖 V9.0排除（生死红线）：{symbol} {name} - {result['reason']}")
+                elif result['signal'] == 'SELL' and '身份与涨幅错配' in result['reason']:
+                    # 半路战法忽略身份与涨幅错配检查
+                    logger.info(f"🦖 V9.0跳过（身份与涨幅错配）：{symbol} {name} - {result['reason']}")
             
-            # 过滤掉被V9.0排除的股票
+            # 过滤掉被V9.0排除的股票（只排除触发生死红线的）
             filtered_stocks = [stock for stock in all_stocks 
-                             if predator_results[stock['代码']]['signal'] != 'SELL']
+                             if not (predator_results[stock['代码']]['signal'] == 'SELL' and 
+                                   '生死红线' in predator_results[stock['代码']]['reason'])]
             logger.info(f"🦖 V9.0检查完成，从{len(all_stocks)}只中排除了{len(all_stocks)-len(filtered_stocks)}只，保留{len(filtered_stocks)}只")
             
             if not filtered_stocks:
