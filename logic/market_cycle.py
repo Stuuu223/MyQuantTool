@@ -328,7 +328,7 @@ class MarketCycleManager:
                 # 构建代码到行业的映射
                 code_to_industry = {}
                 for _, row in industry_df.iterrows():
-                    code_to_industry[row['代码']] = row['板块名称']
+                    code_to_industry[row['板块代码']] = row['板块名称']
             except Exception as e:
                 logger.warning(f"获取行业信息失败: {e}")
                 code_to_industry = {}
