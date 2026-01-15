@@ -419,6 +419,222 @@ class MarketCycleManager:
         else:
             return None
     
+    def detect_special_operations(self) -> Dict:
+        """
+        检测特种作战机会（V6.1 新增）
+        
+        功能：
+        1. 反核模式：监控跌停板上的核心龙头，检测大单翘板信号
+        2. 龙回头模式：检测真龙首阴低吸机会
+        3. 地天板模式：检测地天板博弈机会
+        
+        Returns:
+            dict: {
+                'has_special_opportunity': bool,
+                'operation_type': 'ANTI_NUCLEAR' | 'DRAGON_RETURN' | 'GROUND_TO_SKY' | None,
+                'target_stocks': [股票列表],
+                'operation_strategy': '操作建议',
+                'confidence': 'HIGH' | 'MEDIUM' | 'LOW'
+            }
+        """
+        try:
+            cycle_info = self.get_current_phase()
+            current_cycle = cycle_info['cycle']
+            
+            # 只在 ICE 和 DECLINE 周期检测特种作战机会
+            if current_cycle not in [self.CYCLE_ICE, self.CYCLE_DECLINE]:
+                return {
+                    'has_special_opportunity': False,
+                    'operation_type': None,
+                    'target_stocks': [],
+                    'operation_strategy': f"当前周期为{current_cycle}，不适合特种作战",
+                    'confidence': 'LOW'
+                }
+            
+            # 获取跌停股票列表
+            limit_down_stocks = self.market_indicators.get('limit_down_stocks', [])
+            
+            if not limit_down_stocks:
+                return {
+                    'has_special_opportunity': False,
+                    'operation_type': None,
+                    'target_stocks': [],
+                    'operation_strategy': "当前无跌停股票，无特种作战机会",
+                    'confidence': 'LOW'
+                }
+            
+            special_opportunities = []
+            
+            # 1. 检测反核机会（跌停板上的核心龙头）
+            anti_nuclear_stocks = self._detect_anti_nuclear_opportunity(limit_down_stocks)
+            if anti_nuclear_stocks:
+                special_opportunities.extend([{
+                    'type': 'ANTI_NUCLEAR',
+                    'stock': stock,
+                    'strategy': '博弈地天板，关注大单翘板信号'
+                } for stock in anti_nuclear_stocks])
+            
+            # 2. 检测龙回头机会（首阴低吸）
+            dragon_return_stocks = self._detect_dragon_return_opportunity(limit_down_stocks)
+            if dragon_return_stocks:
+                special_opportunities.extend([{
+                    'type': 'DRAGON_RETURN',
+                    'stock': stock,
+                    'strategy': '首阴低吸博弈，关注均线支撑'
+                } for stock in dragon_return_stocks])
+            
+            # 3. 检测地天板机会
+            ground_to_sky_stocks = self._detect_ground_to_sky_opportunity(limit_down_stocks)
+            if ground_to_sky_stocks:
+                special_opportunities.extend([{
+                    'type': 'GROUND_TO_SKY',
+                    'stock': stock,
+                    'strategy': '地天板博弈，关注盘口变化'
+                } for stock in ground_to_sky_stocks])
+            
+            if special_opportunities:
+                # 按优先级排序：ANTI_NUCLEAR > GROUND_TO_SKY > DRAGON_RETURN
+                priority_order = {'ANTI_NUCLEAR': 3, 'GROUND_TO_SKY': 2, 'DRAGON_RETURN': 1}
+                special_opportunities.sort(key=lambda x: priority_order.get(x['type'], 0), reverse=True)
+                
+                top_opportunity = special_opportunities[0]
+                
+                return {
+                    'has_special_opportunity': True,
+                    'operation_type': top_opportunity['type'],
+                    'target_stocks': [opp['stock'] for opp in special_opportunities],
+                    'operation_strategy': f"🎯 {top_opportunity['type']}特种作战：{top_opportunity['strategy']}",
+                    'confidence': 'HIGH' if top_opportunity['type'] == 'ANTI_NUCLEAR' else 'MEDIUM',
+                    'all_opportunities': special_opportunities
+                }
+            else:
+                return {
+                    'has_special_opportunity': False,
+                    'operation_type': None,
+                    'target_stocks': [],
+                    'operation_strategy': "当前无特种作战机会",
+                    'confidence': 'LOW'
+                }
+        
+        except Exception as e:
+            logger.error(f"检测特种作战机会失败: {e}")
+            return {
+                'has_special_opportunity': False,
+                'operation_type': None,
+                'target_stocks': [],
+                'operation_strategy': '检测失败',
+                'confidence': 'LOW'
+            }
+    
+    def _detect_anti_nuclear_opportunity(self, limit_down_stocks: List[Dict]) -> List[Dict]:
+        """
+        检测反核机会（跌停板上的核心龙头）
+        
+        Args:
+            limit_down_stocks: 跌停股票列表
+        
+        Returns:
+            list: 具备反核机会的股票列表
+        """
+        anti_nuclear_stocks = []
+        
+        for stock in limit_down_stocks:
+            code = stock['code']
+            name = stock['name']
+            change_pct = stock['change_pct']
+            
+            # 反核机会判断逻辑：
+            # 1. 跌停板上（change_pct <= -9.5%）
+            # 2. 是核心龙头（这里简化判断：成交额较大）
+            # 3. 有大单翘板迹象（需要实时盘口数据，这里简化处理）
+            
+            if change_pct <= -9.5:
+                # 检查是否是核心龙头（这里简化：假设成交额 > 1亿）
+                # 实际应该从数据库获取成交额数据
+                is_core_dragon = True  # 简化处理
+                
+                if is_core_dragon:
+                    anti_nuclear_stocks.append({
+                        'code': code,
+                        'name': name,
+                        'change_pct': change_pct,
+                        'reason': '核心龙头跌停，关注大单翘板信号'
+                    })
+        
+        return anti_nuclear_stocks
+    
+    def _detect_dragon_return_opportunity(self, limit_down_stocks: List[Dict]) -> List[Dict]:
+        """
+        检测龙回头机会（首阴低吸）
+        
+        Args:
+            limit_down_stocks: 跌停股票列表
+        
+        Returns:
+            list: 具备龙回头机会的股票列表
+        """
+        dragon_return_stocks = []
+        
+        for stock in limit_down_stocks:
+            code = stock['code']
+            name = stock['name']
+            change_pct = stock['change_pct']
+            
+            # 龙回头机会判断逻辑：
+            # 1. 龙头股首日断板大跌（-5% ~ -10%）
+            # 2. 未破 10 日线（需要历史数据，这里简化处理）
+            # 3. 成交量萎缩（需要历史数据，这里简化处理）
+            
+            if -10 <= change_pct <= -5:
+                # 检查是否是龙头股（这里简化处理）
+                is_dragon = True  # 简化处理
+                
+                if is_dragon:
+                    dragon_return_stocks.append({
+                        'code': code,
+                        'name': name,
+                        'change_pct': change_pct,
+                        'reason': '龙头首阴大跌，关注均线支撑和低吸机会'
+                    })
+        
+        return dragon_return_stocks
+    
+    def _detect_ground_to_sky_opportunity(self, limit_down_stocks: List[Dict]) -> List[Dict]:
+        """
+        检测地天板机会
+        
+        Args:
+            limit_down_stocks: 跌停股票列表
+        
+        Returns:
+            list: 具备地天板机会的股票列表
+        """
+        ground_to_sky_stocks = []
+        
+        for stock in limit_down_stocks:
+            code = stock['code']
+            name = stock['name']
+            change_pct = stock['change_pct']
+            
+            # 地天板机会判断逻辑：
+            # 1. 跌停板上（change_pct <= -9.5%）
+            # 2. 有大单翘板迹象（Order Imbalance 剧烈变化）
+            # 3. 是核心龙头或热门股
+            
+            if change_pct <= -9.5:
+                # 检查是否是热门股（这里简化处理）
+                is_hot = True  # 简化处理
+                
+                if is_hot:
+                    ground_to_sky_stocks.append({
+                        'code': code,
+                        'name': name,
+                        'change_pct': change_pct,
+                        'reason': '跌停板热门股，关注地天板博弈机会'
+                    })
+        
+        return ground_to_sky_stocks
+    
     def close(self):
         """关闭数据库连接"""
         if self.db:

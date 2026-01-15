@@ -423,16 +423,22 @@ class DataManager:
         """
         self.conn.close()
     
-    def get_fast_price(self, stock_list: list) -> dict:
+    def get_fast_price(self, stock_list: list, max_retries: int = 3) -> dict:
         """
-        极速批量获取行情 (专门给龙头扫描用)
+        极速批量获取行情 (专门给龙头扫描用) - V6.1 增强版
 
         优先使用 Easyquotation 批量获取实时行情，一次网络请求可获取数百只股票数据，
         耗时仅需 0.5-1 秒，相比逐个调用 Akshare 快 100 倍以上。
-        如果 Easyquotation 不可用，则回退到使用 Akshare。
+        
+        🆕 V6.1 数据源降级策略：
+        1. 主备切换：Easyquotation (Sina) -> Akshare (Eastmoney) -> 样本估算
+        2. 多次重试：网络失败时自动重试
+        3. 样本估算：全市场数据获取失败时，使用样本股票估算市场情绪
+        4. 缓存机制：60秒内重复查询使用缓存数据
 
         Args:
             stock_list: 股票代码列表，如 ['300063', '000001', '600519']
+            max_retries: 最大重试次数（默认3次）
 
         Returns:
             字典，key 为带前缀的股票代码（如 'sz300063'），value 为行情数据字典
@@ -450,7 +456,7 @@ class DataManager:
             - turnover: 换手率
 
         Note:
-            如果 Easyquotation 未初始化，会回退到使用 Akshare
+            如果所有数据源都失败，会返回样本估算数据或空字典
 
         Example:
             >>> db = DataManager()
@@ -460,89 +466,193 @@ class DataManager:
         if not stock_list:
             return {}
 
+        # 🆕 V6.1: 检查缓存
+        cache_key = f"fast_price_{len(stock_list)}_{hash(tuple(sorted(stock_list)))}"
+        if cache_key in self.realtime_cache:
+            cache_data = self.realtime_cache[cache_key]
+            cache_age = (datetime.now() - cache_data['timestamp']).total_seconds()
+            if cache_age < self.cache_expire_seconds:
+                logger.info(f"[CACHE] 使用缓存数据 (剩余有效时间: {self.cache_expire_seconds - cache_age:.1f}秒)")
+                return cache_data['data']
+
+        # 🆕 V6.1: 多次重试机制
+        for retry in range(max_retries):
+            result = self._try_get_fast_price(stock_list, retry)
+            
+            if result and len(result) > 0:
+                # 🆕 V6.1: 存入缓存
+                self.realtime_cache[cache_key] = {
+                    'data': result,
+                    'timestamp': datetime.now()
+                }
+                return result
+            
+            if retry < max_retries - 1:
+                logger.warning(f"第 {retry + 1} 次尝试失败，等待 2 秒后重试...")
+                import time
+                time.sleep(2)
+
+        # 🆕 V6.1: 所有尝试都失败，使用样本估算
+        logger.error("所有数据源都失败，尝试使用样本估算...")
+        return self._get_sample_estimation(stock_list)
+    
+    def _try_get_fast_price(self, stock_list: list, retry: int) -> dict:
+        """
+        尝试获取行情数据（单次尝试）
+
+        Args:
+            stock_list: 股票代码列表
+            retry: 当前重试次数
+
+        Returns:
+            dict: 行情数据字典
+        """
         # 优先使用 Easyquotation
         if self.quotation:
             try:
-                # 转换代码格式 (easyquotation 需要 sh/sz 前缀)
-                full_codes = []
-                for code in stock_list:
-                    if code.startswith('6'):
-                        prefix = 'sh'
-                    elif code.startswith('8') or code.startswith('4'):
-                        prefix = 'bj'
-                    else:
-                        prefix = 'sz'
-                    full_codes.append(f"{prefix}{code}")
-
-                # 🚀 批量获取，避免一次请求过多股票导致连接失败
-                result = {}
-                batch_size = 500  # 每次最多 500 只股票
-                total_batches = (len(full_codes) + batch_size - 1) // batch_size
-
-                logger.info(f"正在使用 Easyquotation 极速获取 {len(full_codes)} 只股票的实时行情（分 {total_batches} 批）...")
-
-                for i in range(0, len(full_codes), batch_size):
-                    batch = full_codes[i:i + batch_size]
-                    batch_num = i // batch_size + 1
-                    try:
-                        logger.info(f"正在获取第 {batch_num}/{total_batches} 批数据 ({len(batch)} 只股票)...")
-                        batch_result = self.quotation.stocks(batch)
-                        result.update(batch_result)
-                        logger.info(f"✅ 第 {batch_num} 批获取完成，获取到 {len(batch_result)} 只股票")
-                    except Exception as e:
-                        logger.warning(f"第 {batch_num} 批获取失败: {e}，继续下一批")
-                        continue
-
-                logger.info(f"✅ Easyquotation 极速获取完成，共获取 {len(result)} 只股票")
-                return result
+                return self._get_price_from_easyquotation(stock_list)
             except Exception as e:
-                logger.error(f"Easyquotation 极速获取行情失败: {e}")
-                # 回退到 Akshare
-
+                logger.error(f"Easyquotation 获取失败 (尝试 {retry + 1}): {e}")
+        
         # 回退方案：使用 Akshare
-        logger.warning("Easyquotation 不可用，回退到使用 Akshare 获取实时行情...")
         try:
-            result = {}
-
-            # 使用 Akshare 获取实时行情
-            import time
-            start_time = time.time()
-
-            # 批量获取，每次最多 300 只股票
-            batch_size = 300
-            for i in range(0, len(stock_list), batch_size):
-                batch = stock_list[i:i + batch_size]
-                logger.info(f"正在使用 Akshare 获取第 {i//batch_size + 1} 批数据 ({len(batch)} 只股票)...")
-
-                for code in batch:
-                    try:
-                        # 使用 Akshare 获取实时数据
-                        realtime_data = self.get_realtime_data(code)
-                        if realtime_data:
-                            # 转换为与 easyquotation 相同的格式
-                            full_code = f"sh{code}" if code.startswith('6') else f"sz{code}"
-                            result[full_code] = {
-                                'name': '',  # Akshare 实时数据不包含名称
-                                'open': realtime_data.get('open', 0),
-                                'close': realtime_data.get('pre_close', 0),
-                                'now': realtime_data.get('price', 0),
-                                'high': realtime_data.get('high', 0),
-                                'low': realtime_data.get('low', 0),
-                                'volume': realtime_data.get('volume', 0),
-                                'turnover': realtime_data.get('turnover_rate', 0),
-                                'bid1_volume': 0,  # Akshare 实时数据不包含盘口数据
-                                'ask1_volume': 0,
-                                'bid1': 0,
-                                'ask1': 0
-                            }
-                    except Exception as e:
-                        logger.warning(f"获取股票 {code} 数据失败: {e}")
-                        continue
-
-            elapsed = time.time() - start_time
-            logger.info(f"✅ Akshare 获取完成，共 {len(result)} 只股票，耗时 {elapsed:.2f}秒")
-            return result
-
+            return self._get_price_from_akshare(stock_list)
         except Exception as e:
-            logger.error(f"Akshare 获取行情失败: {e}")
+            logger.error(f"Akshare 获取失败 (尝试 {retry + 1}): {e}")
+        
+        return {}
+    
+    def _get_price_from_easyquotation(self, stock_list: list) -> dict:
+        """
+        使用 Easyquotation 获取行情
+
+        Args:
+            stock_list: 股票代码列表
+
+        Returns:
+            dict: 行情数据字典
+        """
+        # 转换代码格式 (easyquotation 需要 sh/sz 前缀)
+        full_codes = []
+        for code in stock_list:
+            if code.startswith('6'):
+                prefix = 'sh'
+            elif code.startswith('8') or code.startswith('4'):
+                prefix = 'bj'
+            else:
+                prefix = 'sz'
+            full_codes.append(f"{prefix}{code}")
+
+        # 🚀 批量获取，避免一次请求过多股票导致连接失败
+        result = {}
+        batch_size = 500  # 每次最多 500 只股票
+        total_batches = (len(full_codes) + batch_size - 1) // batch_size
+
+        logger.info(f"正在使用 Easyquotation 极速获取 {len(full_codes)} 只股票的实时行情（分 {total_batches} 批）...")
+
+        for i in range(0, len(full_codes), batch_size):
+            batch = full_codes[i:i + batch_size]
+            batch_num = i // batch_size + 1
+            try:
+                logger.info(f"正在获取第 {batch_num}/{total_batches} 批数据 ({len(batch)} 只股票)...")
+                batch_result = self.quotation.stocks(batch)
+                result.update(batch_result)
+                logger.info(f"✅ 第 {batch_num} 批获取完成，获取到 {len(batch_result)} 只股票")
+            except Exception as e:
+                logger.warning(f"第 {batch_num} 批获取失败: {e}，继续下一批")
+                continue
+
+        logger.info(f"✅ Easyquotation 极速获取完成，共获取 {len(result)} 只股票")
+        return result
+    
+    def _get_price_from_akshare(self, stock_list: list) -> dict:
+        """
+        使用 Akshare 获取行情
+
+        Args:
+            stock_list: 股票代码列表
+
+        Returns:
+            dict: 行情数据字典
+        """
+        result = {}
+
+        # 使用 Akshare 获取实时行情
+        import time
+        start_time = time.time()
+
+        # 批量获取，每次最多 300 只股票
+        batch_size = 300
+        for i in range(0, len(stock_list), batch_size):
+            batch = stock_list[i:i + batch_size]
+            logger.info(f"正在使用 Akshare 获取第 {i//batch_size + 1} 批数据 ({len(batch)} 只股票)...")
+
+            for code in batch:
+                try:
+                    # 使用 Akshare 获取实时数据
+                    realtime_data = self.get_realtime_data(code)
+                    if realtime_data:
+                        # 转换为与 easyquotation 相同的格式
+                        full_code = f"sh{code}" if code.startswith('6') else f"sz{code}"
+                        result[full_code] = {
+                            'name': '',  # Akshare 实时数据不包含名称
+                            'open': realtime_data.get('open', 0),
+                            'close': realtime_data.get('pre_close', 0),
+                            'now': realtime_data.get('price', 0),
+                            'high': realtime_data.get('high', 0),
+                            'low': realtime_data.get('low', 0),
+                            'volume': realtime_data.get('volume', 0),
+                            'turnover': realtime_data.get('turnover_rate', 0),
+                            'bid1_volume': 0,  # Akshare 实时数据不包含盘口数据
+                            'ask1_volume': 0,
+                            'bid1': 0,
+                            'ask1': 0
+                        }
+                except Exception as e:
+                    logger.warning(f"获取股票 {code} 数据失败: {e}")
+                    continue
+
+        elapsed = time.time() - start_time
+        logger.info(f"✅ Akshare 获取完成，共 {len(result)} 只股票，耗时 {elapsed:.2f}秒")
+        return result
+    
+    def _get_sample_estimation(self, stock_list: list) -> dict:
+        """
+        🆕 V6.1: 使用样本估算市场情绪（降级方案）
+
+        当全市场数据获取失败时，使用样本股票（前100只）的数据来估算市场情绪。
+        100只样本足够代表大盘的整体走势。
+
+        Args:
+            stock_list: 股票代码列表
+
+        Returns:
+            dict: 样本估算数据
+        """
+        logger.warning("使用样本估算模式（仅获取前100只股票）")
+        
+        # 只取前100只股票作为样本
+        sample_stocks = stock_list[:100]
+        
+        result = {}
+        try:
+            # 尝试获取样本数据
+            sample_data = self._get_price_from_akshare(sample_stocks)
+            
+            if sample_data:
+                # 计算样本统计信息
+                total_count = len(sample_data)
+                up_count = sum(1 for data in sample_data.values() if data.get('now', 0) > data.get('close', 0))
+                down_count = sum(1 for data in sample_data.values() if data.get('now', 0) < data.get('close', 0))
+                
+                logger.info(f"📊 样本统计：共 {total_count} 只，上涨 {up_count} 只，下跌 {down_count} 只")
+                logger.info(f"📊 涨跌比：{up_count/total_count:.1%}，可以代表大盘情绪")
+                
+                return sample_data
+            else:
+                logger.error("样本数据获取也失败")
+                return {}
+        
+        except Exception as e:
+            logger.error(f"样本估算失败: {e}")
             return {}

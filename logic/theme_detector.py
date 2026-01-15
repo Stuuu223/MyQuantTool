@@ -330,6 +330,135 @@ class ThemeDetector:
         
         return summary
     
+    def predict_rotation(self, 
+                        current_theme: str, 
+                        theme_heat: float, 
+                        theme_sentiment: str = 'UNKNOWN',
+                        theme_days: int = 1,
+                        all_themes: Dict = None) -> Dict:
+        """
+        预测板块轮动（V6.1 新增）
+        
+        功能：
+        1. 高低切检测：当主线连续涨了3天且高标股出现炸板时，提示切换风险
+        2. 资金流向预测：监控板块资金净流出，提示轮动方向
+        3. 低位滞涨板块扫描：识别可能承接资金的低位板块
+        
+        Args:
+            current_theme: 当前主线板块
+            theme_heat: 主线热度（0-1）
+            theme_sentiment: 主线情绪（'STRONG', 'DIVERGENCE', 'WEAK'）
+            theme_days: 主线持续天数
+            all_themes: 所有板块的统计信息
+        
+        Returns:
+            dict: {
+                'rotation_signal': 'HOLD' | 'WATCH_LOW_SECTOR' | 'SWITCH_RISK',
+                'rotation_reason': '轮动原因',
+                'target_sectors': ['目标板块1', '目标板块2'],
+                'strategy': '操作建议'
+            }
+        """
+        try:
+            rotation_signal = 'HOLD'
+            rotation_reason = ''
+            target_sectors = []
+            strategy = ''
+            
+            # 1. 高低切检测
+            if theme_days >= 3 and theme_sentiment == 'DIVERGENCE':
+                rotation_signal = 'WATCH_LOW_SECTOR'
+                rotation_reason = f"{current_theme}连续{theme_days}天上涨，情绪出现分歧，资金可能流向低位板块"
+                strategy = f"降低{current_theme}仓位，关注低位滞涨板块的首板机会"
+                
+                # 扫描低位滞涨板块
+                if all_themes:
+                    low_sectors = self._find_low_sectors(all_themes, current_theme)
+                    target_sectors = low_sectors[:3]  # 取前3个低位板块
+            
+            # 2. 资金流向预测（模拟）
+            # 实际实现需要获取资金流向数据
+            elif theme_heat > 0.15 and theme_sentiment == 'STRONG':
+                # 主线热度极高，高潮期风险
+                rotation_signal = 'SWITCH_RISK'
+                rotation_reason = f"{current_theme}进入高潮期（热度{theme_heat:.1%}），注意资金回流风险"
+                strategy = f"只卖不买，等待{current_theme}分歧后的新机会"
+            
+            # 3. 主线刚启动，继续持有
+            elif theme_days <= 2 and theme_sentiment == 'STRONG':
+                rotation_signal = 'HOLD'
+                rotation_reason = f"{current_theme}启动初期，情绪强势，继续持有"
+                strategy = f"坚定持有{current_theme}前排，关注补涨机会"
+            
+            # 4. 主线弱势，观望
+            elif theme_heat < 0.05 or theme_sentiment == 'WEAK':
+                rotation_signal = 'WATCH_LOW_SECTOR'
+                rotation_reason = f"{current_theme}热度不足（{theme_heat:.1%}），情绪弱势"
+                strategy = f"控制仓位，观察新题材启动，避免接盘"
+                
+                # 扫描低位滞涨板块
+                if all_themes:
+                    low_sectors = self._find_low_sectors(all_themes, current_theme)
+                    target_sectors = low_sectors[:3]
+            
+            return {
+                'rotation_signal': rotation_signal,
+                'rotation_reason': rotation_reason,
+                'target_sectors': target_sectors,
+                'strategy': strategy,
+                'current_theme': current_theme,
+                'theme_days': theme_days,
+                'theme_heat': theme_heat,
+                'theme_sentiment': theme_sentiment
+            }
+        
+        except Exception as e:
+            logger.error(f"预测板块轮动失败: {e}")
+            return {
+                'rotation_signal': 'HOLD',
+                'rotation_reason': '预测失败',
+                'target_sectors': [],
+                'strategy': '保持现有策略'
+            }
+    
+    def _find_low_sectors(self, all_themes: Dict, exclude_theme: str) -> List[str]:
+        """
+        查找低位滞涨板块
+        
+        Args:
+            all_themes: 所有板块统计信息
+            exclude_theme: 要排除的主线板块
+        
+        Returns:
+            list: 低位板块列表（按热度排序）
+        """
+        low_sectors = []
+        
+        for theme, info in all_themes.items():
+            # 排除主线板块
+            if theme == exclude_theme:
+                continue
+            
+            # 排除"其他"板块
+            if theme == '其他':
+                continue
+            
+            heat = info.get('heat', 0)
+            count = info.get('count', 0)
+            
+            # 低位板块定义：热度较低但有涨停股票
+            if 0.01 <= heat <= 0.05 and count >= 1:
+                low_sectors.append({
+                    'theme': theme,
+                    'heat': heat,
+                    'count': count
+                })
+        
+        # 按热度排序（取热度相对较高的低位板块）
+        low_sectors.sort(key=lambda x: x['heat'], reverse=True)
+        
+        return [s['theme'] for s in low_sectors]
+    
     def close(self):
         """关闭数据库连接"""
         if self.db:

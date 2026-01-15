@@ -21,6 +21,9 @@ from logic.strategy_comparison import StrategyComparator
 from logic.advanced_visualizer import AdvancedVisualizer
 from logic.backtest_engine import BacktestEngine
 
+# 🆕 V6.1 新增
+from ui.v61_features_tab import render_v61_features_tab
+
 
 def main():
     st.set_page_config(
@@ -35,7 +38,7 @@ def main():
     st.sidebar.header("导航")
     page = st.sidebar.radio(
         "选择功能页面",
-        ["主页", "交易执行", "组合优化", "市场情绪", "策略工厂", "参数优化", "策略对比", "可视化分析"]
+        ["主页", "交易执行", "组合优化", "市场情绪", "策略工厂", "参数优化", "策略对比", "可视化分析", "🚀 V6.1新功能"]
     )
     
     # 初始化各模块
@@ -65,6 +68,8 @@ def main():
         show_strategy_comparison_page(strategy_comparator, strategy_factory, backtest_engine)
     elif page == "可视化分析":
         show_visualization_page(advanced_visualizer)
+    elif page == "🚀 V6.1新功能":
+        render_v61_features_tab(None, None)
 
 
 def show_home_page():
