@@ -2506,9 +2506,9 @@ class QuantAlgo:
                 turnover_rate = row['换手率']
                 market_cap = row['流通市值']
                 
-                # 计算封单金额（估算：成交量 * 当前价格）
+                # 计算封单金额（估算：成交量 * 100 * 当前价格）
                 volume = row['成交量']
-                seal_amount = volume * current_price
+                seal_amount = volume * 100 * current_price
                 
                 # 封单金额占流通市值比例
                 seal_ratio = seal_amount / market_cap if market_cap > 0 else 0

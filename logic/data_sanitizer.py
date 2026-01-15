@@ -151,6 +151,40 @@ class DataSanitizer:
         return True, "数据正常"
     
     @staticmethod
+    def calculate_amount_from_volume(volume_lots, price):
+        """
+        统一金额计算器：永远记得乘以 100
+        
+        Args:
+            volume_lots: 成交量（手数）
+            price: 价格（元）
+        
+        Returns:
+            float: 金额（元）
+        """
+        if volume_lots is None or price is None:
+            return 0.0
+        
+        # 核心修复：手 -> 股
+        return volume_lots * 100 * price
+    
+    @staticmethod
+    def format_amount_to_display(amount):
+        """
+        自动格式化显示 (万/亿)
+        
+        Args:
+            amount: 金额（元）
+        
+        Returns:
+            str: 格式化后的金额字符串
+        """
+        if amount > 100000000:
+            return f"{amount/100000000:.2f} 亿"
+        else:
+            return f"{amount/10000:.2f} 万"
+    
+    @staticmethod
     def sanitize_realtime_data(raw_data, source_type='easyquotation', stock_info=None):
         """
         一站式实时数据清洗
