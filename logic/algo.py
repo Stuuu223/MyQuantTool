@@ -748,7 +748,14 @@ class QuantAlgo:
         current_volume = df['volume'].iloc[-1] / 100  # 转换为手数
         avg_volume = df['volume'].rolling(window=period).mean().iloc[-1] / 100  # 转换为手数
         
-        volume_ratio = current_volume / avg_volume if avg_volume > 0 else 1
+        # 🆕 V8.3: 添加异常值检测
+        # 如果平均成交量太小（<1000手），可能是停牌或数据异常，不计算量比
+        if avg_volume < 1000:
+            volume_ratio = 1  # 不计算，避免异常值
+        elif avg_volume > 0:
+            volume_ratio = current_volume / avg_volume
+        else:
+            volume_ratio = 1
         
         # 成交量判断
         if volume_ratio > 2:
@@ -1479,7 +1486,12 @@ class QuantAlgo:
                                 # 实时数据的volume是股数（来自easyquotation），也需要转换为手数
                                 avg_volume = df['volume'].tail(5).mean() / 100  # 转换为手数
                                 current_volume = realtime_data_item.get('volume', 0) / 100  # 转换为手数
-                                if avg_volume > 0:
+                                
+                                # 🆕 V8.3: 添加异常值检测
+                                # 如果平均成交量太小（<1000手），可能是停牌或数据异常，不计算量比
+                                if avg_volume < 1000:
+                                    volume_ratio = 1  # 不计算，避免异常值
+                                elif avg_volume > 0:
                                     volume_ratio = current_volume / avg_volume
                         
                         # 计算换手率（使用历史数据中的换手率）
@@ -1501,7 +1513,12 @@ class QuantAlgo:
                             # 🆕 V8.3: 修复单位换算BUG
                             # df['volume']来自akshare，是股数，需要转换为手数（除以100）
                             yesterday_volume = df['volume'].iloc[-2] / 100  # 昨日成交量（手数）
-                            if yesterday_volume > 0:
+                            
+                            # 🆕 V8.3: 添加异常值检测
+                            # 如果昨日成交量太小（<1000手），可能是停牌或数据异常，不计算竞价抢筹度
+                            if yesterday_volume < 1000:
+                                auction_ratio = 0  # 不计算，避免异常值
+                            elif yesterday_volume > 0:
                                 auction_ratio = auction_volume / yesterday_volume
 
                     # 计算封单金额（针对涨停股）
@@ -2659,7 +2676,12 @@ class QuantAlgo:
                         # 历史数据的volume是股数（来自akshare），需要转换为手数（除以100）
                         # 实时数据的成交量已经是手数（在前面已除以100）
                         avg_volume = df['volume'].tail(5).mean() / 100  # 转换为手数
-                        if avg_volume > 0:
+                        
+                        # 🆕 V8.3: 添加异常值检测
+                        # 如果平均成交量太小（<1000手），可能是停牌或数据异常，不计算量比
+                        if avg_volume < 1000:
+                            stock['量比'] = 1  # 不计算，避免异常值
+                        elif avg_volume > 0:
                             stock['量比'] = stock['成交量'] / avg_volume
                         else:
                             stock['量比'] = 1
@@ -2718,7 +2740,12 @@ class QuantAlgo:
                         # 🆕 V8.3: 修复单位换算BUG
                         # df['volume']来自akshare，是股数，需要转换为手数（除以100）
                         yesterday_volume = df['volume'].iloc[-2] / 100  # 昨日成交量（手数）
-                        if yesterday_volume > 0:
+                        
+                        # 🆕 V8.3: 添加异常值检测
+                        # 如果昨日成交量太小（<1000手），可能是停牌或数据异常，不计算竞价抢筹度
+                        if yesterday_volume < 1000:
+                            auction_ratio = 0  # 不计算，避免异常值
+                        elif yesterday_volume > 0:
                             auction_ratio = auction_volume / yesterday_volume
 
                     # 计算封单金额（针对涨停股）
@@ -3076,7 +3103,12 @@ class QuantAlgo:
                         # 历史数据的volume是股数（来自akshare），需要转换为手数（除以100）
                         # 实时数据的成交量已经是手数（在前面已除以100）
                         avg_volume = df['volume'].tail(5).mean() / 100  # 转换为手数
-                        if avg_volume > 0:
+                        
+                        # 🆕 V8.3: 添加异常值检测
+                        # 如果平均成交量太小（<1000手），可能是停牌或数据异常，不计算量比
+                        if avg_volume < 1000:
+                            stock['量比'] = 1  # 不计算，避免异常值
+                        elif avg_volume > 0:
                             stock['量比'] = stock['成交量'] / avg_volume
                         else:
                             stock['量比'] = 1
@@ -3360,7 +3392,12 @@ class QuantAlgo:
                         # 历史数据的volume是股数（来自akshare），需要转换为手数（除以100）
                         # 实时数据的成交量已经是手数（在前面已除以100）
                         avg_volume = df['volume'].tail(5).mean() / 100  # 转换为手数
-                        if avg_volume > 0:
+                        
+                        # 🆕 V8.3: 添加异常值检测
+                        # 如果平均成交量太小（<1000手），可能是停牌或数据异常，不计算量比
+                        if avg_volume < 1000:
+                            stock['量比'] = 1  # 不计算，避免异常值
+                        elif avg_volume > 0:
                             stock['量比'] = stock['成交量'] / avg_volume
                         else:
                             stock['量比'] = 1
