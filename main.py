@@ -22,8 +22,14 @@ from config import Config
 import streamlit as st
 import importlib
 
-# 初始化日志系统
-logger = get_logger(__name__)
+# 🆕 V9.2 修复：导入清理管理器，确保程序退出时正确清理所有资源
+try:
+    from fix_background_tasks import cleanup_manager
+    logger = get_logger(__name__)
+    logger.info("✅ 清理管理器已加载")
+except ImportError:
+    logger = get_logger(__name__)
+    logger.warning("⚠️ 清理管理器加载失败，程序退出时可能无法正确清理资源")
 logger.info("=" * 50)
 logger.info("应用启动")
 
