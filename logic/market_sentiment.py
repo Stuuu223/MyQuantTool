@@ -174,10 +174,24 @@ class MarketSentiment:
             prev_profit = self.get_prev_limit_up_profit()
             
             limit_up_count = limit_up_down.get('limit_up_count', 0)
+            limit_down_count = limit_up_down.get('limit_down_count', 0)
             avg_profit = prev_profit.get('avg_profit', 0)
             
-            # 判断市场状态
-            if limit_up_count >= self.BULL_LIMIT_UP_COUNT and avg_profit >= self.BULL_PREV_PROFIT:
+            # 🛑 V9.2 新增：恐慌熔断机制 (Panic Circuit Breaker)
+            # 1. 绝对恐慌：跌停比涨停多 → 直接降级为"防守模式"
+            if limit_down_count > limit_up_count:
+                regime = self.REGIME_BEAR_DEFENSE
+                description = "暴雨：极度危险，空仓观望"
+                strategy = "只卖不买，空仓观望，等待情绪修复"
+            
+            # 2. 局部恐慌：跌停家数超过 30 家 → 最高只能是"震荡模式"
+            elif limit_down_count > 30:
+                regime = self.REGIME_CHAOS
+                description = "多云：分歧巨大，谨慎操作"
+                strategy = "轻仓试错，控制仓位，只做最高板"
+            
+            # 3. 正常判断：根据涨停家数和昨日溢价判断市场状态
+            elif limit_up_count >= self.BULL_LIMIT_UP_COUNT and avg_profit >= self.BULL_PREV_PROFIT:
                 # 进攻模式
                 regime = self.REGIME_BULL_ATTACK
                 description = "市场情绪火热，适合进攻"
@@ -198,7 +212,7 @@ class MarketSentiment:
             self.current_regime = regime
             self.market_data = {
                 'limit_up_count': limit_up_count,
-                'limit_down_count': limit_up_down.get('limit_down_count', 0),
+                'limit_down_count': limit_down_count,
                 'prev_profit': avg_profit,
                 'max_board': self.get_consecutive_board_height().get('max_board', 0)
             }
@@ -308,10 +322,26 @@ class MarketSentiment:
         Returns:
             str: 天气图标和描述
         """
-        if self.current_regime == self.REGIME_BULL_ATTACK:
+        # 🆕 V9.2 更新：根据市场数据返回更准确的天气图标
+        if not self.market_data:
+            return "❓ 未知"
+        
+        limit_up_count = self.market_data.get('limit_up_count', 0)
+        limit_down_count = self.market_data.get('limit_down_count', 0)
+        
+        # 绝对恐慌：跌停比涨停多 → 暴雨
+        if limit_down_count > limit_up_count:
+            return "⛈️ 暴雨（极度危险）"
+        
+        # 局部恐慌：跌停家数超过 30 家 → 多云
+        elif limit_down_count > 30:
+            return "🌥️ 多云（分歧巨大）"
+        
+        # 正常判断
+        elif self.current_regime == self.REGIME_BULL_ATTACK:
             return "☀️ 晴天（进攻）"
         elif self.current_regime == self.REGIME_BEAR_DEFENSE:
-            return "🌧️ 暴雨（防守）"
+            return "🌧️ 雨天（防守）"
         else:
             return "☁️ 多云（震荡）"
     
