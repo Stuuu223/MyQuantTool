@@ -308,29 +308,32 @@ class MarketCycleManager:
             }
         """
         try:
-            # 🆕 V9.3.3: 使用 Easyquotation（Sina）获取实时数据 + AkShare 获取行业信息
+            # 🆕 V9.3.6: 使用 Easyquotation获取实时数据 + AkShare获取行业信息（带回退机制）
             logger.info("正在获取全市场实时快照...")
             
-            # 第一步：从 AkShare 获取股票列表（包含代码和名称）
+            # 第一步：从 Easyquotation 获取实时价格数据（快速）
             import akshare as ak
-            stock_list_df = ak.stock_info_a_code_name()
-            stock_list = stock_list_df['code'].tolist()
-            
-            # 第二步：从 Easyquotation 获取实时价格数据（快速）
-            realtime_data = self.db.get_fast_price(stock_list)
+            try:
+                stock_list_df = ak.stock_info_a_code_name()
+                stock_list = stock_list_df['code'].tolist()
+            except Exception as e:
+                logger.warning(f"AkShare 获取股票列表失败: {e}，回退到数据库查询")
+                # 回退：从数据库获取股票列表
+                stock_list_df = self.db.get_all_stock_codes()
+                stock_list = stock_list_df['code'].tolist()
             
             realtime_data = self.db.get_fast_price(stock_list)
             
             # 第二步：从 AkShare 获取行业信息（一次性，用于主线识别）
-            import akshare as ak
+            code_to_industry = {}
             try:
                 industry_df = ak.stock_board_industry_name_em()
                 # 构建代码到行业的映射
-                code_to_industry = {}
                 for _, row in industry_df.iterrows():
                     code_to_industry[row['板块代码']] = row['板块名称']
+                logger.info(f"✅ 获取行业信息成功，共 {len(code_to_industry)} 个板块")
             except Exception as e:
-                logger.warning(f"获取行业信息失败: {e}")
+                logger.warning(f"获取行业信息失败: {e}，将使用'未知'作为默认行业")
                 code_to_industry = {}
             
             limit_up_stocks = []
@@ -354,6 +357,11 @@ class MarketCycleManager:
                 if 'ST' in name or '*ST' in name:
                     continue
                 
+                # 🆕 V9.3.6: 剔除停牌股（成交量为0）
+                volume = cleaned_data.get('volume', 0)
+                if volume == 0:
+                    continue
+                
                 # 获取行业信息
                 industry = code_to_industry.get(code, '未知')
                 
@@ -362,22 +370,22 @@ class MarketCycleManager:
                 pre_close = cleaned_data.get('close', 0)
                 high = cleaned_data.get('high', 0)
                 
-                if pre_close <= 0:
+                if pre_close <= 0 or now == 0:
                     continue
                 
                 change_pct = (now - pre_close) / pre_close * 100
                 
-                # 识别板块（主板10%，创业板/科创板20%）
+                # 🆕 V9.3.6: 精确涨停价计算（四舍五入到2位）
                 is_20cm = code.startswith(('30', '68'))
-                limit_pct = 19.8 if is_20cm else 9.8
+                limit_ratio = 1.20 if is_20cm else 1.10
+                limit_price = round(pre_close * limit_ratio, 2)
                 
-                # 判断涨跌停
-                is_limit_up = change_pct >= limit_pct
-                is_limit_down = change_pct <= -limit_pct
+                # 使用精确涨停价判断
+                is_limit_up = now >= limit_price
+                is_limit_down = now <= (pre_close / limit_ratio)
                 
                 # 计算炸板（最高价摸过涨停，但现价没封住）
-                high_pct = (high - pre_close) / pre_close * 100 if pre_close > 0 else 0
-                is_exploded = (high_pct >= limit_pct) and (change_pct < limit_pct)
+                is_exploded = (high >= limit_price) and (now < limit_price)
                 
                 if is_limit_up:
                     limit_up_stocks.append({
