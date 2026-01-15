@@ -619,9 +619,10 @@ class DataManager:
     def _get_sample_estimation(self, stock_list: list) -> dict:
         """
         🆕 V6.1: 使用样本估算市场情绪（降级方案）
+        🆕 V6.2: 升级为分层抽样，避免样本偏差
 
-        当全市场数据获取失败时，使用样本股票（前100只）的数据来估算市场情绪。
-        100只样本足够代表大盘的整体走势。
+        当全市场数据获取失败时，使用分层抽样的样本股票（100只）来估算市场情绪。
+        确保样本覆盖：权重股、人气妖股、跌幅榜常客、随机中小盘。
 
         Args:
             stock_list: 股票代码列表
@@ -629,10 +630,15 @@ class DataManager:
         Returns:
             dict: 样本估算数据
         """
-        logger.warning("使用样本估算模式（仅获取前100只股票）")
+        logger.warning("使用样本估算模式（分层抽样100只股票）")
         
-        # 只取前100只股票作为样本
-        sample_stocks = stock_list[:100]
+        # 🆕 V6.2: 使用分层抽样，而不是随机取前100只
+        sample_stocks = self._get_stratified_sample()
+        
+        if not sample_stocks:
+            # 如果分层抽样失败，回退到取前100只
+            logger.warning("分层抽样失败，回退到随机抽样")
+            sample_stocks = stock_list[:100]
         
         result = {}
         try:
@@ -645,8 +651,8 @@ class DataManager:
                 up_count = sum(1 for data in sample_data.values() if data.get('now', 0) > data.get('close', 0))
                 down_count = sum(1 for data in sample_data.values() if data.get('now', 0) < data.get('close', 0))
                 
-                logger.info(f"📊 样本统计：共 {total_count} 只，上涨 {up_count} 只，下跌 {down_count} 只")
-                logger.info(f"📊 涨跌比：{up_count/total_count:.1%}，可以代表大盘情绪")
+                logger.info(f"📊 分层样本统计：共 {total_count} 只，上涨 {up_count} 只，下跌 {down_count} 只")
+                logger.info(f"📊 涨跌比：{up_count/total_count:.1%}，分层抽样代表大盘情绪")
                 
                 return sample_data
             else:
@@ -656,3 +662,45 @@ class DataManager:
         except Exception as e:
             logger.error(f"样本估算失败: {e}")
             return {}
+    
+    def _get_stratified_sample(self) -> list:
+        """
+        🆕 V6.2: 获取分层抽样样本
+        
+        从balanced_monitor_list.json中读取预存的100只代表性股票，
+        确保覆盖各个市场层级。
+        
+        Returns:
+            list: 100只分层抽样的股票代码
+        """
+        try:
+            import json
+            import os
+            
+            config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 
+                                       'config', 'balanced_monitor_list.json')
+            
+            if not os.path.exists(config_path):
+                logger.warning(f"分层抽样配置文件不存在: {config_path}")
+                return []
+            
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+            
+            # 提取所有层的股票
+            sample_stocks = []
+            for layer_name, layer_info in config.get('layers', {}).items():
+                stocks = layer_info.get('stocks', [])
+                sample_stocks.extend(stocks)
+                logger.info(f"📊 分层抽样 - {layer_name}: {len(stocks)} 只")
+            
+            # 确保总数是100只
+            if len(sample_stocks) != 100:
+                logger.warning(f"分层抽样总数不是100只，实际: {len(sample_stocks)} 只")
+            
+            logger.info(f"✅ 分层抽样完成，共 {len(sample_stocks)} 只")
+            return sample_stocks
+        
+        except Exception as e:
+            logger.error(f"获取分层抽样失败: {e}")
+            return []

@@ -337,12 +337,13 @@ class ThemeDetector:
                         theme_days: int = 1,
                         all_themes: Dict = None) -> Dict:
         """
-        预测板块轮动（V6.1 新增）
+        预测板块轮动（V6.2 升级版）
         
         功能：
         1. 高低切检测：当主线连续涨了3天且高标股出现炸板时，提示切换风险
         2. 资金流向预测：监控板块资金净流出，提示轮动方向
         3. 低位滞涨板块扫描：识别可能承接资金的低位板块
+        4. 🆕 轮动确认窗口（Hysteresis Window）：避免假摔导致的踏空
         
         Args:
             current_theme: 当前主线板块
@@ -353,10 +354,11 @@ class ThemeDetector:
         
         Returns:
             dict: {
-                'rotation_signal': 'HOLD' | 'WATCH_LOW_SECTOR' | 'SWITCH_RISK',
+                'rotation_signal': 'HOLD' | 'HOLD_AND_WATCH' | 'WATCH_LOW_SECTOR' | 'SWITCH_RISK' | 'ROTATE_NOW',
                 'rotation_reason': '轮动原因',
                 'target_sectors': ['目标板块1', '目标板块2'],
-                'strategy': '操作建议'
+                'strategy': '操作建议',
+                'hysteresis_days': int  # 观察期天数
             }
         """
         try:
@@ -364,17 +366,39 @@ class ThemeDetector:
             rotation_reason = ''
             target_sectors = []
             strategy = ''
+            hysteresis_days = 0
             
-            # 1. 高低切检测
+            # 🆕 V6.2: 轮动确认窗口逻辑
+            # 主线分歧的第一天，不急着切换，而是进入"观察期"
             if theme_days >= 3 and theme_sentiment == 'DIVERGENCE':
-                rotation_signal = 'WATCH_LOW_SECTOR'
-                rotation_reason = f"{current_theme}连续{theme_days}天上涨，情绪出现分歧，资金可能流向低位板块"
-                strategy = f"降低{current_theme}仓位，关注低位滞涨板块的首板机会"
+                # 检查是否是第一次分歧
+                divergence_count = self._count_recent_divergence(current_theme)
                 
-                # 扫描低位滞涨板块
-                if all_themes:
-                    low_sectors = self._find_low_sectors(all_themes, current_theme)
-                    target_sectors = low_sectors[:3]  # 取前3个低位板块
+                if divergence_count == 1:
+                    # 第一次分歧：进入观察期，不要急着切
+                    rotation_signal = 'HOLD_AND_WATCH'
+                    rotation_reason = f"{current_theme}首次分歧，可能是'空中加油'，进入观察期"
+                    strategy = f"锁仓观察，等待确认。如果次日龙头无法反包，则准备切换"
+                    hysteresis_days = 1
+                elif divergence_count >= 2:
+                    # 连续2天分歧：确认切换
+                    # 但还需要检查低位板块是否有承接
+                    new_sector_strength = self._check_new_sector_strength(all_themes, current_theme)
+                    
+                    if new_sector_strength >= 2:  # 低位板块有2只以上首板
+                        rotation_signal = 'ROTATE_NOW'
+                        rotation_reason = f"{current_theme}连续{divergence_count}天分歧且无法修复，确认切换"
+                        strategy = f"果断切换到低位板块，避免踏空"
+                        
+                        # 扫描低位滞涨板块
+                        if all_themes:
+                            low_sectors = self._find_low_sectors(all_themes, current_theme)
+                            target_sectors = low_sectors[:3]
+                    else:
+                        rotation_signal = 'HOLD_AND_WATCH'
+                        rotation_reason = f"{current_theme}分歧但低位板块无承接，继续观察"
+                        strategy = f"低位板块未启动，继续持有主线，等待明确信号"
+                        hysteresis_days = divergence_count
             
             # 2. 资金流向预测（模拟）
             # 实际实现需要获取资金流向数据
@@ -409,7 +433,8 @@ class ThemeDetector:
                 'current_theme': current_theme,
                 'theme_days': theme_days,
                 'theme_heat': theme_heat,
-                'theme_sentiment': theme_sentiment
+                'theme_sentiment': theme_sentiment,
+                'hysteresis_days': hysteresis_days
             }
         
         except Exception as e:
@@ -458,6 +483,65 @@ class ThemeDetector:
         low_sectors.sort(key=lambda x: x['heat'], reverse=True)
         
         return [s['theme'] for s in low_sectors]
+    
+    def _count_recent_divergence(self, theme: str) -> int:
+        """
+        🆕 V6.2: 统计最近的主线分歧次数
+        
+        Args:
+            theme: 主线板块名称
+        
+        Returns:
+            int: 最近的分歧次数
+        """
+        if not self.theme_history:
+            return 0
+        
+        # 查看最近3天的主线历史
+        recent_history = self.theme_history[-3:]
+        
+        divergence_count = 0
+        for record in recent_history:
+            if record['theme'] == theme:
+                # 简化判断：如果热度低于0.1，认为是分歧
+                if record['heat'] < 0.1:
+                    divergence_count += 1
+        
+        return divergence_count
+    
+    def _check_new_sector_strength(self, all_themes: Dict, exclude_theme: str) -> int:
+        """
+        🆕 V6.2: 检查新板块的强度（低位板块的首板数量）
+        
+        Args:
+            all_themes: 所有板块统计信息
+            exclude_theme: 要排除的主线板块
+        
+        Returns:
+            int: 低位板块的首板数量
+        """
+        if not all_themes:
+            return 0
+        
+        new_sector_count = 0
+        
+        for theme, info in all_themes.items():
+            # 排除主线板块
+            if theme == exclude_theme:
+                continue
+            
+            # 排除"其他"板块
+            if theme == '其他':
+                continue
+            
+            count = info.get('count', 0)
+            heat = info.get('heat', 0)
+            
+            # 新板块强度：低位板块有首板（热度0.01-0.05，涨停家数>=1）
+            if 0.01 <= heat <= 0.05 and count >= 1:
+                new_sector_count += 1
+        
+        return new_sector_count
     
     def close(self):
         """关闭数据库连接"""
