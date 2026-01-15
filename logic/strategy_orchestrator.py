@@ -15,6 +15,7 @@ from logic.logger import get_logger
 from logic.market_cycle import MarketCycleManager
 from logic.theme_detector import ThemeDetector
 from logic.dragon_tactics import DragonTactics
+from logic.intraday_turnaround_detector import IntradayTurnaroundDetector  # 🆕 V9.0
 
 logger = get_logger(__name__)
 
@@ -41,6 +42,7 @@ class StrategyOrchestrator:
         """初始化策略仲裁者"""
         self.market_cycle_manager = MarketCycleManager()
         self.theme_detector = ThemeDetector()
+        self.turnaround_detector = IntradayTurnaroundDetector()  # 🆕 V9.0: 日内弱转强探测器
         
         # 模块权重配置
         self.weights = {
@@ -101,13 +103,30 @@ class StrategyOrchestrator:
             if veto_result:
                 return DecisionType.REJECT, veto_reason, 0.0
             
+            # 🆕 V9.0: 日内弱转强检测（修正评分）
+            turnaround_score = 0.0
+            turnaround_reason = ""
+            if self._should_check_turnaround(stock_signal, market_status, theme_info):
+                is_turnaround, turnaround_reason, turnaround_score = self._check_turnaround(
+                    stock_signal, market_status, theme_info
+                )
+                if is_turnaround:
+                    logger.info(f"检测到日内弱转强: {turnaround_reason}")
+            
             # 2. 加权打分（Weighted Scoring）
             total_score = self._calculate_weighted_score(stock_signal, market_status, theme_info)
+            
+            # 🆕 V9.0: 应用日内弱转强修正评分
+            if turnaround_score > 0:
+                total_score += turnaround_score
+                logger.info(f"应用日内弱转强修正: 原始得分{total_score-turnaround_score:.1f}分 + 修正{turnaround_score:.1f}分 = {total_score:.1f}分")
             
             # 3. 根据得分输出决策
             if total_score >= 80:
                 decision = DecisionType.BUY
                 reason = f"综合得分{total_score:.1f}分，建议买入"
+                if turnaround_score > 0:
+                    reason += f"（{turnaround_reason}）"
                 
                 # 计算仓位
                 if use_kelly:
@@ -118,6 +137,8 @@ class StrategyOrchestrator:
             elif total_score >= 60:
                 decision = DecisionType.BUY
                 reason = f"综合得分{total_score:.1f}分，建议轻仓买入"
+                if turnaround_score > 0:
+                    reason += f"（{turnaround_reason}）"
                 position = 0.3  # 固定30%仓位
                 
             elif total_score >= 40:
@@ -492,6 +513,91 @@ class StrategyOrchestrator:
         }
         
         return defensive_mapping.get(aggressive_sector, ['512880', '159915'])
+    
+    # 🆕 V9.0: 日内弱转强检测方法
+    
+    def _should_check_turnaround(
+        self,
+        stock_signal: Dict[str, Any],
+        market_status: Dict[str, Any],
+        theme_info: Dict[str, Any]
+    ) -> bool:
+        """
+        判断是否应该检测日内弱转强
+        
+        Args:
+            stock_signal: 个股信号
+            market_status: 市场状态
+            theme_info: 板块信息
+        
+        Returns:
+            bool: 是否应该检测
+        """
+        # 1. 检查是否有竞价数据
+        auction_data = stock_signal.get('auction_data', {})
+        if not auction_data:
+            return False
+        
+        # 2. 检查是否有日内数据
+        intraday_data = stock_signal.get('intraday_data', None)
+        if intraday_data is None or (isinstance(intraday_data, pd.DataFrame) and intraday_data.empty):
+            return False
+        
+        # 3. 检查市场环境（只在主升期或高潮期检测弱转强）
+        market_cycle = market_status.get('cycle', '')
+        if market_cycle not in ['MAIN_RISE', 'BOOM']:
+            return False
+        
+        # 4. 检查主线热度（主线热度>60才检测）
+        theme_heat = theme_info.get('theme_heat', 0)
+        if theme_heat < 60:
+            return False
+        
+        # 5. 检查是否是竞价弱（竞价金额<500万 或 竞价抢筹度<2%）
+        auction_amount = auction_data.get('auction_amount', 0)
+        auction_ratio = auction_data.get('auction_ratio', 0)
+        if auction_amount >= 500 and auction_ratio >= 0.02:
+            return False
+        
+        return True
+    
+    def _check_turnaround(
+        self,
+        stock_signal: Dict[str, Any],
+        market_status: Dict[str, Any],
+        theme_info: Dict[str, Any]
+    ) -> Tuple[bool, str, float]:
+        """
+        检测日内弱转强
+        
+        Args:
+            stock_signal: 个股信号
+            market_status: 市场状态
+            theme_info: 板块信息
+        
+        Returns:
+            tuple: (是否弱转强, 原因, 修正评分)
+        """
+        try:
+            # 获取数据
+            auction_data = stock_signal.get('auction_data', {})
+            intraday_data = stock_signal.get('intraday_data', None)
+            main_theme = theme_info.get('main_theme', '')
+            theme_heat = theme_info.get('theme_heat', 0)
+            symbol = stock_signal.get('code', '')
+            
+            # 使用IntradayTurnaroundDetector检测
+            return self.turnaround_detector.detect_turnaround(
+                symbol,
+                auction_data,
+                intraday_data,
+                main_theme,
+                theme_heat
+            )
+        
+        except Exception as e:
+            logger.error(f"检测日内弱转强失败: {e}", exc_info=True)
+            return False, f"检测失败: {e}", 0.0
     
     def close(self):
         """关闭资源"""

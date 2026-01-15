@@ -2873,7 +2873,16 @@ class QuantAlgo:
                         '评级': rating,
                         '信号': signals,
                         '操作建议': suggestion,
-                        '弱转强': weak_to_strong.get('是否弱转强', False)
+                        '弱转强': weak_to_strong.get('是否弱转强', False),
+                        # 🆕 V9.0: 添加日内弱转强相关字段（用于StrategyOrchestrator）
+                        'auction_data': {
+                            'auction_amount': auction_amount_wan,
+                            'auction_ratio': auction_ratio,
+                            'auction_volume': auction_volume,
+                            'open_price': current_price,
+                            'open_gap_pct': change_pct
+                        },
+                        'intraday_data': None  # 日内数据需要在开盘后获取
                     }
                 except Exception as e:
                     print(f"分析股票 {symbol} 失败: {e}")
