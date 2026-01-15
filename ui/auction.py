@@ -93,26 +93,45 @@ def render_auction_tab(db, config):
                                 col11.metric("竞价抢筹度", f"{stock.get('竞价抢筹度', 0):.2%}")
                                 
                                 if is_limit_up:
-                                    # 涨停时，封单金额 = 买一量（手数）× 100（股/手）× 价格
+                                    # 涨停时，显示竞价金额和封单金额
                                     # 🆕 使用 DataSanitizer 确保计算正确
                                     from logic.data_sanitizer import DataSanitizer
                                     bid1_volume_lots = stock.get('买一量', 0)  # 买一量（手数）
+                                    auction_volume_lots = stock.get('竞价量', 0)  # 竞价量（手数）
                                     current_price = stock.get('最新价', 0)
+                                    
+                                    # 计算竞价金额（基于竞价量）
+                                    auction_amount_yuan = DataSanitizer.calculate_amount_from_volume(auction_volume_lots, current_price)
+                                    auction_amount_wan = auction_amount_yuan / 10000  # 转换为万
+                                    
+                                    # 计算封单金额（基于买一量）
                                     seal_amount_yuan = DataSanitizer.calculate_amount_from_volume(bid1_volume_lots, current_price)
                                     seal_amount_wan = seal_amount_yuan / 10000  # 转换为万
-                                    col12.metric("封单金额", f"¥{seal_amount_wan:.2f} 万", delta="涨停封单")
-                                    col13.metric("买卖价差", "N/A", delta="涨停")
+                                    
+                                    col12.metric("竞价金额", f"¥{auction_amount_wan:.2f} 万", delta="竞价抢筹")
+                                    col13.metric("封单金额", f"¥{seal_amount_wan:.2f} 万", delta="涨停封单")
                                 else:
-                                    # 非涨停时，也使用 DataSanitizer 重新计算封单金额（如果有的话）
+                                    # 非涨停时，也使用 DataSanitizer 重新计算金额
                                     from logic.data_sanitizer import DataSanitizer
                                     bid1_volume_lots = stock.get('买一量', 0)  # 买一量（手数）
+                                    auction_volume_lots = stock.get('竞价量', 0)  # 竞价量（手数）
                                     current_price = stock.get('最新价', 0)
+                                    
+                                    # 显示竞价金额
+                                    if auction_volume_lots > 0 and current_price > 0:
+                                        auction_amount_yuan = DataSanitizer.calculate_amount_from_volume(auction_volume_lots, current_price)
+                                        auction_amount_wan = auction_amount_yuan / 10000  # 转换为万
+                                        col12.metric("竞价金额", f"¥{auction_amount_wan:.2f} 万")
+                                    else:
+                                        col12.metric("竞价金额", f"¥{stock.get('竞价金额', 0):.2f} 万")
+                                    
+                                    # 显示封单金额
                                     if bid1_volume_lots > 0 and current_price > 0:
                                         seal_amount_yuan = DataSanitizer.calculate_amount_from_volume(bid1_volume_lots, current_price)
                                         seal_amount_wan = seal_amount_yuan / 10000  # 转换为万
-                                        col12.metric("封单金额", f"¥{seal_amount_wan:.2f} 万")
+                                        col13.metric("封单金额", f"¥{seal_amount_wan:.2f} 万")
                                     else:
-                                        col12.metric("封单金额", f"¥{stock.get('封单金额', 0):.2f} 万")
+                                        col13.metric("封单金额", f"¥{stock.get('封单金额', 0):.2f} 万")
                                     # 买卖价差
                                     price_gap = stock.get('买一价', 0) and stock.get('卖一价', 0)
                                     if price_gap and stock.get('买一价', 0) > 0:
