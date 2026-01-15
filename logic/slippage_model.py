@@ -565,5 +565,453 @@ class DynamicSlippage(SlippageModel):
         return min(execution_time, 240.0)  # 最多4小时
 
 
+class VWAPExecutor:
+    """
+    🆕 V8.0: VWAP (成交量加权平均价) 算法交易执行器
+    
+    功能：
+    1. 将大单拆分成多个小单
+    2. 根据成交量分布智能执行
+    3. 降低冲击成本
+    """
+    
+    def __init__(self, db):
+        """
+        初始化VWAP执行器
+        
+        Args:
+            db: DataManager实例
+        """
+        self.db = db
+        self.execution_history = []
+    
+    def calculate_vwap_schedule(self, 
+                               symbol: str, 
+                               total_quantity: int,
+                               side: str,
+                               execution_window_minutes: int = 30,
+                               num_slices: int = 10) -> List[Dict[str, Any]]:
+        """
+        计算VWAP执行计划
+        
+        Args:
+            symbol: 股票代码
+            total_quantity: 总数量
+            side: 交易方向 ('buy' or 'sell')
+            execution_window_minutes: 执行窗口（分钟）
+            num_slices: 拆分份数
+        
+        Returns:
+            list: 执行计划列表
+                [{
+                    'slice_index': int,
+                    'quantity': int,
+                    'target_time': datetime,
+                    'method': str
+                }]
+        """
+        from datetime import datetime, timedelta
+        
+        # 获取历史成交量分布（模拟）
+        volume_distribution = self._get_historical_volume_distribution(symbol, execution_window_minutes)
+        
+        # 根据成交量分布分配订单
+        schedule = []
+        remaining_quantity = total_quantity
+        start_time = datetime.now()
+        
+        for i in range(num_slices):
+            if remaining_quantity <= 0:
+                break
+            
+            # 根据历史成交量比例分配
+            if i < len(volume_distribution):
+                volume_ratio = volume_distribution[i]
+            else:
+                volume_ratio = 1.0 / num_slices
+            
+            slice_quantity = int(total_quantity * volume_ratio)
+            slice_quantity = min(slice_quantity, remaining_quantity)
+            
+            target_time = start_time + timedelta(minutes=i * execution_window_minutes / num_slices)
+            
+            schedule.append({
+                'slice_index': i,
+                'quantity': slice_quantity,
+                'target_time': target_time,
+                'method': 'VWAP',
+                'side': side,
+                'symbol': symbol
+            })
+            
+            remaining_quantity -= slice_quantity
+        
+        return schedule
+    
+    def _get_historical_volume_distribution(self, symbol: str, window_minutes: int) -> List[float]:
+        """
+        获取历史成交量分布（模拟）
+        
+        Args:
+            symbol: 股票代码
+            window_minutes: 时间窗口（分钟）
+        
+        Returns:
+            list: 成交量分布比例列表
+        """
+        # 简化处理：返回均匀分布
+        # 实际应该从数据库查询历史分钟K线数据
+        num_slices = 10
+        return [1.0 / num_slices] * num_slices
+    
+    def execute_vwap_order(self, 
+                          schedule: List[Dict[str, Any]],
+                          market_depth: MarketDepth) -> Dict[str, Any]:
+        """
+        执行VWAP订单
+        
+        Args:
+            schedule: 执行计划
+            market_depth: 市场深度
+        
+        Returns:
+            dict: 执行结果
+        """
+        total_quantity = sum(slice['quantity'] for slice in schedule)
+        total_cost = 0
+        executed_quantity = 0
+        
+        for slice_order in schedule:
+            quantity = slice_order['quantity']
+            side = slice_order['side']
+            
+            # 计算该笔订单的滑点
+            slippage = self.calculate_market_slippage(quantity, side, market_depth)
+            
+            # 模拟执行
+            if side == 'buy':
+                avg_price = market_depth.ask_prices[0] * (1 + slippage)
+            else:
+                avg_price = market_depth.bid_prices[0] * (1 - slippage)
+            
+            total_cost += quantity * avg_price
+            executed_quantity += quantity
+        
+        avg_execution_price = total_cost / executed_quantity if executed_quantity > 0 else 0
+        
+        return {
+            'total_quantity': total_quantity,
+            'executed_quantity': executed_quantity,
+            'avg_execution_price': avg_execution_price,
+            'total_cost': total_cost,
+            'execution_method': 'VWAP'
+        }
+
+
+class TWAPExecutor:
+    """
+    🆕 V8.0: TWAP (时间加权平均价) 算法交易执行器
+    
+    功能：
+    1. 将大单均匀拆分成多个小单
+    2. 按时间间隔均匀执行
+    3. 降低冲击成本
+    """
+    
+    def __init__(self):
+        """初始化TWAP执行器"""
+        self.execution_history = []
+    
+    def calculate_twap_schedule(self, 
+                               total_quantity: int,
+                               side: str,
+                               execution_window_minutes: int = 30,
+                               num_slices: int = 10) -> List[Dict[str, Any]]:
+        """
+        计算TWAP执行计划
+        
+        Args:
+            total_quantity: 总数量
+            side: 交易方向 ('buy' or 'sell')
+            execution_window_minutes: 执行窗口（分钟）
+            num_slices: 拆分份数
+        
+        Returns:
+            list: 执行计划列表
+        """
+        from datetime import datetime, timedelta
+        
+        schedule = []
+        start_time = datetime.now()
+        slice_quantity = total_quantity // num_slices
+        remaining_quantity = total_quantity
+        
+        for i in range(num_slices):
+            if i == num_slices - 1:
+                # 最后一单处理剩余数量
+                slice_quantity = remaining_quantity
+            
+            target_time = start_time + timedelta(minutes=i * execution_window_minutes / num_slices)
+            
+            schedule.append({
+                'slice_index': i,
+                'quantity': slice_quantity,
+                'target_time': target_time,
+                'method': 'TWAP',
+                'side': side
+            })
+            
+            remaining_quantity -= slice_quantity
+        
+        return schedule
+    
+    def execute_twap_order(self, 
+                          schedule: List[Dict[str, Any]],
+                          current_price: float,
+                          slippage_rate: float = 0.002) -> Dict[str, Any]:
+        """
+        执行TWAP订单
+        
+        Args:
+            schedule: 执行计划
+            current_price: 当前价格
+            slippage_rate: 滑点率
+        
+        Returns:
+            dict: 执行结果
+        """
+        total_quantity = sum(slice['quantity'] for slice in schedule)
+        total_cost = 0
+        executed_quantity = 0
+        
+        for slice_order in schedule:
+            quantity = slice_order['quantity']
+            side = slice_order['side']
+            
+            # 计算该笔订单的价格（包含滑点）
+            if side == 'buy':
+                execution_price = current_price * (1 + slippage_rate)
+            else:
+                execution_price = current_price * (1 - slippage_rate)
+            
+            total_cost += quantity * execution_price
+            executed_quantity += quantity
+        
+        avg_execution_price = total_cost / executed_quantity if executed_quantity > 0 else 0
+        
+        return {
+            'total_quantity': total_quantity,
+            'executed_quantity': executed_quantity,
+            'avg_execution_price': avg_execution_price,
+            'total_cost': total_cost,
+            'execution_method': 'TWAP'
+        }
+
+
+class OrderSplitter:
+    """
+    🆕 V8.0: 大单拆分器
+    
+    功能：
+    1. 智能拆分大单
+    2. 根据市场状况选择拆分策略
+    3. 避免冲击成本
+    """
+    
+    def __init__(self):
+        """初始化大单拆分器"""
+        self.split_history = []
+    
+    def calculate_optimal_split(self, 
+                               order_quantity: int,
+                               order_value: float,
+                               market_condition: str = 'normal') -> Dict[str, Any]:
+        """
+        计算最优拆分策略
+        
+        Args:
+            order_quantity: 订单数量
+            order_value: 订单金额
+            market_condition: 市场条件
+        
+        Returns:
+            dict: 拆分策略
+                {
+                    'num_slices': int,
+                    'slice_quantity': int,
+                    'execution_method': 'VWAP' | 'TWAP' | 'MARKET',
+                    'execution_window_minutes': int,
+                    'reason': str
+                }
+        """
+        # 判断是否需要拆分
+        if order_value < 100000:  # 10万以下，直接市价单
+            return {
+                'num_slices': 1,
+                'slice_quantity': order_quantity,
+                'execution_method': 'MARKET',
+                'execution_window_minutes': 0,
+                'reason': '订单规模较小，直接市价单执行'
+            }
+        
+        elif order_value < 500000:  # 10万-50万，TWAP拆分
+            num_slices = min(10, order_quantity // 100)  # 最多10笔，每笔至少100股
+            
+            return {
+                'num_slices': num_slices,
+                'slice_quantity': order_quantity // num_slices,
+                'execution_method': 'TWAP',
+                'execution_window_minutes': 15,
+                'reason': '订单规模中等，使用TWAP均匀拆分'
+            }
+        
+        elif order_value < 2000000:  # 50万-200万，VWAP拆分
+            num_slices = min(20, order_quantity // 100)
+            
+            return {
+                'num_slices': num_slices,
+                'slice_quantity': order_quantity // num_slices,
+                'execution_method': 'VWAP',
+                'execution_window_minutes': 30,
+                'reason': '订单规模较大，使用VWAP智能拆分'
+            }
+        
+        else:  # 200万以上，深度拆分
+            num_slices = min(50, order_quantity // 100)
+            
+            return {
+                'num_slices': num_slices,
+                'slice_quantity': order_quantity // num_slices,
+                'execution_method': 'VWAP',
+                'execution_window_minutes': 60,
+                'reason': '订单规模很大，使用VWAP深度拆分，降低冲击成本'
+            }
+
+
+class EmergencyExitExecutor:
+    """
+    🆕 V8.0: 紧急清仓执行器
+    
+    功能：
+    1. 闪崩时的紧急清仓
+    2. 智能选择清仓策略
+    3. 避免地板价成交
+    """
+    
+    def __init__(self):
+        """初始化紧急清仓执行器"""
+        self.exit_history = []
+    
+    def calculate_emergency_exit_strategy(self, 
+                                        positions: List[Dict[str, Any]],
+                                        market_condition: str = 'flash_crash') -> Dict[str, Any]:
+        """
+        计算紧急清仓策略
+        
+        Args:
+            positions: 持仓列表
+                [{
+                    'code': '股票代码',
+                    'name': '股票名称',
+                    'quantity': '持仓数量',
+                    'current_price': '当前价格',
+                    'cost_price': '成本价'
+                }]
+            market_condition: 市场条件
+        
+        Returns:
+            dict: 清仓策略
+                {
+                    'exit_method': 'MARKET' | 'LIMIT' | 'ICEBERG',
+                    'exit_speed': 'IMMEDIATE' | 'FAST' | 'MODERATE',
+                    'slippage_allowance': float,
+                    'reason': str
+                }
+        """
+        if market_condition == 'flash_crash':
+            # 闪崩情况：使用冰山单，避免地板价
+            return {
+                'exit_method': 'ICEBERG',
+                'exit_speed': 'FAST',
+                'slippage_allowance': 0.02,  # 允许2%滑点
+                'reason': '闪崩情况，使用冰山单逐步清仓，避免地板价成交'
+            }
+        
+        elif market_condition == 'panic':
+            # 恐慌性抛售：市价单快速清仓
+            return {
+                'exit_method': 'MARKET',
+                'exit_speed': 'IMMEDIATE',
+                'slippage_allowance': 0.05,  # 允许5%滑点
+                'reason': '恐慌性抛售，市价单快速清仓，保命第一'
+            }
+        
+        else:
+            # 一般清仓：限价单
+            return {
+                'exit_method': 'LIMIT',
+                'exit_speed': 'MODERATE',
+                'slippage_allowance': 0.01,  # 允许1%滑点
+                'reason': '一般清仓，使用限价单逐步卖出'
+            }
+    
+    def execute_emergency_exit(self, 
+                             positions: List[Dict[str, Any]],
+                             exit_strategy: Dict[str, Any],
+                             market_depth: MarketDepth) -> Dict[str, Any]:
+        """
+        执行紧急清仓
+        
+        Args:
+            positions: 持仓列表
+            exit_strategy: 清仓策略
+            market_depth: 市场深度
+        
+        Returns:
+            dict: 清仓结果
+        """
+        total_value = 0
+        total_cost = 0
+        exit_details = []
+        
+        for position in positions:
+            code = position['code']
+            quantity = position['quantity']
+            current_price = position['current_price']
+            
+            if exit_strategy['exit_method'] == 'MARKET':
+                # 市价单清仓
+                exit_price = current_price * (1 - exit_strategy['slippage_allowance'])
+            
+            elif exit_strategy['exit_method'] == 'LIMIT':
+                # 限价单清仓：挂在Ask1 - 0.5%的位置
+                if market_depth.ask_prices and len(market_depth.ask_prices) > 0:
+                    limit_price = market_depth.ask_prices[0] * 0.995
+                else:
+                    limit_price = current_price * 0.995
+                exit_price = limit_price
+            
+            elif exit_strategy['exit_method'] == 'ICEBERG':
+                # 冰山单清仓：每次只卖10%
+                slice_quantity = quantity // 10
+                exit_price = current_price * (1 - exit_strategy['slippage_allowance'] * 0.5)
+            
+            exit_value = slice_quantity * exit_price if exit_strategy['exit_method'] == 'ICEBERG' else quantity * exit_price
+            total_value += exit_value
+            
+            exit_details.append({
+                'code': code,
+                'quantity': quantity,
+                'exit_price': exit_price,
+                'exit_value': exit_value
+            })
+        
+        return {
+            'total_value': total_value,
+            'exit_details': exit_details,
+            'exit_strategy': exit_strategy
+        }
+
+
 if __name__ == "__main__":
     demo_slippage_model()

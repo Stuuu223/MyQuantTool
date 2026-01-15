@@ -442,6 +442,10 @@ class FlashCrashDetector:
         
         now = datetime.now()
         
+        # 🆕 V8.0: 双重确认机制
+        index_drop_triggered = False
+        limit_down_triggered = False
+        
         # 检查每个指数的下跌速率
         for index_code, current_price in current_indices.items():
             # 获取5分钟前的价格
@@ -468,6 +472,7 @@ class FlashCrashDetector:
             drop_rate = (oldest_price - current_price) / oldest_price if oldest_price > 0 else 0
             
             if drop_rate > self.index_drop_threshold_5min:
+                index_drop_triggered = True
                 is_flash_crash = True
                 index_drop_rate = max(index_drop_rate, drop_rate)
                 reason += f"指数{index_code} 5分钟内下跌{drop_rate*100:.2f}%；"
@@ -495,6 +500,7 @@ class FlashCrashDetector:
             limit_down_surge = current_limit_down_count - previous_limit_down_count
             
             if limit_down_surge >= self.limit_down_surge_threshold:
+                limit_down_triggered = True
                 is_flash_crash = True
                 reason += f"跌停家数激增{limit_down_surge}家；"
                 
@@ -502,6 +508,25 @@ class FlashCrashDetector:
                     severity = "HIGH"
                 elif limit_down_surge >= 30:
                     severity = "MEDIUM"
+        
+        # 🆕 V8.0: 双重确认机制
+        # 只有同时满足两个条件才触发闪崩
+        if index_drop_triggered and limit_down_triggered:
+            # 双重确认：指数下跌 + 跌停家数激增
+            is_flash_crash = True
+            reason = f"🚨 双重确认：{reason}"
+        elif index_drop_triggered and index_drop_rate > 0.015:
+            # 指数大幅下跌（>1.5%）单独触发
+            is_flash_crash = True
+            reason = f"⚠️ 指数大幅下跌：{reason}"
+        elif limit_down_triggered and limit_down_surge >= 50:
+            # 跌停家数大幅激增（>50家）单独触发
+            is_flash_crash = True
+            reason = f"⚠️ 跌停家数大幅激增：{reason}"
+        else:
+            # 单一条件不触发，避免被假摔震出局
+            is_flash_crash = False
+            reason = ""
         
         # 更新跌停家数历史
         for index_code in current_indices.keys():
