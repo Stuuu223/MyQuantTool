@@ -423,6 +423,14 @@ def _render_dragon_stock(stock, config):
             # 主板：10% 涨停
             is_limit_up = change_pct >= 9.5
         
+        # 🆕 V9.2 新增：检查是否收盘（买一卖一都为0）
+        bid1_volume = stock.get('买一量', 0)
+        ask1_volume = stock.get('卖一量', 0)
+        is_market_closed = (bid1_volume == 0 and ask1_volume == 0 and not is_limit_up)
+        
+        if is_market_closed:
+            st.warning("⚠️ 已收盘，盘口数据已清空")
+        
         if is_limit_up:
             col7.metric("买一价", f"¥{stock.get('买一价', 0):.2f}", delta="涨停")
             col8.metric("卖一价", "涨停板", delta="无卖单")
@@ -538,6 +546,12 @@ def _render_trend_stock(stock, config):
         col10.metric("买一量", f"{stock.get('买一量', 0)} 手")
         col11.metric("卖一量", f"{stock.get('卖一量', 0)} 手")
         
+        # 🆕 V9.2 新增：检查是否收盘（买一卖一都为0）
+        bid1_volume = stock.get('买一量', 0)
+        ask1_volume = stock.get('卖一量', 0)
+        if bid1_volume == 0 and ask1_volume == 0:
+            st.warning("⚠️ 已收盘，盘口数据已清空，评分仅供参考")
+        
         # 显示信号
         st.write(f"**评级得分**: {stock['评分']}/100")
         st.info(f"**信号**: {stock['信号']}")
@@ -573,6 +587,12 @@ def _render_halfway_stock(stock, config):
         col6.metric("卖一价", f"¥{stock.get('卖一价', 0):.2f}")
         col7.metric("买一量", f"{stock.get('买一量', 0)} 手")
         col8.metric("卖一量", f"{stock.get('卖一量', 0)} 手")
+        
+        # 🆕 V9.2 新增：检查是否收盘（买一卖一都为0）
+        bid1_volume = stock.get('买一量', 0)
+        ask1_volume = stock.get('卖一量', 0)
+        if bid1_volume == 0 and ask1_volume == 0:
+            st.warning("⚠️ 已收盘，盘口数据已清空，评分仅供参考")
         
         # 显示信号和操作建议
         st.write(f"**评级得分**: {stock['评分']}/100")

@@ -3195,7 +3195,16 @@ class QuantAlgo:
 
                 # 2. 量比评分 (机构喜欢温和放量 1.0 - 3.0)
                 volume_ratio = stock['量比']
-                if 1.0 <= volume_ratio <= 3.0:
+                
+                # 🆕 V9.2 新增：检查量比是否为默认值
+                bid1_volume = stock.get('买一量', 0)
+                ask1_volume = stock.get('卖一量', 0)
+                is_market_closed = (bid1_volume == 0 and ask1_volume == 0)
+                
+                # 如果量比是默认值1且收盘了，说明数据无效
+                if volume_ratio == 1.0 and is_market_closed:
+                    trend_score -= 5  # 数据无效，降低评分
+                elif 1.0 <= volume_ratio <= 3.0:
                     trend_score += 15  # 温和放量
                 elif 3.0 < volume_ratio <= 5.0:
                     trend_score += 10  # 较强放量
@@ -3236,6 +3245,11 @@ class QuantAlgo:
                     current_price = stock['最新价']
                     change_pct = stock['涨跌幅']
                     volume_ratio = stock['量比']
+
+                    # 🆕 V9.2 新增：检查是否收盘（买一卖一都为0）
+                    bid1_volume = stock.get('买一量', 0)
+                    ask1_volume = stock.get('卖一量', 0)
+                    is_market_closed = (bid1_volume == 0 and ask1_volume == 0)
 
                     # 获取历史数据
                     df = history_data_cache.get(symbol)
@@ -3290,6 +3304,11 @@ class QuantAlgo:
                             score += 10
                             signals.append(f"换手率较高（{turnover_rate:.2f}%）")
 
+                    # 🆕 V9.2 新增：收盘数据警告
+                    if is_market_closed:
+                        signals.append("⚠️ 收盘数据（盘口已清空）")
+                        # 收盘后，盘口数据无效，评分仅供参考
+                    
                     # 评级
                     if score >= 90:
                         level = "🔥 强趋势中军"
