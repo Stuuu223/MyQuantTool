@@ -16,6 +16,7 @@ import sys
 import atexit
 import signal
 import asyncio
+import threading
 from logic.logger import get_logger
 
 logger = get_logger(__name__)
@@ -30,11 +31,22 @@ class CleanupManager:
         # 注册退出处理函数
         atexit.register(self.cleanup_all)
         
-        # 注册信号处理函数（仅在 Unix 系统上有效）
-        if hasattr(signal, 'SIGINT'):
-            signal.signal(signal.SIGINT, self._signal_handler)
-        if hasattr(signal, 'SIGTERM'):
-            signal.signal(signal.SIGTERM, self._signal_handler)
+        # 🆕 V9.2 修复：只在主线程中注册信号处理函数
+        # signal.signal() 只能在主线程中使用
+        try:
+            if threading.current_thread() is threading.main_thread():
+                if hasattr(signal, 'SIGINT'):
+                    signal.signal(signal.SIGINT, self._signal_handler)
+                if hasattr(signal, 'SIGTERM'):
+                    signal.signal(signal.SIGTERM, self._signal_handler)
+                logger.info("✅ 信号处理函数已注册")
+            else:
+                logger.info("⚠️ 非主线程，跳过信号处理函数注册")
+        except ValueError as e:
+            # 捕获 ValueError: signal only works in main thread
+            logger.warning(f"⚠️ 无法注册信号处理函数: {e}")
+        except Exception as e:
+            logger.warning(f"⚠️ 注册信号处理函数失败: {e}")
     
     def register_cleanup_handler(self, handler):
         """注册清理处理函数"""
@@ -87,7 +99,16 @@ class CleanupManager:
             sys.exit(0)
 
 # 全局清理管理器实例
-cleanup_manager = CleanupManager()
+try:
+    cleanup_manager = CleanupManager()
+    logger.info("✅ 清理管理器已初始化")
+except Exception as e:
+    logger.error(f"❌ 清理管理器初始化失败: {e}")
+    # 创建一个空的清理管理器作为后备
+    cleanup_manager = type('CleanupManager', (), {
+        'register_cleanup_handler': lambda self, handler: None,
+        'cleanup_all': lambda self: None
+    })()
 
 def cleanup_sector_rotation_analyzer():
     """清理板块轮动分析器"""
