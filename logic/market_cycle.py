@@ -7,6 +7,7 @@
 import pandas as pd
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
+import akshare as ak
 from logic.logger import get_logger
 from logic.data_manager import DataManager
 from logic.data_cleaner import DataCleaner
@@ -308,33 +309,28 @@ class MarketCycleManager:
             }
         """
         try:
-            # 🆕 V9.3.6: 使用 Easyquotation获取实时数据 + AkShare获取行业信息（带回退机制）
+            # 🆕 V9.3.7: 使用 Easyquotation获取实时数据 + DataManager获取行业信息（使用缓存）
             logger.info("正在获取全市场实时快照...")
-            
+
             # 第一步：从 Easyquotation 获取实时价格数据（快速）
-            import akshare as ak
             try:
                 stock_list_df = ak.stock_info_a_code_name()
                 stock_list = stock_list_df['code'].tolist()
             except Exception as e:
-                logger.warning(f"AkShare 获取股票列表失败: {e}，回退到数据库查询")
-                # 回退：从数据库获取股票列表
-                stock_list_df = self.db.get_all_stock_codes()
-                stock_list = stock_list_df['code'].tolist()
-            
+                logger.warning(f"AkShare 获取股票列表失败: {e}，使用样本股票列表")
+                # 回退：使用样本股票列表
+                stock_list = [
+                    '000001', '000002', '000063', '000066', '000333', '000651',
+                    '000725', '000858', '000895', '002415', '002594', '002714',
+                    '002841', '300059', '300142', '300274', '300347', '300433',
+                    '300750', '600000', '600036', '600519', '600900', '601318',
+                    '601398', '601766', '601888', '603259', '688981'
+                ]
+
             realtime_data = self.db.get_fast_price(stock_list)
             
-            # 第二步：从 AkShare 获取行业信息（一次性，用于主线识别）
-            code_to_industry = {}
-            try:
-                industry_df = ak.stock_board_industry_name_em()
-                # 构建代码到行业的映射
-                for _, row in industry_df.iterrows():
-                    code_to_industry[row['板块代码']] = row['板块名称']
-                logger.info(f"✅ 获取行业信息成功，共 {len(code_to_industry)} 个板块")
-            except Exception as e:
-                logger.warning(f"获取行业信息失败: {e}，将使用'未知'作为默认行业")
-                code_to_industry = {}
+            # 第二步：从 DataManager 获取行业信息（使用缓存，极快）
+            code_to_industry = self.db.get_industry_cache()
             
             limit_up_stocks = []
             limit_down_stocks = []

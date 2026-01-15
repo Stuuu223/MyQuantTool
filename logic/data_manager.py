@@ -67,6 +67,11 @@ class DataManager:
         except Exception as e:
             logger.warning(f"⚠️ 竞价快照管理器初始化失败: {e}")
         
+        # 🆕 V9.3.7 新增：静态数据缓存（行业信息）
+        self.static_cache_file = "data/industry_cache.json"
+        self.industry_cache = {}
+        self._load_industry_cache()
+        
         DataManager._initialized = True
         logger.info("DataManager 初始化完成")
     
@@ -792,7 +797,53 @@ class DataManager:
             
             logger.info(f"✅ 分层抽样完成，共 {len(sample_stocks)} 只")
             return sample_stocks
-        
+            
         except Exception as e:
             logger.error(f"获取分层抽样失败: {e}")
             return []
+    
+    def _load_industry_cache(self):
+        """从本地JSON文件加载行业缓存"""
+        import json
+        import os
+        
+        if os.path.exists(self.static_cache_file):
+            try:
+                with open(self.static_cache_file, 'r', encoding='utf-8') as f:
+                    self.industry_cache = json.load(f)
+                logger.info(f"✅ 从磁盘加载行业缓存成功，共 {len(self.industry_cache)} 个板块")
+            except Exception as e:
+                logger.warning(f"读取行业缓存失败: {e}，将重新获取")
+                self.industry_cache = {}
+                self._update_industry_cache()
+        else:
+            logger.info("行业缓存文件不存在，正在创建...")
+            self._update_industry_cache()
+    
+    def _update_industry_cache(self):
+        """从AkShare更新行业缓存并保存到磁盘"""
+        import akshare as ak
+        import json
+        
+        try:
+            logger.info("正在从AkShare获取行业信息...")
+            industry_df = ak.stock_board_industry_name_em()
+            
+            # 构建板块代码到板块名称的映射
+            self.industry_cache = {}
+            for _, row in industry_df.iterrows():
+                self.industry_cache[row['板块代码']] = row['板块名称']
+            
+            # 保存到磁盘
+            with open(self.static_cache_file, 'w', encoding='utf-8') as f:
+                json.dump(self.industry_cache, f, ensure_ascii=False, indent=2)
+            
+            logger.info(f"✅ 行业缓存更新成功，共 {len(self.industry_cache)} 个板块")
+            
+        except Exception as e:
+            logger.error(f"更新行业缓存失败: {e}")
+            self.industry_cache = {}
+    
+    def get_industry_cache(self):
+        """获取行业缓存"""
+        return self.industry_cache
