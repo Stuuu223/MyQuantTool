@@ -1487,25 +1487,25 @@ class QuantAlgo:
                             turnover_rate = df['turnover_rate'].iloc[-1] if 'turnover_rate' in df.columns else 0
                         
                         # 获取竞价数据
-                                                bid1_volume = realtime_data_item.get('bid1_volume', 0)  # 买一量（手数，来自Easyquotation）
-                                                ask1_volume = realtime_data_item.get('ask1_volume', 0)  # 卖一量（手数，来自Easyquotation）
-                                                bid1_price = realtime_data_item.get('bid1', 0)  # 买一价
-                                                ask1_price = realtime_data_item.get('ask1', 0)  # 卖一价
-                                                auction_volume = (bid1_volume + ask1_volume)  # 已经是手数，无需转换
-                                                
-                                                # 计算竞价抢筹度（竞价量 / 昨日成交量）
-                                                auction_ratio = 0
-                                                if not df.empty and len(df) > 1:
-                                                    yesterday_volume = df['volume'].iloc[-2]  # 昨日成交量（手数）
-                                                    if yesterday_volume > 0:
-                                                        auction_ratio = auction_volume / yesterday_volume
+                        bid1_volume = realtime_data_item.get('bid1_volume', 0)  # 买一量（手数，来自Easyquotation）
+                        ask1_volume = realtime_data_item.get('ask1_volume', 0)  # 卖一量（手数，来自Easyquotation）
+                        bid1_price = realtime_data_item.get('bid1', 0)  # 买一价
+                        ask1_price = realtime_data_item.get('ask1', 0)  # 卖一价
+                        auction_volume = (bid1_volume + ask1_volume)  # 已经是手数，无需转换
                         
-                                            # 计算封单金额（针对涨停股）
-                                            seal_amount = 0
-                                            # 只有当卖一价为 0（真正涨停）时才计算封单金额
-                                            if ask1_price == 0 and stock_info['涨跌幅'] >= 9.5:  # 涨停板
-                                                # 涨停时，封单金额 = 买一量（手数）× 100（股/手）× 价格
-                                                seal_amount = bid1_volume * 100 * current_price / 10000  # 转换为万
+                        # 计算竞价抢筹度（竞价量 / 昨日成交量）
+                        auction_ratio = 0
+                        if not df.empty and len(df) > 1:
+                            yesterday_volume = df['volume'].iloc[-2]  # 昨日成交量（手数）
+                            if yesterday_volume > 0:
+                                auction_ratio = auction_volume / yesterday_volume
+
+                    # 计算封单金额（针对涨停股）
+                    seal_amount = 0
+                    # 只有当卖一价为 0（真正涨停）时才计算封单金额
+                    if ask1_price == 0 and stock_info['涨跌幅'] >= 9.5:  # 涨停板
+                        # 涨停时，封单金额 = 买一量（手数）× 100（股/手）× 价格
+                        seal_amount = bid1_volume * 100 * current_price / 10000  # 转换为万
                         # 计算买卖盘口价差
                         price_gap = 0
                         if bid1_price > 0 and ask1_price > 0:
@@ -2742,9 +2742,17 @@ class QuantAlgo:
                     # 这种情况通常是重组复牌等超级利好，买都买不到，不是流动性陷阱
                     is_super_one_word = (ask1_price == 0 and change_pct >= 19.5 and seal_amount > 10000)
                     
+                    # 🆕 V8.3: 豁免逻辑 - 次新股（Sub-New Stock）
+                    # 豁免条件：如果是次新股（代码以301、303、688开头）且缩量惜售
+                    # 次新股特性：筹码稳定，惜售缩量，炒作逻辑是情绪博弈，不是业绩驱动
+                    is_sub_new = (symbol.startswith('301') or symbol.startswith('303') or symbol.startswith('688')) and auction_amount_wan < 500
+                    
                     if is_trap and is_super_one_word:
                         liquidity_trap = False
                         liquidity_trap_reason = f"✅ 豁免：缩量一字板真龙（封单金额{seal_amount:.0f}万>1亿）"
+                    elif is_trap and is_sub_new:
+                        liquidity_trap = False
+                        liquidity_trap_reason = f"✅ 豁免：次新股惜售（竞价金额{auction_amount_wan:.0f}万<500万，筹码稳定）"
                     elif is_trap:
                         liquidity_trap = True
                         liquidity_trap_reason = f"⚠️ 流动性陷阱：竞价金额{auction_amount_wan:.0f}万<500万，竞价抢筹度{auction_ratio*100:.2f}%<2%，缩量拉升"
