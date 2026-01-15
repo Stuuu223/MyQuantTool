@@ -329,6 +329,143 @@ class StrategyOrchestrator:
         else:
             return 0.0
     
+    def get_hedging_advice(self, 
+                          current_positions: List[Dict[str, Any]], 
+                          market_status: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        🆕 V7.1: 获取对冲建议
+        
+        功能：
+        1. 检测当前持仓的行业集中度
+        2. 检测市场过热程度
+        3. 建议配置防御性资产
+        
+        Args:
+            current_positions: 当前持仓列表
+                [{
+                    'code': '股票代码',
+                    'name': '股票名称',
+                    'sector': '所属板块',
+                    'weight': '仓位权重'
+                }]
+            market_status: 市场状态
+        
+        Returns:
+            dict: {
+                'need_hedging': bool,
+                'hedging_type': 'ETF' | 'SECTOR' | 'NONE',
+                'hedging_weight': float,
+                'hedging_targets': ['目标1', '目标2'],
+                'reason': '对冲原因'
+            }
+        """
+        try:
+            # 1. 检测行业集中度
+            sector_exposure = {}
+            total_weight = 0
+            
+            for pos in current_positions:
+                sector = pos.get('sector', '其他')
+                weight = pos.get('weight', 0)
+                sector_exposure[sector] = sector_exposure.get(sector, 0) + weight
+                total_weight += weight
+            
+            # 找出最大暴露的行业
+            max_sector = max(sector_exposure, key=sector_exposure.get) if sector_exposure else None
+            max_exposure = sector_exposure.get(max_sector, 0) if max_sector else 0
+            
+            # 2. 检测市场过热程度
+            market_cycle = market_status.get('cycle', '')
+            risk_level = market_status.get('risk_level', 3)
+            
+            # 3. 判断是否需要对冲
+            need_hedging = False
+            hedging_type = 'NONE'
+            hedging_weight = 0.0
+            hedging_targets = []
+            reason = ""
+            
+            # 判断逻辑
+            if market_cycle == 'BOOM':
+                # 高潮期：情绪极度高涨，风险极大
+                need_hedging = True
+                hedging_type = 'ETF'
+                hedging_weight = 0.2  # 20%对冲
+                hedging_targets = ['510300', '510500']  # 沪深300ETF、中证500ETF
+                reason = "高潮期情绪过热，建议配置20%宽基ETF对冲系统性风险"
+            
+            elif max_exposure > 0.8:
+                # 单一行业暴露超过80%
+                need_hedging = True
+                hedging_type = 'SECTOR'
+                hedging_weight = 0.15  # 15%对冲
+                hedging_targets = self._get_defensive_sectors(max_sector)
+                reason = f"{max_sector}板块暴露过高({max_exposure*100:.1f}%)，建议配置15%防御性板块"
+            
+            elif market_cycle == 'DECLINE' and risk_level >= 4:
+                # 退潮期且高风险
+                need_hedging = True
+                hedging_type = 'ETF'
+                hedging_weight = 0.3  # 30%对冲
+                hedging_targets = ['510880', '159915']  # 红利低波ETF、国债ETF
+                reason = "退潮期高风险，建议配置30%红利低波ETF作为压舱石"
+            
+            elif market_cycle == 'MAIN_RISE' and max_exposure > 0.6:
+                # 主升期但行业集中度较高
+                need_hedging = True
+                hedging_type = 'SECTOR'
+                hedging_weight = 0.1  # 10%对冲
+                hedging_targets = self._get_defensive_sectors(max_sector)
+                reason = f"主升期但{max_sector}暴露较高({max_exposure*100:.1f}%)，建议配置10%防御性板块"
+            
+            return {
+                'need_hedging': need_hedging,
+                'hedging_type': hedging_type,
+                'hedging_weight': hedging_weight,
+                'hedging_targets': hedging_targets,
+                'reason': reason,
+                'sector_exposure': sector_exposure,
+                'max_sector': max_sector,
+                'max_exposure': max_exposure
+            }
+        
+        except Exception as e:
+            logger.error(f"获取对冲建议失败: {e}")
+            return {
+                'need_hedging': False,
+                'hedging_type': 'NONE',
+                'hedging_weight': 0.0,
+                'hedging_targets': [],
+                'reason': '获取对冲建议失败'
+            }
+    
+    def _get_defensive_sectors(self, aggressive_sector: str) -> List[str]:
+        """
+        获取防御性板块（用于对冲攻击性板块）
+        
+        Args:
+            aggressive_sector: 攻击性板块名称
+        
+        Returns:
+            list: 防御性板块ETF代码列表
+        """
+        # 防御性板块映射
+        defensive_mapping = {
+            'AI': ['512880', '159915'],  # 证券ETF、红利低波ETF
+            '科技': ['512880', '159915'],
+            '医药': ['512880', '159915'],
+            '新能源': ['512880', '159915'],
+            '芯片': ['512880', '159915'],
+            '汽车': ['512880', '159915'],
+            '军工': ['512880', '159915'],
+            '消费': ['512880', '159915'],
+            '软件': ['512880', '159915'],
+            '传媒': ['512880', '159915'],
+            '其他': ['512880', '159915']
+        }
+        
+        return defensive_mapping.get(aggressive_sector, ['512880', '159915'])
+    
     def close(self):
         """关闭资源"""
         if self.market_cycle_manager:

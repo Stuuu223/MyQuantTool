@@ -27,6 +27,9 @@ from ui.v61_features_tab import render_v61_features_tab
 # 🆕 V7.0 新增
 from ui.v70_features_tab import render_v70_features_tab
 
+# 🆕 V7.1 新增
+from ui.v71_features_tab import render_v71_features_tab
+
 
 def main():
     st.set_page_config(
@@ -41,7 +44,7 @@ def main():
     st.sidebar.header("导航")
     page = st.sidebar.radio(
         "选择功能页面",
-        ["主页", "交易执行", "组合优化", "市场情绪", "策略工厂", "参数优化", "策略对比", "可视化分析", "🚀 V6.1新功能", "🎯 V7.0统合优化"]
+        ["主页", "交易执行", "组合优化", "市场情绪", "策略工厂", "参数优化", "策略对比", "可视化分析", "🚀 V6.1新功能", "🎯 V7.0统合优化", "⚡ V7.1终极展望"]
     )
     
     # 初始化各模块
@@ -75,6 +78,8 @@ def main():
         render_v61_features_tab(None, None)
     elif page == "🎯 V7.0统合优化":
         render_v70_features_tab(None, None)
+    elif page == "⚡ V7.1终极展望":
+        render_v71_features_tab(None, None)
 
 
 def show_home_page():

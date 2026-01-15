@@ -281,3 +281,243 @@ class Monitor:
         self.stop_monitoring()
         if self.db:
             self.db.close()
+
+
+class FlashCrashDetector:
+    """
+    🆕 V7.1: 闪崩探测器
+    
+    功能：
+    1. 高频监控市场下跌速率
+    2. 检测闪崩信号
+    3. 触发紧急清仓信号
+    """
+    
+    def __init__(self):
+        """初始化闪崩探测器"""
+        self.db = DataManager()
+        self.price_history = {}  # {index_code: [(timestamp, price), ...]}
+        self.limit_down_history = {}  # 跌停家数历史
+        self.is_monitoring = False
+        self.emergency_callback = None
+        
+        # 闪崩阈值配置
+        self.index_drop_threshold_5min = 0.01  # 5分钟内指数下跌1%
+        self.limit_down_surge_threshold = 20   # 跌停家数激增20家
+        self.monitoring_interval = 60  # 监控间隔（秒）
+        
+        logger.info("闪崩探测器初始化完成")
+    
+    def start_monitoring(self, callback: Callable = None):
+        """
+        开始监控
+        
+        Args:
+            callback: 紧急回调函数
+        """
+        if self.is_monitoring:
+            logger.warning("闪崩探测器已经在运行中")
+            return
+        
+        self.emergency_callback = callback
+        self.is_monitoring = True
+        
+        logger.info("闪崩探测器开始监控")
+        
+        # 启动监控线程
+        import threading
+        self.monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
+        self.monitor_thread.start()
+    
+    def stop_monitoring(self):
+        """停止监控"""
+        self.is_monitoring = False
+        if self.monitor_thread:
+            self.monitor_thread.join(timeout=5)
+        logger.info("闪崩探测器停止监控")
+    
+    def _monitor_loop(self):
+        """监控循环"""
+        import time
+        from datetime import datetime, timedelta
+        
+        while self.is_monitoring:
+            try:
+                # 获取指数数据
+                indices = self._get_index_data()
+                
+                # 获取跌停家数
+                limit_down_count = self._get_limit_down_count()
+                
+                # 检测闪崩信号
+                flash_crash_signal = self._detect_flash_crash(indices, limit_down_count)
+                
+                if flash_crash_signal['is_flash_crash']:
+                    logger.warning(f"🚨 检测到闪崩信号: {flash_crash_signal['reason']}")
+                    
+                    # 触发紧急回调
+                    if self.emergency_callback:
+                        self.emergency_callback(flash_crash_signal)
+                
+                # 等待下一次监控
+                time.sleep(self.monitoring_interval)
+            
+            except Exception as e:
+                logger.error(f"闪崩监控异常: {e}")
+                time.sleep(self.monitoring_interval)
+    
+    def _get_index_data(self) -> Dict[str, float]:
+        """
+        获取指数数据
+        
+        Returns:
+            dict: {index_code: current_price}
+        """
+        try:
+            # 获取主要指数的实时数据
+            index_codes = ['000001', '399001', '399006']  # 上证指数、深证成指、创业板指
+            
+            realtime_data = self.db.get_fast_price(index_codes)
+            
+            indices = {}
+            for full_code, data in realtime_data.items():
+                # 清洗股票代码
+                code = full_code[2:]  # 去掉sh/sz前缀
+                price = data.get('now', 0)
+                if price > 0:
+                    indices[code] = price
+            
+            return indices
+        
+        except Exception as e:
+            logger.error(f"获取指数数据失败: {e}")
+            return {}
+    
+    def _get_limit_down_count(self) -> int:
+        """
+        获取跌停家数
+        
+        Returns:
+            int: 跌停家数
+        """
+        try:
+            from logic.market_cycle import MarketCycleManager
+            mcm = MarketCycleManager()
+            
+            result = mcm.get_limit_up_down_count()
+            limit_down_count = result.get('limit_down_count', 0)
+            
+            mcm.close()
+            
+            return limit_down_count
+        
+        except Exception as e:
+            logger.error(f"获取跌停家数失败: {e}")
+            return 0
+    
+    def _detect_flash_crash(self, 
+                           current_indices: Dict[str, float], 
+                           current_limit_down_count: int) -> Dict[str, Any]:
+        """
+        检测闪崩信号
+        
+        Args:
+            current_indices: 当前指数价格
+            current_limit_down_count: 当前跌停家数
+        
+        Returns:
+            dict: {
+                'is_flash_crash': bool,
+                'reason': str,
+                'severity': 'LOW' | 'MEDIUM' | 'HIGH',
+                'index_drop_rate': float,
+                'limit_down_surge': int
+            }
+        """
+        is_flash_crash = False
+        reason = ""
+        severity = "LOW"
+        index_drop_rate = 0.0
+        limit_down_surge = 0
+        
+        now = datetime.now()
+        
+        # 检查每个指数的下跌速率
+        for index_code, current_price in current_indices.items():
+            # 获取5分钟前的价格
+            if index_code not in self.price_history:
+                # 初始化历史数据
+                self.price_history[index_code] = [(now, current_price)]
+                continue
+            
+            # 过滤5分钟内的历史数据
+            five_minutes_ago = now - timedelta(minutes=5)
+            recent_history = [
+                (timestamp, price) 
+                for timestamp, price in self.price_history[index_code]
+                if timestamp > five_minutes_ago
+            ]
+            
+            if len(recent_history) < 2:
+                # 数据不足，添加当前数据
+                self.price_history[index_code].append((now, current_price))
+                continue
+            
+            # 计算下跌速率
+            oldest_price = recent_history[0][1]
+            drop_rate = (oldest_price - current_price) / oldest_price if oldest_price > 0 else 0
+            
+            if drop_rate > self.index_drop_threshold_5min:
+                is_flash_crash = True
+                index_drop_rate = max(index_drop_rate, drop_rate)
+                reason += f"指数{index_code} 5分钟内下跌{drop_rate*100:.2f}%；"
+                
+                # 判断严重程度
+                if drop_rate > 0.02:
+                    severity = "HIGH"
+                elif drop_rate > 0.015:
+                    severity = "MEDIUM"
+            
+            # 更新历史数据
+            self.price_history[index_code].append((now, current_price))
+            
+            # 保留最近10分钟的数据
+            ten_minutes_ago = now - timedelta(minutes=10)
+            self.price_history[index_code] = [
+                (timestamp, price) 
+                for timestamp, price in self.price_history[index_code]
+                if timestamp > ten_minutes_ago
+            ]
+        
+        # 检查跌停家数激增
+        if index_code in self.limit_down_history:
+            previous_limit_down_count = self.limit_down_history[index_code]
+            limit_down_surge = current_limit_down_count - previous_limit_down_count
+            
+            if limit_down_surge >= self.limit_down_surge_threshold:
+                is_flash_crash = True
+                reason += f"跌停家数激增{limit_down_surge}家；"
+                
+                if limit_down_surge >= 50:
+                    severity = "HIGH"
+                elif limit_down_surge >= 30:
+                    severity = "MEDIUM"
+        
+        # 更新跌停家数历史
+        for index_code in current_indices.keys():
+            self.limit_down_history[index_code] = current_limit_down_count
+        
+        return {
+            'is_flash_crash': is_flash_crash,
+            'reason': reason.strip(),
+            'severity': severity,
+            'index_drop_rate': index_drop_rate,
+            'limit_down_surge': limit_down_surge,
+            'timestamp': now.strftime('%Y-%m-%d %H:%M:%S')
+        }
+    
+    def close(self):
+        """关闭闪崩探测器"""
+        self.stop_monitoring()
+        if self.db:
+            self.db.close()
