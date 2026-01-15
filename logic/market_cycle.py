@@ -308,14 +308,30 @@ class MarketCycleManager:
             }
         """
         try:
-            import akshare as ak
+            # 🆕 V9.3.3: 使用 Easyquotation（Sina）获取实时数据 + AkShare 获取行业信息
+            logger.info("正在获取全市场实时快照...")
             
-            # 获取A股实时行情
+            # 第一步：从 AkShare 获取股票列表（包含代码和名称）
+            import akshare as ak
             stock_list_df = ak.stock_info_a_code_name()
             stock_list = stock_list_df['code'].tolist()
             
-            # 获取实时数据
+            # 第二步：从 Easyquotation 获取实时价格数据（快速）
             realtime_data = self.db.get_fast_price(stock_list)
+            
+            realtime_data = self.db.get_fast_price(stock_list)
+            
+            # 第二步：从 AkShare 获取行业信息（一次性，用于主线识别）
+            import akshare as ak
+            try:
+                industry_df = ak.stock_board_industry_name_em()
+                # 构建代码到行业的映射
+                code_to_industry = {}
+                for _, row in industry_df.iterrows():
+                    code_to_industry[row['代码']] = row['板块名称']
+            except Exception as e:
+                logger.warning(f"获取行业信息失败: {e}")
+                code_to_industry = {}
             
             limit_up_stocks = []
             limit_down_stocks = []
@@ -331,36 +347,57 @@ class MarketCycleManager:
                 if not cleaned_data:
                     continue
                 
-                # 🆕 V9.2 修复：剔除新股（N开头）和次新股（C开头）
-                # 新股上市首日无涨跌幅限制，涨幅可以超过100%
-                # 次新股上市前5天也没有涨跌幅限制
+                # 剔除新股（N开头）、次新股（C开头）、ST股
                 name = cleaned_data.get('name', '')
                 if name.startswith(('N', 'C')):
-                    logger.debug(f"剔除新股/次新股: {name} ({code})")
                     continue
-                
-                # 排除ST股（可选，根据需求决定是否排除）
                 if 'ST' in name or '*ST' in name:
-                    logger.debug(f"剔除ST股: {name} ({code})")
                     continue
                 
-                # 检查涨跌停状态
-                limit_status = cleaned_data.get('limit_status', {})
+                # 获取行业信息
+                industry = code_to_industry.get(code, '未知')
                 
-                if limit_status.get('is_limit_up', False):
+                # 计算涨跌幅
+                now = cleaned_data.get('now', 0)
+                pre_close = cleaned_data.get('close', 0)
+                high = cleaned_data.get('high', 0)
+                
+                if pre_close <= 0:
+                    continue
+                
+                change_pct = (now - pre_close) / pre_close * 100
+                
+                # 识别板块（主板10%，创业板/科创板20%）
+                is_20cm = code.startswith(('30', '68'))
+                limit_pct = 19.8 if is_20cm else 9.8
+                
+                # 判断涨跌停
+                is_limit_up = change_pct >= limit_pct
+                is_limit_down = change_pct <= -limit_pct
+                
+                # 计算炸板（最高价摸过涨停，但现价没封住）
+                high_pct = (high - pre_close) / pre_close * 100 if pre_close > 0 else 0
+                is_exploded = (high_pct >= limit_pct) and (change_pct < limit_pct)
+                
+                if is_limit_up:
                     limit_up_stocks.append({
                         'code': code,
-                        'name': cleaned_data.get('name', ''),
-                        'price': cleaned_data.get('now', 0),
-                        'change_pct': cleaned_data.get('change_pct', 0)
+                        'name': name,
+                        'price': now,
+                        'change_pct': change_pct,
+                        'industry': industry,
+                        'is_exploded': is_exploded
                     })
-                elif limit_status.get('is_limit_down', False):
+                elif is_limit_down:
                     limit_down_stocks.append({
                         'code': code,
-                        'name': cleaned_data.get('name', ''),
-                        'price': cleaned_data.get('now', 0),
-                        'change_pct': cleaned_data.get('change_pct', 0)
+                        'name': name,
+                        'price': now,
+                        'change_pct': change_pct,
+                        'industry': industry
                     })
+            
+            logger.info(f"✅ 统计：涨停{len(limit_up_stocks)}家，跌停{len(limit_down_stocks)}家")
             
             return {
                 'limit_up_count': len(limit_up_stocks),
