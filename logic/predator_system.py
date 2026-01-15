@@ -48,6 +48,26 @@ class PredatorSystem:
                 'halfway_max': 22.0,
             }
         }
+        
+        # 🆕 V9.1: 封单强度熔断配置
+        self.seal_strength_config = {
+            'main_board': {  # 主板（60/00）
+                'min_seal_amount_wan': 3000,  # 最小封单金额（万）
+                'min_seal_ratio': 0.005,  # 最小封单占流通市值比例（0.5%）
+            },
+            'chi_next': {  # 创业板（300/301）
+                'min_seal_amount_wan': 1500,  # 最小封单金额（万）
+                'min_seal_ratio': 0.003,  # 最小封单占流通市值比例（0.3%）
+            },
+            'star_market': {  # 科创板（688）
+                'min_seal_amount_wan': 1500,  # 最小封单金额（万）
+                'min_seal_ratio': 0.003,  # 最小封单占流通市值比例（0.3%）
+            },
+            'beijing': {  # 北交所（8/4）
+                'min_seal_amount_wan': 500,  # 最小封单金额（万）
+                'min_seal_ratio': 0.002,  # 最小封单占流通市值比例（0.2%）
+            }
+        }
     
     def analyze_stock(self, stock_data: Dict[str, Any], 
                      realtime_data: Optional[Dict[str, Any]] = None,
@@ -128,6 +148,33 @@ class PredatorSystem:
                 result['confidence'] = halfway_result['confidence']
                 result['reason'] = halfway_result['reason']
                 result['suggested_position'] = halfway_result['suggested_position']
+        
+        # 🆕 Step 5: V9.1 封单强度熔断检测
+        if realtime_data and result['score'] > 0:  # 只有评分>0才检查封单强度
+            seal_strength_result = self.check_limit_strength(stock_data, realtime_data, result['score'])
+            result['checks']['seal_strength'] = seal_strength_result
+            
+            # 提取结果
+            adjusted_score, seal_status = seal_strength_result
+            
+            # 如果封单强度检测失败
+            if 'FAIL' in seal_status:
+                result['score'] = adjusted_score  # 强制降级
+                result['role'] = '弱封单'
+                result['signal'] = 'SELL'
+                result['confidence'] = 'HIGH'
+                result['reason'] = f"封单强度熔断：{seal_status}"
+                result['warning'] = '封单过弱，随时可能炸板'
+                result['suggested_position'] = 0.0
+                return result
+            # 如果封单强度检测通过
+            elif seal_status in ['STRONG_SEAL', 'GOOD_SEAL']:
+                result['score'] = adjusted_score  # 加分
+                result['reason'] += f"，封单强度{seal_status}"
+            # 如果封单强度一般
+            elif seal_status == 'NORMAL_SEAL':
+                result['score'] = adjusted_score  # 保持原分
+                result['reason'] += f"，封单强度{seal_status}"
             else:
                 result['score'] = 0
                 result['role'] = '观望'
@@ -244,6 +291,102 @@ class PredatorSystem:
             logger.warning(f"资金结构恶化：主力净流出{main_net_outflow}，融资买入{financing_buy}")
         
         return result
+    
+    def check_limit_strength(self, stock_data: Dict[str, Any], 
+                           realtime_data: Optional[Dict[str, Any]] = None,
+                           score: int = 100) -> Tuple[int, str]:
+        """
+        🆕 V9.1: 封单强度熔断（Seal Strength Veto）
+        
+        防止由"弱封单"引发的炸板惨案
+        
+        Args:
+            stock_data: 股票基本信息
+            realtime_data: 实时行情数据
+            score: 当前评分
+        
+        Returns:
+            tuple: (调整后的评分, 状态)
+        """
+        if not realtime_data:
+            return score, "PASS"
+        
+        symbol = stock_data.get('symbol', '')
+        name = stock_data.get('name', '')
+        
+        # 1. 只有涨停股才需要检查封单
+        change_pct = realtime_data.get('change_percent', 0)
+        bid1_price = realtime_data.get('bid1', 0)
+        ask1_price = realtime_data.get('ask1', 0)
+        
+        # 判断是否涨停（卖一价为0表示封板）
+        is_limit_up = (ask1_price == 0) and (change_pct >= 9.5)
+        
+        if not is_limit_up:
+            return score, "NOT_LIMIT"
+        
+        # 2. 计算封单金额（万）- 确保使用了 DataSanitizer 清洗后的数据
+        bid1_volume = realtime_data.get('bid1_volume', 0)  # 买一量（手数）
+        current_price = realtime_data.get('price', realtime_data.get('now', 0))
+        
+        if bid1_volume == 0 or current_price == 0:
+            return score, "NO_SEAL_DATA"
+        
+        # 使用 DataSanitizer 计算封单金额
+        from logic.data_sanitizer import DataSanitizer
+        seal_amount_yuan = DataSanitizer.calculate_amount_from_volume(bid1_volume, current_price)
+        seal_amount_wan = seal_amount_yuan / 10000  # 转换为万
+        
+        # 3. 设定硬阈值（根据板块和市值动态调整）
+        board_type = self._get_board_type(symbol)
+        config = self.seal_strength_config.get(board_type, {})
+        
+        if not config:
+            return score, "UNKNOWN_BOARD"
+        
+        min_seal_amount_wan = config['min_seal_amount_wan']
+        min_seal_ratio = config['min_seal_ratio']
+        
+        # 4. 获取流通市值
+        circulating_market_cap = realtime_data.get('circulating_market_cap', 0)  # 流通市值（元）
+        
+        # 5. 熔断判定
+        # 条件1：封单金额低于最小阈值
+        if seal_amount_wan < min_seal_amount_wan:
+            logger.warning(f"⚠️ [高危] {symbol} {name} 涨停封单仅 {seal_amount_wan:.0f}万 < {min_seal_amount_wan}万，随时可能炸板！")
+            
+            # 即使 V9.0 评分 100，也要强制降级
+            if score > 0:
+                score = 0  # 直接归零
+            
+            return score, "FAIL_WEAK_SEAL_AMOUNT (封单金额过弱)"
+        
+        # 条件2：封单占流通市值比例过低
+        if circulating_market_cap > 0:
+            seal_ratio = seal_amount_yuan / circulating_market_cap
+            if seal_ratio < min_seal_ratio:
+                logger.warning(f"⚠️ [高危] {symbol} {name} 封单占比 {seal_ratio*100:.2f}% < {min_seal_ratio*100:.2f}%，随时可能炸板！")
+                
+                # 即使 V9.0 评分 100，也要强制降级
+                if score > 0:
+                    score = 0  # 直接归零
+                
+                return score, "FAIL_WEAK_SEAL_RATIO (封单占比过低)"
+        
+        # 6. 封单强度评分
+        # 根据封单强度给分
+        if seal_amount_wan >= min_seal_amount_wan * 3:
+            # 封单强度极高
+            logger.info(f"✅ [强势] {symbol} {name} 涨停封单 {seal_amount_wan:.0f}万，封单强度极高")
+            return min(score + 10, 100), "STRONG_SEAL"
+        elif seal_amount_wan >= min_seal_amount_wan * 2:
+            # 封单强度高
+            logger.info(f"✅ [良好] {symbol} {name} 涨停封单 {seal_amount_wan:.0f}万，封单强度良好")
+            return min(score + 5, 100), "GOOD_SEAL"
+        else:
+            # 封单强度一般
+            logger.info(f"⚠️ [一般] {symbol} {name} 涨停封单 {seal_amount_wan:.0f}万，封单强度一般")
+            return score, "NORMAL_SEAL"
     
     def analyze_halfway_strategy(self, stock_data: Dict[str, Any], 
                                 realtime_data: Dict[str, Any]) -> Dict[str, Any]:
