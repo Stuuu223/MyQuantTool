@@ -135,8 +135,18 @@ class MarketCycleManager:
             # 2. 获取连板高度
             board_info = self.get_consecutive_board_height()
             
-            # 3. 获取昨日涨停溢价
-            prev_profit = self.get_prev_limit_up_profit()
+            # 🆕 V9.2.1 修复：获取实时数据，用于计算平均溢价
+            # 在盘中，daily_bars 数据库通常只包含 T-1（昨天及以前）的历史数据
+            # 所以必须使用实时数据来计算今日价格
+            realtime_data = {}
+            for stock in limit_up_down.get('limit_up_stocks', []) + limit_up_down.get('limit_down_stocks', []):
+                realtime_data[stock['code']] = {
+                    'price': stock.get('price', 0),
+                    'change_pct': stock.get('change_pct', 0)
+                }
+            
+            # 3. 获取昨日涨停溢价（传入实时数据）
+            prev_profit = self.get_prev_limit_up_profit(realtime_data)
             
             # 4. 获取炸板率
             burst_rate = self.get_limit_up_burst_rate()
@@ -451,12 +461,18 @@ class MarketCycleManager:
                 
                 # 从今天开始检查
                 consecutive_count = 0
+                last_db_date = None
                 
                 for idx, row in df.iterrows():
                     open_price = row['open']
                     close_price = row['close']
                     high_price = row['high']
                     low_price = row['low']
+                    date = row['date']
+                    
+                    # 记录数据库中的最新日期
+                    if last_db_date is None:
+                        last_db_date = date
                     
                     # 判断是否涨停（使用开盘价和收盘价计算涨幅）
                     # 涨停判断：涨幅 >= 9.5%（主板）或 >= 19.5%（创业板/科创板）
@@ -486,6 +502,19 @@ class MarketCycleManager:
                     else:
                         # 开盘价为0，无法判断，停止计数
                         break
+                
+                # 🆕 V9.2.1 修复：添加 +1 逻辑
+                # 如果数据库最新日期是昨天，说明还要加上今天这一板
+                # 因为进入这个方法的 limit_up_stocks 列表本身就是今天涨停的股票
+                if consecutive_count > 0 and last_db_date:
+                    today_str = datetime.now().strftime('%Y-%m-%d')
+                    
+                    # 检查数据库里的最新日期是否是今天
+                    if last_db_date != today_str:
+                        # 数据库最新日期不是今天，说明今天的数据还没有入库
+                        # 所以需要 +1，加上今天这一板
+                        consecutive_count += 1
+                        logger.debug(f"股票 {symbol} 数据库最新日期是 {last_db_date}，不是今天 {today_str}，连板数 +1")
                 
                 if consecutive_count > 0:
                     # 统计到对应的板数
@@ -521,9 +550,12 @@ class MarketCycleManager:
                 'board_distribution': {}
             }
     
-    def get_prev_limit_up_profit(self) -> Dict:
+    def get_prev_limit_up_profit(self, realtime_data: Dict = None) -> Dict:
         """
         获取昨日涨停溢价
+        
+        Args:
+            realtime_data: 实时数据字典，格式: {code: {'price': float, 'change_pct': float}}
         
         Returns:
             dict: {
@@ -579,15 +611,17 @@ class MarketCycleManager:
                 
                 yesterday_limit_up_codes = df['symbol'].tolist()
             
-            # 获取今日的收盘价计算溢价
-            today = datetime.now().strftime('%Y-%m-%d')
-            
+            # 🆕 V9.2.1 修复：使用实时数据计算今日价格，而不是查询数据库
+            # 在盘中，daily_bars 数据库通常只包含 T-1（昨天及以前）的历史数据
+            # 所以必须使用实时数据来计算今日价格
             profits = []
             profit_count = 0
             loss_count = 0
+            missing_data_count = 0
             
             for symbol in yesterday_limit_up_codes:
-                # 获取昨日收盘价
+                # 1. 获取昨日收盘价（从数据库查询）
+                yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
                 yesterday_query = f"SELECT close FROM daily_bars WHERE symbol = '{symbol}' AND date = '{yesterday}'"
                 yesterday_df = pd.read_sql(yesterday_query, self.db.conn)
                 
@@ -596,24 +630,35 @@ class MarketCycleManager:
                 
                 yesterday_close = yesterday_df.iloc[0]['close']
                 
-                # 获取今日数据
-                today_query = f"SELECT close FROM daily_bars WHERE symbol = '{symbol}' AND date = '{today}'"
-                today_df = pd.read_sql(today_query, self.db.conn)
-                
-                if not today_df.empty:
-                    today_close = today_df.iloc[0]['close']
-                    profit_pct = (today_close - yesterday_close) / yesterday_close * 100 if yesterday_close > 0 else 0
+                # 2. 获取今日最新价（从实时数据获取）
+                if realtime_data and symbol in realtime_data:
+                    current_price = realtime_data[symbol].get('price', 0)
                     
-                    profits.append(profit_pct)
-                    
-                    if profit_pct > 0:
-                        profit_count += 1
+                    if current_price > 0:
+                        profit_pct = (current_price - yesterday_close) / yesterday_close * 100 if yesterday_close > 0 else 0
+                        
+                        profits.append(profit_pct)
+                        
+                        if profit_pct > 0:
+                            profit_count += 1
+                        else:
+                            loss_count += 1
                     else:
-                        loss_count += 1
+                        missing_data_count += 1
+                        logger.debug(f"股票 {symbol} 的实时价格为 0，跳过计算")
+                else:
+                    missing_data_count += 1
+                    logger.debug(f"股票 {symbol} 不在实时数据中，跳过计算")
             
-            avg_profit = sum(profits) / len(profits) if profits else 0
+            if missing_data_count > 0:
+                logger.warning(f"⚠️ 有 {missing_data_count} 只股票缺少实时数据，无法计算溢价")
             
-            logger.info(f"✅ 平均溢价计算完成：{avg_profit:.2f}%（盈利{profit_count}只，亏损{loss_count}只）")
+            if profits:
+                avg_profit = sum(profits) / len(profits)
+                logger.info(f"✅ 平均溢价计算完成：{avg_profit:.2f}%（盈利{profit_count}只，亏损{loss_count}只，共{len(profits)}只）")
+            else:
+                logger.warning("⚠️ 没有可用的溢价数据，返回默认值")
+                avg_profit = 3.0  # 假设平均溢价为3%
             
             return {
                 'avg_profit': avg_profit / 100,  # 转换为小数
