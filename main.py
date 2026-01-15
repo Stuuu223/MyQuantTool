@@ -99,7 +99,8 @@ if not API_KEY.startswith('sk-'):
     logger.warning("API Key 格式可能不正确，建议以 'sk-' 开头")
 
 # --- 初始化核心组件（智能缓存）---
-@st.cache_resource
+# 🆕 V9.3.8: 使用 hash_values 确保代码更新时缓存失效
+@st.cache_resource(hash_funcs={DataManager: lambda _: "V9.3.8"})
 def get_db():
     """获取数据库管理器实例（缓存）"""
     return DataManager()
