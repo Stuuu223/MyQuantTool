@@ -2896,9 +2896,9 @@ class QuantAlgo:
                         elif change_pct > 3:
                             score += 20
                             signals.append(f"高开{change_pct:.2f}%")
-                    elif change_pct > 0:
-                        score += 15
-                        signals.append(f"小幅高开{change_pct:.2f}%")
+                        elif change_pct > 0:
+                            score += 15
+                            signals.append(f"小幅高开{change_pct:.2f}%")
 
                     # 换手率评分
                     # 🆕 V8.4: 次新股动态换手率评分标准
