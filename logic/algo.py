@@ -1487,26 +1487,25 @@ class QuantAlgo:
                             turnover_rate = df['turnover_rate'].iloc[-1] if 'turnover_rate' in df.columns else 0
                         
                         # 获取竞价数据
-                        bid1_volume = realtime_data_item.get('bid1_volume', 0)  # 买一量（股数）
-                        ask1_volume = realtime_data_item.get('ask1_volume', 0)  # 卖一量（股数）
-                        bid1_price = realtime_data_item.get('bid1', 0)  # 买一价
-                        ask1_price = realtime_data_item.get('ask1', 0)  # 卖一价
-                        auction_volume = (bid1_volume + ask1_volume) / 100  # 转换为手
+                                                bid1_volume = realtime_data_item.get('bid1_volume', 0)  # 买一量（手数，来自Easyquotation）
+                                                ask1_volume = realtime_data_item.get('ask1_volume', 0)  # 卖一量（手数，来自Easyquotation）
+                                                bid1_price = realtime_data_item.get('bid1', 0)  # 买一价
+                                                ask1_price = realtime_data_item.get('ask1', 0)  # 卖一价
+                                                auction_volume = (bid1_volume + ask1_volume)  # 已经是手数，无需转换
+                                                
+                                                # 计算竞价抢筹度（竞价量 / 昨日成交量）
+                                                auction_ratio = 0
+                                                if not df.empty and len(df) > 1:
+                                                    yesterday_volume = df['volume'].iloc[-2]  # 昨日成交量（手数）
+                                                    if yesterday_volume > 0:
+                                                        auction_ratio = auction_volume / yesterday_volume
                         
-                        # 计算竞价抢筹度（竞价量 / 昨日成交量）
-                        auction_ratio = 0
-                        if not df.empty and len(df) > 1:
-                            yesterday_volume = df['volume'].iloc[-2]  # 昨日成交量（手数）
-                            if yesterday_volume > 0:
-                                auction_ratio = auction_volume / yesterday_volume
-                        
-                        # 计算封单金额（针对涨停股）
-                        seal_amount = 0
-                        # 只有当卖一价为 0（真正涨停）时才计算封单金额
-                        if ask1_price == 0 and stock_info['涨跌幅'] >= 9.5:  # 涨停板
-                            # 涨停时，封单金额 = 买一量 * 价格（买一量就是封单量）
-                            seal_amount = bid1_volume * current_price / 10000  # 转换为万
-
+                                            # 计算封单金额（针对涨停股）
+                                            seal_amount = 0
+                                            # 只有当卖一价为 0（真正涨停）时才计算封单金额
+                                            if ask1_price == 0 and stock_info['涨跌幅'] >= 9.5:  # 涨停板
+                                                # 涨停时，封单金额 = 买一量（手数）× 100（股/手）× 价格
+                                                seal_amount = bid1_volume * 100 * current_price / 10000  # 转换为万
                         # 计算买卖盘口价差
                         price_gap = 0
                         if bid1_price > 0 and ask1_price > 0:
@@ -2241,9 +2240,9 @@ class QuantAlgo:
                     pct_change = (current_price - last_close) / last_close * 100
                     
                     # 获取竞价量（买一量 + 卖一量）
-                    bid1_volume = data.get('bid1_volume', 0)
-                    ask1_volume = data.get('ask1_volume', 0)
-                    auction_volume = (bid1_volume + ask1_volume) / 100  # 转换为手
+                    bid1_volume = data.get('bid1_volume', 0)  # 买一量（手数，来自Easyquotation）
+                    ask1_volume = data.get('ask1_volume', 0)  # 卖一量（手数，来自Easyquotation）
+                    auction_volume = bid1_volume + ask1_volume  # 已经是手数，无需转换
                     
                     # 获取成交量（Easyquotation 返回的是股数，需要转换为手数）
                     volume = data.get('volume', 0) / 100  # 转换为手
@@ -2260,7 +2259,8 @@ class QuantAlgo:
                     # 只有当卖一价为 0（真正涨停）时才计算封单金额
                     ask1_price = data.get('ask1', 0)
                     if ask1_price == 0 and pct_change >= 9.5:  # 涨停板
-                        seal_amount = bid1_volume * current_price / 10000  # 买一量 * 价格（转换为万）
+                        # 封单金额 = 买一量（手数）× 100（股/手）× 价格
+                        seal_amount = bid1_volume * 100 * current_price / 10000  # 转换为万
                     
                     # 计算买卖盘口价差
                     bid1_price = data.get('bid1', 0)
@@ -2592,9 +2592,9 @@ class QuantAlgo:
                     volume = data.get('volume', 0) / 100
                     
                     # 获取竞价量（买一量 + 卖一量）
-                    bid1_volume = data.get('bid1_volume', 0)
-                    ask1_volume = data.get('ask1_volume', 0)
-                    auction_volume = (bid1_volume + ask1_volume) / 100  # 转换为手
+                    bid1_volume = data.get('bid1_volume', 0)  # 买一量（手数，来自Easyquotation）
+                    ask1_volume = data.get('ask1_volume', 0)  # 卖一量（手数，来自Easyquotation）
+                    auction_volume = bid1_volume + ask1_volume  # 已经是手数，无需转换
                     
                     # 快速初筛：只保留有竞价特征的股票
                     # 条件：有成交量 且 (竞价量 > 0 或 涨跌幅 > 1%)
@@ -2701,8 +2701,8 @@ class QuantAlgo:
                         open_gap_pct = 0
 
                     # 获取买卖盘口数据
-                    bid1_volume = realtime_data_item.get('bid1_volume', 0)  # 买一量（股数）
-                    ask1_volume = realtime_data_item.get('ask1_volume', 0)  # 卖一量（股数）
+                    bid1_volume = realtime_data_item.get('bid1_volume', 0)  # 买一量（手数，来自Easyquotation）
+                    ask1_volume = realtime_data_item.get('ask1_volume', 0)  # 卖一量（手数，来自Easyquotation）
                     bid1_price = realtime_data_item.get('bid1', 0)  # 买一价
                     ask1_price = realtime_data_item.get('ask1', 0)  # 卖一价
 
@@ -2717,8 +2717,8 @@ class QuantAlgo:
                     seal_amount = 0
                     # 只有当卖一价为 0（真正涨停）时才计算封单金额
                     if ask1_price == 0 and change_pct >= 9.5:  # 涨停板
-                        # 涨停时，封单金额 = 买一量 * 价格（买一量就是封单量）
-                        seal_amount = bid1_volume * current_price / 10000  # 转换为万
+                        # 涨停时，封单金额 = 买一量（手数）× 100（股/手）× 价格
+                        seal_amount = bid1_volume * 100 * current_price / 10000  # 转换为万
 
                     # 计算买卖盘口价差
                     price_gap = 0

@@ -430,8 +430,8 @@ def _render_dragon_stock(stock, config):
         col11.metric("开盘涨幅", f"{stock.get('开盘涨幅', 0):.2f}%")
         
         if is_limit_up:
-            # 涨停时，封单金额 = 买一量 * 价格
-            seal_amount = stock.get('买一量', 0) * stock.get('最新价', 0) / 10000  # 转换为万
+            # 涨停时，封单金额 = 买一量（手数）× 100（股/手）× 价格
+            seal_amount = stock.get('买一量', 0) * 100 * stock.get('最新价', 0) / 10000  # 转换为万
             col12.metric("封单金额", f"¥{seal_amount:.2f} 万", delta="涨停封单")
             col13.metric("买卖价差", "N/A", delta="涨停")
         else:
