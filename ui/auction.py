@@ -94,11 +94,25 @@ def render_auction_tab(db, config):
                                 
                                 if is_limit_up:
                                     # 涨停时，封单金额 = 买一量（手数）× 100（股/手）× 价格
-                                    seal_amount = stock.get('买一量', 0) * 100 * stock.get('最新价', 0) / 10000  # 转换为万
-                                    col12.metric("封单金额", f"¥{seal_amount:.2f} 万", delta="涨停封单")
+                                    # 🆕 使用 DataSanitizer 确保计算正确
+                                    from logic.data_sanitizer import DataSanitizer
+                                    bid1_volume_lots = stock.get('买一量', 0)  # 买一量（手数）
+                                    current_price = stock.get('最新价', 0)
+                                    seal_amount_yuan = DataSanitizer.calculate_amount_from_volume(bid1_volume_lots, current_price)
+                                    seal_amount_wan = seal_amount_yuan / 10000  # 转换为万
+                                    col12.metric("封单金额", f"¥{seal_amount_wan:.2f} 万", delta="涨停封单")
                                     col13.metric("买卖价差", "N/A", delta="涨停")
                                 else:
-                                    col12.metric("封单金额", f"¥{stock.get('封单金额', 0):.2f} 万")
+                                    # 非涨停时，也使用 DataSanitizer 重新计算封单金额（如果有的话）
+                                    from logic.data_sanitizer import DataSanitizer
+                                    bid1_volume_lots = stock.get('买一量', 0)  # 买一量（手数）
+                                    current_price = stock.get('最新价', 0)
+                                    if bid1_volume_lots > 0 and current_price > 0:
+                                        seal_amount_yuan = DataSanitizer.calculate_amount_from_volume(bid1_volume_lots, current_price)
+                                        seal_amount_wan = seal_amount_yuan / 10000  # 转换为万
+                                        col12.metric("封单金额", f"¥{seal_amount_wan:.2f} 万")
+                                    else:
+                                        col12.metric("封单金额", f"¥{stock.get('封单金额', 0):.2f} 万")
                                     # 买卖价差
                                     price_gap = stock.get('买一价', 0) and stock.get('卖一价', 0)
                                     if price_gap and stock.get('买一价', 0) > 0:
