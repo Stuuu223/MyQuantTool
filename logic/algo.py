@@ -1471,9 +1471,12 @@ class QuantAlgo:
                                 if avg_turnover > 0:
                                     volume_ratio = current_turnover / avg_turnover
                             else:
+                                # 🆕 V8.1: 修复单位换算BUG
                                 # 如果没有 turnover 列，使用成交量计算
-                                avg_volume = df['volume'].tail(5).mean()  # 5日平均成交量
-                                current_volume = realtime_data_item.get('volume', 0)  # 当前成交量
+                                # 历史数据的volume是股数（来自akshare），需要转换为手数（除以100）
+                                # 实时数据的volume是股数（来自easyquotation），也需要转换为手数
+                                avg_volume = df['volume'].tail(5).mean() / 100  # 转换为手数
+                                current_volume = realtime_data_item.get('volume', 0) / 100  # 转换为手数
                                 if avg_volume > 0:
                                     volume_ratio = current_volume / avg_volume
                         
@@ -2646,7 +2649,10 @@ class QuantAlgo:
                 try:
                     df = history_data_cache.get(stock['代码'])
                     if df is not None and not df.empty and len(df) > 5:
-                        avg_volume = df['volume'].tail(5).mean()
+                        # 🆕 V8.1: 修复单位换算BUG
+                        # 历史数据的volume是股数（来自akshare），需要转换为手数（除以100）
+                        # 实时数据的成交量已经是手数（在前面已除以100）
+                        avg_volume = df['volume'].tail(5).mean() / 100  # 转换为手数
                         if avg_volume > 0:
                             stock['量比'] = stock['成交量'] / avg_volume
                         else:
@@ -2719,6 +2725,42 @@ class QuantAlgo:
                     if bid1_price > 0 and ask1_price > 0:
                         price_gap = (ask1_price - bid1_price) / bid1_price * 100
 
+                    # 🆕 V8.1: 流动性陷阱检测（缩量拉升识别）
+                    liquidity_trap = False
+                    liquidity_trap_reason = ""
+                    auction_amount = auction_volume * current_price  # 竞价金额（元）
+                    auction_amount_wan = auction_amount / 10000  # 转换为万
+
+                    # 流动性陷阱条件：
+                    # 1. 竞价金额 < 500万（流动性不足）
+                    # 2. 竞价抢筹度 < 2%（主力未大举抢筹）
+                    # 3. 涨幅 > 5%（看似强势，但缺乏流动性支持）
+                    if auction_amount_wan < 500 and auction_ratio < 0.02 and change_pct > 5:
+                        liquidity_trap = True
+                        liquidity_trap_reason = f"⚠️ 流动性陷阱：竞价金额{auction_amount_wan:.0f}万<500万，竞价抢筹度{auction_ratio*100:.2f}%<2%，缩量拉升"
+
+                    # 🆕 V8.1: 真龙识别（区分龙头vs跟风）
+                    dragon_type = "未知"
+                    dragon_reason = ""
+                    current_turnover = realtime_data_item.get('turnover', 0) / 10000  # 当前成交额（万元）
+
+                    # 真龙标准：
+                    # 1. 成交额 > 5000万（大资金能进出）
+                    # 2. 竞价抢筹度 > 2%（主力大举抢筹）
+                    # 3. 涨幅 > 10%（强势）
+                    if current_turnover > 5000 and auction_ratio > 0.02 and change_pct > 10:
+                        dragon_type = "🐉 真龙"
+                        dragon_reason = f"✅ 成交额{current_turnover:.0f}万>5000万，竞价抢筹度{auction_ratio*100:.2f}%>2%，真龙特征"
+                    elif current_turnover > 2000 and auction_ratio > 0.01 and change_pct > 8:
+                        dragon_type = "🐲 强跟风"
+                        dragon_reason = f"⚠️ 成交额{current_turnover:.0f}万>2000万，竞价抢筹度{auction_ratio*100:.2f}%>1%，强跟风"
+                    elif current_turnover < 500 or auction_ratio < 0.01:
+                        dragon_type = "🐛 杂毛"
+                        dragon_reason = f"❌ 成交额{current_turnover:.0f}万<500万或竞价抢筹度{auction_ratio*100:.2f}%<1%，杂毛"
+                    else:
+                        dragon_type = "🦆 弱跟风"
+                        dragon_reason = f"⚠️ 成交额{current_turnover:.0f}万，竞价抢筹度{auction_ratio*100:.2f}%，弱跟风"
+
                     # 检测竞价弱转强
                     weak_to_strong = QuantAlgo.detect_auction_weak_to_strong(df, symbol)
 
@@ -2761,6 +2803,25 @@ class QuantAlgo:
                         score += 15
                         signals.append(f"换手率较高（{turnover_rate:.2f}%）")
 
+                    # 🆕 V8.1: 流动性陷阱惩罚
+                    if liquidity_trap:
+                        score -= 30  # 大幅降低评分
+                        signals.append(liquidity_trap_reason)
+
+                    # 🆕 V8.1: 真龙加分/跟风减分
+                    if dragon_type == "🐉 真龙":
+                        score += 30  # 真龙大幅加分
+                        signals.append(dragon_reason)
+                    elif dragon_type == "🐲 强跟风":
+                        score += 10  # 强跟风小幅加分
+                        signals.append(dragon_reason)
+                    elif dragon_type == "🐛 杂毛":
+                        score -= 20  # 杂毛大幅减分
+                        signals.append(dragon_reason)
+                    elif dragon_type == "🦆 弱跟风":
+                        score -= 5  # 弱跟风小幅减分
+                        signals.append(dragon_reason)
+
                     # 竞价量评分（新增）
                     if auction_volume > 1000:  # 竞价量超过1000手
                         score += 10
@@ -2796,6 +2857,8 @@ class QuantAlgo:
                         '量比': round(volume_ratio, 2),
                         '换手率': round(turnover_rate, 2),
                         '竞价量': auction_volume,
+                        '竞价金额': round(auction_amount_wan, 2),  # 🆕 V8.1: 添加竞价金额
+                        '成交额': round(current_turnover, 2),  # 🆕 V8.1: 添加成交额
                         '买一价': round(bid1_price, 2),
                         '卖一价': round(ask1_price, 2),
                         '买一量': int(bid1_volume / 100),
@@ -2803,6 +2866,8 @@ class QuantAlgo:
                         '竞价抢筹度': round(auction_ratio, 4),
                         '开盘涨幅': round(open_gap_pct, 2),
                         '封单金额': round(seal_amount, 2),
+                        '流动性陷阱': liquidity_trap,  # 🆕 V8.1: 添加流动性陷阱标记
+                        '真龙类型': dragon_type,  # 🆕 V8.1: 添加真龙类型标记
                         '买卖价差': round(price_gap, 2),
                         '评分': score,
                         '评级': rating,
@@ -2970,7 +3035,10 @@ class QuantAlgo:
                 try:
                     df = history_data_cache.get(stock['代码'])
                     if df is not None and not df.empty and len(df) > 5:
-                        avg_volume = df['volume'].tail(5).mean()
+                        # 🆕 V8.1: 修复单位换算BUG
+                        # 历史数据的volume是股数（来自akshare），需要转换为手数（除以100）
+                        # 实时数据的成交量已经是手数（在前面已除以100）
+                        avg_volume = df['volume'].tail(5).mean() / 100  # 转换为手数
                         if avg_volume > 0:
                             stock['量比'] = stock['成交量'] / avg_volume
                         else:
@@ -3251,7 +3319,10 @@ class QuantAlgo:
                 try:
                     df = history_data_cache.get(stock['代码'])
                     if df is not None and not df.empty and len(df) > 5:
-                        avg_volume = df['volume'].tail(5).mean()
+                        # 🆕 V8.1: 修复单位换算BUG
+                        # 历史数据的volume是股数（来自akshare），需要转换为手数（除以100）
+                        # 实时数据的成交量已经是手数（在前面已除以100）
+                        avg_volume = df['volume'].tail(5).mean() / 100  # 转换为手数
                         if avg_volume > 0:
                             stock['量比'] = stock['成交量'] / avg_volume
                         else:

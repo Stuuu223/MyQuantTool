@@ -143,6 +143,15 @@ class StrategyOrchestrator:
         
         Args:
             stock_signal: 个股信号
+                {
+                    'code': str,
+                    'is_anti_nuclear': bool,
+                    'is_limit_up': bool,
+                    'turnover': float,  # 成交额（万元）
+                    'auction_ratio': float,  # 竞价抢筹度
+                    'liquidity_trap': bool,  # 流动性陷阱标记
+                    'dragon_type': str  # 真龙类型
+                }
             market_status: 市场状态
         
         Returns:
@@ -169,6 +178,24 @@ class StrategyOrchestrator:
             stock_code = stock_signal.get('code', '')
             if 'ST' in stock_code or '*ST' in stock_code:
                 return True, "🚫 ST/退市风险股，一票否决"
+        
+        # 🆕 V8.1: 流动性不足一票否决
+        turnover = stock_signal.get('turnover', 0)  # 成交额（万元）
+        auction_ratio = stock_signal.get('auction_ratio', 0)  # 竞价抢筹度
+        liquidity_trap = stock_signal.get('liquidity_trap', False)  # 流动性陷阱标记
+        dragon_type = stock_signal.get('dragon_type', '')  # 真龙类型
+        
+        # 流动性陷阱一票否决
+        if liquidity_trap:
+            return True, f"🚫 流动性陷阱：缩量拉升，大资金进出困难"
+        
+        # 杂毛一票否决（成交额<500万或竞价抢筹度<1%）
+        if dragon_type == "🐛 杂毛":
+            return True, f"🚫 杂毛股：成交额{turnover:.0f}万<500万或竞价抢筹度{auction_ratio*100:.2f}%<1%，不具备操作价值"
+        
+        # 弱跟风一票否决（成交额<2000万或竞价抢筹度<1%）
+        if dragon_type == "🦆 弱跟风":
+            return True, f"🚫 弱跟风：成交额{turnover:.0f}万<2000万或竞价抢筹度{auction_ratio*100:.2f}%<1%，跟风价值低"
         
         return False, ""
     
