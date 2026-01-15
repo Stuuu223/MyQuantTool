@@ -153,7 +153,7 @@ def render_v80_features_tab(db, config):
             marker_color='green',
             orientation='h'
         ))
-        fig.add_tracego.Bar(
+        fig.add_trace(go.Bar(
             name='卖盘',
             x=ask_prices,
             y=ask_volumes,
