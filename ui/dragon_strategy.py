@@ -306,8 +306,18 @@ def render_dragon_strategy_tab(db, config):
                         } for s in weak_halfway])
                         st.dataframe(df_weak, width="stretch", hide_index=True)
             else:
-                st.warning("未发现符合条件的股票")
-                st.info("💡 提示：可以降低最低评分门槛或增加扫描数量")
+                st.warning("⚠️ 未发现符合条件的半路板股票")
+                st.info("""
+                💡 **当前市场情况分析：**
+                - 大部分20cm股票已封板涨停（无法半路扫货）
+                - 半路区间（10%-18.5%）股票数量较少
+                - 可能被V9.0游资掠食者系统过滤（触发生死红线）
+                
+                📌 **建议操作：**
+                1. 等待新的20cm股票启动（集合竞价后）
+                2. 或降低最低评分门槛（从60分降至40-50分）
+                3. 或转向龙头战法（抓连板/妖股）
+                """)
         
         # 重置扫描状态
         st.session_state.scan_dragon = False

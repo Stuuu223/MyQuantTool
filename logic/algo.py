@@ -3431,8 +3431,9 @@ class QuantAlgo:
                     
                     # 🛑 V9.2 新增：严禁已经封死涨停的
                     # 检查卖一价是否为0（已封板）
+                    # 注意：只有当涨幅接近涨停（>=19.0%）且卖一价为0时，才认为是已封板
                     ask1_price = data.get('ask1', 0)
-                    if ask1_price == 0:
+                    if ask1_price == 0 and pct_change >= 19.0:
                         continue  # 已经封板，不是半路机会
 
                     # 获取成交量
