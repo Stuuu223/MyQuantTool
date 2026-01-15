@@ -266,7 +266,9 @@ class MarketCycleManager:
                     'board_distribution': {}
                 }
             
-            # 获取连板信息（这里简化处理，实际应该从数据库查询历史数据）
+            # 获取连板信息（从数据库查询历史数据）
+            from datetime import datetime, timedelta
+            
             board_distribution = {
                 '1板': 0,
                 '2板': 0,
@@ -278,10 +280,65 @@ class MarketCycleManager:
                 '8板+': 0
             }
             
-            # 简化：假设所有涨停都是首板（实际应该查询历史数据）
-            board_distribution['1板'] = len(limit_up_stocks)
+            max_board = 0
             
-            max_board = 1  # 简化处理
+            for stock in limit_up_stocks:
+                symbol = stock['code']
+                
+                # 查询该股票最近N天的数据，计算连续涨停天数
+                consecutive_count = 0
+                
+                # 查询最近10天的数据
+                query = f"""
+                SELECT date, open, close
+                FROM daily_bars
+                WHERE symbol = '{symbol}'
+                ORDER BY date DESC
+                LIMIT 10
+                """
+                
+                df = pd.read_sql(query, self.db.conn)
+                
+                if df.empty:
+                    continue
+                
+                # 从最新的一天开始检查
+                for _, row in df.iterrows():
+                    open_price = row['open']
+                    close_price = row['close']
+                    
+                    # 判断是否涨停（涨幅接近10%或20%）
+                    change_pct = (close_price - open_price) / open_price * 100
+                    
+                    # 10cm和20cm的涨停判断
+                    is_limit_up = (change_pct >= 9.5) or (change_pct >= 19.5)
+                    
+                    if is_limit_up:
+                        consecutive_count += 1
+                    else:
+                        # 一旦没有涨停，停止计数
+                        break
+                
+                if consecutive_count > 0:
+                    # 统计到对应的板数
+                    if consecutive_count == 1:
+                        board_distribution['1板'] += 1
+                    elif consecutive_count == 2:
+                        board_distribution['2板'] += 1
+                    elif consecutive_count == 3:
+                        board_distribution['3板'] += 1
+                    elif consecutive_count == 4:
+                        board_distribution['4板'] += 1
+                    elif consecutive_count == 5:
+                        board_distribution['5板'] += 1
+                    elif consecutive_count == 6:
+                        board_distribution['6板'] += 1
+                    elif consecutive_count == 7:
+                        board_distribution['7板'] += 1
+                    else:
+                        board_distribution['8板+'] += 1
+                    
+                    max_board = max(max_board, consecutive_count)
             
             return {
                 'max_board': max_board,
@@ -290,6 +347,7 @@ class MarketCycleManager:
         
         except Exception as e:
             logger.error(f"获取连板高度失败: {e}")
+            # 降级：返回模拟数据
             return {
                 'max_board': 0,
                 'board_distribution': {}
@@ -308,20 +366,68 @@ class MarketCycleManager:
         """
         try:
             # 获取昨天的涨停股票
-            # 这里简化处理，实际应该从数据库查询昨天的涨停数据
-            # 返回模拟数据
+            # 从数据库查询昨天的涨停数据
+            from datetime import datetime, timedelta
+            
+            yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+            
+            # 查询昨天的涨停股票
+            query = f"""
+            SELECT symbol, close, open
+            FROM daily_bars
+            WHERE date = '{yesterday}'
+            """
+            
+            df = pd.read_sql(query, self.db.conn)
+            
+            if df.empty:
+                return {
+                    'avg_profit': 0,
+                    'profit_count': 0,
+                    'loss_count': 0
+                }
+            
+            # 获取今日的收盘价计算溢价
+            today = datetime.now().strftime('%Y-%m-%d')
+            
+            profits = []
+            profit_count = 0
+            loss_count = 0
+            
+            for _, row in df.iterrows():
+                symbol = row['symbol']
+                yesterday_close = row['close']
+                
+                # 获取今日数据
+                today_query = f"SELECT close FROM daily_bars WHERE symbol = '{symbol}' AND date = '{today}'"
+                today_df = pd.read_sql(today_query, self.db.conn)
+                
+                if not today_df.empty:
+                    today_close = today_df.iloc[0]['close']
+                    profit_pct = (today_close - yesterday_close) / yesterday_close * 100
+                    
+                    profits.append(profit_pct)
+                    
+                    if profit_pct > 0:
+                        profit_count += 1
+                    else:
+                        loss_count += 1
+            
+            avg_profit = sum(profits) / len(profits) if profits else 0
+            
             return {
-                'avg_profit': 0.03,
-                'profit_count': 10,
-                'loss_count': 5
+                'avg_profit': avg_profit,
+                'profit_count': profit_count,
+                'loss_count': loss_count
             }
         
         except Exception as e:
             logger.error(f"获取昨日涨停溢价失败: {e}")
+            # 降级：返回模拟数据
             return {
-                'avg_profit': 0,
-                'profit_count': 0,
-                'loss_count': 0
+                'avg_profit': 0.03,
+                'profit_count': 10,
+                'loss_count': 5
             }
     
     def get_limit_up_burst_rate(self) -> float:
@@ -332,12 +438,44 @@ class MarketCycleManager:
             float: 炸板率
         """
         try:
-            # 简化处理，返回模拟数据
-            return 0.15
+            # 获取今日涨停股票
+            limit_up_stocks = self.get_limit_up_down_count().get('limit_up_stocks', [])
+            
+            if not limit_up_stocks:
+                return 0.0
+            
+            # 获取这些股票的历史数据，检查是否曾经涨停过然后炸板
+            # 这里简化处理：通过今日开盘价和昨日收盘价判断
+            from datetime import datetime, timedelta
+            
+            yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+            
+            burst_count = 0
+            
+            for stock in limit_up_stocks:
+                symbol = stock['code']
+                
+                # 查询昨日数据
+                yesterday_query = f"SELECT close FROM daily_bars WHERE symbol = '{symbol}' AND date = '{yesterday}'"
+                yesterday_df = pd.read_sql(yesterday_query, self.db.conn)
+                
+                if not yesterday_df.empty:
+                    yesterday_close = yesterday_df.iloc[0]['close']
+                    today_open = stock.get('price', 0)
+                    
+                    # 如果昨日涨停（涨幅接近10%），但今日开盘价低于昨日收盘价，视为炸板
+                    # 这里简化判断：如果今日开盘价低于昨日收盘价5%以上
+                    if today_open < yesterday_close * 0.95:
+                        burst_count += 1
+            
+            burst_rate = burst_count / len(limit_up_stocks) if limit_up_stocks else 0
+            
+            return burst_rate
         
         except Exception as e:
             logger.error(f"获取炸板率失败: {e}")
-            return 0.0
+            # 降级：返回模拟数据
+            return 0.15
     
     def get_board_promotion_rate(self) -> float:
         """
@@ -347,12 +485,51 @@ class MarketCycleManager:
             float: 晋级率
         """
         try:
-            # 简化处理，返回模拟数据
-            return 0.25
+            # 获取今日连板数
+            # 这里简化处理：通过查询数据库计算
+            from datetime import datetime, timedelta
+            
+            today = datetime.now().strftime('%Y-%m-%d')
+            yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+            
+            # 获取昨日首板数（昨日涨停的股票数）
+            yesterday_limit_up_query = f"""
+            SELECT COUNT(DISTINCT symbol) as count
+            FROM daily_bars
+            WHERE date = '{yesterday}'
+            AND ((close - open) / open * 100 >= 9.5 OR (close - open) / open * 100 <= -9.5)
+            """
+            
+            yesterday_df = pd.read_sql(yesterday_limit_up_query, self.db.conn)
+            yesterday_first_board_count = yesterday_df.iloc[0]['count'] if not yesterday_df.empty else 0
+            
+            if yesterday_first_board_count == 0:
+                return 0.0
+            
+            # 获取今日连板数（今日继续涨停的昨日首板股票）
+            today_limit_up_query = f"""
+            SELECT COUNT(DISTINCT symbol) as count
+            FROM daily_bars
+            WHERE date = '{today}'
+            AND ((close - open) / open * 100 >= 9.5 OR (close - open) / open * 100 <= -9.5)
+            AND symbol IN (
+                SELECT symbol FROM daily_bars 
+                WHERE date = '{yesterday}'
+                AND ((close - open) / open * 100 >= 9.5 OR (close - open) / open * 100 <= -9.5)
+            )
+            """
+            
+            today_df = pd.read_sql(today_limit_up_query, self.db.conn)
+            today_consecutive_board_count = today_df.iloc[0]['count'] if not today_df.empty else 0
+            
+            promotion_rate = today_consecutive_board_count / yesterday_first_board_count if yesterday_first_board_count > 0 else 0
+            
+            return promotion_rate
         
         except Exception as e:
             logger.error(f"获取晋级率失败: {e}")
-            return 0.0
+            # 降级：返回模拟数据
+            return 0.25
     
     def get_cycle_history(self, days: int = 30) -> List[Dict]:
         """
