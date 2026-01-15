@@ -6,6 +6,9 @@ from logic.logger import get_logger
 # 🆕 V9.0: 导入游资掠食者系统
 from logic.predator_system import PredatorSystem
 
+# 🆕 V8.5: 导入算法数学库
+from logic.algo_math import calculate_true_auction_aggression
+
 logger = get_logger(__name__)
 
 class QuantAlgo:
@@ -1510,19 +1513,27 @@ class QuantAlgo:
                         ask1_price = realtime_data_item.get('ask1', 0)  # 卖一价
                         auction_volume = (bid1_volume + ask1_volume)  # 已经是手数，无需转换
                         
-                        # 计算竞价抢筹度（竞价量 / 昨日成交量）
+                        # 🆕 V8.5: 使用标准竞价抢筹度计算器（修复 6900% BUG）
                         auction_ratio = 0
                         if not df.empty and len(df) > 1:
-                            # 🆕 V8.3: 修复单位换算BUG
-                            # df['volume']来自akshare，是股数，需要转换为手数（除以100）
+                            # 获取昨日全天成交量（手数）
                             yesterday_volume = df['volume'].iloc[-2] / 100  # 昨日成交量（手数）
                             
-                            # 🆕 V8.3: 添加异常值检测
-                            # 如果昨日成交量太小（<1000手），可能是停牌或数据异常，不计算竞价抢筹度
-                            if yesterday_volume < 1000:
-                                auction_ratio = 0  # 不计算，避免异常值
-                            elif yesterday_volume > 0:
-                                auction_ratio = auction_volume / yesterday_volume
+                            # 获取流通股本（股数）
+                            circulating_cap = None
+                            if 'circulating_cap' in df.columns:
+                                circulating_cap = df['circulating_cap'].iloc[-1]
+                            
+                            # 判断是否为新股
+                            is_new_stock = (symbol.startswith('301') or symbol.startswith('303') or symbol.startswith('688'))
+                            
+                            # 使用标准计算器
+                            auction_ratio = calculate_true_auction_aggression(
+                                auction_vol=auction_volume,
+                                prev_day_vol=yesterday_volume,
+                                circulating_share_capital=circulating_cap,
+                                is_new_stock=is_new_stock
+                            ) / 100  # 转换为比例
 
                     # 计算封单金额（针对涨停股）
                     seal_amount = 0
@@ -2737,19 +2748,27 @@ class QuantAlgo:
                     bid1_price = realtime_data_item.get('bid1', 0)  # 买一价
                     ask1_price = realtime_data_item.get('ask1', 0)  # 卖一价
 
-                    # 计算竞价抢筹度（竞价量 / 昨日成交量）
+                    # 🆕 V8.5: 使用标准竞价抢筹度计算器（修复 6900% BUG）
                     auction_ratio = 0
                     if not df.empty and len(df) > 1:
-                        # 🆕 V8.3: 修复单位换算BUG
-                        # df['volume']来自akshare，是股数，需要转换为手数（除以100）
+                        # 获取昨日全天成交量（手数）
                         yesterday_volume = df['volume'].iloc[-2] / 100  # 昨日成交量（手数）
                         
-                        # 🆕 V8.3: 添加异常值检测
-                        # 如果昨日成交量太小（<1000手），可能是停牌或数据异常，不计算竞价抢筹度
-                        if yesterday_volume < 1000:
-                            auction_ratio = 0  # 不计算，避免异常值
-                        elif yesterday_volume > 0:
-                            auction_ratio = auction_volume / yesterday_volume
+                        # 获取流通股本（股数）
+                        circulating_cap = None
+                        if 'circulating_cap' in df.columns:
+                            circulating_cap = df['circulating_cap'].iloc[-1]
+                        
+                        # 判断是否为新股
+                        is_new_stock = (symbol.startswith('301') or symbol.startswith('303') or symbol.startswith('688'))
+                        
+                        # 使用标准计算器
+                        auction_ratio = calculate_true_auction_aggression(
+                            auction_vol=auction_volume,
+                            prev_day_vol=yesterday_volume,
+                            circulating_share_capital=circulating_cap,
+                            is_new_stock=is_new_stock
+                        ) / 100  # 转换为比例
 
                     # 计算封单金额（针对涨停股）
                     seal_amount = 0
