@@ -555,6 +555,9 @@ class DataManager:
         Returns:
             dict: 行情数据字典
         """
+        # 🆕 V8.4: 导入数据消毒器
+        from logic.data_sanitizer import DataSanitizer
+        
         # 转换代码格式 (easyquotation 需要 sh/sz 前缀)
         full_codes = []
         for code in stock_list:
@@ -579,7 +582,18 @@ class DataManager:
             try:
                 logger.info(f"正在获取第 {batch_num}/{total_batches} 批数据 ({len(batch)} 只股票)...")
                 batch_result = self.quotation.stocks(batch)
-                result.update(batch_result)
+                
+                # 🆕 V8.4: 数据消毒 - 在数据进入系统的那一刻进行清洗
+                sanitized_batch = {}
+                for stock_code, stock_data in batch_result.items():
+                    # 使用 DataSanitizer 清洗数据
+                    sanitized_data = DataSanitizer.sanitize_realtime_data(
+                        stock_data, 
+                        source_type='easyquotation'
+                    )
+                    sanitized_batch[stock_code] = sanitized_data
+                
+                result.update(sanitized_batch)
                 logger.info(f"✅ 第 {batch_num} 批获取完成，获取到 {len(batch_result)} 只股票")
             except Exception as e:
                 logger.warning(f"第 {batch_num} 批获取失败: {e}，继续下一批")

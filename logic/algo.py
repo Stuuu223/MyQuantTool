@@ -2777,17 +2777,30 @@ class QuantAlgo:
                     # 这种情况通常是重组复牌等超级利好，买都买不到，不是流动性陷阱
                     is_super_one_word = (ask1_price == 0 and change_pct >= 19.5 and seal_amount > 10000)
                     
-                    # 🆕 V8.3: 豁免逻辑 - 次新股（Sub-New Stock）
-                    # 豁免条件：如果是次新股（代码以301、303、688开头）且缩量惜售
+                    # 🆕 V8.4: 深化次新股豁免逻辑（防止豁免权滥用）
                     # 次新股特性：筹码稳定，惜售缩量，炒作逻辑是情绪博弈，不是业绩驱动
+                    # 但豁免必须有门槛：次新股可以竞价弱，但开盘必须强，或者位置必须好
                     is_sub_new = (symbol.startswith('301') or symbol.startswith('303') or symbol.startswith('688')) and auction_amount_wan < 500
+                    
+                    # 🆕 V8.4: 获取开盘涨幅（需要实时数据）
+                    open_price = realtime_data_item.get('open', 0)
+                    last_close = realtime_data_item.get('close', 0)
+                    open_gap_pct = 0
+                    if open_price > 0 and last_close > 0:
+                        open_gap_pct = (open_price - last_close) / last_close * 100
                     
                     if is_trap and is_super_one_word:
                         liquidity_trap = False
                         liquidity_trap_reason = f"✅ 豁免：缩量一字板真龙（封单金额{seal_amount:.0f}万>1亿）"
                     elif is_trap and is_sub_new:
-                        liquidity_trap = False
-                        liquidity_trap_reason = f"✅ 豁免：次新股惜售（竞价金额{auction_amount_wan:.0f}万<500万，筹码稳定）"
+                        # 🆕 V8.4: 深化次新股豁免逻辑 - 只有 "红盘开盘" 或 "微跌但承接极强" 才豁免
+                        if open_gap_pct > -2.0:  # 红盘开盘或微跌（< -2%）
+                            liquidity_trap = False
+                            liquidity_trap_reason = f"✅ 豁免：次新股惜售（竞价金额{auction_amount_wan:.0f}万<500万，开盘涨幅{open_gap_pct:.2f}%，情绪稳定）"
+                        else:
+                            # 如果竞价没钱，还低开 > -2%，那就是真没人要，不是惜售
+                            liquidity_trap = True
+                            liquidity_trap_reason = f"⚠️ 流动性陷阱：次新股无抵抗阴跌（竞价金额{auction_amount_wan:.0f}万<500万，开盘涨幅{open_gap_pct:.2f}%，缺乏承接）"
                     elif is_trap:
                         liquidity_trap = True
                         liquidity_trap_reason = f"⚠️ 流动性陷阱：竞价金额{auction_amount_wan:.0f}万<500万，竞价抢筹度{auction_ratio*100:.2f}%<2%，缩量拉升"
@@ -2849,12 +2862,31 @@ class QuantAlgo:
                         signals.append(f"小幅高开{change_pct:.2f}%")
 
                     # 换手率评分
-                    if 2 <= turnover_rate <= 10:
-                        score += 25
-                        signals.append(f"换手率适中（{turnover_rate:.2f}%）")
-                    elif turnover_rate > 10:
-                        score += 15
-                        signals.append(f"换手率较高（{turnover_rate:.2f}%）")
+                    # 🆕 V8.4: 次新股动态换手率评分标准
+                    is_sub_new_stock = symbol.startswith('301') or symbol.startswith('303') or symbol.startswith('688')
+                    
+                    if is_sub_new_stock:
+                        # 次新股标准：必须充分换手
+                        if turnover_rate < 15:
+                            score -= 10  # 换手不够，大概率是庄股或僵尸
+                            signals.append(f"⚠️ 次新股换手过低（{turnover_rate:.2f}%<15%），流动性枯竭")
+                        elif turnover_rate > 70:
+                            score -= 5  # 换手太高，可能是出货
+                            signals.append(f"⚠️ 次新股换手过高（{turnover_rate:.2f}%>70%），可能出货")
+                        elif turnover_rate > 30:
+                            score += 30  # 30%-50% 是次新妖股的黄金区间
+                            signals.append(f"✅ 次新股换手活跃（{turnover_rate:.2f}%），妖股特征")
+                        else:
+                            score += 20  # 15%-30% 是次新股正常区间
+                            signals.append(f"✅ 次新股换手适中（{turnover_rate:.2f}%）")
+                    else:
+                        # 普通股标准 (原有逻辑)
+                        if 2 <= turnover_rate <= 10:
+                            score += 25
+                            signals.append(f"换手率适中（{turnover_rate:.2f}%）")
+                        elif turnover_rate > 10:
+                            score += 15
+                            signals.append(f"换手率较高（{turnover_rate:.2f}%）")
 
                     # 🆕 V8.1: 流动性陷阱惩罚
                     if liquidity_trap:
@@ -3201,12 +3233,31 @@ class QuantAlgo:
                         signals.append("均线多头排列")
 
                     # 换手率评分
-                    if 2 <= turnover_rate <= 10:
-                        score += 15
-                        signals.append(f"换手率适中（{turnover_rate:.2f}%）")
-                    elif turnover_rate > 10:
-                        score += 10
-                        signals.append(f"换手率较高（{turnover_rate:.2f}%）")
+                    # 🆕 V8.4: 次新股动态换手率评分标准
+                    is_sub_new_stock = symbol.startswith('301') or symbol.startswith('303') or symbol.startswith('688')
+                    
+                    if is_sub_new_stock:
+                        # 次新股标准：必须充分换手
+                        if turnover_rate < 15:
+                            score -= 5  # 换手不够
+                            signals.append(f"⚠️ 次新股换手过低（{turnover_rate:.2f}%）")
+                        elif turnover_rate > 70:
+                            score -= 3  # 换手太高
+                            signals.append(f"⚠️ 次新股换手过高（{turnover_rate:.2f}%）")
+                        elif turnover_rate > 30:
+                            score += 20  # 30%-50% 是次新妖股的黄金区间
+                            signals.append(f"✅ 次新股换手活跃（{turnover_rate:.2f}%）")
+                        else:
+                            score += 15  # 15%-30% 是次新股正常区间
+                            signals.append(f"✅ 次新股换手适中（{turnover_rate:.2f}%）")
+                    else:
+                        # 普通股标准 (原有逻辑)
+                        if 2 <= turnover_rate <= 10:
+                            score += 15
+                            signals.append(f"换手率适中（{turnover_rate:.2f}%）")
+                        elif turnover_rate > 10:
+                            score += 10
+                            signals.append(f"换手率较高（{turnover_rate:.2f}%）")
 
                     # 评级
                     if score >= 90:
@@ -3480,12 +3531,31 @@ class QuantAlgo:
                         signals.append(f"较强放量（量比{volume_ratio:.2f}）")
 
                     # 换手率评分
-                    if 5 <= turnover_rate <= 15:
-                        score += 15
-                        signals.append(f"换手率适中（{turnover_rate:.2f}%）")
-                    elif turnover_rate > 15:
-                        score += 10
-                        signals.append(f"换手率较高（{turnover_rate:.2f}%）")
+                    # 🆕 V8.4: 次新股动态换手率评分标准
+                    is_sub_new_stock = symbol.startswith('301') or symbol.startswith('303') or symbol.startswith('688')
+                    
+                    if is_sub_new_stock:
+                        # 次新股标准：必须充分换手
+                        if turnover_rate < 15:
+                            score -= 5  # 换手不够
+                            signals.append(f"⚠️ 次新股换手过低（{turnover_rate:.2f}%）")
+                        elif turnover_rate > 70:
+                            score -= 3  # 换手太高
+                            signals.append(f"⚠️ 次新股换手过高（{turnover_rate:.2f}%）")
+                        elif turnover_rate > 30:
+                            score += 20  # 30%-50% 是次新妖股的黄金区间
+                            signals.append(f"✅ 次新股换手活跃（{turnover_rate:.2f}%）")
+                        else:
+                            score += 15  # 15%-30% 是次新股正常区间
+                            signals.append(f"✅ 次新股换手适中（{turnover_rate:.2f}%）")
+                    else:
+                        # 普通股标准 (原有逻辑)
+                        if 5 <= turnover_rate <= 15:
+                            score += 15
+                            signals.append(f"换手率适中（{turnover_rate:.2f}%）")
+                        elif turnover_rate > 15:
+                            score += 10
+                            signals.append(f"换手率较高（{turnover_rate:.2f}%）")
 
                     # 评级
                     if score >= 90:
