@@ -743,8 +743,10 @@ class QuantAlgo:
         分析成交量
         判断成交量是否异常放大
         """
-        current_volume = df['volume'].iloc[-1]
-        avg_volume = df['volume'].rolling(window=period).mean().iloc[-1]
+        # 🆕 V8.3: 修复单位换算BUG
+        # df['volume']来自akshare，是股数，需要转换为手数（除以100）
+        current_volume = df['volume'].iloc[-1] / 100  # 转换为手数
+        avg_volume = df['volume'].rolling(window=period).mean().iloc[-1] / 100  # 转换为手数
         
         volume_ratio = current_volume / avg_volume if avg_volume > 0 else 1
         
@@ -1496,7 +1498,9 @@ class QuantAlgo:
                         # 计算竞价抢筹度（竞价量 / 昨日成交量）
                         auction_ratio = 0
                         if not df.empty and len(df) > 1:
-                            yesterday_volume = df['volume'].iloc[-2]  # 昨日成交量（手数）
+                            # 🆕 V8.3: 修复单位换算BUG
+                            # df['volume']来自akshare，是股数，需要转换为手数（除以100）
+                            yesterday_volume = df['volume'].iloc[-2] / 100  # 昨日成交量（手数）
                             if yesterday_volume > 0:
                                 auction_ratio = auction_volume / yesterday_volume
 
@@ -2363,8 +2367,10 @@ class QuantAlgo:
             gap_pct = (today_open - yesterday_close) / yesterday_close * 100
             
             # 计算今日成交量相对于昨日
-            today_volume = today.get('volume', 0)
-            yesterday_volume = yesterday.get('volume', 0)
+            # 🆕 V8.3: 修复单位换算BUG
+            # today和yesterday来自akshare，是股数，需要转换为手数（除以100）
+            today_volume = today.get('volume', 0) / 100  # 转换为手数
+            yesterday_volume = yesterday.get('volume', 0) / 100  # 转换为手数
             volume_ratio = today_volume / yesterday_volume if yesterday_volume > 0 else 1
             
             # 3. 判断是否弱转强
@@ -2709,7 +2715,9 @@ class QuantAlgo:
                     # 计算竞价抢筹度（竞价量 / 昨日成交量）
                     auction_ratio = 0
                     if not df.empty and len(df) > 1:
-                        yesterday_volume = df['volume'].iloc[-2]  # 昨日成交量（手数）
+                        # 🆕 V8.3: 修复单位换算BUG
+                        # df['volume']来自akshare，是股数，需要转换为手数（除以100）
+                        yesterday_volume = df['volume'].iloc[-2] / 100  # 昨日成交量（手数）
                         if yesterday_volume > 0:
                             auction_ratio = auction_volume / yesterday_volume
 
