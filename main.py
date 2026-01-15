@@ -241,6 +241,25 @@ def show_market_weather():
         if not cycle_manager and not theme_detector:
             return
         
+        # 🆕 V9.2 修复：强制刷新市场情绪数据
+        # 确保每次都获取最新的数据，而不是使用缓存的旧数据
+        if cycle_manager:
+            # 强制调用 get_market_emotion() 来刷新数据
+            indicators = cycle_manager.get_market_emotion()
+            
+            # 将数据存储到 Session State，确保 UI 能读取到最新数据
+            if 'market_metrics' not in st.session_state:
+                st.session_state.market_metrics = {}
+            
+            st.session_state.market_metrics.update({
+                'limit_up_count': indicators.get('limit_up_count', 0),
+                'limit_down_count': indicators.get('limit_down_count', 0),
+                'highest_board': indicators.get('highest_board', 0),
+                'avg_profit': indicators.get('avg_profit', 0),
+                'burst_rate': indicators.get('burst_rate', 0),
+                'promotion_rate': indicators.get('promotion_rate', 0)
+            })
+        
         # 创建三列布局
         col1, col2, col3 = st.columns([2, 2, 1])
         
@@ -288,10 +307,16 @@ def show_market_weather():
         
         with col2:
             if theme_detector:
-                # 获取涨停股票
+                # 🆕 V9.2 修复：从 Session State 或 market_indicators 获取涨停股票
                 limit_up_stocks = []
                 if cycle_manager:
-                    limit_up_stocks = cycle_manager.market_indicators.get('limit_up_stocks', [])
+                    # 优先从 Session State 获取
+                    if 'market_metrics' in st.session_state:
+                        # 从 market_indicators 获取（因为 Session State 中只存储了数量，没有股票列表）
+                        limit_up_stocks = cycle_manager.market_indicators.get('limit_up_stocks', [])
+                    else:
+                        # 如果 Session State 中没有数据，从 market_indicators 获取
+                        limit_up_stocks = cycle_manager.market_indicators.get('limit_up_stocks', [])
                 
                 theme_info = theme_detector.analyze_main_theme(limit_up_stocks)
                 
@@ -318,20 +343,33 @@ def show_market_weather():
         with col3:
             # 显示核心指标
             if cycle_manager:
-                indicators = cycle_manager.get_market_emotion()
+                # 🆕 V9.2 修复：优先从 Session State 读取数据，确保显示最新数据
+                metrics = st.session_state.get('market_metrics', {})
+                
+                # 如果 Session State 中没有数据，再调用 get_market_emotion()
+                if not metrics:
+                    indicators = cycle_manager.get_market_emotion()
+                    metrics = {
+                        'limit_up_count': indicators.get('limit_up_count', 0),
+                        'limit_down_count': indicators.get('limit_down_count', 0),
+                        'highest_board': indicators.get('highest_board', 0),
+                        'avg_profit': indicators.get('avg_profit', 0),
+                        'burst_rate': indicators.get('burst_rate', 0),
+                        'promotion_rate': indicators.get('promotion_rate', 0)
+                    }
                 
                 st.markdown("### 📊 核心指标")
                 
-                metrics = [
-                    ("涨停家数", indicators.get('limit_up_count', 0), "🔥"),
-                    ("跌停家数", indicators.get('limit_down_count', 0), "❄️"),
-                    ("最高板", indicators.get('highest_board', 0), "🏔️"),
-                    ("平均溢价", f"{indicators.get('avg_profit', 0):.1%}", "💰"),
-                    ("炸板率", f"{indicators.get('burst_rate', 0):.1%}", "💥"),
-                    ("晋级率", f"{indicators.get('promotion_rate', 0):.1%}", "⬆️")
+                metric_data = [
+                    ("涨停家数", metrics.get('limit_up_count', 0), "🔥"),
+                    ("跌停家数", metrics.get('limit_down_count', 0), "❄️"),
+                    ("最高板", metrics.get('highest_board', 0), "🏔️"),
+                    ("平均溢价", f"{metrics.get('avg_profit', 0):.1%}", "💰"),
+                    ("炸板率", f"{metrics.get('burst_rate', 0):.1%}", "💥"),
+                    ("晋级率", f"{metrics.get('promotion_rate', 0):.1%}", "⬆️")
                 ]
                 
-                for label, value, emoji in metrics:
+                for label, value, emoji in metric_data:
                     st.metric(label, f"{emoji} {value}")
         
         st.markdown("---")
