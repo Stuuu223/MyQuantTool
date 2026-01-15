@@ -1566,8 +1566,8 @@ class QuantAlgo:
                                 '竞价量': int(auction_volume),
                                 '买一价': round(bid1_price, 2),
                                 '卖一价': round(ask1_price, 2),
-                                '买一量': int(bid1_volume / 100),
-                                '卖一量': int(ask1_volume / 100),
+                                '买一量': int(bid1_volume),
+                                '卖一量': int(ask1_volume),
                                 '竞价抢筹度': round(auction_ratio, 4),
                                 '开盘涨幅': round(open_gap_pct, 2),
                                 '封单金额': round(seal_amount, 2),
@@ -2314,8 +2314,8 @@ class QuantAlgo:
                         '量比': 0,  # 需要从历史数据计算
                         '换手率': 0,  # 需要从历史数据计算
                         '竞价量': int(auction_volume),
-                        '买一量': int(bid1_volume / 100),
-                        '卖一量': int(ask1_volume / 100),
+                        '买一量': int(bid1_volume),
+                        '卖一量': int(ask1_volume),
                         '买一价': bid1_price,
                         '卖一价': ask1_price,
                         '竞价抢筹度': 0,  # 需要从历史数据计算
@@ -2968,8 +2968,8 @@ class QuantAlgo:
                         '成交额': round(current_turnover, 2),  # 🆕 V8.1: 添加成交额
                         '买一价': round(bid1_price, 2),
                         '卖一价': round(ask1_price, 2),
-                        '买一量': int(bid1_volume / 100),
-                        '卖一量': int(ask1_volume / 100),
+                        '买一量': int(bid1_volume),
+                        '卖一量': int(ask1_volume),
                         '竞价抢筹度': round(auction_ratio, 4),
                         '开盘涨幅': round(open_gap_pct, 2),
                         '封单金额': round(seal_amount, 2),

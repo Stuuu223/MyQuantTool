@@ -769,9 +769,9 @@ class DragonTrackingSystem:
                 pct_change = (current_price - last_close) / last_close * 100
                 
                 # 计算竞价/量比
-                # Easyquotation 的 bid1_volume 是股数，需要除以 100 变成手
-                bid_vol = int(data.get('bid1_volume', 0)) / 100
-                ask_vol = int(data.get('ask1_volume', 0)) / 100
+                # 🆕 V9.2 修复：DataSanitizer 已经将 bid1_volume 转换为手数，无需再次除以 100
+                bid_vol = int(data.get('bid1_volume', 0))
+                ask_vol = int(data.get('ask1_volume', 0))
                 
                 # 判断是否为 20cm（创业板、科创板）
                 is_20cm = full_code.startswith('sz30') or full_code.startswith('sh688')
