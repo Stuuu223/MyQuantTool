@@ -310,6 +310,34 @@ class MarketCycleManager:
             
             max_board = 0
             
+            # 🆕 V9.2 修复：检查数据库中是否有足够的历史数据
+            # 检查最近的数据日期
+            recent_query = "SELECT MAX(date) as max_date FROM daily_bars"
+            recent_df = pd.read_sql(recent_query, self.db.conn)
+            
+            if recent_df.empty or recent_df.iloc[0]['max_date'] is None:
+                logger.warning("数据库中没有历史数据，无法计算连板高度")
+                # 降级：返回默认值（所有涨停都是1板）
+                board_distribution['1板'] = len(limit_up_stocks)
+                return {
+                    'max_board': 1,
+                    'board_distribution': board_distribution
+                }
+            
+            # 检查是否有最近的数据（最近7天）
+            max_date = recent_df.iloc[0]['max_date']
+            max_date_dt = datetime.strptime(max_date, '%Y-%m-%d')
+            days_diff = (datetime.now() - max_date_dt).days
+            
+            if days_diff > 7:
+                logger.warning(f"数据库中的最新数据是{days_diff}天前，可能不准确")
+                # 降级：返回默认值（所有涨停都是1板）
+                board_distribution['1板'] = len(limit_up_stocks)
+                return {
+                    'max_board': 1,
+                    'board_distribution': board_distribution
+                }
+            
             for stock in limit_up_stocks:
                 symbol = stock['code']
                 
@@ -336,7 +364,7 @@ class MarketCycleManager:
                     close_price = row['close']
                     
                     # 判断是否涨停（涨幅接近10%或20%）
-                    change_pct = (close_price - open_price) / open_price * 100
+                    change_pct = (close_price - open_price) / open_price * 100 if open_price > 0 else 0
                     
                     # 10cm和20cm的涨停判断
                     is_limit_up = (change_pct >= 9.5) or (change_pct >= 19.5)
@@ -399,6 +427,23 @@ class MarketCycleManager:
             
             yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
             
+            # 🆕 V9.2 修复：检查数据库中是否有昨天的数据
+            yesterday_query = f"""
+            SELECT COUNT(*) as count
+            FROM daily_bars
+            WHERE date = '{yesterday}'
+            """
+            yesterday_df = pd.read_sql(yesterday_query, self.db.conn)
+            
+            if yesterday_df.empty or yesterday_df.iloc[0]['count'] == 0:
+                logger.warning(f"数据库中没有昨天的数据（{yesterday}），无法计算平均溢价")
+                # 降级：返回默认值
+                return {
+                    'avg_profit': 0.03,  # 假设平均溢价为3%
+                    'profit_count': 0,
+                    'loss_count': 0
+                }
+            
             # 查询昨天的涨停股票
             query = f"""
             SELECT symbol, close, open
@@ -432,7 +477,7 @@ class MarketCycleManager:
                 
                 if not today_df.empty:
                     today_close = today_df.iloc[0]['close']
-                    profit_pct = (today_close - yesterday_close) / yesterday_close * 100
+                    profit_pct = (today_close - yesterday_close) / yesterday_close * 100 if yesterday_close > 0 else 0
                     
                     profits.append(profit_pct)
                     
@@ -453,9 +498,9 @@ class MarketCycleManager:
             logger.error(f"获取昨日涨停溢价失败: {e}")
             # 降级：返回模拟数据
             return {
-                'avg_profit': 0.03,
-                'profit_count': 10,
-                'loss_count': 5
+                'avg_profit': 0.03,  # 假设平均溢价为3%
+                'profit_count': 0,
+                'loss_count': 0
             }
     
     def get_limit_up_burst_rate(self) -> float:
@@ -472,28 +517,45 @@ class MarketCycleManager:
             if not limit_up_stocks:
                 return 0.0
             
-            # 获取这些股票的历史数据，检查是否曾经涨停过然后炸板
-            # 这里简化处理：通过今日开盘价和昨日收盘价判断
+            # 🆕 V9.2 修复：检查数据库中是否有昨天的数据
             from datetime import datetime, timedelta
             
             yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
             
+            yesterday_query = f"""
+            SELECT COUNT(*) as count
+            FROM daily_bars
+            WHERE date = '{yesterday}'
+            """
+            yesterday_df = pd.read_sql(yesterday_query, self.db.conn)
+            
+            if yesterday_df.empty or yesterday_df.iloc[0]['count'] == 0:
+                logger.warning(f"数据库中没有昨天的数据（{yesterday}），无法计算炸板率")
+                # 降级：返回默认值（假设15%的炸板率）
+                return 0.15
+            
+            # 获取这些股票的历史数据，检查是否曾经涨停过然后炸板
+            # 这里简化处理：通过今日开盘价和昨日收盘价判断
             burst_count = 0
             
             for stock in limit_up_stocks:
                 symbol = stock['code']
                 
                 # 查询昨日数据
-                yesterday_query = f"SELECT close FROM daily_bars WHERE symbol = '{symbol}' AND date = '{yesterday}'"
+                yesterday_query = f"SELECT close, open FROM daily_bars WHERE symbol = '{symbol}' AND date = '{yesterday}'"
                 yesterday_df = pd.read_sql(yesterday_query, self.db.conn)
                 
                 if not yesterday_df.empty:
                     yesterday_close = yesterday_df.iloc[0]['close']
+                    yesterday_open = yesterday_df.iloc[0]['open']
                     today_open = stock.get('price', 0)
                     
-                    # 如果昨日涨停（涨幅接近10%），但今日开盘价低于昨日收盘价，视为炸板
-                    # 这里简化判断：如果今日开盘价低于昨日收盘价5%以上
-                    if today_open < yesterday_close * 0.95:
+                    # 判断昨日是否涨停
+                    yesterday_change_pct = (yesterday_close - yesterday_open) / yesterday_open * 100 if yesterday_open > 0 else 0
+                    was_limit_up = (yesterday_change_pct >= 9.5) or (yesterday_change_pct >= 19.5)
+                    
+                    # 如果昨日涨停，但今日开盘价低于昨日收盘价，视为炸板
+                    if was_limit_up and today_open < yesterday_close * 0.95:
                         burst_count += 1
             
             burst_rate = burst_count / len(limit_up_stocks) if limit_up_stocks else 0
@@ -502,7 +564,7 @@ class MarketCycleManager:
         
         except Exception as e:
             logger.error(f"获取炸板率失败: {e}")
-            # 降级：返回模拟数据
+            # 降级：返回模拟数据（假设15%的炸板率）
             return 0.15
     
     def get_board_promotion_rate(self) -> float:
@@ -519,6 +581,19 @@ class MarketCycleManager:
             
             today = datetime.now().strftime('%Y-%m-%d')
             yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+            
+            # 🆕 V9.2 修复：检查数据库中是否有昨天的数据
+            yesterday_query = f"""
+            SELECT COUNT(*) as count
+            FROM daily_bars
+            WHERE date = '{yesterday}'
+            """
+            yesterday_df = pd.read_sql(yesterday_query, self.db.conn)
+            
+            if yesterday_df.empty or yesterday_df.iloc[0]['count'] == 0:
+                logger.warning(f"数据库中没有昨天的数据（{yesterday}），无法计算晋级率")
+                # 降级：返回默认值（假设25%的晋级率）
+                return 0.25
             
             # 获取昨日首板数（昨日涨停的股票数）
             yesterday_limit_up_query = f"""
@@ -556,7 +631,7 @@ class MarketCycleManager:
         
         except Exception as e:
             logger.error(f"获取晋级率失败: {e}")
-            # 降级：返回模拟数据
+            # 降级：返回模拟数据（假设25%的晋级率）
             return 0.25
     
     def get_cycle_history(self, days: int = 30) -> List[Dict]:

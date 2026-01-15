@@ -233,9 +233,18 @@ class ThemeDetector:
         if not theme_stocks:
             return None
         
+        # 🆕 V9.2 修复：排除新股（N开头，涨幅超过100%）
+        # 新股前5天没有涨跌幅限制，涨幅可以超过100%
+        non_new_stocks = [stock for stock in theme_stocks 
+                          if not (stock['name'].startswith('N') and stock['change_pct'] > 100)]
+        
+        # 如果所有股票都是新股，则选择涨幅最小的作为龙头
+        if not non_new_stocks:
+            non_new_stocks = theme_stocks
+        
         # 简化处理：选择涨幅最大的作为龙头
         # 实际应该考虑涨停时间、成交额、市值等因素
-        leader = max(theme_stocks, key=lambda x: x.get('change_pct', 0))
+        leader = max(non_new_stocks, key=lambda x: x.get('change_pct', 0))
         
         return {
             'code': leader['code'],
