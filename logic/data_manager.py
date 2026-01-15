@@ -466,7 +466,28 @@ class DataManager:
         if not stock_list:
             return {}
 
-        # 🆕 V6.1: 检查缓存
+        # 🆕 V7.0: 判断是否在交易时间内
+        now = datetime.now()
+        current_time = now.time()
+        is_trading_time = (
+            (current_time >= datetime.strptime("09:30", "%H:%M").time() and
+             current_time <= datetime.strptime("11:30", "%H:%M").time()) or
+            (current_time >= datetime.strptime("13:00", "%H:%M").time() and
+             current_time <= datetime.strptime("15:00", "%H:%M").time())
+        )
+        is_weekday = now.weekday() < 5
+
+        # 🆕 V7.0: 非交易时间，使用缓存数据（上次收盘）
+        if not (is_trading_time and is_weekday):
+            cache_key = f"fast_price_{len(stock_list)}_{hash(tuple(sorted(stock_list)))}"
+            if cache_key in self.realtime_cache:
+                cache_data = self.realtime_cache[cache_key]
+                logger.info(f"[OFF-HOURS] 使用上次收盘数据 (缓存时间: {cache_data['timestamp'].strftime('%H:%M:%S')})")
+                return cache_data['data']
+            else:
+                logger.warning("[OFF-HOURS] 无缓存数据，尝试获取最新数据")
+
+        # 🆕 V6.1: 检查缓存（交易时间内）
         cache_key = f"fast_price_{len(stock_list)}_{hash(tuple(sorted(stock_list)))}"
         if cache_key in self.realtime_cache:
             cache_data = self.realtime_cache[cache_key]
@@ -480,10 +501,12 @@ class DataManager:
             result = self._try_get_fast_price(stock_list, retry)
             
             if result and len(result) > 0:
-                # 🆕 V6.1: 存入缓存
+                # 🆕 V6.1: 存入缓存（非交易时间缓存时间延长）
+                cache_duration = 86400 if not (is_trading_time and is_weekday) else self.cache_expire_seconds
                 self.realtime_cache[cache_key] = {
                     'data': result,
-                    'timestamp': datetime.now()
+                    'timestamp': datetime.now(),
+                    'cache_duration': cache_duration
                 }
                 return result
             

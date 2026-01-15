@@ -367,54 +367,62 @@ class ThemeDetector:
             target_sectors = []
             strategy = ''
             hysteresis_days = 0
+            strength_ratio = 0.0  # 🆕 V7.0: 强度比值
             
-            # 🆕 V6.2: 轮动确认窗口逻辑
-            # 主线分歧的第一天，不急着切换，而是进入"观察期"
-            if theme_days >= 3 and theme_sentiment == 'DIVERGENCE':
-                # 检查是否是第一次分歧
-                divergence_count = self._count_recent_divergence(current_theme)
+            # 🆕 V7.0: 引入板块强度相对值（Relative Strength Ratio）
+            # 从"看时间切换"改为"看强度差切换"
+            if theme_sentiment == 'DIVERGENCE':
+                # 计算主线强度
+                main_strength = self._calculate_sector_strength(current_theme, all_themes)
                 
-                if divergence_count == 1:
-                    # 第一次分歧：进入观察期，不要急着切
-                    rotation_signal = 'HOLD_AND_WATCH'
-                    rotation_reason = f"{current_theme}首次分歧，可能是'空中加油'，进入观察期"
-                    strategy = f"锁仓观察，等待确认。如果次日龙头无法反包，则准备切换"
-                    hysteresis_days = 1
-                elif divergence_count >= 2:
-                    # 连续2天分歧：确认切换
-                    # 但还需要检查低位板块是否有承接
-                    new_sector_strength = self._check_new_sector_strength(all_themes, current_theme)
+                # 找出最强的低位板块
+                strongest_low_sector = self._find_strongest_low_sector(all_themes, current_theme)
+                
+                if strongest_low_sector:
+                    # 计算强度比值
+                    low_strength = self._calculate_sector_strength(strongest_low_sector, all_themes)
+                    strength_ratio = low_strength / main_strength if main_strength > 0 else 0
                     
-                    if new_sector_strength >= 2:  # 低位板块有2只以上首板
+                    # 动态阈值：强度比值判断
+                    if strength_ratio >= 1.5:
+                        # 新板块强度是主线的1.5倍以上，确认切换
                         rotation_signal = 'ROTATE_NOW'
-                        rotation_reason = f"{current_theme}连续{divergence_count}天分歧且无法修复，确认切换"
-                        strategy = f"果断切换到低位板块，避免踏空"
+                        rotation_reason = f"{current_theme}分歧，新板块{strongest_low_sector}强度比值{strength_ratio:.2f}，确认切换"
+                        strategy = f"果断切换到{strongest_low_sector}，避免踏空"
+                        target_sectors = [strongest_low_sector]
                         
-                        # 扫描低位滞涨板块
-                        if all_themes:
-                            low_sectors = self._find_low_sectors(all_themes, current_theme)
-                            target_sectors = low_sectors[:3]
+                    elif strength_ratio >= 1.0:
+                        # 新板块强度接近主线，密切关注
+                        rotation_signal = 'WATCH_CLOSELY'
+                        rotation_reason = f"{current_theme}分歧，新板块{strongest_low_sector}强度比值{strength_ratio:.2f}，密切关注"
+                        strategy = f"主线未死，继续在主线做T，同时观察新板块动向"
+                        target_sectors = [strongest_low_sector]
+                        
                     else:
-                        rotation_signal = 'HOLD_AND_WATCH'
-                        rotation_reason = f"{current_theme}分歧但低位板块无承接，继续观察"
-                        strategy = f"低位板块未启动，继续持有主线，等待明确信号"
-                        hysteresis_days = divergence_count
+                        # 主线依然比新板块强，坚决不切
+                        rotation_signal = 'STAY_WITH_MAIN'
+                        rotation_reason = f"{current_theme}分歧但依然强势（强度比值{strength_ratio:.2f}），继续持有"
+                        strategy = f"主线未死，继续在此做T，不要去抓杂毛"
+                        hysteresis_days = 1
+                else:
+                    # 没有低位板块承接，继续观察
+                    rotation_signal = 'HOLD_AND_WATCH'
+                    rotation_reason = f"{current_theme}分歧，但无低位板块承接"
+                    strategy = f"继续持有主线，等待明确信号"
             
-            # 2. 资金流向预测（模拟）
-            # 实际实现需要获取资金流向数据
-            elif theme_heat > 0.15 and theme_sentiment == 'STRONG':
-                # 主线热度极高，高潮期风险
-                rotation_signal = 'SWITCH_RISK'
-                rotation_reason = f"{current_theme}进入高潮期（热度{theme_heat:.1%}），注意资金回流风险"
-                strategy = f"只卖不买，等待{current_theme}分歧后的新机会"
-            
-            # 3. 主线刚启动，继续持有
+            # 主线刚启动，继续持有
             elif theme_days <= 2 and theme_sentiment == 'STRONG':
                 rotation_signal = 'HOLD'
                 rotation_reason = f"{current_theme}启动初期，情绪强势，继续持有"
                 strategy = f"坚定持有{current_theme}前排，关注补涨机会"
             
-            # 4. 主线弱势，观望
+            # 主线高潮期风险
+            elif theme_heat > 0.15 and theme_sentiment == 'STRONG':
+                rotation_signal = 'SWITCH_RISK'
+                rotation_reason = f"{current_theme}进入高潮期（热度{theme_heat:.1%}），注意资金回流风险"
+                strategy = f"只卖不买，等待{current_theme}分歧后的新机会"
+            
+            # 主线弱势，观望
             elif theme_heat < 0.05 or theme_sentiment == 'WEAK':
                 rotation_signal = 'WATCH_LOW_SECTOR'
                 rotation_reason = f"{current_theme}热度不足（{theme_heat:.1%}），情绪弱势"
@@ -434,7 +442,8 @@ class ThemeDetector:
                 'theme_days': theme_days,
                 'theme_heat': theme_heat,
                 'theme_sentiment': theme_sentiment,
-                'hysteresis_days': hysteresis_days
+                'hysteresis_days': hysteresis_days,
+                'strength_ratio': strength_ratio  # 🆕 V7.0: 返回强度比值
             }
         
         except Exception as e:
@@ -539,6 +548,70 @@ class ThemeDetector:
             
             # 新板块强度：低位板块有首板（热度0.01-0.05，涨停家数>=1）
             if 0.01 <= heat <= 0.05 and count >= 1:
+                new_sector_count += count
+        
+        return new_sector_count
+    
+    def _calculate_sector_strength(self, theme: str, all_themes: Dict) -> float:
+        """
+        🆕 V7.0: 计算板块强度（用于强度比值计算）
+        
+        Args:
+            theme: 板块名称
+            all_themes: 所有板块统计信息
+        
+        Returns:
+            float: 板块强度值
+        """
+        if not all_themes or theme not in all_themes:
+            return 0.0
+        
+        theme_info = all_themes[theme]
+        
+        # 强度计算公式：涨停家数 * 热度系数
+        count = theme_info.get('count', 0)
+        heat = theme_info.get('heat', 0)
+        
+        # 强度 = 涨停家数 * (1 + 热度)
+        # 这样涨停家数多的板块即使热度不高，强度也会比较高
+        strength = count * (1 + heat * 10)
+        
+        return strength
+    
+    def _find_strongest_low_sector(self, all_themes: Dict, exclude_theme: str) -> Optional[str]:
+        """
+        🆕 V7.0: 找出最强的低位板块
+        
+        Args:
+            all_themes: 所有板块统计信息
+            exclude_theme: 要排除的主线板块
+        
+        Returns:
+            str: 最强的低位板块名称，如果没有则返回None
+        """
+        if not all_themes:
+            return None
+        
+        strongest_sector = None
+        max_strength = 0
+        
+        for theme, info in all_themes.items():
+            # 排除主线板块和"其他"板块
+            if theme == exclude_theme or theme == '其他':
+                continue
+            
+            heat = info.get('heat', 0)
+            count = info.get('count', 0)
+            
+            # 低位板块定义：热度较低但有涨停股票
+            if 0.01 <= heat <= 0.05 and count >= 1:
+                strength = self._calculate_sector_strength(theme, all_themes)
+                
+                if strength > max_strength:
+                    max_strength = strength
+                    strongest_sector = theme
+        
+        return strongest_sector
                 new_sector_count += 1
         
         return new_sector_count
