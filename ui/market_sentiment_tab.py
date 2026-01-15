@@ -39,12 +39,12 @@ def render_market_sentiment_tab(db, config):
         'price_sentiment': price_sentiment
     }).set_index('date')
     
-    # 计算综合情绪指数
-    sentiment_data['composite_index'] = sentiment_calculator.calculate_composite_index(
-        sentiment_data['news_sentiment'],
-        sentiment_data['social_sentiment'],
-        sentiment_data['volume_sentiment'],
-        sentiment_data['price_sentiment']
+    # 计算综合情绪指数（加权平均）
+    sentiment_data['composite_index'] = (
+        sentiment_calculator.news_weight * sentiment_data['news_sentiment'] +
+        sentiment_calculator.social_weight * sentiment_data['social_sentiment'] +
+        sentiment_calculator.volume_weight * sentiment_data['volume_sentiment'] +
+        sentiment_calculator.price_weight * sentiment_data['price_sentiment']
     )
     
     st.write("情绪指标趋势:")
