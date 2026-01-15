@@ -250,7 +250,9 @@ def show_market_weather():
             'MAIN_RISE': {'name': '🚀 主升期', 'color': '#4ECDC4'},
             'CHAOS': {'name': '🌊 混沌期', 'color': '#FFD93D'},
             'ICE': {'name': '🧊 冰点期', 'color': '#6BCB77'},
-            'DECLINE': {'name': '📉 退潮期', 'color': '#FF8C42'}
+            'DECLINE': {'name': '📉 退潮期', 'color': '#FF8C42'},
+            'PANIC': {'name': '⛈️ 暴雨期', 'color': '#8B0000'},  # 🆕 V9.2 恐慌期
+            'CAUTIOUS': {'name': '🌥️ 谨慎期', 'color': '#FFA500'}  # 🆕 V9.2 谨慎期
         }
         
         with col1:

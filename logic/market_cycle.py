@@ -87,9 +87,12 @@ class MarketCycleManager:
             logger.error(f"获取市场情绪指标失败: {e}")
             return {}
     
-    def get_current_phase(self) -> Dict:
+    def get_current_phase(self, custom_indicators=None) -> Dict:
         """
         判断当前市场周期
+        
+        Args:
+            custom_indicators: 可选的自定义指标（用于测试）
         
         Returns:
             dict: {
@@ -101,7 +104,10 @@ class MarketCycleManager:
         """
         try:
             # 获取市场情绪指标
-            indicators = self.get_market_emotion()
+            if custom_indicators:
+                indicators = custom_indicators
+            else:
+                indicators = self.get_market_emotion()
             
             if not indicators:
                 return {
@@ -112,12 +118,34 @@ class MarketCycleManager:
                 }
             
             limit_up_count = indicators['limit_up_count']
+            limit_down_count = indicators['limit_down_count']
             highest_board = indicators['highest_board']
             avg_profit = indicators['avg_profit']
             burst_rate = indicators['burst_rate']
             promotion_rate = indicators['promotion_rate']
             
-            # 判断周期
+            # 🛑 V9.2 新增：恐慌熔断机制 (Panic Circuit Breaker)
+            # 1. 绝对恐慌：跌停比涨停多 → 直接降级为"暴雨"
+            if limit_down_count > limit_up_count:
+                self.current_cycle = self.CYCLE_DECLINE  # 退潮期
+                return {
+                    'cycle': 'PANIC',  # 恐慌期
+                    'description': "暴雨：极度危险，空仓观望",
+                    'strategy': "只卖不买，空仓观望，等待情绪修复",
+                    'risk_level': 5
+                }
+            
+            # 2. 局部恐慌：跌停家数超过 30 家 → 最高只能是"多云"
+            if limit_down_count > 30:
+                self.current_cycle = self.CYCLE_CHAOS  # 混沌期
+                return {
+                    'cycle': 'CAUTIOUS',  # 谨慎期
+                    'description': "多云：分歧巨大，谨慎操作",
+                    'strategy': "轻仓试错，控制仓位，只做最高板",
+                    'risk_level': 4
+                }
+            
+            # 判断周期（原有逻辑，但增加了跌停因子的约束）
             if limit_up_count >= self.BOOM_LIMIT_UP_COUNT and highest_board >= self.BOOM_HIGHEST_BOARD:
                 # 高潮期：情绪高潮，危险
                 self.current_cycle = self.CYCLE_BOOM
