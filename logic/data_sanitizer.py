@@ -185,7 +185,7 @@ class DataSanitizer:
             return f"{amount/10000:.2f} 万"
     
     @staticmethod
-    def sanitize_realtime_data(raw_data, source_type='easyquotation', stock_info=None):
+    def sanitize_realtime_data(raw_data, source_type='easyquotation', stock_info=None, code=None):
         """
         一站式实时数据清洗
         
@@ -193,6 +193,7 @@ class DataSanitizer:
             raw_data: 原始实时数据（字典）
             source_type: 数据源类型
             stock_info: 股票基本信息（含流通股本等）
+            code: 股票代码（可选，用于 easyquotation 数据源）
         
         Returns:
             dict: 清洗后的数据
@@ -201,6 +202,10 @@ class DataSanitizer:
             return {}
         
         sanitized = raw_data.copy()
+        
+        # 🆕 添加股票代码（easyquotation 数据源需要）
+        if code:
+            sanitized['code'] = code
         
         # 获取基本信息
         price = float(raw_data.get('now', raw_data.get('price', 0)))

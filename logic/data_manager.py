@@ -589,7 +589,8 @@ class DataManager:
                     # 使用 DataSanitizer 清洗数据
                     sanitized_data = DataSanitizer.sanitize_realtime_data(
                         stock_data, 
-                        source_type='easyquotation'
+                        source_type='easyquotation',
+                        code=stock_code  # 🆕 传递股票代码
                     )
                     sanitized_batch[stock_code] = sanitized_data
                 
