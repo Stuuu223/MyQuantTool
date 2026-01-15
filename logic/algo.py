@@ -3,6 +3,9 @@ import numpy as np
 from sklearn.cluster import KMeans
 from logic.logger import get_logger
 
+# 🆕 V9.0: 导入游资掠食者系统
+from logic.predator_system import PredatorSystem
+
 logger = get_logger(__name__)
 
 class QuantAlgo:
@@ -3433,6 +3436,50 @@ class QuantAlgo:
                 except Exception as e:
                     logger.warning(f"加载股票 {symbol} 历史数据失败: {e}")
             logger.info(f"✅ 历史数据加载完成，成功加载 {len(history_data_cache)} 只股票")
+
+            # 🆕 V9.0: 游资掠食者系统检查
+            logger.info("🦖 启动V9.0游资掠食者系统检查...")
+            predator = PredatorSystem()
+            predator_results = {}
+            
+            for stock in all_stocks:
+                symbol = stock['代码']
+                name = stock['名称']
+                
+                # 构建股票基本信息
+                stock_info = {
+                    'symbol': symbol,
+                    'name': name,
+                    'remark': ''
+                }
+                
+                # 构建实时行情数据
+                realtime_data = {
+                    'change_percent': stock['涨跌幅'],
+                    'volume_ratio': 1,  # 暂时设为1，后面会计算
+                    'turnover_rate': 0  # 暂时设为0，后面会计算
+                }
+                
+                # 运行V9.0检查
+                result = predator.analyze_stock(stock_info, realtime_data)
+                predator_results[symbol] = result
+                
+                # 如果触发生死红线或身份与涨幅错配，直接排除
+                if result['signal'] == 'SELL':
+                    logger.warning(f"🦖 V9.0排除：{symbol} {name} - {result['reason']}")
+            
+            # 过滤掉被V9.0排除的股票
+            filtered_stocks = [stock for stock in all_stocks 
+                             if predator_results[stock['代码']]['signal'] != 'SELL']
+            logger.info(f"🦖 V9.0检查完成，从{len(all_stocks)}只中排除了{len(all_stocks)-len(filtered_stocks)}只，保留{len(filtered_stocks)}只")
+            
+            if not filtered_stocks:
+                return {
+                    '数据状态': 'V9.0游资掠食者系统全部排除',
+                    '说明': '所有候选股票触发生死红线或身份与涨幅错配'
+                }
+            
+            all_stocks = filtered_stocks
 
             # 计算量比
             for stock in all_stocks:
