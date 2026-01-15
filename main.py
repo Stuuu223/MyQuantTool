@@ -210,9 +210,8 @@ st.title("🚀 个人化A股智能投研终端")
 st.markdown("基于 DeepSeek AI & AkShare 数据")
 
 # --- V6.0 逻辑深化：市场情绪周期和主线识别展示 ---
-@st.cache_resource
 def get_market_cycle_manager():
-    """获取市场周期管理器实例（缓存）"""
+    """获取市场周期管理器实例（不缓存，确保每次都获取最新数据）"""
     try:
         from logic.market_cycle import MarketCycleManager
         return MarketCycleManager()
@@ -220,9 +219,8 @@ def get_market_cycle_manager():
         logger.warning(f"市场周期管理器初始化失败: {e}")
         return None
 
-@st.cache_resource
 def get_theme_detector():
-    """获取主线识别器实例（缓存）"""
+    """获取主线识别器实例（不缓存，确保每次都获取最新数据）"""
     try:
         from logic.theme_detector import ThemeDetector
         return ThemeDetector()
