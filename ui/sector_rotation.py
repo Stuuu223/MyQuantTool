@@ -16,7 +16,7 @@ def render_sector_rotation_tab(db, config):
     """渲染板块轮动分析标签页"""
     
     st.header("🔄 板块轮动分析")
-    st.caption("30个行业板块实时强度评分 | 5因子加权模型 | 轮动机会识别")
+    st.caption("30个行业板块实时强度评分 | 基于日内资金流的实时热度 | 轮动机会识别")
     
     # 侧边栏配置
     with st.sidebar:
@@ -25,60 +25,28 @@ def render_sector_rotation_tab(db, config):
         date = st.date_input("分析日期", value=datetime.now().date(), key="sector_date")
         date_str = date.strftime("%Y%m%d")
 
-        # 市场概览
-        st.markdown("---")
-        st.subheader("📊 市场概览")
-
-        try:
-            import akshare as ak
-
-            # 获取主要指数
-            index_data = ak.stock_zh_index_spot_em()
-            major_indices = index_data[index_data['代码'].isin(['000001', '399001', '399006'])]
-
-            for _, row in major_indices.iterrows():
-                change_color = "📈" if row['涨跌幅'] > 0 else "📉" if row['涨跌幅'] < 0 else "➡️"
-                st.metric(
-                    f"{change_color} {row['名称']}",
-                    f"{row['涨跌幅']:+.2f}%"
-                )
-
-            # 涨跌停统计
-            st.markdown("---")
-            st.subheader("🎯 涨跌停统计")
-
-            try:
-                limit_up = ak.stock_zt_pool_em(date=date_str)
-                limit_down = ak.stock_zt_pool_em(date=date_str, ftype="跌停")
-
-                col_zt, col_dt = st.columns(2)
-                with col_zt:
-                    st.metric("涨停", len(limit_up))
-                with col_dt:
-                    st.metric("跌停", len(limit_down))
-            except Exception as e:
-                st.warning(f"获取涨跌停数据失败: {e}")
-                # 使用默认值
-                col_zt, col_dt = st.columns(2)
-                with col_zt:
-                    st.metric("涨停", "N/A")
-                with col_dt:
-                    st.metric("跌停", "N/A")
-
-        except Exception as e:
-            st.warning(f"获取市场数据失败: {e}")
+        # 🆕 V9.3.8: 移除侧边栏的 AkShare 调用，避免阻塞 UI
+        # 市场概览和涨跌停统计现在从主页面获取
 
         st.markdown("---")
-        st.markdown("### 📊 因子权重")
-        price_weight = st.slider("涨幅因子", 0, 50, 30, 5) / 100
-        capital_weight = st.slider("资金因子", 0, 50, 25, 5) / 100
-        leader_weight = st.slider("龙头因子", 0, 50, 20, 5) / 100
-        topic_weight = st.slider("题材因子", 0, 50, 15, 5) / 100
-        volume_weight = st.slider("成交因子", 0, 50, 10, 5) / 100
+        st.markdown("### 📊 强度计算公式")
+        st.info("""
+        **强度分 = 平均涨幅 × 70% + 涨停率 × 30%**
 
-        total_weight = price_weight + capital_weight + leader_weight + topic_weight + volume_weight
-        if abs(total_weight - 1.0) > 0.01:
-            st.warning(f"⚠️ 权重总和应为100%，当前为{total_weight*100:.1f}%")
+        - **平均涨幅**: 板块内所有股票的平均涨跌幅
+        - **涨停率**: 涨停股票数量 / 板块总股票数量
+
+        此算法基于日内资金流的实时热度，无需历史数据
+        """)
+
+        st.markdown("---")
+        st.markdown("### 💡 使用说明")
+        st.markdown("""
+        - **极速模式**: 基于全市场快照，耗时 <0.1秒
+        - **实时数据**: 反映此时此刻的资金流向
+        - **适用场景**: 盘中盯盘，捕捉热点板块
+        - **数据来源**: Easyquotation (新浪) + 行业缓存
+        """)
     
     # 主要内容
     col1, col2 = st.columns([2, 1])
@@ -188,46 +156,33 @@ def render_sector_rotation_tab(db, config):
                                 width='small'
                             )
                         }
-                    )                        
-                    # 检测轮动信号
+                    )
+                    # 🆕 V9.3.8: 简化的轮动信号识别（基于实时数据）
                     st.markdown("---")
-                    st.subheader("🎯 轮动信号识别")
+                    st.subheader("🎯 板块热度分布")
 
-                    signals = analyzer.detect_rotation_signals(date_str)
+                    # 基于强度分进行分类
+                    strong = df_strength[df_strength['综合评分'] >= 70]
+                    medium = df_strength[(df_strength['综合评分'] >= 40) & (df_strength['综合评分'] < 70)]
+                    weak = df_strength[df_strength['综合评分'] < 40]
 
-                    # 统计各阶段板块数量
-                    rising_count = len(signals['rising'])
-                    falling_count = len(signals['falling'])
-                    leading_count = len(signals['leading'])
-                    lagging_count = len(signals['lagging'])
-                    stable_count = len(strength_scores) - rising_count - falling_count - leading_count - lagging_count
-
-                    col_a, col_b, col_c, col_d = st.columns(4)
+                    col_a, col_b, col_c = st.columns(3)
 
                     with col_a:
-                        st.metric("📈 上升中", rising_count)
-                        if signals['rising']:
-                            st.write(", ".join(signals['rising'][:3]))
+                        st.metric("🔥 强势", len(strong))
+                        if len(strong) > 0:
+                            st.write(", ".join(strong['板块'].head(3).tolist()))
 
                     with col_b:
-                        st.metric("📉 下降中", falling_count)
-                        if signals['falling']:
-                            st.write(", ".join(signals['falling'][:3]))
+                        st.metric("🟡 中性", len(medium))
+                        if len(medium) > 0:
+                            st.write(", ".join(medium['板块'].head(3).tolist()))
 
                     with col_c:
-                        st.metric("🏆 领跑", leading_count)
-                        if signals['leading']:
-                            st.write(", ".join(signals['leading'][:3]))
+                        st.metric("❄️ 弱势", len(weak))
+                        if len(weak) > 0:
+                            st.write(", ".join(weak['板块'].head(3).tolist()))
 
-                    with col_d:
-                        st.metric("⚠️ 落后", lagging_count)
-                        if signals['lagging']:
-                            st.write(", ".join(signals['lagging'][:3]))
-
-                    # 显示稳定板块数量
-                    if stable_count > 0:
-                        st.info(f"📊 稳定板块: {stable_count} 个")
-                    
                     # 板块强度可视化
                     st.markdown("---")
                     st.subheader("📈 板块强度可视化")
@@ -316,9 +271,9 @@ def render_sector_rotation_tab(db, config):
                     )
                     st.plotly_chart(fig_turnover, use_container_width=True)
 
-                    # 因子雷达图
+                    # 🆕 V9.3.8: 简化的 TOP3 板块分析
                     st.markdown("---")
-                    st.subheader("📊 TOP3板块因子分析")
+                    st.subheader("📊 TOP3板块详细分析")
 
                     top3_sectors = df_strength.head(3)
 
@@ -326,21 +281,12 @@ def render_sector_rotation_tab(db, config):
                         with st.expander(f"🏆 {row['板块']} - {row['综合评分']:.1f}分"):
                             col_f1, col_f2, col_f3 = st.columns(3)
 
-                            col_f1.metric("涨幅因子", f"{row['涨幅因子']:.1f}")
-                            col_f2.metric("资金因子", f"{row['资金因子']:.1f}")
-                            col_f3.metric("龙头因子", f"{row['龙头因子']:.1f}")
-                            
-                            col_f4, col_f5 = st.columns(2)
-                            col_f4.metric("题材因子", f"{row['题材因子']:.1f}")
-                            col_f5.metric("成交因子", f"{row['成交因子']:.1f}")
-                            
+                            col_f1.metric("综合评分", f"{row['综合评分']:.1f}")
+                            col_f2.metric("平均涨幅", f"{row['涨跌幅']:+.2f}%")
+                            col_f3.metric("成交额", Formatter.format_amount(row['成交额']))
+
                             if row['领跑股票'] != '-':
                                 st.info(f"📌 领跑股票: {row['领跑股票']}")
-                            
-                            if row['强度变化'] > 5:
-                                st.success(f"📈 强度快速上升 (+{row['强度变化']:.1f})")
-                            elif row['强度变化'] < -5:
-                                st.warning(f"📉 强度快速下降 ({row['强度变化']:.1f})")
                     
                 else:
                     st.warning("⚠️ 未能获取板块数据，请稍后重试")
@@ -354,48 +300,41 @@ def render_sector_rotation_tab(db, config):
         st.markdown("""
         ### 💡 轮动策略
         
-        **📈 上升中板块**
-        - 关注龙头股
-        - 适度追涨
-        - 设置止损
+        **🔥 强势板块 (评分 ≥ 70)**
+        - 重点配置，持有待涨
+        - 关注龙头股，注意分化
+        - 适度追涨，设置止损
         
-        **🏆 领跑板块**
-        - 重点配置
-        - 持有待涨
-        - 注意分化
+        **🟡 中性板块 (评分 40-70)**
+        - 观望为主，等待信号
+        - 轻仓试错，寻找机会
+        - 注意板块轮动
         
-        **📉 下降中板块**
-        - 减仓规避
-        - 等待企稳
+        **❄️ 弱势板块 (评分 < 40)**
+        - 减仓规避，等待企稳
         - 不建议抄底
-        
-        **⚠️ 落后板块**
-        - 避免参与
         - 观望为主
-        - 等待轮动
         """)
         
         st.markdown("---")
         st.markdown("""
         ### 🎯 因子解读
         
-        **涨幅因子 (30%)**
+        **平均涨幅 (70%)**
         - 反映板块整体涨幅
         - 越强说明市场关注度越高
         
-        **资金因子 (25%)**
-        - 反映主力资金流入
-        - 资金流入越多越强
+        **涨停率 (30%)**
+        - 反映板块爆发力
+        - 涨停股票越多，板块越强
+        """)
         
-        **龙头因子 (20%)**
-        - 反映龙虎榜活跃度
-        - 龙头股表现决定板块强度
+        st.markdown("---")
+        st.markdown("""
+        ### 📊 数据说明
         
-        **题材因子 (15%)**
-        - 反映热点题材关联
-        - 题材越热板块越强
-        
-        **成交因子 (10%)**
-        - 反映成交量活跃度
-        - 放量上涨更可靠
+        **数据来源**: 全市场快照聚合
+        **更新频率**: 实时（每分钟）
+        **计算方式**: 纯内存计算，无网络请求
+        **适用场景**: 盘中盯盘，捕捉热点板块
         """)
