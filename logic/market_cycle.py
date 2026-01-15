@@ -47,6 +47,80 @@ class MarketCycleManager:
         self.cycle_history = []
         self.market_indicators = {}
     
+    def save_limit_up_pool_to_redis(self, limit_up_stocks: List[Dict]) -> bool:
+        """
+        🆕 V9.2 新增：保存今日涨停池到 Redis
+        
+        Args:
+            limit_up_stocks: 涨停股票列表
+        
+        Returns:
+            bool: 是否保存成功
+        """
+        try:
+            if not self.db._redis_client:
+                logger.warning("Redis 未连接，无法保存涨停池")
+                return False
+            
+            # 使用今天的日期作为 key
+            today = datetime.now().strftime('%Y%m%d')
+            key = f"limit_up:{today}"
+            
+            # 提取股票代码列表
+            stock_codes = [stock['code'] for stock in limit_up_stocks]
+            
+            # 保存到 Redis，过期时间为 7 天
+            import json
+            success = self.db.redis_set(key, json.dumps(stock_codes), expire=7*24*3600)
+            
+            if success:
+                logger.info(f"✅ 已保存今日涨停池到 Redis（{len(stock_codes)}只股票）")
+            else:
+                logger.error(f"❌ 保存涨停池到 Redis 失败")
+            
+            return success
+        
+        except Exception as e:
+            logger.error(f"保存涨停池到 Redis 失败: {e}")
+            return False
+    
+    def get_limit_up_pool_from_redis(self, date_str: str = None) -> List[str]:
+        """
+        🆕 V9.2 新增：从 Redis 获取涨停池
+        
+        Args:
+            date_str: 日期字符串（格式：YYYYMMDD），默认为昨天
+        
+        Returns:
+            list: 股票代码列表
+        """
+        try:
+            if not self.db._redis_client:
+                logger.warning("Redis 未连接，无法获取涨停池")
+                return []
+            
+            # 如果没有指定日期，使用昨天
+            if not date_str:
+                date_str = (datetime.now() - timedelta(days=1)).strftime('%Y%m%d')
+            
+            key = f"limit_up:{date_str}"
+            
+            # 从 Redis 获取数据
+            import json
+            raw_data = self.db.redis_get(key)
+            
+            if raw_data:
+                stock_codes = json.loads(raw_data)
+                logger.info(f"✅ 已从 Redis 恢复涨停池（{date_str}，{len(stock_codes)}只股票）")
+                return stock_codes
+            else:
+                logger.warning(f"⚠️ Redis 中没有 {date_str} 的涨停池数据")
+                return []
+        
+        except Exception as e:
+            logger.error(f"从 Redis 获取涨停池失败: {e}")
+            return []
+    
     def get_market_emotion(self) -> Dict:
         """
         获取市场情绪指标
@@ -80,6 +154,12 @@ class MarketCycleManager:
                 'limit_up_stocks': limit_up_down.get('limit_up_stocks', []),
                 'limit_down_stocks': limit_up_down.get('limit_down_stocks', [])
             }
+            
+            # 🆕 V9.2 新增：保存今日涨停池到 Redis
+            # 这样明天就可以计算晋级率和平均溢价
+            limit_up_stocks = limit_up_down.get('limit_up_stocks', [])
+            if limit_up_stocks:
+                self.save_limit_up_pool_to_redis(limit_up_stocks)
             
             return self.market_indicators
         
@@ -241,6 +321,19 @@ class MarketCycleManager:
                 if not cleaned_data:
                     continue
                 
+                # 🆕 V9.2 修复：剔除新股（N开头）和次新股（C开头）
+                # 新股上市首日无涨跌幅限制，涨幅可以超过100%
+                # 次新股上市前5天也没有涨跌幅限制
+                name = cleaned_data.get('name', '')
+                if name.startswith(('N', 'C')):
+                    logger.debug(f"剔除新股/次新股: {name} ({code})")
+                    continue
+                
+                # 排除ST股（可选，根据需求决定是否排除）
+                if 'ST' in name or '*ST' in name:
+                    logger.debug(f"剔除ST股: {name} ({code})")
+                    continue
+                
                 # 检查涨跌停状态
                 limit_status = cleaned_data.get('limit_status', {})
                 
@@ -341,12 +434,10 @@ class MarketCycleManager:
             for stock in limit_up_stocks:
                 symbol = stock['code']
                 
-                # 查询该股票最近N天的数据，计算连续涨停天数
-                consecutive_count = 0
-                
-                # 查询最近10天的数据
+                # 🆕 V9.2 修复：使用正确的算法计算连续涨停天数
+                # 查询该股票最近10天的数据
                 query = f"""
-                SELECT date, open, close
+                SELECT date, open, close, high, low
                 FROM daily_bars
                 WHERE symbol = '{symbol}'
                 ORDER BY date DESC
@@ -358,21 +449,42 @@ class MarketCycleManager:
                 if df.empty:
                     continue
                 
-                # 从最新的一天开始检查
-                for _, row in df.iterrows():
+                # 从今天开始检查
+                consecutive_count = 0
+                
+                for idx, row in df.iterrows():
                     open_price = row['open']
                     close_price = row['close']
+                    high_price = row['high']
+                    low_price = row['low']
                     
-                    # 判断是否涨停（涨幅接近10%或20%）
-                    change_pct = (close_price - open_price) / open_price * 100 if open_price > 0 else 0
-                    
-                    # 10cm和20cm的涨停判断
-                    is_limit_up = (change_pct >= 9.5) or (change_pct >= 19.5)
-                    
-                    if is_limit_up:
-                        consecutive_count += 1
+                    # 判断是否涨停（使用开盘价和收盘价计算涨幅）
+                    # 涨停判断：涨幅 >= 9.5%（主板）或 >= 19.5%（创业板/科创板）
+                    if open_price > 0:
+                        change_pct = (close_price - open_price) / open_price * 100
+                        
+                        # 更准确的涨停判断：需要考虑涨跌停板限制
+                        # 主板：10%涨跌停，创业板/科创板：20%涨跌停
+                        # 根据股票代码判断：
+                        # 60xxxx：主板，10%
+                        # 00xxxx：主板，10%
+                        # 30xxxx：创业板，20%
+                        # 68xxxx：科创板，20%
+                        
+                        if symbol.startswith('60') or symbol.startswith('00'):
+                            is_limit_up = change_pct >= 9.5
+                        elif symbol.startswith('30') or symbol.startswith('68'):
+                            is_limit_up = change_pct >= 19.5
+                        else:
+                            is_limit_up = change_pct >= 9.5  # 默认按主板处理
+                        
+                        if is_limit_up:
+                            consecutive_count += 1
+                        else:
+                            # 一旦没有涨停，停止计数
+                            break
                     else:
-                        # 一旦没有涨停，停止计数
+                        # 开盘价为0，无法判断，停止计数
                         break
                 
                 if consecutive_count > 0:
@@ -421,44 +533,51 @@ class MarketCycleManager:
             }
         """
         try:
-            # 获取昨天的涨停股票
-            # 从数据库查询昨天的涨停数据
-            from datetime import datetime, timedelta
+            # 🆕 V9.2 修复：优先使用 Redis 数据
+            # 从 Redis 获取昨日涨停池
+            yesterday_limit_up_codes = self.get_limit_up_pool_from_redis()
             
-            yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
-            
-            # 🆕 V9.2 修复：检查数据库中是否有昨天的数据
-            yesterday_query = f"""
-            SELECT COUNT(*) as count
-            FROM daily_bars
-            WHERE date = '{yesterday}'
-            """
-            yesterday_df = pd.read_sql(yesterday_query, self.db.conn)
-            
-            if yesterday_df.empty or yesterday_df.iloc[0]['count'] == 0:
-                logger.warning(f"数据库中没有昨天的数据（{yesterday}），无法计算平均溢价")
-                # 降级：返回默认值
-                return {
-                    'avg_profit': 0.03,  # 假设平均溢价为3%
-                    'profit_count': 0,
-                    'loss_count': 0
-                }
-            
-            # 查询昨天的涨停股票
-            query = f"""
-            SELECT symbol, close, open
-            FROM daily_bars
-            WHERE date = '{yesterday}'
-            """
-            
-            df = pd.read_sql(query, self.db.conn)
-            
-            if df.empty:
-                return {
-                    'avg_profit': 0,
-                    'profit_count': 0,
-                    'loss_count': 0
-                }
+            if not yesterday_limit_up_codes:
+                logger.warning("Redis 中没有昨日涨停池数据，降级使用数据库查询")
+                # 降级：使用数据库查询
+                from datetime import datetime, timedelta
+                
+                yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+                
+                # 检查数据库中是否有昨天的数据
+                yesterday_query = f"""
+                SELECT COUNT(*) as count
+                FROM daily_bars
+                WHERE date = '{yesterday}'
+                """
+                yesterday_df = pd.read_sql(yesterday_query, self.db.conn)
+                
+                if yesterday_df.empty or yesterday_df.iloc[0]['count'] == 0:
+                    logger.warning(f"数据库中没有昨天的数据（{yesterday}），无法计算平均溢价")
+                    # 降级：返回默认值
+                    return {
+                        'avg_profit': 0.03,  # 假设平均溢价为3%
+                        'profit_count': 0,
+                        'loss_count': 0
+                    }
+                
+                # 查询昨天的涨停股票
+                query = f"""
+                SELECT symbol, close, open
+                FROM daily_bars
+                WHERE date = '{yesterday}'
+                """
+                
+                df = pd.read_sql(query, self.db.conn)
+                
+                if df.empty:
+                    return {
+                        'avg_profit': 0,
+                        'profit_count': 0,
+                        'loss_count': 0
+                    }
+                
+                yesterday_limit_up_codes = df['symbol'].tolist()
             
             # 获取今日的收盘价计算溢价
             today = datetime.now().strftime('%Y-%m-%d')
@@ -467,9 +586,15 @@ class MarketCycleManager:
             profit_count = 0
             loss_count = 0
             
-            for _, row in df.iterrows():
-                symbol = row['symbol']
-                yesterday_close = row['close']
+            for symbol in yesterday_limit_up_codes:
+                # 获取昨日收盘价
+                yesterday_query = f"SELECT close FROM daily_bars WHERE symbol = '{symbol}' AND date = '{yesterday}'"
+                yesterday_df = pd.read_sql(yesterday_query, self.db.conn)
+                
+                if yesterday_df.empty:
+                    continue
+                
+                yesterday_close = yesterday_df.iloc[0]['close']
                 
                 # 获取今日数据
                 today_query = f"SELECT close FROM daily_bars WHERE symbol = '{symbol}' AND date = '{today}'"
@@ -488,8 +613,10 @@ class MarketCycleManager:
             
             avg_profit = sum(profits) / len(profits) if profits else 0
             
+            logger.info(f"✅ 平均溢价计算完成：{avg_profit:.2f}%（盈利{profit_count}只，亏损{loss_count}只）")
+            
             return {
-                'avg_profit': avg_profit,
+                'avg_profit': avg_profit / 100,  # 转换为小数
                 'profit_count': profit_count,
                 'loss_count': loss_count
             }
@@ -575,57 +702,79 @@ class MarketCycleManager:
             float: 晋级率
         """
         try:
-            # 获取今日连板数
-            # 这里简化处理：通过查询数据库计算
-            from datetime import datetime, timedelta
+            # 🆕 V9.2 修复：优先使用 Redis 数据
+            # 从 Redis 获取昨日涨停池
+            yesterday_limit_up_codes = self.get_limit_up_pool_from_redis()
             
-            today = datetime.now().strftime('%Y-%m-%d')
-            yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
-            
-            # 🆕 V9.2 修复：检查数据库中是否有昨天的数据
-            yesterday_query = f"""
-            SELECT COUNT(*) as count
-            FROM daily_bars
-            WHERE date = '{yesterday}'
-            """
-            yesterday_df = pd.read_sql(yesterday_query, self.db.conn)
-            
-            if yesterday_df.empty or yesterday_df.iloc[0]['count'] == 0:
-                logger.warning(f"数据库中没有昨天的数据（{yesterday}），无法计算晋级率")
-                # 降级：返回默认值（假设25%的晋级率）
-                return 0.25
-            
-            # 获取昨日首板数（昨日涨停的股票数）
-            yesterday_limit_up_query = f"""
-            SELECT COUNT(DISTINCT symbol) as count
-            FROM daily_bars
-            WHERE date = '{yesterday}'
-            AND ((close - open) / open * 100 >= 9.5 OR (close - open) / open * 100 <= -9.5)
-            """
-            
-            yesterday_df = pd.read_sql(yesterday_limit_up_query, self.db.conn)
-            yesterday_first_board_count = yesterday_df.iloc[0]['count'] if not yesterday_df.empty else 0
-            
-            if yesterday_first_board_count == 0:
-                return 0.0
-            
-            # 获取今日连板数（今日继续涨停的昨日首板股票）
-            today_limit_up_query = f"""
-            SELECT COUNT(DISTINCT symbol) as count
-            FROM daily_bars
-            WHERE date = '{today}'
-            AND ((close - open) / open * 100 >= 9.5 OR (close - open) / open * 100 <= -9.5)
-            AND symbol IN (
-                SELECT symbol FROM daily_bars 
+            if not yesterday_limit_up_codes:
+                logger.warning("Redis 中没有昨日涨停池数据，降级使用数据库查询")
+                # 降级：使用数据库查询
+                from datetime import datetime, timedelta
+                
+                today = datetime.now().strftime('%Y-%m-%d')
+                yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+                
+                # 检查数据库中是否有昨天的数据
+                yesterday_query = f"""
+                SELECT COUNT(*) as count
+                FROM daily_bars
+                WHERE date = '{yesterday}'
+                """
+                yesterday_df = pd.read_sql(yesterday_query, self.db.conn)
+                
+                if yesterday_df.empty or yesterday_df.iloc[0]['count'] == 0:
+                    logger.warning(f"数据库中没有昨天的数据（{yesterday}），无法计算晋级率")
+                    # 降级：返回默认值（假设25%的晋级率）
+                    return 0.25
+                
+                # 获取昨日首板数（昨日涨停的股票数）
+                yesterday_limit_up_query = f"""
+                SELECT COUNT(DISTINCT symbol) as count
+                FROM daily_bars
                 WHERE date = '{yesterday}'
                 AND ((close - open) / open * 100 >= 9.5 OR (close - open) / open * 100 <= -9.5)
-            )
-            """
+                """
+                
+                yesterday_df = pd.read_sql(yesterday_limit_up_query, self.db.conn)
+                yesterday_first_board_count = yesterday_df.iloc[0]['count'] if not yesterday_df.empty else 0
+                
+                if yesterday_first_board_count == 0:
+                    return 0.0
+                
+                # 获取今日连板数（今日继续涨停的昨日首板股票）
+                today_limit_up_query = f"""
+                SELECT COUNT(DISTINCT symbol) as count
+                FROM daily_bars
+                WHERE date = '{today}'
+                AND ((close - open) / open * 100 >= 9.5 OR (close - open) / open * 100 <= -9.5)
+                AND symbol IN (
+                    SELECT symbol FROM daily_bars 
+                    WHERE date = '{yesterday}'
+                    AND ((close - open) / open * 100 >= 9.5 OR (close - open) / open * 100 <= -9.5)
+                )
+                """
+                
+                today_df = pd.read_sql(today_limit_up_query, self.db.conn)
+                today_consecutive_board_count = today_df.iloc[0]['count'] if not today_df.empty else 0
+                
+                promotion_rate = today_consecutive_board_count / yesterday_first_board_count if yesterday_first_board_count > 0 else 0
+                
+                return promotion_rate
             
-            today_df = pd.read_sql(today_limit_up_query, self.db.conn)
-            today_consecutive_board_count = today_df.iloc[0]['count'] if not today_df.empty else 0
+            # 使用 Redis 数据计算晋级率
+            # 获取今日涨停股票
+            today_limit_up_stocks = self.get_limit_up_down_count().get('limit_up_stocks', [])
+            today_limit_up_codes = [stock['code'] for stock in today_limit_up_stocks]
             
-            promotion_rate = today_consecutive_board_count / yesterday_first_board_count if yesterday_first_board_count > 0 else 0
+            # 计算昨日涨停池中今天继续涨停的数量
+            success_count = 0
+            for code in yesterday_limit_up_codes:
+                if code in today_limit_up_codes:
+                    success_count += 1
+            
+            promotion_rate = success_count / len(yesterday_limit_up_codes) if yesterday_limit_up_codes else 0
+            
+            logger.info(f"✅ 晋级率计算完成：{promotion_rate:.2%}（昨日{len(yesterday_limit_up_codes)}只涨停，今日{success_count}只晋级）")
             
             return promotion_rate
         

@@ -101,8 +101,40 @@ class ThemeDetector:
                 }
             
             # 3. 找出主线板块
-            main_theme = max(theme_stats, key=lambda x: theme_stats[x]['count'])
-            main_theme_info = theme_stats[main_theme]
+            # 🆕 V9.2 修复：优化主线识别逻辑，避免"其他"作为主线
+            # 如果"其他"排第一，就强制取第二名作为主线
+            sorted_themes = sorted(theme_stats.items(), key=lambda x: x[1]['count'], reverse=True)
+            
+            if not sorted_themes:
+                return {
+                    'main_theme': '未知',
+                    'theme_heat': 0,
+                    'theme_stocks': [],
+                    'leader': None,
+                    'all_themes': {},
+                    'suggestion': '无法识别板块概念'
+                }
+            
+            # 如果第一名是"其他"，且有第二名，则取第二名
+            if sorted_themes[0][0] == '其他' and len(sorted_themes) > 1:
+                main_theme = sorted_themes[1][0]
+                main_theme_info = theme_stats[main_theme]
+                logger.info(f"主线识别：跳过'其他'板块（{sorted_themes[0][1]['count']}只），选择 '{main_theme}' 板块（{main_theme_info['count']}只）")
+            else:
+                main_theme = sorted_themes[0][0]
+                main_theme_info = theme_stats[main_theme]
+            
+            # 如果所有板块都是"其他"，则返回"未知"
+            if main_theme == '其他':
+                logger.warning("主线识别：所有涨停股都属于'其他'板块，无法识别主线")
+                return {
+                    'main_theme': '未知',
+                    'theme_heat': 0,
+                    'theme_stocks': [],
+                    'leader': None,
+                    'all_themes': theme_stats,
+                    'suggestion': '无法识别主线板块，所有股票都属于其他板块'
+                }
             
             # 4. 识别龙头
             leader = self._identify_leader(main_theme_info['stocks'])
