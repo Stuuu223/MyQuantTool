@@ -2866,28 +2866,36 @@ class QuantAlgo:
                     if 'turnover_rate' in df.columns:
                         turnover_rate = df['turnover_rate'].iloc[-1]
 
-                    # 计算综合评分
-                    score = 0
-                    signals = []
+                    # 🆕 V9.2 新增：数据完整性熔断检查
+                    # 如果竞价量为0，说明数据缺失，不能给高分
+                    if auction_volume == 0:
+                        # 竞价数据缺失，大幅降低评分
+                        score = 30  # 只给基础分
+                        signals.append("⚠️ 竞价数据缺失（无法判断竞价强弱）")
+                        signals.append("⚠️ 评分仅供参考（建议等待明日集合竞价数据）")
+                    else:
+                        # 正常的评分逻辑
+                        # 计算综合评分
+                        score = 0
+                        
+                        # 量比评分
+                        if volume_ratio > 3:
+                            score += 30
+                            signals.append(f"大幅放量（量比{volume_ratio:.2f}）")
+                        elif volume_ratio > 2:
+                            score += 25
+                            signals.append(f"放量（量比{volume_ratio:.2f}）")
+                        elif volume_ratio > 1.5:
+                            score += 20
+                            signals.append(f"温和放量（量比{volume_ratio:.2f}）")
 
-                    # 量比评分
-                    if volume_ratio > 3:
-                        score += 30
-                        signals.append(f"大幅放量（量比{volume_ratio:.2f}）")
-                    elif volume_ratio > 2:
-                        score += 25
-                        signals.append(f"放量（量比{volume_ratio:.2f}）")
-                    elif volume_ratio > 1.5:
-                        score += 20
-                        signals.append(f"温和放量（量比{volume_ratio:.2f}）")
-
-                    # 涨跌幅评分
-                    if change_pct > 5:
-                        score += 25
-                        signals.append(f"大幅高开{change_pct:.2f}%")
-                    elif change_pct > 3:
-                        score += 20
-                        signals.append(f"高开{change_pct:.2f}%")
+                        # 涨跌幅评分
+                        if change_pct > 5:
+                            score += 25
+                            signals.append(f"大幅高开{change_pct:.2f}%")
+                        elif change_pct > 3:
+                            score += 20
+                            signals.append(f"高开{change_pct:.2f}%")
                     elif change_pct > 0:
                         score += 15
                         signals.append(f"小幅高开{change_pct:.2f}%")

@@ -404,8 +404,20 @@ def _render_dragon_stock(stock, config):
         col3, col4, col5, col6 = st.columns(4)
         col3.metric("量比", f"{stock.get('量比', 0):.2f}")
         col4.metric("换手率", f"{stock.get('换手率', 0):.2f}%")
-        col5.metric("竞价量", f"{stock.get('竞价量', 0)} 手")
-        col6.metric("竞价抢筹度", f"{stock.get('竞价抢筹度', 0):.2%}")
+        
+# 🆕 V9.2 新增：竞价量显示优化
+        auction_volume = stock.get('竞价量', 0)
+        if auction_volume == 0:
+            col5.metric("竞价量", "N/A", delta="数据缺失")
+        else:
+            col5.metric("竞价量", f"{auction_volume} 手")
+        
+        # 🆕 V9.2 新增：竞价抢筹度显示优化
+        auction_aggression = stock.get('竞价抢筹度', 0)
+        if auction_volume == 0 and auction_aggression == 0:
+            col6.metric("竞价抢筹度", "N/A", delta="数据缺失")
+        else:
+            col6.metric("竞价抢筹度", f"{auction_aggression:.2f}%")
         
         # 显示买卖盘口数据
         st.write("**买卖盘口：**")
@@ -463,8 +475,11 @@ def _render_dragon_stock(stock, config):
             auction_amount_yuan = DataSanitizer.calculate_amount_from_volume(auction_volume_lots, current_price)
             auction_amount_wan = auction_amount_yuan / 10000  # 转换为万
             
-            # 显示竞价金额（这是用户期望的2.2亿）
-            col12.metric("竞价金额", f"¥{auction_amount_wan:.2f} 万", delta="竞价抢筹")
+            # 🆕 V9.2 新增：竞价金额显示优化
+            if auction_volume_lots > 0 and current_price > 0:
+                col12.metric("竞价金额", f"¥{auction_amount_wan:.2f} 万", delta="竞价抢筹")
+            else:
+                col12.metric("竞价金额", "N/A", delta="数据缺失")
             col13.metric("封单金额", f"¥{seal_amount_wan:.2f} 万", delta="涨停封单")
         else:
             # 非涨停时，也使用 DataSanitizer 重新计算金额
@@ -479,7 +494,7 @@ def _render_dragon_stock(stock, config):
                 auction_amount_wan = auction_amount_yuan / 10000  # 转换为万
                 col12.metric("竞价金额", f"¥{auction_amount_wan:.2f} 万")
             else:
-                col12.metric("竞价金额", f"¥{stock.get('竞价金额', 0):.2f} 万")
+                col12.metric("竞价金额", "N/A", delta="数据缺失")
             
             # 显示封单金额
             if bid1_volume_lots > 0 and current_price > 0:
