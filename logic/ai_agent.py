@@ -250,70 +250,39 @@ class RealAIAgent:
             context_parts.append(f"主力净流入: {money_flow.get('主力净流入', 'N/A')}")
 
         # 市场上下文
+        if market_context:
+            context_parts.append("\n【市场环境】")
+            context_parts.append(f"大盘指数: {market_context.get('index', 'N/A')}")
+            context_parts.append(f"大盘涨跌幅: {market_context.get('index_change', 'N/A')}%")
+            context_parts.append(f"市场情绪: {market_context.get('sentiment', 'N/A')}")
 
-                if market_context:
+            # 🆕 V6.0 新增：市场情绪周期和主线识别
+            market_cycle = market_context.get('market_cycle', {})
+            if market_cycle:
+                cycle_type = market_cycle.get('cycle', 'UNKNOWN')
+                cycle_desc = market_cycle.get('description', '')
+                cycle_strategy = market_cycle.get('strategy', '')
+                risk_level = market_cycle.get('risk_level', 3)
 
-                    context_parts.append("\n【市场环境】")
+                context_parts.append("\n【🌤️ 今日市场天气】")
+                context_parts.append(f"市场周期: {cycle_type}")
+                context_parts.append(f"周期描述: {cycle_desc}")
+                context_parts.append(f"风险等级: {risk_level}/5")
+                context_parts.append(f"周期策略: {cycle_strategy}")
 
-                    context_parts.append(f"大盘指数: {market_context.get('index', 'N/A')}")
+            # 主线识别
+            main_theme = market_context.get('main_theme', {})
+            if main_theme:
+                theme_name = main_theme.get('main_theme', '未知')
+                theme_heat = main_theme.get('theme_heat', 0)
+                theme_suggestion = main_theme.get('suggestion', '')
 
-                    context_parts.append(f"大盘涨跌幅: {market_context.get('index_change', 'N/A')}%")
+                context_parts.append("\n【🎯 今日主线】")
+                context_parts.append(f"主线板块: {theme_name}")
+                context_parts.append(f"主线热度: {theme_heat:.1%}")
+                context_parts.append(f"主线建议: {theme_suggestion}")
 
-                    context_parts.append(f"市场情绪: {market_context.get('sentiment', 'N/A')}")
-
-                
-
-                # 🆕 V6.0 新增：市场情绪周期和主线识别
-
-                market_cycle = market_context.get('market_cycle', {}) if market_context else {}
-
-                if market_cycle:
-
-                    cycle_type = market_cycle.get('cycle', 'UNKNOWN')
-
-                    cycle_desc = market_cycle.get('description', '')
-
-                    cycle_strategy = market_cycle.get('strategy', '')
-
-                    risk_level = market_cycle.get('risk_level', 3)
-
-                    
-
-                    context_parts.append("\n【🌤️ 今日市场天气】")
-
-                    context_parts.append(f"市场周期: {cycle_type}")
-
-                    context_parts.append(f"周期描述: {cycle_desc}")
-
-                    context_parts.append(f"风险等级: {risk_level}/5")
-
-                    context_parts.append(f"周期策略: {cycle_strategy}")
-
-                
-
-                main_theme = market_context.get('main_theme', {}) if market_context else {}
-
-                if main_theme:
-
-                    theme_name = main_theme.get('main_theme', '未知')
-
-                    theme_heat = main_theme.get('theme_heat', 0)
-
-                    theme_suggestion = main_theme.get('suggestion', '')
-
-                    
-
-                    context_parts.append("\n【🎯 今日主线】")
-
-                    context_parts.append(f"主线板块: {theme_name}")
-
-                    context_parts.append(f"主线热度: {theme_heat:.1%}")
-
-                    context_parts.append(f"主线建议: {theme_suggestion}")
-
-        
-
-                return "\n".join(context_parts)
+        return "\n".join(context_parts)
 
     def _build_prompt(self, context: str, use_dragon_tactics: bool = False) -> str:
         """
