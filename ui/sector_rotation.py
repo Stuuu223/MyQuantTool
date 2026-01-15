@@ -69,6 +69,9 @@ def render_sector_rotation_tab(db, config):
                 if not sector_ranking.empty:
                     st.info(f"💡 数据来源：全市场快照聚合（共{len(sector_ranking)}个板块，耗时<0.1秒）")
 
+                    # 计算最大成交额（用于归一化）
+                    max_amount = sector_ranking['amount'].max() if sector_ranking['amount'].max() > 0 else 1
+
                     # 转换为DataFrame，适配现有UI格式
                     df_strength = pd.DataFrame([
                         {
@@ -79,7 +82,7 @@ def render_sector_rotation_tab(db, config):
                             '换手率': 0,  # 暂不计算换手率
                             '最新价': 0,  # 暂不计算最新价
                             '涨幅因子': row['pct_chg'] * 0.7,  # 简化计算
-                            '资金因子': (row['amount'] / row['amount'].max()) * 100 * 0.3 if row['amount'] > 0 else 0,
+                            '资金因子': (row['amount'] / max_amount) * 100 * 0.3 if row['amount'] > 0 else 0,
                             '龙头因子': row['is_limit_up'] * 10,  # 简化计算
                             '题材因子': 0,  # 暂不计算题材因子
                             '成交因子': 0,  # 暂不计算成交因子
