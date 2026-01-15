@@ -302,7 +302,7 @@ def render_data_source_fallback_tab(db, config):
         st.metric("缓存状态", "已启用", "60秒")
     
     with col4:
-        st.metric"重试次数", "0/3", "无需重试")
+        st.metric("重试次数", "0/3", "无需重试")
     
     st.markdown("---")
     

@@ -612,9 +612,6 @@ class ThemeDetector:
                     strongest_sector = theme
         
         return strongest_sector
-                new_sector_count += 1
-        
-        return new_sector_count
     
     def close(self):
         """关闭数据库连接"""
