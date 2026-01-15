@@ -2735,7 +2735,17 @@ class QuantAlgo:
                     # 1. 竞价金额 < 500万（流动性不足）
                     # 2. 竞价抢筹度 < 2%（主力未大举抢筹）
                     # 3. 涨幅 > 5%（看似强势，但缺乏流动性支持）
-                    if auction_amount_wan < 500 and auction_ratio < 0.02 and change_pct > 5:
+                    is_trap = auction_amount_wan < 500 and auction_ratio < 0.02 and change_pct > 5
+                    
+                    # 🆕 V8.2: 豁免逻辑 - 绝对一字板龙头（The Absolute One-Word Board）
+                    # 豁免条件：如果是"一字涨停"且"封单巨大"（封单额>1亿）
+                    # 这种情况通常是重组复牌等超级利好，买都买不到，不是流动性陷阱
+                    is_super_one_word = (ask1_price == 0 and change_pct >= 19.5 and seal_amount > 10000)
+                    
+                    if is_trap and is_super_one_word:
+                        liquidity_trap = False
+                        liquidity_trap_reason = f"✅ 豁免：缩量一字板真龙（封单金额{seal_amount:.0f}万>1亿）"
+                    elif is_trap:
                         liquidity_trap = True
                         liquidity_trap_reason = f"⚠️ 流动性陷阱：竞价金额{auction_amount_wan:.0f}万<500万，竞价抢筹度{auction_ratio*100:.2f}%<2%，缩量拉升"
 
@@ -2867,6 +2877,8 @@ class QuantAlgo:
                         '开盘涨幅': round(open_gap_pct, 2),
                         '封单金额': round(seal_amount, 2),
                         '流动性陷阱': liquidity_trap,  # 🆕 V8.1: 添加流动性陷阱标记
+                        '流动性陷阱原因': liquidity_trap_reason,  # 🆕 V8.2: 添加流动性陷阱原因
+                        '一字板龙头': is_super_one_word,  # 🆕 V8.2: 添加一字板龙头标记
                         '真龙类型': dragon_type,  # 🆕 V8.1: 添加真龙类型标记
                         '买卖价差': round(price_gap, 2),
                         '评分': score,

@@ -204,11 +204,17 @@ class StrategyOrchestrator:
         turnover = stock_signal.get('turnover', 0)  # 成交额（万元）
         auction_ratio = stock_signal.get('auction_ratio', 0)  # 竞价抢筹度
         liquidity_trap = stock_signal.get('liquidity_trap', False)  # 流动性陷阱标记
+        liquidity_trap_reason = stock_signal.get('liquidity_trap_reason', '')  # 流动性陷阱原因
         dragon_type = stock_signal.get('dragon_type', '')  # 真龙类型
         
-        # 流动性陷阱一票否决
+        # 流动性陷阱一票否决（但豁免一字板龙头）
         if liquidity_trap:
-            return True, f"🚫 流动性陷阱：缩量拉升，大资金进出困难"
+            # 🆕 V8.2: 检查是否是一字板龙头豁免
+            if "豁免" in liquidity_trap_reason:
+                # 一字板龙头豁免，不否决
+                pass
+            else:
+                return True, f"🚫 流动性陷阱：缩量拉升，大资金进出困难"
         
         # 杂毛一票否决（成交额<500万或竞价抢筹度<1%）
         if dragon_type == "🐛 杂毛":
