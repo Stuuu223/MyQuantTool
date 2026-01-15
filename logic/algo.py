@@ -3401,9 +3401,14 @@ class QuantAlgo:
                     else:
                         continue
 
-                    # 只保留 20cm 标的 (创业板 30/科创板 68)
-                    if not (len(code) == 6 and code.isdigit() and code[0] in ['3', '6']):
-                        continue
+                    # 🛑 V9.2 修复：半路战法必须只抓 20cm 标的
+                    # 创业板：300xxx、301xxx
+                    # 科创板：688xxx
+                    is_chinext = code.startswith('300') or code.startswith('301')
+                    is_star = code.startswith('688')
+                    
+                    if not (is_chinext or is_star):
+                        continue  # 剔除主板股票（600xxx、000xxx等）
 
                     name = data.get('name', '')
 
@@ -3419,9 +3424,16 @@ class QuantAlgo:
 
                     pct_change = (current_price - last_close) / last_close * 100
 
-                    # 半路板初筛规则：10% - 19.5%
-                    if not (10.0 <= pct_change < 19.5):
+                    # 半路板初筛规则：10% - 18.5%（留1.5%空间给半路扫货）
+                    # 🆕 V9.2 修复：严格卡死半路区间
+                    if not (10.0 <= pct_change < 18.5):
                         continue
+                    
+                    # 🛑 V9.2 新增：严禁已经封死涨停的
+                    # 检查卖一价是否为0（已封板）
+                    ask1_price = data.get('ask1', 0)
+                    if ask1_price == 0:
+                        continue  # 已经封板，不是半路机会
 
                     # 获取成交量
                     volume = data.get('volume', 0) / 100  # 转换为手
