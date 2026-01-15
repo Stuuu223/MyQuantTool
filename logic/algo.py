@@ -1513,9 +1513,15 @@ class QuantAlgo:
                         ask1_price = realtime_data_item.get('ask1', 0)  # 卖一价
                         
                         # 🆕 V9.2 修复：竞价量应该是集合竞价期间的成交量，不是买一量加卖一量
-                        # 在连续竞价期间（9:30-15:00），竞价量应该为 0
-                        # 如果需要显示集合竞价期间的成交量，需要从历史数据中获取
-                        auction_volume = 0  # 连续竞价期间，竞价量为 0
+                        # 🆕 V9.2 新增：优先从 Redis 恢复竞价数据
+                        auction_volume = realtime_data_item.get('竞价量', 0)  # 从 DataManager 传递过来的竞价量（可能来自 Redis）
+                        
+                        # 如果 auction_volume 仍然是 0，尝试从 DataManager 快照管理器恢复
+                        if auction_volume == 0 and hasattr(db, 'auction_snapshot_manager') and db.auction_snapshot_manager:
+                            snapshot = db.auction_snapshot_manager.load_auction_snapshot(symbol)
+                            if snapshot:
+                                auction_volume = snapshot.get('auction_volume', 0)
+                                logger.debug(f"✅ [竞价恢复] {symbol} 竞价数据已从 Redis 恢复")
                         
                         # 🆕 V8.5: 使用标准竞价抢筹度计算器（修复 6900% BUG）
                         auction_ratio = 0

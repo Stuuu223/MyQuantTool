@@ -58,6 +58,15 @@ class DataManager:
             logger.warning("❌ Easyquotation 未安装，将使用 Akshare")
             self.quotation = None
         
+        # 🆕 V9.2 新增：竞价快照管理器
+        self.auction_snapshot_manager = None
+        try:
+            from logic.auction_snapshot_manager import AuctionSnapshotManager
+            self.auction_snapshot_manager = AuctionSnapshotManager(self)
+            logger.info("✅ 竞价快照管理器初始化成功")
+        except Exception as e:
+            logger.warning(f"⚠️ 竞价快照管理器初始化失败: {e}")
+        
         DataManager._initialized = True
         logger.info("DataManager 初始化完成")
     
@@ -558,6 +567,15 @@ class DataManager:
         # 🆕 V8.4: 导入数据消毒器
         from logic.data_sanitizer import DataSanitizer
         
+        # 🆕 V9.2: 判断当前时间
+        now = datetime.now()
+        current_time = now.time()
+        is_auction_time = (
+            current_time >= datetime.strptime("09:25", "%H:%M").time() and
+            current_time < datetime.strptime("09:30", "%H:%M").time()
+        )
+        is_after_market = current_time >= datetime.strptime("09:30", "%H:%M").time()
+        
         # 转换代码格式 (easyquotation 需要 sh/sz 前缀)
         full_codes = []
         for code in stock_list:
@@ -584,14 +602,50 @@ class DataManager:
                 batch_result = self.quotation.stocks(batch)
                 
                 # 🆕 V8.4: 数据消毒 - 在数据进入系统的那一刻进行清洗
+                # 🆕 V9.2: 竞价快照保存和恢复
                 sanitized_batch = {}
                 for stock_code, stock_data in batch_result.items():
+                    # 提取纯股票代码（去掉前缀）
+                    code = stock_code[2:]  # 'sh600058' -> '600058'
+                    
                     # 使用 DataSanitizer 清洗数据
                     sanitized_data = DataSanitizer.sanitize_realtime_data(
                         stock_data, 
                         source_type='easyquotation',
-                        code=stock_code  # 🆕 传递股票代码
+                        code=stock_code
                     )
+                    
+                    # 🆕 V9.2: 竞价快照逻辑
+                    if self.auction_snapshot_manager:
+                        # 场景 A: 竞价时间（9:25-9:30）→ 保存竞价数据
+                        if is_auction_time:
+                            auction_volume = sanitized_data.get('volume', 0)  # 此时 volume 就是竞价量
+                            auction_amount = sanitized_data.get('turnover', 0)
+                            
+                            if auction_volume > 0:
+                                # 保存竞价快照
+                                self.auction_snapshot_manager.save_auction_snapshot(code, {
+                                    'auction_volume': auction_volume,
+                                    'auction_amount': auction_amount,
+                                    'timestamp': now.timestamp()
+                                })
+                        
+                        # 场景 B: 盘中/盘后（9:30 以后）→ 尝试恢复竞价数据
+                        elif is_after_market:
+                            # 从 Redis 恢复竞价数据
+                            snapshot = self.auction_snapshot_manager.load_auction_snapshot(code)
+                            
+                            if snapshot:
+                                # ✅ 成功恢复竞价数据
+                                sanitized_data['竞价量'] = snapshot.get('auction_volume', 0)
+                                sanitized_data['竞价金额'] = snapshot.get('auction_amount', 0)
+                                logger.debug(f"✅ [竞价恢复] {code} 竞价数据已从 Redis 恢复")
+                            else:
+                                # ❌ Redis 也没有，标记为缺失
+                                sanitized_data['竞价量'] = 0
+                                sanitized_data['竞价金额'] = 0
+                                logger.debug(f"⚠️ [竞价缺失] {code} 无竞价快照数据")
+                    
                     sanitized_batch[stock_code] = sanitized_data
                 
                 result.update(sanitized_batch)
