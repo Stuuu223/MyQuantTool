@@ -9,9 +9,9 @@ def render_sentiment_tab(db, config):
     st.subheader("📈 情绪分析")
     st.caption("基于拾荒网技术文章:情绪指数、涨停板分析、龙虎榜深度分析")
     
-    # 初始化情绪分析器
-    from logic.algo_sentiment import MarketSentimentAnalyzer
-    sentiment_analyzer = MarketSentimentAnalyzer()
+    # 🆕 V9.3.8: 使用极速情绪分析器（基于全市场快照，无额外网络请求）
+    from logic.fast_sentiment import get_fast_sentiment_analyzer
+    sentiment_analyzer = get_fast_sentiment_analyzer(db)
     
     # 情绪分析类型选择
     sentiment_type = st.radio("分析类型", ["情绪周期", "情绪指数", "涨停板分析", "龙虎榜分析", "反包模式", "板块轮动", "连板高度"], horizontal=True, key="sentiment_type_select")
