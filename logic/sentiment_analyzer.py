@@ -295,6 +295,43 @@ class SentimentAnalyzer:
             # 🆕 V9.12 修复：识别ST股
             df['is_st'] = df['name'].str.contains('ST', case=False, na=False)
             
+            # 🆕 V10.0 新增：计算涨停价（用于炸板统计）
+            # 主板：10%涨停，双创：20%涨停，ST：5%涨停
+            df['limit_up_price'] = df['close'] * 1.10  # 默认主板10%
+            df.loc[df.index.str.startswith(('30', '68')), 'limit_up_price'] = df.loc[df.index.str.startswith(('30', '68')), 'close'] * 1.20  # 双创20%
+            df.loc[df['is_st'], 'limit_up_price'] = df.loc[df['is_st'], 'close'] * 1.05  # ST股5%
+            
+            # 🆕 V10.0 新增：炸板统计（深化版：区分良性炸板和恶性炸板）
+            # 炸板条件：最高价触及涨停，但现价 < 涨停价
+            df['is_zhaban'] = (df['high'] >= df['limit_up_price'] * 0.99) & (df['now'] < df['limit_up_price'] * 0.99)
+            zhaban_count = df['is_zhaban'].sum()
+            
+            # 🆕 V10.0 深化：计算回撤深度，区分良性炸板和恶性炸板
+            # 提取炸板股票
+            zhaban_df = df[df['is_zhaban']].copy()
+            
+            if not zhaban_df.empty:
+                # 计算回撤幅度：(涨停价 - 现价) / 涨停价
+                zhaban_df['drop_pct'] = (zhaban_df['limit_up_price'] - zhaban_df['now']) / zhaban_df['limit_up_price'] * 100
+                
+                # 分类炸板类型
+                # 良性炸板：回撤 < 2%（烂板/高位震荡）
+                # 恶性炸板：回撤 >= 2%（炸板回落）
+                zhaban_df['zhaban_type'] = zhaban_df['drop_pct'].apply(
+                    lambda x: '良性炸板' if x < 2 else '恶性炸板'
+                )
+                
+                # 统计各类炸板数量
+                benign_zhaban_count = (zhaban_df['zhaban_type'] == '良性炸板').sum()
+                malignant_zhaban_count = (zhaban_df['zhaban_type'] == '恶性炸板').sum()
+                
+                # 计算平均回撤
+                avg_drop_pct = zhaban_df['drop_pct'].mean()
+            else:
+                benign_zhaban_count = 0
+                malignant_zhaban_count = 0
+                avg_drop_pct = 0.0
+            
             # 涨停/跌停统计（粗略估算：主板10%，双创20%）
             # 使用 9.0% 作为涨停阈值（近似值）
             limit_up = df[df['pct'] > 9.0].shape[0]
@@ -332,10 +369,10 @@ class SentimentAnalyzer:
             weak_down = df[df['pct'] < -5.0].shape[0]
             weak_down_ratio = int((weak_down / total_stocks) * 100)
             
-            # 炸板率估算（涨停后回落的家数）
-            # 这里简化处理：涨停数 - 仍然涨停的家数
-            # 实际需要历史数据，这里用近似值
-            burst_rate = 0.0  # 需要历史数据支持
+            # 🆕 V10.0 新增：计算炸板率
+            # 炸板率 = 炸板数 / (涨停数 + 炸板数) * 100%
+            limit_up_total = limit_up + zhaban_count
+            zhaban_rate = (zhaban_count / limit_up_total * 100) if limit_up_total > 0 else 0.0
             
             result = {
                 "total": total_stocks,
@@ -355,7 +392,13 @@ class SentimentAnalyzer:
                 "median_pct": round(median_pct, 2),
                 "strong_up_ratio": strong_up_ratio,
                 "weak_down_ratio": weak_down_ratio,
-                "burst_rate": round(burst_rate, 2),
+                # 🆕 V10.0 新增：炸板统计
+                "zhaban_count": int(zhaban_count),
+                "zhaban_rate": round(zhaban_rate, 2),
+                # 🆕 V10.0 深化：炸板类型统计
+                "benign_zhaban_count": int(benign_zhaban_count),
+                "malignant_zhaban_count": int(malignant_zhaban_count),
+                "avg_drop_pct": round(avg_drop_pct, 2),
                 "timestamp": pd.Timestamp.now().strftime("%H:%M:%S")
             }
             
@@ -531,7 +574,14 @@ class SentimentAnalyzer:
                     "avg_pct": mood['avg_pct'],
                     "median_pct": mood['median_pct'],
                     "strong_up_ratio": mood['strong_up_ratio'],
-                    "weak_down_ratio": mood['weak_down_ratio']
+                    "weak_down_ratio": mood['weak_down_ratio'],
+                    # 🆕 V10.0 新增：炸板统计
+                    "zhaban_count": mood.get('zhaban_count', 0),
+                    "zhaban_rate": mood.get('zhaban_rate', 0),
+                    # 🆕 V10.0 深化：炸板类型统计
+                    "benign_zhaban_count": mood.get('benign_zhaban_count', 0),
+                    "malignant_zhaban_count": mood.get('malignant_zhaban_count', 0),
+                    "avg_drop_pct": mood.get('avg_drop_pct', 0)
                 },
                 "trading_advice": self.get_trading_advice(),
                 "risk_assessment": {
@@ -556,12 +606,13 @@ class SentimentAnalyzer:
                         # 批量分析竞价强度
                         auction_results = QuantAlgo.batch_analyze_auction(snapshot, last_closes, is_review_mode, self.dm)
                         
-                        # 按评分排序，取前N只
+                        # 🆕 V10.0 优化：按评分排序，取前N只（限制为 Top 10，避免 Token 爆炸）
+                        max_pool_size = min(stock_pool_size, 10)  # 最多 10 只
                         sorted_stocks = sorted(
                             auction_results.items(),
                             key=lambda x: x[1].get('score', 0),
                             reverse=True
-                        )[:stock_pool_size]
+                        )[:max_pool_size]
                         
                         # 构建股票池数据
                         stock_pool = []
@@ -593,33 +644,25 @@ class SentimentAnalyzer:
                             # 🆕 V9.13.1 修复：获取游资战术建议
                             strategy = StrategyMapper.get_strategy(lianban_count, pct, is_weak_to_strong)
                             
+                            # 🆕 V10.0 新增：获取板块和概念信息
+                            concepts_data = self.dm.get_stock_concepts(code)
+                            concepts_str = ', '.join(concepts_data.get('concepts', [])) if concepts_data.get('concepts') else ''
+                            
                             stock_pool.append({
                                 "code": code,
                                 "name": stock_data.get('name', '未知'),
                                 "price": result.get('price', 0),
                                 "pct": pct,
                                 "score": result.get('score', 0),
-                                "base_score": result.get('base_score', 0),  # 原始得分
-                                "time_weight": result.get('time_weight', 1.0),  # 时间权重
-                                "time_weight_desc": result.get('time_weight_desc', ''),  # 时间权重描述
-                                "status": result.get('status', '未知'),
-                                "turnover_rate": result.get('turnover_rate', 0),
-                                "amount": result.get('amount', 0),
-                                # 🆕 V9.12 修复：连板标记
                                 "lianban_status": lianban_status,
-                                # 🆕 V9.13 修复：真实连板和弱转强信息
                                 "lianban_count": lianban_count,
-                                "yesterday_status": yesterday_status,
                                 "is_weak_to_strong": is_weak_to_strong,
-                                "weak_to_strong_bonus": result.get('weak_to_strong_bonus', 0),
-                                "lianban_bonus": result.get('lianban_bonus', 0),
-                                "high_risk_penalty": result.get('high_risk_penalty', 0),
-                                # 🆕 V9.13.1 修复：游资战术建议
                                 "strategy_tactic": strategy.get('tactic', '观察'),
                                 "strategy_hint": strategy.get('ai_hint', '暂无建议'),
                                 "strategy_risk": strategy.get('risk', '未知'),
-                                "strategy_position": strategy.get('position', '空仓'),
-                                "strategy_key": strategy.get('strategy_key', '未知')
+                                # 🆕 V10.0 新增：板块和概念信息
+                                "industry": concepts_data.get('industry', '未知'),
+                                "concepts": concepts_str
                             })
                         
                         ai_context["stock_pool"] = {
@@ -676,6 +719,13 @@ class SentimentAnalyzer:
             prompt_parts.append(f"- 中位: {sentiment.get('median_pct', 0)}%")
             prompt_parts.append(f"- 强势占比: {sentiment.get('strong_up_ratio', 0)}%")
             prompt_parts.append(f"- 弱势占比: {sentiment.get('weak_down_ratio', 0)}%")
+            # 🆕 V10.0 新增：炸板统计
+            prompt_parts.append(f"- 炸板: {sentiment.get('zhaban_count', 0)}家 (炸板率: {sentiment.get('zhaban_rate', 0)}%)")
+            # 🆕 V10.0 深化：炸板类型
+            if sentiment.get('zhaban_count', 0) > 0:
+                prompt_parts.append(f"  - 良性炸板: {sentiment.get('benign_zhaban_count', 0)}家 (烂板/高位震荡)")
+                prompt_parts.append(f"  - 恶性炸板: {sentiment.get('malignant_zhaban_count', 0)}家 (炸板回落)")
+                prompt_parts.append(f"  - 平均回撤: {sentiment.get('avg_drop_pct', 0)}%")
             prompt_parts.append("")
             
             # 3. 交易建议
@@ -698,10 +748,14 @@ class SentimentAnalyzer:
             if 'stocks' in stock_pool:
                 prompt_parts.append("📋 精选股票池 (前20强):")
                 for i, stock in enumerate(stock_pool['stocks'], 1):
+                    # 🆕 V10.0 新增：添加板块和概念信息
+                    concept_str = f", 板块: {stock.get('industry', '未知')}, 概念: {stock.get('concepts', '')}" if stock.get('industry') or stock.get('concepts') else ""
+                    
                     prompt_parts.append(
                         f"{i}. {stock['name']} ({stock['code']}) - "
                         f"价格: {stock['price']}, 涨幅: {stock['pct']}%, "
                         f"评分: {stock['score']}, 状态: {stock['status']}"
+                        f"{concept_str}"
                     )
             
             return "\n".join(prompt_parts)

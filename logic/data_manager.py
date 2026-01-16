@@ -77,6 +77,11 @@ class DataManager:
         self.industry_cache = {}
         self._load_industry_cache()
         
+        # 🆕 V10.0 新增：概念映射缓存（极速查询）
+        self.concept_map_file = "data/concept_map.json"
+        self.concept_map = {}
+        self._load_concept_map()
+        
         DataManager._initialized = True
         logger.info("DataManager 初始化完成")
     
@@ -1093,6 +1098,23 @@ class DataManager:
             logger.info("行业缓存文件不存在，正在创建...")
             self._update_industry_cache()
     
+    def _load_concept_map(self):
+        """🆕 V10.0：从本地JSON文件加载概念映射缓存"""
+        import json
+        import os
+        
+        if os.path.exists(self.concept_map_file):
+            try:
+                with open(self.concept_map_file, 'r', encoding='utf-8') as f:
+                    self.concept_map = json.load(f)
+                logger.info(f"✅ 从磁盘加载概念映射成功，共 {len(self.concept_map)} 只股票")
+            except Exception as e:
+                logger.warning(f"读取概念映射失败: {e}，概念映射为空")
+                self.concept_map = {}
+        else:
+            logger.warning("概念映射文件不存在，请运行 tools/update_concepts.py 生成")
+            self.concept_map = {}
+    
     def _update_industry_cache(self):
         """从AkShare更新行业缓存并保存到磁盘"""
         import akshare as ak
@@ -1120,6 +1142,66 @@ class DataManager:
     def get_industry_cache(self):
         """获取行业缓存"""
         return self.industry_cache
+    
+    def get_stock_concepts(self, code: str) -> Dict[str, Any]:
+        """
+        🆕 V10.0 获取股票的板块和概念信息
+        
+        优先使用本地概念映射（极速），如果本地没有则使用 API 获取。
+        为 AI 决策提供"叙事感"。
+        
+        Args:
+            code: 股票代码（6位数字）
+        
+        Returns:
+            dict: {
+                'industry': 行业名称,
+                'concepts': 概念列表,
+                'industry_code': 行业代码
+            }
+        """
+        try:
+            # 🆕 V10.0 优化：优先使用本地概念映射（极速查询）
+            concepts = []
+            if code in self.concept_map:
+                concepts = self.concept_map[code]
+                logger.debug(f"✅ 从本地缓存获取股票 {code} 概念: {concepts}")
+            
+            # 获取行业信息
+            import akshare as ak
+            stock_info = ak.stock_individual_info_em(symbol=code)
+            
+            if stock_info.empty:
+                return {
+                    'industry': '未知',
+                    'concepts': concepts,
+                    'industry_code': ''
+                }
+            
+            # 转换为字典
+            info_dict = dict(zip(stock_info['item'], stock_info['value']))
+            
+            # 提取行业信息（AkShare 返回的字段名是 '行业'）
+            industry = info_dict.get('行业', '')
+            industry_code = info_dict.get('行业代码', '')
+            
+            result = {
+                'industry': industry,
+                'concepts': concepts,
+                'industry_code': industry_code
+            }
+            
+            logger.debug(f"获取股票 {code} 板块概念成功: {industry}, {concepts}")
+            
+            return result
+            
+        except Exception as e:
+            logger.warning(f"获取股票 {code} 板块概念失败: {e}")
+            return {
+                'industry': '未知',
+                'concepts': [],
+                'industry_code': ''
+            }
     
     def get_stock_status(self, code: str, days: int = 5) -> Dict[str, Any]:
         """
@@ -1242,14 +1324,16 @@ class DataManager:
             if not code:
                 continue
                 
+            # 🆕 V10.0 新增：添加异常处理保护
             try:
                 # 调用 get_stock_status 会下载 K 线并缓存
                 # 因为数据是静态的，DataManager 的缓存机制会生效
                 self.get_stock_status(code)
                 success_count += 1
             except Exception as e:
-                logger.warning(f"预热股票 {code} 失败: {e}")
+                logger.warning(f"⚠️ {code} 预热失败: {e}，跳过...")
                 fail_count += 1
+                continue  # 保证其他股票继续预热
         
         elapsed_time = time.time() - start_time
         
