@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 from sklearn.cluster import KMeans
 from logic.logger import get_logger
+from datetime import time
 
 # 🆕 V9.0: 导入游资掠食者系统
 from logic.predator_system import PredatorSystem
@@ -10,6 +11,70 @@ from logic.predator_system import PredatorSystem
 from logic.algo_math import calculate_true_auction_aggression
 
 logger = get_logger(__name__)
+
+
+def get_time_weight(current_time=None, is_review_mode=False):
+    """
+    ⏰ V9.12.1 时间衰减因子：越早越贵，越晚越废
+    
+    游资心法：涨停的时间越早，溢价越高；涨停的时间越晚，气质越弱。
+    
+    Args:
+        current_time: 当前时间（time对象），如果不提供则自动获取
+        is_review_mode: 复盘模式开关。如果为 True，则忽略时间衰减，权重恒为 1.0
+    
+    Returns:
+        float: 时间权重 (0.0 - 1.0)
+    
+    权重说明：
+        1.0 - 👑 黄金半小时 (09:30-10:00)：秒板/硬板，满分
+        0.9 - ⚔️ 上午博弈区 (10:00-11:30)：换手板，轻微衰减
+        0.7 - 💤 下午昏睡区 (13:00-14:30)：跟风/磨叽，显著衰减
+        0.4 - 🦊 尾盘偷袭区 (14:30-14:50)：非奸即盗，极低分
+        0.0 - ☠️ 最后一击 (14:50-15:00)：直接一票否决
+        1.0 - 其他情况（竞价期间等）
+    
+    🆕 V9.12.1 修复：复盘模式
+        - 当 is_review_mode=True 时，返回 1.0，禁用时间衰减
+        - 用于盘后复盘、回测分析等场景
+    """
+    # 🌟 V9.12.1 核心修复：如果是复盘模式，直接满分，还原股票本身的硬度
+    if is_review_mode:
+        return 1.0
+    
+    if current_time is None:
+        from datetime import datetime
+        from logic.market_status import get_market_status_checker
+        checker = get_market_status_checker()
+        current_time = checker.get_current_time()
+    
+    t_0930 = time(9, 30)
+    t_1000 = time(10, 0)
+    t_1130 = time(11, 30)
+    t_1430 = time(14, 30)
+    t_1450 = time(14, 50)
+    
+    # 1. 👑 黄金半小时 (秒板/硬板)
+    if t_0930 <= current_time <= t_1000:
+        return 1.0  # 满分
+        
+    # 2. ⚔️ 上午博弈区 (换手板)
+    elif t_1000 < current_time <= t_1130:
+        return 0.9  # 轻微衰减
+        
+    # 3. 💤 下午昏睡区 (跟风/磨叽)
+    elif time(13, 0) <= current_time <= t_1430:
+        return 0.7  # 显著衰减
+        
+    # 4. 🦊 尾盘偷袭区 (非奸即盗)
+    elif t_1430 < current_time <= t_1450:
+        return 0.4  # 极低分，基本不看
+        
+    # 5. ☠️ 最后一击 (通常是为了做K线骗人)
+    elif current_time > t_1450:
+        return 0.0  # 直接一票否决
+        
+    return 1.0  # 竞价期间或其他情况
 
 class QuantAlgo:
 
@@ -1318,11 +1383,83 @@ class QuantAlgo:
         return suggestions
     
     @staticmethod
-    def scan_dragon_stocks(limit=50, min_score=60):
+    def filter_active_stocks(all_stocks: list, min_change_pct: float = 3.0, 
+                            min_volume: float = 10000, min_amount: float = 5000,
+                            watchlist: list = None) -> list:
+        """
+        🆕 V9.9：股票池过滤（基于快照数据的粗筛）
+        🆕 V9.10 修复：添加核心监控池白名单功能
+        
+        Args:
+            all_stocks: 全市场股票列表（来自get_fast_price）
+            min_change_pct: 最小涨幅（默认3%）
+            min_volume: 最小成交量（手，默认10000手）
+            min_amount: 最小成交额（万元，默认5000万）
+            watchlist: 核心监控池白名单（这些股票跳过过滤条件）
+        
+        Returns:
+            过滤后的活跃股票列表
+        """
+        if watchlist is None:
+            watchlist = []
+        
+        # 转换监控池为集合，提高查找效率
+        watchlist_set = set(watchlist)
+        
+        filtered_stocks = []
+        watchlist_matched = []
+        
+        for stock in all_stocks:
+            try:
+                code = stock.get('代码', '')
+                
+                # 🆕 V9.10 修复：如果股票在监控池中，跳过过滤条件
+                if code in watchlist_set:
+                    watchlist_matched.append(stock)
+                    logger.debug(f"✅ 监控池命中: {code} ({stock.get('名称', '')})")
+                    continue
+                
+                # 1. 涨幅过滤
+                if stock.get('涨跌幅', 0) < min_change_pct:
+                    continue
+                
+                # 2. 成交量过滤
+                if stock.get('成交量', 0) < min_volume:
+                    continue
+                
+                # 3. 成交额过滤
+                if stock.get('成交额', 0) < min_amount:
+                    continue
+                
+                # 4. 排除ST股票（可选）
+                name = stock.get('名称', '')
+                if 'ST' in name.upper() or '退' in name:
+                    continue
+                
+                # 5. 排除停牌股票（价格为0或成交量为0）
+                if stock.get('最新价', 0) == 0 or stock.get('成交量', 0) == 0:
+                    continue
+                
+                filtered_stocks.append(stock)
+            except Exception as e:
+                continue
+        
+        # 🆕 V9.10 修复：监控池股票优先返回
+        result = watchlist_matched + filtered_stocks
+        
+        logger.info(f"🔍 股票池过滤：全市场 {len(all_stocks)} 只 → 监控池 {len(watchlist_matched)} 只 + 活跃股票 {len(filtered_stocks)} 只")
+        return result
+    
+    @staticmethod
+    def scan_dragon_stocks(limit=50, min_score=60, min_change_pct=9.9, min_volume=5000, min_amount=3000, watchlist=None):
         """
         扫描市场中的潜在龙头股
         limit: 扫描的股票数量限制
         min_score: 最低评分门槛
+        min_change_pct: 最小涨幅（默认9.9%，即涨停板）
+        min_volume: 最小成交量（手，默认5000手）
+        min_amount: 最小成交额（万元，默认3000万）
+        watchlist: 核心监控池白名单（这些股票跳过过滤条件）
         返回: 符合条件的龙头股列表
         """
         try:
@@ -1402,19 +1539,32 @@ class QuantAlgo:
                 except Exception as e:
                     continue
             
-            # 筛选涨停板股票（涨跌幅 >= 9.9%）
-            limit_up_stocks = [s for s in all_stocks if s['涨跌幅'] >= 9.9]
+            # 🆕 V9.9 新增：先进行股票池过滤，减少需要下载K线的股票数量
+            # 筛选涨停板股票（涨跌幅 >= min_change_pct）
+            limit_up_stocks = [s for s in all_stocks if s['涨跌幅'] >= min_change_pct]
+
+            # 🆕 V9.9 新增：对涨停板股票进行二次过滤（成交量、成交额等）
+            # 🆕 V9.10 修复：添加监控池白名单
+            active_stocks = QuantAlgo.filter_active_stocks(
+                limit_up_stocks, 
+                min_change_pct=min_change_pct,
+                min_volume=min_volume,
+                min_amount=min_amount,
+                watchlist=watchlist
+            )
 
             # 按涨跌幅排序，取前 limit 只
-            limit_up_stocks.sort(key=lambda x: x['涨跌幅'], reverse=True)
-            stocks_to_analyze = limit_up_stocks[:limit]
+            active_stocks.sort(key=lambda x: x['涨跌幅'], reverse=True)
+            stocks_to_analyze = active_stocks[:limit]
 
             if not stocks_to_analyze:
                 return {
-                    '数据状态': '无涨停板股票',
-                    '说明': '当前市场无涨停板股票',
+                    '数据状态': '无符合条件的涨停板股票',
+                    '说明': '当前市场无符合条件的涨停板股票（已过滤成交量和成交额）',
                     '扫描数量': len(stock_list),
-                    '涨停板数量': len(limit_up_stocks)
+                    '全市场数量': len(all_stocks),
+                    '涨停板数量': len(limit_up_stocks),
+                    '过滤后数量': len(active_stocks)
                 }
 
             # 🚀 批量预加载历史数据，避免每次都查询数据库
@@ -3744,3 +3894,220 @@ class QuantAlgo:
                 '错误信息': str(e),
                 '说明': '可能是网络问题或数据源限制'
             }
+    
+    # 🆕 V9.11: 竞价异动捕捉逻辑
+    @staticmethod
+    def analyze_auction_strength(stock_data: Dict[str, Any], last_close: float, is_review_mode=False, code=None, data_manager=None) -> Dict[str, Any]:
+        """
+        🔥 竞价抢筹力度分析（无需K线）
+        
+        Args:
+            stock_data: 股票快照数据（来自Easyquotation）
+            last_close: 昨日收盘价
+            is_review_mode: 复盘模式开关（V9.12.1新增）
+            code: 股票代码（V9.13新增，用于获取连板信息）
+            data_manager: 数据管理器实例（V9.13新增，用于获取连板信息）
+        
+        Returns:
+            竞价强度分析结果
+        """
+        if last_close == 0:
+            return {
+                "price": 0,
+                "pct": 0,
+                "score": 0,
+                "status": "数据异常"
+            }
+        
+        # 获取竞价当前的"虚拟开盘价"
+        # 竞价阶段 bid1 和 ask1 通常是重合的，即为撮合价
+        current_price = stock_data.get('bid1', 0)
+        if current_price == 0:
+            current_price = stock_data.get('now', 0)
+        
+        if current_price == 0:
+            return {
+                "price": 0,
+                "pct": 0,
+                "score": 0,
+                "status": "无数据"
+            }
+        
+        # 1. 竞价涨幅
+        auction_pct = (current_price - last_close) / last_close * 100
+        
+        # 2. 匹配量（如有）
+        # Easyquotation 部分接口可能不返回 matching_vol
+        # 这里用 bid1_volume 近似代替，虽不精准但能看意图
+        bid_vol = stock_data.get('bid1_volume', 0)
+        ask_vol = stock_data.get('ask1_volume', 0)
+        
+        # 🆕 V9.11.2 修复：获取换手率和成交额
+        turnover_rate = stock_data.get('turnover', 0)  # 换手率
+        amount = stock_data.get('amount', 0)  # 成交额
+        
+        # 3. 评分逻辑
+        # 基础分：50分
+        score = 50
+        
+        # 🆕 V9.11.2 修复：识别"缩量一字板"（使用换手率替代绝对手数）
+        # 一字板（涨幅>9.5%）且换手率极低（<0.1%）是最强的
+        is_limit_up = auction_pct > 9.5
+        is_shrinking = turnover_rate < 0.1  # 换手率<0.1%视为缩量
+        
+        if is_limit_up and is_shrinking:
+            # 缩量一字板：换手率极低，资金锁死
+            score += 40  # 基础一字板加分
+            score += 10  # 缩量额外加分
+            status = "缩量一字板"
+        elif is_limit_up:
+            # 放量一字板：换手率正常或放量
+            score += 40  # 一字板加分
+            if turnover_rate > 0.5:
+                score += 10  # 放量一字板额外加分
+            status = "放量一字板"
+        elif 5.0 < auction_pct <= 9.0:
+            score += 30  # 高开 5% ~ 9% = 强势
+            status = "强势"
+        elif 2.0 <= auction_pct <= 5.0:
+            score += 20  # 高开 2% ~ 5% = 抢筹
+            status = "抢筹"
+        elif auction_pct > 0:
+            status = "高开"
+        elif auction_pct > -2.0:
+            status = "平开"
+        elif auction_pct < 0:
+            score -= 20  # 低开 = 弱势
+            status = "弱势"
+        
+        # 量能加分（非一字板）
+        if not is_limit_up:
+            if bid_vol > 0:
+                # 有买盘，说明有资金关注
+                score += 10
+            elif bid_vol == 0 and auction_pct > 0:
+                # 高开但无买盘，可能是竞价刚开始
+                score += 5
+        
+        # 卖盘扣分
+        if ask_vol > bid_vol * 2:
+            # 卖盘远大于买盘，抛压重
+            score -= 15
+            if status == "平开":
+                status = "抛压重"
+        
+        # 🆕 V9.12 修复：应用时间衰减因子
+        # 游资心法：涨停的时间越早，溢价越高；涨停的时间越晚，气质越弱
+        time_weight = get_time_weight(is_review_mode=is_review_mode)
+        
+        # 计算最终得分（应用时间权重）
+        final_score = int(score * time_weight)
+        
+        # 🆕 V9.12 修复：添加时间权重信息到返回结果
+        time_weight_desc = ""
+        if is_review_mode:
+            time_weight_desc = "📝 复盘模式 (不衰减)"
+        elif time_weight == 1.0:
+            time_weight_desc = "👑 黄金时段"
+        elif time_weight == 0.9:
+            time_weight_desc = "⚔️ 激战时段"
+        elif time_weight == 0.7:
+            time_weight_desc = "💤 垃圾时间"
+        elif time_weight == 0.4:
+            time_weight_desc = "🦊 偷袭时段"
+        elif time_weight == 0.0:
+            time_weight_desc = "☠️ 最后一击"
+        
+        # 🆕 V9.13 修复：弱转强识别和连板溢价
+        lianban_count = 0
+        yesterday_status = "未知"
+        yesterday_pct = 0
+        is_weak_to_strong = False
+        weak_to_strong_bonus = 0
+        lianban_bonus = 0
+        high_risk_penalty = 0
+        
+        if code and data_manager:
+            try:
+                stock_status = data_manager.get_stock_status(code)
+                lianban_count = stock_status.get('lianban_count', 0)
+                yesterday_status = stock_status.get('yesterday_status', '未知')
+                yesterday_pct = stock_status.get('yesterday_pct', 0)
+                
+                # 🚀 弱转强加分项
+                # 如果昨天是"烂板"或"非涨停"，但今天"高开抢筹"
+                if yesterday_status in ['烂板', '非涨停', '大跌'] and score > 70:
+                    weak_to_strong_bonus = 15  # 巨大的加分！
+                    is_weak_to_strong = True
+                    final_score = min(100, final_score + weak_to_strong_bonus)
+                
+                # 🪜 连板溢价
+                if lianban_count >= 2:
+                    lianban_bonus = 10
+                    final_score = min(100, final_score + lianban_bonus)
+                elif lianban_count >= 4:
+                    lianban_bonus = 15
+                    final_score = min(100, final_score + lianban_bonus)
+                
+                # ⚠️ 高位风险（5板以上要注意核按钮）
+                if lianban_count >= 5 and auction_pct < -3:
+                    high_risk_penalty = 50
+                    final_score = max(0, final_score - high_risk_penalty)
+                
+            except Exception as e:
+                # 如果获取状态失败，不影响主流程
+                pass
+        
+        return {
+            "price": round(current_price, 2),
+            "pct": round(auction_pct, 2),
+            "score": min(100, max(0, final_score)),  # 限制在 0-100 分
+            "base_score": min(100, max(0, score)),  # 原始得分（未应用时间权重）
+            "time_weight": round(time_weight, 2),  # 时间权重
+            "time_weight_desc": time_weight_desc,  # 时间权重描述
+            "status": status,
+            "turnover_rate": turnover_rate,
+            "amount": amount,
+            "bid_vol": bid_vol,
+            "ask_vol": ask_vol,
+            # 🆕 V9.13 修复：连板和弱转强信息
+            "lianban_count": lianban_count,
+            "yesterday_status": yesterday_status,
+            "yesterday_pct": yesterday_pct,
+            "is_weak_to_strong": is_weak_to_strong,
+            "weak_to_strong_bonus": weak_to_strong_bonus,
+            "lianban_bonus": lianban_bonus,
+            "high_risk_penalty": high_risk_penalty
+        }
+    
+    @staticmethod
+    def batch_analyze_auction(stocks_data: Dict[str, Dict[str, Any]],
+                                   last_closes: Dict[str, float],
+                                   is_review_mode=False,
+                                   data_manager=None) -> Dict[str, Dict[str, Any]]:
+        """
+        批量分析竞价强度
+        
+        Args:
+            stocks_data: 股票快照数据字典 {code: stock_data}
+            last_closes: 昨日收盘价字典 {code: last_close}
+            is_review_mode: 复盘模式开关（V9.12.1新增）
+            data_manager: 数据管理器实例（V9.13新增，用于获取连板信息）
+            
+        Returns:
+            竞价分析结果字典 {code: analysis_result}
+        """
+        results = {}
+        
+        for code, stock_data in stocks_data.items():
+            last_close = last_closes.get(code, 0)
+            result = QuantAlgo.analyze_auction_strength(
+                stock_data, 
+                last_close, 
+                is_review_mode,
+                code=code,
+                data_manager=data_manager
+            )
+            results[code] = result
+        
+        return results
