@@ -345,12 +345,41 @@ class AutoReviewer:
         """
         获取涨停板股票列表
         
-        TODO: 需要实现涨停板数据获取功能
+        Args:
+            date: 日期字符串，格式YYYY-MM-DD
+        
+        Returns:
+            涨停板股票代码列表
         """
-        # 临时实现：返回空列表
-        # 实际应该从AkShare或其他数据源获取
-        logger.warning("_get_limit_up_stocks 尚未实现，返回空列表")
-        return []
+        try:
+            import akshare as ak
+            import pandas as pd
+            
+            # 格式转换：2026-01-18 -> 20260118
+            date_str = date.replace('-', '')
+            
+            logger.info(f"正在获取 {date} 的涨停板数据...")
+            
+            # 获取涨停板数据
+            df = ak.stock_zt_pool_em(date=date_str)
+            
+            if df is not None and not df.empty:
+                # 提取股票代码列表
+                stock_codes = df['代码'].tolist()
+                logger.info(f"成功获取 {len(stock_codes)} 只涨停板股票")
+                return stock_codes
+            else:
+                logger.warning(f"{date} 无涨停板数据")
+                return []
+                
+        except ImportError:
+            logger.error("akshare模块未安装，无法获取涨停板数据")
+            return []
+        except Exception as e:
+            logger.error(f"获取涨停板数据失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
     
     def _get_fact_vetoed_stocks(self, date: str) -> List[Dict]:
         """

@@ -1,0 +1,11 @@
+﻿stock_code,date,system_score,today_status,signal,reason,fact_veto,capital_flow,trend
+600058,2026-01-17,30.0,LIMIT_UP,WAIT,"Divergence: Price UP but capital outflow, potential bull trap",False,0,UP
+603056,2026-01-17,0.0,LIMIT_UP,WAIT,"Trend DOWN, no flying knife",True,0,DOWN
+600841,2026-01-17,0.0,LIMIT_UP,WAIT,"Trend DOWN, no flying knife",True,0,DOWN
+002028,2026-01-17,30.0,LIMIT_UP,WAIT,"Divergence: Price UP but capital outflow, potential bull trap",False,0,UP
+601163,2026-01-17,0.0,LIMIT_UP,WAIT,"Trend DOWN, no flying knife",True,0,DOWN
+001255,2026-01-17,0.0,LIMIT_UP,WAIT,Invalid time: No capital no trend,False,0,SIDEWAY
+002358,2026-01-17,0.0,LIMIT_UP,WAIT,Invalid time: No capital no trend,False,0,SIDEWAY
+002119,2026-01-17,30.0,LIMIT_UP,WAIT,"Divergence: Price UP but capital outflow, potential bull trap",False,0,UP
+300952,2026-01-17,30.0,LIMIT_UP,WAIT,"Divergence: Price UP but capital outflow, potential bull trap",False,0,UP
+600785,2026-01-17,0.0,LIMIT_UP,WAIT,Invalid time: No capital no trend,False,0,SIDEWAY
