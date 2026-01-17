@@ -80,9 +80,11 @@ class OpenAIProvider(BaseLLMProvider):
             openai_messages = [{"role": m.role, "content": m.content} for m in messages]
             
             # 调用API
+            # 🆕 V10.1.3：添加 5 秒超时控制，避免 UI 卡死
             response = client.chat.completions.create(
                 model=model,
                 messages=openai_messages,
+                timeout=5.0,  # ⚡️ 超过5秒没这就报错，立即触发脊髓反射
                 **kwargs
             )
             
@@ -144,6 +146,7 @@ class DeepSeekProvider(BaseLLMProvider):
             response = client.chat.completions.create(
                 model=model,
                 messages=openai_messages,
+                timeout=5.0,  # ⚡️ 超过5秒没这就报错，立即触发脊髓反射
                 **kwargs
             )
             

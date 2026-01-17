@@ -7,6 +7,8 @@
 
 import pandas as pd
 from datetime import datetime, timedelta
+from collections import Counter
+from typing import List, Dict, Optional, Tuple
 from logic.logger import get_logger
 from logic.data_manager import DataManager
 from logic.data_cleaner import DataCleaner
@@ -24,6 +26,8 @@ class MarketSentiment:
     3. 计算昨日涨停溢价
     4. 判断市场情绪（进攻/防守/震荡）
     5. 动态调整策略参数
+    6. 🆕 V10.1：自动挖掘今日主线题材
+    7. 🆕 V10.1.1：概念库过期提醒 + 主线聚焦度分析
     """
     
     # 市场情绪阈值
@@ -37,10 +41,41 @@ class MarketSentiment:
     REGIME_BEAR_DEFENSE = "BEAR_DEFENSE"    # 防守模式
     REGIME_CHAOS = "CHAOS"                  # 震荡模式
     
+    # 🆕 V10.1：概念关键词映射
+    CONCEPT_KEYWORDS = {
+        'AI': ['人工智能', 'AI', '大模型', 'ChatGPT', '算力', 'CPO', '光模块', '智能', '机器人'],
+        '医药': ['医药', '医疗', '生物', '疫苗', '创新药', 'CRO', '医疗器械', '健康'],
+        '华为': ['华为', '鸿蒙', '麒麟', '昇腾', '鲲鹏', '海思'],
+        '新能源': ['新能源', '光伏', '风电', '储能', '锂电池', '动力电池', '充电桩'],
+        '芯片': ['芯片', '半导体', '集成电路', '存储', '晶圆', '封测'],
+        '汽车': ['汽车', '新能源车', '智能驾驶', '自动驾驶', '车联网', '汽车电子'],
+        '军工': ['军工', '航空', '航天', '雷达', '导弹', '无人机'],
+        '消费': ['消费', '白酒', '食品', '饮料', '家电', '零售', '电商'],
+        '金融': ['银行', '证券', '保险', '金融', '期货', '信托'],
+        '房地产': ['房地产', '地产', '物业', '建筑', '建材'],
+        '化工': ['化工', '化学', '石化', '化纤', '聚氨酯'],
+        '有色': ['有色', '金属', '铜', '铝', '锂', '稀土', '黄金'],
+        '软件': ['软件', '云计算', '大数据', 'SaaS', 'ERP', '互联网'],
+        '传媒': ['传媒', '游戏', '影视', '广告', '出版'],
+        '教育': ['教育', '培训', '在线教育', '学校'],
+        '农业': ['农业', '种业', '农机', '农产品'],
+        '环保': ['环保', '水务', '固废', '大气', '节能'],
+        '通信': ['通信', '5G', '6G', '光纤', '基站'],
+        '电力': ['电力', '电网', '发电', '输电', '配电'],
+        '纺织': ['纺织', '服装', '面料', '家纺'],
+        '造纸': ['造纸', '纸业', '包装', '印刷'],
+    }
+    
     def __init__(self):
         self.db = DataManager()
         self.current_regime = None
         self.market_data = {}
+        self.hot_themes = []  # 🆕 V10.1：今日主线
+        self.hot_themes_detailed = []  # 🆕 V10.1.1：今日主线（带分数）
+        self.concept_map_expired = False  # 🆕 V10.1.1：概念库是否过期
+        
+        # 🆕 V10.1.1：加载真实的概念映射表
+        self.concept_map = self._load_concept_map()
     
     def get_limit_up_down_count(self):
         """
@@ -157,15 +192,20 @@ class MarketSentiment:
                 'loss_count': 0
             }
     
-    def get_market_regime(self):
+    def get_market_regime(self, top_stocks: Optional[List[Dict]] = None):
         """
         判断市场情绪（进攻/防守/震荡）
+        
+        Args:
+            top_stocks: 强势股列表（可选，用于主线挖掘）
         
         Returns:
             dict: {
                 'regime': 市场状态,
                 'description': 状态描述,
-                'strategy': 策略建议
+                'strategy': 策略建议,
+                'market_data': 市场数据,
+                'hot_themes': 今日主线（V10.1新增）
             }
         """
         try:
@@ -210,18 +250,93 @@ class MarketSentiment:
                 strategy = "只做首板，控制仓位"
             
             self.current_regime = regime
+            
+            # 🆕 V10.1：挖掘今日主线
+            hot_themes = []
+            hot_themes_detailed = []
+            if top_stocks:
+                hot_themes_detailed = self._analyze_hot_themes(top_stocks)
+                hot_themes = [theme for theme, score in hot_themes_detailed]
+                self.hot_themes = hot_themes
+                self.hot_themes_detailed = hot_themes_detailed
+            
             self.market_data = {
                 'limit_up_count': limit_up_count,
                 'limit_down_count': limit_down_count,
                 'prev_profit': avg_profit,
-                'max_board': self.get_consecutive_board_height().get('max_board', 0)
+                'max_board': self.get_consecutive_board_height().get('max_board', 0),
+                'hot_themes': hot_themes,  # 🆕 V10.1
+                'hot_themes_detailed': hot_themes_detailed  # 🆕 V10.1.1：带分数
             }
+            
+            # ==========================================
+            # 🔥 V10.1.7 [新增] 静态风险预警 (Static Warning)
+            # ==========================================
+            static_warning = ""
+            
+            # 计算市场情绪分数（基于涨停家数和昨日溢价）
+            # 分数范围：0-100
+            score = 0
+            if limit_up_count > 0:
+                # 涨停家数贡献（最高50分）
+                score += min(limit_up_count / 2, 50)
+            # 昨日溢价贡献（最高50分）
+            score += min(avg_profit * 1000, 50)
+            score = min(score, 100)
+            
+            # 计算恶性炸板率
+            mal_rate = 0
+            try:
+                from logic.market_cycle import MarketCycle
+                mc = MarketCycle()
+                limit_data = mc.get_limit_up_down_count()
+                limit_up_stocks = limit_data.get('limit_up_stocks', [])
+                
+                benign_count = 0
+                malignant_count = 0
+                
+                for stock in limit_up_stocks:
+                    if stock.get('is_exploded', False):
+                        change_pct = stock.get('change_pct', 0)
+                        # 恶性炸板：回撤超过 5%（A杀风险）
+                        if change_pct < 5:
+                            malignant_count += 1
+                        else:
+                            benign_count += 1
+                
+                total_zhaban = benign_count + malignant_count
+                if total_zhaban > 0:
+                    mal_rate = malignant_count / total_zhaban
+                
+                mc.close()
+            except Exception as e:
+                logger.warning(f"计算恶性炸板率失败: {e}")
+                mal_rate = 0
+            
+            # 场景1: 高位分歧 (最危险) -> 市场过热 + 炸板率高
+            if score > 70 and mal_rate > 0.3:
+                static_warning = "⚠️ 警惕：市场过热且炸板率高，防止退潮！"
+            
+            # 场景2: 冰点杀跌 -> 市场极冷 + 炸板率高
+            elif score < 30 and mal_rate > 0.4:
+                static_warning = "❄️ 警惕：冰点期且亏钱效应剧烈，严禁试错！"
+            
+            # 场景3: 普涨高潮 -> 市场极热 + 炸板率低 (安全)
+            elif score > 80 and mal_rate < 0.2:
+                static_warning = "🔥 提示：情绪一致性高潮，持筹盛宴。"
+            
+            # 注入到数据包
+            self.market_data['static_warning'] = static_warning
+            self.market_data['score'] = score
+            self.market_data['malignant_zhaban_rate'] = mal_rate
             
             return {
                 'regime': regime,
                 'description': description,
                 'strategy': strategy,
-                'market_data': self.market_data
+                'market_data': self.market_data,
+                'hot_themes': hot_themes,  # 🆕 V10.1
+                'hot_themes_detailed': hot_themes_detailed  # 🆕 V10.1.1：带分数
             }
         
         except Exception as e:
@@ -230,7 +345,9 @@ class MarketSentiment:
                 'regime': self.REGIME_CHAOS,
                 'description': "无法判断市场情绪",
                 'strategy': "保守操作",
-                'market_data': {}
+                'market_data': {},
+                'hot_themes': [],
+                'hot_themes_detailed': []
             }
     
     def get_strategy_parameters(self, regime=None):
@@ -344,6 +461,313 @@ class MarketSentiment:
             return "🌧️ 雨天（防守）"
         else:
             return "☁️ 多云（震荡）"
+    
+    def generate_ai_context(self, top_stocks: Optional[List[Dict]] = None) -> Dict:
+        """
+        🆕 V10.1：生成 AI 上下文，让 AI 能够读取今日主线
+        🆕 V10.1.1：包含主线聚焦度信息（带分数）
+        
+        Args:
+            top_stocks: 强势股列表（可选）
+        
+        Returns:
+            dict: AI 上下文信息
+        """
+        try:
+            # 获取市场情绪
+            regime_info = self.get_market_regime(top_stocks)
+            
+            # 🆕 V10.1.1：格式化带分数的主线信息
+            hot_themes_detailed = regime_info.get('hot_themes_detailed', [])
+            if hot_themes_detailed:
+                # 格式化成 AI 易读的字符串
+                themes_str = ", ".join([f"{t[0]}({t[1]}分)" for t in hot_themes_detailed])
+                
+                # 🆕 V10.1.1：判断主线聚焦度
+                if len(hot_themes_detailed) >= 2:
+                    top_score = hot_themes_detailed[0][1]
+                    second_score = hot_themes_detailed[1][1]
+                    score_gap = top_score - second_score
+                    
+                    # 分数差距小且分数高 → 合力强
+                    if score_gap < 10 and top_score >= 30:
+                        focus_level = "主线明确，合力强"
+                    # 分数差距大 → 单一主线
+                    elif score_gap >= 20:
+                        focus_level = "单一主线，聚焦度高"
+                    # 分数低且分散 → 合力弱
+                    elif top_score < 20:
+                        focus_level = "主线分散，合力弱"
+                    else:
+                        focus_level = "主线一般"
+                else:
+                    focus_level = "主线不明确"
+                
+                themes_with_focus = f"{themes_str}（{focus_level}）"
+            else:
+                themes_with_focus = "无明显主线"
+            
+            # ==========================================
+            # 🔥 V10.1.6 [新增] 龙头身份认证协议 (Leader Identification)
+            # ==========================================
+            
+            # 1. 建立主线秩序：找到每个概念下的"最高板"
+            # 格式: {'新能源': {'name': '天龙集团', 'height': 3}, ...}
+            theme_leaders = {} 
+            
+            if top_stocks:
+                for stock in top_stocks:
+                    concepts = stock.get('concept_tags', [])
+                    # 解析连板高度 (如 "3连板" -> 3, "首板" -> 1)
+                    status = stock.get('lianban_status', '首板')
+                    try:
+                        if '连板' in status:
+                            height = int(status[0])
+                        else:
+                            height = 1
+                    except:
+                        height = 1
+                        
+                    for c in concepts:
+                        # 记录该概念下的最高身位
+                        current_leader = theme_leaders.get(c, {'height': -1})
+                        if height > current_leader['height']:
+                            theme_leaders[c] = {'name': stock['name'], 'height': height}
+                        # 如果高度一样，优先选封单额大的或者竞价强的 (此处简化为选涨幅大的)
+                        elif height == current_leader['height']:
+                            change_pct = stock.get('change_pct', 0) or stock.get('涨跌幅', 0)
+                            if change_pct > 9.5: # 涨停优先
+                                theme_leaders[c] = {'name': stock['name'], 'height': height}
+                
+                # 2. 标记个股身份：你是龙，还是虫？
+                for stock in top_stocks:
+                    concepts = stock.get('concept_tags', [])
+                    is_leader = False
+                    my_leader = "无"
+                    
+                    # 只要它是任何一个概念的最高板，它就是龙头
+                    for c in concepts:
+                        leader_info = theme_leaders.get(c)
+                        if leader_info:
+                            if stock['name'] == leader_info['name']:
+                                is_leader = True
+                            else:
+                                my_leader = leader_info['name']
+                    
+                    # 注入身份字段
+                    if is_leader:
+                        stock['role'] = "🐲 龙头 (真龙)"
+                    else:
+                        stock['role'] = f"🐕 跟风 (大哥是: {my_leader})"
+            
+            # ==========================================
+            # 🔥 V10.1.6 逻辑结束
+            # ==========================================
+            
+            # 构建上下文
+            context = {
+                'market_weather': self.get_market_weather_icon(),
+                'regime': regime_info.get('regime', ''),
+                'description': regime_info.get('description', ''),
+                'strategy': regime_info.get('strategy', ''),
+                'market_data': regime_info.get('market_data', {}),
+                'hot_themes': regime_info.get('hot_themes', []),  # 🆕 V10.1：今日主线（仅名称）
+                'hot_themes_detailed': themes_with_focus,  # 🆕 V10.1.1：今日主线（带分数 + 聚焦度）
+                'concept_map_expired': self.concept_map_expired,  # 🆕 V10.1.1：概念库是否过期
+                'theme_leaders': theme_leaders  # 🆕 V10.1.6：龙头信息
+            }
+            
+            return context
+        
+        except Exception as e:
+            logger.error(f"生成 AI 上下文失败: {e}")
+            return {
+                'market_weather': '未知',
+                'regime': self.REGIME_CHAOS,
+                'description': '无法判断市场情绪',
+                'strategy': '保守操作',
+                'market_data': {},
+                'hot_themes': [],
+                'hot_themes_detailed': '无明显主线',
+                'concept_map_expired': False
+            }
+    
+    def _load_concept_map(self) -> Dict:
+        """
+        🆕 V10.1.1：加载概念映射表（包含过期提醒）
+        
+        Returns:
+            dict: 股票代码 -> 概念列表的映射
+        """
+        import os
+        import json
+        import time
+        
+        concept_map_path = "data/concept_map.json"
+        
+        if os.path.exists(concept_map_path):
+            try:
+                # 🆕 V10.1.1：检查文件龄期
+                file_time = os.path.getmtime(concept_map_path)
+                days_old = (time.time() - file_time) / (24 * 3600)
+                
+                if days_old > 7:
+                    self.concept_map_expired = True
+                    logger.warning(f"⚠️ [警告] 概念库已过期 {int(days_old)} 天！建议运行 `python scripts/generate_concept_map.py` 更新。")
+                else:
+                    self.concept_map_expired = False
+                
+                with open(concept_map_path, 'r', encoding='utf-8') as f:
+                    concept_map = json.load(f)
+                logger.info(f"✅ 加载概念映射表成功，覆盖 {len(concept_map)} 只股票（{int(days_old)} 天前更新）")
+                return concept_map
+            except Exception as e:
+                logger.warning(f"读取概念映射表失败: {e}")
+        
+        self.concept_map_expired = True
+        logger.warning("⚠️ 概念映射表不存在，将使用名称推断法")
+        return {}
+    
+    def _get_concept_coverage(self) -> Dict:
+        """
+        🆕 V10.1.5：获取概念库覆盖率信息
+        
+        Returns:
+            dict: 包含覆盖率信息的字典
+                - covered_count: 已覆盖股票数量
+                - total_count: 市场总股票数量
+                - coverage_rate: 覆盖率（百分比）
+                - uncovered_count: 未覆盖股票数量
+        """
+        try:
+            import akshare as ak
+            
+            # 获取概念库覆盖的股票数量
+            covered_count = len(self.concept_map)
+            
+            # 获取市场总股票数量
+            stock_list_df = ak.stock_info_a_code_name()
+            total_count = len(stock_list_df)
+            
+            # 计算覆盖率
+            coverage_rate = (covered_count / total_count * 100) if total_count > 0 else 0
+            uncovered_count = total_count - covered_count
+            
+            result = {
+                'covered_count': covered_count,
+                'total_count': total_count,
+                'coverage_rate': round(coverage_rate, 2),
+                'uncovered_count': uncovered_count
+            }
+            
+            logger.info(f"📊 概念库覆盖率: {coverage_rate:.2f}% ({covered_count}/{total_count})")
+            return result
+            
+        except Exception as e:
+            logger.warning(f"获取概念库覆盖率失败: {e}")
+            return {
+                'covered_count': len(self.concept_map),
+                'total_count': 0,
+                'coverage_rate': 0,
+                'uncovered_count': 0
+            }
+    
+    def _analyze_hot_themes(self, top_stocks: List[Dict]) -> List[Tuple[str, int]]:
+        """
+        🔥 [V10.1.1 深化逻辑] 挖掘今日主线题材（加权评分版）
+        使用加权评分替代简单计数，优先识别涨停/连板股票的概念
+        
+        Args:
+            top_stocks: 强势股列表（涨停或高涨幅股票）
+            
+        Returns:
+            list: 今日主线题材列表（Top 3），格式为 [(概念, 分数), ...]
+        """
+        if not top_stocks:
+            return []
+        
+        # 🆕 V10.1.1：使用加权评分
+        theme_scores = {}
+        
+        for stock in top_stocks:
+            code = stock.get('code', '')
+            name = stock.get('name', '')
+            
+            # 获取该股票的概念列表
+            concepts = self.get_stock_concepts(code, name)
+            
+            if concepts:
+                # 同时把概念注入到 stock 对象里，方便 UI 显示
+                stock['concept_tags'] = concepts[:3]  # 只取前3个核心概念
+                
+                # 🔥 核心权重算法：
+                # 涨停板/连板 = 10分
+                # 涨幅 > 7% = 5分
+                # 涨幅 > 3% = 1分
+                weight = 1
+                
+                # 判断是否涨停
+                change_pct = stock.get('change_pct', 0)
+                is_limit_up = change_pct >= 9.5
+                
+                # 判断是否连板
+                lianban_count = stock.get('lianban_count', 0)
+                
+                if is_limit_up or lianban_count > 0:
+                    weight = 10  # 涨停板或连板
+                elif change_pct > 7.0:
+                    weight = 5   # 强势股
+                elif change_pct > 3.0:
+                    weight = 1   # 普通上涨
+                
+                for concept in concepts:
+                    # 过滤掉太宽泛的概念
+                    exclude_concepts = ['融资融券', '深股通', '标准普尔', 'MSCI', '富时罗素', '标普道琼斯', '沪股通']
+                    if concept in exclude_concepts:
+                        continue
+                    
+                    # 累加权重
+                    theme_scores[concept] = theme_scores.get(concept, 0) + weight
+        
+        # 按分数排序，而不是按数量排序
+        if not theme_scores:
+            return []
+        
+        sorted_themes = sorted(theme_scores.items(), key=lambda x: x[1], reverse=True)
+        
+        # 🆕 V10.1.1：返回 (名字, 分数) 而不只是名字
+        return sorted_themes[:3]
+    
+    def get_stock_concepts(self, code: str, name: str) -> List[str]:
+        """
+        🆕 V10.1.1：获取股票概念（优先查表，兜底推断）
+        
+        Args:
+            code: 股票代码
+            name: 股票名称
+            
+        Returns:
+            list: 概念列表
+        """
+        # 1. 优先查表（使用真实的 concept_map.json）
+        if code in self.concept_map:
+            concepts = self.concept_map[code]
+            # 过滤掉太宽泛的概念
+            exclude_concepts = ['融资融券', '深股通', '标准普尔', 'MSCI', '富时罗素', '标普道琼斯', '沪股通']
+            filtered_concepts = [c for c in concepts if c not in exclude_concepts]
+            return filtered_concepts if filtered_concepts else []
+        
+        # 2. 兜底：使用名称推断法
+        concepts = []
+        for theme, keywords in self.CONCEPT_KEYWORDS.items():
+            for keyword in keywords:
+                if keyword in name:
+                    if theme not in concepts:
+                        concepts.append(theme)
+                    break
+        
+        # 如果没有匹配到概念，返回空列表（不再返回"其他"）
+        return concepts
     
     def close(self):
         """关闭数据库连接"""
