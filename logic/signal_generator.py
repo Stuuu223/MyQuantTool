@@ -187,4 +187,195 @@ def get_signal_generator() -> SignalGeneratorVectorized:
     global _signal_generator
     if _signal_generator is None:
         _signal_generator = SignalGeneratorVectorized()
-    return _signal_generator
+    return _signal_generator# V13.1 Reality Priority - Dynamic Thresholds + Divergence Detection
+class SignalGenerator:
+    '''
+    V13.1 终极形态：事实一票否决制 (Reality Priority)
+    特性：
+    1. 动态阈值：基于流通市值的资金流出判定
+    2. 背离识别：上涨趋势中的资金流出预警
+    '''
+    
+    CAPITAL_OUT_THRESHOLD = -50000000  # 绝对阈值：5000万
+    FLOW_RATIO_THRESHOLD = -0.01  # 相对阈值：流出占市值1%
+    
+    def calculate_final_signal(self, stock_code, ai_narrative_score, capital_flow_data, trend_status, circulating_market_cap=None):
+        '''
+        计算最终交易信号 (V13.1)
+        
+        参数:
+        - stock_code: 股票代码
+        - ai_narrative_score: LLM基于新闻/基本面吹出来的分数 (0-100)
+        - capital_flow_data: DDE净额 (float, 单位: 元)
+        - trend_status: 技术面趋势 ('UP', 'DOWN', 'SIDEWAY')
+        - circulating_market_cap: 流通市值 (float, 单位: 元), V13.1新增
+        
+        返回:
+        - dict: {
+            'signal': 'BUY' | 'SELL' | 'WAIT',
+            'final_score': float,
+            'reason': str,
+            'fact_veto': bool,
+            'risk_level': str  # V13.1新增: 'LOW', 'MEDIUM', 'HIGH'
+        }
+        '''
+        
+        # ---------------------------------------------------------
+        # 第一层：一级事实熔断 (Fact Veto - The Physics)
+        # ---------------------------------------------------------
+        
+        # 1. 资金测谎仪 (Capital Flow Veto) - V13.1 动态阈值升级
+        # 双重熔断机制：
+        # A. 绝对值死线：净流出 > 5000万 (大资金出逃)
+        # B. 相对值死线：净流出 > 流通市值的 1% (小盘股失血)
+        
+        is_capital_fleeing = False
+        fleeing_reason = ""
+        
+        # 绝对阈值检查
+        if capital_flow_data < self.CAPITAL_OUT_THRESHOLD:
+            is_capital_fleeing = True
+            fleeing_reason = f"Absolute outflow {-capital_flow_data/10000:.0f}W"
+            
+        # 相对阈值检查 (如果有市值数据)
+        elif circulating_market_cap and circulating_market_cap > 0:
+            flow_ratio = capital_flow_data / circulating_market_cap
+            if flow_ratio < self.FLOW_RATIO_THRESHOLD:  # 流出超1%
+                is_capital_fleeing = True
+                fleeing_reason = f"Relative outflow {flow_ratio*100:.2f}% (exceeds 1% warning line)"
+        
+        if is_capital_fleeing:
+            logger.warning(f"Fact Veto: {stock_code} capital fleeing ({fleeing_reason}), AI narrative invalid.")
+            return {
+                'signal': 'SELL',
+                'final_score': 0,
+                'reason': f"Capital fleeing ({fleeing_reason}), AI narrative invalid",
+                'fact_veto': True,
+                'risk_level': 'HIGH'
+            }
+        
+        # 2. 趋势铁律 (Trend Veto)
+        if trend_status == 'DOWN':
+            logger.warning(f"Fact Veto: {stock_code} trend DOWN, no flying knife.")
+            return {
+                'signal': 'WAIT',
+                'final_score': 0,
+                'reason': 'Trend DOWN, no flying knife',
+                'fact_veto': True,
+                'risk_level': 'HIGH'
+            }
+        
+        # ---------------------------------------------------------
+        # 第二层：顺势加权 (Trend Confirmation - The Boost)
+        # ---------------------------------------------------------
+        
+        final_score = 0
+        log_reason = ''
+        risk_level = 'MEDIUM'
+        
+        # 情况 A：资金流入 + 趋势向上 (完美共振)
+        if capital_flow_data > 0 and trend_status == 'UP':
+            final_score = ai_narrative_score * 1.2  # 给予20%的溢价奖励
+            log_reason = 'Resonance Attack: Capital + Trend + AI'
+            risk_level = 'LOW'
+            
+        # 情况 B：资金流入 + 趋势震荡 (潜伏/吸筹)
+        elif capital_flow_data > 0:
+            final_score = ai_narrative_score * 0.9
+            log_reason = 'Observation: Capital inflow but trend not up'
+            risk_level = 'MEDIUM'
+            
+        # 情况 C：资金流出/微流出 + 趋势向上 (背离/虚拉) - V13.1 严防诱多
+        elif trend_status == 'UP':
+            # V13.1: 如果股价涨但资金流出，视为"背离"
+            # 这里的 capital_flow_data 是负数（但未触及熔断线）
+            final_score = ai_narrative_score * 0.4  # 极度打折，比V13更狠
+            log_reason = 'Divergence: Price UP but capital outflow, potential bull trap'
+            risk_level = 'HIGH'
+            logger.warning(f"Divergence detected: {stock_code} price UP but capital outflow {-capital_flow_data/10000:.0f}W")
+            
+        # 情况 D：其他 (垃圾时间)
+        else:
+            final_score = 0
+            log_reason = 'Invalid time: No capital no trend'
+            risk_level = 'LOW'
+        
+        logger.info(f'{stock_code} score: {final_score:.1f} | {log_reason}')
+        
+        # ---------------------------------------------------------
+        # 第三层：最终裁决
+        # ---------------------------------------------------------
+        
+        # V13 门槛提高：只有共振或极强逻辑才能开仓
+        if final_score >= 85:
+            signal = 'BUY'
+        else:
+            signal = 'WAIT'
+        
+        return {
+            'signal': signal,
+            'final_score': final_score,
+            'reason': log_reason,
+            'fact_veto': False,
+            'risk_level': risk_level
+        }
+    
+    def get_trend_status(self, df, window=20):
+        if len(df) < window:
+            return 'SIDEWAY'
+        
+        ma = df['close'].rolling(window=window).mean()
+        current_price = df['close'].iloc[-1]
+        current_ma = ma.iloc[-1]
+        
+        recent_ma = ma.tail(5)
+        slope = (recent_ma.iloc[-1] - recent_ma.iloc[0]) / len(recent_ma)
+        
+        if slope > 0 and current_price > current_ma:
+            return 'UP'
+        elif slope < 0 and current_price < current_ma:
+            return 'DOWN'
+        else:
+            return 'SIDEWAY'
+    
+    def get_capital_flow(self, stock_code, data_manager):
+        '''
+        获取资金流向数据（DDE净额）和流通市值
+        
+        参数:
+        - stock_code: 股票代码
+        - data_manager: 数据管理器实例
+        
+        返回:
+        - tuple: (dde_net_flow, circulating_market_cap)
+        '''
+        try:
+            realtime_data = data_manager.get_realtime_data(stock_code)
+            
+            dde_net_flow = 0
+            circulating_market_cap = 0
+            
+            if realtime_data:
+                if 'dde_net_flow' in realtime_data:
+                    dde_net_flow = realtime_data['dde_net_flow']
+                else:
+                    logger.warning(f'Cannot get DDE net flow for {stock_code}')
+                
+                if 'circulating_market_cap' in realtime_data:
+                    circulating_market_cap = realtime_data['circulating_market_cap']
+                else:
+                    logger.debug(f'Cannot get circulating market cap for {stock_code}')
+            
+            return dde_net_flow, circulating_market_cap
+        except Exception as e:
+            logger.error(f'Get capital flow for {stock_code} failed: {e}')
+            return 0, 0
+
+
+_signal_generator_v13 = None
+
+def get_signal_generator_v13():
+    global _signal_generator_v13
+    if _signal_generator_v13 is None:
+        _signal_generator_v13 = SignalGenerator()
+    return _signal_generator_v13

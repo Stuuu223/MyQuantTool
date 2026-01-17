@@ -297,6 +297,130 @@ def render_single_stock_tab(db: DataManager, config: Config):
         
         st.markdown("---")
         
+        # [V13.1 Reality Priority] 事实一票否决制信号生成
+        st.markdown("### 🎯 [V13.1 Reality Priority] 事实一票否决制")
+        
+        try:
+            from logic.signal_generator import SignalGenerator, get_signal_generator_v13
+            
+            # 获取V13.1信号生成器实例
+            signal_gen = get_signal_generator_v13()
+            
+            # 获取资金流向和流通市值
+            capital_flow, market_cap = signal_gen.get_capital_flow(symbol, db)
+            
+            # 获取趋势状态
+            trend_status = signal_gen.get_trend_status(df)
+            
+            # 模拟AI叙事分数（实际应该从LLM接口获取）
+            ai_score = 75  # 默认分数
+            
+            # 计算最终信号
+            signal_result = signal_gen.calculate_final_signal(
+                stock_code=symbol,
+                ai_narrative_score=ai_score,
+                capital_flow_data=capital_flow,
+                trend_status=trend_status,
+                circulating_market_cap=market_cap
+            )
+            
+            # 显示V13.1信号
+            col_signal, col_score, col_risk = st.columns(3)
+            
+            with col_signal:
+                signal_emoji = "🟢" if signal_result['signal'] == 'BUY' else "🔴" if signal_result['signal'] == 'SELL' else "🟡"
+                st.metric(
+                    "最终信号",
+                    f"{signal_emoji} {signal_result['signal']}",
+                    delta="事实优先" if signal_result['fact_veto'] else "综合评分",
+                    delta_color="inverse" if signal_result['signal'] == 'SELL' else "normal"
+                )
+            
+            with col_score:
+                st.metric(
+                    "最终评分",
+                    f"{signal_result['final_score']:.1f}",
+                    delta=f"AI基准: {ai_score}",
+                    delta_color="normal" if signal_result['final_score'] >= 85 else "inverse"
+                )
+            
+            with col_risk:
+                risk_emoji = "🟢" if signal_result['risk_level'] == 'LOW' else "🟡" if signal_result['risk_level'] == 'MEDIUM' else "🔴"
+                st.metric(
+                    "风险等级",
+                    f"{risk_emoji} {signal_result['risk_level']}",
+                    delta=signal_result['reason'],
+                    delta_color="inverse" if signal_result['risk_level'] == 'HIGH' else "normal"
+                )
+            
+            # 显示一级事实
+            st.markdown("#### 📊 一级事实（物理定律）")
+            col_capital, col_trend, col_market = st.columns(3)
+            
+            with col_capital:
+                capital_emoji = "🟢" if capital_flow > 0 else "🔴"
+                st.metric(
+                    "资金流向",
+                    f"{capital_emoji} {format_amount(capital_flow)}",
+                    delta="流入" if capital_flow > 0 else "流出",
+                    delta_color="normal" if capital_flow > 0 else "inverse"
+                )
+            
+            with col_trend:
+                trend_emoji = "📈" if trend_status == 'UP' else "📉" if trend_status == 'DOWN' else "➡️"
+                st.metric(
+                    "价格趋势",
+                    f"{trend_emoji} {trend_status}",
+                    delta="多头" if trend_status == 'UP' else "空头" if trend_status == 'DOWN' else "震荡",
+                    delta_color="normal" if trend_status == 'UP' else "inverse" if trend_status == 'DOWN' else "off"
+                )
+            
+            with col_market:
+                st.metric(
+                    "流通市值",
+                    format_amount(market_cap),
+                    delta=f"占盘比例: {capital_flow/market_cap*100:.2f}%" if market_cap > 0 else "N/A",
+                    delta_color="inverse" if capital_flow < 0 and market_cap > 0 else "normal"
+                )
+            
+            # 显示信号生成逻辑说明
+            with st.expander("📖 V13.1 信号生成逻辑说明"):
+                st.markdown("""
+                **V13.1 Reality Priority 核心原则：**
+                
+                **一级事实（物理定律） > 二级观点（AI分析）**
+                
+                1. **动态熔断机制：**
+                   - **绝对阈值**：资金净流出 > 5000万 → 强制 SELL
+                   - **相对阈值**：资金净流出 / 流通市值 < -1% → 强制 SELL
+                   - **趋势熔断**：趋势 = DOWN → 强制 WAIT（不接飞刀）
+                
+                2. **背离识别（V13.1新增）：**
+                   - 如果趋势 = UP 但资金流出 → 识别为"诱多"
+                   - AI分数打折到 0.4（极度保守）
+                
+                3. **共振奖励：**
+                   - 资金流入 + 趋势向上 → AI分数 × 1.2（完美共振）
+                   - 资金流入 + 趋势震荡 → AI分数 × 0.9（潜伏观察）
+                
+                4. **最终裁决：**
+                   - 评分 ≥ 85 → BUY
+                   - 评分 < 85 → WAIT
+                
+                **禁止辩证：** 严禁"虽然资金流出，但利好极大，所以买入"的逻辑
+                """)
+            
+            # 如果触发事实熔断，显示警告
+            if signal_result['fact_veto']:
+                st.error(f"🚨 [事实熔断] {signal_result['reason']}")
+                st.warning("一级事实为负，AI叙事无效化，建议立即执行相应操作！")
+            
+        except Exception as e:
+            logger.error(f"获取V13.1信号失败: {e}")
+            st.error(f"获取V13.1信号失败: {e}")
+        
+        st.markdown("---")
+        
         # 价格信息
         col_price, col_change, col_atr = st.columns(3)
         with col_price:
