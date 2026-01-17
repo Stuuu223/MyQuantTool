@@ -18,8 +18,7 @@ from logic.backtest import BacktestEngine
 from logic.formatter import Formatter
 from logic.logger import get_logger
 from logic.error_handler import handle_errors, ValidationError
-from config import Config
-import config_system as config
+from config_system import Config, config
 import streamlit as st
 import importlib
 
@@ -83,8 +82,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- 加载配置 ---
-config = Config()
-
 # API Key 安全获取
 API_KEY = os.getenv("SILICONFLOW_API_KEY") or config.get('api_key')
 

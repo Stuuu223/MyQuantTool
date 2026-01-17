@@ -7,7 +7,7 @@
 import streamlit as st
 from logic.backtest import BacktestEngine
 from logic.logger import get_logger
-from config import Config
+from config_system import Config
 
 logger = get_logger(__name__)
 

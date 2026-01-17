@@ -254,3 +254,91 @@ def get_time_weight(current_time_minutes=None):
         return 0.0
     
     return 0.0
+
+
+# ==========================================
+# 配置管理器（用于读取 config.json）
+# ==========================================
+class Config:
+    """
+    配置管理器
+    从 config.json 文件读取动态配置
+    """
+    
+    _instance = None
+    _config_data = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._load_config()
+        return cls._instance
+    
+    def _load_config(self):
+        """加载配置文件"""
+        import json
+        import os
+        
+        config_path = 'config.json'
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    self._config_data = json.load(f)
+            except Exception as e:
+                print(f"⚠️ 加载配置文件失败: {e}")
+                self._config_data = {}
+        else:
+            print(f"⚠️ 配置文件不存在: {config_path}")
+            self._config_data = {}
+    
+    def get(self, key, default=None):
+        """
+        获取配置值
+        
+        Args:
+            key: 配置键（支持嵌套，如 'database.path'）
+            default: 默认值
+        
+        Returns:
+            配置值或默认值
+        """
+        if self._config_data is None:
+            return default
+        
+        # 支持嵌套键（如 'database.path'）
+        keys = key.split('.')
+        value = self._config_data
+        
+        for k in keys:
+            if isinstance(value, dict) and k in value:
+                value = value[k]
+            else:
+                return default
+        
+        return value
+    
+    def set(self, key, value):
+        """
+        设置配置值（仅内存中，不保存到文件）
+        
+        Args:
+            key: 配置键
+            value: 配置值
+        """
+        if self._config_data is None:
+            self._config_data = {}
+        
+        # 支持嵌套键（如 'database.path'）
+        keys = key.split('.')
+        config = self._config_data
+        
+        for k in keys[:-1]:
+            if k not in config:
+                config[k] = {}
+            config = config[k]
+        
+        config[keys[-1]] = value
+
+
+# 创建全局配置实例
+config = Config()

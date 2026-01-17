@@ -3,7 +3,7 @@
 """
 
 import json
-from config import Config
+from config_system import Config
 
 
 def configure_broker_api():

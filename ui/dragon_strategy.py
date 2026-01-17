@@ -13,7 +13,7 @@ from logic.position_manager import PositionManager
 from logic.trade_log import TradeLog
 from logic.logger import get_logger
 from logic.sentiment_analyzer import SentimentAnalyzer
-from config import Config
+from config_system import Config
 
 logger = get_logger(__name__)
 
@@ -372,7 +372,7 @@ def render_dragon_strategy_tab(db, config):
             with st.spinner("🔥 正在预热监控池股票的身位数据..."):
                 try:
                     # 获取监控池股票列表
-                    from config import Config
+                    from config_system import Config
                     config = Config()
                     watchlist = config.get_watchlist()
                     
