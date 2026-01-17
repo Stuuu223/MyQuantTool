@@ -8,6 +8,7 @@ import numpy as np
 from typing import Dict, List, Optional, Any
 import logging
 import json
+from logic.predictive_engine import PredictiveEngine
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,9 @@ class RealAIAgent:
         self.model = model
         self.use_dragon_tactics = use_dragon_tactics
         self.llm = self._init_llm()
+        
+        # 🆕 V12 接入预测引擎
+        self.pe = PredictiveEngine()
         
         # 初始化龙头战法
         if use_dragon_tactics:
@@ -281,6 +285,17 @@ class RealAIAgent:
                 context_parts.append(f"主线板块: {theme_name}")
                 context_parts.append(f"主线热度: {theme_heat:.1%}")
                 context_parts.append(f"主线建议: {theme_suggestion}")
+
+        # 🆕 V12 添加预测雷达数据
+        if market_context and 'highest_board' in market_context:
+            current_height = market_context.get('highest_board', 0)
+            prob = self.pe.get_promotion_probability(current_height)
+            pivot = self.pe.detect_sentiment_pivot()
+            
+            prob_display = f"{prob}%" if prob >= 0 else "数据不足"
+            context_parts.append("\n【🔮 预测雷达数据】")
+            context_parts.append(f"历史同高度晋级成功率: {prob_display}")
+            context_parts.append(f"情绪转折点预判: {pivot['action']} (原因: {pivot['reason']})")
 
         return "\n".join(context_parts)
 

@@ -40,8 +40,8 @@ class PredictiveEngine:
             results = self.db.sqlite_query(sql)
             
             if len(results) < 10:
-                logger.warning(f"⚠️ 样本不足（{len(results)}天），返回中性概率")
-                return 0.5  # 样本不足，返回中性概率
+                logger.warning(f"⚠️ 样本不足（{len(results)}天），返回盲区状态")
+                return -1.0  # 样本不足，返回盲区状态
                 
             boards = [r[0] for r in results]
             boards.reverse()  # 转为正序
