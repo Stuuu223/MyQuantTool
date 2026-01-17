@@ -2,6 +2,7 @@ import akshare as ak
 import pandas as pd
 import concurrent.futures
 from datetime import datetime
+import config_system as config
 
 class TechnicalAnalyzer:
     def __init__(self):
@@ -27,16 +28,16 @@ class TechnicalAnalyzer:
             # 注意：akshare 接口可能会偶尔超时，这里是耗时点
             df = ak.stock_zh_a_hist(symbol=clean_code, period="daily", start_date=self.start_date, adjust="qfq")
             
-            if df.empty or len(df) < 20:
+            if df.empty or len(df) < config.THRESHOLD_MA_PERIOD:
                 return "⚪ 数据不足"
 
             # 3. 只需要最近 60 天的数据
-            df = df.tail(60).reset_index(drop=True)
+            df = df.tail(config.THRESHOLD_HISTORY_DAYS).reset_index(drop=True)
             
             # 4. 计算核心均线
             df['MA5'] = df['收盘'].rolling(window=5).mean()
             df['MA10'] = df['收盘'].rolling(window=10).mean()
-            df['MA20'] = df['收盘'].rolling(window=20).mean() # 辅助
+            df['MA20'] = df['收盘'].rolling(window=config.THRESHOLD_MA_PERIOD) # 辅助
             
             # 🔥 V10.1.9.1 修复：实时价格注入 (Real-Time Injection)
             # 如果传入了实时价格，就用实时的；否则用历史收盘价（降级方案）
@@ -73,10 +74,10 @@ class TechnicalAnalyzer:
             # C. 乖离率 (Bias) - 防止追高
             # (现价 - 5日线) / 5日线
             bias_5 = (current_price - ma5) / ma5 * 100
-            if bias_5 > 15:
+            if bias_5 > config.THRESHOLD_BIAS_HIGH:
                 tags.append("⚠️ 短期超买")
                 score -= 1
-            elif bias_5 < -15:
+            elif bias_5 < config.THRESHOLD_BIAS_LOW:
                 tags.append("💎 短期超跌")
                 score += 1
                 

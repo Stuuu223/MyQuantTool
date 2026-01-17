@@ -12,6 +12,7 @@ from typing import List, Dict, Optional, Tuple
 from logic.logger import get_logger
 from logic.data_manager import DataManager
 from logic.data_cleaner import DataCleaner
+import config_system as config
 
 logger = get_logger(__name__)
 
@@ -314,15 +315,15 @@ class MarketSentiment:
                 mal_rate = 0
             
             # 场景1: 高位分歧 (最危险) -> 市场过热 + 炸板率高
-            if score > 70 and mal_rate > 0.3:
+            if score > 70 and mal_rate > config.THRESHOLD_HIGH_MALIGNANT_RATE:
                 static_warning = "⚠️ 警惕：市场过热且炸板率高，防止退潮！"
             
             # 场景2: 冰点杀跌 -> 市场极冷 + 炸板率高
-            elif score < 30 and mal_rate > 0.4:
+            elif score < 30 and mal_rate > config.THRESHOLD_MALIGNANT_RATE:
                 static_warning = "❄️ 警惕：冰点期且亏钱效应剧烈，严禁试错！"
             
             # 场景3: 普涨高潮 -> 市场极热 + 炸板率低 (安全)
-            elif score > 80 and mal_rate < 0.2:
+            elif score > 80 and mal_rate < config.THRESHOLD_LOW_MALIGNANT_RATE:
                 static_warning = "🔥 提示：情绪一致性高潮，持筹盛宴。"
             
             # 注入到数据包

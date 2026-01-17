@@ -11,6 +11,8 @@ V10.1.9 系统配置文件
 THRESHOLD_MARKET_HEAT_HIGH = 80   # 市场高潮分
 THRESHOLD_MARKET_HEAT_LOW = 30    # 市场冰点分
 THRESHOLD_MALIGNANT_RATE = 0.4    # 恶性炸板率报警线 (40%)
+THRESHOLD_HIGH_MALIGNANT_RATE = 0.3  # 高位分歧炸板率 (30%)
+THRESHOLD_LOW_MALIGNANT_RATE = 0.2   # 低炸板率安全线 (20%)
 
 # ==========================================
 # 风险扫描阈值
@@ -34,6 +36,11 @@ MAX_SCAN_WORKERS = 8              # 并发线程数
 API_TIMEOUT = 5.0                 # API 超时时间（秒）
 MAX_SCAN_STOCKS = 8               # 最大扫描股票数
 STOCK_POOL_SIZE = 10              # 股票池大小
+
+# 🚨 重要：数据提供者默认模式
+# - 'live': 实盘模式（默认，周一开盘使用）
+# - 'replay': 历史回放模式（仅用于周末测试）
+DATA_PROVIDER_MODE = 'live'       # 默认模式：实盘
 
 # ==========================================
 # 龙头战法阈值

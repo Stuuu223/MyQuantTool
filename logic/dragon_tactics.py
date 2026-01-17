@@ -9,6 +9,7 @@ import numpy as np
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timedelta
 import logging
+import config_system as config
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +72,7 @@ class DragonTactics:
             elif ratio > 0.03:  # 3% 以上：强抢筹
                 results['auction_intensity'] = '强'
                 results['auction_score'] = 80
-            elif ratio > 0.02:  # 2% 以上：中等抢筹
+            elif ratio > config.THRESHOLD_FAKE_BOARD_RATIO:  # 2% 以上：中等抢筹
                 results['auction_intensity'] = '中等'
                 results['auction_score'] = 60
             elif ratio > 0.01:  # 1% 以上：弱抢筹
