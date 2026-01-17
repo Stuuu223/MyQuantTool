@@ -23,7 +23,7 @@ def render_predictive_radar(data_manager=None):
     Args:
         data_manager: 数据管理器实例（可选）
     """
-    st.subheader("🔮 预测雷达 (V12)")
+    st.subheader("🔮 预测雷达 (V13)")
 
     # 初始化组件
     if data_manager is None:
@@ -114,19 +114,77 @@ def render_predictive_radar(data_manager=None):
 
     st.markdown("---")
 
+    # [V13 新增] 板块记忆展示
+    st.markdown("### 🏆 板块记忆 (V13)")
+    
+    try:
+        # 获取昨日复盘数据
+        from logic.review_manager import ReviewManager
+        rm = ReviewManager()
+        yesterday_stats = rm.get_yesterday_stats()
+        
+        if yesterday_stats and yesterday_stats.get('top_sectors'):
+            top_sectors = yesterday_stats['top_sectors']
+            
+            st.info(f"📅 昨日 ({yesterday_stats['date']}) 领涨板块: {', '.join(top_sectors)}")
+            
+            # 板块忠诚度分析
+            st.markdown("#### 🎯 板块忠诚度分析")
+            
+            for sector in top_sectors[:3]:  # 只显示前3个
+                loyalty = pe.get_sector_loyalty(sector)
+                
+                # 根据忠诚度设置样式
+                if loyalty['status'] == "真命天子":
+                    emoji = "👑"
+                    color = "🟢"
+                elif loyalty['status'] == "一般":
+                    emoji = "⚖️"
+                    color = "🟡"
+                elif loyalty['status'] == "短命渣男":
+                    emoji = "💔"
+                    color = "🔴"
+                else:
+                    emoji = "⏳"
+                    color = "⚪"
+                
+                with st.expander(f"{emoji} {sector} - {color} {loyalty['status']}"):
+                    st.metric("忠诚度评分", loyalty['loyalty_score'])
+                    st.metric("出现次数", loyalty['appearance_count'])
+                    st.metric("次日平均表现", f"{loyalty['avg_next_day_profit']:+.2f}")
+                    
+                    if loyalty['status'] == "数据积累中...":
+                        st.caption("⚠️ 数据积累中，需要至少3天历史数据")
+                    elif loyalty['status'] == "真命天子":
+                        st.success("✅ 该板块持续性较强，可重点关注")
+                    elif loyalty['status'] == "短命渣男":
+                        st.warning("⚠️ 该板块持续性较差，谨慎参与")
+        else:
+            st.info("📊 暂无板块数据，请在交易时段后查看")
+    
+    except Exception as e:
+        logger.error(f"获取板块记忆失败: {e}")
+        st.error(f"获取板块记忆失败: {e}")
+
+    st.markdown("---")
+
     # 可视化：历史高度走势
     st.markdown("### 📈 市场高度周期演变")
 
     try:
         # 从 DB 读取最近 20 天的高度数据
         history = data_manager.sqlite_query(
-            "SELECT date, highest_board FROM market_summary ORDER BY date DESC LIMIT 20"
+            "SELECT date, highest_board, top_sectors FROM market_summary ORDER BY date DESC LIMIT 20"
         )
 
         if history and len(history) > 1:
             # 转换为 DataFrame
-            df_hist = pd.DataFrame(history, columns=['日期', '最高板'])
+            df_hist = pd.DataFrame(history, columns=['日期', '最高板', '领涨板块'])
             df_hist = df_hist.sort_values('日期')
+            
+            # 解析领涨板块
+            import json
+            df_hist['领涨板块'] = df_hist['领涨板块'].apply(lambda x: ', '.join(json.loads(x)) if x else '无')
 
             # 创建图表
             fig = go.Figure()
@@ -139,7 +197,8 @@ def render_predictive_radar(data_manager=None):
                 name='最高板',
                 line=dict(color='#FF6B6B', width=3),
                 marker=dict(size=8, color='#FF6B6B'),
-                hovertemplate='<b>%{x}</b><br>最高板: %{y}<extra></extra>'
+                hovertemplate='<b>%{x}</b><br>最高板: %{y}<br>领涨板块: %{text}<extra></extra>',
+                text=df_hist['领涨板块']
             ))
 
             # 添加填充区域
@@ -154,7 +213,7 @@ def render_predictive_radar(data_manager=None):
 
             # 更新布局
             fig.update_layout(
-                title='最近20天市场最高板高度走势',
+                title='最近20天市场最高板高度走势（含领涨板块）',
                 xaxis_title='日期',
                 yaxis_title='连板高度',
                 hovermode='x unified',
@@ -210,7 +269,12 @@ def render_predictive_radar(data_manager=None):
            - **NORMAL (正常)**：情绪稳定，按原策略操作
            - **HOLD (观望)**：样本不足，保持观望
 
-        3. **市场高度周期演变**
+        3. **🏆 板块记忆 (V13 新增)**
+           - 显示昨日领涨板块
+           - 板块忠诚度分析：判断板块是"真命天子"还是"短命渣男"
+           - 基于历史出现次数和次日表现计算忠诚度评分
+
+        4. **市场高度周期演变**
            - 显示最近20天的最高板高度走势
            - 帮助判断当前处于哪个周期阶段
            - 配合情绪转折预判，辅助决策

@@ -101,6 +101,106 @@ class PredictiveEngine:
         except Exception as e:
             logger.error(f"情绪转折检测失败: {e}")
             return {"action": "HOLD", "reason": "检测异常"}
+    
+    def get_sector_loyalty(self, sector_name: str) -> dict:
+        """
+        [V13 预研] 获取板块忠诚度（持续性）
+        
+        逻辑：查找该板块过去出现在 top_sectors 的记录，看次日市场溢价
+        
+        Args:
+            sector_name: 板块名称（如"人工智能"、"新能源"）
+        
+        Returns:
+            dict: {
+                'sector': 板块名称,
+                'loyalty_score': 忠诚度评分 (0-100),
+                'appearance_count': 出现次数,
+                'avg_next_day_profit': 次日平均溢价,
+                'status': '真命天子' | '短命渣男' | '数据积累中...'
+            }
+        """
+        try:
+            # 获取最近 60 天的复盘记录
+            sql = "SELECT date, top_sectors, highest_board FROM market_summary ORDER BY date DESC LIMIT 60"
+            results = self.db.sqlite_query(sql)
+            
+            if len(results) < 3:
+                return {
+                    "sector": sector_name,
+                    "loyalty_score": "数据积累中...",
+                    "appearance_count": 0,
+                    "avg_next_day_profit": 0,
+                    "status": "数据积累中..."
+                }
+            
+            # 统计该板块的出现次数和次日表现
+            appearance_count = 0
+            next_day_profits = []
+            
+            for i in range(len(results) - 1):
+                date, top_sectors_json, highest_board = results[i]
+                
+                # 解析 top_sectors
+                try:
+                    top_sectors = json.loads(top_sectors_json) if top_sectors_json else []
+                except:
+                    top_sectors = []
+                
+                # 检查该板块是否在当日 top_sectors 中
+                if sector_name in top_sectors:
+                    appearance_count += 1
+                    
+                    # 获取次日最高板变化（作为次日表现的代理指标）
+                    if i + 1 < len(results):
+                        next_day_highest_board = results[i + 1][2]
+                        # 计算次日最高板变化（正数表示次日高度更高，情绪更好）
+                        profit = next_day_highest_board - highest_board
+                        next_day_profits.append(profit)
+            
+            if appearance_count == 0:
+                return {
+                    "sector": sector_name,
+                    "loyalty_score": 0,
+                    "appearance_count": 0,
+                    "avg_next_day_profit": 0,
+                    "status": "无记录"
+                }
+            
+            # 计算平均次日表现
+            avg_next_day_profit = sum(next_day_profits) / len(next_day_profits) if next_day_profits else 0
+            
+            # 计算忠诚度评分（基于出现次数和次日表现）
+            # 出现次数越多、次日表现越好，忠诚度越高
+            loyalty_score = min(100, (appearance_count * 10) + (avg_next_day_profit * 20))
+            
+            # 判断板块类型
+            if loyalty_score >= 70:
+                status = "真命天子"
+            elif loyalty_score >= 40:
+                status = "一般"
+            else:
+                status = "短命渣男"
+            
+            logger.info(f"📊 板块忠诚度分析: {sector_name} - 评分: {loyalty_score:.1f}, 状态: {status}")
+            
+            return {
+                "sector": sector_name,
+                "loyalty_score": round(loyalty_score, 2),
+                "appearance_count": appearance_count,
+                "avg_next_day_profit": round(avg_next_day_profit, 2),
+                "status": status
+            }
+            
+        except Exception as e:
+            logger.error(f"获取板块忠诚度失败: {e}")
+            return {
+                "sector": sector_name,
+                "loyalty_score": 0,
+                "appearance_count": 0,
+                "avg_next_day_profit": 0,
+                "status": "计算异常"
+            }
 
 
 # 单例测试
@@ -108,3 +208,4 @@ if __name__ == "__main__":
     pe = PredictiveEngine()
     print(f"5板晋级6板概率: {pe.get_promotion_probability(5)}%")
     print(f"情绪转折点检测: {pe.detect_sentiment_pivot()}")
+    print(f"板块忠诚度测试: {pe.get_sector_loyalty('人工智能')}")

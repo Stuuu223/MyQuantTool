@@ -35,16 +35,34 @@ class ReviewManager:
             limit_up_count INTEGER,     -- 涨停家数
             limit_down_count INTEGER,   -- 跌停家数
             limit_up_list TEXT,         -- 涨停股名单 (JSON)
+            top_sectors TEXT,           -- [V13 新增] 存储当日领涨板块 (JSON 列表)
             created_at TEXT
         )
         """
         self.db.sqlite_execute(sql_summary)
-        logger.info("✅ V11 复盘数据库表结构已就绪")
+        
+        # [V13 新增] 数据库迁移：添加 top_sectors 字段（如果不存在）
+        try:
+            # 检查字段是否存在
+            check_sql = "PRAGMA table_info(market_summary)"
+            columns = self.db.sqlite_query(check_sql)
+            column_names = [col[1] for col in columns]
+            
+            if 'top_sectors' not in column_names:
+                # 添加新字段
+                alter_sql = "ALTER TABLE market_summary ADD COLUMN top_sectors TEXT"
+                self.db.sqlite_execute(alter_sql)
+                logger.info("✅ V13 数据库迁移完成：已添加 top_sectors 字段")
+            else:
+                logger.info("✅ V13 复盘数据库表结构已就绪 (含板块记忆字段 top_sectors)")
+        except Exception as e:
+            logger.warning(f"⚠️ 数据库迁移失败: {e}")
     
     def run_daily_review(self, date=None):
         """
         执行每日复盘 (建议每日 15:30 运行)
         获取当日涨停数据并存入 DB
+        [V13 新增] 自动抓取当日表现最强的行业板块
         """
         if date is None:
             date = datetime.now().strftime("%Y%m%d")
@@ -68,11 +86,27 @@ class ReviewManager:
             # 格式: ["000001", "600519", ...]
             limit_up_list = df['代码'].tolist()
             
+            # [V13 新增] 获取今日领涨板块
+            top_sectors = []
+            try:
+                # 获取行业板块行情
+                sector_df = ak.stock_board_industry_name_em()
+                # 取涨幅前 3 的板块名称
+                if not sector_df.empty and '涨跌幅' in sector_df.columns:
+                    top_3_sectors = sector_df.nlargest(3, '涨跌幅')['板块名称'].tolist()
+                    top_sectors = top_3_sectors
+                    logger.info(f"🏆 今日核心主线预选: {top_sectors}")
+                else:
+                    logger.warning("⚠️ 板块数据格式异常，无法提取领涨板块")
+            except Exception as e:
+                logger.error(f"获取领涨板块失败: {e}")
+                top_sectors = []
+            
             # 3. 存入数据库
             sql = """
             INSERT OR REPLACE INTO market_summary 
-            (date, highest_board, limit_up_count, limit_down_count, limit_up_list, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            (date, highest_board, limit_up_count, limit_down_count, limit_up_list, top_sectors, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """
             
             self.db.sqlite_execute(sql, (
@@ -81,10 +115,11 @@ class ReviewManager:
                 limit_up_count, 
                 0,  # 跌停数暂时填0，后续可扩充
                 json.dumps(limit_up_list), 
+                json.dumps(top_sectors),  # ✅ 存入 JSON 化的板块列表
                 datetime.now().isoformat()
             ))
             
-            logger.info(f"✅ 复盘归档完成! 日期: {date}, 最高板: {highest_board}, 涨停: {limit_up_count}家")
+            logger.info(f"✅ 复盘归档完成! 日期: {date}, 最高板: {highest_board}, 涨停: {limit_up_count}家, 领涨板块: {top_sectors}")
             return True
             
         except Exception as e:
@@ -94,6 +129,7 @@ class ReviewManager:
     def get_yesterday_stats(self):
         """
         获取昨日市场状态 (供今日实盘使用)
+        [V13 新增] 返回领涨板块数据
         """
         # 获取最近的一个交易日记录
         sql = "SELECT * FROM market_summary ORDER BY date DESC LIMIT 1"
@@ -104,12 +140,23 @@ class ReviewManager:
         
         row = results[0]
         # 解析数据
-        return {
+        stats = {
             'date': row[0],
             'highest_board': row[1],
             'limit_up_count': row[2],
-            'limit_up_list': json.loads(row[4])  # 这是一个代码列表
+            'limit_up_list': json.loads(row[4]) if row[4] else []  # 这是一个代码列表
         }
+        
+        # [V13 新增] 解析领涨板块
+        if len(row) > 5 and row[5]:
+            try:
+                stats['top_sectors'] = json.loads(row[5])
+            except:
+                stats['top_sectors'] = []
+        else:
+            stats['top_sectors'] = []
+        
+        return stats
 
 
 # 单例测试
