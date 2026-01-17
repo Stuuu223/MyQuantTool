@@ -121,6 +121,9 @@ def render_market_weather_panel():
         with st.spinner("正在分析市场天气..."):
             regime_info = market_sentiment.get_market_regime()
         
+        # 🔥 修复：提前定义 market_data，避免作用域错误
+        market_data = regime_info.get('market_data', {})
+        
         # 🆕 V10.1：获取今日主线（需要 Top 20 强势股）
         hot_themes = regime_info.get('hot_themes', [])
         theme_str = " / ".join(hot_themes) if hot_themes else "无明显主线"
@@ -175,7 +178,6 @@ def render_market_weather_panel():
             st.divider()
         
         # 显示详细指标
-        market_data = regime_info.get('market_data', {})
         if market_data:
             st.write("**市场指标：**")
             col4, col5, col6 = st.columns(3)
