@@ -2,6 +2,7 @@
 单股分析模块
 
 提供单只股票的详细分析功能
+[V13 Iron Rule] 集成铁律监控和预警系统
 """
 
 import streamlit as st
@@ -12,6 +13,8 @@ from logic.data_manager import DataManager
 from logic.algo import QuantAlgo
 from logic.formatter import Formatter
 from logic.logger import get_logger
+from logic.iron_rule_monitor import IronRuleMonitor
+from logic.iron_rule_alert import IronRuleAlert
 from config_system import Config
 
 logger = get_logger(__name__)
@@ -179,6 +182,121 @@ def render_single_stock_tab(db: DataManager, config: Config):
         stock_name = QuantAlgo.get_stock_name(symbol)
         st.markdown(f"### {stock_name} ({symbol})")
         
+        # [V13 Iron Rule] 铁律状态显示
+        st.markdown("---")
+        st.markdown("### 🛡️ [V13 Iron Rule] 铁律状态")
+        
+        try:
+            # 初始化铁律监控和预警系统
+            iron_monitor = IronRuleMonitor()
+            iron_alert = IronRuleAlert()
+            
+            # 获取铁律状态
+            iron_status = iron_monitor.get_stock_iron_status(symbol)
+            
+            # 显示铁律状态
+            col_lock, col_warning, col_recommendation = st.columns(3)
+            
+            with col_lock:
+                if iron_status['is_locked']:
+                    st.metric(
+                        "铁律状态",
+                        "🔒 已锁定",
+                        delta=f"{iron_status['lock_reason']}",
+                        delta_color="inverse"
+                    )
+                else:
+                    st.metric(
+                        "铁律状态",
+                        "✅ 正常",
+                        delta="未触发铁律",
+                        delta_color="normal"
+                    )
+            
+            with col_warning:
+                warning_level = iron_status['warning_level']
+                if warning_level == 0:
+                    warning_text = "正常"
+                    warning_emoji = "✅"
+                elif warning_level == 1:
+                    warning_text = "预警"
+                    warning_emoji = "⚡"
+                elif warning_level == 2:
+                    warning_text = "危险"
+                    warning_emoji = "⚠️"
+                else:
+                    warning_text = "熔断"
+                    warning_emoji = "🚨"
+                
+                st.metric(
+                    "预警级别",
+                    f"{warning_emoji} {warning_text}",
+                    delta=f"DDE: {iron_status['dde_net_flow']:.2f}亿",
+                    delta_color="inverse" if warning_level >= 2 else "normal"
+                )
+            
+            with col_recommendation:
+                st.metric(
+                    "操作建议",
+                    iron_status['recommendation'],
+                    delta=iron_status['logic_status'],
+                    delta_color="inverse" if iron_status['warning_level'] >= 2 else "normal"
+                )
+            
+            # 显示预警消息
+            if iron_status['warning_messages']:
+                st.warning("⚠️ 预警消息：")
+                for message in iron_status['warning_messages']:
+                    st.markdown(f"  - {message}")
+            
+            # 显示新闻关键词
+            if iron_status['news_keywords']:
+                st.info(f"📰 新闻关键词：{', '.join(iron_status['news_keywords'])}")
+            
+            # 显示铁律规则说明
+            with st.expander("📖 铁律规则说明"):
+                st.markdown("""
+                **V13 Iron Rule 核心原则：**
+                
+                1. **逻辑证伪 + 资金背离 = 永久熔断**
+                   - 如果核心利好逻辑被官方证伪（澄清、监管函、风险提示等）
+                   - 且 DDE/主力资金大幅流出（净额 < -1亿）
+                   - 则触发铁律，该股票被锁定24小时，禁止买入
+                
+                2. **物理阉割亏损加仓**
+                   - 浮亏超过 -3%：禁止加仓，只准割肉
+                   - 浮亏超过 -8%：强制止损，立即平仓
+                
+                3. **战前三问审计**
+                   - 核心利好逻辑是否依然成立？
+                   - 盘中DDE/主力大单流出是否处于可控红线内？
+                   - 是否坚决执行-3%禁止补仓、-8%物理止损？
+                """)
+            
+            # 显示监控历史
+            with st.expander("📊 铁律监控历史（最近7天）"):
+                monitor_history = iron_monitor.get_monitor_history(symbol, days=7)
+                if monitor_history:
+                    history_df = pd.DataFrame(monitor_history)
+                    st.dataframe(
+                        history_df[['timestamp', 'warning_level', 'dde_net_flow', 'logic_status', 'recommendation']].rename(columns={
+                            'timestamp': '时间',
+                            'warning_level': '预警级别',
+                            'dde_net_flow': 'DDE净额(亿)',
+                            'logic_status': '逻辑状态',
+                            'recommendation': '建议操作'
+                        }),
+                        use_container_width=True
+                    )
+                else:
+                    st.info("暂无监控历史")
+            
+        except Exception as e:
+            logger.error(f"获取铁律状态失败: {e}")
+            st.error(f"获取铁律状态失败: {e}")
+        
+        st.markdown("---")
+        
         # 价格信息
         col_price, col_change, col_atr = st.columns(3)
         with col_price:
@@ -283,6 +401,22 @@ def render_single_stock_tab(db: DataManager, config: Config):
         st.subheader("💡 操作建议")
         
         suggestions = []
+        
+        # [V13 Iron Rule] 铁律优先检查
+        try:
+            iron_monitor = IronRuleMonitor()
+            iron_status = iron_monitor.get_stock_iron_status(symbol)
+            
+            # 如果铁律锁定或熔断，优先显示铁律建议
+            if iron_status['is_locked'] or iron_status['warning_level'] >= 3:
+                st.error(f"🚨 [V13 Iron Rule] {iron_status['recommendation']}")
+                st.warning("铁律优先：禁止任何买入操作，建议立即清仓或观望")
+                suggestions.append(f"铁律锁定：{iron_status['lock_reason']}")
+            elif iron_status['warning_level'] >= 2:
+                st.warning(f"⚠️ [V13 Iron Rule] {iron_status['recommendation']}")
+                suggestions.append(f"铁律预警：{iron_status['warning_messages'][0] if iron_status['warning_messages'] else '接近熔断阈值'}")
+        except Exception as e:
+            logger.error(f"获取铁律状态失败: {e}")
         
         # MACD建议
         if macd_value > signal_value:
