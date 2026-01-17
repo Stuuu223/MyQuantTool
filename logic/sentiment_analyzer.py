@@ -16,6 +16,7 @@ import numpy as np
 from typing import Optional, Dict, Any
 from logic.logger import get_logger
 from logic.market_status import get_market_status_checker
+from logic.technical_analyzer import TechnicalAnalyzer
 
 logger = get_logger(__name__)
 
@@ -206,6 +207,8 @@ class SentimentAnalyzer:
         self.checker = get_market_status_checker()
         self.cache = None
         self.cache_timestamp = None
+        # 🔥 新增初始化
+        self.ta = TechnicalAnalyzer()
     
     def get_market_snapshot(self) -> Optional[Dict[str, Any]]:
         """
@@ -664,6 +667,21 @@ class SentimentAnalyzer:
                                 "industry": concepts_data.get('industry', '未知'),
                                 "concepts": concepts_str
                             })
+                        
+                        # ==========================================
+                        # 🔥 V10.1.9 [新增] K线视野 (Technical Vision)
+                        # ==========================================
+                        print("🔍 正在启动多线程扫描 K 线形态...") 
+                        # 并发获取技术形态
+                        tech_results = self.ta.analyze_batch(stock_pool)
+                        
+                        # 注入到 stock 对象中
+                        for stock in stock_pool:
+                            code = stock['code']
+                            # 获取分析结果，如果没有(8名以后)则显示未分析
+                            kline_info = tech_results.get(code, "⚪ 排名靠后未分析")
+                            stock['kline_trend'] = kline_info
+                        # ==========================================
                         
                         ai_context["stock_pool"] = {
                             "size": len(stock_pool),
