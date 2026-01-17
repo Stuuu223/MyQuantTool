@@ -137,6 +137,7 @@ class MarketSentiment:
         
         Returns:
             dict: {'max_board': 最高板数, 'board_distribution': 板数分布}
+                  或 None（数据不足时）
         """
         try:
             # 这里需要从数据库获取历史涨停数据
@@ -144,23 +145,13 @@ class MarketSentiment:
             # 实际实现需要查询数据库，计算连续涨停天数
             
             # TODO: 实现真正的连板高度计算
-            # 这里先返回模拟数据
-            return {
-                'max_board': 3,
-                'board_distribution': {
-                    '2板': 10,
-                    '3板': 5,
-                    '4板': 2,
-                    '5板': 1
-                }
-            }
+            # 暂时返回 None，不给假数据
+            logger.warning("⚠️ 连板高度数据未实现，返回 None")
+            return None
         
         except Exception as e:
             logger.error(f"获取连板高度失败: {e}")
-            return {
-                'max_board': 0,
-                'board_distribution': {}
-            }
+            return None
     
     def get_prev_limit_up_profit(self):
         """
@@ -172,26 +163,20 @@ class MarketSentiment:
                 'profit_count': 盈利家数,
                 'loss_count': 亏损家数
             }
+            或 None（数据不足时）
         """
         try:
             # 这里需要获取昨日涨停的股票，计算今日的平均涨幅
             # 简化版：假设我们有一个涨停记录表
             
             # TODO: 实现真正的昨日涨停溢价计算
-            # 这里先返回模拟数据
-            return {
-                'avg_profit': 0.03,  # 3%
-                'profit_count': 30,
-                'loss_count': 10
-            }
+            # 暂时返回 None，不给假数据
+            logger.warning("⚠️ 昨日涨停溢价数据未实现，返回 None")
+            return None
         
         except Exception as e:
-            logger.error(f"计算昨日涨停溢价失败: {e}")
-            return {
-                'avg_profit': 0.0,
-                'profit_count': 0,
-                'loss_count': 0
-            }
+            logger.error(f"获取昨日涨停溢价失败: {e}")
+            return None
     
     def get_market_regime(self, top_stocks: Optional[List[Dict]] = None):
         """
@@ -216,7 +201,7 @@ class MarketSentiment:
             
             limit_up_count = limit_up_down.get('limit_up_count', 0)
             limit_down_count = limit_up_down.get('limit_down_count', 0)
-            avg_profit = prev_profit.get('avg_profit', 0)
+            avg_profit = prev_profit.get('avg_profit', 0) if prev_profit else 0
             
             # 🛑 V9.2 新增：恐慌熔断机制 (Panic Circuit Breaker)
             # 1. 绝对恐慌：跌停比涨停多 → 直接降级为"防守模式"
@@ -265,7 +250,7 @@ class MarketSentiment:
                 'limit_up_count': limit_up_count,
                 'limit_down_count': limit_down_count,
                 'prev_profit': avg_profit,
-                'max_board': self.get_consecutive_board_height().get('max_board', 0),
+                'max_board': self.get_consecutive_board_height().get('max_board', 0) if self.get_consecutive_board_height() else 0,
                 'hot_themes': hot_themes,  # 🆕 V10.1
                 'hot_themes_detailed': hot_themes_detailed  # 🆕 V10.1.1：带分数
             }
