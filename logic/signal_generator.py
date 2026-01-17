@@ -199,9 +199,9 @@ class SignalGenerator:
     CAPITAL_OUT_THRESHOLD = -50000000  # 绝对阈值：5000万
     FLOW_RATIO_THRESHOLD = -0.01  # 相对阈值：流出占市值1%
     
-    def calculate_final_signal(self, stock_code, ai_narrative_score, capital_flow_data, trend_status, circulating_market_cap=None):
+    def calculate_final_signal(self, stock_code, ai_narrative_score, capital_flow_data, trend_status, circulating_market_cap=None, current_pct_change=None):
         '''
-        计算最终交易信号 (V13.1)
+        计算最终交易信号 (V14.2)
         
         参数:
         - stock_code: 股票代码
@@ -209,6 +209,7 @@ class SignalGenerator:
         - capital_flow_data: DDE净额 (float, 单位: 元)
         - trend_status: 技术面趋势 ('UP', 'DOWN', 'SIDEWAY')
         - circulating_market_cap: 流通市值 (float, 单位: 元), V13.1新增
+        - current_pct_change: 当前涨幅 (float, 百分比), V14.2新增
         
         返回:
         - dict: {
@@ -216,33 +217,62 @@ class SignalGenerator:
             'final_score': float,
             'reason': str,
             'fact_veto': bool,
-            'risk_level': str  # V13.1新增: 'LOW', 'MEDIUM', 'HIGH'
+            'risk_level': str,
+            'limit_up_immunity': bool  # V14.2新增: 是否触发涨停豁免
         }
         '''
         
         # ---------------------------------------------------------
+        # V14.2 涨停豁免权检查 (Limit Up Immunity)
+        # ---------------------------------------------------------
+        
+        limit_up_immunity = False
+        immunity_reason = ""
+        
+        # 如果涨幅接近或达到涨停（主板9.5%，创业板/科创板19.5%），触发豁免
+        if current_pct_change is not None:
+            if current_pct_change >= 9.5:  # 主板接近涨停
+                limit_up_immunity = True
+                immunity_reason = f"强势封板 (+{current_pct_change:.1f}%), 涨停豁免权生效"
+                logger.info(f"Limit Up Immunity: {stock_code} {immunity_reason}")
+            elif current_pct_change >= 19.5:  # 创业板/科创板涨停
+                limit_up_immunity = True
+                immunity_reason = f"20cm涨停 (+{current_pct_change:.1f}%), 涨停豁免权生效"
+                logger.info(f"Limit Up Immunity: {stock_code} {immunity_reason}")
+        
+        # ---------------------------------------------------------
         # 第一层：一级事实熔断 (Fact Veto - The Physics)
+        # V14.2: 涨停豁免权可屏蔽部分熔断
         # ---------------------------------------------------------
         
         # 1. 资金测谎仪 (Capital Flow Veto) - V13.1 动态阈值升级
-        # 双重熔断机制：
-        # A. 绝对值死线：净流出 > 5000万 (大资金出逃)
-        # B. 相对值死线：净流出 > 流通市值的 1% (小盘股失血)
+        # V14.2: 如果触发涨停豁免，资金流出惩罚降级
         
         is_capital_fleeing = False
         fleeing_reason = ""
         
         # 绝对阈值检查
         if capital_flow_data < self.CAPITAL_OUT_THRESHOLD:
-            is_capital_fleeing = True
-            fleeing_reason = f"Absolute outflow {-capital_flow_data/10000:.0f}W"
+            # V14.2: 涨停豁免权下的资金流出处理
+            if limit_up_immunity:
+                # 涨停板上，资金流出可能是主力锁仓或游资接力，降低惩罚
+                logger.info(f"Limit Up Immunity: {stock_code} 资金流出 {-capital_flow_data/10000:.0f}W 被豁免")
+                is_capital_fleeing = False
+            else:
+                is_capital_fleeing = True
+                fleeing_reason = f"Absolute outflow {-capital_flow_data/10000:.0f}W"
             
         # 相对阈值检查 (如果有市值数据)
         elif circulating_market_cap and circulating_market_cap > 0:
             flow_ratio = capital_flow_data / circulating_market_cap
             if flow_ratio < self.FLOW_RATIO_THRESHOLD:  # 流出超1%
-                is_capital_fleeing = True
-                fleeing_reason = f"Relative outflow {flow_ratio*100:.2f}% (exceeds 1% warning line)"
+                # V14.2: 涨停豁免权下的相对流出处理
+                if limit_up_immunity:
+                    logger.info(f"Limit Up Immunity: {stock_code} 相对流出 {flow_ratio*100:.2f}% 被豁免")
+                    is_capital_fleeing = False
+                else:
+                    is_capital_fleeing = True
+                    fleeing_reason = f"Relative outflow {flow_ratio*100:.2f}% (exceeds 1% warning line)"
         
         if is_capital_fleeing:
             logger.warning(f"Fact Veto: {stock_code} capital fleeing ({fleeing_reason}), AI narrative invalid.")
@@ -251,30 +281,54 @@ class SignalGenerator:
                 'final_score': 0,
                 'reason': f"Capital fleeing ({fleeing_reason}), AI narrative invalid",
                 'fact_veto': True,
-                'risk_level': 'HIGH'
+                'risk_level': 'HIGH',
+                'limit_up_immunity': False
             }
         
         # 2. 趋势铁律 (Trend Veto)
+        # V14.2: 涨停豁免权可屏蔽趋势熔断
         if trend_status == 'DOWN':
-            logger.warning(f"Fact Veto: {stock_code} trend DOWN, no flying knife.")
-            return {
-                'signal': 'WAIT',
-                'final_score': 0,
-                'reason': 'Trend DOWN, no flying knife',
-                'fact_veto': True,
-                'risk_level': 'HIGH'
-            }
+            if limit_up_immunity:
+                # 涨停板上，趋势向下可能是弱转强，豁免
+                logger.info(f"Limit Up Immunity: {stock_code} 趋势DOWN被豁免")
+            else:
+                logger.warning(f"Fact Veto: {stock_code} trend DOWN, no flying knife.")
+                return {
+                    'signal': 'WAIT',
+                    'final_score': 0,
+                    'reason': 'Trend DOWN, no flying knife',
+                    'fact_veto': True,
+                    'risk_level': 'HIGH',
+                    'limit_up_immunity': False
+                }
         
         # ---------------------------------------------------------
         # 第二层：顺势加权 (Trend Confirmation - The Boost)
+        # V14.2: 涨停豁免权下的权重调整
         # ---------------------------------------------------------
         
         final_score = 0
         log_reason = ''
         risk_level = 'MEDIUM'
         
+        # V14.2: 涨停豁免权处理
+        if limit_up_immunity:
+            # 涨停板上，强制给予AI分数1.0-1.1倍权重
+            if current_pct_change >= 19.5:
+                # 20cm涨停，给予更高权重
+                final_score = ai_narrative_score * 1.1
+                log_reason = f'Limit Up Immunity: 20cm涨停 (+{current_pct_change:.1f}%), 强势看多'
+                risk_level = 'MEDIUM'  # 涨停板风险中等
+            else:
+                # 10cm涨停，给予正常权重
+                final_score = ai_narrative_score * 1.0
+                log_reason = f'Limit Up Immunity: 涨停 (+{current_pct_change:.1f}%), 强势看多'
+                risk_level = 'MEDIUM'  # 涨停板风险中等
+            
+            logger.info(f'{stock_code} score: {final_score:.1f} | {log_reason}')
+            
         # 情况 A：资金流入 + 趋势向上 (完美共振)
-        if capital_flow_data > 0 and trend_status == 'UP':
+        elif capital_flow_data > 0 and trend_status == 'UP':
             final_score = ai_narrative_score * 1.2  # 给予20%的溢价奖励
             log_reason = 'Resonance Attack: Capital + Trend + AI'
             risk_level = 'LOW'
@@ -288,7 +342,7 @@ class SignalGenerator:
         # 情况 C：资金流出/微流出 + 趋势向上 (背离/虚拉) - V13.1 严防诱多
         elif trend_status == 'UP':
             # V13.1: 如果股价涨但资金流出，视为"背离"
-            # 这里的 capital_flow_data 是负数（但未触及熔断线）
+            # 这里 capital_flow_data 是负数（但未触及熔断线）
             final_score = ai_narrative_score * 0.4  # 极度打折，比V13更狠
             log_reason = 'Divergence: Price UP but capital outflow, potential bull trap'
             risk_level = 'HIGH'
@@ -304,20 +358,30 @@ class SignalGenerator:
         
         # ---------------------------------------------------------
         # 第三层：最终裁决
+        # V14.2: 涨停豁免权下的阈值调整
         # ---------------------------------------------------------
         
-        # V13 门槛提高：只有共振或极强逻辑才能开仓
-        if final_score >= 85:
-            signal = 'BUY'
+        # V14.2: 涨停豁免权下的阈值调整
+        if limit_up_immunity:
+            # 涨停板上，降低买入阈值到75分（因为已经经过市场筛选）
+            if final_score >= 75:
+                signal = 'BUY'
+            else:
+                signal = 'WAIT'
         else:
-            signal = 'WAIT'
+            # V13 门槛提高：只有共振或极强逻辑才能开仓
+            if final_score >= 85:
+                signal = 'BUY'
+            else:
+                signal = 'WAIT'
         
         return {
             'signal': signal,
             'final_score': final_score,
             'reason': log_reason,
             'fact_veto': False,
-            'risk_level': risk_level
+            'risk_level': risk_level,
+            'limit_up_immunity': limit_up_immunity
         }
     
     def get_trend_status(self, df, window=20):
