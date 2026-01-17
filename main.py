@@ -818,98 +818,103 @@ if app_mode == "📈 市场分析":
 
 elif app_mode == "🔥 交易策略":
     # 交易策略模块
-    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18, t19 = st.tabs(["🔥 龙头战法", "📈 均线战法", "🎯 打板预测", "⚡ 集合竞价", "📊 量价关系", "💰 游资席位", "🎯 半路战法", "🔍 买点扫描", "🕸️ 关系图谱", "👤 游资画像", "📈 短期涨跌", "🔮 机会预测", "🤖 多智能体", "📰 智能新闻", "🧠 实时情绪感知", "🐉 龙头识别跟踪", "⚡ 竞价预测系统", "🔧 在线参数调整", "🎮 历史重演"])
+    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18, t19, t20 = st.tabs(["🔮 预测雷达", "🔥 龙头战法", "📈 均线战法", "🎯 打板预测", "⚡ 集合竞价", "📊 量价关系", "💰 游资席位", "🎯 半路战法", "🔍 买点扫描", "🕸️ 关系图谱", "👤 游资画像", "📈 短期涨跌", "🔮 机会预测", "🤖 多智能体", "📰 智能新闻", "🧠 实时情绪感知", "🐉 龙头识别跟踪", "⚡ 竞价预测系统", "🔧 在线参数调整", "🎮 历史重演"])
     with t1:
+        # 🆕 V12 第三阶段：预测雷达
+        with st.spinner("正在加载预测雷达引擎..."):
+            predictive_radar = __import__('ui.predictive_radar', fromlist=['render_predictive_radar'])
+            predictive_radar.render_predictive_radar(get_db_instance())
+    with t2:
         # 延迟导入龙头战法模块
         with st.spinner("正在加载龙头战法引擎..."):
             dragon_strategy = __import__('ui.dragon_strategy', fromlist=['render_dragon_strategy_tab'])
             dragon_strategy.render_dragon_strategy_tab(get_db_instance(), config)
-    with t2:
+    with t3:
         # 延迟导入均线战法模块
         with st.spinner("正在加载均线战法引擎..."):
             ma_strategy = __import__('ui.ma_strategy', fromlist=['render_ma_strategy_tab'])
             ma_strategy.render_ma_strategy_tab(get_db_instance(), config)
-    with t3:
+    with t4:
         # 延迟导入打板预测模块
         with st.spinner("正在加载打板预测引擎..."):
             limit_up = __import__('ui.limit_up', fromlist=['render_limit_up_tab'])
             limit_up.render_limit_up_tab(get_db_instance(), config)
-    with t4:
+    with t5:
         # 延迟导入集合竞价模块
         with st.spinner("正在加载集合竞价引擎..."):
             auction = __import__('ui.auction', fromlist=['render_auction_tab'])
             auction.render_auction_tab(get_db_instance(), config)
-    with t5:
+    with t6:
         # 延迟导入量价关系模块
         with st.spinner("正在加载量价关系引擎..."):
             volume_price = __import__('ui.volume_price', fromlist=['render_volume_price_tab'])
             volume_price.render_volume_price_tab(get_db_instance(), config)
-    with t6:
+    with t7:
         # 延迟导入游资席位模块
         with st.spinner("正在加载游资席位引擎..."):
             capital = __import__('ui.capital', fromlist=['render_capital_tab'])
             capital.render_capital_tab(get_db_instance(), config)
-    with t7:
+    with t8:
         # 延迟导入半路战法模块
         with st.spinner("正在加载半路战法引擎..."):
             midway_strategy = __import__('ui.midway_strategy', fromlist=['render_midway_strategy_tab'])
             midway_strategy.render_midway_strategy_tab(get_db_instance(), config)
-    with t8:
+    with t9:
         # 延迟导入买点扫描模块
         with st.spinner("正在加载买点扫描引擎..."):
             buy_point_scanner = __import__('ui.buy_point_scanner', fromlist=['render_buy_point_scanner_tab'])
             buy_point_scanner.render_buy_point_scanner_tab(get_db_instance(), config)
-    with t9:
+    with t10:
         # 延迟导入关系图谱模块
         with st.spinner("正在加载关系图谱引擎..."):
             capital_network = __import__('ui.capital_network', fromlist=['render_capital_network_tab'])
             capital_network.render_capital_network_tab(get_db_instance(), config)
-    with t10:
+    with t11:
         # 延迟导入游资画像模块
         with st.spinner("正在加载游资画像引擎..."):
             capital_profiler = __import__('ui.capital_profiler', fromlist=['render_capital_profiler_tab'])
             capital_profiler.render_capital_profiler_tab(get_db_instance(), config)
-    with t11:
+    with t12:
         # 延迟导入短期涨跌模块
         with st.spinner("正在加载短期涨跌分析引擎..."):
             short_term_trend = __import__('ui.short_term_trend', fromlist=['render_short_term_trend_tab'])
             short_term_trend.render_short_term_trend_tab(get_db_instance(), config)
-    with t12:
+    with t13:
         # 延迟导入机会预测模块
         with st.spinner("正在加载机会预测引擎..."):
             opportunity_predictor = __import__('ui.opportunity_predictor', fromlist=['render_opportunity_predictor_tab'])
             opportunity_predictor.render_opportunity_predictor_tab(get_db_instance(), config)
-    with t13:
+    with t14:
         # 延迟导入多智能体分析模块
         with st.spinner("正在加载多智能体分析引擎..."):
             multi_agent_analysis = __import__('ui.multi_agent_analysis', fromlist=['render_multi_agent_analysis_tab'])
             multi_agent_analysis.render_multi_agent_analysis_tab(get_db_instance(), config)
-    with t14:
+    with t15:
         # 延迟导入智能新闻分析模块（新版：支持自主爬取和机器学习）
         with st.spinner("正在加载智能新闻分析引擎..."):
             smart_news_analysis = __import__('ui.smart_news_analysis', fromlist=['render_smart_news_analysis_tab'])
             smart_news_analysis.render_smart_news_analysis_tab(get_db_instance(), config)
-    with t15:
+    with t16:
         # 延迟导入实时情绪感知系统模块
         with st.spinner("正在加载实时情绪感知引擎..."):
             realtime_sentiment_tab = __import__('ui.realtime_sentiment_tab', fromlist=['render_realtime_sentiment_tab'])
             realtime_sentiment_tab.render_realtime_sentiment_tab(get_db_instance(), config)
-    with t16:
+    with t17:
         # 延迟导入龙头识别与跟踪系统模块
         with st.spinner("正在加载龙头识别跟踪引擎..."):
             dragon_tracking_tab = __import__('ui.dragon_tracking_tab', fromlist=['render_dragon_tracking_tab'])
             dragon_tracking_tab.render_dragon_tracking_tab(get_db_instance(), config)
-    with t17:
+    with t18:
         # 延迟导入集合竞价预测系统模块
         with st.spinner("正在加载竞价预测引擎..."):
             auction_prediction_tab = __import__('ui.auction_prediction_tab', fromlist=['render_auction_prediction_tab'])
             auction_prediction_tab.render_auction_prediction_tab(get_db_instance(), config)
-    with t18:
+    with t19:
         # 延迟导入在线参数调整系统模块
         with st.spinner("正在加载在线参数调整引擎..."):
             online_parameter_tab = __import__('ui.online_parameter_tab', fromlist=['render_online_parameter_tab'])
             online_parameter_tab.render_online_parameter_tab(get_db_instance(), config)
-    with t19:
+    with t20:
         # 延迟导入历史重演测试模块
         with st.spinner("正在加载历史重演引擎..."):
             historical_replay = __import__('ui.historical_replay', fromlist=['render_historical_replay_panel'])
