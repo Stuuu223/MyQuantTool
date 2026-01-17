@@ -3,6 +3,51 @@ MyQuantTool - 个人化A股智能投研终端
 主入口文件
 """
 
+# 🆕 V13 Iron Rule：战前三问拦截器
+def pre_flight_check():
+    """
+    [V13 Iron Rule] 强制冷却多巴胺的冷启动审计
+    使用 Streamlit 交互组件实现战前三问
+    """
+    st.warning("⚠️ V13 Iron Rule 模式已激活")
+    st.warning("⚠️ 系统将进入'只卖不买'的掠食者模式")
+    
+    st.markdown("---")
+    st.markdown("### 🛡️ [V13 Iron Rule] 战前三问")
+    st.markdown("请在进入系统前，确认以下确定性逻辑审计：")
+    
+    # 检查 1：核心利好逻辑是否依然成立
+    check1 = st.checkbox(
+        "1. 核心利好逻辑是否依然成立（未被官方证伪/澄清）？",
+        value=False,
+        help="检查是否有官方澄清、监管函、风险提示等证伪信息"
+    )
+    
+    # 检查 2：盘中DDE/主力大单流出是否处于可控红线内
+    check2 = st.checkbox(
+        "2. 盘中DDE/主力大单流出是否处于可控红线内？",
+        value=False,
+        help="检查主力资金是否大幅流出，DDE净额是否为负"
+    )
+    
+    # 检查 3：是否坚决执行-3%禁止补仓、-8%物理止损
+    check3 = st.checkbox(
+        "3. 是否坚决执行-3%禁止补仓、-8%物理止损？",
+        value=False,
+        help="承诺遵守铁律，亏损3%禁止加仓，亏损8%强制止损"
+    )
+    
+    st.markdown("---")
+    
+    # 检查是否所有检查都通过
+    if check1 and check2 and check3:
+        st.success("✅ 逻辑契约已签订，欢迎进入掠食者模式。")
+        return True
+    else:
+        st.error("❌ 审计未通过！请去复盘相关股票的DDE流出和官方公告。")
+        st.warning("系统已锁定，请重新审计后再进入。")
+        return False
+
 # 禁用 tqdm 进度条，避免停止应用时的 asyncio 错误
 import os
 os.environ['TQDM_DISABLE'] = '1'
@@ -600,6 +645,55 @@ def load_ui_module(module_name, function_name):
 
 # --- 侧边栏 ---
 with st.sidebar:
+    # [V13 Iron Rule] 战前三问拦截器
+    if 'iron_rule_checked' not in st.session_state:
+        st.session_state.iron_rule_checked = False
+    
+    if not st.session_state.iron_rule_checked:
+        st.warning("⚠️ V13 Iron Rule 模式已激活")
+        st.warning("⚠️ 系统将进入'只卖不买'的掠食者模式")
+        
+        st.markdown("---")
+        st.markdown("### 🛡️ [V13 Iron Rule] 战前三问")
+        st.markdown("请在进入系统前，确认以下确定性逻辑审计：")
+        
+        # 检查 1：核心利好逻辑是否依然成立
+        check1 = st.checkbox(
+            "1. 核心利好逻辑是否依然成立（未被官方证伪/澄清）？",
+            value=False,
+            help="检查是否有官方澄清、监管函、风险提示等证伪信息",
+            key="iron_check1"
+        )
+        
+        # 检查 2：盘中DDE/主力大单流出是否处于可控红线内
+        check2 = st.checkbox(
+            "2. 盘中DDE/主力大单流出是否处于可控红线内？",
+            value=False,
+            help="检查主力资金是否大幅流出，DDE净额是否为负",
+            key="iron_check2"
+        )
+        
+        # 检查 3：是否坚决执行-3%禁止补仓、-8%物理止损
+        check3 = st.checkbox(
+            "3. 是否坚决执行-3%禁止补仓、-8%物理止损？",
+            value=False,
+            help="承诺遵守铁律，亏损3%禁止加仓，亏损8%强制止损",
+            key="iron_check3"
+        )
+        
+        st.markdown("---")
+        
+        # 检查是否所有检查都通过
+        if check1 and check2 and check3:
+            st.success("✅ 逻辑契约已签订，欢迎进入掠食者模式。")
+            if st.button("确认进入系统", key="iron_confirm"):
+                st.session_state.iron_rule_checked = True
+                st.rerun()
+        else:
+            st.error("❌ 审计未通过！请去复盘相关股票的DDE流出和官方公告。")
+            st.warning("系统已锁定，请重新审计后再进入。")
+            st.stop()  # 停止执行，阻止用户进入系统
+    
     # 功能导航
     st.header("🧭 功能导航")
     app_mode = st.radio(

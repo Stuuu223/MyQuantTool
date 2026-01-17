@@ -168,6 +168,79 @@ def render_predictive_radar(data_manager=None):
 
     st.markdown("---")
 
+    # [V13 Iron Rule] 铁律状态展示
+    st.markdown("### 🛡️ [V13 Iron Rule] 铁律状态")
+    
+    try:
+        from logic.iron_rule_engine import IronRuleEngine
+        iron_engine = IronRuleEngine()
+        
+        # 获取锁定股票列表
+        locked_stocks = iron_engine.get_locked_stocks()
+        
+        # 显示铁律引擎状态
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.metric(
+                "铁律引擎",
+                "✅ 激活",
+                delta="V13 Iron Rule 模式",
+                delta_color="normal"
+            )
+        
+        with col2:
+            st.metric(
+                "锁定股票",
+                f"{len(locked_stocks)} 只",
+                delta="逻辑证伪+资金背离",
+                delta_color="inverse" if locked_stocks else "off"
+            )
+        
+        # 显示锁定股票详情
+        if locked_stocks:
+            st.warning(f"⚠️ 当前有 {len(locked_stocks)} 只股票被铁律锁定")
+            
+            # 创建锁定股票表格
+            locked_df = pd.DataFrame(locked_stocks)
+            st.dataframe(
+                locked_df[['code', 'reason', 'lock_time', 'remaining_hours']].rename(columns={
+                    'code': '股票代码',
+                    'reason': '锁定原因',
+                    'lock_time': '锁定时间',
+                    'remaining_hours': '剩余锁定时间(小时)'
+                }),
+                use_container_width=True
+            )
+        else:
+            st.success("✅ 当前无股票被铁律锁定")
+        
+        # 显示铁律规则说明
+        with st.expander("📖 铁律规则说明"):
+            st.markdown("""
+            **V13 Iron Rule 核心原则：**
+            
+            1. **逻辑证伪 + 资金背离 = 永久熔断**
+               - 如果核心利好逻辑被官方证伪（澄清、监管函、风险提示等）
+               - 且 DDE/主力资金大幅流出（净额 < -1亿）
+               - 则触发铁律，该股票被锁定24小时，禁止买入
+            
+            2. **物理阉割亏损加仓**
+               - 浮亏超过 -3%：禁止加仓，只准割肉
+               - 浮亏超过 -8%：强制止损，立即平仓
+            
+            3. **战前三问审计**
+               - 核心利好逻辑是否依然成立？
+               - 盘中DDE/主力大单流出是否处于可控红线内？
+               - 是否坚决执行-3%禁止补仓、-8%物理止损？
+            """)
+    
+    except Exception as e:
+        logger.error(f"获取铁律状态失败: {e}")
+        st.error(f"获取铁律状态失败: {e}")
+
+    st.markdown("---")
+
     # 可视化：历史高度走势
     st.markdown("### 📈 市场高度周期演变")
 
