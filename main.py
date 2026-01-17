@@ -106,13 +106,19 @@ def get_db():
     """获取数据库管理器实例（缓存）"""
     db = DataManager()
     
-    # ✅ V11 启动仪式：数据新陈代谢
-    try:
-        db.prune_old_data(days_to_keep=config.THRESHOLD_HISTORY_DAYS)
-    except Exception as e:
-        logger.warning(f"V11 数据瘦身失败: {e}")
+    # ✅ V11 启动仪式：数据新陈代谢（后台线程执行）
+    import threading
+    def background_cleanup():
+        try:
+            db.prune_old_data(days_to_keep=config.THRESHOLD_HISTORY_DAYS)
+        except Exception as e:
+            logger.warning(f"V11 数据瘦身失败: {e}")
     
-    # ✅ V11 启动仪式：自动同步最新复盘数据
+    # 启动后台清理线程，避免界面卡顿
+    cleanup_thread = threading.Thread(target=background_cleanup, daemon=True)
+    cleanup_thread.start()
+    
+    # ✅ V11 启动仪式：自动同步最新复盘数据（快速执行）
     try:
         from logic.review_manager import ReviewManager
         rm = ReviewManager()

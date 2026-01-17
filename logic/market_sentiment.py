@@ -178,6 +178,17 @@ class MarketSentiment:
             或 None（数据不足时）
         """
         try:
+            # 🆕 V11.1 检查是否在可靠时间之后（避免竞价时段溢价跳变）
+            from logic.market_status import get_market_status_checker
+            market_checker = get_market_status_checker()
+            current_time = market_checker.get_current_time()
+            current_time_minutes = current_time.hour * 60 + current_time.minute
+            
+            # 如果在 9:25 之前，返回 None（数据不可靠）
+            if current_time_minutes < config.MIN_RELIABLE_TIME:
+                logger.info(f"⏰ 当前时间 {current_time} 未到 9:25，溢价数据不可靠，返回 None")
+                return None
+            
             stats = self.rm.get_yesterday_stats()
             if not stats or not stats.get('limit_up_list'):
                 logger.warning("⚠️ 昨日涨停溢价数据未实现，返回 None")

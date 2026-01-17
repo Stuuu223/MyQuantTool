@@ -70,6 +70,9 @@ HALFWAY_MIN_VOLUME_RATIO = 3.0    # 半路战法最低量比
 CALL_AUCTION_START = 9 * 60 + 15   # 9:15 = 555分钟
 CALL_AUCTION_END = 9 * 60 + 25     # 9:25 = 565分钟
 
+# 🆕 V11 最小可靠时间（用于溢价计算）
+MIN_RELIABLE_TIME = 9 * 60 + 25    # 9:25 = 565分钟（集合竞价定格后）
+
 # 上午交易时间（9:30-11:30）
 MORNING_TRADE_START = 9 * 60 + 30  # 9:30 = 570分钟
 MORNING_TRADE_END = 11 * 60 + 30   # 11:30 = 690分钟
