@@ -170,6 +170,66 @@ class DataManager:
         except Exception as e:
             print(f"更新数据库表结构失败: {e}")
 
+    # [新增功能] V11 阶段二：数据库自动瘦身
+    def prune_old_data(self, days_to_keep: int = 90) -> None:
+        """
+        🧹 数据库新陈代谢 (TTL机制)
+
+        功能：
+        1. 删除 N 天前的陈旧日线数据 (避免数据库无限膨胀)
+        2. 执行 VACUUM 释放物理磁盘空间
+        3. 仅保留"有价值"的近期数据 (实战中3个月前的数据参考意义极低)
+
+        Args:
+            days_to_keep: 保留最近多少天的数据 (默认90天)
+        """
+        try:
+            self._ensure_db_initialized()
+
+            logger.info(f"🧹 开始执行数据库瘦身 (保留最近 {days_to_keep} 天)...")
+            start_time = datetime.now()
+
+            # 1. 计算过期时间点
+            cutoff_date = (datetime.now() - timedelta(days=days_to_keep)).strftime("%Y%m%d")
+
+            # 2. 获取清理前的统计信息
+            cursor = self.conn.execute("SELECT count(*) FROM daily_bars")
+            count_before = cursor.fetchone()[0]
+
+            # 3. 执行删除操作 (使用参数化查询防止注入，虽然这里是内部逻辑)
+            # 注意：daily_bars 表中的 date 格式通常是 YYYYMMDD 或 YYYY-MM-DD
+            # 为了兼容，我们尝试删除所有字符串比较小于 cutoff_date 的记录
+            # 假设日期格式是统一的 YYYYMMDD (AkShare默认)
+            self.conn.execute(
+                "DELETE FROM daily_bars WHERE date < ?", (cutoff_date,)
+            )
+            delete_count = self.conn.total_changes
+
+            if delete_count > 0:
+                # 4. 提交删除操作（必须在 VACUUM 之前）
+                self.conn.commit()
+
+                # 5. 执行 VACUUM 释放物理磁盘空间
+                logger.info(f"🗑️ 已删除 {delete_count} 条陈旧记录，正在执行 VACUUM 释放空间...")
+                self.conn.execute("VACUUM")
+
+                # 6. 获取清理后的统计
+                cursor = self.conn.execute("SELECT count(*) FROM daily_bars")
+                count_after = cursor.fetchone()[0]
+
+                duration = (datetime.now() - start_time).total_seconds()
+                logger.info(
+                    f"✅ 瘦身完成! 耗时: {duration:.2f}s\n"
+                    f"   - 清理前: {count_before} 条\n"
+                    f"   - 已删除: {delete_count} 条\n"
+                    f"   - 剩余: {count_after} 条 (截止日期: {cutoff_date})"
+                )
+            else:
+                logger.info("✅ 数据库很健康，无需清理 (没有超过时限的数据)")
+
+        except Exception as e:
+            logger.error(f"❌ 数据库瘦身失败: {e}", exc_info=True)
+
     def _get_kline_cache_path(self, symbol: str) -> str:
         """🆕 V9.9：获取K线缓存文件路径"""
         return os.path.join(self.kline_cache_dir, f"{symbol}_kline.pkl")
