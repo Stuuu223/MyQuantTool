@@ -1,0 +1,110 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""
+V12 核心组件：预测引擎 (Predictive Engine)
+基于历史复盘数据计算概率模型
+"""
+
+import pandas as pd
+import json
+from logic.database_manager import get_db_manager
+from logic.logger import get_logger
+
+logger = get_logger(__name__)
+
+
+class PredictiveEngine:
+    """
+    V12 核心组件：预测引擎
+    基于历史复盘数据计算概率模型
+    """
+    
+    def __init__(self):
+        self.db = get_db_manager()
+    
+    def get_promotion_probability(self, current_height: int) -> float:
+        """
+        计算连板晋级概率
+        
+        逻辑：统计历史数据中，当最高板达到 N 时，次日出现 N+1 的次数
+        
+        Args:
+            current_height: 当前连板高度（如 5 表示 5 板）
+        
+        Returns:
+            float: 晋级成功率（百分比，如 45.5 表示 45.5%）
+        """
+        try:
+            # 1. 获取历史最高板序列
+            sql = "SELECT highest_board FROM market_summary ORDER BY date DESC LIMIT 60"
+            results = self.db.sqlite_query(sql)
+            
+            if len(results) < 10:
+                logger.warning(f"⚠️ 样本不足（{len(results)}天），返回中性概率")
+                return 0.5  # 样本不足，返回中性概率
+                
+            boards = [r[0] for r in results]
+            boards.reverse()  # 转为正序
+            
+            # 2. 统计当前高度晋级的次数
+            total_cases = 0
+            success_cases = 0
+            
+            for i in range(len(boards) - 1):
+                if boards[i] == current_height:
+                    total_cases += 1
+                    if boards[i+1] > current_height:
+                        success_cases += 1
+            
+            if total_cases == 0:
+                logger.info(f"📊 历史回测：{current_height}板 无历史记录，返回 0%")
+                return 0.0
+                
+            prob = (success_cases / total_cases) * 100
+            logger.info(f"📊 历史回测：{current_height}板 晋级成功率为 {prob:.2f}% (样本数: {total_cases})")
+            return round(prob, 2)
+            
+        except Exception as e:
+            logger.error(f"计算晋级概率失败: {e}")
+            return 0.0
+    
+    def detect_sentiment_pivot(self) -> dict:
+        """
+        检测情绪转折点 (防守雷达)
+        
+        逻辑：昨日溢价连降 + 最高板降低 = 触发强力防守
+        
+        Returns:
+            dict: {
+                'action': 'DEFENSE' | 'NORMAL' | 'HOLD',
+                'reason': 触发原因
+            }
+        """
+        try:
+            # 获取最近3天的复盘记录
+            sql = "SELECT highest_board, date FROM market_summary ORDER BY date DESC LIMIT 3"
+            results = self.db.sqlite_query(sql)
+            
+            if len(results) < 3:
+                return {"action": "HOLD", "reason": "样本不足"}
+            
+            # 这里简化逻辑，实际溢价率需要结合实时计算
+            # 假设我们只根据最高板高度判定
+            h3, h2, h1 = results[0][0], results[1][0], results[2][0]
+            
+            if h1 < h2 < h3:  # 最高板高度逐日下降
+                logger.warning("🚨 警报：市场高度持续坍塌，触发强力防守指令！")
+                return {"action": "DEFENSE", "reason": "市场高度连降，情绪退潮期"}
+                
+            return {"action": "NORMAL", "reason": "情绪稳定"}
+            
+        except Exception as e:
+            logger.error(f"情绪转折检测失败: {e}")
+            return {"action": "HOLD", "reason": "检测异常"}
+
+
+# 单例测试
+if __name__ == "__main__":
+    pe = PredictiveEngine()
+    print(f"5板晋级6板概率: {pe.get_promotion_probability(5)}%")
+    print(f"情绪转折点检测: {pe.detect_sentiment_pivot()}")
