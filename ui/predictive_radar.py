@@ -251,6 +251,126 @@ def render_predictive_radar(data_manager=None):
         logger.error(f"获取历史高度数据失败: {e}")
         st.error(f"获取历史高度数据失败: {e}")
 
+    # [V13 第二阶段] 实时感知心电图
+    st.markdown("---")
+    st.markdown("### 💓 实时感知心电图 (V13)")
+    
+    try:
+        from logic.sector_pulse_monitor import SectorPulseMonitor
+        from logic.sector_capital_tracker import SectorCapitalTracker
+        from logic.sector_rotation_detector import SectorRotationDetector
+        
+        # 初始化实时监控组件
+        spm = SectorPulseMonitor()
+        sct = SectorCapitalTracker()
+        srd = SectorRotationDetector()
+        
+        # 使用列布局：左侧板块热度，右侧资金流向
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("#### 🔥 实时板块热度")
+            pulse = spm.get_sector_pulse()
+            
+            if pulse['top_sectors']:
+                st.info(f"📊 监控到 {pulse['total_sectors']} 个板块")
+                
+                # 显示热度最高的板块
+                for i, sector in enumerate(pulse['top_sectors'][:5], 1):
+                    # 根据心跳状态设置图标
+                    if sector['pulse_status'] == '加速':
+                        emoji = "🚀"
+                        color = "🔴"
+                    elif sector['pulse_status'] == '平稳':
+                        emoji = "⚖️"
+                        color = "🟡"
+                    else:
+                        emoji = "📉"
+                        color = "🔵"
+                    
+                    st.metric(
+                        f"{i}. {sector['name']}",
+                        f"{sector['change_pct']:.2f}%",
+                        delta=f"{emoji} 心跳: {sector['pulse_score']:.1f}",
+                        help=f"成交量: {sector['volume']:,}, 成交额: {sector['amount']:,}"
+                    )
+            else:
+                st.warning("⚠️ 暂无板块热度数据")
+            
+            # 显示预警板块
+            if pulse['alert_sectors']:
+                st.warning("⚠️ 板块预警:")
+                for sector in pulse['alert_sectors']:
+                    st.caption(f"  • {sector['name']}: {sector['alert_type']} ({sector['alert_level']})")
+        
+        with col2:
+            st.markdown("#### 💰 实时资金流向")
+            capital_flow = sct.get_sector_capital_flow()
+            
+            if capital_flow['top_inflow']:
+                st.info(f"📊 监控到 {capital_flow['total_sectors']} 个板块")
+                
+                # 显示净流入最多的板块
+                if capital_flow['top_inflow']:
+                    st.success(f"💵 净流入最多: {capital_flow['top_inflow']['name']}")
+                    st.metric(
+                        "净流入",
+                        f"{capital_flow['top_inflow']['net_inflow']:.2f}亿元",
+                        delta=f"排名: #{capital_flow['top_inflow']['inflow_rank']}"
+                    )
+                
+                # 显示净流出最多的板块
+                if capital_flow['top_outflow']:
+                    st.error(f"💸 净流出最多: {capital_flow['top_outflow']['name']}")
+                    st.metric(
+                        "净流出",
+                        f"{capital_flow['top_outflow']['net_inflow']:.2f}亿元",
+                        delta=f"排名: #{capital_flow['top_outflow']['inflow_rank']}"
+                    )
+            else:
+                st.warning("⚠️ 暂无资金流向数据")
+            
+            # 显示资金预警板块
+            if capital_flow['alert_sectors']:
+                st.warning("⚠️ 资金预警:")
+                for sector in capital_flow['alert_sectors']:
+                    st.caption(f"  • {sector['name']}: {sector['alert_type']} ({sector['alert_level']})")
+        
+        # 板块轮动检测
+        st.markdown("#### 🔄 板块轮动检测")
+        
+        # 获取当前热度最高的板块
+        current_top_sectors = [s['name'] for s in pulse['top_sectors'][:3]] if pulse['top_sectors'] else []
+        
+        if current_top_sectors:
+            rotation = srd.detect_rotation(current_top_sectors)
+            
+            if rotation['is_rotating']:
+                # 显示轮动预警
+                if rotation['alert_level'] == '高':
+                    st.error(f"🚨 {rotation['rotation_type']} (强度: {rotation['rotation_strength']:.1%})")
+                else:
+                    st.warning(f"⚠️ {rotation['rotation_type']} (强度: {rotation['rotation_strength']:.1%})")
+                
+                st.info(f"💡 建议: {rotation['recommendation']}")
+                
+                # 显示主线切换信息
+                if rotation['rotation_type'] == '主线切换':
+                    col_a, col_b = st.columns(2)
+                    with col_a:
+                        st.metric("旧主线", rotation['old_main'])
+                    with col_b:
+                        st.metric("新主线", rotation['new_main'])
+            else:
+                st.success(f"✅ {rotation['rotation_type']} - 市场稳定")
+                st.info(f"💡 建议: {rotation['recommendation']}")
+        else:
+            st.warning("⚠️ 暂无板块数据，无法检测轮动")
+    
+    except Exception as e:
+        logger.error(f"获取实时感知数据失败: {e}")
+        st.error(f"获取实时感知数据失败: {e}")
+
     # 概率分析说明
     st.markdown("---")
     st.markdown("### 📖 概率分析说明")
