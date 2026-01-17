@@ -12,6 +12,7 @@ from typing import List, Dict, Optional, Tuple
 from logic.logger import get_logger
 from logic.data_manager import DataManager
 from logic.data_cleaner import DataCleaner
+from logic.review_manager import ReviewManager
 import config_system as config
 
 logger = get_logger(__name__)
@@ -69,6 +70,7 @@ class MarketSentiment:
     
     def __init__(self):
         self.db = DataManager()
+        self.rm = ReviewManager()  # ✅ V11 接入复盘管理器
         self.current_regime = None
         self.market_data = {}
         self.hot_themes = []  # 🆕 V10.1：今日主线
@@ -133,29 +135,39 @@ class MarketSentiment:
     
     def get_consecutive_board_height(self):
         """
-        获取连板高度（最高板数）
+        [V11 修复] 获取真实的市场最高连板高度
         
         Returns:
-            dict: {'max_board': 最高板数, 'board_distribution': 板数分布}
-                  或 None（数据不足时）
+            dict: {'max_board': 最高板数, 'date': 日期}
         """
         try:
-            # 这里需要从数据库获取历史涨停数据
-            # 简化版：假设我们有一个涨停记录表
-            # 实际实现需要查询数据库，计算连续涨停天数
+            stats = self.rm.get_yesterday_stats()
+            if stats:
+                logger.info(f"✅ 从复盘库获取连板高度: {stats['highest_board']}")
+                return {
+                    'max_board': stats['highest_board'],
+                    'date': stats['date']
+                }
             
-            # TODO: 实现真正的连板高度计算
-            # 暂时返回 None，不给假数据
-            logger.warning("⚠️ 连板高度数据未实现，返回 None")
-            return None
+            # 如果库里没有，尝试紧急运行一次复盘(默认昨天)
+            logger.info("🔄 复盘库无数据，尝试紧急运行复盘...")
+            self.rm.run_daily_review()
+            stats = self.rm.get_yesterday_stats()
+            
+            if stats:
+                logger.info(f"✅ 紧急复盘成功，获取连板高度: {stats['highest_board']}")
+                return {'max_board': stats['highest_board'], 'date': stats['date']}
+                
+            logger.warning("⚠️ 无法获取连板高度数据")
+            return {'max_board': 0, 'date': '未知'}
         
         except Exception as e:
-            logger.error(f"获取连板高度失败: {e}")
-            return None
+            logger.error(f"获取连板高度异常: {e}")
+            return {'max_board': 0, 'date': '异常'}
     
     def get_prev_limit_up_profit(self):
         """
-        计算昨日涨停溢价
+        [V11 修复] 计算真实的昨日涨停溢价 (赚钱效应)
         
         Returns:
             dict: {
@@ -166,16 +178,56 @@ class MarketSentiment:
             或 None（数据不足时）
         """
         try:
-            # 这里需要获取昨日涨停的股票，计算今日的平均涨幅
-            # 简化版：假设我们有一个涨停记录表
+            stats = self.rm.get_yesterday_stats()
+            if not stats or not stats.get('limit_up_list'):
+                logger.warning("⚠️ 昨日涨停溢价数据未实现，返回 None")
+                return None
             
-            # TODO: 实现真正的昨日涨停溢价计算
-            # 暂时返回 None，不给假数据
-            logger.warning("⚠️ 昨日涨停溢价数据未实现，返回 None")
-            return None
-        
+            # 1. 获取昨日涨停股代码
+            yesterday_codes = stats['limit_up_list'][:50]  # 样本取前50只即可
+            
+            # 2. 获取这些股票的实时行情
+            # 💡 这里复用 DataManager 的极速接口
+            prices = self.db.get_fast_price(yesterday_codes)
+            
+            if not prices:
+                logger.warning("⚠️ 无法获取昨日涨停股的实时行情")
+                return None
+                
+            # 3. 计算平均涨幅
+            total_pct = 0
+            count = 0
+            profit_count = 0
+            loss_count = 0
+            
+            for code, data in prices.items():
+                price = data.get('now', 0)
+                pre_close = data.get('close', 0)
+                if pre_close > 0:
+                    pct = (price - pre_close) / pre_close * 100
+                    total_pct += pct
+                    count += 1
+                    
+                    if pct > 0:
+                        profit_count += 1
+                    elif pct < 0:
+                        loss_count += 1
+            
+            if count == 0:
+                logger.warning("⚠️ 无法计算昨日涨停溢价（没有有效价格数据）")
+                return None
+            
+            avg_profit = total_pct / count
+            logger.info(f"✅ 真实昨日涨停溢价计算完成: {avg_profit:.2f}% (样本数: {count})")
+            
+            return {
+                'avg_profit': round(avg_profit, 2),
+                'profit_count': profit_count,
+                'loss_count': loss_count
+            }
+            
         except Exception as e:
-            logger.error(f"获取昨日涨停溢价失败: {e}")
+            logger.error(f"计算昨日涨停溢价异常: {e}")
             return None
     
     def get_market_regime(self, top_stocks: Optional[List[Dict]] = None):

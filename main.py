@@ -19,6 +19,7 @@ from logic.formatter import Formatter
 from logic.logger import get_logger
 from logic.error_handler import handle_errors, ValidationError
 from config import Config
+import config_system as config
 import streamlit as st
 import importlib
 
@@ -103,7 +104,23 @@ if not API_KEY.startswith('sk-'):
 @st.cache_resource(hash_funcs={DataManager: lambda _: "V9.3.8"})
 def get_db():
     """获取数据库管理器实例（缓存）"""
-    return DataManager()
+    db = DataManager()
+    
+    # ✅ V11 启动仪式：数据新陈代谢
+    try:
+        db.prune_old_data(days_to_keep=config.THRESHOLD_HISTORY_DAYS)
+    except Exception as e:
+        logger.warning(f"V11 数据瘦身失败: {e}")
+    
+    # ✅ V11 启动仪式：自动同步最新复盘数据
+    try:
+        from logic.review_manager import ReviewManager
+        rm = ReviewManager()
+        rm.run_daily_review()
+    except Exception as e:
+        logger.warning(f"V11 复盘同步失败: {e}")
+    
+    return db
 
 @st.cache_resource
 def get_ai_agent():
