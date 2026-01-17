@@ -592,14 +592,14 @@ def render_dragon_strategy_tab(db, config):
                         st.divider()
                         st.subheader("🔥 强龙头（重点关注）")
                         for stock in strong_dragons:
-                            _render_dragon_stock(stock, config)
+                            _render_dragon_stock(stock, config, review_mode=review_mode)
                     
                     # 潜力龙头
                     if potential_dragons:
                         st.divider()
                         st.subheader("📈 潜力龙头（可关注）")
                         for stock in potential_dragons:
-                            _render_dragon_stock(stock, config)
+                            _render_dragon_stock(stock, config, review_mode=review_mode)
                     
                     # 弱龙头
                     if weak_dragons:
@@ -943,8 +943,14 @@ def render_dragon_strategy_tab(db, config):
             **严格纪律：**
             - 绝对不允许个股跌幅超过10%
             """)
-def _render_dragon_stock(stock, config):
-    """渲染龙头股票详情"""
+def _render_dragon_stock(stock, config, review_mode=False):
+    """渲染龙头股票详情
+    
+    Args:
+        stock: 股票数据字典
+        config: 配置对象
+        review_mode: 复盘模式开关
+    """
     with st.expander(f"{stock['龙头评级']} {stock['名称']} ({stock['代码']}) - 评分: {stock['评级得分']}"):
         col1, col2 = st.columns(2)
         col1.metric("最新价", f"¥{stock['最新价']:.2f}")
@@ -1179,6 +1185,17 @@ def _render_dragon_stock(stock, config):
         # 显示评级得分和评级说明
         st.write(f"**评级得分**: {stock['评级得分']}/100")
         st.info(f"**评级说明**: {stock['评级说明']}")
+        
+        # 🔥 V10.1.9 [新增] 显示技术形态标签
+        trend = stock.get('kline_trend', '')
+        if trend:
+            # 根据好坏显示不同颜色
+            if '📈' in trend or '🟢' in trend:
+                st.info(f"📊 技术面: {trend}")  # 蓝色/绿色
+            elif '📉' in trend or '🔴' in trend:
+                st.error(f"📊 技术面: {trend}") # 红色警示
+            else:
+                st.caption(f"📊 技术面: {trend}") # 灰色
         
         # 显示五个条件得分
         st.write("**五个条件得分：**")
