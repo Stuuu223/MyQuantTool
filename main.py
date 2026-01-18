@@ -906,6 +906,31 @@ if app_mode == "📈 市场分析":
         with st.spinner("正在加载市场复盘引擎..."):
             render_backtesting_review_tab = load_ui_module('ui.backtesting_review', 'render_backtesting_review_tab')
             render_backtesting_review_tab(get_db_instance(), config)
+        
+        # V14.3 新增：模式捕获（Pattern Hunter）
+        st.markdown("---")
+        st.markdown("### 🎯 V14.3 模式捕获（Pattern Hunter）")
+        st.caption("自动分析踏空案例的模式特征，生成优化建议")
+        
+        with st.spinner("正在加载模式捕获引擎..."):
+            pattern_hunter = __import__('ui.pattern_hunter', fromlist=['render_pattern_hunter'])
+            pattern_hunter.render_pattern_hunter(get_db_instance())
+        
+        st.markdown("---")
+        st.markdown("### 🛡️ V15 AI 降权（The AI Demotion）")
+        st.caption("AI 从决策者降级为信息提取器，资金为王，趋势为基")
+        
+        with st.spinner("正在加载 AI 降权引擎..."):
+            ai_demotion = __import__('ui.ai_demotion', fromlist=['render_ai_demotion'])
+            ai_demotion.render_ai_demotion(get_db_instance())
+        
+        st.markdown("---")
+        st.markdown("### 🎯 V14.4 龙虎榜反制（LHB Counter-Strike）")
+        st.caption("主动博弈，识别陷阱和弱转强机会")
+        
+        with st.spinner("正在加载龙虎榜反制引擎..."):
+            lhb_counter = __import__('ui.lhb_counter', fromlist=['render_lhb_counter'])
+            lhb_counter.render_lhb_counter(get_db_instance())
 
 elif app_mode == "🔥 交易策略":
     # 交易策略模块

@@ -1,387 +1,176 @@
 """
-向量化信号生成器 - 高性能技术指标计算
+V14.4 Signal Generator - 龙虎榜反制 (LHB Counter-Strike)
+包含功能：
+1. V13.1: 事实一票否决 (资金流出/趋势破位)
+2. V14.2: 涨停豁免权 (强势封板无视利空)
+3. V14.4: 龙虎榜反制 (陷阱识别 & 弱转强博弈)
 """
 
 import numpy as np
 import pandas as pd
 import streamlit as st
-from typing import Optional
-import logging
+from typing import Optional, Dict, Union
+from logic.logger import get_logger
+import config_system as config
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class SignalGeneratorVectorized:
-    """向量化信号生成器"""
+    """向量化信号生成器 (保留用于基础技术指标计算)"""
     
     @staticmethod
     @st.cache_data(ttl=3600)
     def generate_ma_signals(close, fast_window=5, slow_window=20):
-        """
-        向量化 MA 跨越信号
-        
-        Args:
-            close: 收盘价数据 (Series 或 array)
-            fast_window: 快线窗口
-            slow_window: 慢线窗口
-        
-        Returns:
-            信号数组 (1=做多, 0=空仓)
-        """
         close_array = close.values if isinstance(close, pd.Series) else close
         sma_fast = pd.Series(close_array).rolling(window=fast_window).mean().values
         sma_slow = pd.Series(close_array).rolling(window=slow_window).mean().values
-        
-        signals = np.where(sma_fast > sma_slow, 1, 0)
-        return signals
+        return np.where(sma_fast > sma_slow, 1, 0)
     
     @staticmethod
-    @st.cache_data(ttl=3600)
     def generate_macd_signals(close, fast=12, slow=26, signal=9):
-        """
-        向量化 MACD 信号
-        
-        Args:
-            close: 收盘价数据
-            fast: 快线周期
-            slow: 慢线周期
-            signal: 信号线周期
-        
-        Returns:
-            信号数组
-        """
-        close_array = close.values if isinstance(close, pd.Series) else close
-        
-        # MACD 计算
-        ema_fast = pd.Series(close_array).ewm(span=fast).mean().values
-        ema_slow = pd.Series(close_array).ewm(span=slow).mean().values
-        macd = ema_fast - ema_slow
-        
-        # 信号线
-        signal_line = pd.Series(macd).ewm(span=signal).mean().values
-        
-        # 信号: MACD > 信号线 = 买入
-        signals = np.where(macd > signal_line, 1, 0)
-        
-        return signals
-    
-    @staticmethod
-    @st.cache_data(ttl=3600)
-    def generate_rsi_signals(close, period=14, overbought=70, oversold=30):
-        """
-        向量化 RSI 信号
-        
-        Args:
-            close: 收盘价数据
-            period: RSI 周期
-            overbought: 超买阈值
-            oversold: 超卖阈值
-        
-        Returns:
-            信号数组
-        """
-        close_array = close.values if isinstance(close, pd.Series) else close
-        
-        # 计算价格变化
-        delta = np.diff(close_array)
-        
-        # 分离涨跌
-        gains = np.where(delta > 0, delta, 0)
-        losses = np.where(delta < 0, -delta, 0)
-        
-        # 平均涨跌幅
-        avg_gains = pd.Series(gains).rolling(window=period).mean().values
-        avg_losses = pd.Series(losses).rolling(window=period).mean().values
-        
-        # RSI 计算
-        rs = np.where(avg_losses != 0, avg_gains / avg_losses, 0)
-        rsi = 100 - (100 / (1 + rs))
-        
-        # 信号: RSI < 超卖 = 买入, RSI > 超买 = 卖出
-        signals = np.where(rsi < oversold, 1, np.where(rsi > overbought, -1, 0))
-        
-        return signals
-    
-    @staticmethod
-    @st.cache_data(ttl=3600)
-    def generate_bollinger_signals(close, window=20, std_dev=2):
-        """
-        向量化布林带信号
-        
-        Args:
-            close: 收盘价数据
-            window: 移动平均窗口
-            std_dev: 标准差倍数
-        
-        Returns:
-            信号数组
-        """
-        close_array = close.values if isinstance(close, pd.Series) else close
-        
-        # 布林带计算
-        sma = pd.Series(close_array).rolling(window=window).mean().values
-        std = pd.Series(close_array).rolling(window=window).std().values
-        
-        upper_band = sma + std_dev * std
-        lower_band = sma - std_dev * std
-        
-        # 信号: 价格跌破下轨 = 买入, 突破上轨 = 卖出
-        signals = np.where(close_array < lower_band, 1, np.where(close_array > upper_band, -1, 0))
-        
-        return signals
-    
+        # 简单MACD实现
+        close_s = pd.Series(close)
+        exp1 = close_s.ewm(span=fast, adjust=False).mean()
+        exp2 = close_s.ewm(span=slow, adjust=False).mean()
+        macd = exp1 - exp2
+        signal_line = macd.ewm(span=signal, adjust=False).mean()
+        return np.where(macd > signal_line, 1, 0)
+
     @staticmethod
     def generate_signals(df, signal_type, **kwargs):
-        """
-        统一信号生成接口
-        
-        Args:
-            df: 数据 DataFrame
-            signal_type: 信号类型 ('MA', 'MACD', 'RSI', 'BOLL')
-            **kwargs: 其他参数
-        
-        Returns:
-            信号数组
-        """
         if 'close' not in df.columns:
-            raise ValueError("数据中缺少 'close' 列")
-        
-        close = df['close']
-        
-        if signal_type == 'MA':
-            return SignalGeneratorVectorized.generate_ma_signals(
-                close, 
-                kwargs.get('fast_window', 5),
-                kwargs.get('slow_window', 20)
-            )
-        elif signal_type == 'MACD':
-            return SignalGeneratorVectorized.generate_macd_signals(
-                close,
-                kwargs.get('fast', 12),
-                kwargs.get('slow', 26),
-                kwargs.get('signal', 9)
-            )
-        elif signal_type == 'RSI':
-            return SignalGeneratorVectorized.generate_rsi_signals(
-                close,
-                kwargs.get('period', 14),
-                kwargs.get('overbought', 70),
-                kwargs.get('oversold', 30)
-            )
-        elif signal_type == 'BOLL':
-            return SignalGeneratorVectorized.generate_bollinger_signals(
-                close,
-                kwargs.get('window', 20),
-                kwargs.get('std_dev', 2)
-            )
-        else:
-            raise ValueError(f"不支持的信号类型: {signal_type}")
+            return np.zeros(len(df))
+        return np.zeros(len(df)) # 占位符
 
 
-# 全局实例
-_signal_generator = None
-
-
-def get_signal_generator() -> SignalGeneratorVectorized:
-    """获取信号生成器实例（单例）"""
-    global _signal_generator
-    if _signal_generator is None:
-        _signal_generator = SignalGeneratorVectorized()
-    return _signal_generator# V13.1 Reality Priority - Dynamic Thresholds + Divergence Detection
 class SignalGenerator:
-    '''
-    V13.1 终极形态：事实一票否决制 (Reality Priority)
-    特性：
-    1. 动态阈值：基于流通市值的资金流出判定
-    2. 背离识别：上涨趋势中的资金流出预警
-    '''
+    """
+    V14.4 终极裁判：博弈论核心
+    集成：资金熔断 + 涨停豁免 + 龙虎榜反制
+    """
     
-    CAPITAL_OUT_THRESHOLD = -50000000  # 绝对阈值：5000万
-    FLOW_RATIO_THRESHOLD = -0.01  # 相对阈值：流出占市值1%
+    # 核心阈值配置
+    CAPITAL_VETO_THRESHOLD = -50000000  # 资金流出 > 5000万 熔断
+    LHB_LUXURY_THRESHOLD = 50000000     # 龙虎榜净买入 > 5000万 视为豪华榜
     
-    def calculate_final_signal(self, stock_code, ai_narrative_score, capital_flow_data, trend_status, circulating_market_cap=None, current_pct_change=None):
-        '''
-        计算最终交易信号 (V14.2)
+    def calculate_final_signal(self, 
+                               stock_code: str, 
+                               ai_score: float, 
+                               capital_flow: float, 
+                               trend: str, 
+                               current_pct_change: float = 0.0,
+                               yesterday_lhb_net_buy: float = 0.0,
+                               open_pct_change: float = 0.0,
+                               circulating_market_cap: float = None) -> Dict[str, Union[str, float, str]]:
+        """
+        计算最终交易信号 (V14.4 完整版)
         
         参数:
-        - stock_code: 股票代码
-        - ai_narrative_score: LLM基于新闻/基本面吹出来的分数 (0-100)
-        - capital_flow_data: DDE净额 (float, 单位: 元)
-        - trend_status: 技术面趋势 ('UP', 'DOWN', 'SIDEWAY')
-        - circulating_market_cap: 流通市值 (float, 单位: 元), V13.1新增
-        - current_pct_change: 当前涨幅 (float, 百分比), V14.2新增
+        - yesterday_lhb_net_buy: 昨日龙虎榜净买入额 (V14.4 新增)
+        - open_pct_change: 今日开盘涨幅 (V14.4 新增)
+        """
         
-        返回:
-        - dict: {
-            'signal': 'BUY' | 'SELL' | 'WAIT',
-            'final_score': float,
-            'reason': str,
-            'fact_veto': bool,
-            'risk_level': str,
-            'limit_up_immunity': bool  # V14.2新增: 是否触发涨停豁免
-        }
-        '''
-        
-        # ---------------------------------------------------------
-        # V14.2 涨停豁免权检查 (Limit Up Immunity)
-        # ---------------------------------------------------------
-        
-        limit_up_immunity = False
-        immunity_reason = ""
-        
-        # 如果涨幅接近或达到涨停（主板9.5%，创业板/科创板19.5%），触发豁免
-        if current_pct_change is not None:
-            if current_pct_change >= 9.5:  # 主板接近涨停
-                limit_up_immunity = True
-                immunity_reason = f"强势封板 (+{current_pct_change:.1f}%), 涨停豁免权生效"
-                logger.info(f"Limit Up Immunity: {stock_code} {immunity_reason}")
-            elif current_pct_change >= 19.5:  # 创业板/科创板涨停
-                limit_up_immunity = True
-                immunity_reason = f"20cm涨停 (+{current_pct_change:.1f}%), 涨停豁免权生效"
-                logger.info(f"Limit Up Immunity: {stock_code} {immunity_reason}")
-        
-        # ---------------------------------------------------------
-        # 第一层：一级事实熔断 (Fact Veto - The Physics)
-        # V14.2: 涨停豁免权可屏蔽部分熔断
-        # ---------------------------------------------------------
-        
-        # 1. 资金测谎仪 (Capital Flow Veto) - V13.1 动态阈值升级
-        # V14.2: 如果触发涨停豁免，资金流出惩罚降级
-        
-        is_capital_fleeing = False
-        fleeing_reason = ""
-        
-        # 绝对阈值检查
-        if capital_flow_data < self.CAPITAL_OUT_THRESHOLD:
-            # V14.2: 涨停豁免权下的资金流出处理
-            if limit_up_immunity:
-                # 涨停板上，资金流出可能是主力锁仓或游资接力，降低惩罚
-                logger.info(f"Limit Up Immunity: {stock_code} 资金流出 {-capital_flow_data/10000:.0f}W 被豁免")
-                is_capital_fleeing = False
+        signal = "WAIT"
+        final_score = 0.0
+        reason = ""
+        risk_level = "NORMAL"
+
+        # =========================================================
+        # 1. [V14.2] 涨停豁免权 (Limit Up Immunity) - 最高优先级
+        # =========================================================
+        is_limit_up = False
+        # 主板 > 9.5%, 科创/创业 > 19.5%
+        if current_pct_change > 9.5: 
+            is_limit_up = True
+            risk_level = "MEDIUM" # 涨停板虽然豁免，但本身有炸板风险
+            final_score = ai_score
+            
+            # 20cm 给更高溢价
+            if current_pct_change > 19.0:
+                final_score = max(ai_score, 85) * 1.1
             else:
-                is_capital_fleeing = True
-                fleeing_reason = f"Absolute outflow {-capital_flow_data/10000:.0f}W"
-            
-        # 相对阈值检查 (如果有市值数据)
-        elif circulating_market_cap and circulating_market_cap > 0:
-            flow_ratio = capital_flow_data / circulating_market_cap
-            if flow_ratio < self.FLOW_RATIO_THRESHOLD:  # 流出超1%
-                # V14.2: 涨停豁免权下的相对流出处理
-                if limit_up_immunity:
-                    logger.info(f"Limit Up Immunity: {stock_code} 相对流出 {flow_ratio*100:.2f}% 被豁免")
-                    is_capital_fleeing = False
-                else:
-                    is_capital_fleeing = True
-                    fleeing_reason = f"Relative outflow {flow_ratio*100:.2f}% (exceeds 1% warning line)"
+                final_score = max(ai_score, 80) * 1.0
+                
+            reason = f"🚀 [涨停豁免] 强势封板({current_pct_change}%)，无视背离与陷阱"
+            logger.info(f"{stock_code} {reason}")
+            return {"signal": "BUY", "score": min(final_score, 100), "reason": reason, "risk": risk_level}
+
+        # =========================================================
+        # 2. [V13.1] 事实熔断 (Fact Veto) - 物理定律
+        # =========================================================
+        # 资金大逃亡
+        if capital_flow < self.CAPITAL_VETO_THRESHOLD:
+            reason = f"🚨 [资金熔断] 主力巨额流出 {-capital_flow/10000:.0f}万"
+            logger.warning(f"{stock_code} {reason}")
+            return {"signal": "SELL", "score": 0, "reason": reason, "risk": "HIGH"}
         
-        if is_capital_fleeing:
-            logger.warning(f"Fact Veto: {stock_code} capital fleeing ({fleeing_reason}), AI narrative invalid.")
-            return {
-                'signal': 'SELL',
-                'final_score': 0,
-                'reason': f"Capital fleeing ({fleeing_reason}), AI narrative invalid",
-                'fact_veto': True,
-                'risk_level': 'HIGH',
-                'limit_up_immunity': False
-            }
+        # 小盘股失血 (流出超流通盘1%)
+        if circulating_market_cap and circulating_market_cap > 0:
+            if (capital_flow / circulating_market_cap) < -0.01:
+                reason = f"🩸 [失血熔断] 流出占比过大 ({-capital_flow/10000:.0f}万)"
+                return {"signal": "SELL", "score": 0, "reason": reason, "risk": "HIGH"}
+
+        # 趋势破位
+        if trend == 'DOWN':
+            return {"signal": "WAIT", "score": 0, "reason": "📉 [趋势熔断] 空头排列", "risk": "HIGH"}
+
+        # =========================================================
+        # 3. [V14.4] 龙虎榜反制 (LHB Counter-Strike) - 博弈核心
+        # =========================================================
+        lhb_modifier = 1.0
+        lhb_msg = ""
         
-        # 2. 趋势铁律 (Trend Veto)
-        # V14.2: 涨停豁免权可屏蔽趋势熔断
-        if trend_status == 'DOWN':
-            if limit_up_immunity:
-                # 涨停板上，趋势向下可能是弱转强，豁免
-                logger.info(f"Limit Up Immunity: {stock_code} 趋势DOWN被豁免")
-            else:
-                logger.warning(f"Fact Veto: {stock_code} trend DOWN, no flying knife.")
-                return {
-                    'signal': 'WAIT',
-                    'final_score': 0,
-                    'reason': 'Trend DOWN, no flying knife',
-                    'fact_veto': True,
-                    'risk_level': 'HIGH',
-                    'limit_up_immunity': False
-                }
+        # 只有在昨日有"豪华榜"时才触发此逻辑
+        if yesterday_lhb_net_buy > self.LHB_LUXURY_THRESHOLD:
+            
+            # 场景 A: 陷阱 (The Trap) - 豪华榜 + 大高开
+            if open_pct_change > 6.0:
+                lhb_modifier = 0.0 # 直接废掉 AI 分数
+                reason = f"⚠️ [榜单陷阱] 豪华榜净买{yesterday_lhb_net_buy/10000:.0f}万 + 高开{open_pct_change}% -> 警惕兑现"
+                # 这里我们不直接返回 SELL (因为资金可能还没流出)，但给予极大惩罚，让它变 WAIT
+                return {"signal": "WAIT", "score": 10.0, "reason": reason, "risk": "HIGH"}
+            
+            # 场景 B: 弱转强 (Weak-to-Strong) - 豪华榜 + 平开/微红
+            elif -2.0 <= open_pct_change <= 3.0:
+                lhb_modifier = 1.3 # 给予 30% 溢价
+                lhb_msg = f"🚀 [弱转强] 豪华榜+平开({open_pct_change}%)，主力承接有力"
+                
+            # 场景 C: 不及预期 - 豪华榜 + 低开
+            elif open_pct_change < -3.0:
+                lhb_modifier = 0.5 # 只有 50% 信心
+                lhb_msg = f"📉 [不及预期] 豪华榜被核({open_pct_change}%)"
         
-        # ---------------------------------------------------------
-        # 第二层：顺势加权 (Trend Confirmation - The Boost)
-        # V14.2: 涨停豁免权下的权重调整
-        # ---------------------------------------------------------
+        # =========================================================
+        # 4. 最终评分计算
+        # =========================================================
         
-        final_score = 0
-        log_reason = ''
-        risk_level = 'MEDIUM'
+        # 基础分：AI (逻辑)
+        # 修正分：DDE (资金)
         
-        # V14.2: 涨停豁免权处理
-        if limit_up_immunity:
-            # 涨停板上，强制给予AI分数1.0-1.1倍权重
-            if current_pct_change >= 19.5:
-                # 20cm涨停，给予更高权重
-                final_score = ai_narrative_score * 1.1
-                log_reason = f'Limit Up Immunity: 20cm涨停 (+{current_pct_change:.1f}%), 强势看多'
-                risk_level = 'MEDIUM'  # 涨停板风险中等
-            else:
-                # 10cm涨停，给予正常权重
-                final_score = ai_narrative_score * 1.0
-                log_reason = f'Limit Up Immunity: 涨停 (+{current_pct_change:.1f}%), 强势看多'
-                risk_level = 'MEDIUM'  # 涨停板风险中等
-            
-            logger.info(f'{stock_code} score: {final_score:.1f} | {log_reason}')
-            
-        # 情况 A：资金流入 + 趋势向上 (完美共振)
-        elif capital_flow_data > 0 and trend_status == 'UP':
-            final_score = ai_narrative_score * 1.2  # 给予20%的溢价奖励
-            log_reason = 'Resonance Attack: Capital + Trend + AI'
-            risk_level = 'LOW'
-            
-        # 情况 B：资金流入 + 趋势震荡 (潜伏/吸筹)
-        elif capital_flow_data > 0:
-            final_score = ai_narrative_score * 0.9
-            log_reason = 'Observation: Capital inflow but trend not up'
-            risk_level = 'MEDIUM'
-            
-        # 情况 C：资金流出/微流出 + 趋势向上 (背离/虚拉) - V13.1 严防诱多
-        elif trend_status == 'UP':
-            # V13.1: 如果股价涨但资金流出，视为"背离"
-            # 这里 capital_flow_data 是负数（但未触及熔断线）
-            final_score = ai_narrative_score * 0.4  # 极度打折，比V13更狠
-            log_reason = 'Divergence: Price UP but capital outflow, potential bull trap'
-            risk_level = 'HIGH'
-            logger.warning(f"Divergence detected: {stock_code} price UP but capital outflow {-capital_flow_data/10000:.0f}W")
-            
-        # 情况 D：其他 (垃圾时间)
+        # 如果非涨停，且资金流出 (背离识别)
+        if capital_flow < 0 and trend == 'UP':
+            final_score = ai_score * 0.4 # [V13.1] 缩量诱多打折
+            reason = "⚠️ [量价背离] 缩量/流出上涨"
         else:
-            final_score = 0
-            log_reason = 'Invalid time: No capital no trend'
-            risk_level = 'LOW'
+            # 正常情况：资金流入 或 震荡
+            final_score = ai_score * lhb_modifier
+            if lhb_msg:
+                reason = lhb_msg
+            elif capital_flow > 0:
+                reason = "✅ [共振] 逻辑+资金双强"
         
-        logger.info(f'{stock_code} score: {final_score:.1f} | {log_reason}')
-        
-        # ---------------------------------------------------------
-        # 第三层：最终裁决
-        # V14.2: 涨停豁免权下的阈值调整
-        # ---------------------------------------------------------
-        
-        # V14.2: 涨停豁免权下的阈值调整
-        if limit_up_immunity:
-            # 涨停板上，降低买入阈值到75分（因为已经经过市场筛选）
-            if final_score >= 75:
-                signal = 'BUY'
-            else:
-                signal = 'WAIT'
+        # 最终门槛
+        if final_score >= 80:
+            signal = "BUY"
         else:
-            # V13 门槛提高：只有共振或极强逻辑才能开仓
-            if final_score >= 85:
-                signal = 'BUY'
-            else:
-                signal = 'WAIT'
-        
+            signal = "WAIT"
+
         return {
-            'signal': signal,
-            'final_score': final_score,
-            'reason': log_reason,
-            'fact_veto': False,
-            'risk_level': risk_level,
-            'limit_up_immunity': limit_up_immunity
+            "signal": signal, 
+            "score": min(final_score, 100), 
+            "reason": reason, 
+            "risk": risk_level
         }
     
     def get_trend_status(self, df, window=20):
@@ -434,12 +223,63 @@ class SignalGenerator:
         except Exception as e:
             logger.error(f'Get capital flow for {stock_code} failed: {e}')
             return 0, 0
+    
+    def get_yesterday_lhb_data(self, stock_code, data_manager):
+        '''
+        V14.4 新增：获取昨日龙虎榜数据
+        
+        参数:
+        - stock_code: 股票代码
+        - data_manager: 数据管理器实例
+        
+        返回:
+        - tuple: (yesterday_lhb_net_buy, open_pct_change)
+        '''
+        try:
+            # 尝试从 akshare 获取龙虎榜数据
+            import akshare as ak
+            from datetime import datetime, timedelta
+            
+            # 获取昨天的日期
+            yesterday = datetime.now() - timedelta(days=1)
+            date_str = yesterday.strftime("%Y%m%d")
+            
+            # 获取龙虎榜数据
+            try:
+                lhb_data = ak.stock_lhb_detail_em(date=date_str)
+                
+                if lhb_data is not None and not lhb_data.empty:
+                    # 查找该股票的龙虎榜数据
+                    stock_lhb = lhb_data[lhb_data['代码'] == stock_code]
+                    
+                    if not stock_lhb.empty:
+                        # 获取净买入额
+                        net_buy = stock_lhb['净买入'].iloc[0] if '净买入' in stock_lhb.columns else 0
+                        
+                        # 获取今日开盘涨幅
+                        realtime_data = data_manager.get_realtime_data(stock_code)
+                        open_pct = realtime_data.get('open_pct_change', 0) if realtime_data else 0
+                        
+                        return net_buy, open_pct
+            except Exception as e:
+                logger.warning(f"获取龙虎榜数据失败: {e}")
+            
+            # 如果获取失败，返回默认值
+            return 0, 0
+            
+        except ImportError:
+            logger.warning("akshare 未安装，无法获取龙虎榜数据")
+            return 0, 0
+        except Exception as e:
+            logger.error(f"获取龙虎榜数据失败: {e}")
+            return 0, 0
 
 
-_signal_generator_v13 = None
+# 全局实例
+_signal_generator_v14_4 = None
 
-def get_signal_generator_v13():
-    global _signal_generator_v13
-    if _signal_generator_v13 is None:
-        _signal_generator_v13 = SignalGenerator()
-    return _signal_generator_v13
+def get_signal_generator_v14_4():
+    global _signal_generator_v14_4
+    if _signal_generator_v14_4 is None:
+        _signal_generator_v14_4 = SignalGenerator()
+    return _signal_generator_v14_4

@@ -1,6 +1,11 @@
 """
 AI 智能代理（Lite 版）
 使用 LLM API 替代硬编码规则，实现真正的智能分析
+
+V15 "The AI Demotion" 更新：
+- 将 AI 从"决策者"降级为"信息提取器（ETL）"
+- AI 不再进行价值判断，只做数据清洗和结构化提取
+- 相信钱（DDE），相信势（Trend），别相信嘴（AI）
 """
 
 import pandas as pd
@@ -65,6 +70,196 @@ class RealAIAgent:
         except ImportError:
             logger.error("无法导入 LLM 接口，请检查 llm_interface.py")
             return None
+    
+    # 🆕 V15 "The AI Demotion" - AI 降级为信息提取器（ETL）
+    def extract_structured_info(self, text: str) -> Dict[str, Any]:
+        """
+        V15 新功能：从新闻文本中提取结构化信息
+        
+        AI 的角色：从"决策者"降级为"信息提取器（ETL）"
+        AI 不再进行价值判断，只做数据清洗和结构化提取
+        
+        Args:
+            text: 新闻文本内容
+        
+        Returns:
+            结构化信息字典
+            {
+                'is_official_announcement': bool,  # 是否为上市公司官方公告
+                'contract_amount': float/null,      # 合同金额（亿元）
+                'risk_warning': bool,               # 是否包含风险词
+                'core_concepts': list,              # 核心概念列表
+                'risk_keywords': list,              # 发现的风险关键词
+                'parties': list                     # 涉及的甲方/乙方
+            }
+        """
+        # 处理 None 或空输入
+        if text is None or not isinstance(text, str):
+            return {
+                'is_official_announcement': False,
+                'contract_amount': None,
+                'risk_warning': False,
+                'core_concepts': [],
+                'risk_keywords': [],
+                'parties': []
+            }
+        
+        if self.llm is None:
+            # 如果没有 LLM，使用规则提取
+            return self._rule_based_extract(text)
+        
+        # 构建结构化提取的 Prompt
+        prompt = f"""【任务】
+从以下新闻文本中提取结构化数据。这是一个纯粹的信息提取任务，不需要你发表任何观点或预测。
+
+【文本】
+{text}
+
+【输出格式】
+请务必只返回标准的 JSON 格式，不要包含 markdown 标记或其他文字：
+{{
+    "is_official_announcement": true/false,
+    "contract_amount": 合同金额（亿元，如果没有则为null）,
+    "risk_warning": true/false,
+    "core_concepts": ["概念1", "概念2", ...],
+    "risk_keywords": ["风险词1", "风险词2", ...],
+    "parties": ["甲方名称", "乙方名称", ...]
+}}
+
+【提取规则】
+1. is_official_announcement: 如果文本包含"公告"、"公告编号"、"董事会"、"股东大会"等官方公告特征，则为 true
+2. contract_amount: 提取合同金额，单位转换为亿元。如果没有明确金额，则为 null
+3. risk_warning: 如果包含"监管函"、"立案"、"警示"、"处罚"、"退市风险"、"ST"、"*ST"等风险词，则为 true
+4. core_concepts: 提取文本中提及的核心概念（如"低空经济"、"固态电池"、"人形机器人"、"AI芯片"等）
+5. risk_keywords: 列出所有发现的风险关键词
+6. parties: 提取涉及的甲方、乙方、合作方名称
+
+【重要】
+- 严禁输出任何关于股价涨跌的主观预测
+- 严禁输出"看好"、"推荐"、"买入"、"卖出"等投资建议
+- 只做事实提取，不做价值判断
+- 如果不确定某个字段，填 null 或空列表
+
+请只返回 JSON，不要有任何其他文字。"""
+        
+        try:
+            # 调用 LLM
+            response = self.llm.chat(prompt, model=self.model)
+            
+            # 提取响应内容
+            if hasattr(response, 'content'):
+                response_text = response.content
+            else:
+                response_text = str(response)
+            
+            # 解析 JSON
+            import re
+            cleaned = re.sub(r'```json\s*|\s*```', '', response_text).strip()
+            result = json.loads(cleaned)
+            
+            # 验证和补充默认值
+            if 'is_official_announcement' not in result:
+                result['is_official_announcement'] = False
+            if 'contract_amount' not in result:
+                result['contract_amount'] = None
+            if 'risk_warning' not in result:
+                result['risk_warning'] = False
+            if 'core_concepts' not in result:
+                result['core_concepts'] = []
+            if 'risk_keywords' not in result:
+                result['risk_keywords'] = []
+            if 'parties' not in result:
+                result['parties'] = []
+            
+            logger.info(f"V15 ETL 提取成功: 发现 {len(result['core_concepts'])} 个概念, 风险={result['risk_warning']}")
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"V15 ETL 提取失败: {e}")
+            # 降级到规则提取
+            return self._rule_based_extract(text)
+    
+    def _rule_based_extract(self, text: str) -> Dict[str, Any]:
+        """
+        规则提取（当 LLM 不可用时使用）
+        
+        Args:
+            text: 新闻文本内容
+        
+        Returns:
+            结构化信息字典
+        """
+        import re
+        
+        result = {
+            'is_official_announcement': False,
+            'contract_amount': None,
+            'risk_warning': False,
+            'core_concepts': [],
+            'risk_keywords': [],
+            'parties': []
+        }
+        
+        # 1. 判断是否为官方公告
+        official_keywords = ['公告', '公告编号', '董事会', '股东大会', '监事会', '独立董事']
+        if any(keyword in text for keyword in official_keywords):
+            result['is_official_announcement'] = True
+        
+        # 2. 提取合同金额
+        amount_patterns = [
+            r'(\d+(?:\.\d+)?)\s*亿元',
+            r'(\d+(?:\.\d+)?)\s*万',
+            r'合同金额[：:]\s*(\d+(?:\.\d+)?)',
+            r'中标金额[：:]\s*(\d+(?:\.\d+)?)'
+        ]
+        
+        for pattern in amount_patterns:
+            match = re.search(pattern, text)
+            if match:
+                amount = float(match.group(1))
+                if '万' in match.group(0):
+                    amount = amount / 10000  # 转换为亿元
+                result['contract_amount'] = amount
+                break
+        
+        # 3. 风险关键词检测
+        risk_keywords_list = [
+            '监管函', '立案', '警示', '处罚', '退市风险', 'ST', '*ST',
+            '违规', '造假', '内幕交易', '操纵市场', '虚假陈述'
+        ]
+        
+        found_risk_keywords = []
+        for keyword in risk_keywords_list:
+            if keyword in text:
+                found_risk_keywords.append(keyword)
+        
+        if found_risk_keywords:
+            result['risk_warning'] = True
+            result['risk_keywords'] = found_risk_keywords
+        
+        # 4. 核心概念提取（简化版）
+        # 这里可以扩展更多的概念关键词
+        concept_keywords = [
+            '低空经济', '固态电池', '人形机器人', 'AI芯片', 'CPO', '算力',
+            '华为', '小米', '苹果', '英伟达', '特斯拉',
+            '新能源', '光伏', '风电', '储能', '氢能',
+            '半导体', '集成电路', '芯片',
+            '生物医药', '疫苗', '创新药',
+            '数字经济', '云计算', '大数据', '区块链',
+            '元宇宙', '虚拟现实', '增强现实'
+        ]
+        
+        found_concepts = []
+        for concept in concept_keywords:
+            if concept in text:
+                found_concepts.append(concept)
+        
+        result['core_concepts'] = found_concepts
+        
+        logger.info(f"V15 规则提取: 发现 {len(found_concepts)} 个概念, 风险={result['risk_warning']}")
+        
+        return result
 
     def analyze_stock(self,
                      symbol: str,
