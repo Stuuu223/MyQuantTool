@@ -1031,9 +1031,11 @@ elif app_mode == "🔥 交易策略":
             multi_agent_analysis.render_multi_agent_analysis_tab(get_db_instance(), config)
     with t15:
         # 延迟导入智能新闻分析模块（新版：支持自主爬取和机器学习）
-        with st.spinner("正在加载智能新闻分析引擎..."):
-            smart_news_analysis = __import__('ui.smart_news_analysis', fromlist=['render_smart_news_analysis_tab'])
-            smart_news_analysis.render_smart_news_analysis_tab(get_db_instance(), config)
+        # ⚠️ 已归档：smart_news_analysis 模块已移至 archived 目录
+        # with st.spinner("正在加载智能新闻分析引擎..."):
+        #     smart_news_analysis = __import__('ui.smart_news_analysis', fromlist=['render_smart_news_analysis_tab'])
+        #     smart_news_analysis.render_smart_news_analysis_tab(get_db_instance(), config)
+        st.info("📝 智能新闻分析模块已归档，请使用其他新闻分析功能")
     with t16:
         # 延迟导入实时情绪感知系统模块
         with st.spinner("正在加载实时情绪感知引擎..."):

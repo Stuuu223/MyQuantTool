@@ -18,7 +18,7 @@ from typing import List, Dict, Tuple, Optional
 from pathlib import Path
 from collections import Counter
 from logic.data_manager import DataManager
-from logic.signal_generator import get_signal_generator_v13
+from logic.signal_generator import SignalGenerator
 from logic.signal_history import get_signal_history_manager
 from logic.logger import get_logger
 
@@ -38,7 +38,7 @@ class AutoReviewer:
             data_manager: 数据管理器实例
         """
         self.dm = data_manager or DataManager()
-        self.sg = get_signal_generator_v13()
+        self.sg = SignalGenerator()
         self.shm = get_signal_history_manager()
         
         # 创建案例存储目录
