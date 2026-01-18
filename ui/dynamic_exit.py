@@ -39,7 +39,7 @@ def render_dynamic_exit(data_manager=None):
     with st.sidebar:
         st.markdown("### ⚙️ 测试配置")
         
-        stock_code = st.text_input("股票代码", value="603056", help="例如：603056")
+        stock_code = st.text_input("股票代码", value="603056", help="例如：603056", key="dynamic_exit_stock_code")
         
         # 模拟数据输入
         st.markdown("#### 📊 持仓数据")

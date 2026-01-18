@@ -39,7 +39,7 @@ def render_lhb_counter(data_manager=None):
     with st.sidebar:
         st.markdown("### ⚙️ 测试配置")
         
-        stock_code = st.text_input("股票代码", value="600000", help="例如：600000")
+        stock_code = st.text_input("股票代码", value="600000", help="例如：600000", key="lhb_counter_stock_code")
         
         # 模拟数据输入
         st.markdown("#### 📊 模拟数据")

@@ -28,7 +28,7 @@ def render_auction_prediction_tab(db: DataManager, config):
         
         # 股票输入
         st.subheader("📊 竞价分析")
-        stock_code = st.text_input("股票代码", value="600000", help="输入股票代码")
+        stock_code = st.text_input("股票代码", value="600000", help="输入股票代码", key="auction_prediction_stock_code")
         
         # 竞价数据输入
         st.subheader("📈 竞价数据")

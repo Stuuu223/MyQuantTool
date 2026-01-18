@@ -40,7 +40,7 @@ def render_market_commander(data_manager=None):
     with st.sidebar:
         st.markdown("### ⚙️ 测试配置")
         
-        stock_code = st.text_input("股票代码", value="603056", help="例如：603056")
+        stock_code = st.text_input("股票代码", value="603056", help="例如：603056", key="market_commander_stock_code")
         
         # 模拟数据输入
         st.markdown("#### 📊 个股数据")

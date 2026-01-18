@@ -176,7 +176,7 @@ def show_trading_execution_page(broker_api, slippage_model):
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            symbol = st.text_input("股票代码", "000001")
+            symbol = st.text_input("股票代码", "000001", key="main_dashboard_symbol")
             side = st.selectbox("交易方向", ["买入", "卖出"])
         
         with col2:

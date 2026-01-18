@@ -94,7 +94,7 @@ def render_ai_agent_lite_tab(db, config):
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        symbol = st.text_input("股票代码", value="000001", placeholder="例如: 000001")
+        symbol = st.text_input("股票代码", value="000001", placeholder="例如: 000001", key="ai_agent_lite_symbol")
 
     with col2:
         current_price = st.number_input("当前价格", value=10.50, min_value=0.0, step=0.01)

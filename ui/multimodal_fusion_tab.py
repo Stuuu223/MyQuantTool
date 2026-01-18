@@ -29,7 +29,7 @@ def render_multimodal_fusion_tab(db: DataManager, config):
         
         # 股票输入
         st.subheader("📊 股票分析")
-        stock_code = st.text_input("股票代码", value="600000", help="输入股票代码")
+        stock_code = st.text_input("股票代码", value="600000", help="输入股票代码", key="multimodal_fusion_stock_code")
         
         # 文本输入
         st.subheader("📝 文本输入")
