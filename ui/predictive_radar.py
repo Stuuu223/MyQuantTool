@@ -246,9 +246,11 @@ def render_predictive_radar(data_manager=None):
 
     try:
         # 从 DB 读取最近 20 天的高度数据
-        history = data_manager.sqlite_query(
+        cursor = data_manager.conn.cursor()
+        cursor.execute(
             "SELECT date, highest_board, top_sectors FROM market_summary ORDER BY date DESC LIMIT 20"
         )
+        history = cursor.fetchall()
 
         if history and len(history) > 1:
             # 转换为 DataFrame

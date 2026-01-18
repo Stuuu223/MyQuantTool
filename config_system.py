@@ -338,6 +338,52 @@ class Config:
             config = config[k]
         
         config[keys[-1]] = value
+    
+    def get_watchlist(self):
+        """
+        获取监控池（自选股）列表
+        
+        Returns:
+            list: 股票代码列表
+        """
+        return self.get('watchlist', [])
+    
+    def set_watchlist(self, watchlist):
+        """
+        设置监控池（自选股）列表
+        
+        Args:
+            watchlist: 股票代码列表
+        
+        Returns:
+            bool: 是否成功
+        """
+        try:
+            import json
+            import os
+            
+            # 更新内存中的配置
+            self.set('watchlist', watchlist)
+            
+            # 保存到配置文件
+            config_path = 'config.json'
+            if os.path.exists(config_path):
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    config_data = json.load(f)
+            else:
+                config_data = {}
+            
+            # 更新配置
+            config_data['watchlist'] = watchlist
+            
+            # 保存到文件
+            with open(config_path, 'w', encoding='utf-8') as f:
+                json.dump(config_data, f, ensure_ascii=False, indent=2)
+            
+            return True
+        except Exception as e:
+            print(f"⚠️ 设置监控池失败: {e}")
+            return False
 
 
 # 创建全局配置实例
