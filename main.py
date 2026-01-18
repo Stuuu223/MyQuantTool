@@ -1051,9 +1051,11 @@ elif app_mode == "🔥 交易策略":
             realtime_sentiment_tab.render_realtime_sentiment_tab(get_db_instance(), config)
     with t17:
         # 延迟导入龙头识别与跟踪系统模块
-        with st.spinner("正在加载龙头识别跟踪引擎..."):
-            dragon_tracking_tab = __import__('ui.dragon_tracking_tab', fromlist=['render_dragon_tracking_tab'])
-            dragon_tracking_tab.render_dragon_tracking_tab(get_db_instance(), config)
+        # ⚠️ 已归档：dragon_tracking_tab 模块已移至 archived 目录
+        # with st.spinner("正在加载龙头识别跟踪引擎..."):
+        #     dragon_tracking_tab = __import__('ui.dragon_tracking_tab', fromlist=['render_dragon_tracking_tab'])
+        #     dragon_tracking_tab.render_dragon_tracking_tab(get_db_instance(), config)
+        st.info("📝 龙头识别跟踪模块已归档，请使用其他龙头分析功能")
     with t18:
         # 延迟导入集合竞价预测系统模块
         with st.spinner("正在加载竞价预测引擎..."):
