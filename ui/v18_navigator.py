@@ -29,6 +29,75 @@ def render_navigator_panel():
         db = DataManager()
         analyzer = FastSectorAnalyzer(db)
         
+        # 🚀 V18.1 Turbo Boost 性能监控面板
+        with st.expander("🚀 V18.1 Turbo Boost 性能监控", expanded=False):
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                # 后台刷新状态
+                refresh_status = "🟢 运行中" if analyzer._auto_refresh_running else "🔴 已停止"
+                st.metric("后台刷新", refresh_status)
+            
+            with col2:
+                # 降级模式状态
+                fallback_status = "🟢 正常模式" if not analyzer._fallback_mode else "🟡 降级模式"
+                st.metric("接口状态", fallback_status)
+            
+            with col3:
+                # 映射表大小
+                map_size = len(analyzer._stock_sector_map)
+                st.metric("映射表大小", f"{map_size} 只股票")
+            
+            with col4:
+                # 静态映射表状态
+                static_map_status = "🟢 已加载" if analyzer._static_map_loaded else "🟡 未加载"
+                st.metric("静态映射表", static_map_status)
+            
+            # 详细信息
+            st.markdown("---")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # 缓存状态
+                cache_age = 0
+                if analyzer._akshare_cache_timestamp:
+                    from datetime import datetime
+                    cache_age = (datetime.now() - analyzer._akshare_cache_timestamp).total_seconds()
+                st.info(f"⏱️ 缓存时间: {cache_age:.0f} 秒")
+            
+            with col2:
+                # 映射表统计
+                if analyzer._static_map_loaded:
+                    stocks_with_industry = sum(1 for s in analyzer._stock_sector_map.values() if s.get('industry') != '未知')
+                    stocks_with_concepts = sum(1 for s in analyzer._stock_sector_map.values() if s.get('concepts'))
+                    st.info(f"📊 映射表统计: {stocks_with_industry} 只有行业, {stocks_with_concepts} 只有概念")
+                else:
+                    st.warning("⚠️ 静态映射表未加载，请运行 tools/generate_static_map.py")
+            
+            # 性能开关
+            st.markdown("---")
+            st.subheader("⚙️ 性能设置")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                if 'enable_v18' not in st.session_state:
+                    st.session_state.enable_v18 = True
+                
+                enable_v18 = st.checkbox(
+                    "启用 V18 板块共振",
+                    value=st.session_state.enable_v18,
+                    key="enable_v18_toggle"
+                )
+                st.session_state.enable_v18 = enable_v18
+            
+            with col2:
+                if st.button("🔄 手动刷新缓存"):
+                    analyzer._auto_refresh_data()
+                    st.success("✅ 缓存刷新完成！")
+                    st.rerun()
+        
         # 刷新数据按钮
         col1, col2, col3 = st.columns([2, 1, 1])
         
