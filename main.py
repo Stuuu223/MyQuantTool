@@ -1118,10 +1118,8 @@ elif app_mode == "🧪 量化回测":
             backtest.render_backtest_tab(get_db_instance(), config)
 
     with t2:
-        # 延迟导入高级回测模块
-        with st.spinner("正在加载高级回测引擎..."):
-            advanced_backtest = __import__('ui.advanced_backtest', fromlist=['render_advanced_backtest_tab'])
-            advanced_backtest.render_advanced_backtest_tab(get_db_instance(), config)
+        # 高级回测模块已归档
+        st.info("📝 高级回测模块已归档，请使用策略回测功能")
 
     with t3:
         # 延迟导入 LSTM 预测模块
@@ -1237,10 +1235,8 @@ elif app_mode == "🧪 量化回测":
             backtest = __import__('ui.backtest', fromlist=['render_backtest_tab'])
             backtest.render_backtest_tab(get_db_instance(), config)
     with t2:
-        # 延迟导入高级回测模块
-        with st.spinner("正在加载高级回测引擎..."):
-            advanced_backtest = __import__('ui.advanced_backtest', fromlist=['render_advanced_backtest_tab'])
-            advanced_backtest.render_advanced_backtest_tab(get_db_instance(), config)
+        # 高级回测模块已归档
+        st.info("📝 高级回测模块已归档，请使用策略回测功能")
     with t3:
         # 延迟导入参数优化模块
         with st.spinner("正在加载参数优化引擎..."):
