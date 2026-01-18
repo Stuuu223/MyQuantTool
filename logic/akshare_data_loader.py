@@ -596,6 +596,199 @@ class AKShareDataLoader:
         except Exception as e:
             logger.error(f"获取北向资金数据失败: {e}")
             return {}
+    
+    # ============================================================================
+    # V16.3: 减持公告 API
+    # ============================================================================
+    
+    @staticmethod
+    def get_share_hold_decrease(stock_code: str = None, days: int = 90) -> pd.DataFrame:
+        """
+        获取股东减持公告数据
+        
+        Args:
+            stock_code (str): 股票代码，如果为 None 则获取所有股票
+            days (int): 查询天数，默认 90 天
+        
+        Returns:
+            pd.DataFrame: 减持公告数据
+                - 股票代码
+                - 股票名称
+                - 公告日期
+                - 减持人名称
+                - 减持比例 (%)
+                - 减持价格区间
+                - 减持数量 (万股)
+                - 减持方式
+                - 减持状态
+        """
+        try:
+            # 注意：AkShare 没有 stock_share_hold_decrease_em 接口
+            # 使用 stock_shareholder_change_ths 接口获取股东持股变动
+            # 如果 stock_code 为 None，返回空 DataFrame
+            if not stock_code:
+                logger.info("未提供股票代码，返回空数据")
+                return pd.DataFrame()
+            
+            # 获取股东持股变动
+            df = ak.stock_shareholder_change_ths(symbol=stock_code)
+            
+            if df.empty:
+                logger.info(f"未找到 {stock_code} 的股东持股变动数据")
+                return pd.DataFrame()
+            
+            # 筛选减持记录（持股数量减少的记录）
+            # 假设 DataFrame 中有 '变动数量' 或类似字段
+            # 根据实际返回的数据结构进行调整
+            decrease_df = df.copy()
+            
+            # 添加股票代码列
+            decrease_df['股票代码'] = stock_code
+            
+            logger.info(f"成功获取 {stock_code} 股东持股变动数据，共 {len(decrease_df)} 条记录")
+            return decrease_df
+            
+        except Exception as e:
+            logger.error(f"获取股东持股变动数据失败: {e}")
+            return pd.DataFrame()
+    
+    @staticmethod
+    def get_insider_selling_risk(stock_code: str, days: int = 90) -> Dict[str, Any]:
+        """
+        获取内部人减持风险分析
+        
+        Args:
+            stock_code (str): 股票代码
+            days (int): 查询天数，默认 90 天
+        
+        Returns:
+            Dict: 内部人减持风险分析
+                - has_risk (bool): 是否存在风险
+                - risk_level (str): 风险等级 (LOW, MEDIUM, HIGH)
+                - total_decrease_ratio (float): 总减持比例 (%)
+                - total_decrease_value (float): 总减持金额（万元）
+                - decrease_records (list): 减持记录列表
+                - reason (str): 风险原因
+        """
+        try:
+            # 获取减持公告数据
+            df = AKShareDataLoader.get_share_hold_decrease(stock_code, days)
+            
+            if df.empty:
+                return {
+                    'has_risk': False,
+                    'risk_level': 'LOW',
+                    'total_decrease_ratio': 0.0,
+                    'total_decrease_value': 0.0,
+                    'decrease_records': [],
+                    'reason': '未发现减持公告'
+                }
+            
+            # 分析减持记录
+            total_decrease_ratio = 0.0
+            total_decrease_value = 0.0
+            decrease_records = []
+            
+            for _, row in df.iterrows():
+                # 提取减持比例
+                decrease_ratio = 0.0
+                try:
+                    ratio_str = str(row.get('减持比例', '0'))
+                    # 提取数字（可能包含 % 符号）
+                    import re
+                    ratio_match = re.search(r'([\d.]+)', ratio_str)
+                    if ratio_match:
+                        decrease_ratio = float(ratio_match.group(1))
+                except:
+                    pass
+                
+                # 提取减持数量
+                decrease_amount = 0.0
+                try:
+                    amount_str = str(row.get('减持数量', '0'))
+                    # 提取数字（可能包含单位）
+                    import re
+                    amount_match = re.search(r'([\d.]+)', amount_str)
+                    if amount_match:
+                        decrease_amount = float(amount_match.group(1))
+                except:
+                    pass
+                
+                # 计算减持金额（估算）
+                # 假设平均价格为减持价格区间的中位数
+                decrease_price = 0.0
+                try:
+                    price_str = str(row.get('减持价格区间', '0'))
+                    import re
+                    price_matches = re.findall(r'([\d.]+)', price_str)
+                    if price_matches:
+                        if len(price_matches) == 1:
+                            decrease_price = float(price_matches[0])
+                        else:
+                            # 取价格区间的平均值
+                            decrease_price = (float(price_matches[0]) + float(price_matches[1])) / 2
+                except:
+                    pass
+                
+                decrease_value = decrease_amount * decrease_price  # 单位：万元
+                
+                # 累计
+                total_decrease_ratio += decrease_ratio
+                total_decrease_value += decrease_value
+                
+                # 记录
+                decrease_records.append({
+                    '公告日期': row.get('公告日期', ''),
+                    '减持人': row.get('减持人名称', ''),
+                    '减持比例': decrease_ratio,
+                    '减持数量': decrease_amount,
+                    '减持价格': decrease_price,
+                    '减持金额': decrease_value,
+                    '减持方式': row.get('减持方式', ''),
+                    '减持状态': row.get('减持状态', '')
+                })
+            
+            # 判断风险等级
+            risk_level = 'LOW'
+            has_risk = False
+            reason = ''
+            
+            # 风险判定标准
+            # 1. 总减持比例 > 2% 或 总减持金额 > 1亿：高危
+            if total_decrease_ratio > 2.0 or total_decrease_value > 10000:
+                risk_level = 'HIGH'
+                has_risk = True
+                reason = f"⚠️ [内部人风险] 大股东拟减持 {total_decrease_ratio:.2f}%，套现约 {total_decrease_value:.0f} 万元"
+            # 2. 总减持比例 > 1% 或 总减持金额 > 5000万：中危
+            elif total_decrease_ratio > 1.0 or total_decrease_value > 5000:
+                risk_level = 'MEDIUM'
+                has_risk = True
+                reason = f"⚡ [内部人警示] 股东拟减持 {total_decrease_ratio:.2f}%，套现约 {total_decrease_value:.0f} 万元"
+            # 3. 有减持记录但金额较小：低危
+            elif len(decrease_records) > 0:
+                risk_level = 'LOW'
+                has_risk = False
+                reason = f"ℹ️ [内部人关注] 有减持公告，但规模较小 ({total_decrease_ratio:.2f}%, {total_decrease_value:.0f} 万元)"
+            
+            return {
+                'has_risk': has_risk,
+                'risk_level': risk_level,
+                'total_decrease_ratio': total_decrease_ratio,
+                'total_decrease_value': total_decrease_value,
+                'decrease_records': decrease_records,
+                'reason': reason
+            }
+            
+        except Exception as e:
+            logger.error(f"获取内部人减持风险分析失败: {e}")
+            return {
+                'has_risk': False,
+                'risk_level': 'LOW',
+                'total_decrease_ratio': 0.0,
+                'total_decrease_value': 0.0,
+                'decrease_records': [],
+                'reason': f'获取减持数据失败: {e}'
+            }
 
 
 if __name__ == "__main__":

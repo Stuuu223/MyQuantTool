@@ -313,6 +313,94 @@ class IronRuleMonitor:
         # 这里需要从自选股或监控列表中获取
         # 暂时返回空列表
         return []
+    
+    # ============================================================================
+    # V16.3: 内部人防御盾 (Insider Shield)
+    # ============================================================================
+    
+    def check_insider_selling(self, stock_code: str, days: int = 90) -> Dict:
+        """
+        检查内部人减持风险
+        
+        Args:
+            stock_code: 股票代码
+            days: 查询天数，默认 90 天
+        
+        Returns:
+            dict: {
+                'has_risk': bool,  # 是否存在风险
+                'risk_level': str,  # 风险等级 (LOW, MEDIUM, HIGH)
+                'total_decrease_ratio': float,  # 总减持比例 (%)
+                'total_decrease_value': float,  # 总减持金额（万元）
+                'decrease_records': list,  # 减持记录列表
+                'reason': str  # 风险原因
+            }
+        """
+        try:
+            from logic.akshare_data_loader import AKShareDataLoader
+            
+            # 获取内部人减持风险分析
+            risk_data = AKShareDataLoader.get_insider_selling_risk(stock_code, days)
+            
+            # 记录监控历史
+            if risk_data['has_risk']:
+                logger.warning(f"⚠️ [内部人风险] {stock_code} {risk_data['reason']}")
+            else:
+                logger.info(f"✅ [内部人安全] {stock_code} {risk_data['reason']}")
+            
+            return risk_data
+            
+        except Exception as e:
+            logger.error(f"检查内部人减持风险失败: {e}")
+            return {
+                'has_risk': False,
+                'risk_level': 'LOW',
+                'total_decrease_ratio': 0.0,
+                'total_decrease_value': 0.0,
+                'decrease_records': [],
+                'reason': f'检查失败: {e}'
+            }
+    
+    def get_insider_risk_summary(self, stock_codes: List[str], days: int = 90) -> Dict:
+        """
+        获取多只股票的内部人风险摘要
+        
+        Args:
+            stock_codes: 股票代码列表
+            days: 查询天数，默认 90 天
+        
+        Returns:
+            dict: {
+                'total_stocks': int,  # 总股票数
+                'high_risk_stocks': list,  # 高风险股票列表
+                'medium_risk_stocks': list,  # 中风险股票列表
+                'low_risk_stocks': list,  # 低风险股票列表
+                'risk_details': dict  # 详细风险信息
+            }
+        """
+        summary = {
+            'total_stocks': len(stock_codes),
+            'high_risk_stocks': [],
+            'medium_risk_stocks': [],
+            'low_risk_stocks': [],
+            'risk_details': {}
+        }
+        
+        for stock_code in stock_codes:
+            risk_data = self.check_insider_selling(stock_code, days)
+            
+            # 分类
+            if risk_data['risk_level'] == 'HIGH':
+                summary['high_risk_stocks'].append(stock_code)
+            elif risk_data['risk_level'] == 'MEDIUM':
+                summary['medium_risk_stocks'].append(stock_code)
+            else:
+                summary['low_risk_stocks'].append(stock_code)
+            
+            # 记录详细信息
+            summary['risk_details'][stock_code] = risk_data
+        
+        return summary
 
 
 # 单例测试

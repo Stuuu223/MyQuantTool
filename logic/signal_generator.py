@@ -111,6 +111,32 @@ class SignalGenerator:
             # 继续执行后续逻辑，但会在最终评分时乘以 0.5
         
         # =========================================================
+        # 0.5 [V16.3] 内部人防御盾 (Insider Shield) - 防止被内部人收割
+        # =========================================================
+        try:
+            from logic.iron_rule_monitor import IronRuleMonitor
+            
+            iron_monitor = IronRuleMonitor()
+            insider_risk = iron_monitor.check_insider_selling(stock_code, days=90)
+            
+            # 如果存在内部人减持风险，强制一票否决
+            if insider_risk['has_risk']:
+                reason = f"🚫 [内部人熔断] {insider_risk['reason']}，拒绝接盘"
+                logger.warning(f"{stock_code} {reason}")
+                return {
+                    "signal": "WAIT", 
+                    "score": 0, 
+                    "reason": reason, 
+                    "risk": "HIGH",
+                    "insider_risk": insider_risk,
+                    "market_sentiment_score": market_sentiment_score,
+                    "market_status": market_status
+                }
+        except Exception as e:
+            logger.warning(f"⚠️ [内部人检查失败] {stock_code} {e}")
+            # 检查失败不影响其他逻辑，继续执行
+        
+        # =========================================================
         # 1. [V14.2] 涨停豁免权 (Limit Up Immunity) - 最高优先级
         # =========================================================
         is_limit_up = False
