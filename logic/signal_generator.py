@@ -184,6 +184,75 @@ class SignalGenerator:
             # 检查失败不影响其他逻辑，继续执行
         
         # =========================================================
+        # 0.7 [V18] 全维板块共振 (The Navigator) - 完整旗舰版
+        # =========================================================
+        sector_modifier = 1.0
+        sector_reason = ""
+        sector_info = {}
+        resonance_score = 0.0
+        resonance_details = []
+        
+        try:
+            from logic.sector_analysis import FastSectorAnalyzer
+            from logic.data_manager import DataManager
+            
+            # 获取板块分析器
+            db = DataManager()
+            sector_analyzer = FastSectorAnalyzer(db)
+            
+            # 获取股票名称（用于龙头匹配）
+            try:
+                realtime_data = db.get_realtime_data(stock_code)
+                stock_name = realtime_data.get('name', '') if realtime_data else ''
+            except:
+                stock_name = ''
+            
+            # 全维共振分析（行业 + 概念 + 资金热度 + 龙头溯源）
+            full_resonance = sector_analyzer.check_stock_full_resonance(stock_code, stock_name)
+            
+            resonance_score = full_resonance.get('resonance_score', 0.0)
+            resonance_details = full_resonance.get('resonance_details', [])
+            is_leader = full_resonance.get('is_leader', False)
+            is_follower = full_resonance.get('is_follower', False)
+            
+            # 兼容旧版接口
+            sector_info = sector_analyzer.check_sector_status(stock_code)
+            sector_modifier = sector_info.get('modifier', 1.0)
+            
+            # 根据共振评分调整 AI 分数
+            if resonance_score > 0:
+                # 共振加分
+                ai_score += resonance_score
+                logger.info(f"{stock_code} 🚀 [板块共振] +{resonance_score:.1f}分: {resonance_details}")
+                
+                # 如果是龙头，给予额外权重加成
+                if is_leader:
+                    ai_score *= 1.2
+                    logger.info(f"{stock_code} 👑 [龙头溢价] AI 分数 × 1.2")
+                
+                # 如果是跟风股，适当降权
+                elif is_follower:
+                    ai_score *= 0.9
+                    logger.info(f"{stock_code} 📈 [跟风股] AI 分数 × 0.9")
+            
+            elif resonance_score < 0:
+                # 逆风减分
+                ai_score += resonance_score  # resonance_score 是负数
+                logger.warning(f"{stock_code} ⚠️ [板块逆风] {resonance_score:.1f}分: {resonance_details}")
+            
+            # 构建板块共振原因
+            if resonance_details:
+                sector_reason = " | ".join(resonance_details)
+            else:
+                sector_reason = sector_info.get('reason', '')
+            
+        except Exception as e:
+            logger.warning(f"⚠️ [板块共振检查失败] {stock_code} {e}")
+            import traceback
+            traceback.print_exc()
+            # 检查失败不影响其他逻辑，继续执行
+        
+        # =========================================================
         # 1. [V14.2] 涨停豁免权 (Limit Up Immunity) - 最高优先级
         # =========================================================
         is_limit_up = False
@@ -301,6 +370,7 @@ class SignalGenerator:
         
         # 基础分：AI (逻辑)
         # 修正分：DDE (资金)
+        # 板块修正：Sector Resonance (V18)
         
         # 如果非涨停，且资金流出 (背离识别)
         if capital_flow < 0 and trend == 'UP':
@@ -313,6 +383,16 @@ class SignalGenerator:
                 reason = lhb_msg
             elif capital_flow > 0:
                 reason = "✅ [共振] 逻辑+资金双强"
+        
+        # [V18] 应用板块共振修正
+        final_score = final_score * sector_modifier
+        
+        # 如果板块共振有特殊理由，添加到 reason 中
+        if sector_reason and sector_modifier != 1.0:
+            if reason:
+                reason = f"{reason} | {sector_reason}"
+            else:
+                reason = sector_reason
         
         # =========================================================
         # 5. [V16] 环境调整 (Market Adjustment)
@@ -366,7 +446,8 @@ class SignalGenerator:
             "reason": reason, 
             "risk": risk_level,
             "market_sentiment_score": market_sentiment_score,
-            "market_status": market_status
+            "market_status": market_status,
+            "sector_info": sector_info  # V18: 板块共振信息
         }
     
     def get_trend_status(self, df, window=20):

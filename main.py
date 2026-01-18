@@ -711,6 +711,43 @@ with st.sidebar:
     )
     st.markdown("---")
 
+    # V18 领航员面板
+    with st.expander("🧭 [V18] 领航员 - 全维板块共振", expanded=False):
+        try:
+            from ui.v18_navigator import render_sector_resonance_indicator
+            from logic.sector_analysis import FastSectorAnalyzer
+            from logic.data_manager import DataManager
+            
+            # 获取当前股票的板块共振信息
+            if 'selected_stock' in st.session_state and st.session_state.selected_stock:
+                db = DataManager()
+                analyzer = FastSectorAnalyzer(db)
+                
+                # 获取股票名称
+                try:
+                    realtime_data = db.get_realtime_data(st.session_state.selected_stock)
+                    stock_name = realtime_data.get('name', '') if realtime_data else ''
+                except:
+                    stock_name = ''
+                
+                # 全维共振分析
+                full_resonance = analyzer.check_stock_full_resonance(
+                    st.session_state.selected_stock, 
+                    stock_name
+                )
+                
+                # 渲染板块共振指示器
+                render_sector_resonance_indicator(
+                    st.session_state.selected_stock, 
+                    full_resonance
+                )
+            else:
+                st.info("请先选择股票")
+        except Exception as e:
+            st.error(f"V18 领航员加载失败: {str(e)}")
+    
+    st.markdown("---")
+
     # 控制台
     st.header("🎮 控制台")
     
