@@ -1321,18 +1321,22 @@ elif app_mode == "💰 资产管理":
             smart_recommend.render_smart_recommend_tab(get_db_instance(), config)
     with t4:
         # 延迟导入实时监控模块
-        with st.spinner("正在加载实时监控系统..."):
-            live_monitoring = __import__('ui.live_monitoring', fromlist=['render_live_monitoring_tab'])
-            live_monitoring.render_live_monitoring_tab(get_db_instance(), config)
+        # ⚠️ 已废弃：live_monitoring 模块依赖不存在的 risk_monitor
+        # with st.spinner("正在加载实时监控系统..."):
+        #     live_monitoring = __import__('ui.live_monitoring', fromlist=['render_live_monitoring_tab'])
+        #     live_monitoring.render_live_monitoring_tab(get_db_instance(), config)
+        st.info("📝 实时监控模块已废弃，请使用其他监控功能")
 
 elif app_mode == "⚙️ 系统工具":
     # 系统工具模块
     t1, t2, t3, t4 = st.tabs(["⚡ 性能优化", "⚙️ 系统设置", "📜 历史记录", "🔍 数据监控"])
     with t1:
         # 延迟导入性能优化模块
-        with st.spinner("正在加载性能优化工具..."):
-            performance_optimizer = __import__('ui.performance_optimizer', fromlist=['render_performance_optimizer_tab'])
-            performance_optimizer.render_performance_optimizer_tab(get_db_instance(), config)
+        # ⚠️ 已归档：performance_optimizer 模块已移至 archived 目录
+        # with st.spinner("正在加载性能优化工具..."):
+        #     performance_optimizer = __import__('ui.performance_optimizer', fromlist=['render_performance_optimizer_tab'])
+        #     performance_optimizer.render_performance_optimizer_tab(get_db_instance(), config)
+        st.info("📝 性能优化模块已归档，请使用其他性能监控功能")
     with t2:
         # 延迟导入系统设置模块
         with st.spinner("正在加载系统设置引擎..."):

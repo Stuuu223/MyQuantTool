@@ -10,7 +10,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime
 from logic.ai_agent import RealAIAgent
-from logic.signal_generator import get_signal_generator_v13
+from logic.signal_generator import SignalGenerator
 from logic.logger import get_logger
 
 logger = get_logger(__name__)
@@ -122,16 +122,14 @@ def render_ai_demotion(data_manager=None):
                     ai_extracted_info = ai_agent.extract_structured_info(news_text)
                     
                     # 2. V15 决策
-                    sg = get_signal_generator_v13()
+                    sg = SignalGenerator()
                     result_v15 = sg.calculate_final_signal(
                         stock_code=stock_code,
-                        ai_narrative_score=50,  # V15: AI 评分不再重要
-                        capital_flow_data=capital_flow * 10000,  # 转换为元
-                        trend_status=trend_status,
+                        ai_score=50,  # V15: AI 评分不再重要
+                        capital_flow=capital_flow * 10000,  # 转换为元
+                        trend=trend_status,
                         circulating_market_cap=circulating_market_cap * 100000000,  # 转换为元
-                        current_pct_change=current_pct_change,
-                        ai_extracted_info=ai_extracted_info,
-                        top_sectors=top_sectors
+                        current_pct_change=current_pct_change
                     )
                     
                     # 3. V14 对比（模拟）

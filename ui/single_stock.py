@@ -301,10 +301,10 @@ def render_single_stock_tab(db: DataManager, config: Config):
         st.markdown("### 🎯 [V13.1 Reality Priority] 事实一票否决制")
         
         try:
-            from logic.signal_generator import SignalGenerator, get_signal_generator_v13
+            from logic.signal_generator import SignalGenerator
             
             # 获取V13.1信号生成器实例
-            signal_gen = get_signal_generator_v13()
+            signal_gen = SignalGenerator()
             
             # 获取资金流向和流通市值
             capital_flow, market_cap = signal_gen.get_capital_flow(symbol, db)
