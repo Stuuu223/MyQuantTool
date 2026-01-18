@@ -149,9 +149,9 @@ class SignalGenerator:
             
             # 构建实时数据字典（使用真实数据）
             real_time_data = {
-                'turnover': real_time_data_full.get('turnover', 0) if real_time_data_full else 0,  # 真实换手率
-                'pct_chg': real_time_data_full.get('pct_chg', current_pct_change) if real_time_data_full else current_pct_change,  # 真实涨幅
-                'amount': real_time_data_full.get('amount', 0) if real_time_data_full else 0,  # 真实成交额
+                'turnover': real_time_data_full.get('turnover_rate', 0) if real_time_data_full else 0,  # 真实换手率（%）
+                'pct_chg': real_time_data_full.get('change_percent', current_pct_change) if real_time_data_full else current_pct_change,  # 真实涨幅（%）
+                'amount': real_time_data_full.get('volume', 0) * real_time_data_full.get('price', 0) if real_time_data_full else 0,  # 真实成交额（估算）
                 'volume': real_time_data_full.get('volume', 0) if real_time_data_full else 0,  # 真实成交量
                 'price': real_time_data_full.get('price', 0) if real_time_data_full else 0  # 真实价格
             }
@@ -337,6 +337,27 @@ class SignalGenerator:
             signal = "BUY"
         else:
             signal = "WAIT"
+        
+        # =========================================================
+        # 7. [V17] 时间策略 (Time-Lord) - 分时段策略
+        # =========================================================
+        try:
+            from logic.time_strategy_manager import get_time_strategy_manager
+            
+            time_manager = get_time_strategy_manager()
+            filtered_signal, time_reason = time_manager.should_filter_signal(signal)
+            
+            if time_reason:
+                # 时间策略过滤了信号
+                reason = f"{reason} | {time_reason}"
+                logger.info(f"{stock_code} {time_reason}")
+                signal = filtered_signal
+                
+                # 如果被过滤为 WAIT，将评分设为 0
+                if signal == "WAIT":
+                    final_score = 0
+        except Exception as e:
+            logger.warning(f"⚠️ [时间策略检查失败] {stock_code} {e}")
 
         return {
             "signal": signal, 

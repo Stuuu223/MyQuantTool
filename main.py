@@ -955,6 +955,14 @@ if app_mode == "📈 市场分析":
         with st.spinner("正在加载生态看门人引擎..."):
             ecological_watchdog = __import__('ui.v16_3_ecological_watchdog', fromlist=['render_ecological_watchdog'])
             ecological_watchdog.render_ecological_watchdog(get_db_instance())
+        
+        st.markdown("---")
+        st.markdown("### ⏰ V17 Time-Lord (时间领主)")
+        st.caption("分时段策略：黄金半小时、垃圾时间、尾盘偷袭")
+        
+        with st.spinner("正在加载时间领主引擎..."):
+            time_lord = __import__('ui.v17_time_lord', fromlist=['render_time_lord_panel'])
+            time_lord.render_time_lord_panel()
 
 elif app_mode == "🔥 交易策略":
     # 交易策略模块

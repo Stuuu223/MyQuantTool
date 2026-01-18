@@ -473,9 +473,14 @@ class IronRuleMonitor:
                 }
             
             # 提取关键数据
-            current_turnover = real_time_data.get('turnover', 0)  # 当前换手率 (%)
+            current_turnover = real_time_data.get('turnover', 0)  # 当前换手率
             current_pct_change = real_time_data.get('pct_chg', 0)  # 涨跌幅 (%)
             current_amount = real_time_data.get('amount', 0)  # 成交额（元）
+            
+            # V16.3 优化：检查 turnover 单位，如果小于 1 则认为是小数形式，需要乘 100
+            if current_turnover > 0 and current_turnover < 1:
+                logger.warning(f"⚠️ [单位检查] {stock_code} turnover 值为 {current_turnover}，疑似小数形式，自动转换为百分比")
+                current_turnover = current_turnover * 100
             
             # =========================================================
             # 检测 1: 换手率背离 (Turnover Divergence)
