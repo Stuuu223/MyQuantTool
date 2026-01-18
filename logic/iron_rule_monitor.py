@@ -41,6 +41,10 @@ class IronRuleMonitor:
         self.news_crawler = NewsCrawler()
         self.data_manager = DataManager()
         
+        # V16.3 新增：缓存机制（优化性能）
+        self._turnover_cache = {}  # 换手率缓存 {stock_code: {'avg_turnover': float, 'timestamp': datetime}}
+        self._cache_ttl = 3600  # 缓存有效期（秒），1小时
+        
     def get_stock_iron_status(self, code: str) -> Dict:
         """
         获取单只股票的铁律状态
@@ -402,6 +406,31 @@ class IronRuleMonitor:
         
         return summary
     
+    def _get_avg_turnover(self, stock_code: str, days: int = 20) -> float:
+        """
+        获取过去 N 天的平均换手率（带缓存支持）
+        
+        Args:
+            stock_code: 股票代码
+            days: 查询天数，默认 20 天
+        
+        Returns:
+            float: 平均换手率（%）
+        """
+        try:
+            # 获取过去 N 天的 K 线数据
+            df = self.data_manager.get_stock_daily(stock_code, period='daily', count=days)
+            
+            if df is not None and len(df) >= 5:
+                # 计算平均换手率
+                avg_turnover = df['turnover'].mean()
+                return avg_turnover
+            else:
+                return 0.0
+        except Exception as e:
+            logger.warning(f"⚠️ [获取平均换手率失败] {stock_code} {e}")
+            return 0.0
+    
     # ============================================================================
     # V16.3: 生态看门人 (Ecological Watchdog) - 识别"德不配位"的流动性异常
     # ============================================================================
@@ -455,23 +484,42 @@ class IronRuleMonitor:
             turnover_ratio = 0.0
             
             try:
-                # 获取过去 20 天的 K 线数据
-                df = self.data_manager.get_stock_daily(stock_code, period='daily', count=20)
+                # V16.3 优化：使用缓存机制
+                current_time = datetime.now()
+                cache_key = stock_code
                 
-                if df is not None and len(df) >= 5:
-                    # 计算平均换手率
-                    avg_turnover = df['turnover'].mean()
+                # 检查缓存
+                if cache_key in self._turnover_cache:
+                    cached_data = self._turnover_cache[cache_key]
+                    # 检查缓存是否过期
+                    if (current_time - cached_data['timestamp']).total_seconds() < self._cache_ttl:
+                        avg_turnover = cached_data['avg_turnover']
+                        logger.debug(f"✅ [缓存命中] {stock_code} 平均换手率: {avg_turnover:.2f}%")
+                    else:
+                        # 缓存过期，重新获取
+                        logger.debug(f"⏰ [缓存过期] {stock_code} 重新获取平均换手率")
+                        avg_turnover = self._get_avg_turnover(stock_code)
+                        self._turnover_cache[cache_key] = {
+                            'avg_turnover': avg_turnover,
+                            'timestamp': current_time
+                        }
+                else:
+                    # 缓存未命中，获取数据
+                    avg_turnover = self._get_avg_turnover(stock_code)
+                    self._turnover_cache[cache_key] = {
+                        'avg_turnover': avg_turnover,
+                        'timestamp': current_time
+                    }
+                
+                if avg_turnover > 0:
+                    turnover_ratio = current_turnover / avg_turnover
                     
-                    if avg_turnover > 0:
-                        turnover_ratio = current_turnover / avg_turnover
-                        
-                        # 判定标准：换手率 > 5倍均值 且 涨幅 > 5%
-                        if turnover_ratio > 5.0 and current_pct_change > 5.0:
-                            turnover_anomaly = True
-                            logger.warning(f"🔥 [生态异常] {stock_code} 换手率爆炸({turnover_ratio:.1f}倍均值)，涨幅{current_pct_change:.1f}%，谨防接盘")
+                    # 判定标准：换手率 > 5倍均值 且 涨幅 > 5%
+                    if turnover_ratio > 5.0 and current_pct_change > 5.0:
+                        turnover_anomaly = True
+                        logger.warning(f"🔥 [生态异常] {stock_code} 换手率爆炸({turnover_ratio:.1f}倍均值)，涨幅{current_pct_change:.1f}%，谨防接盘")
             except Exception as e:
-                logger.warning(f"⚠️ [换手率检测失败] {stock_code} {e}")
-            
+                logger.warning(f"⚠️ [换手率检测失败] {stock_code} {e}")            
             # =========================================================
             # 检测 2: 流动性黑洞 (Liquidity Blackhole)
             # =========================================================

@@ -144,11 +144,16 @@ class SignalGenerator:
             
             iron_monitor = IronRuleMonitor()
             
-            # 构建实时数据字典
+            # 从真实数据接口获取实时数据（避免硬编码）
+            real_time_data_full = iron_monitor.data_manager.get_realtime_data(stock_code)
+            
+            # 构建实时数据字典（使用真实数据）
             real_time_data = {
-                'turnover': current_pct_change,  # 使用涨幅作为换手率的代理（实际应从实时数据获取）
-                'pct_chg': current_pct_change,
-                'amount': capital_flow * 10000 if capital_flow > 0 else 0  # 使用资金流作为成交额的代理
+                'turnover': real_time_data_full.get('turnover', 0) if real_time_data_full else 0,  # 真实换手率
+                'pct_chg': real_time_data_full.get('pct_chg', current_pct_change) if real_time_data_full else current_pct_change,  # 真实涨幅
+                'amount': real_time_data_full.get('amount', 0) if real_time_data_full else 0,  # 真实成交额
+                'volume': real_time_data_full.get('volume', 0) if real_time_data_full else 0,  # 真实成交量
+                'price': real_time_data_full.get('price', 0) if real_time_data_full else 0  # 真实价格
             }
             
             # 检查价值扭曲和生态异常

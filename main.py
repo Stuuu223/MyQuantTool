@@ -947,6 +947,14 @@ if app_mode == "📈 市场分析":
         with st.spinner("正在加载战场指挥官引擎..."):
             market_commander = __import__('ui.market_commander', fromlist=['render_market_commander'])
             market_commander.render_market_commander(get_db_instance())
+        
+        st.markdown("---")
+        st.markdown("### 🛡️ V16.3 生态看门人（Ecological Watchdog）")
+        st.caption("识别\"德不配位\"的流动性异常，拒绝参与\"游资对价值股的强暴\"")
+        
+        with st.spinner("正在加载生态看门人引擎..."):
+            ecological_watchdog = __import__('ui.v16_3_ecological_watchdog', fromlist=['render_ecological_watchdog'])
+            ecological_watchdog.render_ecological_watchdog(get_db_instance())
 
 elif app_mode == "🔥 交易策略":
     # 交易策略模块
