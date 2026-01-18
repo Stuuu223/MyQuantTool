@@ -226,7 +226,9 @@ class SignalGenerator:
     
     def get_yesterday_lhb_data(self, stock_code, data_manager):
         '''
-        V14.4 新增：获取昨日龙虎榜数据
+        V14.4 新增：获取昨日龙虎榜数据（修复版）
+        
+        使用 stock_lhb_stock_detail_date_em 和 stock_lhb_stock_detail_em 接口
         
         参数:
         - stock_code: 股票代码
@@ -242,25 +244,61 @@ class SignalGenerator:
             
             # 获取昨天的日期
             yesterday = datetime.now() - timedelta(days=1)
-            date_str = yesterday.strftime("%Y%m%d")
+            date_str = yesterday.strftime("%Y%m%d")  # 格式：20260117
             
-            # 获取龙虎榜数据
+            # 获取龙虎榜数据（修复：使用正确的接口）
             try:
-                lhb_data = ak.stock_lhb_detail_em(date=date_str)
+                # 步骤1：获取该股票有龙虎榜数据的日期列表
+                date_list_df = ak.stock_lhb_stock_detail_date_em(symbol=stock_code)
                 
-                if lhb_data is not None and not lhb_data.empty:
-                    # 查找该股票的龙虎榜数据
-                    stock_lhb = lhb_data[lhb_data['代码'] == stock_code]
-                    
-                    if not stock_lhb.empty:
-                        # 获取净买入额
-                        net_buy = stock_lhb['净买入'].iloc[0] if '净买入' in stock_lhb.columns else 0
+                if date_list_df is None or date_list_df.empty:
+                    logger.debug(f"{stock_code} 无龙虎榜记录")
+                    return 0, 0
+                
+                logger.info(f"找到 {stock_code} 的龙虎榜记录，共 {len(date_list_df)} 天")
+                
+                # 步骤2：查找昨天的日期是否在列表中
+                # 修复：使用正确的列名 '交易日'
+                yesterday_records = date_list_df[date_list_df['交易日'] == date_str]
+                
+                if yesterday_records.empty:
+                    logger.debug(f"{stock_code} 在 {date_str} 无龙虎榜记录")
+                    return 0, 0
+                
+                # 步骤3：获取昨天的龙虎榜详情
+                # 尝试买入和卖出两个方向
+                net_buy = 0
+                
+                for flag in ['买入', '卖出']:
+                    try:
+                        detail_df = ak.stock_lhb_stock_detail_em(
+                            symbol=stock_code,
+                            date=date_str,
+                            flag=flag
+                        )
                         
-                        # 获取今日开盘涨幅
-                        realtime_data = data_manager.get_realtime_data(stock_code)
-                        open_pct = realtime_data.get('open_pct_change', 0) if realtime_data else 0
-                        
-                        return net_buy, open_pct
+                        if detail_df is not None and not detail_df.empty:
+                            # 计算净买入额
+                            if '净买入额' in detail_df.columns:
+                                flag_net_buy = detail_df['净买入额'].sum()
+                                if flag == '卖出':
+                                    flag_net_buy = -flag_net_buy  # 卖出为负
+                                net_buy += flag_net_buy
+                                logger.info(f"{stock_code} {date_str} {flag}净买入: {flag_net_buy/10000:.2f}万元")
+                    except Exception as e:
+                        logger.warning(f"获取 {stock_code} {date_str} {flag}详情失败: {e}")
+                
+                # AkShare 返回的单位通常是万元，需要转换为元
+                net_buy = net_buy * 10000  # 万元 → 元
+                
+                logger.info(f"{stock_code} {date_str} 总净买入: {net_buy/10000:.2f}万元")
+                
+                # 获取今日开盘涨幅
+                realtime_data = data_manager.get_realtime_data(stock_code)
+                open_pct = realtime_data.get('open_pct_change', 0) if realtime_data else 0
+                
+                return net_buy, open_pct
+                
             except Exception as e:
                 logger.warning(f"获取龙虎榜数据失败: {e}")
             
@@ -272,6 +310,8 @@ class SignalGenerator:
             return 0, 0
         except Exception as e:
             logger.error(f"获取龙虎榜数据失败: {e}")
+            import traceback
+            traceback.print_exc()
             return 0, 0
 
 
