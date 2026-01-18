@@ -401,6 +401,189 @@ class IronRuleMonitor:
             summary['risk_details'][stock_code] = risk_data
         
         return summary
+    
+    # ============================================================================
+    # V16.3: 生态看门人 (Ecological Watchdog) - 识别"德不配位"的流动性异常
+    # ============================================================================
+    
+    def check_value_distortion(self, stock_code: str, real_time_data: Dict = None) -> Dict:
+        """
+        检查价值扭曲和生态异常
+        
+        识别"德不配位"的流动性异常，拒绝参与"游资对价值股的强暴"
+        
+        Args:
+            stock_code: 股票代码
+            real_time_data: 实时数据字典，如果为 None 则自动获取
+        
+        Returns:
+            dict: {
+                'has_risk': bool,  # 是否存在风险
+                'risk_level': str,  # 风险等级 (DANGER, WARNING, LOW)
+                'turnover_anomaly': bool,  # 换手率异常
+                'liquidity_blackhole': bool,  # 流动性黑洞
+                'turnover_ratio': float,  # 换手率倍数（当前/均值）
+                'sector_ratio': float,  # 板块占比
+                'reason': str  # 风险原因
+            }
+        """
+        try:
+            # 获取实时数据
+            if real_time_data is None:
+                real_time_data = self.data_manager.get_realtime_data(stock_code)
+            
+            if not real_time_data:
+                return {
+                    'has_risk': False,
+                    'risk_level': 'LOW',
+                    'turnover_anomaly': False,
+                    'liquidity_blackhole': False,
+                    'turnover_ratio': 0.0,
+                    'sector_ratio': 0.0,
+                    'reason': '无法获取实时数据'
+                }
+            
+            # 提取关键数据
+            current_turnover = real_time_data.get('turnover', 0)  # 当前换手率 (%)
+            current_pct_change = real_time_data.get('pct_chg', 0)  # 涨跌幅 (%)
+            current_amount = real_time_data.get('amount', 0)  # 成交额（元）
+            
+            # =========================================================
+            # 检测 1: 换手率背离 (Turnover Divergence)
+            # =========================================================
+            turnover_anomaly = False
+            turnover_ratio = 0.0
+            
+            try:
+                # 获取过去 20 天的 K 线数据
+                df = self.data_manager.get_stock_daily(stock_code, period='daily', count=20)
+                
+                if df is not None and len(df) >= 5:
+                    # 计算平均换手率
+                    avg_turnover = df['turnover'].mean()
+                    
+                    if avg_turnover > 0:
+                        turnover_ratio = current_turnover / avg_turnover
+                        
+                        # 判定标准：换手率 > 5倍均值 且 涨幅 > 5%
+                        if turnover_ratio > 5.0 and current_pct_change > 5.0:
+                            turnover_anomaly = True
+                            logger.warning(f"🔥 [生态异常] {stock_code} 换手率爆炸({turnover_ratio:.1f}倍均值)，涨幅{current_pct_change:.1f}%，谨防接盘")
+            except Exception as e:
+                logger.warning(f"⚠️ [换手率检测失败] {stock_code} {e}")
+            
+            # =========================================================
+            # 检测 2: 流动性黑洞 (Liquidity Blackhole)
+            # =========================================================
+            liquidity_blackhole = False
+            sector_ratio = 0.0
+            
+            try:
+                # 获取股票所属板块
+                stock_info = self.data_manager.get_stock_info(stock_code)
+                if stock_info:
+                    industry = stock_info.get('industry', '')
+                    concept = stock_info.get('concept', '')
+                    
+                    # 获取板块数据
+                    if industry:
+                        sector_stocks = self.data_manager.get_industry_stocks(industry)
+                        if sector_stocks and len(sector_stocks) > 0:
+                            # 获取板块总成交额
+                            sector_total_amount = 0
+                            for sector_stock in sector_stocks[:50]:  # 限制前 50 只股票
+                                sector_data = self.data_manager.get_realtime_data(sector_stock)
+                                if sector_data:
+                                    sector_total_amount += sector_data.get('amount', 0)
+                            
+                            # 计算板块占比
+                            if sector_total_amount > 0:
+                                sector_ratio = current_amount / sector_total_amount
+                                
+                                # 判定标准：板块占比 > 30%
+                                if sector_ratio > 0.30:
+                                    liquidity_blackhole = True
+                                    logger.warning(f"🌪️ [虹吸效应] {stock_code} 吸干板块流动性({sector_ratio:.1%})，独木难支")
+            except Exception as e:
+                logger.warning(f"⚠️ [流动性黑洞检测失败] {stock_code} {e}")
+            
+            # =========================================================
+            # 综合判定
+            # =========================================================
+            risk_level = 'LOW'
+            has_risk = False
+            reason = '生态正常'
+            
+            if turnover_anomaly:
+                risk_level = 'DANGER'
+                has_risk = True
+                reason = f"🔥 [生态异常] 价值票游资化，换手率爆炸({turnover_ratio:.1f}倍均值)，涨幅{current_pct_change:.1f}%，谨防接盘"
+            elif liquidity_blackhole:
+                risk_level = 'WARNING'
+                has_risk = True
+                reason = f"🌪️ [虹吸效应] 个股吸干板块流动性({sector_ratio:.1%})，独木难支"
+            
+            return {
+                'has_risk': has_risk,
+                'risk_level': risk_level,
+                'turnover_anomaly': turnover_anomaly,
+                'liquidity_blackhole': liquidity_blackhole,
+                'turnover_ratio': turnover_ratio,
+                'sector_ratio': sector_ratio,
+                'reason': reason
+            }
+            
+        except Exception as e:
+            logger.error(f"检查价值扭曲失败: {e}")
+            return {
+                'has_risk': False,
+                'risk_level': 'LOW',
+                'turnover_anomaly': False,
+                'liquidity_blackhole': False,
+                'turnover_ratio': 0.0,
+                'sector_ratio': 0.0,
+                'reason': f'检查失败: {e}'
+            }
+    
+    def get_ecological_risk_summary(self, stock_codes: List[str]) -> Dict:
+        """
+        获取多只股票的生态风险摘要
+        
+        Args:
+            stock_codes: 股票代码列表
+        
+        Returns:
+            dict: {
+                'total_stocks': int,  # 总股票数
+                'danger_stocks': list,  # 危险股票列表
+                'warning_stocks': list,  # 警告股票列表
+                'normal_stocks': list,  # 正常股票列表
+                'risk_details': dict  # 详细风险信息
+            }
+        """
+        summary = {
+            'total_stocks': len(stock_codes),
+            'danger_stocks': [],
+            'warning_stocks': [],
+            'normal_stocks': [],
+            'risk_details': {}
+        }
+        
+        for stock_code in stock_codes:
+            risk_data = self.check_value_distortion(stock_code)
+            
+            # 分类
+            if risk_data['risk_level'] == 'DANGER':
+                summary['danger_stocks'].append(stock_code)
+            elif risk_data['risk_level'] == 'WARNING':
+                summary['warning_stocks'].append(stock_code)
+            else:
+                summary['normal_stocks'].append(stock_code)
+            
+            # 记录详细信息
+            summary['risk_details'][stock_code] = risk_data
+        
+        return summary
 
 
 # 单例测试

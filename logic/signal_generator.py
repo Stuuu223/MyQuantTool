@@ -137,6 +137,48 @@ class SignalGenerator:
             # 检查失败不影响其他逻辑，继续执行
         
         # =========================================================
+        # 0.6 [V16.3] 生态看门人 (Ecological Watchdog) - 识别"德不配位"的流动性异常
+        # =========================================================
+        try:
+            from logic.iron_rule_monitor import IronRuleMonitor
+            
+            iron_monitor = IronRuleMonitor()
+            
+            # 构建实时数据字典
+            real_time_data = {
+                'turnover': current_pct_change,  # 使用涨幅作为换手率的代理（实际应从实时数据获取）
+                'pct_chg': current_pct_change,
+                'amount': capital_flow * 10000 if capital_flow > 0 else 0  # 使用资金流作为成交额的代理
+            }
+            
+            # 检查价值扭曲和生态异常
+            eco_risk = iron_monitor.check_value_distortion(stock_code, real_time_data)
+            
+            # 根据风险等级进行处理
+            if eco_risk['risk_level'] == 'DANGER':
+                # 强制一票否决
+                reason = f"🔥 [生态熔断] {eco_risk['reason']}"
+                logger.warning(f"{stock_code} {reason}")
+                return {
+                    "signal": "WAIT", 
+                    "score": 0, 
+                    "reason": reason, 
+                    "risk": "HIGH",
+                    "eco_risk": eco_risk,
+                    "market_sentiment_score": market_sentiment_score,
+                    "market_status": market_status
+                }
+            elif eco_risk['risk_level'] == 'WARNING':
+                # 降权处理
+                ai_score *= 0.5
+                reason = f"🌪️ [生态降权] {eco_risk['reason']}，AI 评分降级"
+                logger.info(f"{stock_code} {reason}")
+                # 继续执行后续逻辑，但 AI 分数已经降级
+        except Exception as e:
+            logger.warning(f"⚠️ [生态看门人检查失败] {stock_code} {e}")
+            # 检查失败不影响其他逻辑，继续执行
+        
+        # =========================================================
         # 1. [V14.2] 涨停豁免权 (Limit Up Immunity) - 最高优先级
         # =========================================================
         is_limit_up = False
