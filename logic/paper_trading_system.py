@@ -16,6 +16,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 import json
+from logic.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class OrderType(Enum):
@@ -681,3 +684,143 @@ def get_paper_trading_system(
         t_plus_one=t_plus_one,
         risk_limit=risk_limit
     )
+
+
+class SignalPool:
+    """
+    V16.2 信号池 - 解决资金碰撞和"平庸优先"陷阱
+    
+    实现策略：Collect -> Rank -> Execute
+    1. 收集所有 BUY 信号
+    2. 按分数排序（降序）
+    3. 执行直到资金耗尽
+    """
+    
+    def __init__(self, trading_system: PaperTradingSystem):
+        """
+        初始化信号池
+        
+        Args:
+            trading_system: 交易系统实例
+        """
+        self.trading_system = trading_system
+        self.signals = []  # 存储所有信号 {"symbol": str, "score": float, "price": float, "quantity": int, "reason": str}
+        logger.info("✅ V16.2: 信号池已初始化")
+    
+    def add_signal(self, symbol: str, score: float, price: float, quantity: int = 0, reason: str = ""):
+        """
+        添加信号到池中
+        
+        Args:
+            symbol: 股票代码
+            score: 信号分数（0-100）
+            price: 参考价格
+            quantity: 数量（手），如果为 0 则自动计算
+            reason: 信号原因
+        """
+        self.signals.append({
+            "symbol": symbol,
+            "score": score,
+            "price": price,
+            "quantity": quantity,
+            "reason": reason
+        })
+        logger.info(f"✅ [信号池] 添加信号: {symbol} 分数={score:.1f} 价格={price:.2f} 原因={reason}")
+    
+    def clear_signals(self):
+        """清空信号池"""
+        self.signals = []
+        logger.info("✅ [信号池] 信号池已清空")
+    
+    def execute_signals(self, max_positions: int = 5, position_size: float = 0.2) -> Dict[str, Any]:
+        """
+        执行信号池中的信号（Collect -> Rank -> Execute）
+        
+        Args:
+            max_positions: 最大持仓数
+            position_size: 单只股票仓位比例（0-1）
+        
+        Returns:
+            执行结果统计
+        """
+        if not self.signals:
+            logger.warning("⚠️ [信号池] 信号池为空，无需执行")
+            return {"total_signals": 0, "executed": 0, "rejected": 0}
+        
+        # Step 1: Rank - 按分数排序（降序）
+        sorted_signals = sorted(self.signals, key=lambda x: x["score"], reverse=True)
+        logger.info(f"🔄 [信号池] 开始执行，共 {len(sorted_signals)} 个信号，已按分数排序")
+        
+        # Step 2: Execute - 按顺序执行直到资金耗尽
+        executed_count = 0
+        rejected_count = 0
+        total_capital = self.trading_system.cash_balance
+        
+        for signal in sorted_signals:
+            # 检查是否已达到最大持仓数
+            if len(self.trading_system.positions) >= max_positions:
+                logger.warning(f"⚠️ [信号池] 已达到最大持仓数 {max_positions}，停止执行")
+                # 统计剩余信号为被拒绝
+                remaining_signals = len(sorted_signals) - sorted_signals.index(signal)
+                rejected_count += remaining_signals
+                break
+            
+            # 检查是否已有持仓
+            if signal["symbol"] in self.trading_system.positions:
+                logger.info(f"⏭️ [信号池] {signal['symbol']} 已有持仓，跳过")
+                rejected_count += 1
+                continue
+            
+            # 计算仓位大小
+            if signal["quantity"] == 0:
+                # 自动计算仓位：position_size * 可用资金
+                position_capital = total_capital * position_size
+                signal["quantity"] = int(position_capital / (signal["price"] * 100))  # 转换为手数
+                if signal["quantity"] == 0:
+                    logger.warning(f"⚠️ [信号池] {signal['symbol']} 资金不足，跳过")
+                    rejected_count += 1
+                    continue
+            
+            # 检查资金是否充足
+            required_capital = signal["quantity"] * 100 * signal["price"] * (1 + self.trading_system.commission_rate)
+            if required_capital > self.trading_system.cash_balance:
+                logger.warning(f"⚠️ [信号池] {signal['symbol']} 资金不足（需要 ¥{required_capital:.2f}，可用 ¥{self.trading_system.cash_balance:.2f}），跳过")
+                rejected_count += 1
+                continue
+            
+            # 执行买入
+            try:
+                order_id = self.trading_system.submit_order(
+                    symbol=signal["symbol"],
+                    order_type=OrderType.LIMIT,
+                    direction=OrderDirection.BUY,
+                    quantity=signal["quantity"],
+                    price=signal["price"]
+                )
+                
+                # 模拟成交
+                self.trading_system.fill_order(
+                    order_id=order_id,
+                    filled_price=signal["price"],
+                    filled_quantity=signal["quantity"] * 100
+                )
+                
+                executed_count += 1
+                logger.info(f"✅ [信号池] {signal['symbol']} 买入成功，分数={signal['score']:.1f} 数量={signal['quantity']}手 价格={signal['price']:.2f}")
+                
+            except Exception as e:
+                logger.error(f"❌ [信号池] {signal['symbol']} 买入失败: {e}")
+                rejected_count += 1
+        
+        # 清空信号池
+        self.clear_signals()
+        
+        result = {
+            "total_signals": len(sorted_signals),
+            "executed": executed_count,
+            "rejected": rejected_count,
+            "remaining_capital": self.trading_system.cash_balance
+        }
+        
+        logger.info(f"📊 [信号池] 执行完成：{result}")
+        return result

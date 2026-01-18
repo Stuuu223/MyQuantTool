@@ -185,7 +185,8 @@ class PaperTradingSystem:
     def execute_order(
         self,
         order: LiveOrder,
-        market_price: float
+        market_price: float,
+        limit_up_price: float = None
     ) -> bool:
         """
         执行订单
@@ -193,12 +194,21 @@ class PaperTradingSystem:
         Args:
             order: 订单
             market_price: 市场价格
+            limit_up_price: 涨停价（V16.2 新增）
         
         Returns:
             是否成功
         """
         if order.status != OrderStatus.PENDING:
             return False
+        
+        # V16.2 新增：涨停板抢筹逻辑 - 强制使用限价单
+        if order.direction == OrderDirection.BUY and limit_up_price is not None:
+            # 检查是否接近涨停价（涨幅 > 9.5%）
+            if market_price >= limit_up_price * 0.99:
+                logger.info(f"🚀 [涨停抢筹] {order.symbol} 接近涨停价，强制使用限价单 @ {limit_up_price}")
+                order.order_type = OrderType.LIMIT
+                order.price = limit_up_price
         
         # 计算成交价格
         if order.order_type == OrderType.MARKET:
@@ -245,6 +255,11 @@ class PaperTradingSystem:
         order.filled_quantity = order.quantity
         order.filled_price = execution_price
         order.update_time = datetime.now()
+        
+        # V16.2 新增：释放 pending_orders 缓存
+        if order.symbol in self.pending_orders:
+            self.pending_orders.remove(order.symbol)
+            logger.info(f"✅ [机关枪防护] {order.symbol} 订单已成交，从 pending_orders 缓存中移除")
         
         logger.info(f"订单 {order.order_id} 成交 @ {execution_price:.2f}, 手续费 {commission:.2f}")
         
@@ -317,6 +332,12 @@ class LiveTradingInterface:
         """
         self.config = config
         self.connected = False
+        
+        # V16.2 新增：pending_orders 缓存（防止机关枪走火）
+        self.pending_orders = set()  # 存储待成交订单的股票代码
+        self.order_status_cache = {}  # 存储订单状态（用于释放 pending_orders）
+        
+        logger.info("✅ V16.2: pending_orders 缓存已初始化")
     
     def connect(self) -> bool:
         """
@@ -341,6 +362,15 @@ class LiveTradingInterface:
         Returns:
             是否成功
         """
+        # V16.2 新增：防止机关枪走火 - 检查是否已有待成交订单
+        if order.symbol in self.pending_orders:
+            logger.warning(f"⚠️ [机关枪防护] {order.symbol} 已有待成交订单，禁止重复下单")
+            return False
+        
+        # 添加到 pending_orders 缓存
+        self.pending_orders.add(order.symbol)
+        logger.info(f"✅ [机关枪防护] {order.symbol} 已加入 pending_orders 缓存")
+        
         raise NotImplementedError("需要实现具体的下单逻辑")
     
     def cancel_order(self, order_id: str) -> bool:

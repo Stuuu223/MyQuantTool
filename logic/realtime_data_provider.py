@@ -8,6 +8,7 @@
 from logic.data_provider_factory import DataProvider
 from logic.logger import get_logger
 import config_system as config
+from datetime import datetime
 
 logger = get_logger(__name__)
 
@@ -20,12 +21,14 @@ class RealtimeDataProvider(DataProvider):
     - 从新浪 API 获取实时行情数据
     - 支持并发请求提升性能
     - 自动处理数据清洗和格式化
+    - 🆕 V16.2: 数据保质期校验
     """
     
     def __init__(self, **kwargs):
         """初始化实时数据提供者"""
         super().__init__()
         self.timeout = config.API_TIMEOUT
+        self.data_freshness_threshold = 15  # V16.2: 数据保质期阈值（秒）
     
     def get_realtime_data(self, stock_list):
         """
@@ -52,11 +55,35 @@ class RealtimeDataProvider(DataProvider):
             # 获取实时数据
             market_data = quotation.stocks(codes)
             
+            # V16.2 新增：数据保质期校验
+            current_time = datetime.now()
+            current_hour = current_time.hour
+            current_minute = current_time.minute
+            
+            # 判断是否在竞价期间（9:15-9:30）
+            is_auction_period = (current_hour == 9 and 15 <= current_minute < 30)
+            
             # 格式化数据
             result = []
             for code, data in market_data.items():
                 if not data:
                     continue
+                
+                # V16.2 新增：检查数据时间戳
+                data_time_str = data.get('time', '')
+                if data_time_str and not is_auction_period:
+                    try:
+                        # 解析数据时间（格式可能是 "09:30:05" 或类似）
+                        data_time = datetime.strptime(data_time_str, '%H:%M:%S')
+                        data_time = data_time.replace(year=current_time.year, month=current_time.month, day=current_time.day)
+                        
+                        # 检查数据是否过期（超过15秒）
+                        time_diff = (current_time - data_time).total_seconds()
+                        if time_diff > self.data_freshness_threshold:
+                            logger.warning(f"⚠️ [数据过期] {code} 数据时间 {data_time_str} 距今 {time_diff:.0f}秒，跳过交易")
+                            continue
+                    except Exception as e:
+                        logger.warning(f"⚠️ [时间解析失败] {code} 无法解析时间戳 {data_time_str}: {e}")
                 
                 stock_info = {
                     'code': code,
@@ -69,6 +96,7 @@ class RealtimeDataProvider(DataProvider):
                     'high': data.get('high', 0),
                     'low': data.get('low', 0),
                     'pre_close': data.get('close', 0),
+                    'data_timestamp': data_time_str,  # V16.2 新增
                 }
                 result.append(stock_info)
             
