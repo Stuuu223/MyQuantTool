@@ -939,6 +939,14 @@ if app_mode == "📈 市场分析":
         with st.spinner("正在加载动态离场引擎..."):
             dynamic_exit = __import__('ui.dynamic_exit', fromlist=['render_dynamic_exit'])
             dynamic_exit.render_dynamic_exit(get_db_instance())
+        
+        st.markdown("---")
+        st.markdown("### ⚔️ V16 战场指挥官（The Commander）")
+        st.caption("市场环境熔断，实现'看天吃饭'")
+        
+        with st.spinner("正在加载战场指挥官引擎..."):
+            market_commander = __import__('ui.market_commander', fromlist=['render_market_commander'])
+            market_commander.render_market_commander(get_db_instance())
 
 elif app_mode == "🔥 交易策略":
     # 交易策略模块

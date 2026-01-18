@@ -818,6 +818,69 @@ class MarketSentiment:
         # 如果没有匹配到概念，返回空列表（不再返回"其他"）
         return concepts
     
+    def get_market_sentiment_score(self, top_stocks: Optional[List[Dict]] = None) -> Dict[str, Union[int, str]]:
+        """
+        [V16 新增] 获取市场情绪分数和状态，用于环境熔断
+        
+        Args:
+            top_stocks: 强势股列表（可选，用于主线挖掘）
+        
+        Returns:
+            dict: {
+                'score': 市场情绪分数 (0-100),
+                'status': 市场状态 ('主升', '退潮', '震荡', '冰点'),
+                'description': 状态描述,
+                'limit_up_count': 涨停家数,
+                'limit_down_count': 跌停家数,
+                'prev_profit': 昨日涨停溢价,
+                'malignant_zhaban_rate': 恶性炸板率
+            }
+        """
+        try:
+            # 获取市场状态
+            regime_info = self.get_market_regime(top_stocks)
+            market_data = regime_info.get('market_data', {})
+            regime = regime_info.get('regime', self.REGIME_CHAOS)
+            
+            # 获取市场情绪分数
+            score = market_data.get('score', 50)
+            
+            # 映射 regime 到 V16 需要的状态
+            status_mapping = {
+                self.REGIME_BULL_ATTACK: '主升',
+                self.REGIME_BEAR_DEFENSE: '退潮',
+                self.REGIME_CHAOS: '震荡'
+            }
+            
+            # 特殊处理：如果分数 < 20，强制设为"冰点"
+            if score < 20:
+                status = '冰点'
+            else:
+                status = status_mapping.get(regime, '震荡')
+            
+            return {
+                'score': score,
+                'status': status,
+                'description': regime_info.get('description', '未知'),
+                'limit_up_count': market_data.get('limit_up_count', 0),
+                'limit_down_count': market_data.get('limit_down_count', 0),
+                'prev_profit': market_data.get('prev_profit', 0),
+                'malignant_zhaban_rate': market_data.get('malignant_zhaban_rate', 0)
+            }
+        
+        except Exception as e:
+            logger.error(f"获取市场情绪分数失败: {e}")
+            # 返回默认值
+            return {
+                'score': 50,
+                'status': '震荡',
+                'description': '无法判断市场情绪',
+                'limit_up_count': 0,
+                'limit_down_count': 0,
+                'prev_profit': 0,
+                'malignant_zhaban_rate': 0
+            }
+    
     def close(self):
         """关闭数据库连接"""
         if self.db:

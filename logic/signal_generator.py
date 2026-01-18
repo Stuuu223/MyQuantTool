@@ -62,13 +62,17 @@ class SignalGenerator:
                                current_pct_change: float = 0.0,
                                yesterday_lhb_net_buy: float = 0.0,
                                open_pct_change: float = 0.0,
-                               circulating_market_cap: float = None) -> Dict[str, Union[str, float, str]]:
+                               circulating_market_cap: float = None,
+                               market_sentiment_score: float = 50,
+                               market_status: str = "震荡") -> Dict[str, Union[str, float, str]]:
         """
-        计算最终交易信号 (V14.4 完整版)
+        计算最终交易信号 (V16 完整版 - 环境熔断)
         
         参数:
         - yesterday_lhb_net_buy: 昨日龙虎榜净买入额 (V14.4 新增)
         - open_pct_change: 今日开盘涨幅 (V14.4 新增)
+        - market_sentiment_score: 市场情绪分数 (0-100) (V16 新增)
+        - market_status: 市场状态 ('主升', '退潮', '震荡', '冰点') (V16 新增)
         """
         
         signal = "WAIT"
@@ -76,6 +80,36 @@ class SignalGenerator:
         reason = ""
         risk_level = "NORMAL"
 
+        # =========================================================
+        # 0. [V16] 环境熔断 (Market Veto) - 最高优先级（除了涨停豁免）
+        # =========================================================
+        
+        # 冰点熔断：市场情绪 < 20，禁止开仓
+        if market_sentiment_score < 20:
+            # 除非个股触发涨停豁免（只有真龙能穿越冰点）
+            if current_pct_change > 9.5:
+                # 涨停股可以穿越冰点
+                reason = f"❄️ [环境熔断-豁免] 市场冰点({market_sentiment_score})，但{stock_code}强势封板({current_pct_change}%)，真龙穿越"
+                logger.info(f"{stock_code} {reason}")
+                # 继续执行后续逻辑
+            else:
+                reason = f"❄️ [环境熔断] 市场情绪冰点({market_sentiment_score})，禁止开仓，防守为主"
+                logger.warning(f"{stock_code} {reason}")
+                return {
+                    "signal": "WAIT", 
+                    "score": 0, 
+                    "reason": reason, 
+                    "risk": "HIGH",
+                    "market_sentiment_score": market_sentiment_score,
+                    "market_status": market_status
+                }
+        
+        # 退潮减权：市场退潮期，所有 BUY 信号的 AI 分数权重 x 0.5
+        if market_status == "退潮":
+            reason = f"🌊 [退潮期] 市场正在退潮，这种票可能是补涨或诱多，评分降级"
+            logger.info(f"{stock_code} {reason}")
+            # 继续执行后续逻辑，但会在最终评分时乘以 0.5
+        
         # =========================================================
         # 1. [V14.2] 涨停豁免权 (Limit Up Immunity) - 最高优先级
         # =========================================================
@@ -91,10 +125,23 @@ class SignalGenerator:
                 final_score = max(ai_score, 85) * 1.1
             else:
                 final_score = max(ai_score, 80) * 1.0
-                
-            reason = f"🚀 [涨停豁免] 强势封板({current_pct_change}%)，无视背离与陷阱"
+            
+            # 检查是否已经有环境熔断豁免信息
+            if "环境熔断-豁免" in reason:
+                # 保留环境熔断豁免信息
+                reason = f"🚀 [涨停豁免] {reason}，强势封板({current_pct_change}%)"
+            else:
+                reason = f"🚀 [涨停豁免] 强势封板({current_pct_change}%)，无视背离与陷阱"
+            
             logger.info(f"{stock_code} {reason}")
-            return {"signal": "BUY", "score": min(final_score, 100), "reason": reason, "risk": risk_level}
+            return {
+                "signal": "BUY", 
+                "score": min(final_score, 100), 
+                "reason": reason, 
+                "risk": risk_level,
+                "market_sentiment_score": market_sentiment_score,
+                "market_status": market_status
+            }
 
         # =========================================================
         # 2. [V13.1] 事实熔断 (Fact Veto) - 物理定律
@@ -103,17 +150,38 @@ class SignalGenerator:
         if capital_flow < self.CAPITAL_VETO_THRESHOLD:
             reason = f"🚨 [资金熔断] 主力巨额流出 {-capital_flow/10000:.0f}万"
             logger.warning(f"{stock_code} {reason}")
-            return {"signal": "SELL", "score": 0, "reason": reason, "risk": "HIGH"}
+            return {
+                "signal": "SELL", 
+                "score": 0, 
+                "reason": reason, 
+                "risk": "HIGH",
+                "market_sentiment_score": market_sentiment_score,
+                "market_status": market_status
+            }
         
         # 小盘股失血 (流出超流通盘1%)
         if circulating_market_cap and circulating_market_cap > 0:
             if (capital_flow / circulating_market_cap) < -0.01:
                 reason = f"🩸 [失血熔断] 流出占比过大 ({-capital_flow/10000:.0f}万)"
-                return {"signal": "SELL", "score": 0, "reason": reason, "risk": "HIGH"}
+                return {
+                    "signal": "SELL", 
+                    "score": 0, 
+                    "reason": reason, 
+                    "risk": "HIGH",
+                    "market_sentiment_score": market_sentiment_score,
+                    "market_status": market_status
+                }
 
         # 趋势破位
         if trend == 'DOWN':
-            return {"signal": "WAIT", "score": 0, "reason": "📉 [趋势熔断] 空头排列", "risk": "HIGH"}
+            return {
+                "signal": "WAIT", 
+                "score": 0, 
+                "reason": "📉 [趋势熔断] 空头排列", 
+                "risk": "HIGH",
+                "market_sentiment_score": market_sentiment_score,
+                "market_status": market_status
+            }
 
         # =========================================================
         # 3. [V14.4] 龙虎榜反制 (LHB Counter-Strike) - 博弈核心
@@ -129,7 +197,14 @@ class SignalGenerator:
                 lhb_modifier = 0.0 # 直接废掉 AI 分数
                 reason = f"⚠️ [榜单陷阱] 豪华榜净买{yesterday_lhb_net_buy/10000:.0f}万 + 高开{open_pct_change}% -> 警惕兑现"
                 # 这里我们不直接返回 SELL (因为资金可能还没流出)，但给予极大惩罚，让它变 WAIT
-                return {"signal": "WAIT", "score": 10.0, "reason": reason, "risk": "HIGH"}
+                return {
+                    "signal": "WAIT", 
+                    "score": 10.0, 
+                    "reason": reason, 
+                    "risk": "HIGH",
+                    "market_sentiment_score": market_sentiment_score,
+                    "market_status": market_status
+                }
             
             # 场景 B: 弱转强 (Weak-to-Strong) - 豪华榜 + 平开/微红
             elif -2.0 <= open_pct_change <= 3.0:
@@ -160,7 +235,25 @@ class SignalGenerator:
             elif capital_flow > 0:
                 reason = "✅ [共振] 逻辑+资金双强"
         
-        # 最终门槛
+        # =========================================================
+        # 5. [V16] 环境调整 (Market Adjustment)
+        # =========================================================
+        
+        # 退潮减权：市场退潮期，所有 BUY 信号的 AI 分数权重 x 0.5
+        if market_status == "退潮":
+            final_score = final_score * 0.5
+            if not reason.startswith("🌊"):
+                reason = f"🌊 [退潮期] {reason}"
+        
+        # 共振加强：市场情绪高昂 + 股票趋势向上 → 最终评分 +10分
+        if market_sentiment_score > 60 and trend == 'UP':
+            final_score = final_score + 10
+            if not reason.startswith("🌊"):
+                reason = f"🌊 [共振加强] 市场情绪高昂({market_sentiment_score}) + 趋势向上，顺势而为"
+        
+        # =========================================================
+        # 6. 最终门槛
+        # =========================================================
         if final_score >= 80:
             signal = "BUY"
         else:
@@ -170,7 +263,9 @@ class SignalGenerator:
             "signal": signal, 
             "score": min(final_score, 100), 
             "reason": reason, 
-            "risk": risk_level
+            "risk": risk_level,
+            "market_sentiment_score": market_sentiment_score,
+            "market_status": market_status
         }
     
     def get_trend_status(self, df, window=20):
