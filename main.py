@@ -931,6 +931,14 @@ if app_mode == "📈 市场分析":
         with st.spinner("正在加载龙虎榜反制引擎..."):
             lhb_counter = __import__('ui.lhb_counter', fromlist=['render_lhb_counter'])
             lhb_counter.render_lhb_counter(get_db_instance())
+        
+        st.markdown("---")
+        st.markdown("### 🛡️ V15.1 动态离场系统（The Reaper）")
+        st.caption("三级火箭防守：保护浮盈，锁定利润，炸板逃逸")
+        
+        with st.spinner("正在加载动态离场引擎..."):
+            dynamic_exit = __import__('ui.dynamic_exit', fromlist=['render_dynamic_exit'])
+            dynamic_exit.render_dynamic_exit(get_db_instance())
 
 elif app_mode == "🔥 交易策略":
     # 交易策略模块

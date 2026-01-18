@@ -26,7 +26,7 @@ class PositionManager:
     # 风险控制参数
     MAX_SINGLE_LOSS_RATIO = 0.02    # 单笔交易最大亏损比例（2%）
     MAX_TOTAL_POSITION = 0.8        # 最大总仓位（80%）
-    DEFAULT_STOP_LOSS_RATIO = 0.05  # 默认止损比例（5%）
+    DEFAULT_STOP_LOSS_RATIO = 0.08  # 默认止损比例（8%，与 V13 铁律保持一致）
     
     def __init__(self, account_value=100000):
         """
@@ -362,3 +362,130 @@ class PositionManager:
                 'can_add_position': True,
                 'force_stop_loss': False
             }
+    
+    # [V15.1 Dynamic Exit] 三级火箭防守系统
+    def calculate_dynamic_stop_loss(self, current_price: float, cost_price: float, 
+                                   highest_price: float, is_limit_up: bool = False,
+                                   limit_up_price: float = None) -> Dict:
+        """
+        [V15.1 动态离场系统 - The Reaper]
+        三级火箭防守：保护浮盈，锁定利润，炸板逃逸
+        
+        Args:
+            current_price: 当前价格
+            cost_price: 成本价
+            highest_price: 持仓期间最高价
+            is_limit_up: 是否曾封涨停
+            limit_up_price: 涨停价（可选，用于判断炸板）
+        
+        Returns:
+            dict: {
+                'stop_loss_price': 止损价,
+                'stop_loss_reason': 止损原因,
+                'should_sell': 是否强制卖出,
+                'defense_level': 防守等级 (0=无, 1=成本保护, 2=回撤锁定, 3=炸板逃逸),
+                'current_profit': 当前浮盈比例,
+                'stop_loss_ratio': 止损比例
+            }
+        """
+        # 计算当前浮盈比例
+        current_profit = (current_price - cost_price) / cost_price
+        
+        # 默认止损价（初始止损：-8%）
+        stop_loss_price = cost_price * (1 - self.DEFAULT_STOP_LOSS_RATIO)
+        stop_loss_reason = "初始止损线（-8%）"
+        should_sell = False
+        defense_level = 0
+        
+        # [一级防守] 成本保护：浮盈 > 3% → 止损线 = 成本价 + 0.5%
+        TIER_1_PROFIT_THRESHOLD = 0.03  # 3%
+        TIER_1_PROFIT_PROTECTION = 0.005  # 0.5%
+        
+        if current_profit > TIER_1_PROFIT_THRESHOLD:
+            tier_1_stop_loss = cost_price * (1 + TIER_1_PROFIT_PROTECTION)
+            if tier_1_stop_loss > stop_loss_price:
+                stop_loss_price = tier_1_stop_loss
+                stop_loss_reason = "一级防守：成本保护（保本单）"
+                defense_level = max(defense_level, 1)
+                logger.info(f"🛡️ [一级防守] 浮盈 {current_profit*100:.2f}% > 3%，止损线上移至成本价 + 0.5%")
+        
+        # [二级防守] 回撤锁定：最高浮盈 > 7% → 止损线 = 最高价 * 0.97
+        TIER_2_PROFIT_THRESHOLD = 0.07  # 7%
+        TIER_2_DRAWDOWN_RATIO = 0.97  # 97%
+        
+        # 计算最高浮盈
+        highest_profit = (highest_price - cost_price) / cost_price
+        
+        if highest_profit > TIER_2_PROFIT_THRESHOLD:
+            tier_2_stop_loss = highest_price * TIER_2_DRAWDOWN_RATIO
+            if tier_2_stop_loss > stop_loss_price:
+                stop_loss_price = tier_2_stop_loss
+                stop_loss_reason = "二级防守：回撤锁定（从最高点回撤 3%）"
+                defense_level = max(defense_level, 2)
+                logger.info(f"🔒 [二级防守] 最高浮盈 {highest_profit*100:.2f}% > 7%，止损线锁定为最高价 * 0.97")
+        
+        # [三级防守] 炸板逃逸：曾涨停 + 炸板 2% → 强制卖出
+        TIER_3_BREAK_THRESHOLD = 0.02  # 2%
+        
+        if is_limit_up and limit_up_price is not None:
+            # 判断是否炸板：当前价格 < 涨停价 * 98%
+            if current_price < limit_up_price * (1 - TIER_3_BREAK_THRESHOLD):
+                should_sell = True
+                stop_loss_price = current_price  # 强制卖出，止损价设为当前价
+                stop_loss_reason = "三级防守：炸板逃逸（强制市价卖出）"
+                defense_level = 3
+                logger.warning(f"🚨 [三级防守] 检测到炸板！当前价 {current_price:.2f} < 涨停价 {limit_up_price:.2f} * 98%，强制卖出！")
+        
+        # 计算止损比例
+        stop_loss_ratio = (stop_loss_price - cost_price) / cost_price
+        
+        return {
+            'stop_loss_price': stop_loss_price,
+            'stop_loss_reason': stop_loss_reason,
+            'should_sell': should_sell,
+            'defense_level': defense_level,
+            'current_profit': current_profit,
+            'stop_loss_ratio': stop_loss_ratio,
+            'tier_1_active': defense_level >= 1,
+            'tier_2_active': defense_level >= 2,
+            'tier_3_active': defense_level == 3
+        }
+    
+    def check_position_exit_signal(self, stock_code: str, current_price: float, 
+                                  cost_price: float, highest_price: float,
+                                  is_limit_up: bool = False, limit_up_price: float = None) -> Dict:
+        """
+        检查持仓是否触发离场信号
+        
+        Args:
+            stock_code: 股票代码
+            current_price: 当前价格
+            cost_price: 成本价
+            highest_price: 持仓期间最高价
+            is_limit_up: 是否曾封涨停
+            limit_up_price: 涨停价
+        
+        Returns:
+            dict: 离场决策信息
+        """
+        # 计算动态止损
+        stop_loss_result = self.calculate_dynamic_stop_loss(
+            current_price=current_price,
+            cost_price=cost_price,
+            highest_price=highest_price,
+            is_limit_up=is_limit_up,
+            limit_up_price=limit_up_price
+        )
+        
+        # 检查是否触发止损
+        triggered = current_price <= stop_loss_result['stop_loss_price']
+        
+        if triggered:
+            logger.warning(f"🚨 [止损触发] {stock_code} 当前价 {current_price:.2f} <= 止损价 {stop_loss_result['stop_loss_price']:.2f}")
+        
+        return {
+            **stop_loss_result,
+            'triggered': triggered,
+            'action': '强制卖出' if (triggered or stop_loss_result['should_sell']) else '持有',
+            'stock_code': stock_code
+        }
