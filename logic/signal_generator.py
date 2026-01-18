@@ -206,12 +206,18 @@ class SignalGenerator:
                     "market_status": market_status
                 }
             
-            # 场景 B: 弱转强 (Weak-to-Strong) - 豪华榜 + 平开/微红
+            # 场景 B: 加速观察区（灰色死区） - 豪华榜 + 高开加速 (+3%~+6%)
+            elif 3.0 < open_pct_change <= 6.0:
+                lhb_modifier = 0.9 # 不加分，也不扣分，但标记为观察区
+                lhb_msg = f"⚠️ [观察区] 豪华榜+高开加速({open_pct_change}%)，需换手确认，RISK_WARNING"
+                risk_level = "HIGH"  # 标记为高风险
+            
+            # 场景 C: 弱转强 (Weak-to-Strong) - 豪华榜 + 平开/微红
             elif -2.0 <= open_pct_change <= 3.0:
                 lhb_modifier = 1.3 # 给予 30% 溢价
                 lhb_msg = f"🚀 [弱转强] 豪华榜+平开({open_pct_change}%)，主力承接有力"
                 
-            # 场景 C: 不及预期 - 豪华榜 + 低开
+            # 场景 D: 不及预期 - 豪华榜 + 低开
             elif open_pct_change < -3.0:
                 lhb_modifier = 0.5 # 只有 50% 信心
                 lhb_msg = f"📉 [不及预期] 豪华榜被核({open_pct_change}%)"
@@ -337,9 +343,12 @@ class SignalGenerator:
             import akshare as ak
             from datetime import datetime, timedelta
             
-            # 获取昨天的日期
-            yesterday = datetime.now() - timedelta(days=1)
-            date_str = yesterday.strftime("%Y%m%d")  # 格式：20260117
+            # 获取昨天的日期（修复周一效应）
+            now = datetime.now()
+            # 周一(0)取上周五(3天前)，周日(6)取上周五(2天前)，其他取昨日(1天前)
+            days_back = 3 if now.weekday() == 0 else (2 if now.weekday() == 6 else 1)
+            target_date = now - timedelta(days=days_back)
+            date_str = target_date.strftime("%Y%m%d")  # 格式：20260116
             
             # 获取龙虎榜数据（修复：使用正确的接口）
             try:

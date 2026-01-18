@@ -326,12 +326,24 @@ class PredatorSystem:
         if not is_limit_up:
             return score, "NOT_LIMIT"
         
-        # 2. 计算封单金额（万）- 确保使用了 DataSanitizer 清洗后的数据
-        bid1_volume = realtime_data.get('bid1_volume', 0)  # 买一量（手数）
+        # 2. 计算封单金额（万）- Trap 4 修复：增加数量级校验
+        bid1_volume = realtime_data.get('bid1_volume', 0)  # 买一量（可能是手数或股数）
         current_price = realtime_data.get('price', realtime_data.get('now', 0))
+        circulating_market_cap = realtime_data.get('circulating_market_cap', 0)  # 流通市值（元）
         
         if bid1_volume == 0 or current_price == 0:
             return score, "NO_SEAL_DATA"
+        
+        # Trap 4 修复：数量级校验（Sanity Check）
+        # 如果 bid1_volume * current_price > 流通市值，则判定 bid1_volume 单位为"股"，除以 100
+        # 否则默认为"手"
+        if circulating_market_cap > 0:
+            estimated_seal_amount = bid1_volume * current_price
+            if estimated_seal_amount > circulating_market_cap:
+                logger.warning(f"⚠️ [单位校验] {symbol} {name} bid1_volume({bid1_volume}) * price({current_price}) = {estimated_seal_amount:.0f} > 流通市值({circulating_market_cap:.0f})，判定单位为'股'，除以 100")
+                bid1_volume = bid1_volume / 100  # 转换为手数
+            else:
+                logger.debug(f"✅ [单位校验] {symbol} {name} bid1_volume 单位判定为'手'，无需转换")
         
         # 使用 DataSanitizer 计算封单金额
         from logic.data_sanitizer import DataSanitizer

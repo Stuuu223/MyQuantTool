@@ -225,8 +225,22 @@ class DragonTactics:
         Returns:
             弱转强分析结果
         """
+        # Trap 5 修复：弱转强周期校验 - 检查 K线级别
         if len(df) < 2:
             return {'weak_to_strong': False, 'score': 0}
+        
+        # 检查索引是否为 DatetimeIndex
+        if not isinstance(df.index, pd.DatetimeIndex):
+            logger.warning("⚠️ [周期校验] K线索引不是 DatetimeIndex，无法判断周期")
+            return {'weak_to_strong': False, 'score': 0}
+        
+        # 检查时间间隔，如果是分钟线，直接返回 False
+        if len(df) >= 2:
+            time_diff = df.index[-1] - df.index[-2]
+            # 如果时间间隔小于 12 小时，说明是分钟线或小时线
+            if time_diff.total_seconds() < 12 * 3600:
+                logger.warning(f"⚠️ [周期校验] 检测到分钟线/小时线（间隔 {time_diff}），不支持弱转强分析")
+                return {'weak_to_strong': False, 'score': 0}
         
         results = {}
         
@@ -413,17 +427,18 @@ class DragonTactics:
         
         pct_change = (current_price - pre_close) / pre_close * 100
         
-        # 3. 竞价分析（使用涨跌幅作为代理，降低门槛）
-        if pct_change > 3:
+        # 3. 竞价分析（修复：使用开盘涨幅 open_pct_change，而不是当前涨幅 pct_change）
+        open_pct_change = (open_price - pre_close) / pre_close * 100
+        if open_pct_change > 3:
             auction_score = 80
             auction_intensity = '强'
-        elif pct_change > 2:
+        elif open_pct_change > 2:
             auction_score = 60
             auction_intensity = '中等'
-        elif pct_change > 1:
+        elif open_pct_change > 1:
             auction_score = 40
             auction_intensity = '弱'
-        elif pct_change > 0:
+        elif open_pct_change > 0:
             auction_score = 20
             auction_intensity = '极弱'
         else:
