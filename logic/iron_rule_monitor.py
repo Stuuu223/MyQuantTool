@@ -12,6 +12,7 @@ from logic.database_manager import get_db_manager
 from logic.iron_rule_engine import IronRuleEngine
 from logic.news_crawler import NewsCrawler
 from logic.data_manager import DataManager
+from logic.utils import Utils
 
 logger = get_logger(__name__)
 
@@ -238,7 +239,7 @@ class IronRuleMonitor:
             """
             self.db.sqlite_execute(insert_sql, (
                 status['code'],
-                datetime.now().isoformat(),
+                Utils.get_beijing_time().isoformat(),
                 1 if status['is_locked'] else 0,
                 status['lock_reason'],
                 status['warning_level'],

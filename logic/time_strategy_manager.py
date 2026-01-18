@@ -3,12 +3,14 @@
 """
 V17 Time-Lord - 时间策略管理器
 实现分时段策略：黄金半小时、垃圾时间、尾盘偷袭
+V17.1: 时区校准 - 统一使用北京时间
 """
 
 from datetime import datetime, time
 from typing import Dict, Optional
 from enum import Enum
 from logic.logger import get_logger
+from logic.utils import Utils
 
 logger = get_logger(__name__)
 
@@ -181,7 +183,7 @@ class TimeStrategyManager:
             }
         """
         if current_time is None:
-            current_time = datetime.now()
+            current_time = Utils.get_beijing_time()
         
         current_time_only = current_time.time()
         

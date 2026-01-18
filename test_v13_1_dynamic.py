@@ -1,6 +1,6 @@
 import sys
 import logging
-from logic.signal_generator import SignalGenerator, get_signal_generator_v13
+from logic.signal_generator import SignalGenerator
 from logic.logger import get_logger
 
 logger = get_logger(__name__)
@@ -10,7 +10,7 @@ def test_dynamic_threshold_absolute():
     '''
     测试V13.1动态阈值：绝对值熔断
     '''
-    sg = get_signal_generator_v13()
+    sg = SignalGenerator()
     
     logger.info('='*50)
     logger.info('测试V13.1动态阈值：绝对值熔断')
@@ -62,7 +62,7 @@ def test_dynamic_threshold_relative():
     '''
     测试V13.1动态阈值：相对值熔断
     '''
-    sg = get_signal_generator_v13()
+    sg = SignalGenerator()
     
     logger.info('='*50)
     logger.info('测试V13.1动态阈值：相对值熔断')
@@ -116,7 +116,7 @@ def test_divergence_detection():
     '''
     测试V13.1背离识别：量价背离
     '''
-    sg = get_signal_generator_v13()
+    sg = SignalGenerator()
     
     logger.info('='*50)
     logger.info('测试V13.1背离识别：量价背离')
@@ -182,7 +182,7 @@ def test_integration_with_data_manager():
     logger.info('='*50)
     
     try:
-        sg = get_signal_generator_v13()
+        sg = SignalGenerator()
         dm = DataManager()
         
         # 测试用例7：获取真实数据

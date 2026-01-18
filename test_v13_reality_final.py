@@ -1,7 +1,7 @@
 ﻿import sys
 import pandas as pd
 import numpy as np
-from logic.signal_generator import get_signal_generator_v13
+from logic.signal_generator import SignalGenerator
 from logic.data_manager import DataManager
 from logic.logger import get_logger
 
@@ -12,7 +12,7 @@ def test_fact_veto_capital_out():
     logger.info('开始测试 V13 事实熔断：资金流出')
     logger.info('=' * 50)
     
-    sg = get_signal_generator_v13()
+    sg = SignalGenerator()
     
     # 测试用例 1：资金大幅流出，AI 分数很高
     logger.info('\n[测试用例 1] 资金大幅流出，AI 分数很高')
@@ -58,7 +58,7 @@ def test_fact_veto_trend_down():
     logger.info('开始测试 V13 事实熔断：趋势向下')
     logger.info('=' * 50)
     
-    sg = get_signal_generator_v13()
+    sg = SignalGenerator()
     
     # 测试用例 3：趋势向下，资金流入
     logger.info('\n[测试用例 3] 趋势向下，资金流入')
@@ -87,7 +87,7 @@ def test_resonance_boost():
     logger.info('开始测试 V13 共振奖励')
     logger.info('=' * 50)
     
-    sg = get_signal_generator_v13()
+    sg = SignalGenerator()
     
     # 测试用例 4：资金流入 + 趋势向上（完美共振）
     logger.info('\n[测试用例 4] 资金流入 + 趋势向上（完美共振）')
@@ -159,7 +159,7 @@ def test_trend_status():
     logger.info('开始测试 V13 趋势状态判断')
     logger.info('=' * 50)
     
-    sg = get_signal_generator_v13()
+    sg = SignalGenerator()
     
     # 创建测试数据
     dates = pd.date_range(start='2026-01-01', periods=30)
@@ -206,7 +206,7 @@ def test_real_data_integration():
     
     try:
         dm = DataManager()
-        sg = get_signal_generator_v13()
+        sg = SignalGenerator()
         
         # 测试用例 10：真实股票数据
         logger.info('\n[测试用例 10] 真实股票数据：600519')

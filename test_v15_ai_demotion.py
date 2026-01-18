@@ -20,7 +20,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from logic.ai_agent import RealAIAgent, RuleBasedAgent
-from logic.signal_generator import get_signal_generator_v13
+from logic.signal_generator import SignalGenerator
 from logic.news_crawler import NewsCrawlerManager
 from logic.logger import get_logger
 
@@ -33,7 +33,7 @@ class V15AIDemotionTester:
     def __init__(self):
         """初始化测试器"""
         self.test_results = []
-        self.sg = get_signal_generator_v13()
+        self.sg = SignalGenerator()
         self.news_manager = NewsCrawlerManager()
         
         # 初始化 AI 代理（使用模拟 API）

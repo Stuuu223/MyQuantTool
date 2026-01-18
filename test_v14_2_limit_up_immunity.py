@@ -4,7 +4,7 @@
 
 import sys
 import logging
-from logic.signal_generator import get_signal_generator_v13
+from logic.signal_generator import SignalGenerator
 from logic.logger import get_logger
 
 logger = get_logger(__name__)
@@ -18,7 +18,7 @@ def test_limit_up_immunity_10cm():
     logger.info('测试V14.2涨停豁免权：10cm涨停')
     logger.info('='*60)
     
-    sg = get_signal_generator_v13()
+    sg = SignalGenerator()
     
     # 测试用例1：10cm涨停 + 资金流出（应该被豁免）
     result = sg.calculate_final_signal(
@@ -78,7 +78,7 @@ def test_limit_up_immunity_20cm():
     logger.info('测试V14.2涨停豁免权：20cm涨停')
     logger.info('='*60)
     
-    sg = get_signal_generator_v13()
+    sg = SignalGenerator()
     
     # 测试用例3：20cm涨停 + 资金流出（应该被豁免）
     result = sg.calculate_final_signal(
@@ -116,7 +116,7 @@ def test_limit_up_immunity_threshold():
     logger.info('测试V14.2涨停豁免权：阈值测试')
     logger.info('='*60)
     
-    sg = get_signal_generator_v13()
+    sg = SignalGenerator()
     
     # 测试用例4：涨幅9.0%（未达到9.5%阈值，不应豁免）
     result = sg.calculate_final_signal(
@@ -175,7 +175,7 @@ def test_limit_up_immunity_buy_threshold():
     logger.info('测试V14.2涨停豁免权：买入阈值调整')
     logger.info('='*60)
     
-    sg = get_signal_generator_v13()
+    sg = SignalGenerator()
     
     # 测试用例6：涨停 + AI分数70（应该买入，阈值降至75）
     result = sg.calculate_final_signal(
@@ -232,7 +232,7 @@ def test_real_case_600058():
     logger.info('测试V14.2真实案例：600058（踏空案例）')
     logger.info('='*60)
     
-    sg = get_signal_generator_v13()
+    sg = SignalGenerator()
     
     # V13.1结果：评分30.0，WAIT
     result_v13_1 = sg.calculate_final_signal(

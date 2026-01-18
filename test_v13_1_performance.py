@@ -1,7 +1,7 @@
 import sys
 import time
 import logging
-from logic.signal_generator import SignalGenerator, get_signal_generator_v13
+from logic.signal_generator import SignalGenerator
 from logic.data_manager import DataManager
 from logic.logger import get_logger
 
@@ -62,7 +62,7 @@ def test_performance_batch():
     '''
     测试V13.1批量股票的性能
     '''
-    sg = get_signal_generator_v13()
+    sg = SignalGenerator()
     dm = DataManager()
     
     stock_list = ['600519', '000001', '000002', '000858', '600036']
@@ -109,7 +109,7 @@ def test_performance_calculation_only():
     '''
     测试V13.1纯计算性能（不含数据获取）
     '''
-    sg = get_signal_generator_v13()
+    sg = SignalGenerator()
     
     logger.info('='*60)
     logger.info('V13.1性能测试：纯计算性能')

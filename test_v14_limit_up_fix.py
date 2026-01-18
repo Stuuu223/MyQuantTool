@@ -7,7 +7,7 @@ import logging
 from datetime import datetime, timedelta
 from logic.auto_reviewer import AutoReviewer
 from logic.signal_history import get_signal_history_manager
-from logic.signal_generator import get_signal_generator_v13
+from logic.signal_generator import SignalGenerator
 from logic.data_manager import DataManager
 from logic.logger import get_logger
 
@@ -56,7 +56,7 @@ def test_missed_opportunities_with_real_data():
     try:
         reviewer = AutoReviewer()
         shm = get_signal_history_manager()
-        sg = get_signal_generator_v13()
+        sg = SignalGenerator()
         
         # 测试日期
         test_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
