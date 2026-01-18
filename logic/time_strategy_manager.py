@@ -4,6 +4,7 @@
 V17 Time-Lord - 时间策略管理器
 实现分时段策略：黄金半小时、垃圾时间、尾盘偷袭
 V17.1: 时区校准 - 统一使用北京时间
+V17.2: 时空融合 - 情绪覆盖时间策略
 """
 
 from datetime import datetime, time
@@ -30,6 +31,10 @@ class TimeStrategyManager:
     - 09:25 - 10:00 (黄金半小时)：全功率运行，进攻模式
     - 10:00 - 14:30 (垃圾时间)：进入低功耗监控模式。只卖不买，或者只做 T
     - 14:30 - 15:00 (尾盘偷袭)：重新唤醒，扫描"首板"或"尾盘抢筹"机会
+    
+    V17.2 时空融合：
+    - 当市场情绪极热（>80）时，即使是在垃圾时间，也要强制切换为进攻模式
+    - 当市场情绪极冷（<20）时，即使是在黄金时间，也要强制切换为防守模式
     """
     
     # 时间段配置
@@ -47,12 +52,13 @@ class TimeStrategyManager:
         self.current_mode = TradingMode.AGGRESSIVE
         self.mode_history = []
     
-    def get_current_mode(self, current_time: Optional[datetime] = None) -> Dict[str, any]:
+    def get_current_mode(self, current_time: Optional[datetime] = None, sentiment_score: float = 50.0) -> Dict[str, any]:
         """
-        获取当前交易模式
+        获取当前交易模式（V17.2 时空融合版本）
         
         Args:
-            current_time: 当前时间，如果为 None 则使用系统时间
+            current_time: 当前时间，如果为 None 则使用北京时间
+            sentiment_score: 市场情绪分数（0-100），V17.2 新增
         
         Returns:
             dict: {
@@ -62,15 +68,17 @@ class TimeStrategyManager:
                 'allow_buy': bool,    # 是否允许买入
                 'allow_sell': bool,   # 是否允许卖出
                 'scan_interval': int, # 扫描间隔（秒）
-                'recommendation': str # 操作建议
+                'recommendation': str, # 操作建议
+                'sentiment_override': bool, # V17.2: 是否被情绪覆盖
+                'sentiment_score': float  # V17.2: 情绪分数
             }
         """
         if current_time is None:
-            current_time = datetime.now()
+            current_time = Utils.get_beijing_time()
         
         current_time_only = current_time.time()
         
-        # 判断当前时间段
+        # 判断当前时间段（基础模式）
         if self.GOLDEN_HALF_HOUR_START <= current_time_only < self.GOLDEN_HALF_HOUR_END:
             # 黄金半小时：09:25 - 10:00
             mode = TradingMode.AGGRESSIVE
@@ -111,6 +119,37 @@ class TimeStrategyManager:
             scan_interval = 300  # 5分钟扫描一次
             recommendation = "😴 系统休眠，等待交易时间"
         
+        # V17.2: 情绪覆盖逻辑 (Chronos-Kairos Fusion)
+        sentiment_override = False
+        
+        if sentiment_score >= 80.0:
+            # 情绪爆发：强制进攻
+            if mode != TradingMode.AGGRESSIVE:
+                logger.warning(f"🔥 [V17.2 情绪爆发] 市场情绪({sentiment_score:.1f})极热，打破时间限制，强制进攻！")
+                mode = TradingMode.AGGRESSIVE
+                mode_name = "情绪爆发模式"
+                description = f"情绪爆发({sentiment_score:.1f})：无视垃圾时间，强制进攻"
+                allow_buy = True
+                allow_sell = True
+                scan_interval = 15  # 15秒扫描一次
+                recommendation = "🚀 市场情绪爆发，抓住主升浪机会，积极买入！"
+            # 无论当前模式是什么，只要情绪分数 >= 80，就标记为情绪覆盖
+            sentiment_override = True
+                
+        elif sentiment_score <= 20.0:
+            # 情绪冰点：强制防守
+            if mode != TradingMode.DEFENSIVE:
+                logger.warning(f"❄️ [V17.2 情绪冰点] 市场情绪({sentiment_score:.1f})极冷，强制防守。")
+                mode = TradingMode.DEFENSIVE
+                mode_name = "情绪冰点模式"
+                description = f"情绪冰点({sentiment_score:.1f})：市场恐慌，强制防守"
+                allow_buy = False
+                allow_sell = True
+                scan_interval = 300  # 5分钟扫描一次
+                recommendation = "🛡️ 市场情绪冰点，规避风险，只卖不买"
+            # 无论当前模式是什么，只要情绪分数 <= 20，就标记为情绪覆盖
+            sentiment_override = True
+        
         # 更新当前模式
         self.current_mode = mode
         
@@ -118,7 +157,9 @@ class TimeStrategyManager:
         self.mode_history.append({
             'timestamp': current_time,
             'mode': mode,
-            'mode_name': mode_name
+            'mode_name': mode_name,
+            'sentiment_score': sentiment_score,
+            'sentiment_override': sentiment_override
         })
         
         # 只保留最近 10 条记录
@@ -132,28 +173,39 @@ class TimeStrategyManager:
             'allow_buy': allow_buy,
             'allow_sell': allow_sell,
             'scan_interval': scan_interval,
-            'recommendation': recommendation
+            'recommendation': recommendation,
+            'sentiment_override': sentiment_override,  # V17.2 新增
+            'sentiment_score': sentiment_score  # V17.2 新增
         }
         
         logger.info(f"⏰ [Time-Lord] {mode_name}: {description}")
+        if sentiment_override:
+            logger.info(f"🔥 [V17.2 时空融合] 情绪({sentiment_score:.1f})覆盖时间策略")
         
         return result
     
-    def should_filter_signal(self, signal: str, current_time: Optional[datetime] = None) -> tuple:
+    def should_filter_signal(self, signal: str, current_time: Optional[datetime] = None, sentiment_score: float = 50.0) -> tuple:
         """
-        根据当前时间策略过滤交易信号
+        根据当前时间策略过滤交易信号（V17.2 时空融合版本）
         
         Args:
             signal: 原始交易信号 (BUY/SELL/WAIT)
             current_time: 当前时间
+            sentiment_score: 市场情绪分数（0-100），V17.2 新增
         
         Returns:
             tuple: (filtered_signal, reason)
         """
-        mode_info = self.get_current_mode(current_time)
+        mode_info = self.get_current_mode(current_time, sentiment_score)
         
         mode = mode_info['mode']
         mode_name = mode_info['mode_name']
+        
+        # V17.2: 情绪爆发时，即使是在防守模式也允许买入
+        if mode_info['sentiment_override'] and mode_info['sentiment_score'] >= 80.0:
+            # 情绪覆盖，保留原信号
+            if signal == "BUY":
+                return (signal, f"🔥 [V17.2 时空融合] 情绪爆发({sentiment_score:.1f})，允许买入")
         
         # 防守模式：过滤所有 BUY 信号
         if mode == TradingMode.DEFENSIVE and signal == "BUY":

@@ -972,6 +972,14 @@ if app_mode == "📈 市场分析":
             time_sync = __import__('ui.v17_1_time_sync', fromlist=['render_time_sync_panel'])
             time_sync.render_time_sync_panel()
 
+        st.markdown("---")
+        st.markdown("### 🌌 V17.2 时空融合 (Chronos-Kairos Fusion)")
+        st.caption("情绪覆盖时间策略，实现情绪 > 时间的优先级机制")
+        
+        with st.spinner("正在加载时空融合引擎..."):
+            chronos_kairos = __import__('ui.v17_2_chronos_kairos', fromlist=['render_chronos_kairos_panel'])
+            chronos_kairos.render_chronos_kairos_panel()
+
 elif app_mode == "🔥 交易策略":
     # 交易策略模块
     t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18, t19, t20 = st.tabs(["🔮 预测雷达", "🔥 龙头战法", "📈 均线战法", "🎯 打板预测", "⚡ 集合竞价", "📊 量价关系", "💰 游资席位", "🎯 半路战法", "🔍 买点扫描", "🕸️ 关系图谱", "👤 游资画像", "📈 短期涨跌", "🔮 机会预测", "🤖 多智能体", "📰 智能新闻", "🧠 实时情绪感知", "🐉 龙头识别跟踪", "⚡ 竞价预测系统", "🔧 在线参数调整", "🎮 历史重演"])

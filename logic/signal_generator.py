@@ -345,7 +345,8 @@ class SignalGenerator:
             from logic.time_strategy_manager import get_time_strategy_manager
             
             time_manager = get_time_strategy_manager()
-            filtered_signal, time_reason = time_manager.should_filter_signal(signal)
+            # V17.2: 传入市场情绪分数，实现时空融合
+            filtered_signal, time_reason = time_manager.should_filter_signal(signal, sentiment_score=market_sentiment_score)
             
             if time_reason:
                 # 时间策略过滤了信号
