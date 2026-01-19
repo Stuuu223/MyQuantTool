@@ -184,7 +184,7 @@ class SignalGenerator:
             # 检查失败不影响其他逻辑，继续执行
         
         # =========================================================
-        # 0.7 [V18] 全维板块共振 (The Navigator) - 完整旗舰版
+        # 0.7 [V18.6.1] 市场环境过滤器 (MarketEnvironmentFilter) - 解耦板块共振逻辑
         # =========================================================
         sector_modifier = 1.0
         sector_reason = ""
@@ -193,61 +193,44 @@ class SignalGenerator:
         resonance_details = []
         
         try:
-            from logic.sector_analysis import FastSectorAnalyzer
-            from logic.data_manager import DataManager
+            from logic.market_environment_filter import get_market_environment_filter
             
-            # 获取板块分析器
-            db = DataManager()
-            sector_analyzer = FastSectorAnalyzer(db)
+            # 获取市场环境过滤器
+            env_filter = get_market_environment_filter(self.db)
             
-            # 获取股票名称（用于龙头匹配）
-            try:
-                realtime_data = db.get_realtime_data(stock_code)
-                stock_name = realtime_data.get('name', '') if realtime_data else ''
-            except:
-                stock_name = ''
+            # 检查市场环境是否支持做多
+            env_result = env_filter.check_market_environment(stock_code)
             
-            # 全维共振分析（行业 + 概念 + 资金热度 + 龙头溯源）
-            full_resonance = sector_analyzer.check_stock_full_resonance(stock_code, stock_name)
-            
-            resonance_score = full_resonance.get('resonance_score', 0.0)
-            resonance_details = full_resonance.get('resonance_details', [])
-            is_leader = full_resonance.get('is_leader', False)
-            is_follower = full_resonance.get('is_follower', False)
-            
-            # 兼容旧版接口
-            sector_info = sector_analyzer.check_sector_status(stock_code)
-            sector_modifier = sector_info.get('modifier', 1.0)
+            resonance_score = env_result.get('resonance_score', 0.0)
+            resonance_details = env_result.get('resonance_details', '').split(' | ') if env_result.get('resonance_details') else []
+            sector_info = env_result.get('sector_info', {})
             
             # 根据共振评分调整 AI 分数
             if resonance_score > 0:
                 # 共振加分
                 ai_score += resonance_score
-                logger.info(f"{stock_code} 🚀 [板块共振] +{resonance_score:.1f}分: {resonance_details}")
+                logger.info(f"{stock_code} 🚀 [板块共振] +{resonance_score:.1f}分: {env_result.get('resonance_details', '')}")
                 
                 # 如果是龙头，给予额外权重加成
-                if is_leader:
+                if sector_info.get('is_leader', False):
                     ai_score *= 1.2
                     logger.info(f"{stock_code} 👑 [龙头溢价] AI 分数 × 1.2")
                 
                 # 如果是跟风股，适当降权
-                elif is_follower:
+                elif sector_info.get('is_follower', False):
                     ai_score *= 0.9
                     logger.info(f"{stock_code} 📈 [跟风股] AI 分数 × 0.9")
             
             elif resonance_score < 0:
                 # 逆风减分
                 ai_score += resonance_score  # resonance_score 是负数
-                logger.warning(f"{stock_code} ⚠️ [板块逆风] {resonance_score:.1f}分: {resonance_details}")
+                logger.warning(f"{stock_code} ⚠️ [板块逆风] {resonance_score:.1f}分: {env_result.get('resonance_details', '')}")
             
             # 构建板块共振原因
-            if resonance_details:
-                sector_reason = " | ".join(resonance_details)
-            else:
-                sector_reason = sector_info.get('reason', '')
+            sector_reason = env_result.get('resonance_details', '')
             
         except Exception as e:
-            logger.warning(f"⚠️ [板块共振检查失败] {stock_code} {e}")
+            logger.warning(f"⚠️ [市场环境检查失败] {stock_code} {e}")
             import traceback
             traceback.print_exc()
             # 检查失败不影响其他逻辑，继续执行

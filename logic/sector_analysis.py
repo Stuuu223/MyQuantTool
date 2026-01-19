@@ -1,5 +1,5 @@
 """
-板块极速分析系统 (FastSectorAnalyzer) - V18 完整旗舰版
+板块极速分析系统 (FastSectorAnalyzer) - V18.6.1
 
 功能: 全维板块共振系统（行业板块 + 概念板块 + 资金热度 + 龙头溯源）
 性能: 0.25s (首次获取) / <0.01s (缓存)
@@ -27,7 +27,7 @@ logger = get_logger(__name__)
 
 
 class FastSectorAnalyzer:
-    """V18 完整旗舰版板块分析器
+    """V18.6.1 板块分析器
     
     全维板块共振系统：
     - 行业板块分析
@@ -47,7 +47,7 @@ class FastSectorAnalyzer:
         self._market_snapshot_cache = None
         self._cache_timestamp = None
         
-        # V18: 板块共振缓存
+        # 板块共振缓存
         self._akshare_industry_cache = None
         self._akshare_concept_cache = None
         self._akshare_cache_timestamp = None
