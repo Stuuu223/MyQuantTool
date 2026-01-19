@@ -185,15 +185,18 @@ class MoneyFlowMaster:
         
         return result
     
-    def check_dde_veto(self, stock_code: str, signal: str) -> Tuple[bool, str]:
+    def check_dde_veto(self, stock_code: str, signal: str, buy_mode: str = 'DRAGON_CHASE') -> Tuple[bool, str]:
         """
         DDE 否决权检查
         
-        铁律：如果 DDE 为负，无论 K 线多漂亮，系统禁止发出 BUY 信号
+        🆕 V18.6: 引入 buy_mode 参数，区分不同的买入策略：
+        - DRAGON_CHASE（追龙头）：DDE 必须为正，严格执行否决权
+        - LOW_SUCTION（低吸）：检查 DDE 变动率（斜率），允许 DDE 为负但转正的情况
         
         Args:
             stock_code: 股票代码
             signal: 原始信号（BUY/SELL/HOLD）
+            buy_mode: 买入模式（DRAGON_CHASE 或 LOW_SUCTION）
         
         Returns:
             tuple: (是否否决, 否决原因)
@@ -210,23 +213,53 @@ class MoneyFlowMaster:
             
             dde_net_flow = realtime_data.get('dde_net_flow', 0)
             
-            # DDE 否决权：DDE 为负时，禁止发出 BUY 信号
-            if dde_net_flow < self.DDE_NEGATIVE_THRESHOLD:
-                veto_reason = f'🛑 [DDE否决权] DDE净额为负（{dde_net_flow:.2f}亿），禁止发出 BUY 信号'
-                logger.warning(f"❌ {stock_code} {veto_reason}")
-                return True, veto_reason
+            # 🆕 V18.6: 根据买入模式采用不同的 DDE 检查逻辑
+            if buy_mode == 'DRAGON_CHASE':
+                # 追龙头模式：DDE 必须为正，严格执行否决权
+                if dde_net_flow < self.DDE_NEGATIVE_THRESHOLD:
+                    veto_reason = f'🛑 [DDE否决权-追龙] DDE净额为负（{dde_net_flow:.2f}亿），禁止发出 BUY 信号'
+                    logger.warning(f"❌ {stock_code} {veto_reason}")
+                    return True, veto_reason
+                
+                # DDE 弱信号：DDE < 0.5亿，发出警告
+                if dde_net_flow < self.DDE_BUY_THRESHOLD:
+                    warning_reason = f'⚠️ [DDE警告-追龙] DDE净额较弱（{dde_net_flow:.2f}亿），建议谨慎'
+                    logger.info(f"⚠️ {stock_code} {warning_reason}")
+                    return False, warning_reason
+                
+                # DDE 强信号：DDE > 1.0亿，增强信心
+                if dde_net_flow > self.DDE_STRONG_THRESHOLD:
+                    strong_reason = f'✅ [DDE强信号-追龙] DDE净额强劲（{dde_net_flow:.2f}亿），增强买入信心'
+                    logger.info(f"✅ {stock_code} {strong_reason}")
+                    return False, strong_reason
             
-            # DDE 弱信号：DDE < 0.5亿，发出警告
-            if dde_net_flow < self.DDE_BUY_THRESHOLD:
-                warning_reason = f'⚠️ [DDE警告] DDE净额较弱（{dde_net_flow:.2f}亿），建议谨慎'
-                logger.info(f"⚠️ {stock_code} {warning_reason}")
-                return False, warning_reason
-            
-            # DDE 强信号：DDE > 1.0亿，增强信心
-            if dde_net_flow > self.DDE_STRONG_THRESHOLD:
-                strong_reason = f'✅ [DDE强信号] DDE净额强劲（{dde_net_flow:.2f}亿），增强买入信心'
-                logger.info(f"✅ {stock_code} {strong_reason}")
-                return False, strong_reason
+            elif buy_mode == 'LOW_SUCTION':
+                # 低吸模式：检查 DDE 变动率（斜率），允许 DDE 为负但转正的情况
+                # 获取 DDE 历史数据
+                dde_history = self._get_dde_history(stock_code, lookback=5)
+                
+                if dde_history and len(dde_history) >= 3:
+                    # 计算 DDE 斜率（变动率）
+                    recent_dde = dde_history[-3:]  # 最近 3 个数据点
+                    dde_slope = (recent_dde[-1] - recent_dde[0]) / len(recent_dde)  # 每个数据点的平均变化
+                    
+                    # 如果 DDE 为负但斜率转正，说明卖盘枯竭，主力开始承接
+                    if dde_net_flow < 0 and dde_slope > 0:
+                        suction_reason = f'🔥 [DDE低吸] DDE净额为负（{dde_net_flow:.2f}亿），但斜率转正（{dde_slope:.3f}），卖盘枯竭，主力承接'
+                        logger.info(f"✅ {stock_code} {suction_reason}")
+                        return False, suction_reason
+                    
+                    # 如果 DDE 为负且斜率继续向下，说明还在砸盘，禁止买入
+                    if dde_net_flow < self.DDE_NEGATIVE_THRESHOLD and dde_slope < 0:
+                        veto_reason = f'🛑 [DDE否决权-低吸] DDE净额为负（{dde_net_flow:.2f}亿）且斜率向下（{dde_slope:.3f}），还在砸盘，禁止买入'
+                        logger.warning(f"❌ {stock_code} {veto_reason}")
+                        return True, veto_reason
+                
+                # 如果无法获取历史数据，采用保守策略
+                if dde_net_flow < self.DDE_NEGATIVE_THRESHOLD:
+                    veto_reason = f'🛑 [DDE否决权-低吸] DDE净额为负（{dde_net_flow:.2f}亿），无法判断斜率，保守处理，禁止买入'
+                    logger.warning(f"❌ {stock_code} {veto_reason}")
+                    return True, veto_reason
             
             return False, ''
         

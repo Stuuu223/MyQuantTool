@@ -287,12 +287,21 @@ class SignalGenerator:
 
         # =========================================================
         # 1.5. [V18.5] DDE 否决权 (DDE Veto) - 资金铁律
+        # 🆕 V18.6: 引入 buy_mode 参数，区分 DRAGON_CHASE 和 LOW_SUCTION
         # =========================================================
-        # 铁律：如果 DDE 为负，无论 K 线多漂亮，系统禁止发出 BUY 信号
+        # 铁律：如果 DDE 为负，根据买入模式决定是否否决
         try:
             from logic.money_flow_master import get_money_flow_master
             mfm = get_money_flow_master()
-            is_vetoed, veto_reason = mfm.check_dde_veto(stock_code, 'BUY')
+            
+            # 🆕 V18.6: 根据当前涨幅判断买入模式
+            # 如果涨幅 > 3%，认为是追龙头模式；否则认为是低吸模式
+            if current_pct_change > 3.0:
+                buy_mode = 'DRAGON_CHASE'
+            else:
+                buy_mode = 'LOW_SUCTION'
+            
+            is_vetoed, veto_reason = mfm.check_dde_veto(stock_code, 'BUY', buy_mode)
             
             if is_vetoed:
                 logger.warning(f"{stock_code} {veto_reason}")
@@ -302,7 +311,8 @@ class SignalGenerator:
                     "reason": veto_reason, 
                     "risk": "HIGH",
                     "market_sentiment_score": market_sentiment_score,
-                    "market_status": market_status
+                    "market_status": market_status,
+                    "buy_mode": buy_mode  # 🆕 V18.6: 返回买入模式
                 }
             elif veto_reason:
                 # DDE 弱信号警告，但不否决

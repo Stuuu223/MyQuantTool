@@ -26,11 +26,17 @@ class LowSuctionEngine:
     2. 缩量回调：成交量萎缩，说明抛压减轻
     3. 资金承接：DDE 净额为正，说明主力承接
     4. 逻辑确认：符合核心逻辑（机器人/航天等）+ 龙虎榜机构深度介入
+    
+    🆕 V18.6: 引入价格缓冲区，避免因网络延迟错过机会
     """
     
     # 低吸阈值配置
     MA5_TOUCH_THRESHOLD = -0.02      # 回踩 5日均线下方 -2%
-    INTRADAY_MA_TOUCH_THRESHOLD = -0.02  # 回踩分时均线下方 -2%
+    
+    # 🆕 V18.6: 分时均线价格缓冲区（避免因网络延迟错过机会）
+    INTRADAY_MA_TOUCH_THRESHOLD_MIN = -0.025  # 回踩分时均线下方 -2.5%（缓冲区下限）
+    INTRADAY_MA_TOUCH_THRESHOLD_MAX = -0.015  # 回踩分时均线下方 -1.5%（缓冲区上限）
+    
     VOLUME_SHRINK_THRESHOLD = 0.7    # 缩量阈值（成交量 < 前一日的 70%）
     DDE_POSITIVE_THRESHOLD = 0.1     # DDE 净额 > 0.1亿
     
@@ -125,7 +131,8 @@ class LowSuctionEngine:
         """
         检查分时均线低吸信号
         
-        逻辑：股价回踩分时均线（黄线）下方 -2% 处，且 DDE 翻红
+        🆕 V18.6: 引入价格缓冲区，避免因网络延迟错过机会
+        逻辑：股价回踩分时均线（黄线）下方 -1.5% 到 -2.5% 宽幅区间，且 DDE 翻红
         
         Args:
             stock_code: 股票代码
@@ -167,8 +174,8 @@ class LowSuctionEngine:
             touch_distance = (current_price - intraday_ma) / intraday_ma
             result['touch_distance'] = touch_distance
             
-            # 4. 判断是否回踩到分时均线下方 -2%
-            if touch_distance <= self.INTRADAY_MA_TOUCH_THRESHOLD:
+            # 🆕 V18.6: 判断是否在价格缓冲区内（-2.5% 到 -1.5%）
+            if self.INTRADAY_MA_TOUCH_THRESHOLD_MIN <= touch_distance <= self.INTRADAY_MA_TOUCH_THRESHOLD_MAX:
                 # 5. 检查 DDE 是否翻红
                 realtime_data = self.data_manager.get_realtime_data(stock_code)
                 if realtime_data:
@@ -179,15 +186,17 @@ class LowSuctionEngine:
                     if dde_turn_red:
                         result['has_suction'] = True
                         result['suction_type'] = 'intraday_ma_suction'
-                        result['confidence'] = min(0.8, abs(touch_distance) / 0.05)
-                        result['reason'] = f'🔥 [分时均线低吸] 回踩分时均线{touch_distance:.2%}，DDE翻红（{dde_net_flow:.2f}亿）'
+                        # 🆕 V18.6: 根据距离计算置信度，越接近 -2% 置信度越高
+                        confidence = 1.0 - abs(touch_distance + 0.02) / 0.01  # 距离 -2% 越近，置信度越高
+                        result['confidence'] = min(0.9, max(0.6, confidence))
+                        result['reason'] = f'🔥 [分时均线低吸] 回踩分时均线{touch_distance:.2%}（缓冲区内），DDE翻红（{dde_net_flow:.2f}亿）'
                         logger.info(f"✅ [分时均线低吸] {stock_code} 检测到低吸信号：{result['reason']}")
                     else:
-                        result['reason'] = f'回踩分时均线{touch_distance:.2%}，但DDE未翻红（{dde_net_flow:.2f}亿）'
+                        result['reason'] = f'回踩分时均线{touch_distance:.2%}（缓冲区内），但DDE未翻红（{dde_net_flow:.2f}亿）'
                 else:
-                    result['reason'] = f'回踩分时均线{touch_distance:.2%}，但无法获取DDE数据'
+                    result['reason'] = f'回踩分时均线{touch_distance:.2%}（缓冲区内），但无法获取DDE数据'
             else:
-                result['reason'] = f'未回踩分时均线下方（{touch_distance:.2%}）'
+                result['reason'] = f'未在分时均线缓冲区内（{touch_distance:.2%}，范围：{self.INTRADAY_MA_TOUCH_THRESHOLD_MIN:.2%} ~ {self.INTRADAY_MA_TOUCH_THRESHOLD_MAX:.2%}）'
         
         except Exception as e:
             logger.error(f"检查分时均线低吸失败: {e}")
