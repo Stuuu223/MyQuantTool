@@ -480,8 +480,4 @@ def render_predictive_radar(data_manager=None):
         - 请结合市场实际情况综合判断
         """)
 
-    # 关闭连接
-    if data_manager:
-        data_manager.close()
-
     logger.info("✅ 预测雷达渲染完成")
