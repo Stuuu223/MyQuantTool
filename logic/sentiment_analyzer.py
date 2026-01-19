@@ -212,21 +212,21 @@ class SentimentAnalyzer:
     
     def get_market_snapshot(self) -> Optional[Dict[str, Any]]:
         """
-        🆕 V9.11.1 修复：获取全市场快照数据（强制刷新，绕过懒加载）
+        🆕 V18.8 修复：获取全市场快照数据（使用新的数据提供者架构）
         
         Returns:
             全市场快照数据字典
         """
         try:
-            # 🆕 V9.11.1 修复：直接使用 Easyquotation 获取全市场快照
-            # 绕过 DataManager 的懒加载和缓存机制，确保获取全市场数据
-            if self.dm.quotation is None:
-                logger.error("Easyquotation 未初始化")
-                return None
+            # 🆕 V18.8 修复：使用 Easyquotation 直接获取全市场快照
+            # 绕过 DataManager 的代理层，直接使用 Easyquotation
+            import easyquotation as eq
             
-            # 直接调用 Easyquotation 的 market_snapshot 方法
-            # 这个方法会返回所有A股的快照数据，不依赖缓存
-            snapshot = self.dm.quotation.market_snapshot(prefix=False)
+            # 初始化行情接口
+            quotation = eq.use('sina')
+            
+            # 获取全市场快照
+            snapshot = quotation.market_snapshot(prefix=False)
             
             if not snapshot or len(snapshot) == 0:
                 logger.warning("获取到的市场快照为空")

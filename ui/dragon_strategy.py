@@ -117,9 +117,38 @@ def render_market_weather_panel():
         # 创建市场情绪分析器
         market_sentiment = MarketSentiment()
         
+        # 🆕 V18.8 修复：获取强势股列表用于主线挖掘
+        top_stocks = []
+        try:
+            from logic.sentiment_analyzer import SentimentAnalyzer
+            analyzer = SentimentAnalyzer(data_manager)
+            mood_data = analyzer.analyze_market_mood(force_refresh=True)
+            
+            if mood_data:
+                # 从市场快照中提取强势股（涨幅 > 3%）
+                snapshot = analyzer.get_market_snapshot()
+                if snapshot:
+                    for code, data in list(snapshot.items())[:100]:  # 取前100只股票
+                        change_pct = data.get('percent', 0)
+                        if change_pct > 3.0:  # 涨幅超过3%的股票
+                            top_stocks.append({
+                                'code': code,
+                                'name': data.get('name', ''),
+                                'change_pct': change_pct,
+                                'lianban_count': 0  # 连板数据需要额外获取，暂时设为0
+                            })
+                    
+                    # 按涨幅排序，取前20只
+                    top_stocks.sort(key=lambda x: x['change_pct'], reverse=True)
+                    top_stocks = top_stocks[:20]
+                    
+                    logger.info(f"✅ 获取强势股列表成功: {len(top_stocks)} 只")
+        except Exception as e:
+            logger.warning(f"⚠️ 获取强势股列表失败: {e}")
+        
         # 获取市场状态
         with st.spinner("正在分析市场天气..."):
-            regime_info = market_sentiment.get_market_regime()
+            regime_info = market_sentiment.get_market_regime(top_stocks=top_stocks)
         
         # 🔥 修复：提前定义 market_data，避免作用域错误
         market_data = regime_info.get('market_data', {})
