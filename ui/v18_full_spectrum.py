@@ -62,7 +62,7 @@ st.markdown("""
 st.markdown("---")
 
 # 选项卡
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
     "📊 DDE 核心战法",
     "🔻 低吸逻辑引擎",
     "🎯 动态涨停系数",
@@ -71,7 +71,8 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
     "🚀 预判模式",
     "🔮 二波预期",
     "🛡️ 风险监控",
-    "🔥 排队打板的真相"
+    "🔥 排队打板的真相",
+    "💎 V18.6.1 进阶战法"
 ])
 
 # Tab 1: DDE 核心战法
@@ -723,6 +724,219 @@ with tab9:
     2. **寻找"放量分歧点"**：利用 ui/v18_full_spectrum.py 里的"综合分析"，寻找那些 DDE 脉冲极强但涨幅尚未到顶（<10%） 的标的。
     3. **泰福泵业 (300992) 观察**：如果它明天在 MA5 附近出现 DDE 翻红，那就是我们 V18.6 "分歧转一致"的首战目标。
     """)
+
+# Tab 10: V18.6.1 进阶战法
+with tab10:
+    st.header("💎 V18.6.1 进阶战法")
+    st.markdown("""
+    **核心理念：**
+    > "V18.6 解决了'买得好'，V18.7 要解决'卖得神'。"
+    
+    **V18.6.1 新增功能：**
+    1. **动态止损**：20cm战法的"移动止损"，一旦股价跌破"DDE均价线"，立即触发HARD_EXIT
+    2. **主力成本线**：可视化主力成本线，当现价回踩这条线时，就是最硬的低吸点
+    3. **诱多陷阱识别**：识别主力"画图"诱多，防止被假单欺骗
+    4. **自动止盈**：情绪高潮兑现，当封单极弱或DDE背离流出时触发TP信号
+    """)
+    
+    st.markdown("---")
+    
+    # 1. 动态止损
+    st.subheader("1. 动态止损（20cm战法专用）")
+    st.markdown("""
+    **逻辑：** 创业板波动极大，从 12% 杀到 -5% 只需要 10 分钟。
+    **策略：** 引入 "Trailing Stop (移动止损)"。一旦股价跌破 "DDE 均价线"，立即触发 HARD_EXIT，不要等 -8% 止损。
+    """)
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        stock_code = st.text_input("股票代码", value="300992", key="dynamic_stop_loss_code")
+        current_price = st.number_input("当前价格", value=28.00, key="dynamic_stop_loss_price")
+        entry_price = st.number_input("入场价格", value=26.00, key="dynamic_stop_loss_entry")
+        dde_avg_price = st.number_input("DDE均价线", value=26.50, key="dynamic_stop_loss_dde_avg")
+        
+        if st.button("检查动态止损", key="check_dynamic_stop_loss"):
+            from logic.signal_generator import get_signal_generator_v14_4
+            signal_gen = get_signal_generator_v14_4()
+            result = signal_gen.check_dynamic_stop_loss(stock_code, current_price, entry_price, dde_avg_price)
+            
+            if result['should_stop_loss']:
+                if result['stop_loss_type'] == 'HARD_EXIT':
+                    st.error(f"🚨 {result['reason']}")
+                else:
+                    st.warning(f"⚠️ {result['reason']}")
+                
+                st.metric("当前亏损", f"{result['current_loss_pct']:.1f}%")
+                st.metric("止损类型", result['stop_loss_type'])
+                st.metric("止损价格", f"¥{result['stop_loss_price']:.2f}")
+                if result['distance_to_dde_avg'] != 0:
+                    st.metric("距离DDE均价线", f"{result['distance_to_dde_avg']:.1f}%")
+            else:
+                st.success(f"✅ {result['reason']}")
+                st.metric("当前亏损", f"{result['current_loss_pct']:.1f}%")
+    
+    with col2:
+        st.info("""
+        **动态止损特征：**
+        - 硬止损：亏损超过 8%
+        - 动态止损：跌破DDE均价线超过 2%
+        - 软止损：亏损超过 5%
+        
+        **实战建议：**
+        - 对于 20cm 股票，从 12% 杀到 -5% 只需要 10 分钟
+        - 不要等 -8% 止损，一旦跌破DDE均价线立即止损
+        - 保护本金，活下去才是最重要的
+        """)
+    
+    st.markdown("---")
+    
+    # 2. 主力成本线
+    st.subheader("2. 主力成本线（Institutional Cost Line）")
+    st.markdown("""
+    **逻辑：** Sum(Price * DDE_Net_Vol) / Sum(DDE_Net_Vol)
+    **意义：** 当现价回踩这条线时，就是最硬的低吸点。
+    """)
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        stock_code2 = st.text_input("股票代码", value="300992", key="institutional_cost_line_code")
+        
+        if st.button("计算主力成本线", key="calculate_institutional_cost_line"):
+            from logic.signal_generator import get_signal_generator_v14_4
+            signal_gen = get_signal_generator_v14_4()
+            institutional_cost_line = signal_gen.calculate_institutional_cost_line(stock_code2)
+            
+            if institutional_cost_line > 0:
+                # 获取当前价格
+                realtime_data = data_manager.get_realtime_data(stock_code2)
+                if realtime_data:
+                    current_price = realtime_data.get('price', 0)
+                    distance = (current_price - institutional_cost_line) / institutional_cost_line * 100 if institutional_cost_line > 0 else 0
+                    
+                    st.metric("主力成本线", f"¥{institutional_cost_line:.2f}")
+                    st.metric("当前价格", f"¥{current_price:.2f}")
+                    st.metric("距离成本线", f"{distance:.1f}%")
+                    
+                    if abs(distance) <= 2:
+                        st.success(f"✅ [黄金低吸点] 当前价格接近主力成本线（{distance:.1f}%），建议低吸")
+                    elif distance > 10:
+                        st.warning(f"⚠️ [追高风险] 当前价格高于主力成本线{distance:.1f}%，追高风险大")
+                    else:
+                        st.info(f"📊 [观察中] 当前价格距离主力成本线{distance:.1f}%")
+            else:
+                st.warning("⚠️ 无法计算主力成本线")
+    
+    with col2:
+        st.info("""
+        **主力成本线特征：**
+        - 算法：Sum(Price * DDE_Net_Vol) / Sum(DDE_Net_Vol)
+        - 意义：主力的平均持仓成本
+        - 应用：当现价回踩这条线时，就是最硬的低吸点
+        
+        **实战建议：**
+        - 主力成本线是最硬的支撑位
+        - 当股价回踩主力成本线时，如果量能萎缩，可以考虑低吸
+        - 不要在主力成本线上方追高，那样成本太高
+        """)
+    
+    st.markdown("---")
+    
+    # 3. 诱多陷阱识别
+    st.subheader("3. 诱多陷阱识别（Trap Pulse Detector）")
+    st.markdown("""
+    **背景：** 现在很多量化基金会故意在 3% 位置制造 DDE 脉冲来诱多（骗你的 V18.6 系统）。
+    **逻辑：** "撤单率 (Cancellation Rate)"。
+    **策略：** 如果买一/买二挂单巨大（诱多），但成交时迅速撤单，系统应判定为 FAKE_PULSE 并发出 🚫 [诱多陷阱] 警报。
+    """)
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        stock_code3 = st.text_input("股票代码", value="300992", key="trap_pulse_code")
+        current_pct_change = st.number_input("当前涨幅（%）", value=4.0, key="trap_pulse_change")
+        
+        if st.button("检测诱多陷阱", key="check_trap_pulse"):
+            result = fake_order_detector.check_trap_pulse(stock_code3, current_pct_change)
+            
+            if result['is_trap_pulse']:
+                st.error(f"🚫 {result['reason']}")
+                st.metric("买一/买二挂单巨大", "是" if result['bid1_bid2_huge'] else "否")
+                st.metric("买一/买二迅速撤单", "是" if result['bid1_bid2_cancel_fast'] else "否")
+                st.metric("撤单率", f"{result['cancellation_rate']:.2%}")
+                st.metric("置信度", f"{result['confidence']:.1%}")
+            elif result['confidence'] >= 0.5:
+                st.warning(f"⚠️ {result['reason']}")
+                st.metric("买一/买二挂单巨大", "是" if result['bid1_bid2_huge'] else "否")
+                st.metric("买一/买二迅速撤单", "是" if result['bid1_bid2_cancel_fast'] else "否")
+                st.metric("撤单率", f"{result['cancellation_rate']:.2%}")
+            else:
+                st.success(f"✅ {result['reason']}")
+    
+    with col2:
+        st.info("""
+        **诱多陷阱特征：**
+        - 涨幅在 3%-5% 区间
+        - 买一/买二挂单巨大（>10000手）
+        - 买一/买二迅速撤单（撤单率 > 50%）
+        
+        **实战建议：**
+        - 如果看到小成交量的票（<5000万）在乱动，直接无视，那是流动性黑洞
+        - 识别诱多陷阱，防止被假单欺骗
+        - 不要被表面的DDE脉冲迷惑
+        """)
+    
+    st.markdown("---")
+    
+    # 4. 自动止盈
+    st.subheader("4. 自动止盈（The Art of Selling）")
+    st.markdown("""
+    **背景：** V18.6 解决了"买得好"，V18.7 要解决"卖得神"。
+    **逻辑：** "情绪高潮兑现"。
+    **策略：** 当股价触及涨停但 "封单量/成交量 < 0.1"（封单极弱），或者 DDE 在高位出现 "背离流出"（股价涨，资金跑），系统应自动触发 TP (Take Profit) 信号，让你在板上把货倒给排队的人。
+    """)
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        stock_code4 = st.text_input("股票代码", value="300992", key="take_profit_code")
+        current_price2 = st.number_input("当前价格", value=30.00, key="take_profit_price")
+        entry_price2 = st.number_input("入场价格", value="26.00, key="take_profit_entry")
+        current_pct_change2 = st.number_input("当前涨幅（%）", value=15.0, key="take_profit_change")
+        is_limit_up = st.checkbox("是否涨停", value=False, key="take_profit_limit_up")
+        
+        if st.button("检查止盈信号", key="check_take_profit"):
+            from logic.signal_generator import get_signal_generator_v14_4
+            signal_gen = get_signal_generator_v14_4()
+            result = signal_gen.check_take_profit_signal(stock_code4, current_price2, entry_price2, current_pct_change2, is_limit_up)
+            
+            if result['should_take_profit']:
+                if result['take_profit_type'] == 'HARD_TP':
+                    st.error(f"🔔 {result['reason']}")
+                else:
+                    st.warning(f"⚠️ {result['reason']}")
+                
+                st.metric("当前盈利", f"{result['current_profit_pct']:.1f}%")
+                st.metric("止盈类型", result['take_profit_type'])
+                if result['seal_volume_ratio'] > 0:
+                    st.metric("封单量/成交量", f"{result['seal_volume_ratio']:.2%}")
+                st.metric("DDE背离", "是" if result['dde_divergence'] else "否")
+            else:
+                st.success(f"✅ {result['reason']}")
+                st.metric("当前盈利", f"{result['current_profit_pct']:.1f}%")
+    
+    with col2:
+        st.info("""
+        **自动止盈特征：**
+        - 硬止盈：封单量/成交量 < 10%
+        - 软止盈：DDE背离流出，盈利超过 5%
+        
+        **实战建议：**
+        - 情绪高潮兑现，在板上把货倒给排队的人
+        - 不要贪心，落袋为安
+        - 保护利润，活下去才是最重要的
+        """)
 
 # 页脚
 st.markdown("---")

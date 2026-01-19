@@ -681,6 +681,239 @@ class SignalGenerator:
         
         return result
     
+    def check_dynamic_stop_loss(self, stock_code: str, current_price: float, entry_price: float, 
+                               dde_avg_price: float = None) -> Dict[str, Any]:
+        """
+        🆕 V18.6.1: 检查动态止损（20cm战法专用）
+        
+        逻辑：创业板波动极大，从 12% 杀到 -5% 只需要 10 分钟。
+        引入 "Trailing Stop (移动止损)"。一旦股价跌破 "DDE 均价线"，立即触发 HARD_EXIT，不要等 -8% 止损。
+        
+        Args:
+            stock_code: 股票代码
+            current_price: 当前价格
+            entry_price: 入场价格
+            dde_avg_price: DDE均价线（可选）
+        
+        Returns:
+            dict: {
+                'should_stop_loss': bool,      # 是否应该止损
+                'stop_loss_type': str,         # 止损类型（HARD_EXIT / SOFT_EXIT）
+                'current_loss_pct': float,    # 当前亏损百分比
+                'stop_loss_price': float,      # 止损价格
+                'distance_to_dde_avg': float,  # 距离DDE均价线的距离
+                'reason': str                  # 原因
+            }
+        """
+        result = {
+            'should_stop_loss': False,
+            'stop_loss_type': '',
+            'current_loss_pct': 0.0,
+            'stop_loss_price': 0.0,
+            'distance_to_dde_avg': 0.0,
+            'reason': ''
+        }
+        
+        try:
+            # 1. 计算当前亏损百分比
+            if entry_price > 0:
+                current_loss_pct = (current_price - entry_price) / entry_price * 100
+                result['current_loss_pct'] = current_loss_pct
+            
+            # 2. 硬止损：亏损超过 8%
+            if current_loss_pct <= -8.0:
+                result['should_stop_loss'] = True
+                result['stop_loss_type'] = 'HARD_EXIT'
+                result['stop_loss_price'] = entry_price * 0.92  # 8%止损
+                result['reason'] = f'🚨 [硬止损] 亏损{current_loss_pct:.1f}%，触发硬止损（-8%）'
+                logger.warning(f"❌ {stock_code} {result['reason']}")
+                return result
+            
+            # 3. 动态止损：跌破DDE均价线
+            if dde_avg_price is not None and dde_avg_price > 0:
+                distance_to_dde_avg = (current_price - dde_avg_price) / dde_avg_price * 100
+                result['distance_to_dde_avg'] = distance_to_dde_avg
+                
+                # 如果跌破DDE均价线超过 2%，立即触发硬止损
+                if distance_to_dde_avg <= -2.0:
+                    result['should_stop_loss'] = True
+                    result['stop_loss_type'] = 'HARD_EXIT'
+                    result['stop_loss_price'] = dde_avg_price
+                    result['reason'] = f'🚨 [动态止损-硬止损] 股价跌破DDE均价线{distance_to_dde_avg:.1f}%，立即止损'
+                    logger.warning(f"❌ {stock_code} {result['reason']}")
+                    return result
+                
+                # 如果跌破DDE均价线超过 1%，发出软止损警告
+                elif distance_to_dde_avg <= -1.0:
+                    result['stop_loss_type'] = 'SOFT_EXIT'
+                    result['stop_loss_price'] = dde_avg_price
+                    result['reason'] = f'⚠️ [动态止损-软止损] 股价接近DDE均价线（{distance_to_dde_avg:.1f}%），建议关注'
+                    logger.info(f"⚠️ {stock_code} {result['reason']}")
+            
+            # 4. 软止损：亏损超过 5%
+            if -8.0 < current_loss_pct <= -5.0:
+                result['should_stop_loss'] = True
+                result['stop_loss_type'] = 'SOFT_EXIT'
+                result['stop_loss_price'] = entry_price * 0.95  # 5%止损
+                result['reason'] = f'⚠️ [软止损] 亏损{current_loss_pct:.1f}%，建议考虑止损'
+                logger.info(f"⚠️ {stock_code} {result['reason']}")
+            
+            # 5. 如果没有触发止损
+            if not result['should_stop_loss']:
+                result['reason'] = f'📊 [持仓中] 亏损{current_loss_pct:.1f}%，未触发止损'
+        
+        except Exception as e:
+            logger.error(f"检查动态止损失败: {e}")
+            result['reason'] = f'检查失败: {e}'
+        
+        return result
+    
+    def calculate_institutional_cost_line(self, stock_code: str, realtime_data: dict = None) -> float:
+        """
+        🆕 V18.6.1: 计算主力成本线（Institutional Cost Line）
+        
+        算法：Sum(Price * DDE_Net_Vol) / Sum(DDE_Net_Vol)
+        当现价回踩这条线时，就是最硬的低吸点。
+        
+        Args:
+            stock_code: 股票代码
+            realtime_data: 实时数据（可选）
+        
+        Returns:
+            float: 主力成本线价格
+        """
+        try:
+            # 如果没有提供实时数据，获取实时数据
+            if realtime_data is None:
+                data_manager = self.get_data_manager()
+                realtime_data = data_manager.get_realtime_data(stock_code)
+            
+            if not realtime_data:
+                return 0.0
+            
+            # 获取DDE历史数据
+            money_flow_master = get_money_flow_master()
+            dde_history = money_flow_master._get_dde_history(stock_code, lookback=10)
+            
+            if not dde_history or len(dde_history) < 3:
+                return 0.0
+            
+            # 获取价格历史数据（这里简化处理，实际应该从K线数据获取）
+            # 假设价格变化与DDE变化同步
+            current_price = realtime_data.get('price', 0)
+            price_history = [current_price * (1 + dde / current_price) for dde in dde_history]
+            
+            # 计算主力成本线：Sum(Price * DDE_Net_Vol) / Sum(DDE_Net_Vol)
+            weighted_sum = sum(price * dde for price, dde in zip(price_history, dde_history))
+            dde_sum = sum(dde_history)
+            
+            if dde_sum != 0:
+                institutional_cost_line = weighted_sum / dde_sum
+                return institutional_cost_line
+            else:
+                return 0.0
+        
+        except Exception as e:
+            logger.error(f"计算主力成本线失败: {e}")
+            return 0.0
+    
+    def check_take_profit_signal(self, stock_code: str, current_price: float, entry_price: float,
+                                current_pct_change: float, is_limit_up: bool = False) -> Dict[str, Any]:
+        """
+        🆕 V18.6.1: 检查自动止盈信号（The Art of Selling）
+        
+        背景：V18.6 解决了"买得好"，V18.7 要解决"卖得神"。
+        逻辑："情绪高潮兑现"。
+        迭代：当股价触及涨停但 "封单量/成交量 < 0.1"（封单极弱），或者 DDE 在高位出现 "背离流出"（股价涨，资金跑），系统应自动触发 TP (Take Profit) 信号，让你在板上把货倒给排队的人。
+        
+        Args:
+            stock_code: 股票代码
+            current_price: 当前价格
+            entry_price: 入场价格
+            current_pct_change: 当前涨幅
+            is_limit_up: 是否涨停
+        
+        Returns:
+            dict: {
+                'should_take_profit': bool,    # 是否应该止盈
+                'take_profit_type': str,       # 止盈类型（HARD_TP / SOFT_TP）
+                'current_profit_pct': float,   # 当前盈利百分比
+                'seal_volume_ratio': float,    # 封单量/成交量比率
+                'dde_divergence': bool,        # DDE是否背离流出
+                'reason': str                  # 原因
+            }
+        """
+        result = {
+            'should_take_profit': False,
+            'take_profit_type': '',
+            'current_profit_pct': 0.0,
+            'seal_volume_ratio': 0.0,
+            'dde_divergence': False,
+            'reason': ''
+        }
+        
+        try:
+            # 1. 计算当前盈利百分比
+            if entry_price > 0:
+                current_profit_pct = (current_price - entry_price) / entry_price * 100
+                result['current_profit_pct'] = current_profit_pct
+            
+            # 2. 检查封单量/成交量比率（封单极弱）
+            if is_limit_up:
+                # 获取实时数据
+                data_manager = self.get_data_manager()
+                realtime_data = data_manager.get_realtime_data(stock_code)
+                
+                if realtime_data:
+                    # 获取封单量（买一量）
+                    bid1_volume = realtime_data.get('bid1_volume', 0)
+                    # 获取成交量
+                    volume = realtime_data.get('volume', 0)
+                    
+                    if volume > 0:
+                        seal_volume_ratio = bid1_volume / volume
+                        result['seal_volume_ratio'] = seal_volume_ratio
+                        
+                        # 如果封单量/成交量 < 0.1，说明封单极弱，应该止盈
+                        if seal_volume_ratio < 0.1:
+                            result['should_take_profit'] = True
+                            result['take_profit_type'] = 'HARD_TP'
+                            result['reason'] = f'🔔 [硬止盈] 封单量/成交量比率{seal_volume_ratio:.2%} < 10%，封单极弱，建议板上止盈'
+                            logger.info(f"✅ [硬止盈] {stock_code} {result['reason']}")
+                            return result
+            
+            # 3. 检查DDE背离流出（股价涨，资金跑）
+            money_flow_master = get_money_flow_master()
+            dde_history = money_flow_master._get_dde_history(stock_code, lookback=5)
+            
+            if dde_history and len(dde_history) >= 3:
+                # 计算DDE斜率
+                recent_dde = dde_history[-3:]
+                dde_slope = (recent_dde[-1] - recent_dde[0]) / len(recent_dde)
+                
+                # 如果股价在涨（涨幅 > 0），但DDE在流出（斜率 < 0），说明背离
+                if current_pct_change > 0 and dde_slope < 0:
+                    result['dde_divergence'] = True
+                    
+                    # 如果盈利超过 5%，触发软止盈
+                    if current_profit_pct > 5.0:
+                        result['should_take_profit'] = True
+                        result['take_profit_type'] = 'SOFT_TP'
+                        result['reason'] = f'⚠️ [软止盈] DDE背离流出（斜率{dde_slope:.3f}），盈利{current_profit_pct:.1f}%，建议止盈'
+                        logger.info(f"✅ [软止盈] {stock_code} {result['reason']}")
+                    else:
+                        result['reason'] = f'⚠️ [DDE背离] DDE背离流出（斜率{dde_slope:.3f}），但盈利不足（{current_profit_pct:.1f}%），继续持有'
+            
+            # 4. 如果没有触发止盈
+            if not result['should_take_profit']:
+                result['reason'] = f'📊 [持仓中] 盈利{current_profit_pct:.1f}%，未触发止盈'
+        
+        except Exception as e:
+            logger.error(f"检查止盈信号失败: {e}")
+            result['reason'] = f'检查失败: {e}'
+        
+        return result
+    
     def get_trend_status(self, df, window=20):
         if len(df) < window:
             return 'SIDEWAY'

@@ -255,10 +255,38 @@ class MoneyFlowMaster:
                 
                 # 5. 检查成交量是否放大
                 current_volume = realtime_data.get('volume', 0)
+                turnover_rate = realtime_data.get('turnover_rate', 0)
+                
+                # 🆕 V18.6.1: 检查流动性陷阱（问题B修复）
+                # 要求：量比 > 1.5 且 换手率 > 3% 且 日成交额预计 > 1亿
+                # 确保有对手盘让你全身而退
+                min_volume_ratio = 1.5
+                min_turnover_rate = 3.0
+                min_turnover_amount = 100000000  # 1亿
+                
                 # 获取历史成交量（这里简化处理，实际应该从K线数据获取）
                 avg_volume = current_volume / 2.0  # 假设历史平均成交量是当前的一半
                 volume_amplification = current_volume / avg_volume if avg_volume > 0 else 1.0
                 result['volume_amplification'] = volume_amplification
+                
+                # 计算日成交额
+                current_price = realtime_data.get('price', 0)
+                turnover_amount = current_volume * 100 * current_price  # 手数 * 100股/手 * 价格
+                
+                # 检查流动性陷阱
+                liquidity_ok = (
+                    volume_amplification >= min_volume_ratio and
+                    turnover_rate >= min_turnover_rate and
+                    turnover_amount >= min_turnover_amount
+                )
+                result['liquidity_ok'] = liquidity_ok
+                result['turnover_rate'] = turnover_rate
+                result['turnover_amount'] = turnover_amount
+                
+                if not liquidity_ok:
+                    result['reason'] = f'⚠️ [流动性陷阱] 涨幅{current_pct_change:.1f}%，但流动性不足（量比{volume_amplification:.1f} < {min_volume_ratio}，换手率{turnover_rate:.1f}% < {min_turnover_rate}%，成交额{turnover_amount/100000000:.2f}亿 < {min_turnover_amount/100000000:.1f}亿），可能是庄股自嗨'
+                    logger.warning(f"❌ [流动性陷阱] {stock_code} {result['reason']}")
+                    return result
                 
                 # 6. 检查是否有连续的巨量大单（这里简化处理，实际应该检查逐笔数据）
                 # 假设如果DDE > 0.5亿，说明有巨量大单
@@ -381,6 +409,25 @@ class MoneyFlowMaster:
                 if dde_net_flow < self.DDE_NEGATIVE_THRESHOLD:
                     veto_reason = f'🛑 [DDE否决权-低吸] DDE净额为负（{dde_net_flow:.2f}亿），无法判断斜率，保守处理，禁止买入'
                     logger.warning(f"❌ {stock_code} {veto_reason}")
+                    return True, veto_reason
+                
+                # 如果 DDE 为正，说明主力已经在承接
+                if dde_net_flow > 0:
+                    if dde_net_flow < self.DDE_BUY_THRESHOLD:
+                        warning_reason = f'⚠️ [DDE警告-低吸] DDE净额较弱（{dde_net_flow:.2f}亿），建议谨慎'
+                        logger.info(f"⚠️ {stock_code} {warning_reason}")
+                        return False, warning_reason
+                    elif dde_net_flow > self.DDE_STRONG_THRESHOLD:
+                        strong_reason = f'✅ [DDE强信号-低吸] DDE净额强劲（{dde_net_flow:.2f}亿），主力强势承接'
+                        logger.info(f"✅ {stock_code} {strong_reason}")
+                        return False, strong_reason
+            
+            else:
+                # 默认使用 DRAGON_CHASE 模式
+                if dde_net_flow < self.DDE_NEGATIVE_THRESHOLD:
+                    veto_reason = f'🛑 [DDE否决权] DDE净额为负（{dde_net_flow:.2f}亿），禁止发出 BUY 信号'
+                    logger.warning(f"❌ {stock_code} {veto_reason}")
+                    return True, veto_reason
                     return True, veto_reason
             
             return False, ''

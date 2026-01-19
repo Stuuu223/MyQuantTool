@@ -219,6 +219,98 @@ class FakeOrderDetector:
         
         return result
     
+    def check_trap_pulse(self, stock_code: str, current_pct_change: float) -> Dict[str, Any]:
+        """
+        🆕 V18.6.1: 检查主力"画图"诱多（Trap Pulse Detector）
+        
+        背景：现在很多量化基金会故意在 3% 位置制造 DDE 脉冲来诱多（骗你的 V18.6 系统）。
+        逻辑："撤单率 (Cancellation Rate)"。
+        迭代：如果买一/买二挂单巨大（诱多），但成交时迅速撤单，系统应判定为 FAKE_PULSE 并发出 🚫 [诱多陷阱] 警报。
+        
+        Args:
+            stock_code: 股票代码
+            current_pct_change: 当前涨幅
+        
+        Returns:
+            dict: {
+                'is_trap_pulse': bool,      # 是否是诱多陷阱
+                'bid1_bid2_huge': bool,     # 买一/买二挂单是否巨大
+                'bid1_bid2_cancel_fast': bool, # 买一/买二是否迅速撤单
+                'cancellation_rate': float, # 撤单率
+                'confidence': float,       # 置信度（0-1）
+                'reason': str              # 原因
+            }
+        """
+        result = {
+            'is_trap_pulse': False,
+            'bid1_bid2_huge': False,
+            'bid1_bid2_cancel_fast': False,
+            'cancellation_rate': 0.0,
+            'confidence': 0.0,
+            'reason': ''
+        }
+        
+        try:
+            # 1. 判断是否在价格发现阶段（3%-5%）
+            if not (3.0 <= current_pct_change <= 5.0):
+                result['reason'] = f'涨幅{current_pct_change:.1f}%不在价格发现阶段（3%-5%）'
+                return result
+            
+            # 2. 获取盘口快照
+            order_book = self._get_order_book_snapshot(stock_code)
+            
+            if not order_book['bid_volumes'] or len(order_book['bid_volumes']) < 2:
+                result['reason'] = '无法获取盘口数据'
+                return result
+            
+            # 3. 检查买一/买二挂单是否巨大
+            bid1_volume = order_book['bid_volumes'][0] if len(order_book['bid_volumes']) > 0 else 0
+            bid2_volume = order_book['bid_volumes'][1] if len(order_book['bid_volumes']) > 1 else 0
+            
+            # 假设买一/买二挂单超过 10000 手为巨大
+            bid1_bid2_huge = (bid1_volume > 10000) or (bid2_volume > 10000)
+            result['bid1_bid2_huge'] = bid1_bid2_huge
+            
+            if not bid1_bid2_huge:
+                result['reason'] = f'买一/买二挂单不大（买一：{bid1_volume}手，买二：{bid2_volume}手），诱多迹象不明显'
+                return result
+            
+            # 4. 计算撤单率
+            cancellation_rate = self._calculate_cancellation_rate(stock_code, lookback_seconds=30)
+            result['cancellation_rate'] = cancellation_rate
+            
+            # 5. 检查买一/买二是否迅速撤单
+            # 如果撤单率超过 50%，说明挂单迅速撤单
+            bid1_bid2_cancel_fast = cancellation_rate > 0.5
+            result['bid1_bid2_cancel_fast'] = bid1_bid2_cancel_fast
+            
+            # 6. 综合判断
+            confidence = 0.0
+            
+            if bid1_bid2_huge:
+                confidence += 0.4
+            
+            if bid1_bid2_cancel_fast:
+                confidence += 0.6
+            
+            result['confidence'] = min(1.0, confidence)
+            
+            # 7. 生成原因
+            if result['confidence'] >= 0.8:
+                result['is_trap_pulse'] = True
+                result['reason'] = f'🚫 [诱多陷阱] 涨幅{current_pct_change:.1f}%，买一/买二挂单巨大（买一：{bid1_volume}手，买二：{bid2_volume}手），但撤单率高（{cancellation_rate:.2%}），判定为诱多'
+                logger.warning(f"❌ [诱多陷阱] {stock_code} {result['reason']}")
+            elif result['confidence'] >= 0.5:
+                result['reason'] = f'⚠️ [诱多嫌疑] 涨幅{current_pct_change:.1f}%，买一/买二挂单较大，撤单率较高（{cancellation_rate:.2%}），建议谨慎'
+            else:
+                result['reason'] = f'📊 涨幅{current_pct_change:.1f}%，买一/买二挂单较大，但撤单率正常（{cancellation_rate:.2%}），未发现诱多迹象'
+        
+        except Exception as e:
+            logger.error(f"检查诱多陷阱失败: {e}")
+            result['reason'] = f'检查失败: {e}'
+        
+        return result
+    
     def should_cancel_buy_signal(self, stock_code: str, signal: str) -> Tuple[bool, str]:
         """
         判断是否应该取消 BUY 信号
