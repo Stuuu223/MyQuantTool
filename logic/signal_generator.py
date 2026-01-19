@@ -447,10 +447,70 @@ class SignalGenerator:
                 reason = f"🌊 [共振加强] 市场情绪高昂({market_sentiment_score}) + 趋势向上，顺势而为"
         
         # =========================================================
-        # 6. 最终门槛
+        # 6. 🆕 V18.6: 预判模式 (Pre-Buy Signal) - 在涨停前锁定确定性
+        # =========================================================
+        
+        # 预判模式1：DDE 脉冲预警（涨幅4%-6%时）
+        pre_buy_signal = None
+        pre_buy_reason = ""
+        
+        if 4.0 <= current_pct_change <= 6.0:
+            # 检查 DDE 是否持续走高
+            try:
+                from logic.money_flow_master import get_money_flow_master
+                mfm = get_money_flow_master()
+                
+                # 获取 DDE 历史数据
+                dde_history = mfm._get_dde_history(stock_code, lookback=5)
+                
+                if dde_history and len(dde_history) >= 3:
+                    # 计算 DDE 斜率
+                    recent_dde = dde_history[-3:]
+                    dde_slope = (recent_dde[-1] - recent_dde[0]) / len(recent_dde)
+                    
+                    # 如果 DDE 持续走高，发出预判信号
+                    if dde_slope > 0:
+                        pre_buy_signal = "PRE_BUY"
+                        pre_buy_reason = f"🔥 [预判信号] 涨幅{current_pct_change:.1f}%，DDE斜率转正（{dde_slope:.3f}），建议提前布局"
+                        logger.info(f"✅ [预判信号] {stock_code} {pre_buy_reason}")
+            except Exception as e:
+                logger.warning(f"⚠️ [预判模式检查失败] {stock_code} {e}")
+        
+        # 预判模式2：20cm/30cm 弹性缓冲（涨幅10%时逻辑二次确认）
+        limit_ratio = Utils.get_limit_ratio(stock_code)
+        
+        # 如果是20cm或30cm股票，且涨幅在10%左右
+        if limit_ratio >= 1.2 and 9.0 <= current_pct_change <= 11.0:
+            # 进行逻辑二次确认
+            try:
+                from logic.money_flow_master import get_money_flow_master
+                mfm = get_money_flow_master()
+                
+                # 检查 DDE 是否持续走高
+                dde_history = mfm._get_dde_history(stock_code, lookback=5)
+                
+                if dde_history and len(dde_history) >= 3:
+                    recent_dde = dde_history[-3:]
+                    dde_slope = (recent_dde[-1] - recent_dde[0]) / len(recent_dde)
+                    
+                    # 如果 DDE 持续走高，发出弹性缓冲信号
+                    if dde_slope > 0:
+                        elastic_buffer = (limit_ratio - 1.0) * 100 - current_pct_change  # 剩余空间
+                        pre_buy_signal = "ELASTIC_BUFFER"
+                        pre_buy_reason = f"🛡️ [弹性缓冲] 涨幅{current_pct_change:.1f}%，DDE斜率转正（{dde_slope:.3f}），剩余空间{elastic_buffer:.1f}%，安全垫充足"
+                        logger.info(f"✅ [弹性缓冲] {stock_code} {pre_buy_reason}")
+            except Exception as e:
+                logger.warning(f"⚠️ [弹性缓冲检查失败] {stock_code} {e}")
+        
+        # =========================================================
+        # 7. 最终门槛
         # =========================================================
         if final_score >= 80:
             signal = "BUY"
+        elif pre_buy_signal:
+            # 如果有预判信号，使用预判信号
+            signal = pre_buy_signal
+            reason = pre_buy_reason
         else:
             signal = "WAIT"
         

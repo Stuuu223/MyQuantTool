@@ -1,12 +1,20 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-V18.5 全谱系战斗逻辑 UI
-集成所有 V18.5 新功能：
+V18.6 全谱系战斗逻辑 UI
+集成所有 V18.5 和 V18.6 新功能：
 1. DDE 核心战法
 2. 低吸逻辑引擎
 3. 动态涨停系数
 4. 逻辑回踩战法
+5. 🆕 V18.6: BUY_MODE 参数（DRAGON_CHASE / LOW_SUCTION）
+6. 🆕 V18.6: 价格缓冲区
+7. 🆕 V18.6: 高精度校准
+8. 🆕 V18.6: 二波预期识别
+9. 🆕 V18.6: 托单套路监控
+10. 🆕 V18.6: 国家队护盘指纹
+11. 🆕 V18.6: 预判模式（Pre-Buy Signal）
+12. 🆕 V18.6: 弹性缓冲（Elastic Buffer）
 """
 
 import streamlit as st
@@ -16,12 +24,15 @@ from logic.data_manager import DataManager
 from logic.money_flow_master import get_money_flow_master
 from logic.low_suction_engine import get_low_suction_engine
 from logic.utils import Utils
+from logic.second_wave_detector import get_second_wave_detector
+from logic.fake_order_detector import get_fake_order_detector
+from logic.national_team_guard import get_national_team_guard
 
 logger = get_logger(__name__)
 
 # 页面配置
 st.set_page_config(
-    page_title="V18.5 全谱系战斗逻辑",
+    page_title="V18.6 全谱系战斗逻辑",
     page_icon="🦁",
     layout="wide"
 )
@@ -33,21 +44,33 @@ def init_managers():
     data_manager = DataManager()
     money_flow_master = get_money_flow_master()
     low_suction_engine = get_low_suction_engine()
-    return data_manager, money_flow_master, low_suction_engine
+    second_wave_detector = get_second_wave_detector()
+    fake_order_detector = get_fake_order_detector()
+    national_team_guard = get_national_team_guard()
+    return data_manager, money_flow_master, low_suction_engine, second_wave_detector, fake_order_detector, national_team_guard
 
-data_manager, money_flow_master, low_suction_engine = init_managers()
+data_manager, money_flow_master, low_suction_engine, second_wave_detector, fake_order_detector, national_team_guard = init_managers()
 
 # 标题
-st.title("🦁 V18.5 全谱系战斗逻辑")
+st.title("🦁 V18.6 全谱系战斗逻辑")
+st.markdown("""
+**核心理念：**
+> "只有平庸的猎人才等猎物死透了才去捡。顶级的掠食者通过风向（资金流）和草动的规律（分时走势）在猎物奔跑时就已经锁定了结局。"
+
+**确定性不一定非要涨停。当资金流向、板块热度和 K 线回踩在一个点重合时，那个点的确定性比任何涨停板都要高。**
+""")
 st.markdown("---")
 
 # 选项卡
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
     "📊 DDE 核心战法",
     "🔻 低吸逻辑引擎",
     "🎯 动态涨停系数",
     "🔄 逻辑回踩战法",
-    "📈 综合分析"
+    "📈 综合分析",
+    "🚀 预判模式",
+    "🔮 二波预期",
+    "🛡️ 风险监控"
 ])
 
 # Tab 1: DDE 核心战法
@@ -333,10 +356,219 @@ with tab5:
             else:
                 st.warning("⚠️ 等待：暂无低吸信号")
 
+# Tab 6: 预判模式
+with tab6:
+    st.header("🚀 预判模式（Pre-Buy Signal）")
+    st.markdown("""
+    **核心理念：**
+    > "只有平庸的猎人才等猎物死透了才去捡。顶级的掠食者通过风向（资金流）和草动的规律（分时走势）在猎物奔跑时就已经锁定了结局。"
+    
+    **预判信号：**
+    1. DDE 脉冲预警：涨幅 4%-6% 时，如果 DDE 持续走高，发出预判信号
+    2. 弹性缓冲：20cm/30cm 股票涨幅 10% 时，如果 DDE 持续走高，发出弹性缓冲信号，剩余空间作为安全垫
+    """)
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("DDE 脉冲预警")
+        stock_code = st.text_input("股票代码", value="300992", key="pre_buy_code")
+        
+        # 获取实时数据
+        realtime_data = data_manager.get_realtime_data(stock_code)
+        if realtime_data:
+            current_price = realtime_data.get('price', 0)
+            prev_close = realtime_data.get('pre_close', current_price)
+            current_pct_change = (current_price - prev_close) / prev_close * 100 if prev_close > 0 else 0
+            
+            st.metric("当前涨幅", f"{current_pct_change:.2f}%")
+            
+            # 检查是否在预判区间
+            if 4.0 <= current_pct_change <= 6.0:
+                st.info(f"📊 涨幅 {current_pct_change:.1f}% 在预判区间（4%-6%）")
+                
+                # 检查 DDE 斜率
+                dde_history = money_flow_master._get_dde_history(stock_code, lookback=5)
+                if dde_history and len(dde_history) >= 3:
+                    recent_dde = dde_history[-3:]
+                    dde_slope = (recent_dde[-1] - recent_dde[0]) / len(recent_dde)
+                    
+                    st.metric("DDE 斜率", f"{dde_slope:.3f}")
+                    
+                    if dde_slope > 0:
+                        st.success(f"🔥 [预判信号] DDE 斜率转正，建议提前布局")
+                    else:
+                        st.warning(f"⚠️ DDE 斜率向下，暂不建议提前布局")
+                else:
+                    st.warning("⚠️ DDE 历史数据不足，无法判断斜率")
+            elif current_pct_change < 4.0:
+                st.info(f"📊 涨幅 {current_pct_change:.1f}% 还未达到预判区间（4%-6%）")
+            else:
+                st.warning(f"📊 涨幅 {current_pct_change:.1f}% 已超过预判区间（4%-6%）")
+        else:
+            st.error("❌ 无法获取实时数据")
+    
+    with col2:
+        st.subheader("弹性缓冲")
+        stock_code2 = st.text_input("股票代码", value="300992", key="elastic_buffer_code")
+        
+        # 获取实时数据
+        realtime_data2 = data_manager.get_realtime_data(stock_code2)
+        if realtime_data2:
+            current_price2 = realtime_data2.get('price', 0)
+            prev_close2 = realtime_data2.get('pre_close', current_price2)
+            current_pct_change2 = (current_price2 - prev_close2) / prev_close2 * 100 if prev_close2 > 0 else 0
+            
+            # 获取涨停系数
+            limit_ratio = Utils.get_limit_ratio(stock_code2)
+            limit_up_pct = (limit_ratio - 1.0) * 100
+            
+            st.metric("当前涨幅", f"{current_pct_change2:.2f}%")
+            st.metric("涨停幅度", f"{limit_up_pct:.1f}%")
+            
+            # 检查是否是20cm/30cm股票
+            if limit_ratio >= 1.2:
+                if 9.0 <= current_pct_change2 <= 11.0:
+                    st.info(f"📊 涨幅 {current_pct_change2:.1f}% 在弹性缓冲区间（9%-11%）")
+                    
+                    # 检查 DDE 斜率
+                    dde_history = money_flow_master._get_dde_history(stock_code2, lookback=5)
+                    if dde_history and len(dde_history) >= 3:
+                        recent_dde = dde_history[-3:]
+                        dde_slope = (recent_dde[-1] - recent_dde[0]) / len(recent_dde)
+                        
+                        st.metric("DDE 斜率", f"{dde_slope:.3f}")
+                        
+                        if dde_slope > 0:
+                            elastic_buffer = limit_up_pct - current_pct_change2
+                            st.success(f"🛡️ [弹性缓冲] DDE 斜率转正，剩余空间 {elastic_buffer:.1f}%，安全垫充足")
+                        else:
+                            st.warning(f"⚠️ DDE 斜率向下，暂不建议追高")
+                    else:
+                        st.warning("⚠️ DDE 历史数据不足，无法判断斜率")
+                elif current_pct_change2 < 9.0:
+                    st.info(f"📊 涨幅 {current_pct_change2:.1f}% 还未达到弹性缓冲区间（9%-11%）")
+                else:
+                    st.warning(f"📊 涨幅 {current_pct_change2:.1f}% 已超过弹性缓冲区间（9%-11%）")
+            else:
+                st.info(f"📊 该股票不是 20cm/30cm 标的，无需弹性缓冲检查")
+        else:
+            st.error("❌ 无法获取实时数据")
+
+# Tab 7: 二波预期
+with tab7:
+    st.header("🔮 二波预期识别")
+    st.markdown("""
+    **核心理念：**
+    > "博弈主力预期，这才是真正的'博弈主力预期'。"
+    
+    **核心战法：**
+    1. 龙虎榜成本区识别：识别顶级游资（如陈小群）或机构专用的持仓成本区
+    2. 二波预期信号：如果低吸位恰好是这些成本区，提升信号确定性至 150/100
+    3. 博弈主力预期：这才是真正的"博弈主力预期"
+    """)
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("龙虎榜成本区检测")
+        stock_code = st.text_input("股票代码", value="300992", key="second_wave_code")
+        current_price = st.number_input("当前价格", value=28.00, key="second_wave_price")
+        suction_price = st.number_input("低吸价格", value=26.00, key="second_wave_suction")
+        
+        if st.button("检测二波预期", key="check_second_wave"):
+            result = second_wave_detector.check_second_wave_signal(stock_code, current_price, suction_price)
+            
+            if result['has_second_wave']:
+                st.success(f"✅ {result['reason']}")
+                st.metric("置信度", f"{result['confidence']:.1%}")
+                st.metric("提升比例", f"{result['boost_ratio']:.1f}x")
+            else:
+                st.warning(f"⚠️ {result['reason']}")
+    
+    with col2:
+        st.subheader("全域共振检测")
+        stock_code2 = st.text_input("股票代码", value="300992", key="global_resonance_code")
+        suction_price2 = st.number_input("低吸价格", value=26.00, key="global_resonance_suction")
+        
+        if st.button("检测全域共振", key="check_global_resonance"):
+            result = national_team_guard.check_global_resonance(stock_code2, suction_price2)
+            
+            if result['has_global_resonance']:
+                st.success(f"✅ {result['reason']}")
+                st.metric("置信度", f"{result['confidence']:.1%}")
+                st.metric("提升比例", f"{result['boost_ratio']:.1f}x")
+            else:
+                st.warning(f"⚠️ {result['reason']}")
+    
+    st.markdown("---")
+    st.subheader("国家队护盘检测")
+    if st.button("检测国家队护盘", key="check_national_team_guard"):
+        result = national_team_guard.check_national_team_guard()
+        
+        if result['is_guarding']:
+            st.success(f"✅ {result['reason']}")
+            st.metric("护盘强度", f"{result['guard_strength']:.1%}")
+        else:
+            st.warning(f"⚠️ {result['reason']}")
+
+# Tab 8: 风险监控
+with tab8:
+    st.header("🛡️ 风险监控")
+    st.markdown("""
+    **核心理念：**
+    > "识别'虚假繁荣'，防止被假单欺骗。"
+    
+    **核心战法：**
+    1. 托单套路监控：监控买一到买五的撤单率
+    2. 虚假繁荣识别：如果 DDE 巨量流入，但买一到买五出现频繁撤单，判定为"虚假繁荣"
+    3. 取消 BUY 信号：识别到假单时，取消 BUY 信号
+    """)
+    
+    st.subheader("假单信号检测")
+    stock_code = st.text_input("股票代码", value="300992", key="fake_order_code")
+    signal = st.selectbox("原始信号", options=["BUY", "SELL", "HOLD"], value="BUY", key="fake_order_signal")
+    
+    if st.button("检测假单信号", key="check_fake_order"):
+        result = fake_order_detector.check_fake_order_signal(stock_code, signal)
+        
+        if result['is_fake_prosperity']:
+            st.error(f"🚨 {result['reason']}")
+            st.metric("撤单率", f"{result['cancellation_rate']:.2%}")
+            st.metric("置信度", f"{result['confidence']:.1%}")
+        elif result['has_fake_order']:
+            st.warning(f"⚠️ {result['reason']}")
+            st.metric("撤单率", f"{result['cancellation_rate']:.2%}")
+        else:
+            st.success(f"✅ {result['reason']}")
+            if result['cancellation_rate'] > 0:
+                st.metric("撤单率", f"{result['cancellation_rate']:.2%}")
+    
+    st.markdown("---")
+    st.subheader("BUY_MODE 模式测试")
+    stock_code2 = st.text_input("股票代码", value="300992", key="buy_mode_code")
+    buy_mode = st.selectbox("买入模式", options=["DRAGON_CHASE", "LOW_SUCTION"], key="buy_mode_select")
+    
+    if st.button("测试 BUY_MODE", key="test_buy_mode"):
+        is_vetoed, veto_reason = money_flow_master.check_dde_veto(stock_code2, "BUY", buy_mode)
+        
+        if is_vetoed:
+            st.error(f"🛑 {veto_reason}")
+        elif veto_reason:
+            st.warning(f"⚠️ {veto_reason}")
+        else:
+            st.success(f"✅ {buy_mode} 模式下 DDE 检查通过，无否决")
+
 # 页脚
 st.markdown("---")
 st.markdown("""
-**V18.5 全谱系战斗逻辑**  
+**V18.6 全谱系战斗逻辑**  
 "追高是在买'确定性'，低吸是在买'性价比'。DDE 则是看透'底牌'。  
-如果你只追高，你就是在和游资拼手速；只有学会 DDE 辅助下的低吸，你才是在和主力拼布局。"
+如果你只追高，你就是在和游资拼手速；只有学会 DDE 辅助下的低吸，你才是在和主力拼布局。  
+
+**V18.6 新增：**  
+- 预判模式：在涨停前锁定确定性  
+- 弹性缓冲：利用 20cm/30cm 的安全垫  
+- 二波预期：博弈主力预期  
+- 风险监控：识别虚假繁荣  
 """)
