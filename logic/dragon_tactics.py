@@ -501,6 +501,51 @@ class DragonTactics:
             intraday_support_score = 20
             intraday_support = '极弱'
         
+        # 🆕 V18.5: 乖离率检查（防止追高）
+        bias_5 = 0.0
+        bias_10 = 0.0
+        bias_20 = 0.0
+        bias_warning = ""
+        
+        # 尝试从 stock_info 中获取均线数据
+        ma5 = stock_info.get('ma5', 0)
+        ma10 = stock_info.get('ma10', 0)
+        ma20 = stock_info.get('ma20', 0)
+        
+        if ma5 > 0:
+            bias_5 = (current_price - ma5) / ma5 * 100
+        if ma10 > 0:
+            bias_10 = (current_price - ma10) / ma10 * 100
+        if ma20 > 0:
+            bias_20 = (current_price - ma20) / ma20 * 100
+        
+        # 乖离率否决逻辑
+        if bias_5 > 20:
+            # 极度超买：乖离率 > 20%，直接否决
+            return {
+                'total_score': 0,
+                'role': '杂毛',
+                'signal': 'SELL',
+                'action': '清仓/核按钮',
+                'confidence': 'HIGH',
+                'reason': f"🚨 [极度超买] 乖离率过高（{bias_5:.1f}%），追高风险极大，禁止买入",
+                'sector_role': '杂毛',
+                'auction_intensity': auction_intensity,
+                'weak_to_strong': weak_to_strong,
+                'intraday_support': intraday_support,
+                'bias_5': bias_5,
+                'bias_10': bias_10,
+                'bias_20': bias_20
+            }
+        elif bias_5 > 15:
+            # 严重超买：乖离率 > 15%，大幅降低分数
+            sector_role_score = max(0, sector_role_score - 30)
+            bias_warning = f"⚠️ [严重超买] 乖离率过高（{bias_5:.1f}%），大幅降低评分"
+        elif bias_5 > 10:
+            # 轻度超买：乖离率 > 10%，适度降低分数
+            sector_role_score = max(0, sector_role_score - 15)
+            bias_warning = f"⚠️ [轻度超买] 乖离率偏高（{bias_5:.1f}%），适度降低评分"
+        
         # 7. 决策矩阵
         is_20cm = stock_info.get('is_20cm', False)
         decision = self.make_decision_matrix(
@@ -511,6 +556,13 @@ class DragonTactics:
             current_change=pct_change,
             is_20cm=is_20cm
         )
+        
+        # 添加乖离率字段
+        decision['bias_5'] = bias_5
+        decision['bias_10'] = bias_10
+        decision['bias_20'] = bias_20
+        if bias_warning:
+            decision['reason'] = f"{bias_warning}。{decision.get('reason', '')}"
         
         # 添加额外字段
         decision['sector_role'] = sector_role

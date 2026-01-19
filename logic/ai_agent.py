@@ -1687,6 +1687,59 @@ class DragonAIAgent:
                 code_check.get('max_limit', 10) == 20
             )
         
+        # 🆕 V18.5: 乖离率检查（防止追高）
+        bias_5 = 0.0
+        bias_10 = 0.0
+        bias_20 = 0.0
+        bias_warning = ""
+        
+        # 从 technical_data 中获取均线数据
+        ma5 = technical_data.get('ma5', 0) if technical_data else 0
+        ma10 = technical_data.get('ma10', 0) if technical_data else 0
+        ma20 = technical_data.get('ma20', 0) if technical_data else 0
+        current_price = price_data.get('current_price', 0)
+        
+        if ma5 > 0 and current_price > 0:
+            bias_5 = (current_price - ma5) / ma5 * 100
+        if ma10 > 0 and current_price > 0:
+            bias_10 = (current_price - ma10) / ma10 * 100
+        if ma20 > 0 and current_price > 0:
+            bias_20 = (current_price - ma20) / ma20 * 100
+        
+        # 乖离率否决逻辑
+        if bias_5 > 20:
+            # 极度超买：乖离率 > 20%，直接否决
+            return {
+                'score': 0,
+                'role': '杂毛',
+                'signal': 'SELL',
+                'confidence': 'HIGH',
+                'reason': f"🚨 [极度超买] 乖离率过高（{bias_5:.1f}%），追高风险极大，禁止买入",
+                'stop_loss_price': current_price,
+                'symbol': symbol,
+                'timestamp': pd.Timestamp.now(),
+                'bias_5': bias_5,
+                'bias_10': bias_10,
+                'bias_20': bias_20
+            }
+        elif bias_5 > 15:
+            # 严重超买：乖离率 > 15%，大幅降低分数
+            decision['total_score'] = max(0, decision.get('total_score', 0) - 30)
+            bias_warning = f"⚠️ [严重超买] 乖离率过高（{bias_5:.1f}%），大幅降低评分"
+        elif bias_5 > 10:
+            # 轻度超买：乖离率 > 10%，适度降低分数
+            decision['total_score'] = max(0, decision.get('total_score', 0) - 15)
+            bias_warning = f"⚠️ [轻度超买] 乖离率偏高（{bias_5:.1f}%），适度降低评分"
+        
+        # 如果有乖离率警告，添加到决策矩阵的原因中
+        if bias_warning and 'reason' in decision:
+            decision['reason'] = f"{bias_warning}。{decision['reason']}"
+        
+        # 添加乖离率数据到决策矩阵
+        decision['bias_5'] = bias_5
+        decision['bias_10'] = bias_10
+        decision['bias_20'] = bias_20
+        
         # 7. 构建上下文
         context = self._build_dragon_context(
             symbol, price_data, technical_data,
@@ -1721,7 +1774,10 @@ class DragonAIAgent:
                 'is_20cm': code_check.get('max_limit', 10) == 20,
                 'auction_intensity': auction_analysis.get('auction_intensity', '未知'),
                 'sector_role': sector_analysis.get('role', '未知'),
-                'sector_heat': sector_analysis.get('sector_heat', '未知')
+                'sector_heat': sector_analysis.get('sector_heat', '未知'),
+                'bias_5': decision.get('bias_5', 0),
+                'bias_10': decision.get('bias_10', 0),
+                'bias_20': decision.get('bias_20', 0)
             })
 
             return result
@@ -1737,7 +1793,10 @@ class DragonAIAgent:
                 'reason': decision.get('reason', 'LLM分析失败，使用规则决策'),
                 'stop_loss_price': price_data.get('current_price', 0) * 0.95,
                 'symbol': symbol,
-                'timestamp': pd.Timestamp.now()
+                'timestamp': pd.Timestamp.now(),
+                'bias_5': decision.get('bias_5', 0),
+                'bias_10': decision.get('bias_10', 0),
+                'bias_20': decision.get('bias_20', 0)
             }
     
     def _build_dragon_context(self,

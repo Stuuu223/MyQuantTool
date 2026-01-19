@@ -773,6 +773,11 @@ def render_dragon_strategy_tab(db, config):
                                         - 量比: {top_stock.get('量比', 0):.2f}
                                         - 换手率: {top_stock.get('换手率', 0):.2f}%
                                         
+                                        **乖离率（V18.5）：**
+                                        - 5日乖离: {top_stock.get('bias_5', 0):.2f}%
+                                        - 10日乖离: {top_stock.get('bias_10', 0):.2f}%
+                                        - 20日乖离: {top_stock.get('bias_20', 0):.2f}%
+                                        
                                         **概念标签：**
                                         {', '.join(top_stock.get('concept_tags', ['无']))}
                                         
@@ -1006,6 +1011,24 @@ def _render_dragon_stock(stock, config, review_mode=False):
         else:
             col6.metric("竞价抢筹度", f"{auction_aggression:.2f}%")
         
+        # 🆕 V18.5 新增：乖离率显示
+        bias_5 = stock.get('bias_5', 0)
+        bias_10 = stock.get('bias_10', 0)
+        bias_20 = stock.get('bias_20', 0)
+        st.write("**乖离率（V18.5）：**")
+        col_b1, col_b2, col_b3 = st.columns(3)
+        col_b1.metric("5日乖离", f"{bias_5:.2f}%")
+        col_b2.metric("10日乖离", f"{bias_10:.2f}%")
+        col_b3.metric("20日乖离", f"{bias_20:.2f}%")
+        
+        # 乖离率警告
+        if bias_5 > 20:
+            st.error(f"🚨 [极度超买] 乖离率过高（{bias_5:.1f}%），追高风险极大，禁止买入")
+        elif bias_5 > 15:
+            st.warning(f"⚠️ [严重超买] 乖离率过高（{bias_5:.1f}%），大幅降低评分")
+        elif bias_5 > 10:
+            st.warning(f"⚠️ [轻度超买] 乖离率偏高（{bias_5:.1f}%），适度降低评分")
+        
 # 🆕 V9.12 修复：显示时间权重
         from logic.algo import get_time_weight
         time_weight = get_time_weight(is_review_mode=review_mode)
@@ -1100,28 +1123,40 @@ def _render_dragon_stock(stock, config, review_mode=False):
         # 🆕 V9.7: 支持ST股识别和竞价真空期处理
         bid1_volume = stock.get('买一量', 0)
         ask1_volume = stock.get('卖一量', 0)
-        bid1_price = stock.get('买一价', 0)
-        ask1_price = stock.get('卖一价', 0)
-        stock_name = stock.get('名称', '')
-
-        status_info = market_checker.check_market_status(
-            bid1_volume=bid1_volume,
-            ask1_volume=ask1_volume,
-            change_pct=change_pct,
-            symbol=symbol,
-            name=stock_name,
-            bid1_price=bid1_price,
-            ask1_price=ask1_price
-        )
-
-        # 🆕 V9.10 修复：根据不同状态显示不同颜色
-        if status_info['message']:
-            if status_info['status'] == MarketStatus.NOON_BREAK:
-                st.info(status_info['message'])  # 午间休盘显示蓝色信息
-            elif status_info['status'] in [MarketStatus.CLOSED, MarketStatus.OFF_HOURS]:
-                st.warning(status_info['message'])  # 收盘显示黄色警告
-            else:
-                st.warning(status_info['message'])  # 其他状态显示警告
+        bid1_price=stock.get('买一价', 0)
+                ask1_price=stock.get('卖一价', 0)
+                stock_name = stock.get('名称', '')
+        
+                status_info = market_checker.check_market_status(
+                    bid1_volume=bid1_volume,
+                    ask1_volume=ask1_volume,
+                    change_pct=change_pct,
+                    symbol=symbol,
+                    name=stock_name,
+                    bid1_price=bid1_price,
+                    ask1_price=ask1_price
+                )
+        
+                # 🆕 V9.10 修复：根据不同状态显示不同颜色
+                if status_info['message']:
+                    if status_info['status'] == MarketStatus.NOON_BREAK:
+                        st.info(status_info['message'])  # 午间休盘显示蓝色信息
+                    elif status_info['status'] in [MarketStatus.CLOSED, MarketStatus.OFF_HOURS]:
+                        st.warning(status_info['message'])  # 收盘显示黄色警告
+                        
+                        # 🆕 V18.5: 显示历史数据
+                        if 'historical_data' in status_info and status_info['historical_data']:
+                            hist = status_info['historical_data']
+                            st.markdown(f"**历史数据（{hist['date']}）**")
+                            col1, col2, col3 = st.columns(3)
+                            col1.metric("收盘价", f"¥{hist['close']:.2f}")
+                            col2.metric("最高价", f"¥{hist['high']:.2f}")
+                            col3.metric("最低价", f"¥{hist['low']:.2f}")
+                            col4, col5 = st.columns(2)
+                            col4.metric("成交量", f"{hist['volume']:.0f}")
+                            col5.metric("换手率", f"{hist['turnover_rate']:.2f}%")
+                    else:
+                        st.warning(status_info['message'])  # 其他状态显示警告
         
         if is_limit_up:
             col7.metric("买一价", f"¥{stock.get('买一价', 0):.2f}", delta="涨停")
@@ -1343,6 +1378,37 @@ def _render_trend_stock(stock, config):
         col6.metric("MA10", f"¥{stock.get('MA10', 0):.2f}")
         col7.metric("MA20", f"¥{stock.get('MA20', 0):.2f}")
         
+        # 🆕 V18.5 新增：乖离率显示
+        current_price = stock.get('最新价', 0)
+        ma5 = stock.get('MA5', 0)
+        ma10 = stock.get('MA10', 0)
+        ma20 = stock.get('MA20', 0)
+        
+        bias_5 = 0.0
+        bias_10 = 0.0
+        bias_20 = 0.0
+        
+        if ma5 > 0:
+            bias_5 = (current_price - ma5) / ma5 * 100
+        if ma10 > 0:
+            bias_10 = (current_price - ma10) / ma10 * 100
+        if ma20 > 0:
+            bias_20 = (current_price - ma20) / ma20 * 100
+        
+        st.write("**乖离率（V18.5）：**")
+        col_b1, col_b2, col_b3 = st.columns(3)
+        col_b1.metric("5日乖离", f"{bias_5:.2f}%")
+        col_b2.metric("10日乖离", f"{bias_10:.2f}%")
+        col_b3.metric("20日乖离", f"{bias_20:.2f}%")
+        
+        # 乖离率警告
+        if bias_5 > 20:
+            st.error(f"🚨 [极度超买] 乖离率过高（{bias_5:.1f}%），追高风险极大，禁止买入")
+        elif bias_5 > 15:
+            st.warning(f"⚠️ [严重超买] 乖离率过高（{bias_5:.1f}%），大幅降低评分")
+        elif bias_5 > 10:
+            st.warning(f"⚠️ [轻度超买] 乖离率偏高（{bias_5:.1f}%），适度降低评分")
+        
         # 显示买卖盘口
         st.write("**买卖盘口：**")
         col8, col9, col10, col11 = st.columns(4)
@@ -1409,6 +1475,24 @@ def _render_halfway_stock(stock, config):
         col3.metric("量比", f"{stock.get('量比', 0):.2f}")
         col4.metric("换手率", f"{stock.get('换手率', 0):.2f}%")
         
+        # 🆕 V18.5 新增：乖离率显示
+        bias_5 = stock.get('bias_5', 0)
+        bias_10 = stock.get('bias_10', 0)
+        bias_20 = stock.get('bias_20', 0)
+        st.write("**乖离率（V18.5）：**")
+        col_b1, col_b2, col_b3 = st.columns(3)
+        col_b1.metric("5日乖离", f"{bias_5:.2f}%")
+        col_b2.metric("10日乖离", f"{bias_10:.2f}%")
+        col_b3.metric("20日乖离", f"{bias_20:.2f}%")
+        
+        # 乖离率警告
+        if bias_5 > 20:
+            st.error(f"🚨 [极度超买] 乖离率过高（{bias_5:.1f}%），追高风险极大，禁止买入")
+        elif bias_5 > 15:
+            st.warning(f"⚠️ [严重超买] 乖离率过高（{bias_5:.1f}%），大幅降低评分")
+        elif bias_5 > 10:
+            st.warning(f"⚠️ [轻度超买] 乖离率偏高（{bias_5:.1f}%），适度降低评分")
+        
         # 显示买卖盘口
         st.write("**买卖盘口：**")
         col5, col6, col7, col8 = st.columns(4)
@@ -1442,6 +1526,18 @@ def _render_halfway_stock(stock, config):
                 st.info(status_info['message'])  # 午间休盘显示蓝色信息
             elif status_info['status'] in [MarketStatus.CLOSED, MarketStatus.OFF_HOURS]:
                 st.warning(status_info['message'])  # 收盘显示黄色警告
+                
+                # 🆕 V18.5: 显示历史数据
+                if 'historical_data' in status_info and status_info['historical_data']:
+                    hist = status_info['historical_data']
+                    st.markdown(f"**历史数据（{hist['date']}）**")
+                    col1, col2, col3 = st.columns(3)
+                    col1.metric("收盘价", f"¥{hist['close']:.2f}")
+                    col2.metric("最高价", f"¥{hist['high']:.2f}")
+                    col3.metric("最低价", f"¥{hist['low']:.2f}")
+                    col4, col5 = st.columns(2)
+                    col4.metric("成交量", f"{hist['volume']:.0f}")
+                    col5.metric("换手率", f"{hist['turnover_rate']:.2f}%")
             else:
                 st.warning(status_info['message'])  # 其他状态显示警告
         
