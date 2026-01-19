@@ -4,11 +4,13 @@
 实时数据提供者
 从新浪 API 获取实时行情数据
 V17.1: 时区校准 - 统一使用北京时间
+V18.6: 集成东方财富 DDE 数据适配器
 """
 
 from logic.data_provider_factory import DataProvider
 from logic.logger import get_logger
 from logic.utils import Utils
+from logic.data_adapter_akshare import MoneyFlowAdapter
 import config_system as config
 from datetime import datetime
 
@@ -109,7 +111,55 @@ class RealtimeDataProvider(DataProvider):
                     'data_timestamp': data_time_str,  # V16.2 新增
                 }
                 result.append(stock_info)
-            
+
+            # 🆕 V18.6: 注入 DDE 数据和乖离率
+            # 为了性能，使用批量获取方式
+            if result:
+                try:
+                    # 提取股票代码列表
+                    stock_codes = [stock['code'] for stock in result]
+
+                    # 批量获取 DDE 数据
+                    dde_data_dict = MoneyFlowAdapter.batch_get_dde(stock_codes)
+
+                    # 注入到每个股票的数据中
+                    for stock_info in result:
+                        code = stock_info['code']
+
+                        # 注入 DDE 数据
+                        if code in dde_data_dict:
+                            dde_data = dde_data_dict[code]
+                            stock_info['dde_net_amount'] = dde_data.get('dde_net_amount', 0)
+                            stock_info['scramble_degree'] = dde_data.get('scramble_degree', 0)
+                            stock_info['super_big_order'] = dde_data.get('super_big_order', 0)
+                            stock_info['big_order'] = dde_data.get('big_order', 0)
+                        else:
+                            # 默认值
+                            stock_info['dde_net_amount'] = 0
+                            stock_info['scramble_degree'] = 0
+                            stock_info['super_big_order'] = 0
+                            stock_info['big_order'] = 0
+
+                        # 注入乖离率
+                        current_price = stock_info.get('price', 0)
+                        if current_price > 0:
+                            bias = MoneyFlowAdapter.calculate_ma_bias(code, current_price)
+                            stock_info['bias_rate'] = bias
+                        else:
+                            stock_info['bias_rate'] = 0
+
+                    logger.info(f"✅ [V18.6 DDE注入] 成功为 {len(result)} 只股票注入 DDE 数据")
+
+                except Exception as e:
+                    logger.error(f"❌ [V18.6 DDE注入] 注入 DDE 数据失败: {e}")
+                    # 失败时设置默认值
+                    for stock_info in result:
+                        stock_info['dde_net_amount'] = 0
+                        stock_info['scramble_degree'] = 0
+                        stock_info['super_big_order'] = 0
+                        stock_info['big_order'] = 0
+                        stock_info['bias_rate'] = 0
+
             return result
             
         except Exception as e:

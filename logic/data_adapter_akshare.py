@@ -1,0 +1,283 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""
+🏴‍☠️ [海盗适配器]：免费抓取东方财富实时资金流数据 (DDE)
+用于为 V18.6 系统提供核心弹药，绕过 Tushare 积分限制。
+
+功能：
+- 获取单只股票的实时主力资金流向
+- 计算乖离率 (Bias Rate)
+- 从全市场资金流排名中快速提取目标股票数据
+"""
+
+import akshare as ak
+import pandas as pd
+from datetime import datetime
+from logic.logger import get_logger
+
+logger = get_logger(__name__)
+
+
+class MoneyFlowAdapter:
+    """
+    🏴‍☠️ [海盗适配器]：免费抓取东方财富实时资金流数据 (DDE)
+    用于为 V18.6 系统提供核心弹药，绕过 Tushare 积分限制。
+    """
+
+    # 缓存机制：避免频繁请求东方财富接口
+    _rank_cache = None
+    _rank_cache_time = None
+    _cache_ttl = 10  # 缓存有效期（秒）
+
+    @staticmethod
+    def get_realtime_dde(stock_code):
+        """
+        获取单只股票的实时主力资金流向
+
+        Args:
+            stock_code: 股票代码（如 "600519" 或 "600519.SH"）
+
+        Returns:
+            dict: {
+                'dde_net_amount': 主力净流入金额 (元),
+                'scramble_degree': 主力净流入占比 (%),
+                'super_big_order': 超大单净流入 (元),
+                'big_order': 大单净流入 (元),
+                'timestamp': 数据时间戳
+            }
+        """
+        try:
+            # 适配代码格式 (Akshare 需要 "600000" 这种，不需要后缀)
+            clean_code = stock_code.split('.')[0]
+
+            # 调用东方财富个股资金流接口
+            # 注意：这个接口返回的是历史数据列表，我们需要取当天的最新一条
+            # 某些接口在盘中会实时更新当日数据
+
+            # 备用方案：直接抓取"个股资金流排名"接口，然后过滤出该股
+            # 这样速度更快，不用一只只请求历史
+            return MoneyFlowAdapter._fetch_from_rank_api(clean_code)
+
+        except Exception as e:
+            logger.error(f"DDE 数据抓取失败 {stock_code}: {e}")
+            return None
+
+    @staticmethod
+    def _fetch_from_rank_api(target_code):
+        """
+        从全市场资金流排名中"捞"出目标股票（速度极快）
+
+        Args:
+            target_code: 目标股票代码（如 "600000"）
+
+        Returns:
+            dict: DDE 数据
+        """
+        try:
+            current_time = datetime.now()
+
+            # 检查缓存
+            if (MoneyFlowAdapter._rank_cache is not None and
+                MoneyFlowAdapter._rank_cache_time is not None):
+                time_diff = (current_time - MoneyFlowAdapter._rank_cache_time).total_seconds()
+                if time_diff < MoneyFlowAdapter._cache_ttl:
+                    # 使用缓存
+                    df = MoneyFlowAdapter._rank_cache
+                else:
+                    # 缓存过期，重新获取
+                    df = MoneyFlowAdapter._fetch_rank_data()
+            else:
+                # 没有缓存，重新获取
+                df = MoneyFlowAdapter._fetch_rank_data()
+
+            if df is None or df.empty:
+                return {
+                    'dde_net_amount': 0,
+                    'scramble_degree': 0,
+                    'super_big_order': 0,
+                    'big_order': 0,
+                    'timestamp': current_time.strftime('%Y-%m-%d %H:%M:%S')
+                }
+
+            # 过滤出目标股票
+            row = df[df['代码'] == target_code]
+
+            if row.empty:
+                return {
+                    'dde_net_amount': 0,
+                    'scramble_degree': 0,
+                    'super_big_order': 0,
+                    'big_order': 0,
+                    'timestamp': current_time.strftime('%Y-%m-%d %H:%M:%S')
+                }
+
+            # 解析数据
+            # 东方财富接口返回列名可能变动，需根据实际情况调整
+            row_data = row.iloc[0]
+
+            # 尝试不同的列名（兼容不同版本的接口）
+            # 注意：实际的列名是 '今日主力净流入-净额'，不是 '今日主力净流入'
+            main_net_flow = MoneyFlowAdapter._safe_get_float(row_data, ['今日主力净流入-净额', '今日主力净流入', '主力净流入-净额', '主力净流入'])
+            main_net_pct = MoneyFlowAdapter._safe_get_float(row_data, ['今日主力净流入-净占比', '今日主力净流入占比', '主力净流入-净占比', '主力净流入占比'])
+            super_big_order = MoneyFlowAdapter._safe_get_float(row_data, ['今日超大单净流入-净额', '今日超大单净流入', '超大单净流入-净额', '超大单净流入'])
+            big_order = MoneyFlowAdapter._safe_get_float(row_data, ['今日大单净流入-净额', '今日大单净流入', '大单净流入-净额', '大单净流入'])
+
+            return {
+                'dde_net_amount': main_net_flow,
+                'scramble_degree': main_net_pct,  # 抢筹度 = 净占比
+                'super_big_order': super_big_order,
+                'big_order': big_order,
+                'timestamp': current_time.strftime('%Y-%m-%d %H:%M:%S')
+            }
+
+        except Exception as e:
+            logger.warning(f"Akshare 接口波动: {e}")
+            return {
+                'dde_net_amount': 0,
+                'scramble_degree': 0,
+                'super_big_order': 0,
+                'big_order': 0,
+                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }
+
+    @staticmethod
+    def _fetch_rank_data():
+        """
+        获取东方财富实时资金流榜单 (即时)
+
+        Returns:
+            pd.DataFrame: 资金流排名数据
+        """
+        try:
+            # 获取东方财富实时资金流榜单 (今日)
+            df = ak.stock_individual_fund_flow_rank(indicator="今日")
+
+            # 更新缓存
+            MoneyFlowAdapter._rank_cache = df
+            MoneyFlowAdapter._rank_cache_time = datetime.now()
+
+            return df
+
+        except Exception as e:
+            logger.error(f"获取资金流榜单失败: {e}")
+            return None
+
+    @staticmethod
+    def _safe_get_float(row_data, possible_keys):
+        """
+        安全地从行数据中获取浮点数（兼容不同列名）
+
+        Args:
+            row_data: 行数据
+            possible_keys: 可能的列名列表
+
+        Returns:
+            float: 浮点数，如果找不到则返回 0
+        """
+        for key in possible_keys:
+            if key in row_data:
+                try:
+                    value = row_data[key]
+                    if pd.isna(value):
+                        return 0.0
+                    return float(value)
+                except (ValueError, TypeError):
+                    continue
+        return 0.0
+
+    @staticmethod
+    def calculate_ma_bias(stock_code, current_price):
+        """
+        计算乖离率 (Bias)
+
+        Args:
+            stock_code: 股票代码
+            current_price: 当前价格
+
+        Returns:
+            float: 乖离率 (%)
+        """
+        try:
+            clean_code = stock_code.split('.')[0]
+
+            # 获取个股历史行情 (最近10天)
+            hist = ak.stock_zh_a_hist(symbol=clean_code, period="daily", adjust="qfq")
+            hist = hist.tail(10)
+
+            if len(hist) < 4:
+                # 历史数据不足，无法计算
+                return 0.0
+
+            # 计算 MA5 (取最后4天收盘价 + 当前最新价)
+            last_4_closes = hist['收盘'].iloc[-4:].astype(float).values
+            current_ma5 = (sum(last_4_closes) + float(current_price)) / 5
+
+            bias = (float(current_price) - current_ma5) / current_ma5 * 100
+            return round(bias, 2)
+
+        except Exception as e:
+            logger.warning(f"计算乖离率失败 {stock_code}: {e}")
+            return 0.0
+
+    @staticmethod
+    def batch_get_dde(stock_codes):
+        """
+        批量获取多只股票的 DDE 数据（使用缓存优化）
+
+        Args:
+            stock_codes: 股票代码列表
+
+        Returns:
+            dict: {stock_code: dde_data}
+        """
+        try:
+            # 先获取全市场排名数据（只请求一次）
+            df = MoneyFlowAdapter._fetch_rank_data()
+
+            if df is None or df.empty:
+                return {}
+
+            result = {}
+
+            # 批量过滤
+            for stock_code in stock_codes:
+                clean_code = stock_code.split('.')[0]
+                row = df[df['代码'] == clean_code]
+
+                if not row.empty:
+                    row_data = row.iloc[0]
+
+                    main_net_flow = MoneyFlowAdapter._safe_get_float(row_data, ['今日主力净流入', '主力净流入', '主力净流入-净额'])
+                    main_net_pct = MoneyFlowAdapter._safe_get_float(row_data, ['今日主力净流入占比', '主力净流入占比', '主力净流入-净占比'])
+                    super_big_order = MoneyFlowAdapter._safe_get_float(row_data, ['今日超大单净流入', '超大单净流入', '超大单净流入-净额'])
+                    big_order = MoneyFlowAdapter._safe_get_float(row_data, ['今日大单净流入', '大单净流入', '大单净流入-净额'])
+
+                    result[stock_code] = {
+                        'dde_net_amount': main_net_flow,
+                        'scramble_degree': main_net_pct,
+                        'super_big_order': super_big_order,
+                        'big_order': big_order,
+                        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    }
+                else:
+                    # 没有找到数据，返回默认值
+                    result[stock_code] = {
+                        'dde_net_amount': 0,
+                        'scramble_degree': 0,
+                        'super_big_order': 0,
+                        'big_order': 0,
+                        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    }
+
+            return result
+
+        except Exception as e:
+            logger.error(f"批量获取 DDE 数据失败: {e}")
+            return {}
+
+    @staticmethod
+    def clear_cache():
+        """清除缓存"""
+        MoneyFlowAdapter._rank_cache = None
+        MoneyFlowAdapter._rank_cache_time = None
+        logger.info("DDE 数据缓存已清除")
