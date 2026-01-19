@@ -145,12 +145,8 @@ def render_single_stock_tab(db: DataManager, config: Config):
         """)
     
     # 获取股票数据
-    start_date = pd.Timestamp.now() - pd.Timedelta(days=60)
-    s_date_str = start_date.strftime("%Y%m%d")
-    e_date_str = pd.Timestamp.now().strftime("%Y%m%d")
-    
     with st.spinner(f'正在获取 {symbol} 数据...'):
-        df = db.get_history_data(symbol, start_date=s_date_str, end_date=e_date_str)
+        df = db.get_history_data(symbol)
     
     # 获取实时数据（带缓存，60秒内直接使用缓存）
     realtime_data = db.get_realtime_data(symbol)

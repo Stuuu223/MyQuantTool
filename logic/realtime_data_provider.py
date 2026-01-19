@@ -314,6 +314,53 @@ class RealtimeDataProvider(DataProvider):
                 'regime': 'CHAOS',
             }
     
+    def get_history_data(self, symbol: str, period: str = 'daily', adjust: str = 'qfq'):
+        """
+        获取历史数据（使用 AkShare）
+        
+        Args:
+            symbol: 股票代码
+            period: 周期（daily, weekly, monthly）
+            adjust: 复权方式（qfq: 前复权, hfq: 后复权, none: 不复权）
+        
+        Returns:
+            DataFrame: 历史数据
+        """
+        try:
+            import akshare as ak
+            import pandas as pd
+            
+            # 转换股票代码格式（AkShare 使用 'sh' 或 'sz' 前缀）
+            if symbol.startswith('6'):
+                ak_symbol = f'sh{symbol}'
+            else:
+                ak_symbol = f'sz{symbol}'
+            
+            # 获取历史数据
+            df = ak.stock_zh_a_hist(symbol=ak_symbol, period=period, adjust=adjust)
+            
+            # 重命名列以保持一致性
+            if not df.empty:
+                df.rename(columns={
+                    '日期': 'date',
+                    '开盘': 'open',
+                    '收盘': 'close',
+                    '最高': 'high',
+                    '最低': 'low',
+                    '成交量': 'volume',
+                    '成交额': 'amount',
+                    '涨跌幅': 'change_pct',
+                    '涨跌额': 'change_amount'
+                }, inplace=True)
+            
+            return df
+        
+        except Exception as e:
+            logger.error(f"获取历史数据失败: {e}")
+            # 返回空的 DataFrame
+            import pandas as pd
+            return pd.DataFrame()
+    
     def update_stock_priority(self, stock_code: str, priority_score: float):
         """
         🆕 优化 2：更新股票优先级

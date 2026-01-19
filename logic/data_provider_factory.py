@@ -82,3 +82,17 @@ class DataProvider:
                 - ... 其他字段
         """
         raise NotImplementedError("子类必须实现此方法")
+    
+    def get_history_data(self, symbol: str, period: str = 'daily', adjust: str = 'qfq'):
+        """
+        获取历史数据
+        
+        Args:
+            symbol: 股票代码
+            period: 周期（daily, weekly, monthly）
+            adjust: 复权方式（qfq: 前复权, hfq: 后复权, none: 不复权）
+        
+        Returns:
+            DataFrame: 历史数据
+        """
+        raise NotImplementedError("子类必须实现此方法")

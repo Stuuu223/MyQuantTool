@@ -112,7 +112,7 @@ class DataManager:
         """
         return self.provider.get_market_data()
 
-    def get_history_data(self, symbol: str, period: str = 'daily', adjust: str = 'qfq'):
+    def get_history_data(self, symbol: str, period: str = 'daily', adjust: str = 'qfq', start_date: str = None, end_date: str = None):
         """
         获取历史数据（代理方法）
 
@@ -120,10 +120,14 @@ class DataManager:
             symbol: 股票代码
             period: 周期（daily, weekly, monthly）
             adjust: 复权方式（qfq: 前复权, hfq: 后复权, none: 不复权）
+            start_date: 开始日期（格式：YYYYMMDD），暂不支持
+            end_date: 结束日期（格式：YYYYMMDD），暂不支持
 
         Returns:
             DataFrame: 历史数据
         """
+        # 暂时忽略 start_date 和 end_date 参数，因为底层的 provider 不支持
+        # TODO: 实现对 start_date 和 end_date 参数的支持
         return self.provider.get_history_data(symbol, period, adjust)
 
     # ==================== 向后兼容的接口 ====================

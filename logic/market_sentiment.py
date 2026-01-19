@@ -8,7 +8,7 @@
 import pandas as pd
 from datetime import datetime, timedelta
 from collections import Counter
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Union
 from logic.logger import get_logger
 from logic.data_manager import DataManager
 from logic.data_cleaner import DataCleaner
