@@ -286,6 +286,32 @@ class SignalGenerator:
             }
 
         # =========================================================
+        # 1.5. [V18.5] DDE 否决权 (DDE Veto) - 资金铁律
+        # =========================================================
+        # 铁律：如果 DDE 为负，无论 K 线多漂亮，系统禁止发出 BUY 信号
+        try:
+            from logic.money_flow_master import get_money_flow_master
+            mfm = get_money_flow_master()
+            is_vetoed, veto_reason = mfm.check_dde_veto(stock_code, 'BUY')
+            
+            if is_vetoed:
+                logger.warning(f"{stock_code} {veto_reason}")
+                return {
+                    "signal": "WAIT", 
+                    "score": 0, 
+                    "reason": veto_reason, 
+                    "risk": "HIGH",
+                    "market_sentiment_score": market_sentiment_score,
+                    "market_status": market_status
+                }
+            elif veto_reason:
+                # DDE 弱信号警告，但不否决
+                logger.info(f"{stock_code} {veto_reason}")
+        
+        except Exception as e:
+            logger.warning(f"DDE 否决权检查失败: {e}")
+        
+        # =========================================================
         # 2. [V13.1] 事实熔断 (Fact Veto) - 物理定律
         # =========================================================
         # 资金大逃亡

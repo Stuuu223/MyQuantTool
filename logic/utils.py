@@ -195,6 +195,44 @@ class Utils:
         return code.zfill(6)
     
     @staticmethod
+    def get_limit_ratio(stock_code):
+        """
+        🆕 V18.5: 动态获取涨停系数
+        
+        根据股票代码前缀动态判断涨停系数：
+        - 创业板(30)、科创板(68): 1.2 (20cm)
+        - 北交所(8/4): 1.3 (30cm)
+        - 主板: 1.1 (10cm)
+        - ST股: 1.05 (5cm)
+        
+        Args:
+            stock_code: 股票代码（可能包含 sh/sz/ST 前缀）
+        
+        Returns:
+            float: 涨停系数（如 1.1 表示 10% 涨停）
+        """
+        original_code = str(stock_code)
+        
+        # 判断是否是 ST 股（在清洗之前）
+        is_st = 'ST' in original_code.upper()
+        
+        # 清洗代码
+        code = Utils.clean_stock_code(stock_code)
+        
+        # ST股：5% 涨停
+        if is_st:
+            return 1.05
+        # 创业板/科创板：20% 涨停
+        elif code.startswith(('30', '68')):
+            return 1.2
+        # 北交所：30% 涨停
+        elif code.startswith(('8', '4')):
+            return 1.3
+        else:
+            # 主板：10% 涨停
+            return 1.1
+    
+    @staticmethod
     def is_limit_up(change_pct, code):
         """
         判断是否涨停

@@ -1,0 +1,385 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""
+V18.5 Money Flow Master - 资金流大师
+DDE 核心战法：资金穿透分析
+V18.5: 将 DDE 逻辑从"建议"变成"否决权"
+"""
+
+import pandas as pd
+import numpy as np
+from typing import Dict, List, Optional, Tuple, Any
+from datetime import datetime, timedelta
+from logic.logger import get_logger
+from logic.data_manager import DataManager
+
+logger = get_logger(__name__)
+
+
+class MoneyFlowMaster:
+    """
+    V18.5 资金流大师（Money Flow Master）
+    
+    核心战法：
+    1. DDE 背离低吸：股价下跌但 DDE 持续走高（机构压盘吸筹）
+    2. DDE 抢筹确认：竞价阶段 DDE 活跃度突破历史均值 5 倍
+    3. DDE 否决权：DDE 为负时，禁止发出 BUY 信号
+    """
+    
+    # DDE 阈值配置
+    DDE_BUY_THRESHOLD = 0.5      # DDE 净额 > 0.5亿才考虑买入
+    DDE_STRONG_THRESHOLD = 1.0   # DDE 净额 > 1.0亿为强信号
+    DDE_NEGATIVE_THRESHOLD = -0.3 # DDE 净额 < -0.3亿为负信号
+    
+    # 竞价 DDE 阈值
+    AUCTION_DDE_MULTIPLIER = 5.0  # 竞价 DDE 活跃度突破历史均值 5 倍
+    
+    def __init__(self):
+        """初始化资金流大师"""
+        self.data_manager = DataManager()
+        
+        # DDE 历史数据缓存（用于计算均值）
+        self._dde_history_cache = {}  # {stock_code: {'dde_values': [], 'last_update': datetime}}
+        self._cache_ttl = 3600  # 缓存有效期（秒），1小时
+    
+    def check_dde_divergence(self, stock_code: str, current_price: float, prev_close: float) -> Dict[str, Any]:
+        """
+        检查 DDE 背离低吸信号
+        
+        逻辑：股价下跌 2%-3%，但 DDE 净额却在持续走高（典型的机构压盘吸筹）
+        
+        Args:
+            stock_code: 股票代码
+            current_price: 当前价格
+            prev_close: 昨收价
+        
+        Returns:
+            dict: {
+                'has_divergence': bool,  # 是否有背离
+                'divergence_type': str,  # 背离类型
+                'price_change': float,   # 价格变化
+                'dde_trend': str,        # DDE 趋势
+                'confidence': float,     # 置信度（0-1）
+                'reason': str            # 原因
+            }
+        """
+        result = {
+            'has_divergence': False,
+            'divergence_type': '',
+            'price_change': 0.0,
+            'dde_trend': '',
+            'confidence': 0.0,
+            'reason': ''
+        }
+        
+        try:
+            # 1. 计算价格变化
+            price_change = (current_price - prev_close) / prev_close * 100
+            result['price_change'] = price_change
+            
+            # 2. 获取 DDE 数据
+            realtime_data = self.data_manager.get_realtime_data(stock_code)
+            if not realtime_data:
+                result['reason'] = '无法获取实时数据'
+                return result
+            
+            dde_net_flow = realtime_data.get('dde_net_flow', 0)
+            
+            # 3. 获取 DDE 历史数据
+            dde_history = self._get_dde_history(stock_code)
+            if not dde_history or len(dde_history) < 3:
+                result['reason'] = 'DDE 历史数据不足'
+                return result
+            
+            # 4. 判断价格下跌（2%-3%）
+            if -3.0 <= price_change <= -2.0:
+                # 5. 判断 DDE 趋势（持续走高）
+                recent_dde = dde_history[-3:]  # 最近 3 个数据点
+                dde_trend = 'up' if recent_dde[-1] > recent_dde[0] else 'down'
+                
+                if dde_trend == 'up' and dde_net_flow > 0:
+                    result['has_divergence'] = True
+                    result['divergence_type'] = 'price_down_dde_up'
+                    result['dde_trend'] = 'up'
+                    result['confidence'] = min(0.8, abs(price_change) / 3.0)
+                    result['reason'] = f'🔥 [DDE背离] 股价下跌{price_change:.2f}%，DDE持续走高（{dde_net_flow:.2f}亿），机构压盘吸筹'
+                    logger.info(f"✅ [DDE背离] {stock_code} 检测到背离信号：{result['reason']}")
+                else:
+                    result['reason'] = f'价格下跌{price_change:.2f}%，但DDE未持续走高'
+            else:
+                result['reason'] = f'价格变化{price_change:.2f}%不在背离区间（-3% ~ -2%）'
+        
+        except Exception as e:
+            logger.error(f"检查 DDE 背离失败: {e}")
+            result['reason'] = f'检查失败: {e}'
+        
+        return result
+    
+    def check_auction_dde_surge(self, stock_code: str, auction_time: str = '09:25') -> Dict[str, Any]:
+        """
+        检查竞价 DDE 抢筹信号
+        
+        逻辑：竞价阶段 9:20-9:25，DDE 活跃度突破历史均值 5 倍
+        
+        Args:
+            stock_code: 股票代码
+            auction_time: 竞价时间（默认 09:25）
+        
+        Returns:
+            dict: {
+                'has_surge': bool,        # 是否有抢筹
+                'auction_dde': float,     # 竞价 DDE
+                'historical_mean': float, # 历史均值
+                'surge_ratio': float,     # 突破倍数
+                'confidence': float,      # 置信度（0-1）
+                'reason': str             # 原因
+            }
+        """
+        result = {
+            'has_surge': False,
+            'auction_dde': 0.0,
+            'historical_mean': 0.0,
+            'surge_ratio': 0.0,
+            'confidence': 0.0,
+            'reason': ''
+        }
+        
+        try:
+            # 1. 获取竞价 DDE 数据
+            realtime_data = self.data_manager.get_realtime_data(stock_code)
+            if not realtime_data:
+                result['reason'] = '无法获取实时数据'
+                return result
+            
+            auction_dde = realtime_data.get('dde_net_flow', 0)
+            result['auction_dde'] = auction_dde
+            
+            # 2. 获取 DDE 历史均值
+            dde_history = self._get_dde_history(stock_code)
+            if not dde_history or len(dde_history) < 5:
+                result['reason'] = 'DDE 历史数据不足'
+                return result
+            
+            historical_mean = np.mean(dde_history)
+            result['historical_mean'] = historical_mean
+            
+            # 3. 计算突破倍数
+            if historical_mean > 0:
+                surge_ratio = auction_dde / historical_mean
+                result['surge_ratio'] = surge_ratio
+                
+                # 4. 判断是否突破阈值
+                if surge_ratio >= self.AUCTION_DDE_MULTIPLIER and auction_dde > 0:
+                    result['has_surge'] = True
+                    result['confidence'] = min(0.9, surge_ratio / 10.0)
+                    result['reason'] = f'🚀 [竞价抢筹] DDE活跃度突破历史均值{surge_ratio:.1f}倍（{auction_dde:.2f}亿 vs {historical_mean:.2f}亿）'
+                    logger.info(f"✅ [竞价抢筹] {stock_code} 检测到抢筹信号：{result['reason']}")
+                else:
+                    result['reason'] = f'DDE活跃度未突破阈值（{surge_ratio:.1f}倍 < {self.AUCTION_DDE_MULTIPLIER}倍）'
+            else:
+                result['reason'] = f'历史均值为0，无法计算突破倍数'
+        
+        except Exception as e:
+            logger.error(f"检查竞价 DDE 抢筹失败: {e}")
+            result['reason'] = f'检查失败: {e}'
+        
+        return result
+    
+    def check_dde_veto(self, stock_code: str, signal: str) -> Tuple[bool, str]:
+        """
+        DDE 否决权检查
+        
+        铁律：如果 DDE 为负，无论 K 线多漂亮，系统禁止发出 BUY 信号
+        
+        Args:
+            stock_code: 股票代码
+            signal: 原始信号（BUY/SELL/HOLD）
+        
+        Returns:
+            tuple: (是否否决, 否决原因)
+        """
+        try:
+            # 只有 BUY 信号才需要检查 DDE 否决权
+            if signal != 'BUY':
+                return False, ''
+            
+            # 获取 DDE 数据
+            realtime_data = self.data_manager.get_realtime_data(stock_code)
+            if not realtime_data:
+                return False, '无法获取 DDE 数据，跳过否决检查'
+            
+            dde_net_flow = realtime_data.get('dde_net_flow', 0)
+            
+            # DDE 否决权：DDE 为负时，禁止发出 BUY 信号
+            if dde_net_flow < self.DDE_NEGATIVE_THRESHOLD:
+                veto_reason = f'🛑 [DDE否决权] DDE净额为负（{dde_net_flow:.2f}亿），禁止发出 BUY 信号'
+                logger.warning(f"❌ {stock_code} {veto_reason}")
+                return True, veto_reason
+            
+            # DDE 弱信号：DDE < 0.5亿，发出警告
+            if dde_net_flow < self.DDE_BUY_THRESHOLD:
+                warning_reason = f'⚠️ [DDE警告] DDE净额较弱（{dde_net_flow:.2f}亿），建议谨慎'
+                logger.info(f"⚠️ {stock_code} {warning_reason}")
+                return False, warning_reason
+            
+            # DDE 强信号：DDE > 1.0亿，增强信心
+            if dde_net_flow > self.DDE_STRONG_THRESHOLD:
+                strong_reason = f'✅ [DDE强信号] DDE净额强劲（{dde_net_flow:.2f}亿），增强买入信心'
+                logger.info(f"✅ {stock_code} {strong_reason}")
+                return False, strong_reason
+            
+            return False, ''
+        
+        except Exception as e:
+            logger.error(f"检查 DDE 否决权失败: {e}")
+            return False, f'检查失败: {e}'
+    
+    def calculate_dde_score(self, stock_code: str) -> float:
+        """
+        计算 DDE 评分（0-100）
+        
+        评分标准：
+        - DDE > 1.0亿：80-100分
+        - DDE > 0.5亿：60-80分
+        - DDE > 0：40-60分
+        - DDE < 0：0-40分
+        
+        Args:
+            stock_code: 股票代码
+        
+        Returns:
+            float: DDE 评分（0-100）
+        """
+        try:
+            # 获取 DDE 数据
+            realtime_data = self.data_manager.get_realtime_data(stock_code)
+            if not realtime_data:
+                return 50.0  # 默认中性评分
+            
+            dde_net_flow = realtime_data.get('dde_net_flow', 0)
+            
+            # 计算 DDE 评分
+            if dde_net_flow > self.DDE_STRONG_THRESHOLD:
+                # 1.0亿以上：80-100分
+                score = 80 + min(20, (dde_net_flow - self.DDE_STRONG_THRESHOLD) / self.DDE_STRONG_THRESHOLD * 20)
+            elif dde_net_flow > self.DDE_BUY_THRESHOLD:
+                # 0.5-1.0亿：60-80分
+                score = 60 + (dde_net_flow - self.DDE_BUY_THRESHOLD) / (self.DDE_STRONG_THRESHOLD - self.DDE_BUY_THRESHOLD) * 20
+            elif dde_net_flow > 0:
+                # 0-0.5亿：40-60分
+                score = 40 + dde_net_flow / self.DDE_BUY_THRESHOLD * 20
+            elif dde_net_flow > self.DDE_NEGATIVE_THRESHOLD:
+                # -0.3-0亿：20-40分
+                score = 20 + (dde_net_flow - self.DDE_NEGATIVE_THRESHOLD) / abs(self.DDE_NEGATIVE_THRESHOLD) * 20
+            else:
+                # -0.3亿以下：0-20分
+                score = max(0, 20 + dde_net_flow / abs(self.DDE_NEGATIVE_THRESHOLD) * 20)
+            
+            return min(100, max(0, score))
+        
+        except Exception as e:
+            logger.error(f"计算 DDE 评分失败: {e}")
+            return 50.0
+    
+    def _get_dde_history(self, stock_code: str, lookback: int = 10) -> List[float]:
+        """
+        获取 DDE 历史数据
+        
+        Args:
+            stock_code: 股票代码
+            lookback: 回看天数
+        
+        Returns:
+            list: DDE 历史数据列表
+        """
+        try:
+            # 检查缓存
+            cache_key = stock_code
+            if cache_key in self._dde_history_cache:
+                cache_data = self._dde_history_cache[cache_key]
+                cache_age = (datetime.now() - cache_data['last_update']).total_seconds()
+                if cache_age < self._cache_ttl:
+                    return cache_data['dde_values'][-lookback:]
+            
+            # 从数据库获取历史数据
+            # 这里需要实现从数据库获取 DDE 历史数据的逻辑
+            # 暂时返回空列表
+            return []
+        
+        except Exception as e:
+            logger.error(f"获取 DDE 历史数据失败: {e}")
+            return []
+    
+    def analyze_money_flow(self, stock_code: str, current_price: float, prev_close: float) -> Dict[str, Any]:
+        """
+        综合分析资金流
+        
+        Args:
+            stock_code: 股票代码
+            current_price: 当前价格
+            prev_close: 昨收价
+        
+        Returns:
+            dict: {
+                'dde_score': float,           # DDE 评分（0-100）
+                'divergence_signal': dict,    # 背离信号
+                'auction_surge': dict,        # 竞价抢筹信号
+                'overall_assessment': str,    # 综合评估
+                'recommendation': str         # 建议
+            }
+        """
+        result = {
+            'dde_score': 0.0,
+            'divergence_signal': {},
+            'auction_surge': {},
+            'overall_assessment': '',
+            'recommendation': ''
+        }
+        
+        try:
+            # 1. 计算 DDE 评分
+            result['dde_score'] = self.calculate_dde_score(stock_code)
+            
+            # 2. 检查 DDE 背离信号
+            result['divergence_signal'] = self.check_dde_divergence(stock_code, current_price, prev_close)
+            
+            # 3. 检查竞价抢筹信号
+            result['auction_surge'] = self.check_auction_dde_surge(stock_code)
+            
+            # 4. 综合评估
+            signals = []
+            if result['divergence_signal'].get('has_divergence'):
+                signals.append('DDE背离低吸')
+            if result['auction_surge'].get('has_surge'):
+                signals.append('竞价抢筹')
+            
+            if signals:
+                result['overall_assessment'] = f'资金流强势：{", ".join(signals)}'
+                result['recommendation'] = 'BUY'
+            elif result['dde_score'] >= 60:
+                result['overall_assessment'] = '资金流健康'
+                result['recommendation'] = 'HOLD'
+            elif result['dde_score'] >= 40:
+                result['overall_assessment'] = '资金流中性'
+                result['recommendation'] = 'HOLD'
+            else:
+                result['overall_assessment'] = '资金流疲弱'
+                result['recommendation'] = 'SELL'
+            
+        except Exception as e:
+            logger.error(f"综合分析资金流失败: {e}")
+            result['overall_assessment'] = f'分析失败: {e}'
+            result['recommendation'] = 'HOLD'
+        
+        return result
+
+
+# 便捷函数
+_mfm_instance = None
+
+def get_money_flow_master() -> MoneyFlowMaster:
+    """获取资金流大师单例"""
+    global _mfm_instance
+    if _mfm_instance is None:
+        _mfm_instance = MoneyFlowMaster()
+    return _mfm_instance

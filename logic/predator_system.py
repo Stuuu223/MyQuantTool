@@ -241,30 +241,30 @@ class PredatorSystem:
         symbol = stock_data.get('symbol', '')
         change_pct = realtime_data.get('change_percent', 0)
         
-        # 判断板块类型
-        board_type = self._get_board_type(symbol)
-        config = self.halfway_config.get(board_type, {})
-        
-        if not config:
-            return result
-        
-        limit_up = config['limit_up']
+        # 🆕 V18.5: 使用动态涨停系数
+        limit_ratio = self._get_limit_ratio(symbol)
+        limit_up_pct = (limit_ratio - 1.0) * 100  # 转换为百分比
         
         # 检查涨幅错配
-        if board_type in ['chi_next', 'star_market']:
-            # 创业板/科创板：20cm涨停
-            if change_pct < 19.5 and change_pct > 10.0:
+        if limit_ratio >= 1.2:  # 20cm 或 30cm
+            if limit_ratio >= 1.3:  # 30cm（北交所）
+                if change_pct < 29.5 and change_pct > 15.0:
+                    result['triggered'] = True
+                    result['reason'] = f"北交所股票涨幅{change_pct:.2f}%非涨停，属于冲高回落或跟风上涨"
+                    result['warning'] = f"北交所股票涨幅<29.5%不算涨停，无溢价预期"
+                    logger.warning(f"身份与涨幅错配：{symbol} - 北交所股票涨幅{change_pct:.2f}%")
+            else:  # 20cm（创业板/科创板）
+                if change_pct < 19.5 and change_pct > 10.0:
+                    result['triggered'] = True
+                    result['reason'] = f"20cm股票涨幅{change_pct:.2f}%非涨停，属于冲高回落或跟风上涨"
+                    result['warning'] = f"20cm股票涨幅<19.5%不算涨停，无溢价预期"
+                    logger.warning(f"身份与涨幅错配：{symbol} - 20cm股票涨幅{change_pct:.2f}%")
+        else:  # 10cm（主板）
+            if change_pct < 9.5 and change_pct > 5.0:
                 result['triggered'] = True
-                result['reason'] = f"{board_type}股票涨幅{change_pct:.2f}%非涨停，属于冲高回落或跟风上涨"
-                result['warning'] = f"{board_type}股票涨幅<19.5%不算涨停，无溢价预期"
-                logger.warning(f"身份与涨幅错配：{symbol} - {board_type}股票涨幅{change_pct:.2f}%")
-        elif board_type == 'beijing':
-            # 北交所：30cm涨停
-            if change_pct < 29.5 and change_pct > 15.0:
-                result['triggered'] = True
-                result['reason'] = f"{board_type}股票涨幅{change_pct:.2f}%非涨停，属于冲高回落或跟风上涨"
-                result['warning'] = f"{board_type}股票涨幅<29.5%不算涨停，无溢价预期"
-                logger.warning(f"身份与涨幅错配：{symbol} - {board_type}股票涨幅{change_pct:.2f}%")
+                result['reason'] = f"主板股票涨幅{change_pct:.2f}%非涨停，属于冲高回落或跟风上涨"
+                result['warning'] = f"主板股票涨幅<9.5%不算涨停，无溢价预期"
+                logger.warning(f"身份与涨幅错配：{symbol} - 主板股票涨幅{change_pct:.2f}%")
         
         return result
     
@@ -489,7 +489,7 @@ class PredatorSystem:
     
     def _get_board_type(self, symbol: str) -> str:
         """
-        根据股票代码判断板块类型
+        🆕 V18.5: 根据股票代码判断板块类型（使用动态涨停系数）
         
         Args:
             symbol: 股票代码
@@ -509,6 +509,23 @@ class PredatorSystem:
             return 'main_board'  # 主板（沪市）
         else:
             return 'main_board'  # 主板（深市）
+    
+    def _get_limit_ratio(self, symbol: str) -> float:
+        """
+        🆕 V18.5: 获取动态涨停系数
+        
+        Args:
+            symbol: 股票代码
+        
+        Returns:
+            涨停系数（如 1.1 表示 10% 涨停）
+        """
+        try:
+            from logic.utils import Utils
+            return Utils.get_limit_ratio(symbol)
+        except Exception as e:
+            logger.warning(f"获取涨停系数失败: {e}，使用默认值 1.1")
+            return 1.1
     
     def batch_analyze(self, stocks_data: Dict[str, Dict[str, Any]],
                      realtime_data: Dict[str, Dict[str, Any]],
