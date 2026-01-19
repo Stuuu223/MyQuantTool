@@ -1123,40 +1123,40 @@ def _render_dragon_stock(stock, config, review_mode=False):
         # 🆕 V9.7: 支持ST股识别和竞价真空期处理
         bid1_volume = stock.get('买一量', 0)
         ask1_volume = stock.get('卖一量', 0)
-        bid1_price=stock.get('买一价', 0)
-                ask1_price=stock.get('卖一价', 0)
-                stock_name = stock.get('名称', '')
+        bid1_price = stock.get('买一价', 0)
+        ask1_price = stock.get('卖一价', 0)
+        stock_name = stock.get('名称', '')
         
-                status_info = market_checker.check_market_status(
-                    bid1_volume=bid1_volume,
-                    ask1_volume=ask1_volume,
-                    change_pct=change_pct,
-                    symbol=symbol,
-                    name=stock_name,
-                    bid1_price=bid1_price,
-                    ask1_price=ask1_price
-                )
+        status_info = market_checker.check_market_status(
+            bid1_volume=bid1_volume,
+            ask1_volume=ask1_volume,
+            change_pct=change_pct,
+            symbol=symbol,
+            name=stock_name,
+            bid1_price=bid1_price,
+            ask1_price=ask1_price
+        )
         
-                # 🆕 V9.10 修复：根据不同状态显示不同颜色
-                if status_info['message']:
-                    if status_info['status'] == MarketStatus.NOON_BREAK:
-                        st.info(status_info['message'])  # 午间休盘显示蓝色信息
-                    elif status_info['status'] in [MarketStatus.CLOSED, MarketStatus.OFF_HOURS]:
-                        st.warning(status_info['message'])  # 收盘显示黄色警告
-                        
-                        # 🆕 V18.5: 显示历史数据
-                        if 'historical_data' in status_info and status_info['historical_data']:
-                            hist = status_info['historical_data']
-                            st.markdown(f"**历史数据（{hist['date']}）**")
-                            col1, col2, col3 = st.columns(3)
-                            col1.metric("收盘价", f"¥{hist['close']:.2f}")
-                            col2.metric("最高价", f"¥{hist['high']:.2f}")
-                            col3.metric("最低价", f"¥{hist['low']:.2f}")
-                            col4, col5 = st.columns(2)
-                            col4.metric("成交量", f"{hist['volume']:.0f}")
-                            col5.metric("换手率", f"{hist['turnover_rate']:.2f}%")
-                    else:
-                        st.warning(status_info['message'])  # 其他状态显示警告
+        # 🆕 V9.10 修复：根据不同状态显示不同颜色
+        if status_info['message']:
+            if status_info['status'] == MarketStatus.NOON_BREAK:
+                st.info(status_info['message'])  # 午间休盘显示蓝色信息
+            elif status_info['status'] in [MarketStatus.CLOSED, MarketStatus.OFF_HOURS]:
+                st.warning(status_info['message'])  # 收盘显示黄色警告
+                
+                # 🆕 V18.5: 显示历史数据
+                if 'historical_data' in status_info and status_info['historical_data']:
+                    hist = status_info['historical_data']
+                    st.markdown(f"**历史数据（{hist['date']}）**")
+                    col1, col2, col3 = st.columns(3)
+                    col1.metric("收盘价", f"¥{hist['close']:.2f}")
+                    col2.metric("最高价", f"¥{hist['high']:.2f}")
+                    col3.metric("最低价", f"¥{hist['low']:.2f}")
+                    col4, col5 = st.columns(2)
+                    col4.metric("成交量", f"{hist['volume']:.0f}")
+                    col5.metric("换手率", f"{hist['turnover_rate']:.2f}%")
+            else:
+                st.warning(status_info['message'])  # 其他状态显示警告
         
         if is_limit_up:
             col7.metric("买一价", f"¥{stock.get('买一价', 0):.2f}", delta="涨停")
