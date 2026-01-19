@@ -74,7 +74,8 @@ def render_lhb_counter(data_manager=None):
             max_value=20.0,
             value=5.0,
             step=0.1,
-            help="当前价格涨跌幅"
+            help="当前价格涨跌幅",
+            key="lhb_counter_current_pct_change"
         )
         
         st.markdown("#### 🎯 龙虎榜数据")
@@ -84,7 +85,8 @@ def render_lhb_counter(data_manager=None):
             min_value=0,
             max_value=100000,
             value=6000,
-            help="昨日龙虎榜净买入额，>5000万为豪华榜"
+            help="昨日龙虎榜净买入额，>5000万为豪华榜",
+            key="lhb_counter_yesterday_lhb_net_buy"
         )
         
         open_pct_change = st.slider(
@@ -93,7 +95,8 @@ def render_lhb_counter(data_manager=None):
             max_value=10.0,
             value=0.5,
             step=0.1,
-            help="今日开盘涨跌幅"
+            help="今日开盘涨跌幅",
+            key="lhb_counter_open_pct_change"
         )
         
         circulating_market_cap = st.number_input(
