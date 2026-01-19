@@ -416,3 +416,16 @@ def dragon_strategy_backtest(date, daily_data, params):
         })
     
     return signals
+
+
+def get_backtest_engine(initial_capital=100000):
+    """
+    获取回测引擎实例（工厂函数）
+    
+    Args:
+        initial_capital: 初始资金，默认 100000
+    
+    Returns:
+        BacktestEngine: 回测引擎实例
+    """
+    return BacktestEngine(initial_capital=initial_capital)
