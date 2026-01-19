@@ -4,7 +4,8 @@
 实时数据提供者
 从新浪 API 获取实时行情数据
 V17.1: 时区校准 - 统一使用北京时间
-V18.6: 集成东方财富 DDE 数据适配器
+V18.6: 集成东方财富 DDE 数据适配器（异步化）
+V18.6.1: 后台线程异步获取 DDE 数据，避免阻塞主线程
 """
 
 from logic.data_provider_factory import DataProvider
@@ -13,6 +14,9 @@ from logic.utils import Utils
 from logic.data_adapter_akshare import MoneyFlowAdapter
 import config_system as config
 from datetime import datetime
+import threading
+import time
+from typing import Dict, Any, List
 
 logger = get_logger(__name__)
 
@@ -20,20 +24,21 @@ logger = get_logger(__name__)
 class RealtimeDataProvider(DataProvider):
     """
     实时数据提供者
-    
+
     功能：
     - 从新浪 API 获取实时行情数据
     - 支持并发请求提升性能
     - 自动处理数据清洗和格式化
     - 🆕 V16.2: 数据保质期校验
+    - 🆕 V18.6.1: 后台线程异步获取 DDE 数据，避免阻塞主线程
     """
-    
+
     def __init__(self, **kwargs):
         """初始化实时数据提供者"""
         super().__init__()
         self.timeout = config.API_TIMEOUT
         self.data_freshness_threshold = 15  # V16.2: 数据保质期阈值（秒）
-        
+
         # 🆕 优化 2：ACTIVE_MONITOR 和 PASSIVE_WATCH 动态优先级机制
         self.active_monitor = set()  # 高频监控列表（每秒）
         self.passive_watch = set()  # 低频监控列表（每30秒）
@@ -41,7 +46,119 @@ class RealtimeDataProvider(DataProvider):
         self.last_update_time = {}  # {stock_code: last_update_time} 上次更新时间
         self.active_interval = 1  # 高频监控间隔（秒）
         self.passive_interval = 30  # 低频监控间隔（秒）
-    
+
+        # 🆕 V18.6.1: DDE 缓存和后台线程
+        self.dde_cache = {}  # {stock_code: dde_data} DDE 数据缓存
+        self.ma4_cache = {}  # {stock_code: ma4_value} MA4 缓存（用于快速计算乖离率）
+        self.dde_velocity_cache = {}  # {stock_code: velocity} DDE 加速度缓存
+        self.running = True  # 后台线程运行标志
+        self.dde_update_interval = 10  # DDE 更新间隔（秒）
+        self.monitor_list = []  # 监控股票列表
+
+        # 启动后台线程抓取 DDE
+        self.dde_thread = threading.Thread(target=self._background_fetch_dde, daemon=True)
+        self.dde_thread.start()
+        logger.info("✅ [V18.6.1] DDE 后台线程已启动")
+
+    def _background_fetch_dde(self):
+        """
+        🆕 V18.6.1: 后台持续更新 DDE 数据，不阻塞主线程
+
+        每 10 秒更新一次 DDE 数据，避免在主线程中阻塞网络请求
+        """
+        logger.info("🔄 [V18.6.1] DDE 后台线程开始运行")
+
+        while self.running:
+            try:
+                # 如果有监控列表，批量获取 DDE 数据
+                if self.monitor_list:
+                    # 保存上一次的 DDE 数据，用于计算加速度
+                    last_dde_cache = self.dde_cache.copy()
+
+                    # 批量获取 DDE 数据
+                    new_data = MoneyFlowAdapter.batch_get_dde(self.monitor_list)
+
+                    if new_data:
+                        # 更新缓存
+                        self.dde_cache.update(new_data)
+
+                        # 计算 DDE 加速度（Derivative）
+                        for code, dde_data in new_data.items():
+                            if code in last_dde_cache:
+                                last_dde = last_dde_cache[code].get('dde_net_amount', 0)
+                                current_dde = dde_data.get('dde_net_amount', 0)
+                                # 加速度 = (当前 DDE - 上次 DDE) / 时间间隔（秒）
+                                velocity = (current_dde - last_dde) / self.dde_update_interval
+                                self.dde_velocity_cache[code] = velocity
+
+                                # 检测点火信号（加速度突然暴增）
+                                if velocity > 1000000:  # 每秒净流入超过 100 万
+                                    logger.info(f"🔥 [点火信号] {code} DDE 加速度暴增: {velocity/1000000:.2f}万/秒")
+
+                    logger.info(f"✅ [V18.6.1] DDE 后台更新完成，共 {len(new_data)} 只股票")
+
+            except Exception as e:
+                logger.error(f"❌ [V18.6.1] DDE 后台线程错误: {e}")
+
+            # 休息 10 秒
+            time.sleep(self.dde_update_interval)
+
+        logger.info("🛑 [V18.6.1] DDE 后台线程已停止")
+
+    def set_monitor_list(self, stock_list: List[str]):
+        """
+        设置监控股票列表
+
+        Args:
+            stock_list: 股票代码列表
+        """
+        self.monitor_list = stock_list
+        logger.info(f"📊 [V18.6.1] 监控列表已更新，共 {len(stock_list)} 只股票")
+
+        # 预计算 MA4（用于快速计算乖离率）
+        self._precompute_ma4(stock_list)
+
+    def _precompute_ma4(self, stock_list: List[str]):
+        """
+        🆕 V18.6.1: 盘前预计算 MA4，用于快速计算实时 MA5
+
+        MA5 变化很慢，可以在盘前预计算昨天的 MA4，
+        盘中只需要用 (Yesterday_MA4 * 4 + Current_Price) / 5 就能算出毫秒级精度的实时 MA5
+
+        Args:
+            stock_list: 股票代码列表
+        """
+        logger.info(f"🔄 [V18.6.1] 开始预计算 MA4，共 {len(stock_list)} 只股票")
+
+        for stock_code in stock_list:
+            try:
+                # 获取历史行情（最近 10 天）
+                import akshare as ak
+                clean_code = stock_code.split('.')[0]
+                hist = ak.stock_zh_a_hist(symbol=clean_code, period="daily", adjust="qfq")
+
+                if len(hist) >= 4:
+                    # 计算昨天的 MA4（最后 4 天收盘价的平均值）
+                    last_4_closes = hist['收盘'].iloc[-4:].astype(float).values
+                    ma4 = sum(last_4_closes) / 4
+                    self.ma4_cache[stock_code] = ma4
+                else:
+                    # 历史数据不足
+                    self.ma4_cache[stock_code] = 0
+
+            except Exception as e:
+                logger.warning(f"⚠️ [V18.6.1] 预计算 MA4 失败 {stock_code}: {e}")
+                self.ma4_cache[stock_code] = 0
+
+        logger.info(f"✅ [V18.6.1] MA4 预计算完成，共 {len(self.ma4_cache)} 只股票")
+
+    def stop_background_thread(self):
+        """停止后台线程"""
+        self.running = False
+        if self.dde_thread.is_alive():
+            self.dde_thread.join(timeout=5)
+        logger.info("🛑 [V18.6.1] DDE 后台线程已停止")
+
     def get_realtime_data(self, stock_list):
         """
         获取实时数据
@@ -112,52 +229,47 @@ class RealtimeDataProvider(DataProvider):
                 }
                 result.append(stock_info)
 
-            # 🆕 V18.6: 注入 DDE 数据和乖离率
-            # 为了性能，使用批量获取方式
+            # 🆕 V18.6.1: 从内存缓存中瞬间注入 DDE 数据和乖离率（0 延迟）
+            # 不再同步调用网络请求，避免阻塞主线程
             if result:
-                try:
-                    # 提取股票代码列表
-                    stock_codes = [stock['code'] for stock in result]
+                for stock_info in result:
+                    code = stock_info['code']
 
-                    # 批量获取 DDE 数据
-                    dde_data_dict = MoneyFlowAdapter.batch_get_dde(stock_codes)
-
-                    # 注入到每个股票的数据中
-                    for stock_info in result:
-                        code = stock_info['code']
-
-                        # 注入 DDE 数据
-                        if code in dde_data_dict:
-                            dde_data = dde_data_dict[code]
-                            stock_info['dde_net_amount'] = dde_data.get('dde_net_amount', 0)
-                            stock_info['scramble_degree'] = dde_data.get('scramble_degree', 0)
-                            stock_info['super_big_order'] = dde_data.get('super_big_order', 0)
-                            stock_info['big_order'] = dde_data.get('big_order', 0)
-                        else:
-                            # 默认值
-                            stock_info['dde_net_amount'] = 0
-                            stock_info['scramble_degree'] = 0
-                            stock_info['super_big_order'] = 0
-                            stock_info['big_order'] = 0
-
-                        # 注入乖离率
-                        current_price = stock_info.get('price', 0)
-                        if current_price > 0:
-                            bias = MoneyFlowAdapter.calculate_ma_bias(code, current_price)
-                            stock_info['bias_rate'] = bias
-                        else:
-                            stock_info['bias_rate'] = 0
-
-                    logger.info(f"✅ [V18.6 DDE注入] 成功为 {len(result)} 只股票注入 DDE 数据")
-
-                except Exception as e:
-                    logger.error(f"❌ [V18.6 DDE注入] 注入 DDE 数据失败: {e}")
-                    # 失败时设置默认值
-                    for stock_info in result:
+                    # 从缓存中注入 DDE 数据（瞬间完成）
+                    if code in self.dde_cache:
+                        dde_data = self.dde_cache[code]
+                        stock_info['dde_net_amount'] = dde_data.get('dde_net_amount', 0)
+                        stock_info['scramble_degree'] = dde_data.get('scramble_degree', 0)
+                        stock_info['super_big_order'] = dde_data.get('super_big_order', 0)
+                        stock_info['big_order'] = dde_data.get('big_order', 0)
+                    else:
+                        # 没有缓存数据时补 0，绝不发起网络请求
                         stock_info['dde_net_amount'] = 0
                         stock_info['scramble_degree'] = 0
                         stock_info['super_big_order'] = 0
                         stock_info['big_order'] = 0
+
+                    # 注入 DDE 加速度
+                    if code in self.dde_velocity_cache:
+                        stock_info['dde_velocity'] = self.dde_velocity_cache[code]
+                    else:
+                        stock_info['dde_velocity'] = 0
+
+                    # 注入乖离率（使用缓存或快速计算）
+                    current_price = stock_info.get('price', 0)
+                    if current_price > 0:
+                        # 如果有 MA4 缓存，快速计算实时 MA5
+                        if code in self.ma4_cache:
+                            ma4 = self.ma4_cache[code]
+                            # 实时 MA5 = (昨天 MA4 * 4 + 当前价格) / 5
+                            realtime_ma5 = (ma4 * 4 + current_price) / 5
+                            bias = (current_price - realtime_ma5) / realtime_ma5 * 100
+                            stock_info['bias_rate'] = round(bias, 2)
+                        else:
+                            # 没有缓存，使用 Akshare 计算（较慢，但只在第一次调用时慢）
+                            bias = MoneyFlowAdapter.calculate_ma_bias(code, current_price)
+                            stock_info['bias_rate'] = bias
+                    else:
                         stock_info['bias_rate'] = 0
 
             return result

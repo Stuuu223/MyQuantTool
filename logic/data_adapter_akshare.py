@@ -165,7 +165,7 @@ class MoneyFlowAdapter:
     @staticmethod
     def _safe_get_float(row_data, possible_keys):
         """
-        安全地从行数据中获取浮点数（兼容不同列名）
+        安全地从行数据中获取浮点数（兼容不同列名和中文单位）
 
         Args:
             row_data: 行数据
@@ -180,8 +180,21 @@ class MoneyFlowAdapter:
                     value = row_data[key]
                     if pd.isna(value):
                         return 0.0
+
+                    # 处理字符串类型（可能包含中文单位）
+                    if isinstance(value, str):
+                        value = value.strip()
+                        # 处理中文单位
+                        if '亿' in value:
+                            return float(value.replace('亿', '')) * 100000000
+                        elif '万' in value:
+                            return float(value.replace('万', '')) * 10000
+                        else:
+                            return float(value)
+
+                    # 处理数值类型
                     return float(value)
-                except (ValueError, TypeError):
+                except (ValueError, TypeError, AttributeError):
                     continue
         return 0.0
 

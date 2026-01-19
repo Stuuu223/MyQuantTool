@@ -931,11 +931,75 @@ with tab10:
         **自动止盈特征：**
         - 硬止盈：封单量/成交量 < 10%
         - 软止盈：DDE背离流出，盈利超过 5%
-        
+
         **实战建议：**
         - 情绪高潮兑现，在板上把货倒给排队的人
         - 不要贪心，落袋为安
         - 保护利润，活下去才是最重要的
+        """)
+
+    st.markdown("---")
+
+    # 5. DDE 加速度（点火信号）
+    st.subheader("5. DDE 加速度（Ignition Signal）")
+    st.markdown("""
+    **背景：** 既然现在 DDE 是后台轮询的，我们可以记录上一次的值。
+    **逻辑：** DDE_Velocity = (Current_DDE - Last_DDE) / Time_Interval。
+    **意义：** 如果在股价横盘时，DDE 净流入速度突然从 100万/分 暴增到 1000万/分，这就是**"点火信号"**，比单纯看净流入总额更早。
+    """)
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        stock_code5 = st.text_input("股票代码", value="300992", key="dde_velocity_code")
+
+        if st.button("检测 DDE 加速度", key="check_dde_velocity"):
+            # 从实时数据提供者获取 DDE 加速度
+            try:
+                from logic.realtime_data_provider import RealtimeDataProvider
+                provider = RealtimeDataProvider()
+
+                # 设置监控列表
+                provider.set_monitor_list([stock_code5])
+
+                # 等待后台线程更新数据
+                import time
+                time.sleep(2)
+
+                # 获取 DDE 加速度
+                if stock_code5 in provider.dde_velocity_cache:
+                    velocity = provider.dde_velocity_cache[stock_code5]
+                    st.metric("DDE 加速度", f"{velocity/1000000:.2f}万/秒")
+
+                    if velocity > 1000000:
+                        st.error(f"🔥 [点火信号] DDE 加速度暴增: {velocity/1000000:.2f}万/秒")
+                        st.success("✅ 建议立即买入！主力正在暴力扫货！")
+                    elif velocity > 500000:
+                        st.warning(f"⚠️ [加速中] DDE 加速度上升: {velocity/1000000:.2f}万/秒")
+                        st.info("📊 建议密切关注，可能即将点火")
+                    elif velocity < -1000000:
+                        st.error(f"🚨 [恐慌信号] DDE 加速度暴跌: {velocity/1000000:.2f}万/秒")
+                        st.warning("⚠️ 建议立即止损！主力正在暴力砸盘！")
+                    else:
+                        st.info(f"📊 [平稳] DDE 加速度正常: {velocity/1000000:.2f}万/秒")
+                else:
+                    st.warning("⚠️ 暂无 DDE 加速度数据，请稍后再试")
+
+            except Exception as e:
+                st.error(f"❌ 检测失败: {e}")
+
+    with col2:
+        st.info("""
+        **DDE 加速度特征：**
+        - 点火信号：加速度 > 100万/秒
+        - 加速中：加速度 > 50万/秒
+        - 恐慌信号：加速度 < -100万/秒
+
+        **实战建议：**
+        - DDE 加速度比单纯看净流入总额更早
+        - 在股价横盘时，如果 DDE 加速度突然暴增，就是点火信号
+        - 不要等到涨停才确认，要在点火信号出现时就介入
+        - 保护本金，活下去才是最重要的
         """)
 
 # 页脚
