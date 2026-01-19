@@ -143,6 +143,46 @@ class DataManager:
             return result[0]
         return None
 
+    def get_fast_price(self, stock_list: List[str]) -> Dict[str, Dict[str, Any]]:
+        """
+        获取多只股票的实时数据（向后兼容）
+
+        Args:
+            stock_list: 股票代码列表
+
+        Returns:
+            dict: 股票数据字典，格式：{code: data_dict}
+        """
+        try:
+            # 获取实时数据
+            realtime_data = self.get_realtime_data(stock_list)
+            
+            # 转换为字典格式
+            result = {}
+            for stock_data in realtime_data:
+                code = stock_data.get('code', '')
+                if code:
+                    result[code] = {
+                        'name': stock_data.get('name', ''),
+                        'now': stock_data.get('price', 0),
+                        'close': stock_data.get('pre_close', 0),
+                        'open': stock_data.get('open', 0),
+                        'high': stock_data.get('high', 0),
+                        'low': stock_data.get('low', 0),
+                        'volume': stock_data.get('volume', 0),
+                        'turnover': stock_data.get('amount', 0),
+                        'bid1': stock_data.get('bid1_price', 0),
+                        'ask1': stock_data.get('ask1_price', 0),
+                        'bid1_volume': stock_data.get('bid1_volume', 0),
+                        'ask1_volume': stock_data.get('ask1_volume', 0),
+                        'time': stock_data.get('time', '')
+                    }
+            
+            return result
+        except Exception as e:
+            logger.error(f"获取快速价格失败: {e}")
+            return {}
+
     def get_limit_up_stocks(self, date: str = None) -> List[str]:
         """
         获取涨停板股票列表（向后兼容）
@@ -232,6 +272,20 @@ class DataManager:
         DataManager._instance = None
         DataManager._initialized = False
         logger.info("DataManager 单例已重置")
+
+    def close(self):
+        """
+        关闭数据库连接（向后兼容）
+
+        注意：
+        - 在纯代理模式下，DataManager 不直接管理数据库连接
+        - 数据库连接由 DataProviderFactory 管理
+        - 此方法为空实现，保持向后兼容
+        """
+        # 🚀 V18.6.1: 纯代理模式下，DataManager 不直接管理数据库连接
+        # 数据库连接由 DataProviderFactory 管理
+        # 此方法为空实现，保持向后兼容
+        logger.debug("DataManager.close() 调用（纯代理模式，无需关闭连接）")
 
 
 # 单例测试
