@@ -274,6 +274,138 @@ class LowSuctionEngine:
         
         return result
     
+    def check_divergence_to_consensus(self, stock_code: str, current_price: float, prev_close: float, 
+                                     logic_keywords: Optional[List[str]] = None) -> Dict[str, Any]:
+        """
+        🆕 V18.6: 检查分歧转一致（低吸战法）
+        
+        逻辑：主力故意在高位放手，让股价回踩均线，洗掉不坚定的筹码。
+        这种确定性来自于"逻辑未死"：只要机器人/航天的大背景没变，主力回踩就是为了拿更便宜的筹码。
+        你买在回踩点，比那些等回封涨停再追的人，多了 10% 的安全垫。
+        
+        Args:
+            stock_code: 股票代码
+            current_price: 当前价格
+            prev_close: 昨收价
+            logic_keywords: 核心逻辑关键词列表（可选）
+        
+        Returns:
+            dict: {
+                'has_divergence_to_consensus': bool, # 是否有分歧转一致信号
+                'high_price': float,          # 高位价格
+                'pullback_pct': float,        # 回撤幅度
+                'ma5_touch': bool,            # 是否回踩MA5
+                'volume_shrink': bool,        # 是否缩量
+                'bounce_strength': float,     # 反弹力度
+                'logic_alive': bool,          # 逻辑是否未死
+                'confidence': float,          # 置信度（0-1）
+                'reason': str                 # 原因
+            }
+        """
+        result = {
+            'has_divergence_to_consensus': False,
+            'high_price': 0.0,
+            'pullback_pct': 0.0,
+            'ma5_touch': False,
+            'volume_shrink': False,
+            'bounce_strength': 0.0,
+            'logic_alive': False,
+            'confidence': 0.0,
+            'reason': ''
+        }
+        
+        try:
+            # 1. 获取K线数据
+            kline_data = self.data_manager.get_kline(stock_code, period='daily', count=10)
+            if not kline_data or len(kline_data) < 5:
+                result['reason'] = 'K线数据不足'
+                return result
+            
+            # 2. 识别高位价格（最近5天的最高价）
+            high_price = kline_data['high'].max()
+            result['high_price'] = high_price
+            
+            # 3. 计算回撤幅度
+            if high_price > 0:
+                pullback_pct = (high_price - current_price) / high_price * 100
+                result['pullback_pct'] = pullback_pct
+            
+            # 4. 检查是否回踩MA5
+            ma5 = kline_data['close'].rolling(window=5).mean().iloc[-1]
+            if ma5 > 0:
+                ma5_touch = current_price <= ma5 * 1.02  # 允许2%的误差
+                result['ma5_touch'] = ma5_touch
+            
+            # 5. 检查是否缩量
+            current_volume = kline_data['volume'].iloc[-1]
+            prev_volume = kline_data['volume'].iloc[-2]
+            volume_shrink = current_volume < prev_volume * self.VOLUME_SHRINK_THRESHOLD
+            result['volume_shrink'] = volume_shrink
+            
+            # 6. 检查反弹力度（这里简化处理，实际应该检查分时数据）
+            # 假设如果当前价格 > 开盘价，说明有反弹
+            open_price = kline_data['open'].iloc[-1]
+            bounce_strength = (current_price - open_price) / open_price * 100 if open_price > 0 else 0
+            result['bounce_strength'] = bounce_strength
+            
+            # 7. 检查逻辑是否未死
+            logic_alive = False
+            if logic_keywords:
+                stock_info = self.data_manager.get_stock_info(stock_code)
+                if stock_info:
+                    stock_name = stock_info.get('name', '')
+                    stock_concept = stock_info.get('concept', '')
+                    
+                    for keyword in logic_keywords:
+                        if keyword in stock_name or keyword in stock_concept:
+                            logic_alive = True
+                            break
+            result['logic_alive'] = logic_alive
+            
+            # 8. 综合判断
+            confidence = 0.0
+            
+            # 回撤幅度评分（回撤5%-15%为最佳）
+            if 5.0 <= pullback_pct <= 15.0:
+                confidence += 0.3
+            elif 3.0 <= pullback_pct <= 20.0:
+                confidence += 0.2
+            
+            # 回踩MA5评分
+            if ma5_touch:
+                confidence += 0.3
+            
+            # 缩量评分
+            if volume_shrink:
+                confidence += 0.2
+            
+            # 反弹力度评分
+            if bounce_strength > 0:
+                confidence += 0.1
+            
+            # 逻辑未死评分
+            if logic_alive:
+                confidence += 0.1
+            
+            result['confidence'] = min(1.0, confidence)
+            
+            # 9. 生成原因
+            if result['confidence'] >= 0.7:
+                logic_str = f"，逻辑未死（{','.join(logic_keywords)}）" if logic_alive else ""
+                result['reason'] = f'🔥 [分歧转一致] 从高位回撤{pullback_pct:.1f}%，回踩MA5，缩量洗筹{logic_str}'
+                result['has_divergence_to_consensus'] = True
+                logger.info(f"✅ [分歧转一致] {stock_code} 检测到低吸信号：{result['reason']}")
+            elif result['confidence'] >= 0.4:
+                result['reason'] = f'⚠️ [分歧转一致] 有分歧转一致迹象，但强度不足'
+            else:
+                result['reason'] = f'📊 [分歧转一致] 暂无明显分歧转一致信号'
+        
+        except Exception as e:
+            logger.error(f"检查分歧转一致失败: {e}")
+            result['reason'] = f'检查失败: {e}'
+        
+        return result
+    
     def analyze_low_suction(self, stock_code: str, current_price: float, prev_close: float, 
                           intraday_data: Optional[pd.DataFrame] = None,
                           logic_keywords: Optional[List[str]] = None,

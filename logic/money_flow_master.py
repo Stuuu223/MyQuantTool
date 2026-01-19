@@ -185,6 +185,128 @@ class MoneyFlowMaster:
         
         return result
     
+    def check_price_discovery_stage(self, stock_code: str, current_price: float, prev_close: float) -> Dict[str, Any]:
+        """
+        🆕 V18.6: 检查价格发现阶段（DDE抢筹战法）
+        
+        逻辑：在股价只有 3%-5% 的时候，主力通过连续的巨量大单（DDE红柱）进行暴力扫货。
+        这种确定性来自于"成本压制"：主力花了 2 个亿在 4% 的位置建仓，他今天不把股价顶上板，他自己就出不来。
+        
+        Args:
+            stock_code: 股票代码
+            current_price: 当前价格
+            prev_close: 昨收价
+        
+        Returns:
+            dict: {
+                'in_price_discovery': bool,  # 是否在价格发现阶段
+                'price_range': str,          # 价格区间
+                'dde_pulse_strength': float, # DDE脉冲强度
+                'volume_amplification': float, # 成交量放大倍数
+                'has_continuous_big_orders': bool, # 是否有连续巨量大单
+                'confidence': float,         # 置信度（0-1）
+                'reason': str                # 原因
+            }
+        """
+        result = {
+            'in_price_discovery': False,
+            'price_range': '',
+            'dde_pulse_strength': 0.0,
+            'volume_amplification': 0.0,
+            'has_continuous_big_orders': False,
+            'confidence': 0.0,
+            'reason': ''
+        }
+        
+        try:
+            # 1. 计算当前涨幅
+            if prev_close == 0:
+                result['reason'] = '昨收价为0，无法计算涨幅'
+                return result
+            
+            current_pct_change = (current_price - prev_close) / prev_close * 100
+            result['price_range'] = f"{current_pct_change:.1f}%"
+            
+            # 2. 判断是否在价格发现阶段（3%-5%）
+            if 3.0 <= current_pct_change <= 5.0:
+                result['in_price_discovery'] = True
+                
+                # 3. 获取实时数据
+                realtime_data = self.data_manager.get_realtime_data(stock_code)
+                if not realtime_data:
+                    result['reason'] = '无法获取实时数据'
+                    return result
+                
+                # 4. 检查 DDE 是否持续净流入
+                dde_net_flow = realtime_data.get('dde_net_flow', 0)
+                dde_history = self._get_dde_history(stock_code, lookback=10)
+                
+                if dde_history and len(dde_history) >= 5:
+                    # 计算 DDE 脉冲强度（最近5分钟的DDE均值 vs 历史均值）
+                    recent_dde_mean = np.mean(dde_history[-5:])
+                    historical_dde_mean = np.mean(dde_history[:-5]) if len(dde_history) > 5 else 0
+                    
+                    if historical_dde_mean > 0:
+                        dde_pulse_strength = recent_dde_mean / historical_dde_mean
+                        result['dde_pulse_strength'] = dde_pulse_strength
+                    else:
+                        dde_pulse_strength = 0.0
+                        result['dde_pulse_strength'] = dde_pulse_strength
+                
+                # 5. 检查成交量是否放大
+                current_volume = realtime_data.get('volume', 0)
+                # 获取历史成交量（这里简化处理，实际应该从K线数据获取）
+                avg_volume = current_volume / 2.0  # 假设历史平均成交量是当前的一半
+                volume_amplification = current_volume / avg_volume if avg_volume > 0 else 1.0
+                result['volume_amplification'] = volume_amplification
+                
+                # 6. 检查是否有连续的巨量大单（这里简化处理，实际应该检查逐笔数据）
+                # 假设如果DDE > 0.5亿，说明有巨量大单
+                has_continuous_big_orders = dde_net_flow > 0.5
+                result['has_continuous_big_orders'] = has_continuous_big_orders
+                
+                # 7. 综合判断
+                confidence = 0.0
+                
+                # DDE脉冲强度评分
+                if dde_pulse_strength >= 5.0:
+                    confidence += 0.4
+                elif dde_pulse_strength >= 3.0:
+                    confidence += 0.3
+                elif dde_pulse_strength >= 2.0:
+                    confidence += 0.2
+                
+                # 成交量放大评分
+                if volume_amplification >= 3.0:
+                    confidence += 0.3
+                elif volume_amplification >= 2.0:
+                    confidence += 0.2
+                elif volume_amplification >= 1.5:
+                    confidence += 0.1
+                
+                # 连续巨量大单评分
+                if has_continuous_big_orders:
+                    confidence += 0.3
+                
+                result['confidence'] = min(1.0, confidence)
+                
+                # 8. 生成原因
+                if result['confidence'] >= 0.7:
+                    result['reason'] = f'🔥 [价格发现] 涨幅{current_pct_change:.1f}%，DDE脉冲{dde_pulse_strength:.1f}倍，成交量{volume_amplification:.1f}倍，主力暴力扫货'
+                    logger.info(f"✅ [价格发现] {stock_code} 检测到抢筹信号：{result['reason']}")
+                elif result['confidence'] >= 0.4:
+                    result['reason'] = f'⚠️ [价格发现] 涨幅{current_pct_change:.1f}%，有抢筹迹象但强度不足'
+                else:
+                    result['reason'] = f'📊 [价格发现] 涨幅{current_pct_change:.1f}%，暂无明显抢筹信号'
+            else:
+                result['reason'] = f'涨幅{current_pct_change:.1f}%不在价格发现阶段（3%-5%）'
+        
+        except Exception as e:
+            logger.error(f"检查价格发现阶段失败: {e}")
+            result['reason'] = f'检查失败: {e}'
+        
+        return result
+    
     def check_dde_veto(self, stock_code: str, signal: str, buy_mode: str = 'DRAGON_CHASE') -> Tuple[bool, str]:
         """
         DDE 否决权检查

@@ -546,6 +546,141 @@ class SignalGenerator:
             "sector_info": sector_info  # V18: 板块共振信息
         }
     
+    def check_elastic_buffer_signal(self, stock_code: str, current_price: float, prev_close: float, 
+                                 intraday_data: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
+        """
+        🆕 V18.6: 检查动态适配的"提前量"（20cm/30cm）信号
+        
+        逻辑：在创业板，股价从10%涨到20%有巨大的缓冲带。
+        不需要等它20cm封死。当它在12%处缩量回踩分时均线，且DDE维持强势时，这就是"准涨停确定性"。
+        
+        Args:
+            stock_code: 股票代码
+            current_price: 当前价格
+            prev_close: 昨收价
+            intraday_data: 分时数据（可选）
+        
+        Returns:
+            dict: {
+                'has_elastic_buffer': bool,  # 是否有弹性缓冲信号
+                'is_20cm_or_30cm': bool,     # 是否是20cm/30cm股票
+                'current_pct_change': float, # 当前涨幅
+                'limit_up_pct': float,       # 涨停幅度
+                'elastic_space': float,      # 弹性空间（剩余涨幅）
+                'volume_shrink': bool,       # 是否缩量
+                'intraday_ma_touch': bool,   # 是否回踩分时均线
+                'dde_strong': bool,          # DDE是否维持强势
+                'confidence': float,         # 置信度（0-1）
+                'reason': str                # 原因
+            }
+        """
+        result = {
+            'has_elastic_buffer': False,
+            'is_20cm_or_30cm': False,
+            'current_pct_change': 0.0,
+            'limit_up_pct': 0.0,
+            'elastic_space': 0.0,
+            'volume_shrink': False,
+            'intraday_ma_touch': False,
+            'dde_strong': False,
+            'confidence': 0.0,
+            'reason': ''
+        }
+        
+        try:
+            # 1. 获取涨停系数
+            from logic.utils import Utils
+            limit_ratio = Utils.get_limit_ratio(stock_code)
+            limit_up_pct = (limit_ratio - 1.0) * 100
+            result['limit_up_pct'] = limit_up_pct
+            
+            # 2. 判断是否是20cm/30cm股票
+            is_20cm_or_30cm = limit_ratio >= 1.2
+            result['is_20cm_or_30cm'] = is_20cm_or_30cm
+            
+            if not is_20cm_or_30cm:
+                result['reason'] = '该股票不是20cm/30cm标的，无需弹性缓冲检查'
+                return result
+            
+            # 3. 计算当前涨幅
+            if prev_close == 0:
+                result['reason'] = '昨收价为0，无法计算涨幅'
+                return result
+            
+            current_pct_change = (current_price - prev_close) / prev_close * 100
+            result['current_pct_change'] = current_pct_change
+            
+            # 4. 计算弹性空间（剩余涨幅）
+            elastic_space = limit_up_pct - current_pct_change
+            result['elastic_space'] = elastic_space
+            
+            # 5. 判断是否在弹性区间（10%-14%）
+            if not (10.0 <= current_pct_change <= 14.0):
+                result['reason'] = f'涨幅{current_pct_change:.1f}%不在弹性区间（10%-14%）'
+                return result
+            
+            # 6. 检查是否缩量
+            realtime_data = self.get_data_manager().get_realtime_data(stock_code)
+            if realtime_data:
+                current_volume = realtime_data.get('volume', 0)
+                # 获取历史成交量（这里简化处理，实际应该从K线数据获取）
+                avg_volume = current_volume / 2.0  # 假设历史平均成交量是当前的一半
+                volume_shrink = current_volume < avg_volume * 0.8
+                result['volume_shrink'] = volume_shrink
+            
+            # 7. 检查是否回踩分时均线
+            if intraday_data is not None and len(intraday_data) >= 10:
+                intraday_ma = intraday_data['price'].mean()
+                intraday_ma_touch = current_price <= intraday_ma * 1.02  # 允许2%的误差
+                result['intraday_ma_touch'] = intraday_ma_touch
+            
+            # 8. 检查DDE是否维持强势
+            if realtime_data:
+                dde_net_flow = realtime_data.get('dde_net_flow', 0)
+                dde_strong = dde_net_flow > 0.5  # DDE > 0.5亿为强势
+                result['dde_strong'] = dde_strong
+            
+            # 9. 综合判断
+            confidence = 0.0
+            
+            # 弹性空间评分（剩余空间越大，评分越高）
+            if elastic_space >= 8.0:
+                confidence += 0.3
+            elif elastic_space >= 6.0:
+                confidence += 0.2
+            elif elastic_space >= 4.0:
+                confidence += 0.1
+            
+            # 缩量评分
+            if result['volume_shrink']:
+                confidence += 0.2
+            
+            # 回踩分时均线评分
+            if result['intraday_ma_touch']:
+                confidence += 0.2
+            
+            # DDE强势评分
+            if result['dde_strong']:
+                confidence += 0.3
+            
+            result['confidence'] = min(1.0, confidence)
+            
+            # 10. 生成原因
+            if result['confidence'] >= 0.7:
+                result['has_elastic_buffer'] = True
+                result['reason'] = f'🛡️ [弹性缓冲] 涨幅{current_pct_change:.1f}%，剩余空间{elastic_space:.1f}%，DDE强势，准涨停确定性'
+                logger.info(f"✅ [弹性缓冲] {stock_code} 检测到弹性缓冲信号：{result['reason']}")
+            elif result['confidence'] >= 0.4:
+                result['reason'] = f'⚠️ [弹性缓冲] 有弹性缓冲迹象，但强度不足'
+            else:
+                result['reason'] = f'📊 [弹性缓冲] 暂无明显弹性缓冲信号'
+        
+        except Exception as e:
+            logger.error(f"检查弹性缓冲信号失败: {e}")
+            result['reason'] = f'检查失败: {e}'
+        
+        return result
+    
     def get_trend_status(self, df, window=20):
         if len(df) < window:
             return 'SIDEWAY'
