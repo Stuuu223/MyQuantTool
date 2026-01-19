@@ -16,6 +16,7 @@ import streamlit as st
 import pandas as pd
 import datetime
 from logic.auto_reviewer_v18_7 import get_auto_reviewer_v18_7
+from logic.review_manager import ReviewManager
 from logic.logger import get_logger
 
 logger = get_logger(__name__)
@@ -97,7 +98,63 @@ def render_review_dashboard():
                 delta_color=delta_color
             )
         
-        # --- B. 错失的龙 (Missed Dragons) ---
+        # --- B. 🦁 今日真龙 (Golden Cases) - V18.7 新增 ---
+        st.markdown("### 🦁 今日真龙 (Golden Cases)")
+        st.caption("市场最高标的：连板高度最高或封单金额最大的股票")
+        
+        # 捕获高价值案例
+        golden_cases = None
+        try:
+            rm = ReviewManager()
+            golden_cases = rm.capture_golden_cases(date_str)
+        except Exception as e:
+            logger.error(f"获取高价值案例失败: {e}")
+        
+        if golden_cases:
+            # 展示真龙
+            if golden_cases['dragons']:
+                col1, col2, col3 = st.columns(3)
+                
+                for i, dragon in enumerate(golden_cases['dragons']):
+                    with [col1, col2, col3][i]:
+                        st.info(f"""
+                        **{dragon['name']} ({dragon['code']})**
+                        
+                        {dragon['reason']}
+                        
+                        **类型**: {dragon['type']}
+                        """)
+            else:
+                st.info("📭 今日无真龙")
+            
+            # 展示大坑
+            st.markdown("### 🛡️ 避坑指南 (Golden Traps)")
+            st.caption("当日跌幅榜和炸板大面：学习这些惨案，避免重蹈覆辙")
+            
+            if golden_cases['traps']:
+                for trap in golden_cases['traps']:
+                    if trap['type'] == 'FATAL_TRAP':
+                        st.error(f"""
+                        **{trap['name']} ({trap['code']})**
+                        
+                        {trap['reason']}
+                        
+                        **类型**: {trap['type']}
+                        """)
+                    elif trap['type'] == 'FAILED_DRAGON':
+                        st.warning(f"""
+                        **{trap['name']} ({trap['code']})**
+                        
+                        {trap['reason']}
+                        
+                        **类型**: {trap['type']}
+                        """)
+            else:
+                st.success("✅ 今日无重大风险事件")
+            
+            st.markdown("---")
+        
+        # --- C. 错失的龙 (Missed Dragons) ---
         st.markdown("### 🐉 错失的真龙 (Missed Opportunities)")
         st.caption("系统发出过信号，或者符合模式但未被系统捕捉的标的：")
         
@@ -114,7 +171,7 @@ def render_review_dashboard():
         else:
             st.success("✅ 完美！今日无踏空！")
         
-        # --- C. 避开的坑 (Dodged Bullets) ---
+        # --- D. 避开的坑 (Dodged Bullets) ---
         st.markdown("### 🛡️ 成功规避的陷阱 (Risk Avoidance)")
         st.caption("系统触发熔断/风控，成功阻止你接飞刀的标的：")
         
@@ -131,7 +188,7 @@ def render_review_dashboard():
         else:
             st.info("ℹ️ 今日无重大风控拦截。")
         
-        # --- D. 深度反思 (AI 教练点评) ---
+        # --- E. 深度反思 (AI 教练点评) ---
         st.markdown("### 🤖 AI 教练点评")
         
         with st.chat_message("assistant"):
@@ -172,7 +229,7 @@ def render_review_dashboard():
                 - 加强对 DDE 信号的理解
                 """)
         
-        # --- E. 历史趋势 ---
+        # --- F. 历史趋势 ---
         st.markdown("### 📈 历史执行力趋势")
         st.caption("最近7天的执行力评分趋势：")
         
@@ -180,7 +237,7 @@ def render_review_dashboard():
         # 暂时显示占位符
         st.info("📊 历史趋势功能开发中...")
         
-        # --- F. 导出报告 ---
+        # --- G. 导出报告 ---
         st.markdown("---")
         
         col1, col2, col3 = st.columns([1, 1, 2])
