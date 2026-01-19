@@ -562,15 +562,20 @@ class FastSectorAnalyzerStreamlit:
         resonance_score = 0.0
         resonance_details = []
         
-        # 获取行业和概念板块数据
+        # 获取行业板块数据
         industry_ranking = self.get_akshare_sector_ranking()
-        concept_ranking = self.get_akshare_concept_ranking()
         
         # 🚀 V18.1 Hybrid Engine: 优先使用静态映射表获取股票所属行业和概念
         sector_info = self.get_stock_sector_info(stock_code)
         industry_name = sector_info.get('industry', '未知')
         concepts = sector_info.get('concepts', [])
         sector_status = sector_info.get('status', 'unknown')
+        
+        # 🚀 V18.4 概念猎手优化：只在 concepts 不为空时才获取概念板块数据
+        # 避免调用慢接口 ak.stock_board_concept_name_em()（5.8秒）
+        concept_ranking = pd.DataFrame()  # 默认为空
+        if concepts and len(concepts) > 0:
+            concept_ranking = self.get_akshare_concept_ranking()
         
         # 🚀 V18.1 Fallback: Unknown 状态处理
         if sector_status == 'unknown':
@@ -611,13 +616,22 @@ class FastSectorAnalyzerStreamlit:
                 industry_info['fund_flow'] = fund_flow
         
         # 2. 概念板块共振分析
-        concept_info = self._analyze_concept_resonance(
-            stock_code, stock_name, concept_ranking, concepts
-        )
-        
-        if concept_info:
-            resonance_score += concept_info.get('score_boost', 0)
-            resonance_details.extend(concept_info.get('details', []))
+        # 🚀 V18.4 概念猎手优化：如果 concepts 为空，跳过概念板块共振分析
+        # 避免 5.8秒延迟。依靠 V18.3 的资金流排行来发现龙头，个股概念只是辅助。
+        concept_info = {}  # 初始化变量
+        if concepts and len(concepts) > 0:
+            concept_info = self._analyze_concept_resonance(
+                stock_code, stock_name, concept_ranking, concepts
+            )
+            
+            if concept_info:
+                resonance_score += concept_info.get('score_boost', 0)
+                resonance_details.extend(concept_info.get('details', []))
+        else:
+            # concepts 为空，跳过概念板块共振分析
+            # 避免调用慢接口 ak.stock_board_concept_name_em()
+            logger.debug(f"📊 [V18.4] 股票 {stock_code} 概念信息为空，跳过概念板块共振分析")
+            # 不添加任何详情，保持界面简洁
         
         # 3. 判断是否为龙头或跟风
         is_leader = any('龙头' in detail for detail in resonance_details)
