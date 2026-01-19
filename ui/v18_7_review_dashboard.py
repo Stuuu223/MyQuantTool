@@ -146,10 +146,30 @@ def render_review_dashboard():
                                     
                                     # 创建DataFrame显示DDE历史数据
                                     df_dde = pd.DataFrame(dde_history)
+                                    
+                                    # 🆕 V19 修复：确保时间轴统一格式化为HH:MM字符串
+                                    if 'time' in df_dde.columns:
+                                        # 如果time列是datetime对象，转换为字符串
+                                        if pd.api.types.is_datetime64_any_dtype(df_dde['time']):
+                                            df_dde['time'] = df_dde['time'].dt.strftime('%H:%M')
+                                        # 如果time列是字符串，确保格式正确
+                                        elif df_dde['time'].dtype == 'object':
+                                            # 移除可能的日期部分，只保留时间
+                                            df_dde['time'] = df_dde['time'].apply(lambda x: str(x).split(' ')[-1] if ' ' in str(x) else str(x))
+                                    
                                     st.dataframe(df_dde, use_container_width=True)
                                     
-                                    # 简单可视化
-                                    st.line_chart(df_dde.set_index('time')[['dde_value', 'price']])
+                                    # 🆕 V19 修复：确保绘图前时间轴格式正确
+                                    if 'time' in df_dde.columns:
+                                        # 使用time作为索引
+                                        df_chart = df_dde.set_index('time')
+                                        # 确保只选择数值列
+                                        numeric_cols = ['dde_value', 'price']
+                                        existing_cols = [col for col in numeric_cols if col in df_chart.columns]
+                                        if existing_cols:
+                                            st.line_chart(df_chart[existing_cols])
+                                        else:
+                                            st.warning("⚠️ 无可用的数值列进行绘图")
                                 else:
                                     st.warning(f"⚠️ 暂无 {d['name']} 的DDE历史数据")
                             except Exception as e:
@@ -218,19 +238,39 @@ def render_review_dashboard():
                     st.error(f"💥 {record['reason']}")
                     st.caption(f"📅 记录时间: {record['created_at']}")
                     
-                    # 提供手动录入原因的选项
-                    manual_reason = st.text_input(
-                        "请手动补充漏失原因（可选）",
-                        value="",
-                        key=f"manual_reason_{record['id']}"
-                    )
+                    # 🆕 V19 新增：加入明日重点监控按钮
+                    col_btn1, col_btn2 = st.columns(2)
+                    with col_btn1:
+                        if st.button("🎯 加入明日重点监控", key=f"add_to_monitor_{record['id']}"):
+                            try:
+                                from logic.review_manager import ReviewManager
+                                rm = ReviewManager()
+                                success = rm.add_to_monitor_list(
+                                    record['stock_code'],
+                                    record['stock_name'],
+                                    reason=f"错题本漏失: {record['reason']}"
+                                )
+                                if success:
+                                    st.success(f"✅ 已将 {record['stock_name']} 加入明日重点监控")
+                                else:
+                                    st.warning(f"⚠️ 加入监控失败")
+                            except Exception as e:
+                                st.error(f"❌ 加入监控失败: {e}")
                     
-                    if st.button("补充原因", key=f"update_reason_{record['id']}"):
-                        if manual_reason:
-                            # TODO: 实现更新错题本原因的逻辑
-                            st.success(f"✅ 已记录原因: {manual_reason}")
-                        else:
-                            st.warning("⚠️ 请输入原因")
+                    with col_btn2:
+                        # 提供手动录入原因的选项
+                        manual_reason = st.text_input(
+                            "补充漏失原因（可选）",
+                            value="",
+                            key=f"manual_reason_{record['id']}"
+                        )
+                        
+                        if st.button("💾 保存原因", key=f"update_reason_{record['id']}"):
+                            if manual_reason:
+                                # TODO: 实现更新错题本原因的逻辑
+                                st.success(f"✅ 已记录原因: {manual_reason}")
+                            else:
+                                st.warning("⚠️ 请输入原因")
         else:
             st.success("✅ 今日无逻辑漏失记录，表现完美！")
     except Exception as e:
@@ -264,7 +304,49 @@ def render_review_dashboard():
                 if fingerprint['top_traders']:
                     st.subheader("🌟 顶级游资")
                     for trader in fingerprint['top_traders']:
-                        st.info(f"💰 {trader['name']}: 买入 {int(trader['buy_amount']/10000)}万")
+                        # 🆕 V19 新增：显示席位历史战绩
+                        with st.expander(f"💰 {trader['name']}: 买入 {int(trader['buy_amount']/10000)}万", expanded=False):
+                            try:
+                                from logic.review_manager import ReviewManager
+                                rm = ReviewManager()
+                                
+                                # 获取席位历史战绩
+                                perf = rm.get_seat_history_performance(trader['name'], lookback_days=30)
+                                
+                                if perf['total_appearances'] > 0:
+                                    # 显示核心指标
+                                    col1, col2, col3, col4 = st.columns(4)
+                                    with col1:
+                                        st.metric("上榜次数", perf['total_appearances'])
+                                    with col2:
+                                        profit_color = "normal" if perf['next_day_avg_profit'] > 0 else "inverse"
+                                        st.metric("次日平均溢价", f"{perf['next_day_avg_profit']}%", delta_color=profit_color)
+                                    with col3:
+                                        st.metric("盈利概率", f"{perf['next_day_profit_rate']}%")
+                                    with col4:
+                                        st.metric("最大盈利", f"{perf['next_day_max_profit']}%")
+                                    
+                                    # 显示历史战绩评价
+                                    if perf['next_day_avg_profit'] > 3:
+                                        st.success(f"✅ {trader['name']} 战绩优秀，次日平均溢价 {perf['next_day_avg_profit']}%，值得跟随")
+                                    elif perf['next_day_avg_profit'] > 1:
+                                        st.info(f"📊 {trader['name']} 战绩良好，次日平均溢价 {perf['next_day_avg_profit']}%，可适度关注")
+                                    else:
+                                        st.warning(f"⚠️ {trader['name']} 战绩一般，次日平均溢价仅 {perf['next_day_avg_profit']}%，需谨慎")
+                                    
+                                    # 显示最近10次记录
+                                    if perf['recent_appearances']:
+                                        st.markdown("**最近10次次日溢价：**")
+                                        df_perf = pd.DataFrame({
+                                            '次数': list(range(1, len(perf['recent_appearances']) + 1)),
+                                            '次日溢价(%)': perf['recent_appearances']
+                                        })
+                                        st.dataframe(df_perf, use_container_width=True)
+                                else:
+                                    st.info(f"📊 {trader['name']} 在过去30天内无上榜记录")
+                            
+                            except Exception as e:
+                                st.warning(f"⚠️ 获取席位历史战绩失败: {e}")
                 else:
                     st.info("📭 无顶级游资介入")
                 

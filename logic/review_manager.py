@@ -285,11 +285,88 @@ class ReviewManager:
             logger.error(f"❌ 获取错题本失败: {e}")
             return []
     
+    def add_to_monitor_list(self, stock_code: str, stock_name: str, reason: str = "") -> bool:
+        """
+        [V19 新增] 将股票加入明日重点监控列表
+        
+        Args:
+            stock_code: 股票代码
+            stock_name: 股票名称
+            reason: 加入原因
+        
+        Returns:
+            bool: 是否添加成功
+        """
+        try:
+            monitor_list_path = "config/monitor_list.json"
+            
+            # 读取现有监控列表
+            if os.path.exists(monitor_list_path):
+                with open(monitor_list_path, 'r', encoding='utf-8') as f:
+                    monitor_data = json.load(f)
+            else:
+                monitor_data = {
+                    "monitor_list": [],
+                    "created_at": datetime.now().isoformat(),
+                    "updated_at": datetime.now().isoformat()
+                }
+            
+            # 检查是否已在监控列表中
+            for stock in monitor_data['monitor_list']:
+                if stock['code'] == stock_code:
+                    logger.info(f"⚠️ {stock_name} ({stock_code}) 已在监控列表中")
+                    return True
+            
+            # 添加到监控列表
+            monitor_data['monitor_list'].append({
+                'code': stock_code,
+                'name': stock_name,
+                'reason': reason,
+                'added_at': datetime.now().isoformat()
+            })
+            
+            # 更新时间戳
+            monitor_data['updated_at'] = datetime.now().isoformat()
+            
+            # 保存到文件
+            with open(monitor_list_path, 'w', encoding='utf-8') as f:
+                json.dump(monitor_data, f, ensure_ascii=False, indent=4)
+            
+            logger.info(f"✅ 已将 {stock_name} ({stock_code}) 加入监控列表: {reason}")
+            return True
+        
+        except Exception as e:
+            logger.error(f"❌ 加入监控列表失败: {e}")
+            return False
+    
+    def get_monitor_list(self) -> List[Dict]:
+        """
+        [V19 新增] 获取监控列表
+        
+        Returns:
+            list: 监控列表
+        """
+        try:
+            monitor_list_path = "config/monitor_list.json"
+            
+            if not os.path.exists(monitor_list_path):
+                return []
+            
+            with open(monitor_list_path, 'r', encoding='utf-8') as f:
+                monitor_data = json.load(f)
+            
+            return monitor_data.get('monitor_list', [])
+        
+        except Exception as e:
+            logger.error(f"❌ 获取监控列表失败: {e}")
+            return []
+    
     def check_logic_miss(self, date_str: str, golden_cases: Dict) -> List[Dict]:
         """
         [V18.8 新增] 检查逻辑漏失，自动生成错题本记录
         
         逻辑：如果系统捕获了真龙，但没有买入记录，系统应自动生成错题本记录
+        [V19 新增] 排除一字板，一字板不是逻辑漏失，是通道的错
         
         Args:
             date_str: 日期字符串，格式 YYYYMMDD
@@ -310,32 +387,113 @@ class ReviewManager:
                 stock_code = dragon['code']
                 stock_name = dragon['name']
                 
+                # 🆕 V19 新增：检测是否是一字板
+                is_one_line_board = self._is_one_line_board(stock_code, date_str, dragon)
+                
                 # 检查是否有买入记录
                 has_buy_record = any(record['stock_code'] == stock_code for record in trade_records)
                 
                 if not has_buy_record:
-                    # 没有买入记录，生成错题本记录
-                    missed_dragons.append({
-                        'stock_code': stock_code,
-                        'stock_name': stock_name,
-                        'reason': '逻辑漏失：系统捕获了真龙但未买入',
-                        'type': 'LOGIC_MISS'
-                    })
-                    
-                    # 自动记录到错题本
-                    self.record_error(
-                        date_str,
-                        stock_code,
-                        stock_name,
-                        '逻辑漏失：系统捕获了真龙但未买入',
-                        'LOGIC_MISS'
-                    )
+                    if is_one_line_board:
+                        # 一字板：跳过，不是逻辑漏失
+                        missed_dragons.append({
+                            'stock_code': stock_code,
+                            'stock_name': stock_name,
+                            'reason': '一字板无机会：通道限制无法买入',
+                            'type': 'SKIPPED_ONE_LINE'
+                        })
+                        
+                        # 记录到错题本，但类型为SKIPPED
+                        self.record_error(
+                            date_str,
+                            stock_code,
+                            stock_name,
+                            '一字板无机会：通道限制无法买入',
+                            'SKIPPED_ONE_LINE'
+                        )
+                    else:
+                        # 真正的逻辑漏失
+                        missed_dragons.append({
+                            'stock_code': stock_code,
+                            'stock_name': stock_name,
+                            'reason': '逻辑漏失：系统捕获了真龙但未买入',
+                            'type': 'LOGIC_MISS'
+                        })
+                        
+                        # 自动记录到错题本
+                        self.record_error(
+                            date_str,
+                            stock_code,
+                            stock_name,
+                            '逻辑漏失：系统捕获了真龙但未买入',
+                            'LOGIC_MISS'
+                        )
             
             return missed_dragons
         
         except Exception as e:
             logger.error(f"❌ 检查逻辑漏失失败: {e}")
             return []
+    
+    def _is_one_line_board(self, stock_code: str, date_str: str, dragon: Dict) -> bool:
+        """
+        [V19 新增] 检测是否是一字板
+        
+        判断标准：
+        1. 最低价 == 最高价 == 涨停价（开盘即涨停，全天无波动）
+        2. 或者是"一字涨停"（封单量巨大，开盘即封死）
+        
+        Args:
+            stock_code: 股票代码
+            date_str: 日期字符串
+            dragon: 真龙数据（包含封单金额等信息）
+        
+        Returns:
+            bool: 是否是一字板
+        """
+        try:
+            # 方法1：从AkShare获取分时数据
+            import akshare as ak
+            import pandas as pd
+            
+            # 获取分时数据
+            df_intraday = ak.stock_zh_a_hist_min_em(symbol=stock_code, period='1', adjust='')
+            
+            if df_intraday is not None and not df_intraday.empty:
+                # 筛选指定日期的数据
+                df_date = df_intraday[df_intraday['时间'].str.startswith(date_str)]
+                
+                if not df_date.empty:
+                    # 获取当天的数据
+                    df_today = df_date.iloc[0]
+                    
+                    # 计算涨停价（简化计算：前一日收盘价 * 1.1）
+                    prev_close = df_today.get('收盘', 0)
+                    limit_up_price = prev_close * 1.1
+                    
+                    # 检查是否是一字板：最低价 == 最高价 == 涨停价
+                    low_price = df_today.get('最低', 0)
+                    high_price = df_today.get('最高', 0)
+                    open_price = df_today.get('开盘', 0)
+                    
+                    # 判断条件：
+                    # 1. 开盘价 == 涨停价
+                    # 2. 最低价 == 最高价 == 涨停价（全天无波动）
+                    if abs(open_price - limit_up_price) < 0.01 and abs(low_price - limit_up_price) < 0.01 and abs(high_price - limit_up_price) < 0.01:
+                        logger.info(f"✅ {stock_code} 检测到一字板")
+                        return True
+            
+            # 方法2：封单金额判断（如果封单金额巨大，可能是一字板）
+            seal_amount = dragon.get('seal_amount', 0)
+            if seal_amount > 100000000:  # 封单超过1亿
+                logger.info(f"✅ {stock_code} 封单金额巨大（{seal_amount/10000:.0f}万），可能是一字板")
+                return True
+            
+            return False
+        
+        except Exception as e:
+            logger.warning(f"⚠️ 检测一字板失败: {e}")
+            return False
     
     def get_longhubu_fingerprint(self, stock_code: str, date_str: str = None) -> Dict:
         """
@@ -422,6 +580,112 @@ class ReviewManager:
         except Exception as e:
             logger.error(f"❌ 获取龙虎榜席位指纹失败: {e}")
             return fingerprint
+    
+    def get_seat_history_performance(self, seat_name: str, lookback_days: int = 30) -> Dict:
+        """
+        [V19 新增] 获取席位历史战绩
+        
+        计算指定席位过去N次上榜后的次日溢价率
+        
+        Args:
+            seat_name: 席位名称（如"陈小群"、"机构专用"）
+            lookback_days: 回看天数（默认30天）
+        
+        Returns:
+            dict: 席位历史战绩数据，包含：
+                - seat_name: 席位名称
+                - total_appearances: 总上榜次数
+                - next_day_avg_profit: 次日平均溢价率
+                - next_day_profit_rate: 次日盈利概率
+                - next_day_max_profit: 次日最大溢价
+                - next_day_max_loss: 次日最大亏损
+                - recent_appearances: 最近10次上榜记录
+        """
+        performance = {
+            'seat_name': seat_name,
+            'total_appearances': 0,
+            'next_day_avg_profit': 0.0,
+            'next_day_profit_rate': 0.0,
+            'next_day_max_profit': 0.0,
+            'next_day_max_loss': 0.0,
+            'recent_appearances': []
+        }
+        
+        try:
+            # 计算日期范围
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=lookback_days)
+            
+            start_date_str = start_date.strftime("%Y%m%d")
+            end_date_str = end_date.strftime("%Y%m%d")
+            
+            # 获取龙虎榜数据
+            df_lhb = ak.stock_lhb_detail_em(start_date=start_date_str, end_date=end_date_str)
+            
+            if df_lhb is None or df_lhb.empty:
+                logger.warning(f"⚠️ 未获取到龙虎榜数据")
+                return performance
+            
+            # 筛选指定席位的记录
+            seat_records = df_lhb[df_lhb['营业部名称'].str.contains(seat_name, na=False)]
+            
+            if seat_records.empty:
+                logger.info(f"📊 {seat_name} 在过去{lookback_days}天内未上榜")
+                return performance
+            
+            # 统计总上榜次数
+            performance['total_appearances'] = len(seat_records)
+            
+            # 计算次日溢价率
+            next_day_profits = []
+            
+            for _, row in seat_records.iterrows():
+                stock_code = row['代码']
+                buy_amount = row.get('买入额', 0)
+                
+                # 只统计买入记录
+                if buy_amount and buy_amount > 0:
+                    try:
+                        # 获取该股票次日数据
+                        trade_date = row['上榜日期']
+                        next_date = (datetime.strptime(trade_date, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y%m%d")
+                        
+                        # 获取次日股价数据
+                        df_stock = ak.stock_zh_a_hist(symbol=stock_code, period='daily', adjust='qfq')
+                        
+                        if df_stock is not None and not df_stock.empty:
+                            # 找到次日数据
+                            df_next = df_stock[df_stock['日期'].str.replace('-', '') == next_date]
+                            
+                            if not df_next.empty:
+                                next_day_open = df_next.iloc[0]['开盘']
+                                prev_day_close = df_stock[df_stock['日期'].str.replace('-', '') == trade_date.replace('-', '')].iloc[0]['收盘']
+                                
+                                # 计算次日溢价率
+                                if prev_day_close > 0:
+                                    next_day_profit = (next_day_open - prev_day_close) / prev_day_close * 100
+                                    next_day_profits.append(next_day_profit)
+                    
+                    except Exception as e:
+                        logger.warning(f"⚠️ 计算次日溢价失败: {e}")
+                        continue
+            
+            # 计算统计数据
+            if next_day_profits:
+                performance['next_day_avg_profit'] = round(sum(next_day_profits) / len(next_day_profits), 2)
+                performance['next_day_profit_rate'] = round(len([p for p in next_day_profits if p > 0]) / len(next_day_profits) * 100, 1)
+                performance['next_day_max_profit'] = round(max(next_day_profits), 2)
+                performance['next_day_max_loss'] = round(min(next_day_profits), 2)
+                
+                # 最近10次记录
+                performance['recent_appearances'] = next_day_profits[-10:]
+            
+            logger.info(f"✅ 获取席位历史战绩成功: {seat_name}, 上榜{performance['total_appearances']}次, 次日平均溢价{performance['next_day_avg_profit']}%")
+            return performance
+        
+        except Exception as e:
+            logger.error(f"❌ 获取席位历史战绩失败: {e}")
+            return performance
     
     def capture_golden_cases(self, date_str=None):
         """

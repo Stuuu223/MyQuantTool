@@ -8,7 +8,7 @@
 import pandas as pd
 from datetime import datetime, timedelta
 from collections import Counter
-from typing import List, Dict, Optional, Tuple, Union
+from typing import List, Dict, Optional, Tuple, Union, Any
 from logic.logger import get_logger
 from logic.data_manager import DataManager
 from logic.data_cleaner import DataCleaner
@@ -396,8 +396,153 @@ class MarketSentiment:
                 'strategy': "保守操作",
                 'market_data': {},
                 'hot_themes': [],
-                'hot_themes_detailed': []
+                'hot_themes_detailed': [],
+                'cycle_position': {'cycle_position': 'UNKNOWN'}
             }
+    
+    def get_cycle_position(self) -> Dict[str, Any]:
+        """
+        [V19 新增] 获取情绪周期定位
+        
+        判断当前处于哪个情绪周期阶段：
+        1. 情绪主升期：市场情绪持续上升，适合激进操作
+        2. 高位震荡期：市场情绪高位波动，适合谨慎操作
+        3. 退潮冰点期：市场情绪持续下降，适合空仓观望
+        
+        Returns:
+            dict: 周期定位信息，包含：
+                - cycle_position: 周期位置（RISING/OSCILLATING/FALLING）
+                - cycle_description: 周期描述
+                - cycle_strategy: 周期策略
+                - trend_direction: 趋势方向（UP/DOWN/SIDEWAYS）
+                - trend_strength: 趋势强度（STRONG/MODERATE/WEAK）
+        """
+        try:
+            # 获取最近20天的市场情绪数据
+            history = self._get_market_sentiment_history(days=20)
+            
+            if not history or len(history) < 5:
+                return {
+                    'cycle_position': 'UNKNOWN',
+                    'cycle_description': '数据不足，无法判断周期',
+                    'cycle_strategy': '保持观望',
+                    'trend_direction': 'SIDEWAYS',
+                    'trend_strength': 'WEAK'
+                }
+            
+            # 计算最近5天的情绪变化趋势
+            recent_scores = [h['market_score'] for h in history[:5]]
+            
+            # 计算趋势方向
+            if len(recent_scores) >= 2:
+                score_change = recent_scores[0] - recent_scores[-1]
+                if score_change > 10:
+                    trend_direction = 'UP'
+                    trend_strength = 'STRONG' if score_change > 20 else 'MODERATE'
+                elif score_change < -10:
+                    trend_direction = 'DOWN'
+                    trend_strength = 'STRONG' if score_change < -20 else 'MODERATE'
+                else:
+                    trend_direction = 'SIDEWAYS'
+                    trend_strength = 'WEAK'
+            else:
+                trend_direction = 'SIDEWAYS'
+                trend_strength = 'WEAK'
+            
+            # 计算当前情绪水平
+            current_score = recent_scores[0]
+            
+            # 判断周期位置
+            if trend_direction == 'UP' and current_score >= 70:
+                # 情绪主升期
+                cycle_position = 'RISING'
+                cycle_description = '情绪主升期：市场情绪持续上升，赚钱效应强'
+                cycle_strategy = '大胆做T字板、缩量板，敢于追高'
+            elif trend_direction == 'UP' and current_score >= 50:
+                # 情绪上升期
+                cycle_position = 'RISING'
+                cycle_description = '情绪上升期：市场情绪正在回暖，适合积极参与'
+                cycle_strategy = '提高仓位，积极寻找机会'
+            elif trend_direction == 'DOWN' and current_score <= 30:
+                # 退潮冰点期
+                cycle_position = 'FALLING'
+                cycle_description = '退潮冰点期：市场情绪持续低迷，赚钱效应弱'
+                cycle_strategy = '强制过滤掉所有非换手板，只做首板，或空仓观望'
+            elif trend_direction == 'DOWN' and current_score <= 50:
+                # 情绪下降期
+                cycle_position = 'FALLING'
+                cycle_description = '情绪下降期：市场情绪正在降温，风险加大'
+                cycle_strategy = '降低仓位，谨慎操作，只做确定性高的机会'
+            else:
+                # 高位震荡期
+                cycle_position = 'OSCILLATING'
+                cycle_description = '高位震荡期：市场情绪高位波动，多空分歧大'
+                cycle_strategy = '控制仓位，只做换手板，避免追高'
+            
+            return {
+                'cycle_position': cycle_position,
+                'cycle_description': cycle_description,
+                'cycle_strategy': cycle_strategy,
+                'trend_direction': trend_direction,
+                'trend_strength': trend_strength
+            }
+        
+        except Exception as e:
+            logger.error(f"❌ 获取周期定位失败: {e}")
+            return {
+                'cycle_position': 'UNKNOWN',
+                'cycle_description': '获取失败',
+                'cycle_strategy': '保持观望',
+                'trend_direction': 'SIDEWAYS',
+                'trend_strength': 'WEAK'
+            }
+    
+    def _get_market_sentiment_history(self, days: int = 20) -> List[Dict]:
+        """
+        获取市场情绪历史数据
+        
+        Args:
+            days: 回看天数
+        
+        Returns:
+            list: 市场情绪历史记录
+        """
+        try:
+            from logic.database_manager import get_db_manager
+            db = get_db_manager()
+            
+            # 从数据库获取历史数据
+            sql = """
+            SELECT date, highest_board, limit_up_count, limit_down_count, top_sectors
+            FROM market_summary
+            ORDER BY date DESC
+            LIMIT ?
+            """
+            results = db.sqlite_query(sql, (days,))
+            
+            if not results:
+                return []
+            
+            history = []
+            for row in results:
+                # 计算市场情绪评分
+                limit_up_count = row[2] if len(row) > 2 else 0
+                market_score = int(min(limit_up_count / 50 * 100, 100))
+                
+                history.append({
+                    'date': row[0],
+                    'highest_board': row[1] if len(row) > 1 else 0,
+                    'limit_up_count': limit_up_count,
+                    'limit_down_count': row[3] if len(row) > 3 else 0,
+                    'market_score': market_score,
+                    'top_sectors': row[4] if len(row) > 4 else None
+                })
+            
+            return history
+        
+        except Exception as e:
+            logger.error(f"❌ 获取市场情绪历史失败: {e}")
+            return []
     
     def get_strategy_parameters(self, regime=None):
         """
