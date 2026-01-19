@@ -64,7 +64,8 @@ def render_lhb_counter(data_manager=None):
             "趋势状态",
             options=['UP', 'DOWN', 'SIDEWAY'],
             index=0,
-            help="技术面趋势"
+            help="技术面趋势",
+            key="lhb_counter_trend_status"
         )
         
         current_pct_change = st.slider(

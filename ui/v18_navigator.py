@@ -281,6 +281,27 @@ def render_navigator_panel():
                         
                         if industry_info.get('leader'):
                             st.info(f"👑 领涨龙头: {industry_info['leader']}")
+                        
+                        # 🚀 V18.2 Money Flow: 显示资金流信息
+                        if 'fund_flow' in industry_info:
+                            fund_flow = industry_info['fund_flow']
+                            net_inflow_yi = fund_flow.get('net_inflow_yi', 0)
+                            fund_status = fund_flow.get('status', 'unknown')
+                            fund_reason = fund_flow.get('reason', '')
+                            
+                            st.markdown("### 💰 资金流向")
+                            
+                            if fund_status == 'strong_inflow':
+                                st.success(f"💰 净流入: {net_inflow_yi:.2f}亿")
+                                st.info(fund_reason)
+                            elif fund_status == 'weak_inflow':
+                                st.info(f"📈 净流入: {net_inflow_yi:.2f}亿")
+                                st.write(fund_reason)
+                            elif fund_status == 'outflow':
+                                st.error(f"⚠️ 净流出: {abs(net_inflow_yi):.2f}亿")
+                                st.warning(fund_reason)
+                            else:
+                                st.write(f"📊 资金流: {fund_reason}")
                     
                     # 显示概念信息
                     if concept_info and concept_info.get('details'):

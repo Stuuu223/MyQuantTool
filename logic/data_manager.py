@@ -82,6 +82,16 @@ class DataManager:
         self.concept_map = {}
         self._load_concept_map()
         
+        # 🚀 V18.3 适配器模式：集成 DataProviderFactory
+        # 将数据获取逻辑委托给 DataProviderFactory，逐步架空 DataManager 的旧逻辑
+        try:
+            from logic.data_provider_factory import DataProviderFactory
+            self.provider = DataProviderFactory.get_provider(mode='live')
+            logger.info("✅ DataProviderFactory 集成成功，DataManager 进入适配器模式")
+        except Exception as e:
+            logger.warning(f"⚠️ DataProviderFactory 集成失败，使用传统模式: {e}")
+            self.provider = None
+        
         DataManager._initialized = True
         logger.info("DataManager 初始化完成")
     
@@ -1409,3 +1419,30 @@ class DataManager:
         logger.info(f"💡 9:25 竞价时将直接读取缓存，预计耗时 < 0.1 秒")
         
         return result
+    
+    def get_provider_realtime_data(self, stock_list):
+        """
+        🚀 V18.3 适配器模式：使用 DataProviderFactory 获取实时数据
+        
+        这是适配器模式的演示，逐步将数据获取逻辑委托给 DataProviderFactory。
+        
+        Args:
+            stock_list: 股票代码列表或包含股票信息的字典列表
+        
+        Returns:
+            list: 股票数据列表
+        """
+        if self.provider is None:
+            logger.warning("DataProviderFactory 未初始化，使用传统方法")
+            # 回退到传统方法
+            return list(self.get_fast_price(stock_list).values())
+        
+        try:
+            # 使用 DataProviderFactory 获取数据
+            data = self.provider.get_realtime_data(stock_list)
+            logger.debug(f"✅ 通过 DataProviderFactory 获取到 {len(data)} 只股票数据")
+            return data
+        except Exception as e:
+            logger.warning(f"DataProviderFactory 获取数据失败: {e}，回退到传统方法")
+            # 回退到传统方法
+            return list(self.get_fast_price(stock_list).values())

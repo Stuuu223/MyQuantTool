@@ -23,10 +23,21 @@ class CacheManager:
 
         # 检查是否过期
         timestamp = CacheManager._cache_timestamps.get(key, 0)
-        if time.time() - timestamp > CacheManager._default_ttl:
+        
+        # 优先检查自定义 TTL
+        ttl_key = f"{key}_ttl"
+        if ttl_key in CacheManager._cache_timestamps:
+            ttl = CacheManager._cache_timestamps[ttl_key]
+        else:
+            ttl = CacheManager._default_ttl
+        
+        if time.time() - timestamp > ttl:
             # 缓存过期，删除
             del CacheManager._cache[key]
             del CacheManager._cache_timestamps[key]
+            # 同时删除 TTL 记录
+            if ttl_key in CacheManager._cache_timestamps:
+                del CacheManager._cache_timestamps[ttl_key]
             return None
 
         return CacheManager._cache[key]
@@ -48,6 +59,10 @@ class CacheManager:
             if key in CacheManager._cache:
                 del CacheManager._cache[key]
                 del CacheManager._cache_timestamps[key]
+                # 同时删除 TTL 记录
+                ttl_key = f"{key}_ttl"
+                if ttl_key in CacheManager._cache_timestamps:
+                    del CacheManager._cache_timestamps[ttl_key]
         else:
             CacheManager._cache.clear()
             CacheManager._cache_timestamps.clear()
@@ -59,13 +74,28 @@ class CacheManager:
         expired_keys = []
 
         for key, timestamp in CacheManager._cache_timestamps.items():
-            if current_time - timestamp > CacheManager._default_ttl:
+            # 跳过 TTL 键本身
+            if key.endswith('_ttl'):
+                continue
+            
+            # 检查自定义 TTL
+            ttl_key = f"{key}_ttl"
+            if ttl_key in CacheManager._cache_timestamps:
+                ttl = CacheManager._cache_timestamps[ttl_key]
+            else:
+                ttl = CacheManager._default_ttl
+            
+            if current_time - timestamp > ttl:
                 expired_keys.append(key)
 
         for key in expired_keys:
             if key in CacheManager._cache:
                 del CacheManager._cache[key]
             del CacheManager._cache_timestamps[key]
+            # 同时删除 TTL 记录
+            ttl_key = f"{key}_ttl"
+            if ttl_key in CacheManager._cache_timestamps:
+                del CacheManager._cache_timestamps[ttl_key]
 
     @staticmethod
     def get_cache_info():
