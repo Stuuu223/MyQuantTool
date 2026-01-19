@@ -53,6 +53,11 @@ class RealAIAgent:
                 self.dragon_tactics = None
         else:
             self.dragon_tactics = None
+        
+        # 🆕 优化 1：TTL Cache 缓存机制
+        self._analysis_cache = {}  # {stock_code: {'dde': float, 'timestamp': datetime, 'result': dict}}
+        self._cache_ttl = 1800  # 缓存有效期（秒），30分钟
+        self._dde_change_threshold = 0.3  # DDE 变化阈值（30%）
 
     def _init_llm(self):
         """初始化 LLM 接口"""
@@ -269,7 +274,7 @@ class RealAIAgent:
                      return_json: bool = True,
                      use_dragon_tactics: Optional[bool] = None) -> Dict[str, Any]:
         """
-        使用 LLM 分析股票
+        使用 LLM 分析股票（优化 1：引入 TTL Cache 缓存机制）
 
         Args:
             symbol: 股票代码
@@ -284,6 +289,35 @@ class RealAIAgent:
         """
         if self.llm is None:
             return self._fallback_analysis_json(symbol, price_data, technical_data)
+
+        # 🆕 优化 1：TTL Cache 缓存检查
+        cache_key = f"{symbol}_{use_dragon_tactics}"
+        current_dde = price_data.get('dde_net_flow', 0.0)
+        current_time = pd.Timestamp.now()
+        
+        # 检查缓存
+        if cache_key in self._analysis_cache:
+            cached_data = self._analysis_cache[cache_key]
+            cached_dde = cached_data['dde']
+            cached_time = cached_data['timestamp']
+            
+            # 计算时间差
+            time_diff = (current_time - cached_time).total_seconds()
+            
+            # 计算DDE变化率
+            if cached_dde != 0:
+                dde_change = abs(current_dde - cached_dde) / abs(cached_dde)
+            else:
+                dde_change = 1.0  # 如果缓存DDE为0，认为变化100%
+            
+            # 如果在缓存有效期内（30分钟）且 DDE 变化小于 30%，直接返回缓存结果
+            if time_diff < self._cache_ttl and dde_change < self._dde_change_threshold:
+                logger.info(f"✅ [TTL Cache] {symbol} 使用缓存结果（DDE变化{dde_change:.1%}，缓存{time_diff/60:.1f}分钟）")
+                cached_result = cached_data['result'].copy()
+                cached_result['from_cache'] = True
+                cached_result['cache_time_diff'] = time_diff
+                cached_result['dde_change'] = dde_change
+                return cached_result
 
         # 确定是否使用龙头战法
         use_dragon = use_dragon_tactics if use_dragon_tactics is not None else self.use_dragon_tactics
@@ -316,6 +350,15 @@ class RealAIAgent:
                 result['symbol'] = symbol
                 result['timestamp'] = pd.Timestamp.now()
                 result['use_dragon_tactics'] = use_dragon
+                
+                # 🆕 优化 1：更新缓存
+                self._analysis_cache[cache_key] = {
+                    'dde': current_dde,
+                    'timestamp': current_time,
+                    'result': result.copy()
+                }
+                result['from_cache'] = False
+                
                 return result
             else:
                 return {'raw_response': response_text, 'symbol': symbol}
@@ -1241,6 +1284,34 @@ class RealAIAgent:
                     formatted_results.append(result)
 
             return formatted_results
+    
+    def clear_expired_cache(self):
+        """
+        🆕 优化 1：清理过期的缓存条目
+        """
+        current_time = pd.Timestamp.now()
+        expired_keys = []
+        
+        for key, cache_data in self._analysis_cache.items():
+            time_diff = (current_time - cache_data['timestamp']).total_seconds()
+            if time_diff > self._cache_ttl:
+                expired_keys.append(key)
+        
+        for key in expired_keys:
+            del self._analysis_cache[key]
+        
+        if expired_keys:
+            logger.info(f"✅ [TTL Cache] 清理了 {len(expired_keys)} 个过期缓存条目")
+    
+    def get_cache_stats(self) -> Dict[str, Any]:
+        """
+        🆕 优化 1：获取缓存统计信息
+        """
+        return {
+            'total_cache_entries': len(self._analysis_cache),
+            'cache_ttl_seconds': self._cache_ttl,
+            'dde_change_threshold': self._dde_change_threshold
+        }
 
 
 class RuleBasedAgent:

@@ -31,6 +31,14 @@ class RealtimeDataProvider(DataProvider):
         super().__init__()
         self.timeout = config.API_TIMEOUT
         self.data_freshness_threshold = 15  # V16.2: 数据保质期阈值（秒）
+        
+        # 🆕 优化 2：ACTIVE_MONITOR 和 PASSIVE_WATCH 动态优先级机制
+        self.active_monitor = set()  # 高频监控列表（每秒）
+        self.passive_watch = set()  # 低频监控列表（每30秒）
+        self.stock_priority = {}  # {stock_code: priority_score} 优先级分数
+        self.last_update_time = {}  # {stock_code: last_update_time} 上次更新时间
+        self.active_interval = 1  # 高频监控间隔（秒）
+        self.passive_interval = 30  # 低频监控间隔（秒）
     
     def get_realtime_data(self, stock_list):
         """
@@ -143,3 +151,89 @@ class RealtimeDataProvider(DataProvider):
                 'mal_rate': 0.3,
                 'regime': 'CHAOS',
             }
+    
+    def update_stock_priority(self, stock_code: str, priority_score: float):
+        """
+        🆕 优化 2：更新股票优先级
+        
+        Args:
+            stock_code: 股票代码
+            priority_score: 优先级分数（0-100）
+        """
+        self.stock_priority[stock_code] = priority_score
+        
+        # 动态切换监控级别
+        if priority_score >= 70:
+            # 高优先级：加入高频监控
+            if stock_code not in self.active_monitor:
+                self.active_monitor.add(stock_code)
+                if stock_code in self.passive_watch:
+                    self.passive_watch.remove(stock_code)
+                logger.info(f"✅ [动态优先级] {stock_code} 切换为高频监控（优先级{priority_score:.1f}）")
+        elif priority_score >= 40:
+            # 中优先级：加入低频监控
+            if stock_code not in self.passive_watch:
+                self.passive_watch.add(stock_code)
+                if stock_code in self.active_monitor:
+                    self.active_monitor.remove(stock_code)
+                logger.info(f"📊 [动态优先级] {stock_code} 切换为低频监控（优先级{priority_score:.1f}）")
+        else:
+            # 低优先级：移除监控
+            if stock_code in self.active_monitor:
+                self.active_monitor.remove(stock_code)
+            if stock_code in self.passive_watch:
+                self.passive_watch.remove(stock_code)
+            logger.info(f"⚠️ [动态优先级] {stock_code} 移除监控（优先级{priority_score:.1f}）")
+    
+    def should_update_stock(self, stock_code: str) -> bool:
+        """
+        🆕 优化 2：判断是否应该更新股票数据
+        
+        Args:
+            stock_code: 股票代码
+        
+        Returns:
+            bool: 是否应该更新
+        """
+        current_time = datetime.now()
+        
+        # 检查是否在高频监控列表中
+        if stock_code in self.active_monitor:
+            if stock_code in self.last_update_time:
+                time_diff = (current_time - self.last_update_time[stock_code]).total_seconds()
+                return time_diff >= self.active_interval
+            return True
+        
+        # 检查是否在低频监控列表中
+        if stock_code in self.passive_watch:
+            if stock_code in self.last_update_time:
+                time_diff = (current_time - self.last_update_time[stock_code]).total_seconds()
+                return time_diff >= self.passive_interval
+            return True
+        
+        # 不在监控列表中，不更新
+        return False
+    
+    def mark_stock_updated(self, stock_code: str):
+        """
+        🆕 优化 2：标记股票已更新
+        
+        Args:
+            stock_code: 股票代码
+        """
+        self.last_update_time[stock_code] = datetime.now()
+    
+    def get_monitor_stats(self) -> Dict[str, Any]:
+        """
+        🆕 优化 2：获取监控统计信息
+        
+        Returns:
+            dict: 监控统计信息
+        """
+        return {
+            'active_monitor_count': len(self.active_monitor),
+            'passive_watch_count': len(self.passive_watch),
+            'total_stocks': len(self.stock_priority),
+            'active_interval': self.active_interval,
+            'passive_interval': self.passive_interval
+        }
