@@ -46,6 +46,15 @@ class IronRuleMonitor:
         self._turnover_cache = {}  # 换手率缓存 {stock_code: {'avg_turnover': float, 'timestamp': datetime}}
         self._cache_ttl = 3600  # 缓存有效期（秒），1小时
         
+        # 🆕 V18 深度迭代 1：解禁预警系统
+        try:
+            from logic.unban_warning_system import get_unban_warning_system
+            self.unban_warning = get_unban_warning_system()
+            logger.info("✅ 解禁预警系统集成成功")
+        except Exception as e:
+            logger.warning(f"⚠️ 解禁预警系统集成失败: {e}")
+            self.unban_warning = None
+        
     def get_stock_iron_status(self, code: str) -> Dict:
         """
         获取单只股票的铁律状态
@@ -99,6 +108,15 @@ class IronRuleMonitor:
                 # 3. 检查铁律
                 iron_result = self.iron_engine.check_stock_iron_rule(code, news_text, dde_net_flow)
                 status.update(iron_result)
+                
+                # 🆕 V18 深度迭代 1：检查解禁预警
+                if self.unban_warning:
+                    unban_warning = self.unban_warning.check_unban_warning(code)
+                    if unban_warning and unban_warning['has_warning']:
+                        status['warning_level'] = max(status['warning_level'], 2)  # 提升到危险级别
+                        status['warning_messages'].append(f"🚨 {unban_warning['reason']}")
+                        status['can_buy'] = False  # 禁止买入
+                        status['lock_reason'] = unban_warning['reason']
                 
                 # 4. 检查预警级别
                 warning_level, warning_messages = self._check_warning_level(code, dde_net_flow, news_text)

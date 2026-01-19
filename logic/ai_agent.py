@@ -1582,6 +1582,23 @@ class DragonAIAgent:
         if kline_data is not None and self.dragon_tactics:
             weak_to_strong_analysis = self.dragon_tactics.analyze_weak_to_strong(kline_data)
         
+        # 🆕 V18 深度迭代 2：板块共振检查
+        sector_resonance_analysis = {}
+        if weak_to_strong_analysis.get('weak_to_strong', False):
+            try:
+                from logic.sector_resonance_detector import get_sector_resonance_detector
+                resonance_detector = get_sector_resonance_detector()
+                stock_change_pct = price_data.get('change_percent', 0.0)
+                sector_resonance_analysis = resonance_detector.check_sector_resonance(symbol, stock_change_pct)
+                
+                # 如果是独狼式诱多，降低弱转强评分
+                if sector_resonance_analysis.get('resonance_type') == '独狼':
+                    weak_to_strong_analysis['weak_to_strong_score'] = max(0, weak_to_strong_analysis['weak_to_strong_score'] - 30)
+                    weak_to_strong_analysis['weak_to_strong_desc'] += f"，⚠️ {sector_resonance_analysis['reason']}"
+                    logger.warning(f"🚨 [板块共振] {symbol} 检测到独狼式诱多，弱转强评分降低 30 分")
+            except Exception as e:
+                logger.warning(f"⚠️ [板块共振] 检查失败: {e}")
+        
         # 5. 分时承接分析
         intraday_support_analysis = {}
         if intraday_data is not None and self.dragon_tactics:

@@ -51,6 +51,15 @@ class TimeStrategyManager:
         """初始化时间策略管理器"""
         self.current_mode = TradingMode.AGGRESSIVE
         self.mode_history = []
+        
+        # 🆕 V18 深度迭代 3：国家队指纹监控器
+        try:
+            from logic.national_team_detector import get_national_team_detector
+            self.national_team = get_national_team_detector()
+            logger.info("✅ 国家队指纹监控系统集成成功")
+        except Exception as e:
+            logger.warning(f"⚠️ 国家队指纹监控系统集成失败: {e}")
+            self.national_team = None
     
     def get_current_mode(self, current_time: Optional[datetime] = None, sentiment_score: float = 50.0) -> Dict[str, any]:
         """
@@ -149,6 +158,20 @@ class TimeStrategyManager:
                 recommendation = "🛡️ 市场情绪冰点，规避风险，只卖不买"
             # 无论当前模式是什么，只要情绪分数 <= 20，就标记为情绪覆盖
             sentiment_override = True
+        
+        # 🆕 V18 深度迭代 3：MARKET_RESCUE_MODE 判断
+        if self.national_team and self.national_team.is_rescue_mode():
+            rescue_info = self.national_team.get_rescue_mode_info()
+            logger.warning(f"🚨 [MARKET_RESCUE_MODE] {rescue_info['reason']}")
+            
+            # 救援模式：优先选择价值标的或 ETF
+            mode = TradingMode.AGGRESSIVE
+            mode_name = "救援模式"
+            description = f"MARKET_RESCUE_MODE：{rescue_info['reason']}"
+            allow_buy = True
+            allow_sell = True
+            scan_interval = 10  # 10秒扫描一次
+            recommendation = "🚨 国家队入场救援，优先选择价值标的或 ETF，规避妖股"
         
         # 更新当前模式
         self.current_mode = mode
