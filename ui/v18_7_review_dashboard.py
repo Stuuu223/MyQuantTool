@@ -2,305 +2,303 @@
 # -*- coding: utf-8 -*-
 """
 V18.7 智能复盘驾驶舱 (Mirror of Truth)
-
-功能：
-1. 可视化的复盘界面
-2. 展示"错失的龙"、"避开的坑"和"系统评分"
-3. AI 教练点评
-
-使用：
-每天15:30收盘后运行，生成《每日异常交易报告》
+提供每日复盘、高价值案例展示、历史回放等功能
 """
 
 import streamlit as st
 import pandas as pd
+import json
+import os
 import datetime
-from logic.auto_reviewer_v18_7 import get_auto_reviewer_v18_7
-from logic.review_manager import ReviewManager
 from logic.logger import get_logger
 
 logger = get_logger(__name__)
 
 
 def render_review_dashboard():
-    """渲染 V18.7 智能复盘驾驶舱"""
+    """
+    渲染 V18.7 智能复盘驾驶舱
     
-    st.markdown("## 🧠 V18.7 智能复盘驾驶舱 (Mirror of Truth)")
-    st.info("💡 交易的真理藏在收盘后。直面今天的错误，是明天抓板的唯一捷径。")
+    功能：
+    1. 每日复盘报告展示
+    2. 高价值案例捕获（真龙/大坑/炸板）
+    3. 市场情绪评分
+    4. 历史交易日快速选择
+    """
     
-    # 1. 控制区
-    col1, col2 = st.columns([1, 3])
+    st.header("🧠 V18.7 智能复盘驾驶舱 (Mirror of Truth)")
     
-    with col1:
-        # 默认选择昨天
-        yesterday = datetime.date.today() - datetime.timedelta(days=1)
-        review_date = st.date_input("选择复盘日期", yesterday)
-        date_str = review_date.strftime("%Y%m%d")
-        
-        if st.button("🚀 开始深度复盘", use_container_width=True):
-            with st.spinner(f"正在回溯 {date_str} 的全市场数据..."):
-                try:
-                    reviewer = get_auto_reviewer_v18_7()
-                    # 调用逻辑层获取数据
-                    data = reviewer.generate_report_data(date_str)
-                    st.session_state['review_data'] = data
-                    st.session_state['review_date'] = date_str
-                    st.success("✅ 复盘完成！")
-                except Exception as e:
-                    logger.error(f"复盘失败: {e}")
-                    st.error(f"❌ 复盘失败: {e}")
+    # 侧边栏日期选择
+    st.sidebar.subheader("📅 复盘日期选择")
     
-    # 2. 展示区（如果有数据）
-    if 'review_data' in st.session_state:
-        data = st.session_state['review_data']
-        date_str = st.session_state.get('review_date', '')
+    # 获取可用的历史交易日
+    available_dates = []
+    cases_dir = "data/review_cases/golden_cases"
+    if os.path.exists(cases_dir):
+        for filename in os.listdir(cases_dir):
+            if filename.startswith("cases_") and filename.endswith(".json"):
+                date_str = filename.replace("cases_", "").replace(".json", "")
+                available_dates.append(date_str)
+    
+    # 默认选择今天或最近一个交易日
+    today = datetime.date.today()
+    today_str = today.strftime("%Y%m%d")
+    
+    if today_str in available_dates:
+        selected_date = st.sidebar.date_input("选择复盘日期", today, key="review_date")
+    elif available_dates:
+        # 选择最近的一个交易日
+        latest_date = max(available_dates)
+        selected_date = st.sidebar.date_input(
+            "选择复盘日期",
+            datetime.datetime.strptime(latest_date, "%Y%m%d").date(),
+            key="review_date"
+        )
+    else:
+        selected_date = st.sidebar.date_input("选择复盘日期", today, key="review_date")
+    
+    date_str = selected_date.strftime("%Y%m%d")
+    file_path = f"data/review_cases/golden_cases/cases_{date_str}.json"
+    
+    # 如果没有数据，提供一键生成选项
+    if not os.path.exists(file_path):
+        st.warning(f"⏳ {date_str} 尚未生成复盘报告。")
         
-        # --- A. 核心指标卡 ---
-        st.markdown("### 📊 当日战况总览")
-        
-        summary = data['summary']
-        execution_score = data['execution_score']
-        
-        m1, m2, m3, m4 = st.columns(4)
-        
-        with m1:
-            st.metric(
-                "市场涨停数", 
-                f"{summary['total_limit_up']} 只",
-                delta=f"{summary['market_temperature']}"
-            )
-        
-        with m2:
-            st.metric(
-                "市场温度",
-                summary['market_temperature']
-            )
-        
-        with m3:
-            st.metric(
-                "系统捕获率",
-                summary['system_capture_rate']
-            )
-        
-        with m4:
-            # 根据分数显示不同的颜色
-            if execution_score >= 80:
-                delta_color = "normal"
-            elif execution_score >= 60:
-                delta_color = "normal"
-            else:
-                delta_color = "inverse"
-            
-            st.metric(
-                "执行力评分",
-                f"{execution_score} 分",
-                delta=f"{execution_score - 60}",
-                delta_color=delta_color
-            )
-        
-        # --- B. 🦁 今日真龙 (Golden Cases) - V18.7 新增 ---
-        st.markdown("### 🦁 今日真龙 (Golden Cases)")
-        st.caption("市场最高标的：连板高度最高或封单金额最大的股票")
-        
-        # 捕获高价值案例
-        golden_cases = None
-        try:
-            rm = ReviewManager()
-            golden_cases = rm.capture_golden_cases(date_str)
-        except Exception as e:
-            logger.error(f"获取高价值案例失败: {e}")
-        
-        if golden_cases:
-            # 展示真龙
-            if golden_cases['dragons']:
-                col1, col2, col3 = st.columns(3)
-                
-                for i, dragon in enumerate(golden_cases['dragons']):
-                    with [col1, col2, col3][i]:
-                        st.info(f"""
-                        **{dragon['name']} ({dragon['code']})**
-                        
-                        {dragon['reason']}
-                        
-                        **类型**: {dragon['type']}
-                        """)
-            else:
-                st.info("📭 今日无真龙")
-            
-            # 展示大坑
-            st.markdown("### 🛡️ 避坑指南 (Golden Traps)")
-            st.caption("当日跌幅榜和炸板大面：学习这些惨案，避免重蹈覆辙")
-            
-            if golden_cases['traps']:
-                for trap in golden_cases['traps']:
-                    if trap['type'] == 'FATAL_TRAP':
-                        st.error(f"""
-                        **{trap['name']} ({trap['code']})**
-                        
-                        {trap['reason']}
-                        
-                        **类型**: {trap['type']}
-                        """)
-                    elif trap['type'] == 'FAILED_DRAGON':
-                        st.warning(f"""
-                        **{trap['name']} ({trap['code']})**
-                        
-                        {trap['reason']}
-                        
-                        **类型**: {trap['type']}
-                        """)
-            else:
-                st.success("✅ 今日无重大风险事件")
-            
-            st.markdown("---")
-        
-        # --- C. 错失的龙 (Missed Dragons) ---
-        st.markdown("### 🐉 错失的真龙 (Missed Opportunities)")
-        st.caption("系统发出过信号，或者符合模式但未被系统捕捉的标的：")
-        
-        if data['missed_opportunities']:
-            df_missed = pd.DataFrame(data['missed_opportunities'])
-            
-            # 格式化显示
-            if not df_missed.empty:
-                # 添加序号列
-                df_missed.insert(0, '#', range(1, len(df_missed) + 1))
-                st.dataframe(df_missed, use_container_width=True, hide_index=True)
-            else:
-                st.success("✅ 完美！今日无踏空！")
-        else:
-            st.success("✅ 完美！今日无踏空！")
-        
-        # --- D. 避开的坑 (Dodged Bullets) ---
-        st.markdown("### 🛡️ 成功规避的陷阱 (Risk Avoidance)")
-        st.caption("系统触发熔断/风控，成功阻止你接飞刀的标的：")
-        
-        if data['avoided_traps']:
-            df_traps = pd.DataFrame(data['avoided_traps'])
-            
-            # 格式化显示
-            if not df_traps.empty:
-                # 添加序号列
-                df_traps.insert(0, '#', range(1, len(df_traps) + 1))
-                st.dataframe(df_traps, use_container_width=True, hide_index=True)
-            else:
-                st.info("ℹ️ 今日无重大风控拦截。")
-        else:
-            st.info("ℹ️ 今日无重大风控拦截。")
-        
-        # --- E. 深度反思 (AI 教练点评) ---
-        st.markdown("### 🤖 AI 教练点评")
-        
-        with st.chat_message("assistant"):
-            if execution_score < 60:
-                st.warning("""
-                ⚠️ 今日操作变形严重。
-                
-                **主要问题：**
-                - 追高情绪过重，缺乏耐心等待最佳点位
-                - 无视 DDE 背离信号，盲目入场
-                
-                **建议：**
-                - 明日开盘前默念三遍铁律
-                - 严格执行 DDE 否决权
-                - 控制回撤，保住本金
-                """)
-            elif execution_score >= 80:
-                st.success("""
-                🎉 今日知行合一，节奏完美！
-                
-                **亮点：**
-                - 在关键节点果断出手
-                - 严格遵循风控纪律
-                
-                **保持这种感觉！**
-                特别是对于强势标的的低吸处理，是教科书级别的。
-                """)
-            else:
-                st.info("""
-                📊 今日表现平稳。
-                
-                **需要改进：**
-                - 在部分标的的处理上略显犹豫
-                - 错过了最佳的 DDE 共振点
-                
-                **建议：**
-                - 提高执行力，减少犹豫
-                - 加强对 DDE 信号的理解
-                """)
-        
-        # --- F. 历史趋势 ---
-        st.markdown("### 📈 历史执行力趋势")
-        st.caption("最近7天的执行力评分趋势：")
-        
-        # 这里可以添加历史趋势图表
-        # 暂时显示占位符
-        st.info("📊 历史趋势功能开发中...")
-        
-        # --- G. 导出报告 ---
-        st.markdown("---")
-        
-        col1, col2, col3 = st.columns([1, 1, 2])
-        
+        col1, col2 = st.columns(2)
         with col1:
-            if st.button("📥 导出复盘报告"):
-                # 导出功能
-                st.success("✅ 报告已导出到 data/review_cases/")
+            if st.button("🚀 立即运行复盘任务", key="run_review"):
+                try:
+                    from logic.review_manager import ReviewManager
+                    rm = ReviewManager()
+                    cases = rm.capture_golden_cases(date_str)
+                    if cases:
+                        st.success(f"✅ 复盘任务完成！")
+                        st.rerun()
+                    else:
+                        st.error("❌ 复盘任务失败，请检查日志。")
+                except Exception as e:
+                    st.error(f"❌ 复盘任务执行失败: {e}")
         
         with col2:
-            if st.button("🔄 清空缓存"):
-                # 清空缓存
-                if 'review_data' in st.session_state:
-                    del st.session_state['review_data']
-                if 'review_date' in st.session_state:
-                    del st.session_state['review_date']
-                st.success("✅ 缓存已清空")
+            if st.button("📊 查看历史交易日", key="view_history"):
+                st.info(f"📅 可用的历史交易日: {', '.join(available_dates)}")
         
-        with col3:
-            st.caption("💡 提示：每天收盘后运行复盘，持续改进你的交易系统")
+        return
     
+    # 加载复盘数据
+    with open(file_path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    
+    # 1. 指标总览
+    st.subheader("📊 市场情绪概览")
+    
+    m1, m2, m3 = st.columns(3)
+    score = data.get('market_score', 50)
+    
+    # 根据分数显示不同的颜色
+    if score >= 80:
+        score_color = "🟢"
+    elif score >= 60:
+        score_color = "🟡"
     else:
-        # 显示提示信息
-        st.info('👆 请选择日期并点击"开始深度复盘"按钮')
+        score_color = "🔴"
+    
+    m1.metric("市场情绪得分", f"{score_color} {score} / 100")
+    m2.metric("捕获龙/坑总数", len(data['dragons']) + len(data['traps']))
+    m3.metric("复盘日期", date_str)
+    
+    # 市场情绪解读
+    st.info(f"💡 市场情绪解读: {get_market_sentiment_comment(score)}")
+    
+    st.divider()
+    
+    # 2. 核心案例展示
+    st.subheader("🎯 高价值案例展示")
+    
+    col_a, col_b = st.columns(2)
+    
+    with col_a:
+        st.markdown("### 🐉 今日真龙 (标准答案)")
+        if data['dragons']:
+            for i, d in enumerate(data['dragons']):
+                with st.expander(f"{i+1}. {d['name']} ({d['code']})", expanded=(i == 0)):
+                    st.success(d['reason'])
+                    
+                    # 显示详细信息
+                    if 'limit_board' in d:
+                        st.caption(f"📈 连板高度: {d['limit_board']}板")
+                    if 'seal_amount' in d:
+                        st.caption(f"💰 封单金额: {int(d['seal_amount']/10000)}万")
+                    
+                    st.caption("💡 建议操作：点击'历史回放'查看 9:30 DDE 状态")
+                    
+                    # 添加查看详情按钮
+                    if st.button(f"查看 {d['name']} 详情", key=f"dragon_{d['code']}"):
+                        st.info(f"🔍 正在加载 {d['name']} 的详细数据...")
+                        # 这里可以添加更详细的股票分析
+        else:
+            st.info("📭 今日未捕获到标准真龙案例")
+    
+    with col_b:
+        st.markdown("### 💀 核按钮 (避坑指南)")
+        if data['traps']:
+            for i, t in enumerate(data['traps']):
+                with st.expander(f"{i+1}. {t['name']} ({t['code']})", expanded=(i == 0)):
+                    st.error(t['reason'])
+                    
+                    # 显示详细信息
+                    if 'change_pct' in t:
+                        st.caption(f"📉 跌幅: {t['change_pct']}%")
+                    if 'amount' in t:
+                        st.caption(f"💸 成交额: {int(t['amount']/10000)}万")
+                    
+                    # 根据类型显示不同的风险特征
+                    if t.get('type') == 'FAILED_DRAGON':
+                        st.caption("⚠️ 风险特征：炸板大面，天地板风险")
+                    elif t.get('type') == 'FATAL_TRAP':
+                        st.caption("⚠️ 风险特征：核按钮惨案，跌停风险")
+        else:
+            st.info("📭 今日未捕获到核按钮案例")
+    
+    st.divider()
+    
+    # 3. AI 教练点评
+    st.subheader("🤖 AI 教练点评")
+    
+    execution_score = calculate_execution_score(data)
+    coach_comment = get_coach_comment(execution_score, data)
+    
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        st.info(coach_comment)
+    with col2:
+        st.metric("执行评分", f"{execution_score} / 100")
+    
+    st.divider()
+    
+    # 4. 历史交易日快速选择
+    st.subheader("📅 历史交易日")
+    
+    if available_dates:
+        # 按日期倒序排列
+        available_dates.sort(reverse=True)
         
-        # 显示最近几个交易日
-        st.markdown("### 📅 最近交易日")
+        selected_history = st.selectbox(
+            "快速跳转到历史交易日",
+            available_dates,
+            format_func=lambda x: f"{x[:4]}-{x[4:6]}-{x[6:8]}",
+            key="history_date"
+        )
         
-        recent_dates = []
-        today = datetime.date.today()
-        
-        for i in range(1, 8):  # 最近7天
-            date = today - datetime.timedelta(days=i)
-            # 跳过周末
-            if date.weekday() < 5:  # 0=周一, 4=周五
-                recent_dates.append(date)
-        
-        if recent_dates:
-            cols = st.columns(min(7, len(recent_dates)))
-            for i, date in enumerate(recent_dates):
-                with cols[i]:
-                    date_str = date.strftime("%Y%m%d")
-                    if st.button(f"{date.strftime('%m-%d')}", key=f"recent_date_{date_str}"):
-                        st.session_state['selected_date'] = date
-                        st.rerun()
-        
-        # 如果用户选择了日期
-        if 'selected_date' in st.session_state:
-            selected_date = st.session_state['selected_date']
-            date_str = selected_date.strftime("%Y%m%d")
-            
-            with st.spinner(f"正在回溯 {date_str} 的全市场数据..."):
-                try:
-                    reviewer = get_auto_reviewer_v18_7()
-                    data = reviewer.generate_report_data(date_str)
-                    st.session_state['review_data'] = data
-                    st.session_state['review_date'] = date_str
-                    del st.session_state['selected_date']
-                    st.rerun()
-                except Exception as e:
-                    logger.error(f"复盘失败: {e}")
-                    st.error(f"❌ 复盘失败: {e}")
+        if st.button("跳转到选中的交易日", key="jump_to_history"):
+            # 更新侧边栏的日期选择器
+            st.session_state['review_date'] = datetime.datetime.strptime(selected_history, "%Y%m%d").date()
+            st.rerun()
+    else:
+        st.info("📭 暂无历史交易日数据")
+    
+    # 5. 架构师点评
+    st.divider()
+    st.info("💡 架构师点评：如果你今天没买入上述真龙，请回看 V18.6 的'价格发现'模块是否开启。同时，检查 DDE 拒否权是否正常工作。")
 
 
+def get_market_sentiment_comment(score):
+    """
+    根据市场情绪得分生成解读评论
+    
+    Args:
+        score: 市场情绪得分 (0-100)
+    
+    Returns:
+        str: 情绪解读
+    """
+    if score >= 90:
+        return "🌟 市场极度活跃，多头情绪高涨，适合激进操作。注意风险控制。"
+    elif score >= 75:
+        return "🟢 市场情绪良好，多头占优，可以积极寻找机会。"
+    elif score >= 60:
+        return "🟡 市场情绪中性，多空平衡，建议谨慎操作。"
+    elif score >= 40:
+        return "🟠 市场情绪偏弱，空头占优，建议减少操作频率。"
+    else:
+        return "🔴 市场情绪极度低迷，建议空仓观望，等待机会。"
+
+
+def calculate_execution_score(data):
+    """
+    计算执行评分
+    
+    Args:
+        data: 复盘数据
+    
+    Returns:
+        int: 执行评分 (0-100)
+    """
+    score = 0
+    
+    # 基础分：有数据就给 20 分
+    if data:
+        score += 20
+    
+    # 捕获真龙：每只给 20 分
+    score += len(data.get('dragons', [])) * 20
+    
+    # 捕获大坑：每只给 15 分
+    score += len(data.get('traps', [])) * 15
+    
+    # 市场情绪评分：占 30%
+    market_score = data.get('market_score', 0)
+    score += market_score * 0.3
+    
+    # 限制在 0-100 之间
+    return int(min(max(score, 0), 100))
+
+
+def get_coach_comment(execution_score, data):
+    """
+    生成 AI 教练点评
+    
+    Args:
+        execution_score: 执行评分
+        data: 复盘数据
+    
+    Returns:
+        str: AI 教练点评
+    """
+    dragons_count = len(data.get('dragons', []))
+    traps_count = len(data.get('traps', []))
+    
+    if execution_score >= 90:
+        return f"🎯 完美执行！成功捕获 {dragons_count} 只真龙，{traps_count} 个大坑。你的复盘系统运行良好，继续保持！"
+    elif execution_score >= 75:
+        return f"✅ 表现优秀！捕获 {dragons_count} 只真龙，{traps_count} 个大坑。复盘系统运行稳定，可以继续优化。"
+    elif execution_score >= 60:
+        return f"👍 表现良好！捕获 {dragons_count} 只真龙，{traps_count} 个大坑。复盘系统基本正常，建议检查数据源。"
+    elif execution_score >= 40:
+        return f"⚠️ 表现一般！仅捕获 {dragons_count} 只真龙，{traps_count} 个大坑。建议检查数据接口和网络连接。"
+    else:
+        return f"❌ 执行不理想！仅捕获 {dragons_count} 只真龙，{traps_count} 个大坑。建议立即检查系统配置和数据源。"
+
+
+# 单元测试
 if __name__ == "__main__":
-    render_review_dashboard()
+    # 测试市场情绪解读
+    print("测试市场情绪解读:")
+    for score in [95, 80, 65, 50, 30]:
+        print(f"  {score}分: {get_market_sentiment_comment(score)}")
+    
+    # 测试执行评分
+    print("\n测试执行评分:")
+    test_data = {
+        "dragons": [{"code": "000001", "name": "平安银行"}],
+        "traps": [{"code": "000002", "name": "万科A"}],
+        "market_score": 70
+    }
+    score = calculate_execution_score(test_data)
+    print(f"  执行评分: {score}")
+    
+    # 测试 AI 教练点评
+    print("\n测试 AI 教练点评:")
+    print(f"  {score}分: {get_coach_comment(score, test_data)}")
+    
+    print("\n✅ 所有测试通过！")

@@ -62,7 +62,7 @@ st.markdown("""
 st.markdown("---")
 
 # 选项卡
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11 = st.tabs([
     "📊 DDE 核心战法",
     "🔻 低吸逻辑引擎",
     "🎯 动态涨停系数",
@@ -72,7 +72,8 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
     "🔮 二波预期",
     "🛡️ 风险监控",
     "🔥 排队打板的真相",
-    "💎 V18.6.1 进阶战法"
+    "💎 V18.6.1 进阶战法",
+    "🧠 智能复盘"
 ])
 
 # Tab 1: DDE 核心战法
@@ -1002,6 +1003,30 @@ with tab10:
         - 保护本金，活下去才是最重要的
         """)
 
+# Tab 11: V18.7 智能复盘
+with tab11:
+    st.header("🧠 V18.7 智能复盘驾驶舱 (Mirror of Truth)")
+    st.markdown("""
+    **核心理念：**
+    > "复盘是为了不再犯同样的错误，而高价值案例捕获则是为了让你每一次开火都具备顶级猎手的直觉。"
+    
+    **功能特性：**
+    1. 每日复盘报告展示
+    2. 高价值案例捕获（真龙/大坑/炸板）
+    3. 市场情绪评分
+    4. 历史交易日快速选择
+    5. AI 教练点评
+    """)
+    st.markdown("---")
+    
+    # 导入并调用复盘驾驶舱
+    try:
+        from ui.v18_7_review_dashboard import render_review_dashboard
+        render_review_dashboard()
+    except Exception as e:
+        st.error(f"❌ 加载智能复盘驾驶舱失败: {e}")
+        st.info("💡 请确保已运行 `python trigger_all_services.py` 初始化复盘系统")
+
 # 页脚
 st.markdown("---")
 st.markdown("""
@@ -1014,4 +1039,10 @@ st.markdown("""
 - 弹性缓冲：利用 20cm/30cm 的安全垫  
 - 二波预期：博弈主力预期  
 - 风险监控：识别虚假繁荣  
+
+**V18.7 新增：**  
+- 智能复盘驾驶舱：自动捕获高价值案例  
+- 市场情绪评分：量化市场温度  
+- AI 教练点评：提供操作建议  
+- 历史交易日快速选择：方便复盘回顾  
 """)

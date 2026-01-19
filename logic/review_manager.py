@@ -175,6 +175,7 @@ class ReviewManager:
                 - dragons: 标准真龙列表
                 - traps: 惨案大坑列表
                 - reversals: 弱转强/反核列表
+                - market_score: 市场情绪评分 (0-100)
         """
         if date_str is None:
             date_str = datetime.now().strftime("%Y%m%d")
@@ -185,57 +186,84 @@ class ReviewManager:
             "date": date_str,
             "dragons": [],      # 标准答案
             "traps": [],        # 避坑指南
-            "reversals": []     # 弱转强/反核
+            "reversals": [],    # 弱转强/反核
+            "market_score": 0   # 市场情绪评分
         }
         
         try:
             # 1. 获取当日涨停池 (真龙源头)
             df_zt = ak.stock_zt_pool_em(date=date_str)
             if df_zt is not None and not df_zt.empty:
-                # 筛选规则：连板高度最高 Or 封单金额最大
-                # 按连板数降序，封单金额降序
-                df_zt['封单金额'] = df_zt['封单金额'].astype(float)
-                top_dragons = df_zt.sort_values(by=['连板数', '封单金额'], ascending=[False, False]).head(3)
+                # 筛选规则：连板高度最高 Or 封板资金最大
+                # 按连板数降序，封板资金降序
+                df_zt['封板资金'] = df_zt['封板资金'].astype(float)
+                top_dragons = df_zt.sort_values(by=['连板数', '封板资金'], ascending=[False, False]).head(3)
                 
                 for _, row in top_dragons.iterrows():
                     cases['dragons'].append({
                         "code": row['代码'],
                         "name": row['名称'],
-                        "reason": f"🔥 市场最高标: {row['连板数']}连板, 封单{int(row['封单金额']/10000)}万",
+                        "reason": f"🔥 市场最高标: {row['连板数']}连板, 封单{int(row['封板资金']/10000)}万",
                         "type": "SPACE_DRAGON", # 空间龙
                         "limit_board": int(row['连板数']),
-                        "seal_amount": float(row['封单金额'])
+                        "seal_amount": float(row['封板资金'])
                     })
+                
+                # 计算市场情绪评分 (0-100)
+                cases['market_score'] = int(len(df_zt) / 50 * 100)
+            else:
+                # 如果没有涨停数据，市场情绪评分设为 20
+                cases['market_score'] = 20
             
-            # 2. 获取当日跌幅榜 (大坑源头)
+            # 2. 获取当日跌幅榜 (大坑源头) - 使用超时处理
             # 注意：akshare 获取实时行情按跌幅排序
-            df_market = ak.stock_zh_a_spot_em()
-            df_drop = df_market.sort_values(by='涨跌幅').head(3) # 跌得最惨的3个
-            
-            for _, row in df_drop.iterrows():
-                # 过滤掉 ST 和退市股 (如果不玩垃圾股的话)
-                if 'ST' not in row['名称'] and '退' not in row['名称']:
-                    cases['traps'].append({
-                        "code": row['代码'],
-                        "name": row['名称'],
-                        "reason": f"💀 核按钮惨案: 跌幅 {row['涨跌幅']}%, 成交{int(row['成交额']/10000)}万",
-                        "type": "FATAL_TRAP",
-                        "change_pct": float(row['涨跌幅']),
-                        "amount": float(row['成交额'])
-                    })
+            try:
+                import signal
+                
+                def timeout_handler(signum, frame):
+                    raise TimeoutError("获取跌幅榜超时")
+                
+                # 设置 30 秒超时
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(30)
+                
+                df_market = ak.stock_zh_a_spot_em()
+                
+                # 取消超时
+                signal.alarm(0)
+                
+                # 筛选跌幅前3且成交额不为0的
+                df_drop = df_market[df_market['成交额'] > 0].sort_values(by='涨跌幅').head(3)
+                
+                for _, row in df_drop.iterrows():
+                    # 过滤掉 ST 和退市股 (如果不玩垃圾股的话)
+                    if 'ST' not in row['名称'] and '退' not in row['名称']:
+                        cases['traps'].append({
+                            "code": row['代码'],
+                            "name": row['名称'],
+                            "reason": f"💀 核按钮惨案: 跌幅 {row['涨跌幅']}%, 成交{int(row['成交额']/10000)}万",
+                            "type": "FATAL_TRAP",
+                            "change_pct": float(row['涨跌幅']),
+                            "amount": float(row['成交额'])
+                        })
+            except (TimeoutError, Exception) as e:
+                logger.warning(f"⚠️ 获取跌幅榜失败或超时: {e}")
             
             # 3. (可选) 识别当日"炸板大面" (曾经涨停，收盘大跌)
-            df_zha = ak.stock_zt_pool_zbgc_em(date=date_str) # 炸板股池
-            if df_zha is not None and not df_zha.empty:
-                worst_zha = df_zha.sort_values(by='涨跌幅').head(1) # 炸得最惨的
-                for _, row in worst_zha.iterrows():
-                    cases['traps'].append({
-                        "code": row['代码'],
-                        "name": row['名称'],
-                        "reason": f"🩸 炸板大面: 涨停被砸至 {row['涨跌幅']}%, 也就是所谓的'天地板'风险",
-                        "type": "FAILED_DRAGON",
-                        "change_pct": float(row['涨跌幅'])
-                    })
+            try:
+                df_zha = ak.stock_zt_pool_zbgc_em(date=date_str) # 炸板股池
+                if df_zha is not None and not df_zha.empty:
+                    worst_zha = df_zha.sort_values(by='涨跌幅').head(1) # 炸得最惨的
+                    for _, row in worst_zha.iterrows():
+                        cases['traps'].append({
+                            "code": row['代码'],
+                            "name": row['名称'],
+                            "reason": f"🩸 炸板大面: 涨停被砸至 {row['涨跌幅']}%, 也就是所谓的'天地板'风险",
+                            "type": "FAILED_DRAGON",
+                            "change_pct": float(row['涨跌幅'])
+                        })
+            except Exception as e:
+                logger.warning(f"⚠️ 获取炸板股失败: {e}")
             
             # 4. 保存案例集
             save_dir = "data/review_cases/golden_cases"
@@ -250,6 +278,7 @@ class ReviewManager:
             logger.info(f"   - 真龙: {len(cases['dragons'])} 只")
             logger.info(f"   - 大坑: {len(cases['traps'])} 只")
             logger.info(f"   - 炸板: {len([t for t in cases['traps'] if t['type'] == 'FAILED_DRAGON'])} 只")
+            logger.info(f"   - 市场情绪评分: {cases['market_score']}")
             
             return cases
         
