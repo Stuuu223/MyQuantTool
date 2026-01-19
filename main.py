@@ -1190,11 +1190,15 @@ elif app_mode == "🧪 量化回测":
         if function_category == "🔧 基础工具":
             selected_function = st.selectbox(
                 "选择功能",
-                ["参数优化", "K线形态识别"],
+                ["🧠 智能复盘", "参数优化", "K线形态识别"],
                 key="basic_tools_function"
             )
 
-            if selected_function == "参数优化":
+            if selected_function == "🧠 智能复盘":
+                with st.spinner("正在加载智能复盘系统..."):
+                    v18_7_review_dashboard = __import__('ui.v18_7_review_dashboard', fromlist=['render_review_dashboard'])
+                    v18_7_review_dashboard.render_review_dashboard()
+            elif selected_function == "参数优化":
                 with st.spinner("正在加载参数优化引擎..."):
                     parameter_optimization = __import__('ui.parameter_optimization', fromlist=['render_parameter_optimization_tab'])
                     parameter_optimization.render_parameter_optimization_tab(get_db_instance(), config)
