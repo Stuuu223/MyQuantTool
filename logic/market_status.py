@@ -321,8 +321,53 @@ class MarketStatusChecker:
 
         # 非交易时间
         else:
-            # 买一和卖一都为0，说明已收盘
+            # 🆕 V18.5: 尝试从数据库或 Redis 读取历史数据
             if bid1_volume == 0 and ask1_volume == 0:
+                try:
+                    from logic.data_manager import get_db_manager
+                    db = get_db_manager()
+                    
+                    # 尝试从数据库获取历史数据
+                    import sqlite3
+                    conn = sqlite3.connect('data/stock_data.db')
+                    cursor = conn.cursor()
+                    
+                    # 查询最近的日线数据
+                    cursor.execute("""
+                        SELECT close, high, low, open, volume, turnover_rate, date
+                        FROM stock_data
+                        WHERE symbol = ?
+                        ORDER BY date DESC
+                        LIMIT 1
+                    """, (symbol,))
+                    
+                    row = cursor.fetchone()
+                    conn.close()
+                    
+                    if row:
+                        # 找到历史数据，显示历史收盘价
+                        close, high, low, open, volume, turnover_rate, date = row
+                        return {
+                            'status': MarketStatus.OFF_HOURS,
+                            'message': f"📊 已收盘（使用 {date} 收盘数据）",
+                            'is_trading': False,
+                            'is_limit_up': False,
+                            'is_limit_down': False,
+                            'historical_data': {
+                                'close': close,
+                                'high': high,
+                                'low': low,
+                                'open': open,
+                                'volume': volume,
+                                'turnover_rate': turnover_rate,
+                                'date': date
+                            }
+                        }
+                    
+                except Exception as e:
+                    logger.warning(f"从数据库读取历史数据失败: {e}")
+                
+                # 如果无法获取历史数据，显示默认消息
                 return {
                     'status': MarketStatus.CLOSED,
                     'message': "⚠️ 已收盘，盘口数据已清空",

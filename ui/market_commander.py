@@ -50,7 +50,8 @@ def render_market_commander(data_manager=None):
             min_value=0,
             max_value=100,
             value=90,
-            help="AI 基于新闻和技术面的评分"
+            help="AI 基于新闻和技术面的评分",
+            key="market_commander_ai_score"
         )
         
         capital_flow = st.slider(
@@ -58,14 +59,16 @@ def render_market_commander(data_manager=None):
             min_value=-10000,
             max_value=10000,
             value=1000,
-            help="正数为流入，负数为流出"
+            help="正数为流入，负数为流出",
+            key="market_commander_capital_flow"
         )
         
         trend_status = st.selectbox(
             "趋势状态",
             options=['UP', 'DOWN', 'SIDEWAY'],
             index=0,
-            help="技术面趋势"
+            help="技术面趋势",
+            key="market_commander_trend_status"
         )
         
         current_pct_change = st.slider(
@@ -74,7 +77,8 @@ def render_market_commander(data_manager=None):
             max_value=20.0,
             value=5.0,
             step=0.1,
-            help="当前价格涨跌幅"
+            help="当前价格涨跌幅",
+            key="market_commander_current_pct_change"
         )
         
         st.markdown("#### 🌤️ 市场环境")
@@ -84,14 +88,16 @@ def render_market_commander(data_manager=None):
             min_value=0,
             max_value=100,
             value=50,
-            help="市场情绪分数（0-100），0=极度恐慌，100=极度兴奋"
+            help="市场情绪分数（0-100），0=极度恐慌，100=极度兴奋",
+            key="market_commander_market_sentiment_score"
         )
         
         market_status = st.selectbox(
             "市场状态",
             options=['主升', '退潮', '震荡', '冰点'],
             index=2,
-            help="市场状态"
+            help="市场状态",
+            key="market_commander_market_status"
         )
         
         st.markdown("---")
