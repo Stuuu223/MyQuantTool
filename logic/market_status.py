@@ -267,8 +267,8 @@ class MarketStatusChecker:
         is_limit_up = self.is_limit_up(change_pct, symbol, name)
         is_limit_down = self.is_limit_down(change_pct, symbol, name)
 
-        # 如果在交易时间内
-        if self.is_trading_time():
+        # 如果在交易时间内（强制刷新缓存，确保实时性）
+        if self.is_trading_time(force_refresh=True):
             # 涨停时，卖一量为0是正常现象
             if is_limit_up:
                 return {
@@ -289,15 +289,26 @@ class MarketStatusChecker:
                     'is_limit_down': True
                 }
 
-            # 买一和卖一都为0，可能是数据异常或停牌
+            # 买一和卖一都为0，需要进一步判断
             if bid1_volume == 0 and ask1_volume == 0:
-                return {
-                    'status': MarketStatus.DATA_ABNORMAL,
-                    'message': "⚠️ 数据异常/停牌",
-                    'is_trading': False,
-                    'is_limit_up': False,
-                    'is_limit_down': False
-                }
+                # 如果买一价和卖一价也为0，说明数据异常或停牌
+                if bid1_price == 0 and ask1_price == 0:
+                    return {
+                        'status': MarketStatus.DATA_ABNORMAL,
+                        'message': "⚠️ 数据异常/停牌",
+                        'is_trading': False,
+                        'is_limit_up': False,
+                        'is_limit_down': False
+                    }
+                # 如果有买一价和卖一价，说明交易正常，只是盘口量暂时为0（可能是快速拉升或数据源延迟）
+                else:
+                    return {
+                        'status': MarketStatus.NORMAL,
+                        'message': None,
+                        'is_trading': True,
+                        'is_limit_up': False,
+                        'is_limit_down': False
+                    }
 
             # 正常交易状态
             return {

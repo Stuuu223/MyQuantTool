@@ -531,6 +531,7 @@ class IronRuleMonitor:
             # =========================================================
             liquidity_blackhole = False
             sector_ratio = 0.0
+            dde_ratio = 0.0
             
             try:
                 # 获取股票所属板块
@@ -543,21 +544,31 @@ class IronRuleMonitor:
                     if industry:
                         sector_stocks = self.data_manager.get_industry_stocks(industry)
                         if sector_stocks and len(sector_stocks) > 0:
-                            # 获取板块总成交额
+                            # 获取板块总成交额和总 DDE 净额
                             sector_total_amount = 0
+                            sector_total_dde = 0
                             for sector_stock in sector_stocks[:50]:  # 限制前 50 只股票
                                 sector_data = self.data_manager.get_realtime_data(sector_stock)
                                 if sector_data:
                                     sector_total_amount += sector_data.get('amount', 0)
+                                    sector_total_dde += sector_data.get('dde_net_flow', 0)
                             
                             # 计算板块占比
                             if sector_total_amount > 0:
                                 sector_ratio = current_amount / sector_total_amount
-                                
-                                # 判定标准：板块占比 > 30%
-                                if sector_ratio > 0.30:
-                                    liquidity_blackhole = True
-                                    logger.warning(f"🌪️ [虹吸效应] {stock_code} 吸干板块流动性({sector_ratio:.1%})，独木难支")
+                            
+                            # 计算 DDE 净额占比
+                            if sector_total_dde != 0:
+                                dde_ratio = current_dde / sector_total_dde
+                            
+                            # 🆕 Bug A 修复：引入 DDE 净额加权计算
+                            # 判定标准：成交额占比 > 30% 且 DDE 净额占比 > 30%
+                            # 避免误报散户对倒的流动性黑洞
+                            if sector_ratio > 0.30 and dde_ratio > 0.30:
+                                liquidity_blackhole = True
+                                logger.warning(f"🌪️ [虹吸效应] {stock_code} 吸干板块流动性(成交占比{sector_ratio:.1%}, DDE占比{dde_ratio:.1%})，主力虹吸")
+                            elif sector_ratio > 0.30 and dde_ratio <= 0.30:
+                                logger.info(f"📊 [疑似散户对倒] {stock_code} 成交占比高({sector_ratio:.1%})但 DDE 占比低({dde_ratio:.1%})，可能为散户对倒")
             except Exception as e:
                 logger.warning(f"⚠️ [流动性黑洞检测失败] {stock_code} {e}")
             

@@ -52,6 +52,11 @@ echo.
 echo Application will open in browser
 echo Press Ctrl+C to stop
 echo.
+echo ✨ 自动重载已启用：
+echo    - 修改代码后会自动重新加载
+echo    - 无需手动重启应用
+echo    - 如需手动刷新，按 R 键或点击右上角 "Rerun"
+echo.
 
 python -m streamlit run main.py
 

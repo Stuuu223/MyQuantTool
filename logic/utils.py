@@ -14,6 +14,10 @@ import re
 class Utils:
     """通用工具类"""
     
+    # 🆕 Bug B 修复：服务器时间偏移量（秒）
+    _time_offset = 0.0  # 本地时间与服务器时间的偏移量
+    _last_sync_time = None  # 上次同步时间
+    
     @staticmethod
     def safe_float(value, default=0.0):
         """
@@ -70,7 +74,7 @@ class Utils:
     @staticmethod
     def get_beijing_time():
         """
-        统一获取北京时间
+        统一获取北京时间（Bug B 修复：支持服务器时间对齐）
         
         Returns:
             datetime: 北京时间的datetime对象
@@ -79,14 +83,61 @@ class Utils:
             # 尝试使用 pytz
             utc_now = datetime.now(pytz.utc)
             beijing_tz = pytz.timezone('Asia/Shanghai')
-            return utc_now.astimezone(beijing_tz)
+            beijing_time = utc_now.astimezone(beijing_tz)
+            
+            # 🆕 Bug B 修复：应用服务器时间偏移量
+            if Utils._time_offset != 0.0:
+                beijing_time = beijing_time + pd.Timedelta(seconds=Utils._time_offset)
+            
+            return beijing_time
         except ImportError:
             # 如果没有 pytz，假设系统是本地时间
             now = datetime.now()
             # 如果小时数 < 8，可能是 UTC 时间，转换为北京时间（+8 小时）
             if now.hour < 8:
                 now = now.replace(hour=now.hour + 8)
+            
+            # 🆕 Bug B 修复：应用服务器时间偏移量
+            if Utils._time_offset != 0.0:
+                now = now + pd.Timedelta(seconds=Utils._time_offset)
+            
             return now
+    
+    @staticmethod
+    def sync_server_time(stock_time: str):
+        """
+        🆕 Bug B 修复：从行情数据中提取服务器时间并计算偏移量
+        
+        Args:
+            stock_time: 股票数据中的时间字符串（格式：HH:MM:SS）
+        """
+        try:
+            # 解析服务器时间
+            server_time = datetime.strptime(stock_time, '%H:%M:%S').time()
+            
+            # 获取当前本地时间
+            local_time = Utils.get_beijing_time().time()
+            
+            # 计算时间差（秒）
+            local_seconds = local_time.hour * 3600 + local_time.minute * 60 + local_time.second
+            server_seconds = server_time.hour * 3600 + server_time.minute * 60 + server_time.second
+            
+            # 计算偏移量（如果差异超过 2 秒，才更新）
+            time_diff = server_seconds - local_seconds
+            
+            # 处理跨天情况
+            if time_diff > 43200:  # 超过 12 小时，说明服务器时间是第二天
+                time_diff -= 86400
+            elif time_diff < -43200:  # 小于 -12 小时，说明本地时间是第二天
+                time_diff += 86400
+            
+            # 只有当时间差超过 2 秒时才更新偏移量
+            if abs(time_diff) > 2:
+                Utils._time_offset = time_diff
+                Utils._last_sync_time = datetime.now()
+                print(f"🕐 [时间同步] 本地时间与服务器时间偏差 {time_diff:.2f} 秒，已自动校准")
+        except Exception as e:
+            print(f"⚠️ [时间同步失败] {e}")
     
     @staticmethod
     def format_number(num, precision=2):

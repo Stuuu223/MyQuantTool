@@ -43,6 +43,10 @@ class HuataiRealAPI(BrokerAPIBase):
         
         self.token = None
         self.session = requests.Session()
+        
+        # 🆕 Bug C 修复：撤单请求间隔限制
+        self._last_cancel_time = {}  # {order_id: last_cancel_time}
+        self._cancel_interval = 1.0  # 撤单间隔（秒）
     
     def connect(self) -> bool:
         """
@@ -163,7 +167,7 @@ class HuataiRealAPI(BrokerAPIBase):
     
     def cancel_order(self, order_id: str) -> bool:
         """
-        撤单
+        撤单（Bug C 修复：增加撤单请求间隔限制）
         
         Args:
             order_id: 订单ID
@@ -174,6 +178,16 @@ class HuataiRealAPI(BrokerAPIBase):
         if not self.connected:
             return False
         
+        # 🆕 Bug C 修复：检查撤单间隔限制
+        current_time = datetime.now()
+        if order_id in self._last_cancel_time:
+            last_time = self._last_cancel_time[order_id]
+            time_diff = (current_time - last_time).total_seconds()
+            
+            if time_diff < self._cancel_interval:
+                logger.warning(f"⚠️ [撤单频率限制] {order_id} 距离上次撤单仅 {time_diff:.2f} 秒，已跳过")
+                return False
+        
         try:
             cancel_url = f"{self.server_url}/api/v1/order/cancel"
             
@@ -183,6 +197,9 @@ class HuataiRealAPI(BrokerAPIBase):
             }
             
             response = self.session.post(cancel_url, json=payload, timeout=10)
+            
+            # 🆕 Bug C 修复：记录撤单时间
+            self._last_cancel_time[order_id] = current_time
             
             if response.status_code == 200:
                 data = response.json()
