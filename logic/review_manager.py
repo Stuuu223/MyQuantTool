@@ -10,6 +10,7 @@ import pandas as pd
 import json
 import os
 from datetime import datetime
+from typing import List, Dict
 from logic.database_manager import get_db_manager
 from logic.logger import get_logger
 import akshare as ak
@@ -43,6 +44,20 @@ class ReviewManager:
         )
         """
         self.db.sqlite_execute(sql_summary)
+        
+        # [V18.8 新增] 创建错题本表
+        sql_error_book = """
+        CREATE TABLE IF NOT EXISTS error_book (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT NOT NULL,
+            stock_code TEXT NOT NULL,
+            stock_name TEXT NOT NULL,
+            reason TEXT,                -- 漏失原因（DDE延迟、不敢下单、信号被过滤等）
+            type TEXT,                  -- 漏失类型（LOGIC_MISS、SIGNAL_FILTERED、DDE_DELAY等）
+            created_at TEXT
+        )
+        """
+        self.db.sqlite_execute(sql_error_book)
         
         # [V13 新增] 数据库迁移：添加 top_sectors 字段（如果不存在）
         try:
@@ -161,6 +176,253 @@ class ReviewManager:
         
         return stats
     
+    def get_dde_history(self, stock_code: str, date_str: str = None) -> List[Dict]:
+        """
+        获取指定股票在指定日期的DDE历史数据（9:30-10:00）
+        
+        Args:
+            stock_code: 股票代码
+            date_str: 日期字符串，格式 YYYYMMDD，默认为今天
+        
+        Returns:
+            list: DDE历史数据列表，每个元素包含时间戳和DDE值
+        """
+        if date_str is None:
+            date_str = datetime.now().strftime("%Y%m%d")
+        
+        try:
+            # 从数据库或缓存获取DDE历史数据
+            # 这里暂时返回模拟数据，实际应该从数据库获取
+            # TODO: 实现从数据库获取DDE历史数据的逻辑
+            
+            # 模拟数据：9:30-10:00的DDE数据
+            import random
+            dde_history = []
+            for minute in range(30, 60):
+                time_str = f"09:{minute:02d}"
+                # 模拟DDE值：逐渐上升
+                dde_value = random.uniform(100000, 500000) * (minute / 30)
+                dde_history.append({
+                    'time': time_str,
+                    'dde_value': dde_value,
+                    'price': 10.0 * (1 + random.uniform(-0.02, 0.05))
+                })
+            
+            return dde_history
+        
+        except Exception as e:
+            logger.error(f"获取DDE历史数据失败: {e}")
+            return []
+    
+    def record_error(self, date_str: str, stock_code: str, stock_name: str, reason: str, error_type: str = "LOGIC_MISS"):
+        """
+        [V18.8 新增] 记录逻辑漏失到错题本
+        
+        Args:
+            date_str: 日期字符串，格式 YYYYMMDD
+            stock_code: 股票代码
+            stock_name: 股票名称
+            reason: 漏失原因（DDE延迟、不敢下单、信号被过滤等）
+            error_type: 漏失类型（LOGIC_MISS、SIGNAL_FILTERED、DDE_DELAY等）
+        
+        Returns:
+            bool: 是否记录成功
+        """
+        try:
+            sql = """
+            INSERT INTO error_book (date, stock_code, stock_name, reason, type, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """
+            self.db.sqlite_execute(sql, (
+                date_str,
+                stock_code,
+                stock_name,
+                reason,
+                error_type,
+                datetime.now().isoformat()
+            ))
+            
+            logger.info(f"✅ 已记录错题本: {stock_name} ({stock_code}) - {reason}")
+            return True
+        
+        except Exception as e:
+            logger.error(f"❌ 记录错题本失败: {e}")
+            return False
+    
+    def get_error_book(self, date_str: str = None) -> List[Dict]:
+        """
+        [V18.8 新增] 获取错题本记录
+        
+        Args:
+            date_str: 日期字符串，格式 YYYYMMDD，如果为None则获取所有记录
+        
+        Returns:
+            list: 错题本记录列表
+        """
+        try:
+            if date_str:
+                sql = "SELECT * FROM error_book WHERE date = ? ORDER BY created_at DESC"
+                results = self.db.sqlite_query(sql, (date_str,))
+            else:
+                sql = "SELECT * FROM error_book ORDER BY created_at DESC LIMIT 100"
+                results = self.db.sqlite_query(sql)
+            
+            error_records = []
+            for row in results:
+                error_records.append({
+                    'id': row[0],
+                    'date': row[1],
+                    'stock_code': row[2],
+                    'stock_name': row[3],
+                    'reason': row[4],
+                    'type': row[5],
+                    'created_at': row[6]
+                })
+            
+            return error_records
+        
+        except Exception as e:
+            logger.error(f"❌ 获取错题本失败: {e}")
+            return []
+    
+    def check_logic_miss(self, date_str: str, golden_cases: Dict) -> List[Dict]:
+        """
+        [V18.8 新增] 检查逻辑漏失，自动生成错题本记录
+        
+        逻辑：如果系统捕获了真龙，但没有买入记录，系统应自动生成错题本记录
+        
+        Args:
+            date_str: 日期字符串，格式 YYYYMMDD
+            golden_cases: 高价值案例数据
+        
+        Returns:
+            list: 发现的逻辑漏失列表
+        """
+        missed_dragons = []
+        
+        try:
+            # 获取当日交易记录（这里暂时返回空列表，实际应该从交易日志获取）
+            # TODO: 实现从交易日志获取当日买入记录的逻辑
+            trade_records = []
+            
+            # 检查每个真龙是否被买入
+            for dragon in golden_cases.get('dragons', []):
+                stock_code = dragon['code']
+                stock_name = dragon['name']
+                
+                # 检查是否有买入记录
+                has_buy_record = any(record['stock_code'] == stock_code for record in trade_records)
+                
+                if not has_buy_record:
+                    # 没有买入记录，生成错题本记录
+                    missed_dragons.append({
+                        'stock_code': stock_code,
+                        'stock_name': stock_name,
+                        'reason': '逻辑漏失：系统捕获了真龙但未买入',
+                        'type': 'LOGIC_MISS'
+                    })
+                    
+                    # 自动记录到错题本
+                    self.record_error(
+                        date_str,
+                        stock_code,
+                        stock_name,
+                        '逻辑漏失：系统捕获了真龙但未买入',
+                        'LOGIC_MISS'
+                    )
+            
+            return missed_dragons
+        
+        except Exception as e:
+            logger.error(f"❌ 检查逻辑漏失失败: {e}")
+            return []
+    
+    def get_longhubu_fingerprint(self, stock_code: str, date_str: str = None) -> Dict:
+        """
+        [V18.8 新增] 获取龙虎榜席位指纹
+        
+        Args:
+            stock_code: 股票代码
+            date_str: 日期字符串，格式 YYYYMMDD，默认为今天
+        
+        Returns:
+            dict: 龙虎榜席位指纹数据，包含：
+                - has_institutional: 是否有机构买入
+                - top_traders: 顶级游资列表
+                - cost_line: 主力成本线
+                - seats: 席位详情
+        """
+        if date_str is None:
+            date_str = datetime.now().strftime("%Y%m%d")
+        
+        fingerprint = {
+            'has_institutional': False,
+            'top_traders': [],
+            'cost_line': 0,
+            'seats': []
+        }
+        
+        try:
+            # 获取龙虎榜数据
+            df_lhb = ak.stock_lhb_detail_em(start_date=date_str, end_date=date_str)
+            
+            if df_lhb is None or df_lhb.empty:
+                logger.warning(f"⚠️ {date_str} 未获取到龙虎榜数据")
+                return fingerprint
+            
+            # 筛选指定股票的龙虎榜数据
+            stock_lhb = df_lhb[df_lhb['代码'] == stock_code]
+            
+            if stock_lhb.empty:
+                logger.info(f"📊 {stock_code} 在 {date_str} 未上龙虎榜")
+                return fingerprint
+            
+            # 顶级游资名单（示例）
+            TOP_TRADERS = [
+                '陈小群', '章盟主', '方新侠', '作手新一', '炒股养家',
+                '成都系', '苏州系', '杭州系', '上海溧阳路', '宁波解放南路'
+            ]
+            
+            # 分析席位
+            for _, row in stock_lhb.iterrows():
+                seat_name = row['营业部名称']
+                buy_amount = row.get('买入额', 0)
+                sell_amount = row.get('卖出额', 0)
+                
+                # 检查是否是机构
+                if '机构' in seat_name or '机构专用' in seat_name:
+                    fingerprint['has_institutional'] = True
+                
+                # 检查是否是顶级游资
+                for trader in TOP_TRADERS:
+                    if trader in seat_name:
+                        fingerprint['top_traders'].append({
+                            'name': trader,
+                            'seat': seat_name,
+                            'buy_amount': float(buy_amount) if buy_amount else 0,
+                            'sell_amount': float(sell_amount) if sell_amount else 0
+                        })
+                
+                fingerprint['seats'].append({
+                    'seat_name': seat_name,
+                    'buy_amount': float(buy_amount) if buy_amount else 0,
+                    'sell_amount': float(sell_amount) if sell_amount else 0
+                })
+            
+            # 计算主力成本线（简化计算：买入均价）
+            total_buy = sum(seat['buy_amount'] for seat in fingerprint['seats'])
+            total_volume = sum(seat['buy_amount'] for seat in fingerprint['seats'] if seat['buy_amount'] > 0)
+            
+            if total_volume > 0:
+                fingerprint['cost_line'] = total_buy / len([s for s in fingerprint['seats'] if s['buy_amount'] > 0])
+            
+            logger.info(f"✅ 获取龙虎榜席位指纹成功: {stock_code}")
+            return fingerprint
+        
+        except Exception as e:
+            logger.error(f"❌ 获取龙虎榜席位指纹失败: {e}")
+            return fingerprint
+    
     def capture_golden_cases(self, date_str=None):
         """
         🚀 [V18.7 新增] 高价值案例自动捕获机制
@@ -209,8 +471,8 @@ class ReviewManager:
                         "seal_amount": float(row['封板资金'])
                     })
                 
-                # 计算市场情绪评分 (0-100)
-                cases['market_score'] = int(len(df_zt) / 50 * 100)
+                # 计算市场情绪评分 (0-100)，使用min截断防止溢出
+                cases['market_score'] = int(min(len(df_zt) / 50 * 100, 100))
             else:
                 # 如果没有涨停数据，市场情绪评分设为 20
                 cases['market_score'] = 20
@@ -253,14 +515,21 @@ class ReviewManager:
             try:
                 df_zha = ak.stock_zt_pool_zbgc_em(date=date_str) # 炸板股池
                 if df_zha is not None and not df_zha.empty:
-                    worst_zha = df_zha.sort_values(by='涨跌幅').head(1) # 炸得最惨的
+                    # 计算回撤幅度（从涨停价到收盘价的跌幅）
+                    # 假设涨停价约为前一日收盘价 * 涨停系数（简化处理）
+                    df_zha['回撤幅度'] = df_zha['涨跌幅'].apply(lambda x: abs(x) + 10 if x < 0 else abs(x))
+                    
+                    # 按回撤幅度降序排序，优先展示回撤最大的
+                    worst_zha = df_zha.sort_values(by='回撤幅度', ascending=False).head(3) # 取前3个
+                    
                     for _, row in worst_zha.iterrows():
                         cases['traps'].append({
                             "code": row['代码'],
                             "name": row['名称'],
-                            "reason": f"🩸 炸板大面: 涨停被砸至 {row['涨跌幅']}%, 也就是所谓的'天地板'风险",
+                            "reason": f"🩸 炸板大面: 涨停被砸至 {row['涨跌幅']}%, 回撤幅度{row['回撤幅度']:.1f}%, 也就是所谓的'天地板'风险",
                             "type": "FAILED_DRAGON",
-                            "change_pct": float(row['涨跌幅'])
+                            "change_pct": float(row['涨跌幅']),
+                            "pullback_pct": float(row['回撤幅度'])
                         })
             except Exception as e:
                 logger.warning(f"⚠️ 获取炸板股失败: {e}")

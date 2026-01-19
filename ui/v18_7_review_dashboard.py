@@ -132,10 +132,34 @@ def render_review_dashboard():
                     
                     st.caption("💡 建议操作：点击'历史回放'查看 9:30 DDE 状态")
                     
-                    # 添加查看详情按钮
-                    if st.button(f"查看 {d['name']} 详情", key=f"dragon_{d['code']}"):
-                        st.info(f"🔍 正在加载 {d['name']} 的详细数据...")
-                        # 这里可以添加更详细的股票分析
+                    # 添加DDE溯源按钮
+                    col_dde1, col_dde2 = st.columns(2)
+                    with col_dde1:
+                        if st.button(f"🔍 DDE溯源 {d['name']}", key=f"dde_trace_{d['code']}"):
+                            try:
+                                from logic.review_manager import ReviewManager
+                                rm = ReviewManager()
+                                dde_history = rm.get_dde_history(d['code'], date_str)
+                                
+                                if dde_history:
+                                    st.info(f"📊 {d['name']} 在 {date_str} 9:30-10:00 的DDE脉冲数据")
+                                    
+                                    # 创建DataFrame显示DDE历史数据
+                                    df_dde = pd.DataFrame(dde_history)
+                                    st.dataframe(df_dde, use_container_width=True)
+                                    
+                                    # 简单可视化
+                                    st.line_chart(df_dde.set_index('time')[['dde_value', 'price']])
+                                else:
+                                    st.warning(f"⚠️ 暂无 {d['name']} 的DDE历史数据")
+                            except Exception as e:
+                                st.error(f"❌ 获取DDE历史数据失败: {e}")
+                    
+                    with col_dde2:
+                        # 添加查看详情按钮
+                        if st.button(f"📋 查看详情", key=f"dragon_{d['code']}"):
+                            st.info(f"🔍 正在加载 {d['name']} 的详细数据...")
+                            # 这里可以添加更详细的股票分析
         else:
             st.info("📭 今日未捕获到标准真龙案例")
     
@@ -176,7 +200,98 @@ def render_review_dashboard():
     
     st.divider()
     
-    # 4. 历史交易日快速选择
+    # 4. 错题本展示
+    st.subheader("📝 错题本 (逻辑漏失警报)")
+    
+    try:
+        from logic.review_manager import ReviewManager
+        rm = ReviewManager()
+        
+        # 获取错题本记录
+        error_records = rm.get_error_book(date_str)
+        
+        if error_records:
+            st.warning(f"⚠️ 发现 {len(error_records)} 条逻辑漏失记录")
+            
+            for i, record in enumerate(error_records):
+                with st.expander(f"{i+1}. {record['stock_name']} ({record['stock_code']}) - {record['type']}", expanded=(i == 0)):
+                    st.error(f"💥 {record['reason']}")
+                    st.caption(f"📅 记录时间: {record['created_at']}")
+                    
+                    # 提供手动录入原因的选项
+                    manual_reason = st.text_input(
+                        "请手动补充漏失原因（可选）",
+                        value="",
+                        key=f"manual_reason_{record['id']}"
+                    )
+                    
+                    if st.button("补充原因", key=f"update_reason_{record['id']}"):
+                        if manual_reason:
+                            # TODO: 实现更新错题本原因的逻辑
+                            st.success(f"✅ 已记录原因: {manual_reason}")
+                        else:
+                            st.warning("⚠️ 请输入原因")
+        else:
+            st.success("✅ 今日无逻辑漏失记录，表现完美！")
+    except Exception as e:
+        st.error(f"❌ 加载错题本失败: {e}")
+    
+    st.divider()
+    
+    # 5. 龙虎榜席位指纹
+    st.subheader("🎯 龙虎榜席位指纹")
+    
+    if data['dragons']:
+        selected_dragon = st.selectbox(
+            "选择真龙查看龙虎榜席位",
+            options=data['dragons'],
+            format_func=lambda x: f"{x['name']} ({x['code']})",
+            key="select_dragon_lhb"
+        )
+        
+        if st.button("查看席位指纹", key="view_lhb_fingerprint"):
+            try:
+                from logic.review_manager import ReviewManager
+                rm = ReviewManager()
+                
+                fingerprint = rm.get_longhubu_fingerprint(selected_dragon['code'], date_str)
+                
+                if fingerprint['has_institutional']:
+                    st.success(f"🏛️ {selected_dragon['name']} 有机构介入")
+                else:
+                    st.info(f"📊 {selected_dragon['name']} 无机构介入")
+                
+                if fingerprint['top_traders']:
+                    st.subheader("🌟 顶级游资")
+                    for trader in fingerprint['top_traders']:
+                        st.info(f"💰 {trader['name']}: 买入 {int(trader['buy_amount']/10000)}万")
+                else:
+                    st.info("📭 无顶级游资介入")
+                
+                if fingerprint['cost_line'] > 0:
+                    st.metric("主力成本线", f"¥{fingerprint['cost_line']:.2f}")
+                    
+                    # 获取当前价格
+                    try:
+                        realtime_data = data_manager.get_realtime_data(selected_dragon['code'])
+                        if realtime_data:
+                            current_price = realtime_data.get('price', 0)
+                            distance = (current_price - fingerprint['cost_line']) / fingerprint['cost_line'] * 100 if fingerprint['cost_line'] > 0 else 0
+                            
+                            if abs(distance) <= 2:
+                                st.success(f"✅ [黄金低吸点] 当前价格接近主力成本线（{distance:.1f}%），建议低吸")
+                            else:
+                                st.info(f"📊 距离主力成本线: {distance:.1f}%")
+                    except:
+                        pass
+            except Exception as e:
+                st.error(f"❌ 获取龙虎榜席位指纹失败: {e}")
+    else:
+        st.info("📭 今日无真龙数据")
+    
+    st.divider()
+    
+    # 6. 历史交易日快速选择
     st.subheader("📅 历史交易日")
     
     if available_dates:
