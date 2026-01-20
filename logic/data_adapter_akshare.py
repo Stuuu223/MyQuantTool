@@ -144,23 +144,42 @@ class MoneyFlowAdapter:
     def _fetch_rank_data():
         """
         获取东方财富实时资金流榜单 (即时)
+        🚀 V19.1 优化：添加超时和重试机制
 
         Returns:
             pd.DataFrame: 资金流排名数据
         """
-        try:
-            # 获取东方财富实时资金流榜单 (今日)
-            df = ak.stock_individual_fund_flow_rank(indicator="今日")
+        import time
 
-            # 更新缓存
-            MoneyFlowAdapter._rank_cache = df
-            MoneyFlowAdapter._rank_cache_time = datetime.now()
+        max_retries = 3  # 最大重试次数
+        retry_delay = 2  # 重试延迟（秒）
 
-            return df
+        for attempt in range(max_retries):
+            try:
+                # 获取东方财富实时资金流榜单 (今日)
+                # 设置超时时间为10秒
+                df = ak.stock_individual_fund_flow_rank(indicator="今日", timeout=10)
 
-        except Exception as e:
-            logger.error(f"获取资金流榜单失败: {e}")
-            return None
+                # 更新缓存
+                MoneyFlowAdapter._rank_cache = df
+                MoneyFlowAdapter._rank_cache_time = datetime.now()
+
+                return df
+
+            except Exception as e:
+                error_type = type(e).__name__
+                error_msg = str(e)
+
+                # 如果是连接错误，尝试重试
+                if attempt < max_retries - 1 and ('Connection' in error_msg or 'Timeout' in error_msg or '10054' in error_msg):
+                    logger.warning(f"获取资金流榜单失败（第{attempt + 1}次尝试）: {error_type}: {error_msg}")
+                    logger.info(f"等待 {retry_delay} 秒后重试...")
+                    time.sleep(retry_delay)
+                    continue
+                else:
+                    # 最后一次尝试失败或非连接错误，直接返回
+                    logger.error(f"获取资金流榜单失败（已重试{max_retries}次）: {error_type}: {error_msg}")
+                    return None
 
     @staticmethod
     def _safe_get_float(row_data, possible_keys):

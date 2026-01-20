@@ -215,16 +215,33 @@ class RealtimeDataProvider(DataProvider):
                         # 检查数据是否过期（超过15秒）
                         time_diff = (current_time - data_time).total_seconds()
 
-                        # 🚀 V19.1 修复：午休时段豁免逻辑
-                        # 使用市场状态检查器判断是否在午休时段（11:30-13:00）
+                        # 🚀 V19.1 修复：特殊时段豁免逻辑
                         from logic.market_status import MarketStatusChecker
-                        is_lunch_break = MarketStatusChecker().is_noon_break()
+                        checker = MarketStatusChecker()
+                        current_time_time = current_time.time()
 
-                        # 午休期间允许数据延迟1.5小时（5500秒）
-                        is_acceptable_delay = is_lunch_break and time_diff < 5500
+                        # 1. 午休时段豁免（11:30-13:00）
+                        is_lunch_break = checker.is_noon_break()
+                        is_acceptable_delay_lunch = is_lunch_break and time_diff < 5500  # 1.5小时
+
+                        # 2. 开盘初期豁免（9:30-9:35 和 13:00-13:05）
+                        # 开盘初期数据更新可能有延迟，允许60秒延迟
+                        from datetime import time as dt_time
+                        morning_open_start = dt_time(9, 30)
+                        morning_open_end = dt_time(9, 35)
+                        afternoon_open_start = dt_time(13, 0)
+                        afternoon_open_end = dt_time(13, 5)
+
+                        is_morning_open = (morning_open_start <= current_time_time < morning_open_end)
+                        is_afternoon_open = (afternoon_open_start <= current_time_time < afternoon_open_end)
+                        is_opening_period = is_morning_open or is_afternoon_open
+                        is_acceptable_delay_open = is_opening_period and time_diff < 60  # 开盘初期允许60秒
+
+                        # 综合判断：是否可接受的延迟
+                        is_acceptable_delay = is_acceptable_delay_lunch or is_acceptable_delay_open
 
                         if time_diff > self.data_freshness_threshold and not is_acceptable_delay:
-                            # 只有在非午休时间，或者数据真的过期太久才报警
+                            # 只有在非特殊时段，或者数据真的过期太久才报警
                             logger.warning(f"⚠️ [数据过期] {code} 数据时间 {data_time_str} 距今 {time_diff:.0f}秒，跳过交易")
                             continue
                     except Exception as e:
