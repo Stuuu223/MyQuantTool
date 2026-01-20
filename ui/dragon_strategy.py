@@ -324,18 +324,34 @@ def render_dragon_strategy_tab(db, config):
         with col_filter3:
             min_amount = st.number_input("最小成交额 (万元)", min_value=1000, max_value=50000, value=3000, step=1000, key="filter_min_amount")
         
-        # 🚀 V19.4.4 新增：复盘模式选项
+        # 🚀 V19.4.9 新增：自动检测收盘后，自动使用收盘数据
         st.write("**🔄 复盘模式**")
         st.info("💡 复盘模式使用历史数据进行分析，适合收盘后复盘当天的涨停板股票。")
         
-        use_history = st.checkbox("启用复盘模式", value=False, key="use_history_mode", help="使用历史数据进行分析，适合收盘后复盘")
+        # 检测是否收盘后（15:00 之后）
+        from datetime import datetime, time as dt_time
+        now = datetime.now()
+        current_time = now.time()
+        market_close_time = dt_time(15, 0)
+        is_after_close = current_time >= market_close_time
         
-        if use_history:
-            from datetime import datetime
-            default_date = datetime.now().strftime("%Y%m%d")
-            review_date = st.text_input("复盘日期", value=default_date, help="格式：YYYYMMDD，例如：20260120", key="review_date")
+        # 🚀 V19.4.9 优化：收盘后自动使用收盘数据
+        if is_after_close:
+            # 收盘后，自动使用收盘数据（数据库/Redis中的数据）
+            use_history = True
+            review_date = now.strftime("%Y%m%d")
+            
+            # 显示提示信息
+            st.success(f"⏰ 已收盘（{current_time.strftime('%H:%M')}），自动使用 {review_date} 的收盘数据进行分析（数据库/Redis）")
         else:
-            review_date = None
+            # 盘中，用户可以选择是否使用复盘模式
+            use_history = st.checkbox("启用复盘模式", value=False, key="use_history_mode", help="使用历史数据进行分析，适合收盘后复盘")
+            
+            if use_history:
+                default_date = datetime.now().strftime("%Y%m%d")
+                review_date = st.text_input("复盘日期", value=default_date, help="格式：YYYYMMDD，例如：20260120", key="review_date")
+            else:
+                review_date = None
         
         # 🆕 V9.10.1 新增：核心监控池配置
         st.write("**🎯 核心监控池（白名单）**")
