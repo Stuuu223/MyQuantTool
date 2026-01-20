@@ -227,8 +227,8 @@ def render_market_weather_panel():
         
         # 获取炸板数据（从 market_cycle 模块）
         try:
-            from logic.market_cycle import MarketCycle
-            mc = MarketCycle()
+            from logic.market_cycle import MarketCycleManager
+            mc = MarketCycleManager()
             
             # 获取涨跌停数据
             limit_data = mc.get_limit_up_down_count()
