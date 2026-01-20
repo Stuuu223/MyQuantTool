@@ -47,6 +47,13 @@ class FastSectorAnalyzer:
         self._market_snapshot_cache = None
         self._cache_timestamp = None
         
+        # 🚀 V19.2 紧急熔断：添加板块分析熔断开关
+        self.is_disabled = False  # 熔断开关
+        self._failure_count = 0  # 失败计数
+        self._last_failure_time = None  # 上次失败时间
+        self._failure_threshold = 3  # 失败阈值
+        self._cooldown_period = 300  # 冷却期（秒）
+        
         # 板块共振缓存
         self._akshare_industry_cache = None
         self._akshare_concept_cache = None
@@ -293,6 +300,18 @@ class FastSectorAnalyzer:
             - 成交额: 成交额
             - rank: 排名
         """
+        # 🚀 V19.2 紧急熔断：如果之前失败过，直接跳过，防止卡死
+        if self.is_disabled:
+            logger.debug("🚫 [板块分析熔断] 板块分析功能已熔断，跳过网络请求")
+            return pd.DataFrame()
+        
+        # 检查是否在冷却期
+        if self._last_failure_time:
+            time_since_failure = (datetime.now() - self._last_failure_time).total_seconds()
+            if time_since_failure < self._cooldown_period:
+                logger.debug(f"🚫 [板块分析冷却] 冷却期中，剩余 {self._cooldown_period - time_since_failure:.0f} 秒")
+                return pd.DataFrame()
+        
         # 检查缓存（60秒有效期）
         if self._akshare_industry_cache is not None:
             cache_age = (datetime.now() - self._akshare_cache_timestamp).total_seconds()
@@ -325,6 +344,14 @@ class FastSectorAnalyzer:
             
         except Exception as e:
             logger.error(f"❌ 获取 AkShare 行业板块数据失败: {e}")
+            # 🚀 V19.2 熔断：触发熔断，后续不再请求
+            self._failure_count += 1
+            self._last_failure_time = datetime.now()
+            
+            if self._failure_count >= self._failure_threshold:
+                self.is_disabled = True
+                logger.warning(f"⚠️ [板块分析熔断] 连续失败{self._failure_count}次，板块分析功能已熔断，冷却期{self._cooldown_period}秒")
+            
             return pd.DataFrame()
     
     def get_akshare_concept_ranking(self) -> pd.DataFrame:
@@ -341,6 +368,18 @@ class FastSectorAnalyzer:
             - 成交额: 成交额
             - rank: 排名
         """
+        # 🚀 V19.2 紧急熔断：如果之前失败过，直接跳过，防止卡死
+        if self.is_disabled:
+            logger.debug("🚫 [板块分析熔断] 板块分析功能已熔断，跳过网络请求")
+            return pd.DataFrame()
+        
+        # 检查是否在冷却期
+        if self._last_failure_time:
+            time_since_failure = (datetime.now() - self._last_failure_time).total_seconds()
+            if time_since_failure < self._cooldown_period:
+                logger.debug(f"🚫 [板块分析冷却] 冷却期中，剩余 {self._cooldown_period - time_since_failure:.0f} 秒")
+                return pd.DataFrame()
+        
         # 检查缓存（60秒有效期）
         if self._akshare_concept_cache is not None:
             cache_age = (datetime.now() - self._akshare_cache_timestamp).total_seconds()
@@ -373,6 +412,14 @@ class FastSectorAnalyzer:
             
         except Exception as e:
             logger.error(f"❌ 获取 AkShare 概念板块数据失败: {e}")
+            # 🚀 V19.2 熔断：触发熔断，后续不再请求
+            self._failure_count += 1
+            self._last_failure_time = datetime.now()
+            
+            if self._failure_count >= self._failure_threshold:
+                self.is_disabled = True
+                logger.warning(f"⚠️ [板块分析熔断] 连续失败{self._failure_count}次，板块分析功能已熔断，冷却期{self._cooldown_period}秒")
+            
             return pd.DataFrame()
     
     def _calculate_capital_heat(self, df: pd.DataFrame) -> pd.Series:
