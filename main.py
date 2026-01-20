@@ -1016,8 +1016,8 @@ if app_mode == "📈 市场分析":
         st.caption("识别\"德不配位\"的流动性异常，拒绝参与\"游资对价值股的强暴\"")
         
         with st.spinner("正在加载生态看门人引擎..."):
-            ecological_watchdog = __import__('ui.v16_3_ecological_watchdog', fromlist=['render_ecological_watchdog'])
-            ecological_watchdog.render_ecological_watchdog(get_db_instance())
+            ecological_watchdog = __import__('ui.v16_3_ecological_watchdog', fromlist=['render_ecological_watchdog_tab'])
+            ecological_watchdog.render_ecological_watchdog_tab(get_db_instance())
         
         st.markdown("---")
         st.markdown("### ⏰ V17 Time-Lord (时间领主)")
