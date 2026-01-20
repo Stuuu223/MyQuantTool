@@ -306,6 +306,12 @@ class RealtimeDataProvider(DataProvider):
                         if closing_start <= current_time_time < closing_end:
                             dynamic_threshold = 300  # 5分钟
 
+                        # 🚀 V19.4.2 新增：收盘后豁免（15:00 之后）
+                        # 收盘后使用收盘数据是合理的，这是最新的数据
+                        after_closing_start = dt_time(15, 0)
+                        if current_time_time >= after_closing_start:
+                            dynamic_threshold = 86400  # 24小时（允许使用当天的收盘数据）
+
                         # 检查是否过期
                         if time_diff > dynamic_threshold:
                             logger.warning(f"⚠️ [数据过期] {code} 数据时间 {data_time_str} 距今 {time_diff:.0f}秒（阈值:{dynamic_threshold}秒），跳过交易")
