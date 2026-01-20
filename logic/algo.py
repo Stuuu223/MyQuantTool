@@ -1452,93 +1452,326 @@ class QuantAlgo:
         return result
     
     @staticmethod
-    def scan_dragon_stocks(limit=50, min_score=60, min_change_pct=9.9, min_volume=5000, min_amount=3000, watchlist=None):
+    def scan_dragon_stocks(limit=50, min_score=60, min_change_pct=9.9, min_volume=5000, min_amount=3000, watchlist=None, use_history=False, date=None):
         """
         扫描市场中的潜在龙头股
-        limit: 扫描的股票数量限制
-        min_score: 最低评分门槛
-        min_change_pct: 最小涨幅（默认9.9%，即涨停板）
-        min_volume: 最小成交量（手，默认5000手）
-        min_amount: 最小成交额（万元，默认3000万）
-        watchlist: 核心监控池白名单（这些股票跳过过滤条件）
+        
+        Args:
+            limit: 扫描的股票数量限制
+            min_score: 最低评分门槛
+            min_change_pct: 最小涨幅（默认9.9%，即涨停板）
+            min_volume: 最小成交量（手，默认5000手）
+            min_amount: 最小成交额（万元，默认3000万）
+            watchlist: 核心监控池白名单（这些股票跳过过滤条件）
+            use_history: 是否使用历史数据（复盘模式）
+            date: 复盘日期（格式：YYYYMMDD），默认为今天
+        
         返回: 符合条件的龙头股列表
         """
         try:
             import akshare as ak
             from logic.data_manager import DataManager
+            from datetime import datetime
             
-            # 获取涨停板股票（使用 Easyquotation 极速接口）
-            db = DataManager()
-            
-            # 使用 akshare 获取股票列表
-            stock_list_df = ak.stock_info_a_code_name()
-            if stock_list_df.empty:
-                return {
-                    '数据状态': '无法获取股票列表',
-                    '说明': '可能是数据源限制'
-                }
-            
-            # 获取全市场所有股票
-            stock_list = stock_list_df['code'].tolist()
-
-            # 使用 Easyquotation 极速获取全市场实时数据
-            logger.info(f"开始扫描全市场 {len(stock_list)} 只股票的实时行情...")
-            realtime_data = db.get_fast_price(stock_list)
-            logger.info(f"✅ 实时行情获取完成，获取到 {len(realtime_data)} 只股票数据")
-            
-            if not realtime_data:
-                return {
-                    '数据状态': '无法获取实时数据',
-                    '说明': 'Easyquotation 未初始化或网络问题',
-                    '扫描数量': len(stock_list)
-                }
-            
-            # 转换为列表格式
-            all_stocks = []
-            for full_code, data in realtime_data.items():
-                try:
-                    current_price = float(data.get('now', 0))
-                    last_close = float(data.get('close', 0))
-                    
-                    if current_price == 0 or last_close == 0:
-                        continue
-                    
-                    pct_change = (current_price - last_close) / last_close * 100
-                    
-                    # 提取股票代码（去掉前缀）
-                    # Easyquotation 返回的 key 可能是 '000001' 或 'sz000001'
-                    if len(full_code) == 6:
-                        code = full_code  # 直接使用
-                    elif len(full_code) > 6:
-                        code = full_code[2:]  # 去掉前缀
-                    else:
-                        continue  # 代码格式不对
-                    
-                    name = data.get('name', '')
-                    
-                    # 只保留 A 股股票（6位数字，以 0、3、6 开头）
-                    if not (len(code) == 6 and code.isdigit() and code[0] in ['0', '3', '6']):
-                        continue
-                    
+            # 获取涨停板股票
+            if use_history:
+                # 🚀 V19.4.4 新增：复盘模式，使用 akshare 获取涨停板数据
+                if date is None:
+                    date = datetime.now().strftime("%Y%m%d")
+                
+                logger.info(f"🔄 [复盘模式] 获取 {date} 的涨停板数据...")
+                zt_df = ak.stock_zt_pool_em(date=date)
+                
+                if zt_df is None or zt_df.empty:
+                    return {
+                        '数据状态': '无法获取涨停板数据',
+                        '说明': f'可能是日期 {date} 没有数据或数据源限制',
+                        '扫描数量': 0
+                    }
+                
+                # 转换为列表格式
+                all_stocks = []
+                for _, row in zt_df.iterrows():
                     all_stocks.append({
-                        '代码': code,
-                        '名称': name,
-                        '最新价': current_price,
-                        '涨跌幅': pct_change,
-                        # 保存完整的实时数据，包括买卖盘口
-                        '买一价': data.get('bid1', 0),
-                        '卖一价': data.get('ask1', 0),
-                        '买一量': data.get('bid1_volume', 0),
-                        '卖一量': data.get('ask1_volume', 0),
-                        '成交量': data.get('volume', 0) / 100,  # 转换为手
-                        '成交额': data.get('turnover', 0),
-                        '开盘价': data.get('open', 0),
-                        '昨收价': data.get('close', 0),
-                        '最高价': data.get('high', 0),
-                        '最低价': data.get('low', 0)
+                        '代码': row['代码'],
+                        '名称': row['名称'],
+                        '最新价': row['最新价'],
+                        '涨跌幅': row['涨跌幅'],
+                        '成交量': row['成交量'] / 100 if '成交量' in row else 0,  # 转换为手
+                        '成交额': row['成交额'] / 10000 if '成交额' in row else 0,  # 转换为万元
+                        '开盘价': row['开盘价'] if '开盘价' in row else 0,
+                        '昨收价': row['昨收价'] if '昨收价' in row else 0,
+                        '最高价': row['最高价'] if '最高价' in row else 0,
+                        '最低价': row['最低价'] if '最低价' in row else 0,
+                        '买一价': 0,
+                        '卖一价': 0,
+                        '买一量': 0,
+                        '卖一量': 0
                     })
-                except Exception as e:
-                    continue
+                
+                logger.info(f"✅ [复盘模式] 获取到 {len(all_stocks)} 只涨停板股票")
+                
+                # 🆕 V9.9 新增：先进行股票池过滤，减少需要下载K线的股票数量
+                # 筛选涨停板股票（涨跌幅 >= min_change_pct）
+                limit_up_stocks = [s for s in all_stocks if s['涨跌幅'] >= min_change_pct]
+                
+                # 🆕 V9.9 新增：对涨停板股票进行二次过滤（成交量、成交额等）
+                # 🆕 V9.10 修复：添加监控池白名单
+                active_stocks = QuantAlgo.filter_active_stocks(
+                    limit_up_stocks, 
+                    min_change_pct=min_change_pct,
+                    min_volume=min_volume,
+                    min_amount=min_amount,
+                    watchlist=watchlist
+                )
+                
+                logger.info(f"🔍 [复盘模式] 股票池过滤：全市场 {len(all_stocks)} 只 → 监控池 0 只 + 活跃股票 {len(active_stocks)} 只")
+                
+                if not active_stocks:
+                    return {
+                        '数据状态': '无符合条件的涨停板股票',
+                        '说明': f'{date} 无符合条件的涨停板股票（已过滤成交量和成交额）',
+                        '扫描数量': len(all_stocks),
+                        '全市场数量': len(all_stocks),
+                        '涨停板数量': len(limit_up_stocks),
+                        '过滤后数量': len(active_stocks)
+                    }
+                
+                # 按涨跌幅排序，取前 limit 只
+                active_stocks.sort(key=lambda x: x['涨跌幅'], reverse=True)
+                stocks_to_analyze = active_stocks[:limit]
+                
+                # 🚀 批量预加载历史数据，避免每次都查询数据库
+                logger.info(f"开始批量加载 {len(stocks_to_analyze)} 只涨停板股票的历史数据...")
+                history_data_cache = {}
+                for stock in stocks_to_analyze:
+                    symbol = stock['代码']
+                    try:
+                        # 获取历史数据（包括当天）
+                        df = db.get_history_data(symbol)
+                        if not df.empty and len(df) > 20:
+                            history_data_cache[symbol] = df
+                    except Exception as e:
+                        logger.warning(f"加载股票 {symbol} 历史数据失败: {e}")
+                logger.info(f"✅ 历史数据加载完成，成功加载 {len(history_data_cache)} 只股票")
+                
+                # 🚀 使用多线程并行分析
+                from concurrent.futures import ThreadPoolExecutor, as_completed
+                
+                # 定义分析函数
+                def analyze_single_stock(stock_info):
+                    """分析单只股票"""
+                    symbol = stock_info['代码']
+                    name = stock_info['名称']
+                    current_price = stock_info['最新价']
+                    
+                    # 过滤 ST 股
+                    if 'ST' in name or '*ST' in name:
+                        return None
+                    
+                    try:
+                        # 从缓存中获取历史数据
+                        df = history_data_cache.get(symbol)
+                        
+                        if not df.empty and len(df) > 20:
+                            # 龙头战法分析（传入股票代码和涨跌幅）
+                            dragon_analysis = QuantAlgo.analyze_dragon_stock(df, current_price, symbol, stock_info['涨跌幅'])
+                            
+                            # 计算开盘涨幅
+                            open_price = stock_info.get('开盘价', 0)
+                            last_close = stock_info.get('昨收价', 0)
+                            if open_price > 0 and last_close > 0:
+                                open_gap_pct = (open_price - last_close) / last_close * 100
+                            else:
+                                open_gap_pct = 0
+                            
+                            # 计算量比（使用成交额来计算，更准确）
+                            volume_ratio = 0
+                            if not df.empty and len(df) > 5:
+                                if 'turnover' in df.columns:
+                                    avg_turnover = df['turnover'].tail(5).mean()
+                                    current_turnover = stock_info.get('成交额', 0) * 10000  # 转换为元
+                                    if avg_turnover > 0:
+                                        volume_ratio = current_turnover / avg_turnover
+                                else:
+                                    avg_volume = df['volume'].tail(5).mean() / 100
+                                    current_volume = stock_info.get('成交量', 0)
+                                    if avg_volume < 1000:
+                                        volume_ratio = 1
+                                    elif avg_volume > 0:
+                                        volume_ratio = current_volume / avg_volume
+                            
+                            # 计算换手率
+                            turnover_rate = 0
+                            if not df.empty and len(df) > 5:
+                                if 'turnover_rate' in df.columns:
+                                    avg_turnover_rate = df['turnover_rate'].tail(5).mean()
+                                    current_turnover_rate = df['turnover_rate'].iloc[-1]
+                                    if avg_turnover_rate > 0:
+                                        turnover_rate = current_turnover_rate / avg_turnover_rate
+                            
+                            # 计算封单金额
+                            limit_up_amount = 0
+                            if stock_info['买一价'] > 0 and stock_info['买一量'] > 0:
+                                limit_up_amount = stock_info['买一价'] * stock_info['买一量'] * 100
+                            
+                            # 计算封单比
+                            limit_up_ratio = 0
+                            if stock_info['成交额'] > 0 and limit_up_amount > 0:
+                                limit_up_ratio = limit_up_amount / (stock_info['成交额'] * 10000)
+                            
+                            # 计算连板数
+                            lianban_count = 0
+                            if not df.empty and len(df) > 5:
+                                for i in range(1, min(6, len(df))):
+                                    if df.iloc[-i]['涨跌幅'] >= 9.5:
+                                        lianban_count += 1
+                                    else:
+                                        break
+                            
+                            # 计算评分
+                            score = dragon_analysis['评级得分']
+                            
+                            # 评分调整（基于量比、换手率、封单比、连板数）
+                            if volume_ratio >= 2.0:
+                                score += 5
+                            elif volume_ratio >= 1.5:
+                                score += 3
+                            
+                            if turnover_rate >= 2.0:
+                                score += 5
+                            elif turnover_rate >= 1.5:
+                                score += 3
+                            
+                            if limit_up_ratio >= 0.1:
+                                score += 5
+                            elif limit_up_ratio >= 0.05:
+                                score += 3
+                            
+                            if lianban_count >= 2:
+                                score += 5
+                            elif lianban_count == 1:
+                                score += 3
+                            
+                            score = min(score, 100)
+                            
+                            return {
+                                '代码': symbol,
+                                '名称': name,
+                                '最新价': current_price,
+                                '涨跌幅': stock_info['涨跌幅'],
+                                '评级得分': score,
+                                '量比': volume_ratio,
+                                '换手率': turnover_rate,
+                                '封单比': limit_up_ratio,
+                                '连板数': lianban_count,
+                                '开盘涨幅': open_gap_pct,
+                                '成交额': stock_info.get('成交额', 0),
+                                '成交量': stock_info.get('成交量', 0),
+                                '角色': dragon_analysis.get('role', '未知'),
+                                'lianban_status': f"{lianban_count}板" if lianban_count > 0 else "首板"
+                            }
+                    except Exception as e:
+                        logger.error(f"分析股票 {symbol} 失败: {e}")
+                        return None
+                
+                # 并行分析
+                results = []
+                with ThreadPoolExecutor(max_workers=10) as executor:
+                    futures = {executor.submit(analyze_single_stock, stock): stock for stock in stocks_to_analyze}
+                    
+                    for future in as_completed(futures):
+                        stock = futures[future]
+                        try:
+                            result = future.result(timeout=10)
+                            if result and result['评级得分'] >= min_score:
+                                results.append(result)
+                        except Exception as e:
+                            logger.warning(f"分析股票 {stock['代码']} 超时或失败: {e}")
+                
+                # 按评分排序
+                results.sort(key=lambda x: x['评级得分'], reverse=True)
+                
+                return {
+                    '数据状态': '正常',
+                    '扫描数量': len(all_stocks),
+                    '分析数量': len(stocks_to_analyze),
+                    '符合条件数量': len(results),
+                    '龙头股列表': results
+                }
+            else:
+                # 原有的实时扫描模式
+                db = DataManager()
+                
+                # 使用 akshare 获取股票列表
+                stock_list_df = ak.stock_info_a_code_name()
+                if stock_list_df.empty:
+                    return {
+                        '数据状态': '无法获取股票列表',
+                        '说明': '可能是数据源限制'
+                    }
+                
+                # 获取全市场所有股票
+                stock_list = stock_list_df['code'].tolist()
+
+                # 使用 Easyquotation 极速获取全市场实时数据
+                logger.info(f"开始扫描全市场 {len(stock_list)} 只股票的实时行情...")
+                realtime_data = db.get_fast_price(stock_list)
+                logger.info(f"✅ 实时行情获取完成，获取到 {len(realtime_data)} 只股票数据")
+                
+                if not realtime_data:
+                    return {
+                        '数据状态': '无法获取实时数据',
+                        '说明': 'Easyquotation 未初始化或网络问题',
+                        '扫描数量': len(stock_list)
+                    }
+                
+                # 转换为列表格式
+                all_stocks = []
+                for full_code, data in realtime_data.items():
+                    try:
+                        current_price = float(data.get('now', 0))
+                        last_close = float(data.get('close', 0))
+                        
+                        if current_price == 0 or last_close == 0:
+                            continue
+                        
+                        pct_change = (current_price - last_close) / last_close * 100
+                        
+                        # 提取股票代码（去掉前缀）
+                        # Easyquotation 返回的 key 可能是 '000001' 或 'sz000001'
+                        if len(full_code) == 6:
+                            code = full_code  # 直接使用
+                        elif len(full_code) > 6:
+                            code = full_code[2:]  # 去掉前缀
+                        else:
+                            continue  # 代码格式不对
+                        
+                        name = data.get('name', '')
+                        
+                        # 只保留 A 股股票（6位数字，以 0、3、6 开头）
+                        if not (len(code) == 6 and code.isdigit() and code[0] in ['0', '3', '6']):
+                            continue
+                        
+                        all_stocks.append({
+                            '代码': code,
+                            '名称': name,
+                            '最新价': current_price,
+                            '涨跌幅': pct_change,
+                            # 保存完整的实时数据，包括买卖盘口
+                            '买一价': data.get('bid1', 0),
+                            '卖一价': data.get('ask1', 0),
+                            '买一量': data.get('bid1_volume', 0),
+                            '卖一量': data.get('ask1_volume', 0),
+                            '成交量': data.get('volume', 0) / 100,  # 转换为手
+                            '成交额': data.get('turnover', 0),
+                            '开盘价': data.get('open', 0),
+                            '昨收价': data.get('close', 0),
+                            '最高价': data.get('high', 0),
+                            '最低价': data.get('low', 0)
+                        })
+                    except Exception as e:
+                        continue
             
             # 🆕 V9.9 新增：先进行股票池过滤，减少需要下载K线的股票数量
             # 筛选涨停板股票（涨跌幅 >= min_change_pct）

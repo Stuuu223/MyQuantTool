@@ -324,6 +324,19 @@ def render_dragon_strategy_tab(db, config):
         with col_filter3:
             min_amount = st.number_input("最小成交额 (万元)", min_value=1000, max_value=50000, value=3000, step=1000, key="filter_min_amount")
         
+        # 🚀 V19.4.4 新增：复盘模式选项
+        st.write("**🔄 复盘模式**")
+        st.info("💡 复盘模式使用历史数据进行分析，适合收盘后复盘当天的涨停板股票。")
+        
+        use_history = st.checkbox("启用复盘模式", value=False, key="use_history_mode", help="使用历史数据进行分析，适合收盘后复盘")
+        
+        if use_history:
+            from datetime import datetime
+            default_date = datetime.now().strftime("%Y%m%d")
+            review_date = st.text_input("复盘日期", value=default_date, help="格式：YYYYMMDD，例如：20260120", key="review_date")
+        else:
+            review_date = None
+        
         # 🆕 V9.10.1 新增：核心监控池配置
         st.write("**🎯 核心监控池（白名单）**")
         st.info("💡 监控池中的股票将跳过过滤条件，强制下载K线。适合昨晚复盘选出的目标股。")
@@ -368,6 +381,10 @@ def render_dragon_strategy_tab(db, config):
         filter_min_amount = st.session_state.get('filter_min_amount', 3000)
         
         # 根据模式调用不同的扫描函数
+        # 🚀 V19.4.4 新增：获取复盘模式参数
+        use_history = st.session_state.get('use_history_mode', False)
+        review_date = st.session_state.get('review_date', None)
+        
         if "龙头" in current_mode:
             with st.spinner('🔥 正在执行龙头战法筛选 (竞价爆量)...'):
                 scan_result = QuantAlgo.scan_dragon_stocks(
@@ -376,7 +393,9 @@ def render_dragon_strategy_tab(db, config):
                     min_change_pct=filter_min_change_pct,
                     min_volume=filter_min_volume,
                     min_amount=filter_min_amount,
-                    watchlist=watchlist  # 🆕 V9.10 新增：传递监控池
+                    watchlist=watchlist,  # 🆕 V9.10 新增：传递监控池
+                    use_history=use_history,  # 🚀 V19.4.4 新增：复盘模式
+                    date=review_date  # 🚀 V19.4.4 新增：复盘日期
                 )
         elif "趋势" in current_mode:
             with st.spinner('🛡️ 正在执行趋势中军筛选 (均线多头 + 温和放量)...'):
