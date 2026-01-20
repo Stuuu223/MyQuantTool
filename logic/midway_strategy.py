@@ -272,6 +272,12 @@ class MidwayStrategy:
         elif code in realtime_data:
             dde_net = realtime_data[code].get('dde_net', 0)
         
+        # 🚀 V19.4 盲扫模式：检查 DDE 数据状态
+        dde_status = "资金共振"
+        if dde_net == 0:
+            dde_status = "⚠️ DDE缺失(纯形态)"
+            logger.debug(f"[{code}] DDE 数据缺失，降级为【纯价格形态】模式")
+        
         # 检查四大核心模式
         signals = []
         
@@ -399,8 +405,11 @@ class MidwayStrategy:
             f"RSI={latest['rsi']:.1f}"
         ]
         
+        # 🚀 V19.4 盲扫模式：DDE 加分逻辑
         if dde_net > 0:
             reasons.append(f"DDE净流入{dde_net/10000:.1f}万")
+        elif dde_net == 0:
+            reasons.append("⚠️ DDE缺失(纯形态)")
         
         return MidwaySignal(
             stock_code=code,
@@ -464,7 +473,7 @@ class MidwayStrategy:
         if latest['macdhist'] > 0:
             signal_strength += 0.1
         
-        # DDE加分
+        # 🚀 V19.4 盲扫模式：DDE 加分逻辑
         if dde_net > 0:
             signal_strength += 0.1
         
@@ -482,8 +491,11 @@ class MidwayStrategy:
             f"成交量放大{latest['volume']/df['volume_ma5'].iloc[-1]:.2f}倍"
         ]
         
+        # 🚀 V19.4 盲扫模式：DDE 加分逻辑
         if dde_net > 0:
             reasons.append(f"DDE净流入{dde_net/10000:.1f}万")
+        elif dde_net == 0:
+            reasons.append("⚠️ DDE缺失(纯形态)")
         
         return MidwaySignal(
             stock_code=code,
@@ -565,8 +577,11 @@ class MidwayStrategy:
             f"RSI={latest['rsi']:.1f}"
         ]
         
+        # 🚀 V19.4 盲扫模式：DDE 加分逻辑
         if dde_net > 0:
             reasons.append(f"DDE净流入{dde_net/10000:.1f}万")
+        elif dde_net == 0:
+            reasons.append("⚠️ DDE缺失(纯形态)")
         
         return MidwaySignal(
             stock_code=code,
@@ -656,8 +671,11 @@ class MidwayStrategy:
             f"成交量放大{latest['volume']/df['volume_ma5'].iloc[-1]:.2f}倍"
         ]
         
+        # 🚀 V19.4 盲扫模式：DDE 加分逻辑
         if dde_net > 0:
             reasons.append(f"DDE净流入{dde_net/10000:.1f}万")
+        elif dde_net == 0:
+            reasons.append("⚠️ DDE缺失(纯形态)")
 
         return MidwaySignal(
             stock_code=code,
@@ -764,9 +782,13 @@ class MidwayStrategy:
         if latest['rsi'] > 80:
             return None
 
-        # 5. 检查DDE
+        # 🚀 V19.4 盲扫模式：解除资金流否决权
+        # 如果 DDE 为 0 (说明接口挂了)，暂时放行，标记为 [无资金数据]
         if dde_net < 0:
-            return None
+            return None  # DDE流出才拒绝
+        elif dde_net == 0:
+            # DDE 为 0，降级为纯价格形态模式
+            pass  # 不做任何操作，继续执行
 
         # 6. 计算信号强度
         signal_strength = 0.6
@@ -813,8 +835,11 @@ class MidwayStrategy:
             f"成交量放大{volume_ratio:.2f}倍"
         ]
 
+        # 🚀 V19.4 盲扫模式：DDE 加分逻辑
         if dde_net > 0:
             reasons.append(f"DDE净流入{dde_net/10000:.1f}万")
+        elif dde_net == 0:
+            reasons.append("⚠️ DDE缺失(纯形态)")
 
         return MidwaySignal(
             stock_code=code,

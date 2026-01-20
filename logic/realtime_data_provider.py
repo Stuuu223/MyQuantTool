@@ -188,8 +188,29 @@ class RealtimeDataProvider(DataProvider):
             else:
                 codes = stock_list
             
-            # 获取实时数据
-            market_data = quotation.stocks(codes)
+            # 🚀 V19.4 盲扫模式：批次处理，防止扫描中断
+            # 将大列表拆分为小批次，每次只请求 20 只，失败了不影响下一批
+            batch_size = 20
+            all_market_data = {}
+            
+            for i in range(0, len(codes), batch_size):
+                batch = codes[i : i + batch_size]
+                
+                try:
+                    # 获取实时数据
+                    market_data = quotation.stocks(batch)
+                    all_market_data.update(market_data)
+                    
+                    # 🚀 V19.4 优化：短暂休眠，主动释放 GIL，防止卡死主线程
+                    import time
+                    time.sleep(0.01)
+                    
+                except Exception as e:
+                    # [关键] 捕获错误，打印日志，但绝不 crash！
+                    logger.error(f"⚠️ 批次 {i} 扫描失败，跳过: {e}")
+                    continue  # 继续下一批！
+            
+            market_data = all_market_data
             
             # V16.2 新增：数据保质期校验
             current_time = datetime.now()
