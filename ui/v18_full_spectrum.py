@@ -903,7 +903,7 @@ with tab10:
     with col1:
         stock_code4 = st.text_input("股票代码", value="300992", key="take_profit_code")
         current_price2 = st.number_input("当前价格", value=30.00, key="take_profit_price")
-        entry_price2 = st.number_input("入场价格", value="26.00, key="take_profit_entry")
+        entry_price2 = st.number_input("入场价格", value=26.00, key="take_profit_entry")
         current_pct_change2 = st.number_input("当前涨幅（%）", value=15.0, key="take_profit_change")
         is_limit_up = st.checkbox("是否涨停", value=False, key="take_profit_limit_up")
         
