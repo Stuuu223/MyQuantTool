@@ -810,30 +810,52 @@ class FastSectorAnalyzer:
                 self._akshare_cache_timestamp = datetime.now()
             
             # 刷新概念板块（带超时控制）
-            import signal
+            # 🆕 修复：使用跨平台的超时方案，避免Windows上signal.SIGALRM不可用的问题
+            import threading
             
-            def timeout_handler(signum, frame):
-                raise TimeoutError("Concept data fetch timeout")
+            def fetch_with_timeout():
+                try:
+                    return ak.stock_board_concept_name_em()
+                except Exception as e:
+                    logger.error(f"获取概念板块数据失败: {e}")
+                    return None
             
             try:
-                # 设置 5 秒超时
-                signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(5)
+                # 使用线程实现超时控制（跨平台兼容）
+                result_container = [None]
+                exception_container = [None]
                 
-                concept_df = ak.stock_board_concept_name_em()
+                def worker():
+                    try:
+                        result_container[0] = fetch_with_timeout()
+                    except Exception as e:
+                        exception_container[0] = e
                 
-                # 取消超时
-                signal.alarm(0)
+                thread = threading.Thread(target=worker)
+                thread.start()
+                thread.join(timeout=5)  # 5秒超时
                 
-                if concept_df is not None and not concept_df.empty:
-                    concept_df = concept_df.sort_values('涨跌幅', ascending=False).reset_index(drop=True)
-                    concept_df['rank'] = concept_df.index + 1
-                    concept_df['资金热度'] = self._calculate_capital_heat(concept_df)
-                    self._akshare_concept_cache = concept_df
-                    self._fallback_mode = False  # 概念数据正常，退出降级模式
-            except TimeoutError:
-                logger.warning("⚠️ [V18.1] 概念板块数据获取超时，启用降级模式")
-                self._fallback_mode = True
+                if thread.is_alive():
+                    # 超时，线程仍在运行
+                    logger.warning("⚠️ [V18.1] 概念板块数据获取超时，启用降级模式")
+                    self._fallback_mode = True
+                elif exception_container[0]:
+                    # 线程执行出错
+                    raise exception_container[0]
+                else:
+                    # 成功获取数据
+                    concept_df = result_container[0]
+                    
+                    if concept_df is not None and not concept_df.empty:
+                        concept_df = concept_df.sort_values('涨跌幅', ascending=False).reset_index(drop=True)
+                        concept_df['rank'] = concept_df.index + 1
+                        concept_df['资金热度'] = self._calculate_capital_heat(concept_df)
+                        self._akshare_concept_cache = concept_df
+                        self._fallback_mode = False  # 概念数据正常，退出降级模式
+                    else:
+                        logger.warning("⚠️ [V18.1] 概念板块数据为空，启用降级模式")
+                        self._fallback_mode = True
+                        
             except Exception as e:
                 logger.warning(f"⚠️ [V18.1] 概念板块数据获取失败: {e}，启用降级模式")
                 self._fallback_mode = True

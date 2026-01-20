@@ -744,35 +744,56 @@ class ReviewManager:
             # 2. 获取当日跌幅榜 (大坑源头) - 使用超时处理
             # 注意：akshare 获取实时行情按跌幅排序
             try:
-                import signal
+                # 🆕 修复：使用跨平台的超时方案，避免Windows上signal.SIGALRM不可用的问题
+                import threading
                 
-                def timeout_handler(signum, frame):
-                    raise TimeoutError("获取跌幅榜超时")
+                def fetch_market_data():
+                    try:
+                        return ak.stock_zh_a_spot_em()
+                    except Exception as e:
+                        logger.error(f"获取市场数据失败: {e}")
+                        return None
                 
-                # 设置 30 秒超时
-                signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(30)
+                # 使用线程实现超时控制（跨平台兼容）
+                result_container = [None]
+                exception_container = [None]
                 
-                df_market = ak.stock_zh_a_spot_em()
+                def worker():
+                    try:
+                        result_container[0] = fetch_market_data()
+                    except Exception as e:
+                        exception_container[0] = e
                 
-                # 取消超时
-                signal.alarm(0)
+                thread = threading.Thread(target=worker)
+                thread.start()
+                thread.join(timeout=30)  # 30秒超时
                 
-                # 筛选跌幅前3且成交额不为0的
-                df_drop = df_market[df_market['成交额'] > 0].sort_values(by='涨跌幅').head(3)
-                
-                for _, row in df_drop.iterrows():
-                    # 过滤掉 ST 和退市股 (如果不玩垃圾股的话)
-                    if 'ST' not in row['名称'] and '退' not in row['名称']:
-                        cases['traps'].append({
-                            "code": row['代码'],
-                            "name": row['名称'],
-                            "reason": f"💀 核按钮惨案: 跌幅 {row['涨跌幅']}%, 成交{int(row['成交额']/10000)}万",
-                            "type": "FATAL_TRAP",
-                            "change_pct": float(row['涨跌幅']),
-                            "amount": float(row['成交额'])
-                        })
-            except (TimeoutError, Exception) as e:
+                if thread.is_alive():
+                    # 超时，线程仍在运行
+                    logger.warning("⚠️ 获取跌幅榜超时")
+                elif exception_container[0]:
+                    # 线程执行出错
+                    raise exception_container[0]
+                else:
+                    # 成功获取数据
+                    df_market = result_container[0]
+                    
+                    if df_market is not None and not df_market.empty:
+                        # 筛选跌幅前3且成交额不为0的
+                        df_drop = df_market[df_market['成交额'] > 0].sort_values(by='涨跌幅').head(3)
+                        
+                        for _, row in df_drop.iterrows():
+                            # 过滤掉 ST 和退市股 (如果不玩垃圾股的话)
+                            if 'ST' not in row['名称'] and '退' not in row['名称']:
+                                cases['traps'].append({
+                                    "code": row['代码'],
+                                    "name": row['名称'],
+                                    "reason": f"💀 核按钮惨案: 跌幅 {row['涨跌幅']}%, 成交{int(row['成交额']/10000)}万",
+                                    "type": "FATAL_TRAP",
+                                    "change_pct": float(row['涨跌幅']),
+                                    "amount": float(row['成交额'])
+                                })
+            except Exception as e:
                 logger.warning(f"⚠️ 获取跌幅榜失败或超时: {e}")
             
             # 3. (可选) 识别当日"炸板大面" (曾经涨停，收盘大跌)

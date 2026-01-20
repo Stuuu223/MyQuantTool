@@ -374,9 +374,10 @@ def render_dragon_strategy_tab(db, config):
     try:
         from streamlit_autorefresh import st_autorefresh
         
-        # 🆕 V9.11.2 修复：添加暂停刷新开关
+        # 🆕 V19 优化：禁用自动刷新，避免重复扫描导致卡顿
+        # 原因：自动刷新会导致每30秒重新执行扫描，扫描全市场5000+只股票非常慢
         st.sidebar.subheader("⚙️ 系统设置")
-        auto_refresh_enabled = st.sidebar.checkbox("开启自动刷新 (30秒)", value=True, help="每30秒自动刷新市场数据，保持情绪雷达实时更新")
+        auto_refresh_enabled = st.sidebar.checkbox("开启自动刷新 (300秒)", value=False, help="每5分钟自动刷新市场数据（已禁用以避免卡顿）")
         
         # 🆕 V9.11.2 修复：添加安全模式开关
         use_advanced_features = st.sidebar.checkbox("启用 V9.11 高级特性 (Beta)", value=True, help="启用市场情绪仪表盘等高级功能")
@@ -432,11 +433,12 @@ def render_dragon_strategy_tab(db, config):
                     st.error(f"❌ 盘前预热失败: {e}")
                     logger.error(f"盘前预热失败: {e}")
         
-        # 🆕 V9.11.2 修复：根据开关决定是否刷新
+        # 🆕 V19 优化：根据开关决定是否刷新
         if auto_refresh_enabled:
-            count = st_autorefresh(interval=30000, key="market_radar_refresh")
+            # 增加刷新间隔到300秒（5分钟），避免频繁扫描导致卡顿
+            count = st_autorefresh(interval=300000, key="market_radar_refresh")
         else:
-            st.sidebar.warning("⚠️ 自动刷新已暂停 (输入模式)")
+            st.sidebar.warning("⚠️ 自动刷新已暂停（推荐，避免卡顿）")
             count = 0
     except ImportError:
         st.sidebar.warning("⚠️ 自动刷新功能未安装，请运行: pip install streamlit-autorefresh")

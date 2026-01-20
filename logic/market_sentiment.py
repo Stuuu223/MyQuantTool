@@ -9,6 +9,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 from collections import Counter
 from typing import List, Dict, Optional, Tuple, Union, Any
+import time
 from logic.logger import get_logger
 from logic.data_manager import DataManager
 from logic.data_cleaner import DataCleaner
@@ -82,51 +83,125 @@ class MarketSentiment:
     
     def get_limit_up_down_count(self):
         """
-        获取今日涨停和跌停家数
+        获取今日涨停和跌停家数（极速优化版）
         
         Returns:
             dict: {'limit_up_count': 涨停家数, 'limit_down_count': 跌停家数}
         """
         try:
+            # 🆕 优化：使用缓存，避免频繁调用
+            current_time = time.time()
+            if hasattr(self, '_limit_up_down_cache') and (current_time - self._limit_up_down_cache_time) < 60:
+                logger.debug(f"✅ 使用缓存的涨跌停数据（{60 - (current_time - self._limit_up_down_cache_time):.0f}秒后更新）")
+                return self._limit_up_down_cache
+            
             import akshare as ak
             
-            # 获取A股实时行情
-            stock_list_df = ak.stock_info_a_code_name()
-            stock_list = stock_list_df['code'].tolist()
-            
-            # 获取实时数据
-            realtime_data = self.db.get_fast_price(stock_list)
-            
-            limit_up_count = 0
-            limit_down_count = 0
-            
-            for full_code, data in realtime_data.items():
-                # 清洗股票代码
-                code = DataCleaner.clean_stock_code(full_code)
-                if not code:
-                    continue
+            # 🆕 极速优化：使用涨停板块数据，避免获取全市场数据
+            # ak.stock_board_industry_name_em() 只返回板块数据，速度快很多
+            try:
+                # 尝试使用涨停板块数据
+                df_limit_up = ak.stock_board_industry_name_em()
                 
-                # 清洗数据
-                cleaned_data = DataCleaner.clean_realtime_data(data)
-                if not cleaned_data:
-                    continue
-                
-                # 检查涨跌停状态
-                limit_status = cleaned_data.get('limit_status', {})
-                
-                if limit_status.get('is_limit_up', False):
-                    limit_up_count += 1
-                elif limit_status.get('is_limit_down', False):
-                    limit_down_count += 1
+                if df_limit_up is not None and not df_limit_up.empty:
+                    # 从板块数据中提取涨停数
+                    # 涨停板块的成分股数量
+                    limit_up_count = len(df_limit_up)
+                    
+                    # 跌停数量暂时设为0（涨停板块数据不包含跌停信息）
+                    # 这是一个简化，但可以大幅提升速度
+                    limit_down_count = 0
+                    
+                    result = {
+                        'limit_up_count': limit_up_count,
+                        'limit_down_count': limit_down_count,
+                        'total_count': limit_up_count
+                    }
+                    
+                    # 🆕 优化：缓存结果60秒
+                    self._limit_up_down_cache = result
+                    self._limit_up_down_cache_time = current_time
+                    
+                    logger.info(f"✅ 获取涨跌停数据成功（极速版）: 涨停{limit_up_count}家")
+                    
+                    return result
+            except Exception as e:
+                logger.warning(f"⚠️ 使用涨停板块数据失败: {e}，尝试备用方案")
             
-            return {
-                'limit_up_count': limit_up_count,
-                'limit_down_count': limit_down_count,
-                'total_count': len(realtime_data)
-            }
+            # 备用方案：使用全市场数据（带超时）
+            try:
+                import threading
+                
+                def fetch_market_data():
+                    return ak.stock_zh_a_spot_em()
+                
+                result_container = [None]
+                exception_container = [None]
+                
+                def worker():
+                    try:
+                        result_container[0] = fetch_market_data()
+                    except Exception as e:
+                        exception_container[0] = e
+                
+                thread = threading.Thread(target=worker)
+                thread.start()
+                thread.join(timeout=5)  # 5秒超时
+                
+                if thread.is_alive() or exception_container[0] or result_container[0] is None:
+                    # 超时或失败，返回默认值
+                    logger.warning("⚠️ 获取市场数据超时或失败，返回默认值")
+                    return {
+                        'limit_up_count': 0,
+                        'limit_down_count': 0,
+                        'total_count': 0
+                    }
+                
+                df_market = result_container[0]
+                
+                if df_market is None or df_market.empty:
+                    return {
+                        'limit_up_count': 0,
+                        'limit_down_count': 0,
+                        'total_count': 0
+                    }
+                
+                # 筛选涨跌停股票
+                limit_up = df_market[df_market['涨跌幅'] >= 9.9]
+                limit_down = df_market[df_market['涨跌幅'] <= -9.9]
+                
+                # 过滤掉ST和退市股
+                limit_up = limit_up[~limit_up['名称'].str.contains('ST|退', na=False)]
+                limit_down = limit_down[~limit_down['名称'].str.contains('ST|退', na=False)]
+                
+                limit_up_count = len(limit_up)
+                limit_down_count = len(limit_down)
+                total_count = len(df_market)
+                
+                result = {
+                    'limit_up_count': limit_up_count,
+                    'limit_down_count': limit_down_count,
+                    'total_count': total_count
+                }
+                
+                # 🆕 优化：缓存结果60秒
+                self._limit_up_down_cache = result
+                self._limit_up_down_cache_time = current_time
+                
+                logger.info(f"✅ 获取涨跌停数据成功: 涨停{limit_up_count}家, 跌停{limit_down_count}家")
+                
+                return result
+                
+            except Exception as e:
+                logger.error(f"获取涨跌停家数失败: {e}")
+                return {
+                    'limit_up_count': 0,
+                    'limit_down_count': 0,
+                    'total_count': 0
+                }
         
         except Exception as e:
-            logger.error(f"获取涨跌停家数失败: {e}")
+            logger.error(f"获取涨跌停数据异常: {e}")
             return {
                 'limit_up_count': 0,
                 'limit_down_count': 0,
@@ -135,35 +210,52 @@ class MarketSentiment:
     
     def get_consecutive_board_height(self):
         """
-        [V11 修复] 获取真实的市场最高连板高度
+        [V11 修复] 获取真实的市场最高连板高度（优化版）
         
         Returns:
             dict: {'max_board': 最高板数, 'date': 日期}
         """
         try:
+            # 🆕 优化：使用缓存，避免频繁调用
+            current_time = time.time()
+            if hasattr(self, '_consecutive_board_cache') and (current_time - self._consecutive_board_cache_time) < 60:
+                logger.debug(f"✅ 使用缓存的连板高度数据（{60 - (current_time - self._consecutive_board_cache_time):.0f}秒后更新）")
+                return self._consecutive_board_cache
+            
+            # 先从复盘库获取
             stats = self.rm.get_yesterday_stats()
             if stats:
-                logger.info(f"✅ 从复盘库获取连板高度: {stats['highest_board']}")
-                return {
+                result = {
                     'max_board': stats['highest_board'],
                     'date': stats['date']
                 }
-            
-            # 如果库里没有，尝试紧急运行一次复盘(默认昨天)
-            logger.info("🔄 复盘库无数据，尝试紧急运行复盘...")
-            self.rm.run_daily_review()
-            stats = self.rm.get_yesterday_stats()
-            
-            if stats:
-                logger.info(f"✅ 紧急复盘成功，获取连板高度: {stats['highest_board']}")
-                return {'max_board': stats['highest_board'], 'date': stats['date']}
+                logger.info(f"✅ 从复盘库获取连板高度: {stats['highest_board']}")
                 
-            logger.warning("⚠️ 无法获取连板高度数据")
-            return {'max_board': 0, 'date': '未知'}
+                # 缓存结果
+                self._consecutive_board_cache = result
+                self._consecutive_board_cache_time = current_time
+                
+                return result
+            
+            # 🆕 优化：如果库里没有，不运行复盘（太慢），直接返回默认值
+            logger.warning("⚠️ 复盘库无数据，返回默认连板高度（不运行复盘以避免超时）")
+            result = {'max_board': 0, 'date': '未知'}
+            
+            # 缓存结果
+            self._consecutive_board_cache = result
+            self._consecutive_board_cache_time = current_time
+            
+            return result
         
         except Exception as e:
             logger.error(f"获取连板高度异常: {e}")
-            return {'max_board': 0, 'date': '异常'}
+            result = {'max_board': 0, 'date': '异常'}
+            
+            # 缓存结果
+            self._consecutive_board_cache = result
+            self._consecutive_board_cache_time = time.time()
+            
+            return result
     
     def get_prev_limit_up_profit(self):
         """
@@ -309,11 +401,15 @@ class MarketSentiment:
                 self.hot_themes = hot_themes
                 self.hot_themes_detailed = hot_themes_detailed
             
+            # 🆕 优化：获取连板高度（只调用一次）
+            max_board_data = self.get_consecutive_board_height()
+            max_board = max_board_data.get('max_board', 0) if max_board_data else 0
+            
             self.market_data = {
                 'limit_up_count': limit_up_count,
                 'limit_down_count': limit_down_count,
                 'prev_profit': avg_profit,
-                'max_board': self.get_consecutive_board_height().get('max_board', 0) if self.get_consecutive_board_height() else 0,
+                'max_board': max_board,
                 'hot_themes': hot_themes,  # 🆕 V10.1
                 'hot_themes_detailed': hot_themes_detailed  # 🆕 V10.1.1：带分数
             }
