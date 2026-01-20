@@ -33,8 +33,11 @@ def render_time_sync_panel():
     beijing_time = Utils.get_beijing_time()
     system_time = datetime.now()
 
-    # 计算时差
-    time_diff = (beijing_time - system_time.replace(tzinfo=None)).total_seconds() / 3600
+    # 🚀 V19.4.5 修复：处理时区问题
+    # beijing_time 是带时区的 datetime（offset-aware）
+    # system_time 是不带时区的 datetime（offset-naive）
+    # 需要将两者都转换为 offset-naive 才能相减
+    time_diff = (beijing_time.replace(tzinfo=None) - system_time).total_seconds() / 3600
 
     # 显示时间信息
     col1, col2, col3 = st.columns(3)
