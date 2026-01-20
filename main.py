@@ -1032,7 +1032,7 @@ if app_mode == "📈 市场分析":
         
         with st.spinner("正在加载生态看门人引擎..."):
             ecological_watchdog = __import__('ui.v16_3_ecological_watchdog', fromlist=['render_ecological_watchdog_tab'])
-            ecological_watchdog.render_ecological_watchdog_tab(get_db_instance())
+            ecological_watchdog.render_ecological_watchdog_tab(get_db_instance(), None)
         
         st.markdown("---")
         st.markdown("### ⏰ V17 Time-Lord (时间领主)")
