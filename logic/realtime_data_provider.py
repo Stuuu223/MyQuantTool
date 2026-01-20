@@ -211,10 +211,20 @@ class RealtimeDataProvider(DataProvider):
                         # 解析数据时间（格式可能是 "09:30:05" 或类似）
                         data_time = datetime.strptime(data_time_str, '%H:%M:%S')
                         data_time = data_time.replace(year=current_time.year, month=current_time.month, day=current_time.day)
-                        
+
                         # 检查数据是否过期（超过15秒）
                         time_diff = (current_time - data_time).total_seconds()
-                        if time_diff > self.data_freshness_threshold:
+
+                        # 🚀 V19.1 修复：午休时段豁免逻辑
+                        # 使用市场状态检查器判断是否在午休时段（11:30-13:00）
+                        from logic.market_status import MarketStatusChecker
+                        is_lunch_break = MarketStatusChecker().is_noon_break()
+
+                        # 午休期间允许数据延迟1.5小时（5500秒）
+                        is_acceptable_delay = is_lunch_break and time_diff < 5500
+
+                        if time_diff > self.data_freshness_threshold and not is_acceptable_delay:
+                            # 只有在非午休时间，或者数据真的过期太久才报警
                             logger.warning(f"⚠️ [数据过期] {code} 数据时间 {data_time_str} 距今 {time_diff:.0f}秒，跳过交易")
                             continue
                     except Exception as e:
