@@ -356,7 +356,14 @@ class MarketCycleManager:
             realtime_data = self.db.get_fast_price(stock_list)
             
             # 第二步：从 DataManager 获取行业信息（使用缓存，极快）
-            code_to_industry = self.db.get_industry_cache()
+            # 🚀 V19.1 修复：DataManager没有get_industry_cache方法，返回空字典
+            code_to_industry = {}
+            try:
+                if hasattr(self.db, 'get_industry_cache'):
+                    code_to_industry = self.db.get_industry_cache()
+            except Exception as e:
+                logger.warning(f"获取行业缓存失败: {e}")
+                code_to_industry = {}
             
             limit_up_stocks = []
             limit_down_stocks = []
