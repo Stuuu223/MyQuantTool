@@ -49,6 +49,9 @@ easyquotation>=0.7.0
 # 🆕 V9.11.1: 自动刷新
 streamlit-autorefresh>=1.0.1
 
+# 🆕 V19.1: 定时任务
+schedule>=1.2.0
+
 # 测试依赖
 pytest>=7.4.0
 pytest-cov>=4.1.0

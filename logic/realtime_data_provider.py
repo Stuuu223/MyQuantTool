@@ -343,7 +343,7 @@ class RealtimeDataProvider(DataProvider):
             # 获取市场情绪
             from logic.market_sentiment import MarketSentiment
             ms = MarketSentiment()
-            sentiment_data = ms.get_market_sentiment()
+            sentiment_data = ms.get_market_sentiment_score()
             
             return {
                 'limit_up_count': len(limit_up_stocks),

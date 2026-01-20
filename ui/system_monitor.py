@@ -197,6 +197,12 @@ def get_scheduled_tasks() -> Dict[str, Any]:
             'description': '早盘前系统检查',
             'last_run': '未运行'
         },
+        'pre_market_precompute': {
+            'time': '09:20',
+            'enabled': True,
+            'description': '盘前MA4预计算',
+            'last_run': '未运行'
+        },
         'post_market_review': {
             'time': '15:30',
             'enabled': True,
@@ -281,6 +287,8 @@ def execute_task(task_name: str):
         
         if task_name == 'pre_market_check':
             monitor.run_pre_market_check()
+        elif task_name == 'pre_market_precompute':
+            monitor.run_pre_market_precompute()
         elif task_name == 'post_market_review':
             monitor.run_post_market_review()
         elif task_name == 'weekly_check':

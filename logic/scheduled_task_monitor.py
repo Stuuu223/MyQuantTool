@@ -52,6 +52,12 @@ class ScheduledTaskMonitor:
                 'enabled': True,
                 'description': '早盘前系统检查'
             },
+            # 盘前预计算（9:20）
+            'pre_market_precompute': {
+                'time': '09:20',
+                'enabled': True,
+                'description': '盘前MA4预计算'
+            },
             # 收盘后复盘（15:30）
             'post_market_review': {
                 'time': '15:30',
@@ -289,6 +295,91 @@ class ScheduledTaskMonitor:
         
         return report
     
+    def run_pre_market_precompute(self):
+        """盘前预计算（9:20）"""
+        logger.info("=" * 80)
+        logger.info("🕐 盘前MA4预计算 (9:20)")
+        logger.info("=" * 80)
+        
+        try:
+            from logic.pre_market_cache import get_pre_market_cache
+            from logic.data_manager import DataManager
+            
+            logger.info("🔄 开始盘前预计算...")
+            
+            # 获取缓存实例
+            cache = get_pre_market_cache()
+            
+            # 获取所有股票列表
+            dm = DataManager()
+            stock_list_df = dm.get_market_data()
+            
+            # 检查返回值是否为空
+            if stock_list_df is None:
+                logger.warning("⚠️ 无法获取股票列表")
+                return False
+            
+            # 如果是字典，转换为DataFrame
+            if isinstance(stock_list_df, dict):
+                import pandas as pd
+                if not stock_list_df:
+                    logger.warning("⚠️ 股票列表为空")
+                    return False
+                stock_list_df = pd.DataFrame(stock_list_df)
+            # 如果是DataFrame，检查是否为空
+            elif hasattr(stock_list_df, 'empty') and stock_list_df.empty:
+                logger.warning("⚠️ 股票列表为空")
+                return False
+            
+            # 提取股票代码
+            stock_codes = stock_list_df['代码'].tolist()
+            logger.info(f"📊 待预计算股票: {len(stock_codes)} 只")
+            
+            # 执行预计算
+            success_count = cache.precompute_ma4(stock_codes, max_stocks=len(stock_codes))
+            
+            # 生成报告
+            report = {
+                'timestamp': datetime.now().isoformat(),
+                'total_stocks': len(stock_codes),
+                'success_count': success_count,
+                'cache_time': cache.cache_time.isoformat() if cache.cache_time else None,
+                'overall_status': 'OK' if success_count > 0 else 'WARNING'
+            }
+            
+            logger.info(f"✅ 盘前预计算完成:")
+            logger.info(f"  - 总股票数: {report['total_stocks']}")
+            logger.info(f"  - 成功计算: {report['success_count']}")
+            logger.info(f"  - 缓存时间: {report['cache_time']}")
+            logger.info(f"  - 状态: {report['overall_status']}")
+            
+            if report['overall_status'] != 'OK':
+                self._save_alert(
+                    'pre_market_precompute',
+                    'WARNING',
+                    f'盘前预计算问题: 成功{success_count}/{len(stock_codes)}',
+                    report
+                )
+            else:
+                self._save_alert(
+                    'pre_market_precompute',
+                    'INFO',
+                    f'盘前预计算成功: {success_count}/{len(stock_codes)}',
+                    report
+                )
+            
+            return report
+            
+        except Exception as e:
+            logger.error(f"盘前预计算失败: {e}")
+            self._save_alert(
+                'pre_market_precompute',
+                'ERROR',
+                f'盘前预计算失败: {str(e)}',
+                {}
+            )
+            return False
+    
     def run_post_market_review(self):
         """收盘后复盘（15:30）"""
         logger.info("=" * 80)
@@ -430,6 +521,7 @@ class ScheduledTaskMonitor:
         
         # 设置定时任务
         schedule.every().day.at(self.tasks['pre_market_check']['time']).do(self.run_pre_market_check)
+        schedule.every().day.at(self.tasks['pre_market_precompute']['time']).do(self.run_pre_market_precompute)
         schedule.every().day.at(self.tasks['post_market_review']['time']).do(self.run_post_market_review)
         schedule.every().sunday.at(self.tasks['weekly_check']['time']).do(self.run_weekly_check)
         
@@ -437,6 +529,7 @@ class ScheduledTaskMonitor:
         
         logger.info("✅ 定时任务已设置:")
         logger.info(f"  - 早盘前检查: {self.tasks['pre_market_check']['time']}")
+        logger.info(f"  - 盘前预计算: {self.tasks['pre_market_precompute']['time']}")
         logger.info(f"  - 收盘后复盘: {self.tasks['post_market_review']['time']}")
         logger.info(f"  - 每周检查: 周日 {self.tasks['weekly_check']['time']}")
         
