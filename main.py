@@ -160,13 +160,20 @@ def get_db():
     cleanup_thread = threading.Thread(target=background_cleanup, daemon=True)
     cleanup_thread.start()
     
-    # ✅ V11 启动仪式：自动同步最新复盘数据（快速执行）
-    try:
-        from logic.review_manager import ReviewManager
-        rm = ReviewManager()
-        rm.run_daily_review()
-    except Exception as e:
-        logger.warning(f"V11 复盘同步失败: {e}")
+    # ✅ V11 启动仪式：自动同步最新复盘数据（后台异步执行）
+    def background_review_sync():
+        try:
+            from logic.review_manager import ReviewManager
+            rm = ReviewManager()
+            rm.run_daily_review()
+            logger.info("✅ V11 复盘同步完成")
+        except Exception as e:
+            logger.warning(f"V11 复盘同步失败: {e}")
+    
+    # 启动后台复盘线程，避免阻塞启动
+    review_thread = threading.Thread(target=background_review_sync, daemon=True)
+    review_thread.start()
+    logger.info("🔄 V11 复盘同步已启动（后台执行）")
     
     return db
 
@@ -282,8 +289,15 @@ st.title("🚀 个人化A股智能投研终端")
 st.markdown("基于 DeepSeek AI & AkShare 数据")
 
 # --- V6.0 逻辑深化：市场情绪周期和主线识别展示 ---
+@st.cache_resource
 def get_market_cycle_manager():
-    """获取市场周期管理器实例（不缓存，确保每次都获取最新数据）"""
+    """
+    🚀 [V19 优化] 获取市场周期管理器实例（单例模式）
+    
+    使用 @st.cache_resource 装饰器确保全局只有一个数据源实例，
+    防止线程爆炸。MarketCycleManager 现在会在后台线程中自动更新数据，
+    get_market_emotion() 方法直接返回缓存数据，毫秒级响应。
+    """
     try:
         from logic.market_cycle import MarketCycleManager
         return MarketCycleManager()
@@ -291,8 +305,13 @@ def get_market_cycle_manager():
         logger.warning(f"市场周期管理器初始化失败: {e}")
         return None
 
+@st.cache_resource
 def get_theme_detector():
-    """获取主线识别器实例（不缓存，确保每次都获取最新数据）"""
+    """
+    🚀 [V19 优化] 获取主线识别器实例（单例模式）
+    
+    使用 @st.cache_resource 装饰器确保全局只有一个数据源实例
+    """
     try:
         from logic.theme_detector import ThemeDetector
         return ThemeDetector()
@@ -448,8 +467,15 @@ def show_market_weather():
         logger.error(f"显示市场天气失败: {e}")
         st.error(f"市场天气显示失败: {e}")
 
-# 调用显示函数
-show_market_weather()
+# 🆕 优化：将市场天气显示改为延迟加载，避免阻塞启动
+# 原来的立即调用会导致程序启动时就执行市场情绪分析，可能很慢
+# 现在改为在用户首次访问时才加载
+if 'market_weather_loaded' not in st.session_state:
+    st.session_state.market_weather_loaded = False
+
+# 只在市场分析模式下才显示市场天气
+if 'app_mode' in st.session_state and st.session_state.app_mode == "📈 市场分析":
+    show_market_weather()
 
 # --- 辅助函数 ---
 def parse_selected_stock(selected_stock, fallback_symbol=None):

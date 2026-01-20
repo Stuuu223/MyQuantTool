@@ -146,9 +146,72 @@ def render_market_weather_panel():
         except Exception as e:
             logger.warning(f"⚠️ 获取强势股列表失败: {e}")
         
-        # 获取市场状态
-        with st.spinner("正在分析市场天气..."):
-            regime_info = market_sentiment.get_market_regime(top_stocks=top_stocks)
+        # 获取市场状态（优化版：添加超时控制）
+        try:
+            import threading
+            
+            def fetch_regime():
+                try:
+                    return market_sentiment.get_market_regime(top_stocks=top_stocks)
+                except Exception as e:
+                    logger.warning(f"获取市场状态失败: {e}")
+                    return None
+            
+            # 使用线程实现超时控制
+            result_container = [None]
+            exception_container = [None]
+            
+            def worker():
+                try:
+                    result_container[0] = fetch_regime()
+                except Exception as e:
+                    exception_container[0] = e
+            
+            thread = threading.Thread(target=worker)
+            thread.start()
+            
+            with st.spinner("正在分析市场天气..."):
+                thread.join(timeout=10)  # 10秒超时
+            
+            if thread.is_alive():
+                # 超时，使用默认值
+                logger.warning("⚠️ 市场天气分析超时，使用默认值")
+                regime_info = {
+                    'regime': 'chaos',
+                    'description': '分析超时，谨慎操作',
+                    'strategy': '轻仓试错',
+                    'market_data': {},
+                    'hot_themes': []
+                }
+            elif exception_container[0]:
+                # 出错，使用默认值
+                logger.warning(f"⚠️ 市场天气分析失败: {exception_container[0]}")
+                regime_info = {
+                    'regime': 'chaos',
+                    'description': '分析失败，谨慎操作',
+                    'strategy': '轻仓试错',
+                    'market_data': {},
+                    'hot_themes': []
+                }
+            else:
+                regime_info = result_container[0]
+                if regime_info is None:
+                    regime_info = {
+                        'regime': 'chaos',
+                        'description': '无数据，谨慎操作',
+                        'strategy': '轻仓试错',
+                        'market_data': {},
+                        'hot_themes': []
+                    }
+        except Exception as e:
+            logger.error(f"市场天气分析异常: {e}")
+            regime_info = {
+                'regime': 'chaos',
+                'description': '系统异常，谨慎操作',
+                'strategy': '轻仓试错',
+                'market_data': {},
+                'hot_themes': []
+            }
         
         # 🔥 修复：提前定义 market_data，避免作用域错误
         market_data = regime_info.get('market_data', {})

@@ -8,6 +8,8 @@ import pandas as pd
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 import akshare as ak
+import threading
+import time
 from logic.logger import get_logger
 from logic.data_manager import DataManager
 from logic.data_cleaner import DataCleaner
@@ -47,6 +49,22 @@ class MarketCycleManager:
         self.current_cycle = None
         self.cycle_history = []
         self.market_indicators = {}
+        
+        # 🚀 V19 优化：添加缓存和后台线程
+        self.market_indicators_cache = {
+            'limit_up_count': 0,
+            'limit_down_count': 0,
+            'highest_board': 0,
+            'avg_profit': 0,
+            'burst_rate': 0,
+            'promotion_rate': 0,
+            'limit_up_stocks': [],
+            'limit_down_stocks': []
+        }
+        self.cache_time = None
+        self.update_interval = 300  # 5分钟更新一次
+        self.running = False
+        self.update_thread = None
     
     def save_limit_up_pool_to_redis(self, limit_up_stocks: List[Dict]) -> bool:
         """
@@ -124,11 +142,19 @@ class MarketCycleManager:
     
     def get_market_emotion(self) -> Dict:
         """
-        获取市场情绪指标
+        🚀 [V19 优化版] 获取市场情绪指标
+        
+        优化：如果后台线程已启动且有缓存数据，直接返回缓存（毫秒级响应）。
+        如果缓存为空，则调用原始方法获取数据。
         
         Returns:
             dict: 市场情绪指标
         """
+        # 🚀 V19 优化：优先返回缓存数据
+        if self.running and self.market_indicators_cache and self.cache_time:
+            return self.market_indicators_cache
+        
+        # 如果没有缓存，调用原始方法
         try:
             # 1. 获取涨跌停家数
             limit_up_down = self.get_limit_up_down_count()
@@ -1208,7 +1234,91 @@ class MarketCycleManager:
         
         return ground_to_sky_stocks
     
+    # 🚀 V19 优化：后台更新方法
+    def start_background_update(self):
+        """启动后台更新线程"""
+        if not self.running:
+            self.running = True
+            self.update_thread = threading.Thread(target=self._background_update_loop, daemon=True)
+            self.update_thread.start()
+            logger.info("🚀 [V19] 市场周期后台更新线程已启动")
+    
+    def _background_update_loop(self):
+        """后台循环更新市场情绪数据"""
+        while self.running:
+            try:
+                logger.info("🔄 [V19] 开始后台更新市场情绪数据...")
+                self._update_market_emotion()
+                logger.info(f"✅ [V19] 市场情绪数据更新完成: 涨停{self.market_indicators_cache['limit_up_count']}家")
+            except Exception as e:
+                logger.error(f"❌ [V19] 市场情绪数据更新失败: {e}")
+            
+            time.sleep(self.update_interval)
+    
+    def _update_market_emotion(self):
+        """执行耗时的市场情绪数据更新（在后台线程运行）"""
+        try:
+            # 调用原有的get_market_emotion方法获取数据
+            indicators = self._get_market_emotion_original()
+            
+            if indicators:
+                # 更新缓存
+                self.market_indicators_cache = indicators
+                self.cache_time = datetime.now()
+                
+                # 同时更新旧的market_indicators（向后兼容）
+                self.market_indicators = indicators.copy()
+        except Exception as e:
+            logger.error(f"更新市场情绪数据失败: {e}")
+    
+    def _get_market_emotion_original(self):
+        """原始的get_market_emotion方法（用于后台更新）"""
+        try:
+            # 1. 获取涨跌停家数
+            limit_up_down = self.get_limit_up_down_count()
+            
+            # 2. 获取连板高度
+            board_info = self.get_consecutive_board_height()
+            
+            # 3. 获取实时数据，用于计算平均溢价
+            realtime_data = {}
+            for stock in limit_up_down.get('limit_up_stocks', []) + limit_up_down.get('limit_down_stocks', []):
+                realtime_data[stock['code']] = {
+                    'price': stock.get('price', 0),
+                    'change_pct': stock.get('change_pct', 0)
+                }
+            
+            # 4. 获取昨日涨停溢价
+            prev_profit = self.get_prev_limit_up_profit(realtime_data)
+            
+            # 5. 获取炸板率
+            burst_rate = self.get_limit_up_burst_rate()
+            
+            # 6. 获取晋级率
+            promotion_rate = self.get_board_promotion_rate()
+            
+            return {
+                'limit_up_count': limit_up_down['limit_up_count'],
+                'limit_down_count': limit_up_down['limit_down_count'],
+                'highest_board': board_info['max_board'],
+                'avg_profit': prev_profit.get('avg_profit', 0),
+                'burst_rate': burst_rate,
+                'promotion_rate': promotion_rate,
+                'limit_up_stocks': limit_up_down.get('limit_up_stocks', []),
+                'limit_down_stocks': limit_up_down.get('limit_down_stocks', [])
+            }
+        except Exception as e:
+            logger.error(f"获取市场情绪指标失败: {e}")
+            return None
+    
     def close(self):
-        """关闭数据库连接"""
+        """关闭数据库连接和后台线程"""
+        # 关闭后台线程
+        self.running = False
+        if self.update_thread and self.update_thread.is_alive():
+            self.update_thread.join(timeout=5)
+            logger.info("🛑 [V19] 市场周期后台线程已关闭")
+        
+        # 关闭数据库连接
         if self.db:
             self.db.close()

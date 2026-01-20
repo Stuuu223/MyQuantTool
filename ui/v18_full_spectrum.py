@@ -955,10 +955,17 @@ with tab10:
         stock_code5 = st.text_input("股票代码", value="300992", key="dde_velocity_code")
 
         if st.button("检测 DDE 加速度", key="check_dde_velocity"):
-            # 从实时数据提供者获取 DDE 加速度
+            # 🚀 [V19 优化] 从单例获取实时数据提供者
             try:
                 from logic.realtime_data_provider import RealtimeDataProvider
-                provider = RealtimeDataProvider()
+                import streamlit as st
+                
+                # 使用单例模式获取 RealtimeDataProvider
+                @st.cache_resource
+                def get_realtime_provider():
+                    return RealtimeDataProvider()
+                
+                provider = get_realtime_provider()
 
                 # 设置监控列表
                 provider.set_monitor_list([stock_code5])

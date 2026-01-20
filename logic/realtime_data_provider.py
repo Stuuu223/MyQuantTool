@@ -52,7 +52,7 @@ class RealtimeDataProvider(DataProvider):
         self.ma4_cache = {}  # {stock_code: ma4_value} MA4 缓存（用于快速计算乖离率）
         self.dde_velocity_cache = {}  # {stock_code: velocity} DDE 加速度缓存
         self.running = True  # 后台线程运行标志
-        self.dde_update_interval = 10  # DDE 更新间隔（秒）
+        self.dde_update_interval = 30  # 🚀 V19 优化：DDE 更新间隔延长到 30 秒（降低 GIL 占用）
         self.monitor_list = []  # 监控股票列表
 
         # 启动后台线程抓取 DDE
@@ -63,8 +63,10 @@ class RealtimeDataProvider(DataProvider):
     def _background_fetch_dde(self):
         """
         🆕 V18.6.1: 后台持续更新 DDE 数据，不阻塞主线程
+        🚀 V19 优化：降低GIL占用，延长轮询间隔
 
-        每 10 秒更新一次 DDE 数据，避免在主线程中阻塞网络请求
+        每 20-30 秒更新一次 DDE 数据，避免在主线程中阻塞网络请求
+        添加 time.sleep(0.01) 主动释放 GIL，防止卡死主线程
         """
         logger.info("🔄 [V18.6.1] DDE 后台线程开始运行")
 
@@ -77,6 +79,9 @@ class RealtimeDataProvider(DataProvider):
 
                     # 批量获取 DDE 数据
                     new_data = MoneyFlowAdapter.batch_get_dde(self.monitor_list)
+
+                    # 🚀 V19 优化：短暂休眠，主动释放 GIL，防止卡死主线程
+                    time.sleep(0.01)
 
                     if new_data:
                         # 更新缓存
@@ -100,7 +105,8 @@ class RealtimeDataProvider(DataProvider):
             except Exception as e:
                 logger.error(f"❌ [V18.6.1] DDE 后台线程错误: {e}")
 
-            # 休息 10 秒
+            # 🚀 V19 优化：延长轮询间隔到 20-30 秒（DDE 变化没那么快，不需要频繁更新）
+            # 这样可以大幅降低 GIL 占用，提升 UI 响应速度
             time.sleep(self.dde_update_interval)
 
         logger.info("🛑 [V18.6.1] DDE 后台线程已停止")

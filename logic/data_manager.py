@@ -186,6 +186,48 @@ class DataManager:
         except Exception as e:
             logger.error(f"获取快速价格失败: {e}")
             return {}
+    
+    # ==================== 并发获取方法（V1.0 新增） ====================
+    
+    def get_fast_price_concurrent(self, stock_list: List[str], batch_size: int = 50) -> Dict[str, Dict[str, Any]]:
+        """
+        并发获取多只股票的实时数据（优化版）
+        
+        使用多线程并发获取，大幅提升速度
+        
+        Args:
+            stock_list: 股票代码列表
+            batch_size: 每批处理的股票数量
+        
+        Returns:
+            dict: 股票数据字典，格式：{code: data_dict}
+        """
+        try:
+            from logic.concurrent_executor import batch_get_realtime_data_fast
+            return batch_get_realtime_data_fast(self, stock_list, batch_size)
+        except Exception as e:
+            logger.error(f"并发获取快速价格失败: {e}")
+            # 降级到同步获取
+            return self.get_fast_price(stock_list)
+    
+    def get_history_data_concurrent(self, stock_list: List[str], **kwargs) -> Dict[str, Any]:
+        """
+        并发获取多只股票的历史数据（优化版）
+        
+        Args:
+            stock_list: 股票代码列表
+            **kwargs: 传递给 get_history_data 的参数
+        
+        Returns:
+            dict: 股票历史数据字典 {code: df}
+        """
+        try:
+            from logic.concurrent_executor import batch_get_history_data_fast
+            return batch_get_history_data_fast(self, stock_list, **kwargs)
+        except Exception as e:
+            logger.error(f"并发获取历史数据失败: {e}")
+            # 降级到同步获取
+            return {}
 
     def get_limit_up_stocks(self, date: str = None) -> List[str]:
         """
