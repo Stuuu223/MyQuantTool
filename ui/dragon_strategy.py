@@ -537,11 +537,18 @@ def render_dragon_strategy_tab(db, config):
                     st.session_state.call_ai_commander = True
                     st.rerun()
             else:
-                # 🚀 V19.4.3 新增：显示扫描失败信息
-                st.error(f"❌ 扫描失败：{scan_result.get('数据状态', '未知错误')}")
-                st.warning(f"📋 说明：{scan_result.get('说明', '无详细说明')}")
+                # 🚀 V19.4.6 新增：显示没有找到符合条件的股票
+                st.info("💡 没有找到符合条件的股票")
                 
-                # 显示详细信息
+                # 显示建议
+                if "龙头" in current_mode:
+                    st.warning("📋 建议：降低涨幅要求或调整过滤条件，重新扫描")
+                elif "趋势" in current_mode:
+                    st.warning("📋 建议：降低评分要求或调整过滤条件，重新扫描")
+                else:  # 半路战法
+                    st.warning("📋 建议：降低评分要求或调整过滤条件，重新扫描")
+                
+                # 显示统计信息
                 if '扫描数量' in scan_result:
                     st.info(f"📊 扫描统计：")
                     col1, col2, col3 = st.columns(3)
@@ -551,6 +558,21 @@ def render_dragon_strategy_tab(db, config):
                         st.metric("涨停板数量", scan_result.get('涨停板数量', 0))
                     with col3:
                         st.metric("过滤后数量", scan_result.get('过滤后数量', 0))
+        else:
+            # 🚀 V19.4.3 新增：显示扫描失败信息
+            st.error(f"❌ 扫描失败：{scan_result.get('数据状态', '未知错误')}")
+            st.warning(f"📋 说明：{scan_result.get('说明', '无详细说明')}")
+            
+            # 显示详细信息
+            if '扫描数量' in scan_result:
+                st.info(f"📊 扫描统计：")
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("全市场数量", scan_result.get('全市场数量', 0))
+                with col2:
+                    st.metric("涨停板数量", scan_result.get('涨停板数量', 0))
+                with col3:
+                    st.metric("过滤后数量", scan_result.get('过滤后数量', 0))
                 
                 # 处理 AI 调用
                 if st.session_state.get('call_ai_commander', False):
