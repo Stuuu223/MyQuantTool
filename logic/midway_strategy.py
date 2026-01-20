@@ -120,22 +120,89 @@ class MidwayStrategy:
                 logger.error("❌ [半路战法] 获取实时数据失败")
                 return []
             
-            # 6. 批量获取DDE资金流向
+            # 🚀 V19.3 第三刀：优化扫描逻辑（只做减法）
+            # Step 1: 获取全市场快照（已完成，stock_list_df 就是快照）
+            # Step 2: 本地筛选 涨幅 > 2% 且 量比 > 1.5 的股票（剩下约 300 只）
+            # Step 3: 只对这 300 只 调用 data_adapter 获取详细数据
+            
+            # 🚀 V19.3 新增：批量获取历史数据（用于计算量比）
+            logger.info(f"🔄 [半路战法] 开始批量获取历史数据，计算量比...")
+            history_data_cache = {}
+            volume_ratio_cache = {}
+            
+            for code in stock_codes:
+                try:
+                    df = self.db.get_history_data(code)
+                    if df is not None and len(df) >= 5:
+                        history_data_cache[code] = df
+                        
+                        # 计算量比
+                        # 检查是否有 turnover 列
+                        if 'turnover' in df.columns:
+                            avg_turnover = df['turnover'].tail(5).mean()  # 5日平均成交额
+                            current_turnover = realtime_data.get(code, {}).get('turnover', 0)  # 当前成交额
+                            if avg_turnover > 0:
+                                volume_ratio = current_turnover / avg_turnover
+                            else:
+                                volume_ratio = 0
+                        else:
+                            # 如果没有 turnover 列，使用成交量计算
+                            avg_volume = df['volume'].tail(5).mean() / 100  # 转换为手数
+                            current_volume = realtime_data.get(code, {}).get('volume', 0) / 100  # 转换为手数
+                            
+                            # 如果平均成交量太小（<1000手），可能是停牌或数据异常，不计算量比
+                            if avg_volume < 1000:
+                                volume_ratio = 1  # 不计算，避免异常值
+                            elif avg_volume > 0:
+                                volume_ratio = current_volume / avg_volume
+                            else:
+                                volume_ratio = 0
+                        
+                        volume_ratio_cache[code] = volume_ratio
+                except Exception as e:
+                    logger.debug(f"[{code}] 获取历史数据失败: {e}")
+                    continue
+            
+            logger.info(f"✅ [半路战法] 历史数据获取完成，成功获取 {len(history_data_cache)} 只股票")
+            
+            # 🚀 V19.3 新增：本地筛选（涨幅 > 2% 且 量比 > 1.5）
+            filtered_stock_list_df = stock_list_df.copy()
+            filtered_stock_list_df['量比'] = filtered_stock_list_df['代码'].map(volume_ratio_cache)
+            
+            # 筛选条件：涨幅 > 2% 且 量比 > 1.5
+            filtered_stock_list_df = filtered_stock_list_df[
+                (filtered_stock_list_df['涨跌幅'] > 2.0) & 
+                (filtered_stock_list_df['量比'] > 1.5)
+            ]
+            
+            logger.info(f"🎯 [半路战法] 本地筛选完成，从 {len(stock_list_df)} 只筛选到 {len(filtered_stock_list_df)} 只股票")
+            
+            # 如果筛选后没有股票，直接返回
+            if filtered_stock_list_df.empty:
+                logger.info("⚠️ [半路战法] 本地筛选后无符合条件的股票")
+                return []
+            
+            # 更新股票代码列表
+            filtered_stock_codes = filtered_stock_list_df['代码'].tolist()
+            
+            # 6. 批量获取DDE资金流向（只对筛选后的股票）
             dde_data = {}
             try:
-                dde_data = self.money_flow.batch_get_dde(stock_codes)
+                logger.info(f"🔄 [半路战法] 开始批量获取 DDE 数据，股票数量: {len(filtered_stock_codes)}")
+                dde_data = self.money_flow.batch_get_dde(filtered_stock_codes)
+                logger.info(f"✅ [半路战法] DDE 数据获取完成，成功获取 {len(dde_data)} 只股票")
             except Exception as e:
                 logger.warning(f"⚠️ [半路战法] DDE数据获取失败: {e}")
             
-            # 7. 逐个分析股票
+            # 7. 逐个分析股票（只分析筛选后的股票）
             signals = []
-            for idx, row in stock_list_df.iterrows():
+            for idx, row in filtered_stock_list_df.iterrows():
                 code = row['代码']
                 name = row['名称']
                 
                 try:
-                    # 获取历史数据
-                    df = self.db.get_history_data(code)
+                    # 🚀 V19.3 优化：从缓存中获取历史数据，避免重复查询
+                    df = history_data_cache.get(code)
                     
                     if df is None or len(df) < 20:
                         logger.debug(f"[{code}] 数据不足，跳过")
