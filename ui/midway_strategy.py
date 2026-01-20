@@ -18,6 +18,11 @@ from logic.logger import get_logger
 
 logger = get_logger(__name__)
 
+@st.cache_resource
+def get_midway_strategy_instance():
+    """获取半路战法实例（懒加载）"""
+    return MidwayStrategy()
+
 
 def render_midway_strategy_tab(db, config):
     """
@@ -104,8 +109,8 @@ def render_midway_strategy_tab(db, config):
                 
                 # 显示进度条，而不是让界面卡死
                 with st.spinner("🚀 [半路战法] 正在通过 DDE 显微镜扫描 20cm 标的... 请勿刷新页面"):
-                    # 实例化策略
-                    strategy = MidwayStrategy()
+                    # 🚀 V19 优化：使用懒加载函数获取策略实例
+                    strategy = get_midway_strategy_instance()
                     
                     # 执行核心逻辑
                     results = strategy.scan_market(

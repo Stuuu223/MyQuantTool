@@ -222,17 +222,22 @@ class MidwayStrategy:
         bearish_signal = self._check_bearish_reversal(df, code, name, dde_net)
         if bearish_signal:
             signals.append(bearish_signal)
-        
+
         # 4. 涨停加一阳战法
         limit_up_signal = self._check_limit_up_one_yang(df, code, name, dde_net)
         if limit_up_signal:
             signals.append(limit_up_signal)
-        
+
+        # 🆕 V19 新增：5. 分时形态识别（阶梯式上涨）
+        stair_signal = self._check_stair_climbing_pattern(df, code, name, dde_net)
+        if stair_signal:
+            signals.append(stair_signal)
+
         # 选择评分最高的信号
         if signals:
             best_signal = max(signals, key=lambda x: x.signal_strength)
             return best_signal
-        
+
         return None
     
     def _calculate_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -586,7 +591,7 @@ class MidwayStrategy:
         
         if dde_net > 0:
             reasons.append(f"DDE净流入{dde_net/10000:.1f}万")
-        
+
         return MidwaySignal(
             stock_code=code,
             stock_name=name,
@@ -606,8 +611,167 @@ class MidwayStrategy:
             },
             dde_net_inflow=dde_net
         )
-    
-    def _determine_risk_level(self, signal_strength: float, stop_loss: float, 
+
+    def _check_stair_climbing_pattern(self, df: pd.DataFrame, code: str, name: str,
+                                     dde_net: float) -> Optional[MidwaySignal]:
+        """
+        🆕 V19 新增：检查阶梯式上涨模式（分时形态识别）
+
+        阶梯式上涨特征：
+        1. 价格呈现台阶式上涨，每个台阶有明显的横盘整理
+        2. 每个台阶的上涨幅度在3%-8%之间
+        3. 每个台阶的整理时间在2-5根K线之间
+        4. 成交量在上涨时放大，整理时缩量
+        5. 当前处于新的台阶突破点
+
+        Args:
+            df: 历史K线数据
+            code: 股票代码
+            name: 股票名称
+            dde_net: DDE净流入
+
+        Returns:
+            MidwaySignal: 信号对象，如果没有信号则返回None
+        """
+        if len(df) < 15:
+            return None
+
+        latest = df.iloc[-1]
+        prev = df.iloc[-2]
+
+        # 1. 检测阶梯式上涨模式
+        # 使用最近15根K线来检测阶梯模式
+        recent_df = df.tail(15).copy()
+
+        # 计算价格变化
+        recent_df['price_change'] = recent_df['close'].pct_change()
+
+        # 检测台阶：价格连续上涨后横盘整理
+        steps = []
+        current_step_start = 0
+        current_step_high = recent_df.iloc[0]['high']
+        current_step_low = recent_df.iloc[0]['low']
+
+        for i in range(1, len(recent_df)):
+            row = recent_df.iloc[i]
+
+            # 检测是否开始新的台阶（价格突破前一个台阶的高点）
+            if row['close'] > current_step_high * 1.03:  # 上涨超过3%
+                # 保存上一个台阶
+                if i - current_step_start >= 2:  # 台阶至少持续2根K线
+                    steps.append({
+                        'start': current_step_start,
+                        'end': i - 1,
+                        'high': current_step_high,
+                        'low': current_step_low,
+                        'rise_pct': (current_step_high - current_step_low) / current_step_low
+                    })
+
+                # 开始新的台阶
+                current_step_start = i
+                current_step_high = row['high']
+                current_step_low = row['low']
+
+            # 更新当前台阶的高低点
+            current_step_high = max(current_step_high, row['high'])
+            current_step_low = min(current_step_low, row['low'])
+
+        # 检查是否有至少2个台阶
+        if len(steps) < 2:
+            return None
+
+        # 2. 检查当前是否处于新的台阶突破点
+        last_step = steps[-1]
+        latest_step_start = last_step['end'] + 1
+
+        # 检查最近2根K线是否突破了最后一个台阶的高点
+        if latest['close'] <= last_step['high'] * 1.02:
+            return None
+
+        # 3. 检查成交量
+        # 突破时成交量应该放大
+        if latest['volume'] < df['volume_ma5'].iloc[-1] * 1.3:
+            return None
+
+        # 4. 检查RSI
+        if latest['rsi'] > 80:
+            return None
+
+        # 5. 检查DDE
+        if dde_net < 0:
+            return None
+
+        # 6. 计算信号强度
+        signal_strength = 0.6
+
+        # 台阶数量加分（台阶越多，信号越强）
+        signal_strength += min(len(steps) * 0.05, 0.15)
+
+        # 每个台阶的上涨幅度加分
+        avg_rise_pct = sum(s['rise_pct'] for s in steps) / len(steps)
+        if 0.03 <= avg_rise_pct <= 0.08:
+            signal_strength += 0.1
+
+        # 成交量放大加分
+        volume_ratio = latest['volume'] / df['volume_ma5'].iloc[-1]
+        if volume_ratio >= 2.0:
+            signal_strength += 0.1
+        elif volume_ratio >= 1.5:
+            signal_strength += 0.05
+
+        # MACD加分
+        if latest['macdhist'] > 0:
+            signal_strength += 0.05
+
+        # DDE加分
+        if dde_net > 1000000:  # DDE净流入超过100万
+            signal_strength += 0.1
+        elif dde_net > 0:
+            signal_strength += 0.05
+
+        signal_strength = min(signal_strength, 1.0)
+
+        # 计算止损和目标价
+        entry_price = latest['close']
+        stop_loss = last_step['low']  # 止损设在上一个台阶的低点
+        target_price = entry_price * 1.10  # 目标价设为10%涨幅
+
+        risk_level = self._determine_risk_level(signal_strength, stop_loss, entry_price)
+
+        # 生成原因描述
+        reasons = [
+            f"阶梯式上涨模式，检测到{len(steps)}个台阶",
+            f"平均每个台阶上涨{avg_rise_pct*100:.1f}%",
+            f"当前突破最后一个台阶高点{last_step['high']:.2f}",
+            f"成交量放大{volume_ratio:.2f}倍"
+        ]
+
+        if dde_net > 0:
+            reasons.append(f"DDE净流入{dde_net/10000:.1f}万")
+
+        return MidwaySignal(
+            stock_code=code,
+            stock_name=name,
+            signal_date=str(latest.name),
+            signal_type='阶梯式上涨',
+            entry_price=entry_price,
+            stop_loss=stop_loss,
+            target_price=target_price,
+            signal_strength=signal_strength,
+            risk_level=risk_level,
+            reasons=reasons,
+            confidence=signal_strength,
+            technical_indicators={
+                'rsi': latest['rsi'],
+                'volume_ratio': volume_ratio,
+                'macd_hist': latest['macdhist'],
+                'steps_count': len(steps),
+                'avg_rise_pct': avg_rise_pct
+            },
+            dde_net_inflow=dde_net
+        )
+
+    def _determine_risk_level(self, signal_strength: float, stop_loss: float,
                               entry_price: float) -> str:
         """确定风险等级"""
         risk_ratio = abs(entry_price - stop_loss) / entry_price

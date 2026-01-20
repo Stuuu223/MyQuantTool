@@ -20,21 +20,28 @@ class PredictiveEngine:
     """
     
     def __init__(self):
-        self.db = get_db_manager()
+        # 🚀 V19 优化：懒加载模式，延迟数据库初始化
+        self.db = None
+        self._db_initialized = False
     
     def get_promotion_probability(self, current_height: int) -> float:
         """
-        计算连板晋级概率
-        
+        计算连板晋级概率（懒加载模式）
+
         逻辑：统计历史数据中，当最高板达到 N 时，次日出现 N+1 的次数
-        
+
         Args:
             current_height: 当前连板高度（如 5 表示 5 板）
-        
+
         Returns:
             float: 晋级成功率（百分比，如 45.5 表示 45.5%）
         """
         try:
+            # 🚀 V19 优化：懒加载，第一次使用时才初始化数据库连接
+            if not self._db_initialized:
+                self.db = get_db_manager()
+                self._db_initialized = True
+
             # 1. 获取历史最高板序列
             sql = "SELECT highest_board FROM market_summary ORDER BY date DESC LIMIT 60"
             results = self.db.sqlite_query(sql)
@@ -70,10 +77,10 @@ class PredictiveEngine:
     
     def detect_sentiment_pivot(self) -> dict:
         """
-        检测情绪转折点 (防守雷达)
-        
+        检测情绪转折点 (防守雷达)（懒加载模式）
+
         逻辑：昨日溢价连降 + 最高板降低 = 触发强力防守
-        
+
         Returns:
             dict: {
                 'action': 'DEFENSE' | 'NORMAL' | 'HOLD',
@@ -81,6 +88,11 @@ class PredictiveEngine:
             }
         """
         try:
+            # 🚀 V19 优化：懒加载，第一次使用时才初始化数据库连接
+            if not self._db_initialized:
+                self.db = get_db_manager()
+                self._db_initialized = True
+
             # 获取最近3天的复盘记录
             sql = "SELECT highest_board, date FROM market_summary ORDER BY date DESC LIMIT 3"
             results = self.db.sqlite_query(sql)
@@ -104,13 +116,13 @@ class PredictiveEngine:
     
     def get_sector_loyalty(self, sector_name: str) -> dict:
         """
-        [V13 预研] 获取板块忠诚度（持续性）
-        
+        [V13 预研] 获取板块忠诚度（持续性）（懒加载模式）
+
         逻辑：查找该板块过去出现在 top_sectors 的记录，看次日市场溢价
-        
+
         Args:
             sector_name: 板块名称（如"人工智能"、"新能源"）
-        
+
         Returns:
             dict: {
                 'sector': 板块名称,
@@ -121,6 +133,11 @@ class PredictiveEngine:
             }
         """
         try:
+            # 🚀 V19 优化：懒加载，第一次使用时才初始化数据库连接
+            if not self._db_initialized:
+                self.db = get_db_manager()
+                self._db_initialized = True
+
             # 获取最近 60 天的复盘记录
             sql = "SELECT date, top_sectors, highest_board FROM market_summary ORDER BY date DESC LIMIT 60"
             results = self.db.sqlite_query(sql)

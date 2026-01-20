@@ -27,8 +27,8 @@ class DatabaseManager:
     
     def __init__(self, config: Dict[str, Any] = None):
         """
-        初始化数据库管理器
-        
+        初始化数据库管理器（懒加载模式）
+
         Args:
             config: 数据库配置
                 {
@@ -43,15 +43,15 @@ class DatabaseManager:
             'mongodb': {'reads': 0, 'writes': 0, 'errors': 0, 'total_time': 0},
             'sqlite': {'reads': 0, 'writes': 0, 'errors': 0, 'total_time': 0}
         }
-        
-        # 初始化连接
+
+        # 🚀 V19 优化：懒加载模式，延迟连接初始化
+        # 连接将在第一次使用时才初始化，避免阻塞启动
         self._redis_client = None
         self._mongodb_client = None
         self._sqlite_connection = None
-        
-        self._init_redis()
-        self._init_mongodb()
-        self._init_sqlite()
+        self._redis_initialized = False
+        self._mongodb_initialized = False
+        self._sqlite_initialized = False
     
     def _init_redis(self):
         """初始化Redis连接"""
@@ -73,21 +73,26 @@ class DatabaseManager:
             logger.warning(f"⚠️ Redis连接失败: {e}")
     
     def _init_mongodb(self):
-        """初始化MongoDB连接"""
+        """初始化MongoDB连接（快速失败模式）"""
         try:
             import pymongo
             mongo_config = self.config.get('mongodb', {})
+            # 🚀 V19 优化：添加超时时间，快速失败（3秒）
             self._mongodb_client = pymongo.MongoClient(
                 host=mongo_config.get('host', 'localhost'),
-                port=mongo_config.get('port', 27017)
+                port=mongo_config.get('port', 27017),
+                serverSelectionTimeoutMS=3000,  # 服务器选择超时：3秒
+                socketTimeoutMS=3000,  # Socket超时：3秒
+                connectTimeoutMS=3000  # 连接超时：3秒
             )
-            # 测试连接
-            self._mongodb_client.admin.command('ping')
+            # 测试连接（使用超时）
+            self._mongodb_client.admin.command('ping', maxTimeMS=3000)
             logger.info("✅ MongoDB连接成功")
         except ImportError:
             logger.warning("⚠️ MongoDB未安装，pip install pymongo")
         except Exception as e:
             logger.warning(f"⚠️ MongoDB连接失败: {e}")
+            self._mongodb_client = None
     
     def _init_sqlite(self):
         """初始化SQLite连接"""
@@ -104,19 +109,24 @@ class DatabaseManager:
     
     def redis_set(self, key: str, value: Any, expire: int = None) -> bool:
         """
-        Redis: 设置键值
-        
+        Redis: 设置键值（懒加载模式）
+
         Args:
             key: 键
             value: 值
             expire: 过期时间（秒）
-        
+
         Returns:
             是否成功
         """
+        # 🚀 V19 优化：懒加载，第一次使用时才初始化Redis连接
+        if not self._redis_initialized:
+            self._init_redis()
+            self._redis_initialized = True
+
         if not self._redis_client:
             return False
-        
+
         start_time = time.time()
         try:
             if isinstance(value, (dict, list)):
@@ -131,17 +141,22 @@ class DatabaseManager:
     
     def redis_get(self, key: str) -> Any:
         """
-        Redis: 获取键值
-        
+        Redis: 获取键值（懒加载模式）
+
         Args:
             key: 键
-        
+
         Returns:
             值
         """
+        # 🚀 V19 优化：懒加载，第一次使用时才初始化Redis连接
+        if not self._redis_initialized:
+            self._init_redis()
+            self._redis_initialized = True
+
         if not self._redis_client:
             return None
-        
+
         start_time = time.time()
         try:
             value = self._redis_client.get(key)
@@ -158,10 +173,15 @@ class DatabaseManager:
             return None
     
     def redis_delete(self, key: str) -> bool:
-        """Redis: 删除键"""
+        """Redis: 删除键（懒加载模式）"""
+        # 🚀 V19 优化：懒加载，第一次使用时才初始化Redis连接
+        if not self._redis_initialized:
+            self._init_redis()
+            self._redis_initialized = True
+
         if not self._redis_client:
             return False
-        
+
         try:
             self._redis_client.delete(key)
             return True
@@ -173,28 +193,33 @@ class DatabaseManager:
     
     def mongodb_insert(self, collection: str, data: Dict[str, Any]) -> bool:
         """
-        MongoDB: 插入文档
-        
+        MongoDB: 插入文档（懒加载模式）
+
         Args:
             collection: 集合名
             data: 文档数据
-        
+
         Returns:
             是否成功
         """
+        # 🚀 V19 优化：懒加载，第一次使用时才初始化MongoDB连接
+        if not self._mongodb_initialized:
+            self._init_mongodb()
+            self._mongodb_initialized = True
+
         if not self._mongodb_client:
             return False
-        
+
         start_time = time.time()
         try:
             mongo_config = self.config.get('mongodb', {})
             db = self._mongodb_client[mongo_config.get('db', 'myquant')]
             collection = db[collection]
-            
+
             # 添加时间戳
             data['created_at'] = datetime.now()
             data['updated_at'] = datetime.now()
-            
+
             collection.insert_one(data)
             self._update_performance('mongodb', 'write', time.time() - start_time)
             return True
@@ -206,20 +231,25 @@ class DatabaseManager:
     def mongodb_find(self, collection: str, query: Dict[str, Any] = None,
                     limit: int = 100, sort: List[tuple] = None) -> List[Dict[str, Any]]:
         """
-        MongoDB: 查找文档
-        
+        MongoDB: 查找文档（懒加载模式）
+
         Args:
             collection: 集合名
             query: 查询条件
             limit: 限制数量
             sort: 排序 [('field', direction)]
-        
+
         Returns:
             文档列表
         """
+        # 🚀 V19 优化：懒加载，第一次使用时才初始化MongoDB连接
+        if not self._mongodb_initialized:
+            self._init_mongodb()
+            self._mongodb_initialized = True
+
         if not self._mongodb_client:
             return []
-        
+
         start_time = time.time()
         try:
             mongo_config = self.config.get('mongodb', {})
@@ -281,18 +311,23 @@ class DatabaseManager:
     
     def sqlite_execute(self, sql: str, params: tuple = None) -> bool:
         """
-        SQLite: 执行SQL
-        
+        SQLite: 执行SQL（懒加载模式）
+
         Args:
             sql: SQL语句
             params: 参数
-        
+
         Returns:
             是否成功
         """
+        # 🚀 V19 优化：懒加载，第一次使用时才初始化SQLite连接
+        if not self._sqlite_initialized:
+            self._init_sqlite()
+            self._sqlite_initialized = True
+
         if not self._sqlite_connection:
             return False
-        
+
         start_time = time.time()
         try:
             cursor = self._sqlite_connection.cursor()
@@ -310,18 +345,23 @@ class DatabaseManager:
     
     def sqlite_query(self, sql: str, params: tuple = None) -> List[tuple]:
         """
-        SQLite: 查询
-        
+        SQLite: 查询（懒加载模式）
+
         Args:
             sql: SQL语句
             params: 参数
-        
+
         Returns:
             查询结果
         """
+        # 🚀 V19 优化：懒加载，第一次使用时才初始化SQLite连接
+        if not self._sqlite_initialized:
+            self._init_sqlite()
+            self._sqlite_initialized = True
+
         if not self._sqlite_connection:
             return []
-        
+
         start_time = time.time()
         try:
             cursor = self._sqlite_connection.cursor()
