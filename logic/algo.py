@@ -1512,33 +1512,36 @@ class QuantAlgo:
                 logger.info(f"✅ [复盘模式] 获取到 {len(all_stocks)} 只涨停板股票")
                 
                 # 🆕 V9.9 新增：先进行股票池过滤，减少需要下载K线的股票数量
-                # 筛选涨停板股票（涨跌幅 >= min_change_pct）
-                limit_up_stocks = [s for s in all_stocks if s['涨跌幅'] >= min_change_pct]
-                
-                # 🚀 V19.4.7 新增：记录过滤前的数量
-                logger.info(f"🔍 [复盘模式] 过滤前：{len(all_stocks)} 只涨停板股票")
-                
-                # 🆕 V9.9 新增：对涨停板股票进行二次过滤（成交量、成交额等）
-                # 🆕 V9.10 修复：添加监控池白名单
-                active_stocks = QuantAlgo.filter_active_stocks(
-                    limit_up_stocks, 
-                    min_change_pct=min_change_pct,
-                    min_volume=min_volume,
-                    min_amount=min_amount,
-                    watchlist=watchlist
-                )
-                
-                # 🚀 V19.4.7 新增：记录过滤后的数量
-                logger.info(f"🔍 [复盘模式] 过滤后：{len(active_stocks)} 只股票（被过滤掉 {len(limit_up_stocks) - len(active_stocks)} 只）")
-                
-                # 🚀 V19.4.7 新增：记录被过滤掉的股票（前10只）
-                if len(active_stocks) < len(limit_up_stocks):
-                    filtered_out = limit_up_stocks[:10]
-                    logger.info(f"🔍 [复盘模式] 被过滤掉的股票（前10只）：")
-                    for stock in filtered_out:
-                        logger.info(f"  - {stock['代码']} {stock['名称']}: 涨幅={stock['涨跌幅']:.2f}%, 成交量={stock['成交量']:.0f}手, 成交额={stock['成交额']:.0f}万元")
-                
-                logger.info(f"🔍 [复盘模式] 股票池过滤：全市场 {len(all_stocks)} 只 → 监控池 0 只 + 活跃股票 {len(active_stocks)} 只")
+                # 🚀 V19.4.8 修复：复盘模式下，直接使用涨停板数据，不过滤
+                # ak.stock_zt_pool_em 返回的已经是涨停板股票，不需要再过滤
+                if use_history:
+                    # 复盘模式：直接使用涨停板数据，不过滤
+                    active_stocks = all_stocks
+                    logger.info(f"🔍 [复盘模式] 使用涨停板数据，共 {len(active_stocks)} 只股票（跳过过滤）")
+                else:
+                    # 实时模式：需要过滤
+                    # 筛选涨停板股票（涨跌幅 >= min_change_pct）
+                    limit_up_stocks = [s for s in all_stocks if s['涨跌幅'] >= min_change_pct]
+                    
+                    # 🆕 V9.9 新增：对涨停板股票进行二次过滤（成交量、成交额等）
+                    # 🆕 V9.10 修复：添加监控池白名单
+                    active_stocks = QuantAlgo.filter_active_stocks(
+                        limit_up_stocks, 
+                        min_change_pct=min_change_pct,
+                        min_volume=min_volume,
+                        min_amount=min_amount,
+                        watchlist=watchlist
+                    )
+                    
+                    # 🚀 V19.4.7 新增：记录过滤后的数量
+                    logger.info(f"🔍 [实时模式] 过滤后：{len(active_stocks)} 只股票（被过滤掉 {len(limit_up_stocks) - len(active_stocks)} 只）")
+                    
+                    # 🚀 V19.4.7 新增：记录被过滤掉的股票（前10只）
+                    if len(active_stocks) < len(limit_up_stocks):
+                        filtered_out = limit_up_stocks[:10]
+                        logger.info(f"🔍 [实时模式] 被过滤掉的股票（前10只）：")
+                        for stock in filtered_out:
+                            logger.info(f"  - {stock['代码']} {stock['名称']}: 涨幅={stock['涨跌幅']:.2f}%, 成交量={stock['成交量']:.0f}手, 成交额={stock['成交额']:.0f}万元")
                 
                 if not active_stocks:
                     return {
