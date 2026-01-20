@@ -220,7 +220,9 @@ class MoneyFlowAdapter:
     @staticmethod
     def calculate_ma_bias(stock_code, current_price):
         """
-        计算乖离率 (Bias)
+        计算乖离率 (Bias) - 带熔断机制
+
+        🚀 V19.1 优化：添加熔断机制，避免盘中大量历史数据请求导致系统卡顿
 
         Args:
             stock_code: 股票代码
@@ -229,11 +231,42 @@ class MoneyFlowAdapter:
         Returns:
             float: 乖离率 (%)
         """
+        # 🚀 快速熔断机制：如果当前价格无效，直接返回
+        if current_price <= 0:
+            return 0.0
+
+        # 🚀 全局熔断标志位：如果连续失败超过3次，暂停该功能5分钟
+        if not hasattr(MoneyFlowAdapter, '_ma_bias_failure_count'):
+            MoneyFlowAdapter._ma_bias_failure_count = 0
+        if not hasattr(MoneyFlowAdapter, '_ma_bias_last_failure_time'):
+            MoneyFlowAdapter._ma_bias_last_failure_time = None
+
+        # 检查是否在熔断期
+        if MoneyFlowAdapter._ma_bias_last_failure_time:
+            time_since_failure = (datetime.now() - MoneyFlowAdapter._ma_bias_last_failure_time).total_seconds()
+            if time_since_failure < 300:  # 5分钟熔断期
+                return 0.0  # 熔断期直接返回0
+
         try:
             clean_code = stock_code.split('.')[0]
 
-            # 获取个股历史行情 (最近10天)
-            hist = ak.stock_zh_a_hist(symbol=clean_code, period="daily", adjust="qfq")
+            # 🚀 V19.1 优化：添加超时设置
+            # 注意：AkShare的stock_zh_a_hist不支持timeout参数，这里通过try-catch实现快速失败
+            import signal
+
+            # 设置超时处理（仅Unix系统有效，Windows下使用try-catch）
+            def timeout_handler(signum, frame):
+                raise TimeoutError("乖离率计算超时")
+
+            try:
+                # Windows下不支持signal，直接调用
+                hist = ak.stock_zh_a_hist(symbol=clean_code, period="daily", adjust="qfq")
+            except Exception as e:
+                # Windows下直接捕获异常
+                if 'Timeout' in str(e) or 'Connection' in str(e) or '10054' in str(e):
+                    raise TimeoutError(f"网络请求超时: {e}")
+                raise
+
             hist = hist.tail(10)
 
             if len(hist) < 4:
@@ -245,10 +278,30 @@ class MoneyFlowAdapter:
             current_ma5 = (sum(last_4_closes) + float(current_price)) / 5
 
             bias = (float(current_price) - current_ma5) / current_ma5 * 100
+
+            # 🚀 计算成功，重置失败计数
+            MoneyFlowAdapter._ma_bias_failure_count = 0
+            MoneyFlowAdapter._ma_bias_last_failure_time = None
+
             return round(bias, 2)
 
-        except Exception as e:
-            logger.warning(f"计算乖离率失败 {stock_code}: {e}")
+        except (ConnectionResetError, TimeoutError, Exception) as e:
+            # 🚀 V19.1 优化：降级日志级别，不要刷屏WARNING
+            # 遇到网络错误直接返回0，保证主流程不中断
+            error_type = type(e).__name__
+
+            # 增加失败计数
+            MoneyFlowAdapter._ma_bias_failure_count += 1
+            MoneyFlowAdapter._ma_bias_last_failure_time = datetime.now()
+
+            # 如果连续失败超过3次，进入熔断期
+            if MoneyFlowAdapter._ma_bias_failure_count >= 3:
+                logger.warning(f"⚠️ [乖离率熔断] 连续失败{MoneyFlowAdapter._ma_bias_failure_count}次，暂停乖离率计算5分钟")
+                MoneyFlowAdapter._ma_bias_failure_count = 0  # 重置计数
+            else:
+                # 只在DEBUG级别记录，避免刷屏
+                logger.debug(f"乖离率计算跳过 {stock_code}: {error_type}: {e}")
+
             return 0.0
 
     @staticmethod

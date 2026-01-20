@@ -37,7 +37,10 @@ class RealtimeDataProvider(DataProvider):
         """初始化实时数据提供者"""
         super().__init__()
         self.timeout = config.API_TIMEOUT
-        self.data_freshness_threshold = 15  # V16.2: 数据保质期阈值（秒）
+        # 🚀 V19.1 优化：放宽数据保质期阈值，避免网络拥堵时误报数据过期
+        self.data_freshness_threshold = 180  # 3分钟（原15秒）
+        self.base_threshold = 180  # 基础阈值
+        self.max_threshold = 600  # 最大阈值（10分钟）
 
         # 🆕 优化 2：ACTIVE_MONITOR 和 PASSIVE_WATCH 动态优先级机制
         self.active_monitor = set()  # 高频监控列表（每秒）
@@ -124,9 +127,10 @@ class RealtimeDataProvider(DataProvider):
         # 预计算 MA4（用于快速计算乖离率）
         self._precompute_ma4(stock_list)
 
-    def _precompute_ma4(self, stock_list: List[str]):
+    def _precompute_ma4(self, stock_list):
         """
         🆕 V18.6.1: 盘前预计算 MA4，用于快速计算实时 MA5
+        🚀 V19.1 优化：使用 PreMarketCache 进行预计算，避免重复下载
 
         MA5 变化很慢，可以在盘前预计算昨天的 MA4，
         盘中只需要用 (Yesterday_MA4 * 4 + Current_Price) / 5 就能算出毫秒级精度的实时 MA5
@@ -136,27 +140,24 @@ class RealtimeDataProvider(DataProvider):
         """
         logger.info(f"🔄 [V18.6.1] 开始预计算 MA4，共 {len(stock_list)} 只股票")
 
-        for stock_code in stock_list:
-            try:
-                # 获取历史行情（最近 10 天）
-                import akshare as ak
-                clean_code = stock_code.split('.')[0]
-                hist = ak.stock_zh_a_hist(symbol=clean_code, period="daily", adjust="qfq")
+        # 🚀 V19.1 优化：使用 PreMarketCache 进行预计算
+        from logic.pre_market_cache import get_pre_market_cache
+        cache = get_pre_market_cache()
 
-                if len(hist) >= 4:
-                    # 计算昨天的 MA4（最后 4 天收盘价的平均值）
-                    last_4_closes = hist['收盘'].iloc[-4:].astype(float).values
-                    ma4 = sum(last_4_closes) / 4
-                    self.ma4_cache[stock_code] = ma4
-                else:
-                    # 历史数据不足
-                    self.ma4_cache[stock_code] = 0
+        # 检查缓存是否有效
+        if cache.is_cache_valid():
+            logger.info(f"✅ [V18.6.1] 使用缓存中的MA4数据，共 {len(cache.ma4_cache)} 只股票")
+            # 将缓存数据复制到本地
+            self.ma4_cache = cache.ma4_cache.copy()
+            return
 
-            except Exception as e:
-                logger.warning(f"⚠️ [V18.6.1] 预计算 MA4 失败 {stock_code}: {e}")
-                self.ma4_cache[stock_code] = 0
+        # 缓存无效，执行预计算
+        success_count = cache.precompute_ma4(stock_list, max_stocks=len(stock_list))
 
-        logger.info(f"✅ [V18.6.1] MA4 预计算完成，共 {len(self.ma4_cache)} 只股票")
+        # 将缓存数据复制到本地
+        self.ma4_cache = cache.ma4_cache.copy()
+
+        logger.info(f"✅ [V18.6.1] MA4 预计算完成，共 {len(self.ma4_cache)} 只股票（成功: {success_count}）")
 
     def stop_background_thread(self):
         """停止后台线程"""
@@ -212,20 +213,24 @@ class RealtimeDataProvider(DataProvider):
                         data_time = datetime.strptime(data_time_str, '%H:%M:%S')
                         data_time = data_time.replace(year=current_time.year, month=current_time.month, day=current_time.day)
 
-                        # 检查数据是否过期（超过15秒）
+                        # 检查数据是否过期（超过阈值）
                         time_diff = (current_time - data_time).total_seconds()
 
-                        # 🚀 V19.1 修复：特殊时段豁免逻辑
+                        # 🚀 V19.1 优化：动态阈值逻辑
                         from logic.market_status import MarketStatusChecker
                         checker = MarketStatusChecker()
                         current_time_time = current_time.time()
 
+                        # 动态计算阈值
+                        dynamic_threshold = self.base_threshold  # 默认180秒
+
                         # 1. 午休时段豁免（11:30-13:00）
                         is_lunch_break = checker.is_noon_break()
-                        is_acceptable_delay_lunch = is_lunch_break and time_diff < 5500  # 1.5小时
+                        if is_lunch_break:
+                            dynamic_threshold = 5500  # 1.5小时
 
                         # 2. 开盘初期豁免（9:30-9:35 和 13:00-13:05）
-                        # 开盘初期数据更新可能有延迟，允许60秒延迟
+                        # 开盘初期数据更新可能有延迟，允许更大的延迟
                         from datetime import time as dt_time
                         morning_open_start = dt_time(9, 30)
                         morning_open_end = dt_time(9, 35)
@@ -234,15 +239,24 @@ class RealtimeDataProvider(DataProvider):
 
                         is_morning_open = (morning_open_start <= current_time_time < morning_open_end)
                         is_afternoon_open = (afternoon_open_start <= current_time_time < afternoon_open_end)
-                        is_opening_period = is_morning_open or is_afternoon_open
-                        is_acceptable_delay_open = is_opening_period and time_diff < 60  # 开盘初期允许60秒
 
-                        # 综合判断：是否可接受的延迟
-                        is_acceptable_delay = is_acceptable_delay_lunch or is_acceptable_delay_open
+                        if is_morning_open or is_afternoon_open:
+                            # 开盘初期前10分钟允许更大的延迟
+                            if (is_morning_open and current_time_time < dt_time(9, 40)) or \
+                               (is_afternoon_open and current_time_time < dt_time(13, 10)):
+                                dynamic_threshold = 600  # 10分钟
+                            else:
+                                dynamic_threshold = 300  # 5分钟
 
-                        if time_diff > self.data_freshness_threshold and not is_acceptable_delay:
-                            # 只有在非特殊时段，或者数据真的过期太久才报警
-                            logger.warning(f"⚠️ [数据过期] {code} 数据时间 {data_time_str} 距今 {time_diff:.0f}秒，跳过交易")
+                        # 3. 收盘前豁免（14:50-15:00）
+                        closing_start = dt_time(14, 50)
+                        closing_end = dt_time(15, 0)
+                        if closing_start <= current_time_time < closing_end:
+                            dynamic_threshold = 300  # 5分钟
+
+                        # 检查是否过期
+                        if time_diff > dynamic_threshold:
+                            logger.warning(f"⚠️ [数据过期] {code} 数据时间 {data_time_str} 距今 {time_diff:.0f}秒（阈值:{dynamic_threshold}秒），跳过交易")
                             continue
                     except Exception as e:
                         logger.warning(f"⚠️ [时间解析失败] {code} 无法解析时间戳 {data_time_str}: {e}")

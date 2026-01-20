@@ -1408,7 +1408,7 @@ elif app_mode == "💰 资产管理":
 
 elif app_mode == "⚙️ 系统工具":
     # 系统工具模块
-    t1, t2, t3, t4 = st.tabs(["⚡ 性能优化", "⚙️ 系统设置", "📜 历史记录", "🔍 数据监控"])
+    t1, t2, t3, t4, t5 = st.tabs(["⚡ 性能优化", "⚙️ 系统设置", "📜 历史记录", "🔍 数据监控", "📊 盘前缓存"])
     with t1:
         # 延迟导入性能优化模块
         # ⚠️ 已归档：performance_optimizer 模块已移至 archived 目录
@@ -1431,5 +1431,10 @@ elif app_mode == "⚙️ 系统工具":
         with st.spinner("正在加载数据质量监控工具..."):
             data_monitor = __import__('ui.data_monitor', fromlist=['render_data_monitor_tab'])
             data_monitor.render_data_monitor_tab(get_db_instance(), config)
+    with t5:
+        # 🆕 V19.1 新增：盘前预计算缓存管理
+        with st.spinner("正在加载盘前预计算缓存管理工具..."):
+            pre_market_cache = __import__('ui.pre_market_cache_tab', fromlist=['render_pre_market_cache_tab'])
+            pre_market_cache.render_pre_market_cache_tab()
 
 logger.info("应用渲染完成")
