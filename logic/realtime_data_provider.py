@@ -192,14 +192,25 @@ class RealtimeDataProvider(DataProvider):
             # 将大列表拆分为小批次，每次只请求 20 只，失败了不影响下一批
             batch_size = 20
             all_market_data = {}
+            total_batches = (len(codes) + batch_size - 1) // batch_size
+            
+            logger.info(f"🚀 [盲扫模式] 开始批次处理，共 {len(codes)} 只股票，{total_batches} 个批次")
             
             for i in range(0, len(codes), batch_size):
                 batch = codes[i : i + batch_size]
+                batch_num = i // batch_size + 1
+                
+                logger.info(f"📊 [批次 {batch_num}/{total_batches}] 正在扫描 {len(batch)} 只股票...")
                 
                 try:
                     # 获取实时数据
                     market_data = quotation.stocks(batch)
-                    all_market_data.update(market_data)
+                    
+                    if market_data:
+                        all_market_data.update(market_data)
+                        logger.info(f"✅ [批次 {batch_num}] 成功获取 {len(market_data)} 只股票数据")
+                    else:
+                        logger.warning(f"⚠️ [批次 {batch_num}] 未获取到数据")
                     
                     # 🚀 V19.4 优化：短暂休眠，主动释放 GIL，防止卡死主线程
                     import time
@@ -207,10 +218,30 @@ class RealtimeDataProvider(DataProvider):
                     
                 except Exception as e:
                     # [关键] 捕获错误，打印日志，但绝不 crash！
-                    logger.error(f"⚠️ 批次 {i} 扫描失败，跳过: {e}")
+                    logger.error(f"❌ [批次 {batch_num}] 扫描失败: {e}，跳过此批次")
                     continue  # 继续下一批！
             
             market_data = all_market_data
+            
+            # 🚀 V19.4 盲扫模式：检查是否获取到数据
+            if not market_data:
+                logger.warning(f"⚠️ [盲扫模式] 所有批次均失败，未获取到任何数据")
+                
+                # 🚀 V19.4 降级机制：尝试使用单次请求（可能被限制，但值得一试）
+                logger.info(f"🔄 [盲扫模式] 尝试降级为单次请求...")
+                try:
+                    market_data = quotation.stocks(codes)
+                    if market_data:
+                        logger.info(f"✅ [盲扫模式] 降级成功，获取 {len(market_data)} 只股票数据")
+                    else:
+                        logger.warning(f"⚠️ [盲扫模式] 降级失败，仍未获取到数据")
+                except Exception as e:
+                    logger.error(f"❌ [盲扫模式] 降级请求失败: {e}")
+                
+                if not market_data:
+                    return []
+            else:
+                logger.info(f"✅ [盲扫模式] 批次处理完成，共获取 {len(market_data)} 只股票数据")
             
             # V16.2 新增：数据保质期校验
             current_time = datetime.now()

@@ -114,11 +114,18 @@ class MidwayStrategy:
             
             # 5. 获取实时数据
             stock_codes = stock_list_df['代码'].tolist()
+            logger.info(f"🔄 [半路战法] 开始获取实时数据，股票数量: {len(stock_codes)}")
             realtime_data = self.db.get_fast_price(stock_codes)
             
             if not realtime_data:
-                logger.error("❌ [半路战法] 获取实时数据失败")
+                logger.error(f"❌ [半路战法] 获取实时数据失败，可能原因：")
+                logger.error(f"   1. 网络连接问题")
+                logger.error(f"   2. 数据源限制")
+                logger.error(f"   3. 所有批次扫描失败")
+                logger.error(f"   请查看上方日志中的批次扫描失败信息")
                 return []
+            
+            logger.info(f"✅ [半路战法] 实时数据获取完成，成功获取 {len(realtime_data)} 只股票数据")
             
             # 🚀 V19.3 第三刀：优化扫描逻辑（只做减法）
             # Step 1: 获取全市场快照（已完成，stock_list_df 就是快照）
