@@ -148,20 +148,34 @@ def get_db():
     """获取数据库管理器实例（缓存）"""
     db = DataManager()
     
-    # ✅ V11 启动仪式：数据新陈代谢（后台线程执行）
+    # 🚀 V19.1 优化：避免重复启动后台线程
+    # 使用全局标志位确保每个线程只启动一次
     import threading
+    _cleanup_thread_started = False
+    _review_thread_started = False
+    
+    # ✅ V11 启动仪式：数据新陈代谢（后台线程执行）
     def background_cleanup():
+        nonlocal _cleanup_thread_started
+        if _cleanup_thread_started:
+            return
+        _cleanup_thread_started = True
         try:
             db.prune_old_data(days_to_keep=config.THRESHOLD_HISTORY_DAYS)
         except Exception as e:
             logger.warning(f"V11 数据瘦身失败: {e}")
     
     # 启动后台清理线程，避免界面卡顿
-    cleanup_thread = threading.Thread(target=background_cleanup, daemon=True)
-    cleanup_thread.start()
+    if not _cleanup_thread_started:
+        cleanup_thread = threading.Thread(target=background_cleanup, daemon=True)
+        cleanup_thread.start()
     
     # ✅ V11 启动仪式：自动同步最新复盘数据（后台异步执行）
     def background_review_sync():
+        nonlocal _review_thread_started
+        if _review_thread_started:
+            return
+        _review_thread_started = True
         try:
             from logic.review_manager import ReviewManager
             rm = ReviewManager()
@@ -171,9 +185,10 @@ def get_db():
             logger.warning(f"V11 复盘同步失败: {e}")
     
     # 启动后台复盘线程，避免阻塞启动
-    review_thread = threading.Thread(target=background_review_sync, daemon=True)
-    review_thread.start()
-    logger.info("🔄 V11 复盘同步已启动（后台执行）")
+    if not _review_thread_started:
+        review_thread = threading.Thread(target=background_review_sync, daemon=True)
+        review_thread.start()
+        logger.info("🔄 V11 复盘同步已启动（后台执行）")
     
     return db
 

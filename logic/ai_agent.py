@@ -40,24 +40,44 @@ class RealAIAgent:
         self.use_dragon_tactics = use_dragon_tactics
         self.llm = self._init_llm()
         
-        # 🆕 V12 接入预测引擎
-        self.pe = PredictiveEngine()
-        
-        # 初始化龙头战法
-        if use_dragon_tactics:
-            try:
-                from logic.dragon_tactics import DragonTactics
-                self.dragon_tactics = DragonTactics()
-            except ImportError:
-                logger.warning("无法导入 DragonTactics，龙头战法功能不可用")
-                self.dragon_tactics = None
-        else:
-            self.dragon_tactics = None
+        # 🚀 V19.1 优化：延迟初始化重型组件，避免启动阻塞
+        # PredictiveEngine 和 DragonTactics 将在第一次使用时才初始化
+        self.pe = None
+        self.dragon_tactics = None
+        self._pe_initialized = False
+        self._dragon_tactics_initialized = False
         
         # 🆕 优化 1：TTL Cache 缓存机制
         self._analysis_cache = {}  # {stock_code: {'dde': float, 'timestamp': datetime, 'result': dict}}
         self._cache_ttl = 1800  # 缓存有效期（秒），30分钟
         self._dde_change_threshold = 0.3  # DDE 变化阈值（30%）
+    
+    def _init_predictive_engine(self):
+        """延迟初始化预测引擎"""
+        if not self._pe_initialized:
+            try:
+                from logic.predictive_engine import PredictiveEngine
+                self.pe = PredictiveEngine()
+                self._pe_initialized = True
+                logger.info("✅ PredictiveEngine 初始化成功")
+            except Exception as e:
+                logger.error(f"❌ PredictiveEngine 初始化失败: {e}")
+                self.pe = None
+    
+    def _init_dragon_tactics(self):
+        """延迟初始化龙头战法"""
+        if not self._dragon_tactics_initialized and self.use_dragon_tactics:
+            try:
+                from logic.dragon_tactics import DragonTactics
+                self.dragon_tactics = DragonTactics()
+                self._dragon_tactics_initialized = True
+                logger.info("✅ DragonTactics 初始化成功")
+            except ImportError:
+                logger.warning("⚠️ 无法导入 DragonTactics，龙头战法功能不可用")
+                self.dragon_tactics = None
+            except Exception as e:
+                logger.error(f"❌ DragonTactics 初始化失败: {e}")
+                self.dragon_tactics = None
 
     def _init_llm(self):
         """初始化 LLM 接口"""
@@ -526,14 +546,18 @@ class RealAIAgent:
 
         # 🆕 V12 添加预测雷达数据
         if market_context and 'highest_board' in market_context:
-            current_height = market_context.get('highest_board', 0)
-            prob = self.pe.get_promotion_probability(current_height)
-            pivot = self.pe.detect_sentiment_pivot()
+            # 🚀 V19.1 优化：延迟初始化PredictiveEngine
+            self._init_predictive_engine()
             
-            prob_display = f"{prob}%" if prob >= 0 else "数据不足"
-            context_parts.append("\n【🔮 预测雷达数据】")
-            context_parts.append(f"历史同高度晋级成功率: {prob_display}")
-            context_parts.append(f"情绪转折点预判: {pivot['action']} (原因: {pivot['reason']})")
+            if self.pe:
+                current_height = market_context.get('highest_board', 0)
+                prob = self.pe.get_promotion_probability(current_height)
+                pivot = self.pe.detect_sentiment_pivot()
+                
+                prob_display = f"{prob}%" if prob >= 0 else "数据不足"
+                context_parts.append("\n【🔮 预测雷达数据】")
+                context_parts.append(f"历史同高度晋级成功率: {prob_display}")
+                context_parts.append(f"情绪转折点预判: {pivot['action']} (原因: {pivot['reason']})")
 
         return "\n".join(context_parts)
 
@@ -1615,6 +1639,9 @@ class DragonAIAgent:
         if self.llm is None:
             return self._fallback_dragon_analysis(symbol, price_data, technical_data)
 
+        # 🚀 V19.1 优化：延迟初始化DragonTactics
+        self._init_dragon_tactics()
+        
         # 1. 代码前缀检查（包括 ST 检查）
         code_check = self.dragon_tactics.check_code_prefix(symbol, name) if self.dragon_tactics else {}
         if code_check.get('banned', False):
