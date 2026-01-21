@@ -12,7 +12,46 @@ if exist "venv\Scripts\activate.bat" (
     echo.
 )
 
-echo [1/4] Checking Python...
+echo [1/5] Checking Redis service...
+sc query Redis | find /I "RUNNING" >nul
+if %errorlevel%==0 (
+    echo Redis service is already running
+) else (
+    echo Redis service is not running, attempting to start...
+    sc start Redis >nul 2>&1
+    if %errorlevel%==0 (
+        echo Redis service started successfully
+    ) else (
+        echo.
+        echo ========================================
+        echo WARNING: Redis service failed to start
+        echo ========================================
+        echo.
+        echo Possible reasons:
+        echo   - Redis is not installed as a Windows service
+        echo   - Redis service name is not "Redis"
+        echo   - Insufficient permissions
+        echo.
+        echo Impact:
+        echo   - Real-time data caching will be disabled
+        echo   - System will use SQLite as fallback
+        echo   - Some features may run slower
+        echo.
+        echo To fix this issue:
+        echo   1. Install Redis as Windows service, OR
+        echo   2. Run Redis manually: redis-server.exe, OR
+        echo   3. Ignore this warning (system will work with degraded features)
+        echo.
+        set /p continue="Continue without Redis? (y/n): "
+        if /i not "%continue%"=="y" (
+            pause
+            exit /b 1
+        )
+    )
+)
+echo.
+
+echo [2/5] Checking Python...
 python --version
 if %errorlevel% neq 0 (
     echo Error: Python not found
@@ -22,7 +61,7 @@ if %errorlevel% neq 0 (
 echo Python check passed
 echo.
 
-echo [2/4] Checking dependencies...
+echo [3/5] Checking dependencies...
 python -c "import pandas, streamlit, plotly, akshare, sqlalchemy"
 if %errorlevel% neq 0 (
     echo Warning: Some dependencies missing, please run install_dependencies.bat
@@ -36,14 +75,14 @@ if %errorlevel% neq 0 (
 echo Dependencies check passed
 echo.
 
-echo [3/4] Checking database...
+echo [4/5] Checking database...
 if not exist "data\stock_data.db" (
     echo Warning: Database not found, will be created on first run
 )
 echo Database check passed
 echo.
 
-echo [4/4] Starting application...
+echo [5/5] Starting application...
 echo.
 echo ========================================
 echo MyQuantTool is starting...

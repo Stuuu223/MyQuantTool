@@ -5,9 +5,6 @@ runOnSave = true
 # 文件监听器类型（poll 更稳定）
 fileWatcherType = "poll"
 
-# 监听间隔（秒）
-watchInterval = 1
-
 [client]
 # 启用自动连接
 showErrorDetails = true

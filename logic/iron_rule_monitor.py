@@ -566,7 +566,8 @@ class IronRuleMonitor:
                             sector_total_amount = 0
                             sector_total_dde = 0
                             for sector_stock in sector_stocks[:50]:  # 限制前 50 只股票
-                                sector_data = self.data_manager.get_realtime_data(sector_stock)
+                                # 修复：使用get_realtime_data_dict方法获取单个股票的实时数据
+                                sector_data = self.data_manager.get_realtime_data_dict(sector_stock)
                                 if sector_data:
                                     sector_total_amount += sector_data.get('amount', 0)
                                     sector_total_dde += sector_data.get('dde_net_flow', 0)

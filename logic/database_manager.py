@@ -600,6 +600,44 @@ class DatabaseManager:
         
         return report
     
+    def prune_old_data(self, days_to_keep: int = 30):
+        """
+        清理旧数据（数据瘦身）
+
+        Args:
+            days_to_keep: 保留天数，默认30天
+        """
+        try:
+            cutoff_date = (datetime.now() - timedelta(days=days_to_keep)).strftime('%Y-%m-%d')
+            logger.info(f"🧹 开始清理 {days_to_keep} 天前的数据（截止日期: {cutoff_date}）")
+
+            # 清理SQLite中的旧数据
+            cursor = self.conn.cursor()
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            tables = cursor.fetchall()
+
+            deleted_count = 0
+            for table in tables:
+                table_name = table[0]
+                # 检查表是否有日期列
+                cursor.execute(f"PRAGMA table_info({table_name})")
+                columns = [col[1] for col in cursor.fetchall()]
+
+                if 'date' in columns:
+                    # 删除旧数据
+                    cursor.execute(f"DELETE FROM {table_name} WHERE date < ?", (cutoff_date,))
+                    deleted = cursor.rowcount
+                    if deleted > 0:
+                        logger.info(f"  ✅ {table_name}: 删除 {deleted} 条旧数据")
+                        deleted_count += deleted
+
+            self.conn.commit()
+            logger.info(f"✅ 数据清理完成，共删除 {deleted_count} 条记录")
+
+        except Exception as e:
+            logger.error(f"❌ 数据清理失败: {e}")
+            raise
+
     # ==================== 初始化 ====================
     
     def initialize_schema(self):
