@@ -3916,6 +3916,7 @@ class QuantAlgo:
                         '成交量': volume,
                         '换手率': turnover_rate,  # 🆕 实时换手率
                         '成交额': turnover_amount,  # 🆕 实时成交额
+                        '量比': data.get('volume_ratio', 1),  # 🆕 V19.5 盲扫模式优化：添加量比字段
                         '买一价': data.get('bid1', 0),
                         '卖一价': data.get('ask1', 0),
                         '买一量': data.get('bid1_volume', 0),
@@ -3965,15 +3966,16 @@ class QuantAlgo:
                     'remark': ''
                 }
                 
-                # 构建实时行情数据
-                realtime_data = {
+                # 🆕 V19.5 修复：不要覆盖原来的realtime_data，使用新的变量名
+                # 构建V9.0检查专用的实时行情数据
+                predator_realtime_data = {
                     'change_percent': stock['涨跌幅'],
-                    'volume_ratio': 1,  # 暂时设为1，后面会计算
-                    'turnover_rate': 0  # 暂时设为0，后面会计算
+                    'volume_ratio': stock.get('量比', 1),
+                    'turnover_rate': stock.get('换手率', 0)
                 }
                 
                 # 运行V9.0检查
-                result = predator.analyze_stock(stock_info, realtime_data)
+                result = predator.analyze_stock(stock_info, predator_realtime_data)
                 predator_results[symbol] = result
                 
                 # 🆕 V9.2 修复：半路战法只排除触发生死红线的股票
@@ -3999,14 +4001,17 @@ class QuantAlgo:
             all_stocks = filtered_stocks
 
             # 计算量比
+            logger.info(f"realtime_data的键: {list(realtime_data.keys())[:5]}")
             for stock in all_stocks:
                 try:
                     # 🆕 V19.5 盲扫模式优化：优先使用tencent数据源的量比字段
                     # 从realtime_data中获取量比
                     code = stock['代码']
+                    logger.info(f"检查股票 {code} 是否在 realtime_data 中: {code in realtime_data}")
                     if code in realtime_data:
                         # tencent数据源提供了量比字段
                         volume_ratio = realtime_data[code].get('volume_ratio', 0)
+                        logger.info(f"股票 {code} 的volume_ratio: {volume_ratio}")
                         if volume_ratio > 0:
                             stock['量比'] = volume_ratio
                         else:
@@ -4021,7 +4026,8 @@ class QuantAlgo:
                     else:
                         # 如果没有实时数据，使用默认值
                         stock['量比'] = 1.0
-                except:
+                except Exception as e:
+                    logger.error(f"计算量比失败: {stock['代码']} {e}")
                     stock['量比'] = 1.0
 
             # 计算综合得分
