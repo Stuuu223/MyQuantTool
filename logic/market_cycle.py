@@ -45,11 +45,13 @@ class MarketCycleManager:
     
     def __init__(self):
         """初始化市场周期管理器"""
-        self.db = DataManager()
+        self.data_manager = DataManager()  # 用于获取实时数据
+        from logic.database_manager import DatabaseManager
+        self.db = DatabaseManager()  # 用于数据库和Redis操作
         self.current_cycle = None
         self.cycle_history = []
         self.market_indicators = {}
-        
+
         # 🚀 V19 优化：添加缓存和后台线程
         self.market_indicators_cache = {
             'limit_up_count': 0,
@@ -69,36 +71,33 @@ class MarketCycleManager:
     def save_limit_up_pool_to_redis(self, limit_up_stocks: List[Dict]) -> bool:
         """
         🆕 V9.2 新增：保存今日涨停池到 Redis
-        
+
         Args:
             limit_up_stocks: 涨停股票列表
-        
+
         Returns:
             bool: 是否保存成功
         """
         try:
-            if not self.db._redis_client:
-                logger.warning("Redis 未连接，无法保存涨停池")
-                return False
-            
             # 使用今天的日期作为 key
             today = datetime.now().strftime('%Y%m%d')
             key = f"limit_up:{today}"
-            
+
             # 提取股票代码列表
             stock_codes = [stock['code'] for stock in limit_up_stocks]
-            
+
             # 保存到 Redis，过期时间为 7 天
+            # 🆕 V19.5.2 修复：移除_redis_client检查，让redis_set自动初始化连接
             import json
             success = self.db.redis_set(key, json.dumps(stock_codes), expire=7*24*3600)
-            
+
             if success:
                 logger.info(f"✅ 已保存今日涨停池到 Redis（{len(stock_codes)}只股票）")
             else:
                 logger.error(f"❌ 保存涨停池到 Redis 失败")
-            
+
             return success
-        
+
         except Exception as e:
             logger.error(f"保存涨停池到 Redis 失败: {e}")
             return False
@@ -106,36 +105,37 @@ class MarketCycleManager:
     def get_limit_up_pool_from_redis(self, date_str: str = None) -> List[str]:
         """
         🆕 V9.2 新增：从 Redis 获取涨停池
-        
+
         Args:
             date_str: 日期字符串（格式：YYYYMMDD），默认为昨天
-        
+
         Returns:
             list: 股票代码列表
         """
         try:
-            if not self.db._redis_client:
-                logger.warning("Redis 未连接，无法获取涨停池")
-                return []
-            
             # 如果没有指定日期，使用昨天
             if not date_str:
                 date_str = (datetime.now() - timedelta(days=1)).strftime('%Y%m%d')
-            
+
             key = f"limit_up:{date_str}"
-            
+
             # 从 Redis 获取数据
+            # 🆕 V19.5.2 修复：移除_redis_client检查，让redis_get自动初始化连接
             import json
             raw_data = self.db.redis_get(key)
-            
+
             if raw_data:
-                stock_codes = json.loads(raw_data)
+                # 🆕 V19.5.2 修复：检查raw_data类型，redis_get可能已经解析了JSON
+                if isinstance(raw_data, list):
+                    stock_codes = raw_data
+                else:
+                    stock_codes = json.loads(raw_data)
                 logger.info(f"✅ 已从 Redis 恢复涨停池（{date_str}，{len(stock_codes)}只股票）")
                 return stock_codes
             else:
                 logger.warning(f"⚠️ Redis 中没有 {date_str} 的涨停池数据")
                 return []
-        
+
         except Exception as e:
             logger.error(f"从 Redis 获取涨停池失败: {e}")
             return []
@@ -353,14 +353,14 @@ class MarketCycleManager:
                     '601398', '601766', '601888', '603259', '688981'
                 ]
 
-            realtime_data = self.db.get_fast_price(stock_list)
+            realtime_data = self.data_manager.get_fast_price(stock_list)
             
             # 第二步：从 DataManager 获取行业信息（使用缓存，极快）
             # 🚀 V19.1 修复：DataManager没有get_industry_cache方法，返回空字典
             code_to_industry = {}
             try:
-                if hasattr(self.db, 'get_industry_cache'):
-                    code_to_industry = self.db.get_industry_cache()
+                if hasattr(self.data_manager, 'get_industry_cache'):
+                    code_to_industry = self.data_manager.get_industry_cache()
             except Exception as e:
                 logger.warning(f"获取行业缓存失败: {e}")
                 code_to_industry = {}

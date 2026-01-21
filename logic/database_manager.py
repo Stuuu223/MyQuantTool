@@ -52,6 +52,19 @@ class DatabaseManager:
         self._redis_initialized = False
         self._mongodb_initialized = False
         self._sqlite_initialized = False
+
+    @property
+    def conn(self):
+        """
+        SQLite连接属性（懒加载）
+
+        Returns:
+            sqlite3.Connection: SQLite连接对象
+        """
+        if not self._sqlite_initialized:
+            self._init_sqlite()
+            self._sqlite_initialized = True
+        return self._sqlite_connection
     
     def _init_redis(self):
         """初始化Redis连接"""
