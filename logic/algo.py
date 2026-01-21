@@ -1589,7 +1589,18 @@ class QuantAlgo:
                         # 从缓存中获取历史数据
                         df = history_data_cache.get(symbol)
                         
-                        if not df.empty and len(df) > 20:
+                        # 🚀 V19.5 盲扫模式：允许在没有历史数据的情况下继续分析
+                        if df is None or df.empty or len(df) <= 20:
+                            logger.debug(f"[{symbol}] 🚀 盲扫模式：无历史数据或数据不足，跳过技术指标分析")
+                            # 盲扫模式：只基于实时数据进行分析
+                            dragon_analysis = {
+                                '评分': 60,  # 基础分
+                                '评级': '⚠️ 盲扫模式',
+                                '信号': ['无历史数据，仅基于实时价格分析']
+                            }
+                        else:
+                            # 龙头战法分析（传入股票代码和涨跌幅）
+                            dragon_analysis = QuantAlgo.analyze_dragon_stock(df, current_price, symbol, stock_info['涨跌幅'])
                             # 龙头战法分析（传入股票代码和涨跌幅）
                             dragon_analysis = QuantAlgo.analyze_dragon_stock(df, current_price, symbol, stock_info['涨跌幅'])
                             
@@ -3096,11 +3107,14 @@ class QuantAlgo:
                     logger.warning(f"加载股票 {symbol} 历史数据失败: {e}")
             logger.info(f"✅ 历史数据加载完成，成功加载 {len(history_data_cache)} 只股票")
 
+            # 计算量比
             for stock in all_stocks:
-                # 计算量比（使用缓存的历史数据）
                 try:
+                    # 🆕 V19.5 盲扫模式优化：优先使用实时数据计算量比
                     df = history_data_cache.get(stock['代码'])
+                    
                     if df is not None and not df.empty and len(df) > 5:
+                        # 有历史数据时，使用历史数据计算精确量比
                         # 🆕 V8.1: 修复单位换算BUG
                         # 历史数据的volume是股数（来自akshare），需要转换为手数（除以100）
                         # 实时数据的成交量已经是手数（在前面已除以100）
@@ -3115,7 +3129,17 @@ class QuantAlgo:
                         else:
                             stock['量比'] = 1
                     else:
-                        stock['量比'] = 1
+                        # 🆕 V19.5 盲扫模式：使用实时换手率估算量比
+                        # 换手率 > 5% 量比设为 3-5
+                        # 换手率 2-5% 量比设为 1.5-3
+                        # 换手率 < 2% 量比设为 1
+                        turnover_rate = stock.get('换手率', 0)
+                        if turnover_rate > 5:
+                            stock['量比'] = 3.0 + (turnover_rate - 5) * 0.2  # 5% -> 3.0, 10% -> 4.0, 15% -> 5.0
+                        elif turnover_rate > 2:
+                            stock['量比'] = 1.5 + (turnover_rate - 2) * 0.5  # 2% -> 1.5, 3.5% -> 2.25, 5% -> 3.0
+                        else:
+                            stock['量比'] = 1.0
                 except:
                     stock['量比'] = 1
             
@@ -3667,20 +3691,28 @@ class QuantAlgo:
 
                     # 获取历史数据
                     df = history_data_cache.get(symbol)
+                    
+                    # 🚀 V19.5 盲扫模式：允许在没有历史数据的情况下继续分析
                     if df is None or df.empty:
-                        return None
+                        df = None  # 标记为无历史数据
+                        logger.debug(f"[{symbol}] 🚀 盲扫模式：无历史数据，使用默认值")
+                        
+                        # 盲扫模式默认值
+                        ma5 = ma10 = ma20 = current_price  # 假设均线等于当前价格
+                        is_bullish = True  # 假设多头排列
+                        turnover_rate = 0
+                    else:
+                        # 计算均线多头排列
+                        ma5 = df['close'].tail(5).mean()
+                        ma10 = df['close'].tail(10).mean()
+                        ma20 = df['close'].tail(20).mean()
 
-                    # 计算均线多头排列
-                    ma5 = df['close'].tail(5).mean()
-                    ma10 = df['close'].tail(10).mean()
-                    ma20 = df['close'].tail(20).mean()
+                        is_bullish = current_price > ma5 > ma10 > ma20
 
-                    is_bullish = current_price > ma5 > ma10 > ma20
-
-                    # 获取换手率
-                    turnover_rate = 0
-                    if 'turnover_rate' in df.columns:
-                        turnover_rate = df['turnover_rate'].iloc[-1]
+                        # 获取换手率
+                        turnover_rate = 0
+                        if 'turnover_rate' in df.columns:
+                            turnover_rate = df['turnover_rate'].iloc[-1]
 
                     # 计算评分
                     score = stock['趋势评分']
@@ -3871,6 +3903,10 @@ class QuantAlgo:
 
                     # 获取成交量
                     volume = data.get('volume', 0) / 100  # 转换为手
+                    
+                    # 🆕 V19.5 盲扫模式优化：获取实时换手率和成交额
+                    turnover_rate = data.get('turnover', 0)  # 换手率（百分比）
+                    turnover_amount = data.get('turnover', 0)  # 成交额（万元）
 
                     all_stocks.append({
                         '代码': code,
@@ -3878,6 +3914,8 @@ class QuantAlgo:
                         '最新价': current_price,
                         '涨跌幅': pct_change,
                         '成交量': volume,
+                        '换手率': turnover_rate,  # 🆕 实时换手率
+                        '成交额': turnover_amount,  # 🆕 实时成交额
                         '买一价': data.get('bid1', 0),
                         '卖一价': data.get('ask1', 0),
                         '买一量': data.get('bid1_volume', 0),
@@ -3963,25 +4001,28 @@ class QuantAlgo:
             # 计算量比
             for stock in all_stocks:
                 try:
-                    df = history_data_cache.get(stock['代码'])
-                    if df is not None and not df.empty and len(df) > 5:
-                        # 🆕 V8.1: 修复单位换算BUG
-                        # 历史数据的volume是股数（来自akshare），需要转换为手数（除以100）
-                        # 实时数据的成交量已经是手数（在前面已除以100）
-                        avg_volume = df['volume'].tail(5).mean() / 100  # 转换为手数
-                        
-                        # 🆕 V8.3: 添加异常值检测
-                        # 如果平均成交量太小（<1000手），可能是停牌或数据异常，不计算量比
-                        if avg_volume < 1000:
-                            stock['量比'] = 1  # 不计算，避免异常值
-                        elif avg_volume > 0:
-                            stock['量比'] = stock['成交量'] / avg_volume
+                    # 🆕 V19.5 盲扫模式优化：优先使用tencent数据源的量比字段
+                    # 从realtime_data中获取量比
+                    code = stock['代码']
+                    if code in realtime_data:
+                        # tencent数据源提供了量比字段
+                        volume_ratio = realtime_data[code].get('volume_ratio', 0)
+                        if volume_ratio > 0:
+                            stock['量比'] = volume_ratio
                         else:
-                            stock['量比'] = 1
+                            # 如果tencent数据源没有量比，使用实时换手率估算
+                            turnover_rate = stock.get('换手率', 0)
+                            if turnover_rate > 5:
+                                stock['量比'] = 3.0 + (turnover_rate - 5) * 0.2
+                            elif turnover_rate > 2:
+                                stock['量比'] = 1.5 + (turnover_rate - 2) * 0.5
+                            else:
+                                stock['量比'] = 1.0
                     else:
-                        stock['量比'] = 1
+                        # 如果没有实时数据，使用默认值
+                        stock['量比'] = 1.0
                 except:
-                    stock['量比'] = 1
+                    stock['量比'] = 1.0
 
             # 计算综合得分
             for stock in all_stocks:
@@ -4038,12 +4079,18 @@ class QuantAlgo:
 
                     # 获取历史数据
                     df = history_data_cache.get(symbol)
+                    
+                    # 🚀 V19.5 盲扫模式：允许在没有历史数据的情况下继续分析
                     if df is None or df.empty:
-                        return None
+                        df = None  # 标记为无历史数据
+                        logger.debug(f"[{symbol}] 🚀 盲扫模式：无历史数据，使用默认值")
 
                     # 获取换手率
-                    turnover_rate = 0
-                    if 'turnover_rate' in df.columns:
+                    # 🆕 V19.5 盲扫模式优化：优先使用实时换手率
+                    turnover_rate = stock.get('换手率', 0)
+                    
+                    # 如果实时换手率为0且有历史数据，尝试从历史数据获取
+                    if turnover_rate == 0 and df is not None and 'turnover_rate' in df.columns:
                         turnover_rate = df['turnover_rate'].iloc[-1]
 
                     # 计算评分

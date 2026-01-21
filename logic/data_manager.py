@@ -174,7 +174,9 @@ class DataManager:
                         'high': stock_data.get('high', 0),
                         'low': stock_data.get('low', 0),
                         'volume': stock_data.get('volume', 0),
-                        'turnover': stock_data.get('amount', 0),
+                        'turnover': stock_data.get('turnover', 0),  # 🆕 V19.5 盲扫模式优化：使用正确的换手率字段
+                        'amount': stock_data.get('amount', 0),  # 成交额
+                        'volume_ratio': stock_data.get('volume_ratio', 0),  # 🆕 V19.5 盲扫模式优化：添加量比字段
                         'bid1': stock_data.get('bid1_price', 0),
                         'ask1': stock_data.get('ask1_price', 0),
                         'bid1_volume': stock_data.get('bid1_volume', 0),

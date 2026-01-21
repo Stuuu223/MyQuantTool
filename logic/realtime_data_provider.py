@@ -58,6 +58,11 @@ class RealtimeDataProvider(DataProvider):
         self.dde_update_interval = 30  # 🚀 V19 优化：DDE 更新间隔延长到 30 秒（降低 GIL 占用）
         self.monitor_list = []  # 监控股票列表
 
+        # 🆕 V19.5: 盘前缓存系统 - 解决 IP 被封禁问题
+        from logic.pre_market_cache import get_pre_market_cache
+        self.pre_market_cache = get_pre_market_cache()
+        logger.info("✅ [V19.5] 盘前缓存系统已加载")
+
         # 启动后台线程抓取 DDE
         self.dde_thread = threading.Thread(target=self._background_fetch_dde, daemon=True)
         self.dde_thread.start()
@@ -179,8 +184,8 @@ class RealtimeDataProvider(DataProvider):
         try:
             import easyquotation as eq
             
-            # 初始化行情接口
-            quotation = eq.use('sina')
+            # 🆕 V19.5 盲扫模式优化：使用 tencent 数据源以获取正确的换手率和量比
+            quotation = eq.use('tencent')
             
             # 提取股票代码
             if isinstance(stock_list[0], dict):
@@ -331,6 +336,8 @@ class RealtimeDataProvider(DataProvider):
                     'low': data.get('low', 0),
                     'pre_close': data.get('close', 0),
                     'data_timestamp': data_time_str,  # V16.2 新增
+                    'turnover': data.get('turnover', 0),  # 🆕 V19.5 盲扫模式优化：添加换手率字段
+                    'volume_ratio': data.get('量比', 0),  # 🆕 V19.5 盲扫模式优化：添加量比字段
                 }
                 result.append(stock_info)
 
@@ -363,17 +370,13 @@ class RealtimeDataProvider(DataProvider):
                     # 注入乖离率（使用缓存或快速计算）
                     current_price = stock_info.get('price', 0)
                     if current_price > 0:
-                        # 如果有 MA4 缓存，快速计算实时 MA5
-                        if code in self.ma4_cache:
-                            ma4 = self.ma4_cache[code]
-                            # 实时 MA5 = (昨天 MA4 * 4 + 当前价格) / 5
-                            realtime_ma5 = (ma4 * 4 + current_price) / 5
-                            bias = (current_price - realtime_ma5) / realtime_ma5 * 100
-                            stock_info['bias_rate'] = round(bias, 2)
-                        else:
-                            # 没有缓存，使用 Akshare 计算（较慢，但只在第一次调用时慢）
-                            bias = MoneyFlowAdapter.calculate_ma_bias(code, current_price)
+                        # 🆕 V19.5: 使用盘前缓存计算乖离率（0 网络请求）
+                        # 优先使用盘前缓存，如果缓存不存在则返回 0
+                        bias = self.pre_market_cache.calculate_ma_bias(code, current_price)
+                        if bias is not None:
                             stock_info['bias_rate'] = bias
+                        else:
+                            stock_info['bias_rate'] = 0
                     else:
                         stock_info['bias_rate'] = 0
 
