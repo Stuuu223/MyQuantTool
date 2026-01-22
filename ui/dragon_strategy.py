@@ -438,51 +438,57 @@ def render_dragon_strategy_tab(db, config):
             with st.spinner('🚀 正在执行半路战法筛选 (20cm加速逼空)...'):
                 scan_result = QuantAlgo.scan_halfway_stocks(limit=scan_limit, min_score=min_score)
         elif "低吸" in current_mode:
-            with st.spinner('🛡️ 正在执行低吸战法筛选 (回踩均线/弱转强)...'):
+            with st.spinner('🛡️ 正在扫描低吸机会 (活跃股 TOP{})...'.format(scan_limit)):
                 from logic.low_suction_engine import get_low_suction_engine
                 from logic.data_manager import DataManager
-                import akshare as ak
+                from logic.active_stock_filter import get_active_stocks
                 
                 engine = get_low_suction_engine()
                 dm = DataManager()
                 
-                # 获取股票列表
-                stock_list_df = ak.stock_info_a_code_name()
-                stock_codes = stock_list_df['code'].head(scan_limit).tolist()
-                stock_dict = stock_list_df.set_index('code')['name'].to_dict()
+                # 1. 获取活跃股池（修复：不再扫 000001 开头的死股）
+                active_stocks = get_active_stocks(
+                    limit=scan_limit,
+                    sort_by='amount',  # 按成交额排序，主力战场
+                    exclude_st=True,
+                    exclude_delisting=True
+                )
                 
                 suction_stocks = []
-                for code in stock_codes:
+                progress_bar = st.progress(0)
+                
+                for i, stock_info in enumerate(active_stocks):
+                    code = stock_info['code']
+                    progress_bar.progress((i + 1) / len(active_stocks))
+                    
                     try:
-                        realtime_data = dm.get_realtime_data_dict(code)
-                        if not realtime_data:
+                        # 2. 获取K线数据（用于判断均线和昨日状态）
+                        kline = dm.get_history_data(code, period='daily')
+                        if kline is None or len(kline) < 2:
                             continue
                         
-                        current_price = realtime_data.get('now', 0)
-                        prev_close = realtime_data.get('close', 0)
+                        # 3. 补全昨日状态（修复：弱转强逻辑需要）
+                        yesterday = kline.iloc[-2]
+                        # 简单判断：昨日振幅 > 8% 且 未涨停，疑似炸板/烂板/大长腿
+                        yesterday_limit_up = yesterday['high'] > yesterday['close'] * 1.05 and \
+                                           (yesterday['high'] - yesterday['close']) / yesterday['close'] > 0.03
                         
-                        if current_price == 0 or prev_close == 0:
-                            continue
-                        
-                        # 获取股票名称
-                        stock_name = stock_dict.get(code, '')
-                        
-                        # 获取分时数据（可选，暂时设为None）
-                        intraday_data = None
-                        
-                        # 分析低吸信号
+                        # 4. 执行分析
                         result = engine.analyze_low_suction(
-                            code, current_price, prev_close,
-                            intraday_data=intraday_data,
-                            logic_keywords=['机器人', '航天', 'AI', '芯片', '新能源']
+                            code,
+                            stock_info['price'],
+                            stock_info['close'],
+                            intraday_data=None,  # 暂时为了速度仍传None
+                            logic_keywords=['机器人', 'AI', '低空', '固态', '并购'],  # 热点逻辑
+                            yesterday_limit_up=yesterday_limit_up  # ✅ 修复：传入昨日状态
                         )
                         
                         if result['has_suction']:
                             suction_stocks.append({
                                 '代码': code,
-                                '名称': stock_name,
-                                '最新价': current_price,
-                                '涨跌幅': (current_price - prev_close) / prev_close * 100,
+                                '名称': stock_info['name'],
+                                '最新价': stock_info['price'],
+                                '涨跌幅': stock_info['change_pct'],
                                 '置信度': result['overall_confidence'],
                                 '建议': result['recommendation'],
                                 '原因': result['reason'],
@@ -492,39 +498,47 @@ def render_dragon_strategy_tab(db, config):
                     except Exception as e:
                         continue
                 
+                progress_bar.empty()
                 scan_result = {
                     '数据状态': '正常',
-                    '扫描数量': len(stock_codes),
+                    '扫描数量': len(active_stocks),
                     '符合条件数量': len(suction_stocks),
                     '低吸股票列表': suction_stocks
                 }
         elif "尾盘" in current_mode:
-            with st.spinner('🌙 正在执行尾盘选股扫描 (14:30-15:00)...'):
+            with st.spinner('🌙 正在执行尾盘突袭扫描 (活跃股 TOP{})...'.format(scan_limit)):
                 from logic.late_trading_scanner import get_late_trading_scanner
-                from logic.data_manager import DataManager
-                import akshare as ak
+                from logic.active_stock_filter import get_active_stocks
                 
                 scanner = get_late_trading_scanner()
-                dm = DataManager()
                 
-                # 检查是否在尾盘时段
-                if not scanner.is_late_trading_time():
-                    st.warning("⚠️ 当前不在尾盘时段（14:30-15:00），扫描结果可能不准确")
+                # 1. 强制时间检查（调试模式可注释）
+                # if not scanner.is_late_trading_time():
+                #     st.warning("⚠️ 提示：当前非尾盘时段，仅做逻辑演示")
                 
-                # 获取股票列表
-                stock_list_df = ak.stock_info_a_code_name()
-                stock_codes = stock_list_df['code'].head(scan_limit).tolist()
-                stock_name_dict = stock_list_df.set_index('code')['name'].to_dict()
+                # 2. 获取活跃股池（重点关注涨幅 > 2% 的票）
+                active_stocks = get_active_stocks(
+                    limit=scan_limit * 2,  # 多取点备选
+                    sort_by='amount',  # 按成交额排序
+                    min_change_pct=2.0,  # 只看涨幅 > 2% 的票
+                    exclude_st=True,
+                    exclude_delisting=True
+                )
                 
+                # 提取代码和名称
+                candidates = [s['code'] for s in active_stocks[:scan_limit]]
+                stock_name_dict = {s['code']: s['name'] for s in active_stocks}
+                
+                # 3. 批量扫描
                 scan_result = scanner.scan_late_trading_opportunities(
-                    stock_codes, 
+                    candidates,
                     stock_name_dict=stock_name_dict,
                     max_stocks=scan_limit
                 )
                 
                 # 转换为统一格式
                 scan_result['数据状态'] = '正常' if scan_result.get('is_late_trading_time') else '非尾盘时段'
-                scan_result['扫描数量'] = scan_result.get('total_scanned', 0)
+                scan_result['扫描数量'] = len(candidates)
                 scan_result['符合条件数量'] = len(scan_result.get('opportunities', []))
                 scan_result['尾盘机会列表'] = scan_result.get('opportunities', [])
         
