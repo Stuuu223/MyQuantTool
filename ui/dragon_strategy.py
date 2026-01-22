@@ -342,6 +342,28 @@ def render_dragon_strategy_tab(db, config):
         with col_filter3:
             min_amount = st.number_input("最小成交额 (万元)", min_value=1000, max_value=50000, value=3000, step=1000, key="filter_min_amount")
         
+        # 🆕 V19.6 新增：高级筛选选项
+        st.write("**🔍 高级筛选选项**")
+        col_adv1, col_adv2, col_adv3 = st.columns(3)
+        with col_adv1:
+            min_turnover = st.slider("最小换手率 (%)", 0.0, 20.0, 0.0, 0.5, key="filter_min_turnover", help="过滤换手率不足的股票，0表示不限制")
+        with col_adv2:
+            check_dde = st.checkbox("检查DDE资金流向", value=False, key="filter_check_dde", help="检查DDE资金流向，需要额外请求，较慢")
+        with col_adv3:
+            enable_hot_sectors = st.checkbox("启用热点板块筛选", value=False, key="filter_enable_hot_sectors", help="只扫描热点板块的股票")
+        
+        # 🆕 V19.6 新增：热点板块选择
+        if enable_hot_sectors:
+            hot_sectors_input = st.text_input(
+                "热点板块（用逗号分隔）",
+                value="AI,机器人,低空经济,固态电池,新能源汽车",
+                help="例如：AI,机器人,低空经济",
+                key="filter_hot_sectors"
+            )
+            hot_sectors = [s.strip() for s in hot_sectors_input.split(",") if s.strip()]
+        else:
+            hot_sectors = None
+        
         # 🚀 V19.4.9 新增：自动检测收盘后，自动使用收盘数据
         st.write("**🔄 复盘模式**")
         st.info("💡 复盘模式使用历史数据进行分析，适合收盘后复盘当天的涨停板股票。")

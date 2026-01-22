@@ -197,7 +197,22 @@ class BuyPointScanner:
             if divergence_signal:
                 signals.append(divergence_signal)
 
-            # 8. 弱信号检测（如果没找到强信号，检查弱信号）
+            # 🆕 V19.6 新增：8. 量价齐升买点
+            volume_price_signal = self._check_volume_price_rise(df, stock_code, stock_name)
+            if volume_price_signal:
+                signals.append(volume_price_signal)
+
+            # 🆕 V19.6 新增：9. 缩量回调买点
+            shrinkage_signal = self._check_shrinkage_pullback(df, stock_code, stock_name)
+            if shrinkage_signal:
+                signals.append(shrinkage_signal)
+
+            # 🆕 V19.6 新增：10. 突破前高买点
+            breakout_high_signal = self._check_breakout_high(df, stock_code, stock_name)
+            if breakout_high_signal:
+                signals.append(breakout_high_signal)
+
+            # 11. 弱信号检测（如果没找到强信号，检查弱信号）
             if not signals:
                 weak_signal = self._check_weak_signal(df, stock_code, stock_name)
                 if weak_signal:
@@ -518,6 +533,237 @@ class BuyPointScanner:
                     'rsi': df['rsi'].iloc[-1],
                     'price_lowest': True,
                     'rsi_not_lowest': True
+                }
+            )
+
+        return None
+
+    def _check_volume_price_rise(self, df: pd.DataFrame, stock_code: str, stock_name: str) -> Optional[BuySignal]:
+        """检查量价齐升买点"""
+        if len(df) < 10:
+            return None
+
+        latest = df.iloc[-1]
+
+        # 检查是否量价齐升
+        # 价格上涨
+        price_rise = latest['close'] > latest['open']
+        # 成交量放大
+        volume_rise = latest['volume'] > df['volume_ma5'].iloc[-1] * 1.5
+        # RSI健康
+        rsi_healthy = 30 < latest['rsi'] < 70
+
+        if price_rise and volume_rise and rsi_healthy:
+            # 基础分50分
+            score = 50
+
+            # 成交量越大，加分
+            if latest['volume'] > df['volume_ma5'].iloc[-1] * 2.5:
+                score += 20
+            elif latest['volume'] > df['volume_ma5'].iloc[-1] * 2.0:
+                score += 15
+            elif latest['volume'] > df['volume_ma5'].iloc[-1] * 1.5:
+                score += 10
+
+            # RSI越健康，加分
+            if 40 < latest['rsi'] < 60:
+                score += 15
+            elif 30 < latest['rsi'] < 70:
+                score += 10
+
+            # MACD加分
+            if latest['macdhist'] > 0:
+                score += 15
+
+            score = min(score, 100)
+
+            # 计算入场价、止损价、目标价
+            entry_price = latest['close']
+            stop_loss = latest['low'] * 0.97
+            target_price = entry_price * 1.10
+
+            risk_level = self._determine_risk_level(abs(entry_price - stop_loss) / entry_price)
+
+            reasons = [
+                f"量价齐升，成交量放大{latest['volume']/df['volume_ma5'].iloc[-1]:.2f}倍",
+                f"RSI={latest['rsi']:.1f}，技术指标健康",
+                f"MACD柱状图={latest['macdhist']:.4f}，上涨动能"
+            ]
+
+            print(f"[量价齐升买点] {stock_code} - 信号评分: {score}")
+
+            return BuySignal(
+                stock_code=stock_code,
+                stock_name=stock_name,
+                scan_date=latest.name.strftime('%Y-%m-%d') if hasattr(latest.name, 'strftime') else str(latest.name),
+                signal_type='量价齐升',
+                entry_price=entry_price,
+                stop_loss=stop_loss,
+                target_price=target_price,
+                signal_score=score,
+                risk_level=risk_level,
+                reasons=reasons,
+                technical_indicators={
+                    'rsi': latest['rsi'],
+                    'volume_ratio': latest['volume'] / df['volume_ma5'].iloc[-1],
+                    'macd_hist': latest['macdhist']
+                }
+            )
+
+        return None
+
+    def _check_shrinkage_pullback(self, df: pd.DataFrame, stock_code: str, stock_name: str) -> Optional[BuySignal]:
+        """检查缩量回调买点"""
+        if len(df) < 15:
+            return None
+
+        latest = df.iloc[-1]
+        prev = df.iloc[-2]
+
+        # 检查是否缩量回调
+        # 价格小幅回调
+        price_pullback = latest['close'] < prev['close'] and (prev['close'] - latest['close']) / prev['close'] < 0.03
+        # 成交量萎缩
+        volume_shrink = latest['volume'] < df['volume_ma5'].iloc[-1] * 0.8
+        # 价格在均线附近
+        ma_support = abs(latest['close'] - latest['ma10']) / latest['ma10'] < 0.02
+
+        if price_pullback and volume_shrink and ma_support:
+            # 基础分50分
+            score = 50
+
+            # 缩量越明显，加分
+            if latest['volume'] < df['volume_ma5'].iloc[-1] * 0.6:
+                score += 20
+            elif latest['volume'] < df['volume_ma5'].iloc[-1] * 0.7:
+                score += 15
+            elif latest['volume'] < df['volume_ma5'].iloc[-1] * 0.8:
+                score += 10
+
+            # 回调幅度越小，加分
+            pullback_pct = (prev['close'] - latest['close']) / prev['close']
+            if pullback_pct < 0.01:
+                score += 15
+            elif pullback_pct < 0.02:
+                score += 10
+            elif pullback_pct < 0.03:
+                score += 5
+
+            # RSI加分
+            if 35 < latest['rsi'] < 50:
+                score += 15
+
+            score = min(score, 100)
+
+            # 计算入场价、止损价、目标价
+            entry_price = latest['close']
+            stop_loss = latest['low'] * 0.96
+            target_price = entry_price * 1.08
+
+            risk_level = self._determine_risk_level(abs(entry_price - stop_loss) / entry_price)
+
+            reasons = [
+                f"缩量回调，成交量萎缩{latest['volume']/df['volume_ma5'].iloc[-1]:.2f}倍",
+                f"价格在MA10附近企稳，回调幅度{pullback_pct*100:.2f}%",
+                f"RSI={latest['rsi']:.1f}，处于合理区间"
+            ]
+
+            print(f"[缩量回调买点] {stock_code} - 信号评分: {score}")
+
+            return BuySignal(
+                stock_code=stock_code,
+                stock_name=stock_name,
+                scan_date=latest.name.strftime('%Y-%m-%d') if hasattr(latest.name, 'strftime') else str(latest.name),
+                signal_type='缩量回调',
+                entry_price=entry_price,
+                stop_loss=stop_loss,
+                target_price=target_price,
+                signal_score=score,
+                risk_level=risk_level,
+                reasons=reasons,
+                technical_indicators={
+                    'rsi': latest['rsi'],
+                    'volume_ratio': latest['volume'] / df['volume_ma5'].iloc[-1],
+                    'ma_support': 'MA10附近'
+                }
+            )
+
+        return None
+
+    def _check_breakout_high(self, df: pd.DataFrame, stock_code: str, stock_name: str) -> Optional[BuySignal]:
+        """检查突破前高买点"""
+        if len(df) < 20:
+            return None
+
+        latest = df.iloc[-1]
+
+        # 检查是否突破前高
+        # 找到最近20天的高点
+        recent_high = df['high'].tail(20).max()
+        # 今天突破前高
+        breakout = latest['close'] > recent_high
+        # 成交量确认
+        volume_confirm = latest['volume'] > df['volume_ma5'].iloc[-1] * 1.3
+        # RSI不超买
+        rsi_ok = latest['rsi'] < 75
+
+        if breakout and volume_confirm and rsi_ok:
+            # 基础分60分（突破前高是较强信号）
+            score = 60
+
+            # 突破幅度越大，加分
+            breakout_pct = (latest['close'] - recent_high) / recent_high
+            if breakout_pct > 0.03:
+                score += 15
+            elif breakout_pct > 0.02:
+                score += 10
+            elif breakout_pct > 0.01:
+                score += 5
+
+            # 成交量越大，加分
+            if latest['volume'] > df['volume_ma5'].iloc[-1] * 2.0:
+                score += 15
+            elif latest['volume'] > df['volume_ma5'].iloc[-1] * 1.5:
+                score += 10
+
+            # RSI越健康，加分
+            if 40 < latest['rsi'] < 60:
+                score += 10
+            elif 30 < latest['rsi'] < 70:
+                score += 5
+
+            score = min(score, 100)
+
+            # 计算入场价、止损价、目标价
+            entry_price = latest['close']
+            stop_loss = recent_high * 0.97
+            target_price = entry_price * 1.12
+
+            risk_level = self._determine_risk_level(abs(entry_price - stop_loss) / entry_price)
+
+            reasons = [
+                f"突破前高{recent_high:.2f}，突破幅度{breakout_pct*100:.2f}%",
+                f"成交量放大{latest['volume']/df['volume_ma5'].iloc[-1]:.2f}倍",
+                f"RSI={latest['rsi']:.1f}，上涨动能充足"
+            ]
+
+            print(f"[突破前高买点] {stock_code} - 信号评分: {score}")
+
+            return BuySignal(
+                stock_code=stock_code,
+                stock_name=stock_name,
+                scan_date=latest.name.strftime('%Y-%m-%d') if hasattr(latest.name, 'strftime') else str(latest.name),
+                signal_type='突破前高',
+                entry_price=entry_price,
+                stop_loss=stop_loss,
+                target_price=target_price,
+                signal_score=score,
+                risk_level=risk_level,
+                reasons=reasons,
+                technical_indicators={
+                    'rsi': latest['rsi'],
+                    'volume_ratio': latest['volume'] / df['volume_ma5'].iloc[-1],
+                    'breakout_high': recent_high
                 }
             )
 

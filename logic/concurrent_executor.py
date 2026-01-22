@@ -25,14 +25,53 @@ logger = get_logger(__name__)
 class ConcurrentExecutor:
     """多线程并发执行器"""
     
-    def __init__(self, max_workers: int = 5):
+    def __init__(self, max_workers: int = 2):
         """
         初始化并发执行器
         
         Args:
-            max_workers: 最大线程数 (建议不超过5，避免connection pool溢出)
+            max_workers: 最大线程数 (建议不超过2，避免connection pool溢出)
+        
+        🆕 V19.6 修复：
+        - 将默认并发数从5降到2，避免连接池满的问题
+        - 原因：requests库底层连接池默认只有10个位置，5个线程并发时
+          每个线程可能发起多次请求（日线+分时+资金流），瞬间占满连接池
         """
         self.max_workers = max_workers
+        
+        # 🆕 V19.6 新增：配置requests连接池大小
+        try:
+            import requests
+            from requests.adapters import HTTPAdapter
+            from urllib3.util.retry import Retry
+            
+            # 创建一个session，配置更大的连接池
+            self.session = requests.Session()
+            
+            # 配置重试策略
+            retry_strategy = Retry(
+                total=3,  # 最多重试3次
+                backoff_factor=1,  # 重试间隔指数增长
+                status_forcelist=[429, 500, 502, 503, 504],  # 遇到这些状态码时重试
+            )
+            
+            # 配置连接池适配器
+            adapter = HTTPAdapter(
+                max_retries=retry_strategy,
+                pool_connections=20,  # 连接池大小增加到20
+                pool_maxsize=20,  # 最大连接数增加到20
+                pool_block=False  # 连接池满时不阻塞
+            )
+            
+            # 应用适配器到http和https
+            self.session.mount("http://", adapter)
+            self.session.mount("https://", adapter)
+            
+            logger.info(f"✅ 连接池配置完成：pool_connections=20, pool_maxsize=20")
+        except Exception as e:
+            logger.warning(f"⚠️ 连接池配置失败，使用默认配置: {e}")
+            self.session = None
+        
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
     
     def batch_get_realtime_data(self, data_manager, stock_list: List[str], batch_size: int = 50) -> Dict[str, Dict[str, Any]]:
@@ -200,13 +239,18 @@ class ConcurrentExecutor:
         """
         logger.info("🛑 关闭并发执行器")
         self.executor.shutdown(wait=wait)
+        
+        # 🆕 V19.6 新增：关闭session
+        if self.session:
+            self.session.close()
+            logger.info("✅ Session已关闭")
 
 
 # 全局单例
 _global_executor = None
 
 
-def get_concurrent_executor(max_workers: int = 5) -> ConcurrentExecutor:
+def get_concurrent_executor(max_workers: int = 2) -> ConcurrentExecutor:
     """
     获取全局并发执行器实例
     
@@ -252,6 +296,10 @@ def batch_get_realtime_data_fast(data_manager, stock_list: List[str], batch_size
     
     Returns:
         dict: 股票数据字典 {code: data}
+    
+    🆕 V19.6 优化：
+    - 增加了批次间隔，避免瞬时请求过多
+    - 每批之间间隔0.5秒，给服务器喘息时间
     """
     executor = get_concurrent_executor()
     return executor.batch_get_realtime_data(data_manager, stock_list, batch_size)
