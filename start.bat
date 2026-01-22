@@ -82,11 +82,23 @@ if not exist "data\stock_data.db" (
 echo Database check passed
 echo.
 
-echo [5/5] Starting application...
+echo [5/5] Starting scheduled task monitor...
 echo.
 echo ========================================
 echo MyQuantTool is starting...
 echo ========================================
+echo.
+echo 📅 Scheduled tasks:
+echo    - 09:10: 早盘前检查 (Redis + 竞价快照)
+echo    - 09:20: 盘前MA4预计算
+echo    - 09:25: 竞价快照自动保存 ⭐
+echo    - 15:30: 收盘后复盘
+echo    - 周日 20:00: 每周系统检查
+echo.
+echo 🚀 Starting scheduled task monitor in separate window...
+start "MyQuantTool - 定时任务监控" /min python logic/scheduled_task_monitor.py
+echo ✅ Scheduled task monitor started (minimized window)
+echo 💡 提示: 定时任务监控器在独立窗口运行，关闭本窗口不会影响定时任务
 echo.
 echo Application will open in browser
 echo Press Ctrl+C to stop

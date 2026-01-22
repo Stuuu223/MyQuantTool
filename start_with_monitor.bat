@@ -72,6 +72,8 @@ echo Press Ctrl+C to stop
 echo.
 echo 📅 Scheduled tasks:
 echo    - 09:10: 早盘前检查 (Redis + 竞价快照)
+echo    - 09:20: 盘前MA4预计算
+echo    - 09:25: 竞价快照自动保存 ⭐
 echo    - 15:30: 收盘后复盘
 echo    - 周日 20:00: 每周系统检查
 echo.
