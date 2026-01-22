@@ -446,15 +446,18 @@ def render_dragon_strategy_tab(db, config):
                 engine = get_low_suction_engine()
                 dm = DataManager()
                 
-                # 1. 获取活跃股池（修复：不再扫 000001 开头的死股）
+                # 1. 获取活跃股池（🆕 V19.3: 修复选股池，跳过前30只大家伙）
                 active_stocks = get_active_stocks(
                     limit=scan_limit,
                     sort_by='amount',  # 按成交额排序，主力战场
+                    skip_top=30,  # 🆕 V19.3: 跳过前30只大家伙
+                    min_amplitude=3.0,  # 🆕 V19.3: 最小振幅3%，过滤织布机
                     exclude_st=True,
                     exclude_delisting=True
                 )
                 
                 suction_stocks = []
+                failed_stocks = []  # 🆕 V19.3: 记录失败的股票
                 progress_bar = st.progress(0)
                 
                 for i, stock_info in enumerate(active_stocks):
@@ -465,6 +468,7 @@ def render_dragon_strategy_tab(db, config):
                         # 2. 获取K线数据（用于判断均线和昨日状态）
                         kline = dm.get_history_data(code, period='daily')
                         if kline is None or len(kline) < 2:
+                            failed_stocks.append(f"{stock_info['name']}({code}): K线数据不足")
                             continue
                         
                         # 3. 补全昨日状态（修复：弱转强逻辑需要）
@@ -495,10 +499,23 @@ def render_dragon_strategy_tab(db, config):
                                 '信号': result.get('suction_signals', []),
                                 '弱转强': result.get('weak_to_strong_signal', {})
                             })
+                        else:
+                            # 🆕 V19.3: 记录失败原因
+                            fail_reason = result.get('fail_reason', '未知原因')
+                            failed_stocks.append(f"{stock_info['name']}({code}): {fail_reason}")
+                    
                     except Exception as e:
+                        failed_stocks.append(f"{stock_info['name']}({code}): 异常({str(e)[:30]})")
                         continue
                 
                 progress_bar.empty()
+                
+                # 🆕 V19.3: 添加调试日志显示
+                if failed_stocks:
+                    with st.expander("🔍 扫描日志 (Debug) - 未触发低吸的股票", expanded=False):
+                        st.write(f"共扫描 {len(active_stocks)} 只股票，{len(suction_stocks)} 只符合条件，{len(failed_stocks)} 只不符合条件")
+                        st.dataframe(pd.DataFrame({'失败原因': failed_stocks}), use_container_width=True, height=200)
+                
                 scan_result = {
                     '数据状态': '正常',
                     '扫描数量': len(active_stocks),
@@ -516,11 +533,13 @@ def render_dragon_strategy_tab(db, config):
                 # if not scanner.is_late_trading_time():
                 #     st.warning("⚠️ 提示：当前非尾盘时段，仅做逻辑演示")
                 
-                # 2. 获取活跃股池（重点关注涨幅 > 2% 的票）
+                # 2. 获取活跃股池（🆕 V19.3: 修复选股池，跳过前30只大家伙）
                 active_stocks = get_active_stocks(
                     limit=scan_limit * 2,  # 多取点备选
                     sort_by='amount',  # 按成交额排序
                     min_change_pct=2.0,  # 只看涨幅 > 2% 的票
+                    skip_top=30,  # 🆕 V19.3: 跳过前30只大家伙
+                    min_amplitude=3.0,  # 🆕 V19.3: 最小振幅3%，过滤织布机
                     exclude_st=True,
                     exclude_delisting=True
                 )

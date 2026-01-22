@@ -45,7 +45,9 @@ class ActiveStockFilter:
         max_change_pct: Optional[float] = None,
         exclude_st: bool = True,
         exclude_delisting: bool = True,
-        min_volume: int = 0
+        min_volume: int = 0,
+        skip_top: int = 30,
+        min_amplitude: float = 3.0
     ) -> List[Dict[str, Any]]:
         """
         获取活跃股票列表
@@ -58,6 +60,8 @@ class ActiveStockFilter:
             exclude_st: 是否排除ST股
             exclude_delisting: 是否排除退市股
             min_volume: 最小成交量（手）
+            skip_top: 跳过前N只大家伙（默认30，跳过茅台、中信证券等权重股）
+            min_amplitude: 最小振幅（百分比，默认3%，过滤织布机行情）
         
         Returns:
             list: 活跃股票列表
@@ -119,6 +123,12 @@ class ActiveStockFilter:
                     if max_change_pct is not None and stock['change_pct'] > max_change_pct:
                         continue
                     
+                    # 🆕 V19.3: 增加波动率过滤（振幅 > min_amplitude%）
+                    if min_amplitude > 0 and stock['open'] > 0:
+                        amplitude = (stock['high'] - stock['low']) / stock['open'] * 100
+                        if amplitude < min_amplitude:
+                            continue  # 振幅太小，没油水，剔除
+                    
                     active_list.append(stock)
                 
                 except Exception as e:
@@ -138,10 +148,13 @@ class ActiveStockFilter:
                 logger.warning(f"未知的排序方式: {sort_by}，默认按成交额排序")
                 active_list.sort(key=lambda x: x['amount'], reverse=True)
             
-            # 限制返回数量
-            result = active_list[:limit]
+            # 🆕 V19.3: 关键改进 - 跳过前N只大家伙，取第N到N+limit名
+            # 这些才是游资和量化最喜欢的"战场"
+            skip_count = min(skip_top, len(active_list))
+            end_index = min(skip_count + limit, len(active_list))
+            result = active_list[skip_count:end_index]
             
-            logger.info(f"✅ 筛选完成，返回 {len(result)} 只活跃股（原始: {len(active_list)}）")
+            logger.info(f"✅ 筛选完成，返回 {len(result)} 只活跃股（跳过前{skip_count}只大家伙，原始: {len(active_list)}）")
             
             return result
         
@@ -180,7 +193,9 @@ def get_active_stocks(
     max_change_pct: Optional[float] = None,
     exclude_st: bool = True,
     exclude_delisting: bool = True,
-    min_volume: int = 0
+    min_volume: int = 0,
+    skip_top: int = 30,
+    min_amplitude: float = 3.0
 ) -> List[Dict[str, Any]]:
     """
     便捷函数：获取活跃股票列表
@@ -193,6 +208,8 @@ def get_active_stocks(
         exclude_st: 是否排除ST股
         exclude_delisting: 是否排除退市股
         min_volume: 最小成交量（手）
+        skip_top: 跳过前N只大家伙（默认30）
+        min_amplitude: 最小振幅（百分比，默认3%）
     
     Returns:
         list: 活跃股票列表
@@ -205,5 +222,7 @@ def get_active_stocks(
         max_change_pct=max_change_pct,
         exclude_st=exclude_st,
         exclude_delisting=exclude_delisting,
-        min_volume=min_volume
+        min_volume=min_volume,
+        skip_top=skip_top,
+        min_amplitude=min_amplitude
     )

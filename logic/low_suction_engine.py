@@ -538,7 +538,8 @@ class LowSuctionEngine:
                 'logic_signal': dict,      # 逻辑信号
                 'overall_confidence': float, # 综合置信度（0-1）
                 'recommendation': str,     # 建议
-                'reason': str              # 原因
+                'reason': str,             # 原因
+                'fail_reason': str         # 🆕 V19.3: 失败原因（调试用）
             }
         """
         result = {
@@ -607,7 +608,40 @@ class LowSuctionEngine:
                     result['recommendation'] = 'HOLD'
                     result['reason'] = f'⚠️ [低吸观察] {", ".join([s.get("suction_type", s.get("has_divergence_to_consensus", "")) for s in result["suction_signals"]])}，等待逻辑确认'
             else:
-                # 无低吸信号
+                # 🆕 V19.3: 无低吸信号，返回失败原因
+                fail_reasons = []
+                
+                # 检查MA5回踩情况
+                ma5_suction = self.check_ma5_suction(stock_code, current_price, prev_close)
+                if not ma5_suction['has_suction']:
+                    fail_reasons.append(f"MA5未回踩({ma5_suction['reason']})")
+                
+                # 检查分时均线情况
+                if intraday_data is not None:
+                    intraday_ma_suction = self.check_intraday_ma_suction(stock_code, current_price, intraday_data)
+                    if not intraday_ma_suction['has_suction']:
+                        fail_reasons.append(f"分时均线未回踩({intraday_ma_suction['reason']})")
+                
+                # 检查分歧转一致情况
+                divergence_to_consensus = self.check_divergence_to_consensus(
+                    stock_code, current_price, prev_close, logic_keywords
+                )
+                if not divergence_to_consensus['has_divergence_to_consensus']:
+                    fail_reasons.append(f"无分歧转一致({divergence_to_consensus['reason']})")
+                
+                # 检查逻辑确认
+                if logic_keywords:
+                    logic_signal = self.check_logic_reversion(stock_code, logic_keywords, lhb_institutional)
+                    result['logic_signal'] = logic_signal
+                    
+                    if not logic_signal.get('has_logic'):
+                        fail_reasons.append("不符合核心逻辑")
+                    elif not logic_signal.get('has_institutional'):
+                        fail_reasons.append("龙虎榜无机构深度介入")
+                else:
+                    fail_reasons.append("未指定逻辑关键词")
+                
+                result['fail_reason'] = '; '.join(fail_reasons) if fail_reasons else '未满足低吸条件'
                 if result['logic_signal'].get('has_logic') and result['logic_signal'].get('has_institutional'):
                     # 有逻辑，等待低吸机会
                     result['recommendation'] = 'WAIT'
