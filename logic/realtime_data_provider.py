@@ -338,6 +338,10 @@ class RealtimeDataProvider(DataProvider):
                     'data_timestamp': data_time_str,  # V16.2 新增
                     'turnover': data.get('turnover', 0),  # 🆕 V19.5 盲扫模式优化：添加换手率字段
                     'volume_ratio': data.get('量比', 0),  # 🆕 V19.5 盲扫模式优化：添加量比字段
+                    'bid1': data.get('bid1', 0),  # 🆕 V19.6 新增：买一价
+                    'ask1': data.get('ask1', 0),  # 🆕 V19.6 新增：卖一价
+                    'bid1_volume': data.get('bid1_volume', 0),  # 🆕 V19.6 新增：买一量
+                    'ask1_volume': data.get('ask1_volume', 0),  # 🆕 V19.6 新增：卖一量
                 }
                 result.append(stock_info)
 
