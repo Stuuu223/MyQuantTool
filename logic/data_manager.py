@@ -168,20 +168,20 @@ class DataManager:
                 if code:
                     result[code] = {
                         'name': stock_data.get('name', ''),
-                        'now': stock_data.get('price', 0),
-                        'close': stock_data.get('pre_close', 0),
+                        'now': stock_data.get('now', 0),
+                        'close': stock_data.get('close', 0),
                         'open': stock_data.get('open', 0),
                         'high': stock_data.get('high', 0),
                         'low': stock_data.get('low', 0),
                         'volume': stock_data.get('volume', 0),
-                        'turnover': stock_data.get('turnover', 0),  # 🆕 V19.5 盲扫模式优化：使用正确的换手率字段
+                        'turnover': stock_data.get('turnover', 0),  # 换手率
                         'amount': stock_data.get('amount', 0),  # 成交额
-                        'volume_ratio': stock_data.get('volume_ratio', 0),  # 🆕 V19.5 盲扫模式优化：添加量比字段
-                        'bid1': stock_data.get('bid1_price', 0),
-                        'ask1': stock_data.get('ask1_price', 0),
+                        'volume_ratio': stock_data.get('量比', 0),  # 🆕 V19.6 修复：量比字段名
+                        'bid1': stock_data.get('bid1', 0),  # 🆕 V19.6 修复：买一价字段名
+                        'ask1': stock_data.get('ask1', 0),  # 🆕 V19.6 修复：卖一价字段名
                         'bid1_volume': stock_data.get('bid1_volume', 0),
                         'ask1_volume': stock_data.get('ask1_volume', 0),
-                        'time': stock_data.get('time', '')
+                        'time': stock_data.get('datetime', '')
                     }
             
             return result
