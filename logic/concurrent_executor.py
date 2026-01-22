@@ -25,12 +25,12 @@ logger = get_logger(__name__)
 class ConcurrentExecutor:
     """多线程并发执行器"""
     
-    def __init__(self, max_workers: int = 10):
+    def __init__(self, max_workers: int = 5):
         """
         初始化并发执行器
         
         Args:
-            max_workers: 最大线程数
+            max_workers: 最大线程数 (建议不超过5，避免connection pool溢出)
         """
         self.max_workers = max_workers
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
@@ -206,7 +206,7 @@ class ConcurrentExecutor:
 _global_executor = None
 
 
-def get_concurrent_executor(max_workers: int = 10) -> ConcurrentExecutor:
+def get_concurrent_executor(max_workers: int = 5) -> ConcurrentExecutor:
     """
     获取全局并发执行器实例
     

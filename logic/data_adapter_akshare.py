@@ -144,42 +144,57 @@ class MoneyFlowAdapter:
     def _fetch_rank_data():
         """
         获取东方财富实时资金流榜单 (即时)
-        🚀 V19.1 优化：添加超时和重试机制
+        🚀 V19.1 优化：添加超时和重试机制 + 🔥 V19.2 强制绕过代理
 
         Returns:
             pd.DataFrame: 资金流排名数据
         """
         import time
+        import os  # 引入 os 模块
 
         max_retries = 3  # 最大重试次数
         retry_delay = 2  # 重试延迟（秒）
 
-        for attempt in range(max_retries):
-            try:
-                # 获取东方财富实时资金流榜单 (今日)
-                # 设置超时时间为10秒
-                df = ak.stock_individual_fund_flow_rank(indicator="今日", timeout=10)
+        # 1. 临时移除环境变量中的代理设置（这是解决 ProxyError 的关键）
+        # 这一步是为了防止 requests 自动读取系统的 HTTP_PROXY
+        original_http = os.environ.get('HTTP_PROXY')
+        original_https = os.environ.get('HTTPS_PROXY')
+        os.environ.pop('HTTP_PROXY', None)
+        os.environ.pop('HTTPS_PROXY', None)
 
-                # 更新缓存
-                MoneyFlowAdapter._rank_cache = df
-                MoneyFlowAdapter._rank_cache_time = datetime.now()
+        try:
+            for attempt in range(max_retries):
+                try:
+                    # 获取东方财富实时资金流榜单 (今日)
+                    # 注意：ak.stock_individual_fund_flow_rank() 不支持 timeout 参数
+                    df = ak.stock_individual_fund_flow_rank(indicator="今日")
 
-                return df
+                    # 更新缓存
+                    MoneyFlowAdapter._rank_cache = df
+                    MoneyFlowAdapter._rank_cache_time = datetime.now()
 
-            except Exception as e:
-                error_type = type(e).__name__
-                error_msg = str(e)
+                    return df
 
-                # 如果是连接错误，尝试重试
-                if attempt < max_retries - 1 and ('Connection' in error_msg or 'Timeout' in error_msg or '10054' in error_msg):
-                    logger.warning(f"获取资金流榜单失败（第{attempt + 1}次尝试）: {error_type}: {error_msg}")
-                    logger.info(f"等待 {retry_delay} 秒后重试...")
-                    time.sleep(retry_delay)
-                    continue
-                else:
-                    # 最后一次尝试失败或非连接错误，直接返回
-                    logger.error(f"获取资金流榜单失败（已重试{max_retries}次）: {error_type}: {error_msg}")
-                    return None
+                except Exception as e:
+                    error_type = type(e).__name__
+                    error_msg = str(e)
+
+                    # 如果是连接错误，尝试重试
+                    if attempt < max_retries - 1 and ('Connection' in error_msg or 'Timeout' in error_msg or '10054' in error_msg or 'Proxy' in error_msg):
+                        logger.warning(f"获取资金流榜单失败（第{attempt + 1}次尝试）: {error_type}: {error_msg}")
+                        logger.info(f"等待 {retry_delay} 秒后重试...")
+                        time.sleep(retry_delay)
+                        continue
+                    else:
+                        # 最后一次尝试失败或非连接错误，直接返回
+                        logger.error(f"获取资金流榜单失败（已重试{max_retries}次）: {error_type}: {error_msg}")
+                        return None
+        finally:
+            # 2. 无论成功失败，必须恢复环境变量，以免影响其他需要代理的组件（如 GitHub 推送）
+            if original_http:
+                os.environ['HTTP_PROXY'] = original_http
+            if original_https:
+                os.environ['HTTPS_PROXY'] = original_https
 
     @staticmethod
     def _safe_get_float(row_data, possible_keys):
