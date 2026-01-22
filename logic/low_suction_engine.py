@@ -31,7 +31,9 @@ class LowSuctionEngine:
     """
     
     # 低吸阈值配置
-    MA5_TOUCH_THRESHOLD = -0.02      # 回踩 5日均线下方 -2%
+    # 🆕 V19.0: 优化MA5阈值，强势市场中主力可能在MA5上方就承接
+    MA5_TOUCH_THRESHOLD_MIN = -0.02   # 回踩 5日均线下方 -2%（深度低吸）
+    MA5_TOUCH_THRESHOLD_MAX = 0.01    # 回踩 5日均线上方 1%（轻度低吸）
     
     # 🆕 V18.6: 分时均线价格缓冲区（避免因网络延迟错过机会）
     INTRADAY_MA_TOUCH_THRESHOLD_MIN = -0.025  # 回踩分时均线下方 -2.5%（缓冲区下限）
@@ -406,12 +408,117 @@ class LowSuctionEngine:
         
         return result
     
+    def check_weak_to_strong(self, stock_code: str, current_price: float, prev_close: float, 
+                            yesterday_limit_up: bool = False, yesterday_explosion: bool = False) -> Dict[str, Any]:
+        """
+        🆕 V19.0: 检查弱转强信号（情绪套利）
+        
+        逻辑：监控昨日炸板或烂板的股票，今日竞价是否大幅高开（超预期）。
+        这是一种"情绪套利"，利用市场情绪的反转获利。
+        
+        Args:
+            stock_code: 股票代码
+            current_price: 当前价格
+            prev_close: 昨收价
+            yesterday_limit_up: 昨日是否涨停后炸板
+            yesterday_explosion: 昨日是否烂板（涨停后反复炸板）
+        
+        Returns:
+            dict: {
+                'has_weak_to_strong': bool,   # 是否有弱转强信号
+                'yesterday_status': str,      # 昨日状态
+                'open_gap_pct': float,        # 开盘涨幅
+                'volume_surge': bool,         # 是否放量
+                'dde_positive': bool,         # DDE是否为正
+                'confidence': float,          # 置信度（0-1）
+                'reason': str                 # 原因
+            }
+        """
+        result = {
+            'has_weak_to_strong': False,
+            'yesterday_status': '',
+            'open_gap_pct': 0.0,
+            'volume_surge': False,
+            'dde_positive': False,
+            'confidence': 0.0,
+            'reason': ''
+        }
+        
+        try:
+            # 1. 判断昨日状态
+            if yesterday_limit_up:
+                result['yesterday_status'] = '昨日炸板'
+            elif yesterday_explosion:
+                result['yesterday_status'] = '昨日烂板'
+            else:
+                result['reason'] = '昨日非炸板/烂板，不适用弱转强逻辑'
+                return result
+            
+            # 2. 获取今日竞价数据
+            realtime_data = self.data_manager.get_realtime_data(stock_code)
+            if not realtime_data:
+                result['reason'] = '无法获取实时数据'
+                return result
+            
+            # 3. 计算开盘涨幅
+            open_price = realtime_data.get('open', prev_close)
+            open_gap_pct = (open_price - prev_close) / prev_close * 100
+            result['open_gap_pct'] = open_gap_pct
+            
+            # 4. 判断是否超预期高开
+            # 昨日炸板/烂板，今日竞价高开 > 3% 视为超预期
+            if open_gap_pct > 3.0:
+                confidence = 0.4
+                result['reason'] = f'🔥 [弱转强] {result["yesterday_status"]}，今日竞价高开{open_gap_pct:.2f}%超预期'
+            elif open_gap_pct > 0:
+                confidence = 0.2
+                result['reason'] = f'⚠️ [弱转强] {result["yesterday_status"]}，今日竞价小幅高开{open_gap_pct:.2f}%'
+            else:
+                result['reason'] = f'❌ [弱转强] {result["yesterday_status"]}，今日竞价低开{open_gap_pct:.2f}%，未转强'
+                return result
+            
+            # 5. 检查是否放量
+            current_volume = realtime_data.get('volume', 0)
+            # 获取昨日成交量
+            kline_data = self.data_manager.get_kline(stock_code, period='daily', count=5)
+            if kline_data is not None and len(kline_data) >= 2:
+                prev_volume = kline_data['volume'].iloc[-2]
+                if current_volume > prev_volume * 1.5:
+                    result['volume_surge'] = True
+                    confidence += 0.2
+                    result['reason'] += '，放量1.5倍'
+            
+            # 6. 检查DDE是否为正
+            dde_net_flow = realtime_data.get('dde_net_flow', 0)
+            if dde_net_flow > 0:
+                result['dde_positive'] = True
+                confidence += 0.2
+                result['reason'] += f'，DDE承接{dde_net_flow:.2f}亿'
+            
+            # 7. 综合判断
+            result['confidence'] = min(1.0, confidence)
+            
+            if result['confidence'] >= 0.8:
+                result['has_weak_to_strong'] = True
+                logger.info(f"✅ [弱转强] {stock_code} 检测到强信号：{result['reason']}")
+            elif result['confidence'] >= 0.6:
+                result['has_weak_to_strong'] = True
+                logger.info(f"⚠️ [弱转强] {stock_code} 检测到中等信号：{result['reason']}")
+        
+        except Exception as e:
+            logger.error(f"检查弱转强失败: {e}")
+            result['reason'] = f'检查失败: {e}'
+        
+        return result
+    
     def analyze_low_suction(self, stock_code: str, current_price: float, prev_close: float, 
                           intraday_data: Optional[pd.DataFrame] = None,
                           logic_keywords: Optional[List[str]] = None,
-                          lhb_institutional: bool = False) -> Dict[str, Any]:
+                          lhb_institutional: bool = False,
+                          yesterday_limit_up: bool = False,
+                          yesterday_explosion: bool = False) -> Dict[str, Any]:
         """
-        综合分析低吸信号
+        🆕 V19.0: 综合分析低吸信号（含弱转强）
         
         Args:
             stock_code: 股票代码
@@ -420,11 +527,14 @@ class LowSuctionEngine:
             intraday_data: 分时数据（可选）
             logic_keywords: 核心逻辑关键词列表（可选）
             lhb_institutional: 龙虎榜是否有机构深度介入（默认 False）
+            yesterday_limit_up: 昨日是否涨停后炸板（🆕 V19.0）
+            yesterday_explosion: 昨日是否烂板（🆕 V19.0）
         
         Returns:
             dict: {
                 'has_suction': bool,        # 是否有低吸信号
                 'suction_signals': list,   # 低吸信号列表
+                'weak_to_strong_signal': dict,  # 弱转强信号（🆕 V19.0）
                 'logic_signal': dict,      # 逻辑信号
                 'overall_confidence': float, # 综合置信度（0-1）
                 'recommendation': str,     # 建议
@@ -434,6 +544,7 @@ class LowSuctionEngine:
         result = {
             'has_suction': False,
             'suction_signals': [],
+            'weak_to_strong_signal': {},
             'logic_signal': {},
             'overall_confidence': 0.0,
             'recommendation': 'HOLD',
@@ -441,23 +552,46 @@ class LowSuctionEngine:
         }
         
         try:
-            # 1. 检查 5日均线低吸
+            # 🆕 V19.0: 1. 检查弱转强信号（情绪套利）
+            if yesterday_limit_up or yesterday_explosion:
+                weak_to_strong = self.check_weak_to_strong(
+                    stock_code, current_price, prev_close, 
+                    yesterday_limit_up, yesterday_explosion
+                )
+                result['weak_to_strong_signal'] = weak_to_strong
+                
+                if weak_to_strong['has_weak_to_strong']:
+                    result['has_suction'] = True
+                    result['overall_confidence'] = weak_to_strong['confidence']
+                    result['recommendation'] = 'BUY'
+                    result['reason'] = weak_to_strong['reason']
+                    logger.info(f"✅ [弱转强] {stock_code} 检测到情绪套利机会：{result['reason']}")
+                    return result
+            
+            # 2. 检查 5日均线低吸
             ma5_suction = self.check_ma5_suction(stock_code, current_price, prev_close)
             if ma5_suction['has_suction']:
                 result['suction_signals'].append(ma5_suction)
             
-            # 2. 检查分时均线低吸
+            # 3. 检查分时均线低吸
             if intraday_data is not None:
                 intraday_ma_suction = self.check_intraday_ma_suction(stock_code, current_price, intraday_data)
                 if intraday_ma_suction['has_suction']:
                     result['suction_signals'].append(intraday_ma_suction)
             
-            # 3. 检查逻辑回踩
+            # 4. 检查分歧转一致
+            divergence_to_consensus = self.check_divergence_to_consensus(
+                stock_code, current_price, prev_close, logic_keywords
+            )
+            if divergence_to_consensus['has_divergence_to_consensus']:
+                result['suction_signals'].append(divergence_to_consensus)
+            
+            # 5. 检查逻辑回踩
             if logic_keywords:
                 logic_signal = self.check_logic_reversion(stock_code, logic_keywords, lhb_institutional)
                 result['logic_signal'] = logic_signal
             
-            # 4. 综合判断
+            # 6. 综合判断
             if result['suction_signals']:
                 # 有低吸信号
                 if result['logic_signal'].get('has_logic') and result['logic_signal'].get('has_institutional'):
@@ -465,13 +599,13 @@ class LowSuctionEngine:
                     result['has_suction'] = True
                     result['overall_confidence'] = min(0.9, sum(s['confidence'] for s in result['suction_signals']) / len(result['suction_signals']) + 0.3)
                     result['recommendation'] = 'BUY'
-                    result['reason'] = f'🚀 [低吸强信号] {", ".join([s["suction_type"] for s in result["suction_signals"]])} + {result["logic_signal"]["reason"]}'
+                    result['reason'] = f'🚀 [低吸强信号] {", ".join([s.get("suction_type", s.get("has_divergence_to_consensus", "")) for s in result["suction_signals"]])} + {result["logic_signal"]["reason"]}'
                 else:
                     # 只有低吸信号，没有逻辑确认
                     result['has_suction'] = True
                     result['overall_confidence'] = sum(s['confidence'] for s in result['suction_signals']) / len(result['suction_signals'])
                     result['recommendation'] = 'HOLD'
-                    result['reason'] = f'⚠️ [低吸观察] {", ".join([s["suction_type"] for s in result["suction_signals"]])}，等待逻辑确认'
+                    result['reason'] = f'⚠️ [低吸观察] {", ".join([s.get("suction_type", s.get("has_divergence_to_consensus", "")) for s in result["suction_signals"]])}，等待逻辑确认'
             else:
                 # 无低吸信号
                 if result['logic_signal'].get('has_logic') and result['logic_signal'].get('has_institutional'):

@@ -54,7 +54,7 @@ class AuctionSnapshotManager:
     
     def is_auction_time(self) -> bool:
         """
-        判断当前是否在竞价时间（9:25-9:30）
+        判断当前是否在竞价时间（9:15-9:30）
         
         Returns:
             bool: 是否在竞价时间
@@ -62,8 +62,8 @@ class AuctionSnapshotManager:
         now = datetime.now()
         current_time = now.time()
         
-        # 竞价时间：9:25:00 - 9:30:00
-        auction_start = current_time.replace(hour=9, minute=25, second=0, microsecond=0)
+        # 竞价时间：9:15:00 - 9:30:00（包含集合竞价 9:15-9:25 和竞价真空期 9:25-9:30）
+        auction_start = current_time.replace(hour=9, minute=15, second=0, microsecond=0)
         auction_end = current_time.replace(hour=9, minute=30, second=0, microsecond=0)
         
         return auction_start <= current_time < auction_end

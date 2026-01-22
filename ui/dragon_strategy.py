@@ -258,7 +258,7 @@ def render_dragon_strategy_tab(db, config):
     st.divider()
     strategy_mode = st.radio(
         "⚔️ 选择作战模式",
-        ("🔥 龙头掠食者 (抓连板/妖股)", "🛡️ 趋势中军猎手 (抓机构/业绩/诺思格)", "🚀 半路战法 (抓20cm加速逼空)"),
+        ("🔥 龙头掠食者 (抓连板/妖股)", "🛡️ 趋势中军猎手 (抓机构/业绩/诺思格)", "🚀 半路战法 (抓20cm加速逼空)", "🛡️ 低吸战法 (回踩均线/弱转强)", "🌙 尾盘选股 (14:30-15:00)"),
         index=0,
         horizontal=True
     )
@@ -287,7 +287,7 @@ def render_dragon_strategy_tab(db, config):
         - 🔄 均线多头排列（价格 > MA5 > MA10 > MA20）
         - 🚀 **适合稳健投资，长期持有**
         """)
-    else:  # 半路战法
+    elif "半路" in strategy_mode:
         st.info("""
         **半路战法核心要点：**
         - 🎯 专门抓20cm股票在10%-19%区间的半路板
@@ -295,6 +295,24 @@ def render_dragon_strategy_tab(db, config):
         - 📊 攻击性放量（量比 > 3.0）
         - 🔄 买盘强（买一量 > 卖一量）
         - ⚠️ **风险较高，适合激进投资者**
+        """)
+    elif "低吸" in strategy_mode:
+        st.info("""
+        **低吸战法核心要点：**
+        - 🎯 回踩5日均线或分时均线低吸
+        - 📊 成交量萎缩（<前日70%）+ DDE资金净流入
+        - 🔄 弱转强：监控昨日炸板/烂板，今日竞价超预期高开
+        - 📈 分歧转一致：高位回撤5%-15% + 缩量 + 逻辑未死
+        - 🛡️ **风险较低，适合稳健投资者**
+        """)
+    elif "尾盘" in strategy_mode:
+        st.info("""
+        **尾盘选股核心要点：**
+        - 🕐 时间窗口：14:30 - 15:00
+        - 📊 高位横盘：全天在均线上方，3%-7%涨幅，窄幅震荡
+        - 🚀 尾盘抢筹：14:30后突然放量拉升
+        - 🔄 首板回封：早盘涨停后炸板，尾盘再次回封
+        - 💰 **用时间换确定性，博次日早盘溢价**
         """)
     
     # 扫描参数
@@ -416,9 +434,92 @@ def render_dragon_strategy_tab(db, config):
         elif "趋势" in current_mode:
             with st.spinner('🛡️ 正在执行趋势中军筛选 (均线多头 + 温和放量)...'):
                 scan_result = QuantAlgo.scan_trend_stocks(limit=scan_limit, min_score=min_score)
-        else:  # 半路战法
+        elif "半路" in current_mode:
             with st.spinner('🚀 正在执行半路战法筛选 (20cm加速逼空)...'):
                 scan_result = QuantAlgo.scan_halfway_stocks(limit=scan_limit, min_score=min_score)
+        elif "低吸" in current_mode:
+            with st.spinner('🛡️ 正在执行低吸战法筛选 (回踩均线/弱转强)...'):
+                from logic.low_suction_engine import get_low_suction_engine
+                from logic.data_manager import DataManager
+                
+                engine = get_low_suction_engine()
+                dm = DataManager()
+                
+                # 获取股票列表
+                stock_list = dm.get_stock_list()
+                stock_codes = [s['code'] for s in stock_list[:scan_limit]]
+                
+                suction_stocks = []
+                for code in stock_codes:
+                    try:
+                        realtime_data = dm.get_realtime_data(code)
+                        if not realtime_data:
+                            continue
+                        
+                        current_price = realtime_data.get('price', 0)
+                        prev_close = realtime_data.get('prev_close', 0)
+                        
+                        if current_price == 0 or prev_close == 0:
+                            continue
+                        
+                        # 获取分时数据
+                        intraday_data = dm.get_intraday_data(code)
+                        
+                        # 获取股票信息
+                        stock_info = dm.get_stock_info(code)
+                        stock_name = stock_info.get('name', '') if stock_info else ''
+                        
+                        # 分析低吸信号
+                        result = engine.analyze_low_suction(
+                            code, current_price, prev_close,
+                            intraday_data=intraday_data,
+                            logic_keywords=['机器人', '航天', 'AI', '芯片', '新能源']
+                        )
+                        
+                        if result['has_suction']:
+                            suction_stocks.append({
+                                '代码': code,
+                                '名称': stock_name,
+                                '最新价': current_price,
+                                '涨跌幅': (current_price - prev_close) / prev_close * 100,
+                                '置信度': result['overall_confidence'],
+                                '建议': result['recommendation'],
+                                '原因': result['reason'],
+                                '信号': result.get('suction_signals', []),
+                                '弱转强': result.get('weak_to_strong_signal', {})
+                            })
+                    except Exception as e:
+                        continue
+                
+                scan_result = {
+                    '数据状态': '正常',
+                    '扫描数量': len(stock_codes),
+                    '符合条件数量': len(suction_stocks),
+                    '低吸股票列表': suction_stocks
+                }
+        elif "尾盘" in current_mode:
+            with st.spinner('🌙 正在执行尾盘选股扫描 (14:30-15:00)...'):
+                from logic.late_trading_scanner import get_late_trading_scanner
+                from logic.data_manager import DataManager
+                
+                scanner = get_late_trading_scanner()
+                dm = DataManager()
+                
+                # 检查是否在尾盘时段
+                if not scanner.is_late_trading_time():
+                    st.warning("⚠️ 当前不在尾盘时段（14:30-15:00），扫描结果可能不准确")
+                
+                # 获取股票列表
+                stock_list = dm.get_stock_list()
+                stock_codes = [s['code'] for s in stock_list[:scan_limit]]
+                
+                scan_result = scanner.scan_late_trading_opportunities(stock_codes, max_stocks=scan_limit)
+                
+                # 转换为统一格式
+                scan_result['数据状态'] = '正常' if scan_result.get('is_late_trading_time') else '非尾盘时段'
+                scan_result['扫描数量'] = scan_result.get('total_scanned', 0)
+                scan_result['符合条件数量'] = len(scan_result.get('opportunities', []))
+                scan_result['尾盘机会列表'] = scan_result.get('opportunities', [])
         
         if scan_result['数据状态'] == '正常':
             # 根据模式显示不同的成功消息
@@ -428,9 +529,15 @@ def render_dragon_strategy_tab(db, config):
             elif "趋势" in current_mode:
                 st.success(f"扫描完成！共扫描 {scan_result['扫描数量']} 只股票，发现 {scan_result['符合条件数量']} 只符合趋势中军特征")
                 stock_list_key = '趋势股票列表'
-            else:  # 半路战法
+            elif "半路" in current_mode:
                 st.success(f"扫描完成！共扫描 {scan_result['扫描数量']} 只股票，发现 {scan_result['符合条件数量']} 只半路板机会")
                 stock_list_key = '半路板列表'
+            elif "低吸" in current_mode:
+                st.success(f"扫描完成！共扫描 {scan_result['扫描数量']} 只股票，发现 {scan_result['符合条件数量']} 只低吸机会")
+                stock_list_key = '低吸股票列表'
+            elif "尾盘" in current_mode:
+                st.success(f"扫描完成！共扫描 {scan_result['扫描数量']} 只股票，发现 {scan_result['符合条件数量']} 只尾盘机会")
+                stock_list_key = '尾盘机会列表'
             
             if scan_result.get(stock_list_key):
                 stocks = scan_result[stock_list_key]
@@ -505,6 +612,128 @@ def render_dragon_strategy_tab(db, config):
                             '换手率': f"{s.get('换手率', 0):.2f}%"
                         } for s in weak_trends])
                         st.dataframe(df_weak, width="stretch", hide_index=True)
+                
+                elif "低吸" in current_mode:
+                    # 按置信度分组
+                    strong_suction = [s for s in stocks if s['置信度'] >= 0.8]
+                    potential_suction = [s for s in stocks if 0.6 <= s['置信度'] < 0.8]
+                    weak_suction = [s for s in stocks if s['置信度'] < 0.6]
+                    
+                    # 强低吸信号
+                    if strong_suction:
+                        st.divider()
+                        st.subheader("🔥 强低吸信号（重点关注）")
+                        for stock in strong_suction:
+                            with st.expander(f"🛡️ {stock['名称']} ({stock['代码']}) - 置信度: {stock['置信度']:.2%}"):
+                                col1, col2, col3 = st.columns(3)
+                                with col1:
+                                    st.metric("最新价", f"¥{stock['最新价']:.2f}")
+                                with col2:
+                                    st.metric("涨跌幅", f"{stock['涨跌幅']:.2f}%")
+                                with col3:
+                                    st.metric("建议", stock['建议'])
+                                
+                                st.info(f"📋 **原因**: {stock['原因']}")
+                                
+                                # 显示信号详情
+                                if stock.get('信号'):
+                                    st.markdown("**低吸信号详情**:")
+                                    for signal in stock['信号']:
+                                        st.text(f"• {signal.get('reason', 'N/A')}")
+                                
+                                # 显示弱转强信号
+                                if stock.get('弱转强') and stock['弱转强'].get('has_weak_to_strong'):
+                                    st.success(f"🔄 **弱转强信号**: {stock['弱转强'].get('reason', 'N/A')}")
+                    
+                    # 潜在低吸信号
+                    if potential_suction:
+                        st.divider()
+                        st.subheader("📈 潜在低吸信号（可关注）")
+                        for stock in potential_suction:
+                            with st.expander(f"🛡️ {stock['名称']} ({stock['代码']}) - 置信度: {stock['置信度']:.2%}"):
+                                col1, col2, col3 = st.columns(3)
+                                with col1:
+                                    st.metric("最新价", f"¥{stock['最新价']:.2f}")
+                                with col2:
+                                    st.metric("涨跌幅", f"{stock['涨跌幅']:.2f}%")
+                                with col3:
+                                    st.metric("建议", stock['建议'])
+                                
+                                st.info(f"📋 **原因**: {stock['原因']}")
+                    
+                    # 弱低吸信号
+                    if weak_suction:
+                        st.divider()
+                        st.subheader("⚠️ 弱低吸信号（谨慎关注）")
+                        df_weak = pd.DataFrame([{
+                            '代码': s['代码'],
+                            '名称': s['名称'],
+                            '最新价': f"¥{s['最新价']:.2f}",
+                            '涨跌幅': f"{s['涨跌幅']:.2f}%",
+                            '置信度': f"{s['置信度']:.2%}",
+                            '建议': s['建议']
+                        } for s in weak_suction])
+                        st.dataframe(df_weak, width="stretch", hide_index=True)
+                
+                elif "尾盘" in current_mode:
+                    # 按信号类型分组
+                    stable_hold = [s for s in stocks if s['signal']['signal_type'] == 'STABLE_HOLD']
+                    sneak_attack = [s for s in stocks if s['signal']['signal_type'] == 'SNEAK_ATTACK']
+                    reseal = [s for s in stocks if s['signal']['signal_type'] == 'RESEAL']
+                    
+                    # 高位横盘
+                    if stable_hold:
+                        st.divider()
+                        st.subheader("📊 高位横盘（稳健型）")
+                        for stock in stable_hold:
+                            with st.expander(f"📊 {stock['stock_name']} ({stock['stock_code']})"):
+                                col1, col2, col3 = st.columns(3)
+                                with col1:
+                                    st.metric("最新价", f"¥{stock['current_price']:.2f}")
+                                with col2:
+                                    st.metric("涨跌幅", f"{stock['change_pct']*100:.2f}%")
+                                with col3:
+                                    st.metric("置信度", f"{stock['signal']['confidence']:.2%}")
+                                
+                                st.info(f"📋 **原因**: {stock['signal']['reason']}")
+                                st.text(f"• 分时均价: ¥{stock['signal']['vwap']:.2f}")
+                                st.text(f"• 波动率: {stock['signal']['volatility']:.2%}")
+                    
+                    # 尾盘抢筹
+                    if sneak_attack:
+                        st.divider()
+                        st.subheader("🚀 尾盘抢筹（激进型）")
+                        for stock in sneak_attack:
+                            with st.expander(f"🚀 {stock['stock_name']} ({stock['stock_code']})"):
+                                col1, col2, col3 = st.columns(3)
+                                with col1:
+                                    st.metric("最新价", f"¥{stock['current_price']:.2f}")
+                                with col2:
+                                    st.metric("涨跌幅", f"{stock['change_pct']*100:.2f}%")
+                                with col3:
+                                    st.metric("置信度", f"{stock['signal']['confidence']:.2%}")
+                                
+                                st.info(f"📋 **原因**: {stock['signal']['reason']}")
+                                st.text(f"• 量比: {stock['signal']['volume_ratio']:.2f}倍")
+                                st.text(f"• 价格拉升: {stock['signal']['price_gain']*100:.2f}%")
+                    
+                    # 首板回封
+                    if reseal:
+                        st.divider()
+                        st.subheader("🔄 首板回封（弱转强）")
+                        for stock in reseal:
+                            with st.expander(f"🔄 {stock['stock_name']} ({stock['stock_code']})"):
+                                col1, col2, col3 = st.columns(3)
+                                with col1:
+                                    st.metric("最新价", f"¥{stock['current_price']:.2f}")
+                                with col2:
+                                    st.metric("涨跌幅", f"{stock['change_pct']*100:.2f}%")
+                                with col3:
+                                    st.metric("置信度", f"{stock['signal']['confidence']:.2%}")
+                                
+                                st.info(f"📋 **原因**: {stock['signal']['reason']}")
+                                st.text(f"• 炸板次数: {stock['signal']['explosion_count']}")
+                                st.text(f"• 回封时间: {stock['signal']['reseal_time']}")
                 
                 else:  # 半路战法
                     strong_halfway = [s for s in stocks if s['评分'] >= 80]
