@@ -58,6 +58,12 @@ class ScheduledTaskMonitor:
                 'enabled': True,
                 'description': '盘前MA4预计算'
             },
+            # 🆕 V19.6 新增：竞价快照保存（9:25）
+            'auction_snapshot_save': {
+                'time': '09:25',
+                'enabled': True,
+                'description': '竞价快照自动保存'
+            },
             # 收盘后复盘（15:30）
             'post_market_review': {
                 'time': '15:30',
@@ -357,6 +363,84 @@ class ScheduledTaskMonitor:
                 self._save_alert(
                     'pre_market_precompute',
                     'WARNING',
+                    '盘前预计算失败',
+                    report
+                )
+            
+            return report
+    
+    def run_auction_snapshot_save(self):
+        """竞价快照自动保存（9:25）"""
+        logger.info("=" * 80)
+        logger.info("🕐 竞价快照自动保存 (9:25)")
+        logger.info("=" * 80)
+        
+        try:
+            from logic.auction_snapshot_saver import AuctionSnapshotSaver
+            
+            logger.info("🔄 开始保存竞价快照...")
+            
+            # 创建竞价快照保存器
+            saver = AuctionSnapshotSaver(self.dm)
+            
+            # 执行保存
+            result = saver.save_auction_snapshot_for_stocks()
+            
+            # 生成报告
+            report = {
+                'timestamp': datetime.now().isoformat(),
+                'success': result['success'],
+                'saved_count': result.get('saved_count', 0),
+                'failed_count': result.get('failed_count', 0),
+                'total_count': result.get('total_count', 0),
+                'error': result.get('error', None),
+                'overall_status': 'OK' if result['success'] else 'WARNING'
+            }
+            
+            if result['success']:
+                logger.info(f"✅ 竞价快照保存完成:")
+                logger.info(f"  - 成功保存: {report['saved_count']} 只")
+                logger.info(f"  - 失败: {report['failed_count']} 只")
+                logger.info(f"  - 总计: {report['total_count']} 只")
+                logger.info(f"  - 状态: {report['overall_status']}")
+            else:
+                logger.warning(f"⚠️ 竞价快照保存失败:")
+                logger.warning(f"  - 错误: {report['error']}")
+                logger.warning(f"  - 成功保存: {report['saved_count']} 只")
+                logger.warning(f"  - 失败: {report['failed_count']} 只")
+                
+                # 保存告警
+                self._save_alert(
+                    'auction_snapshot_save',
+                    'WARNING',
+                    f'竞价快照保存失败: {report.get("error", "未知错误")}',
+                    report
+                )
+            
+            return report
+            
+        except Exception as e:
+            logger.error(f"❌ 竞价快照保存任务执行失败: {e}")
+            
+            # 保存告警
+            self._save_alert(
+                'auction_snapshot_save',
+                'ERROR',
+                f'竞价快照保存任务执行失败: {str(e)}',
+                {'error': str(e)}
+            )
+            
+            return {
+                'timestamp': datetime.now().isoformat(),
+                'success': False,
+                'error': str(e),
+                'overall_status': 'ERROR'
+            }
+            
+            if report['overall_status'] != 'OK':
+                self._save_alert(
+                    'pre_market_precompute',
+                    'WARNING',
                     f'盘前预计算问题: 成功{success_count}/{len(stock_codes)}',
                     report
                 )
@@ -522,6 +606,7 @@ class ScheduledTaskMonitor:
         # 设置定时任务
         schedule.every().day.at(self.tasks['pre_market_check']['time']).do(self.run_pre_market_check)
         schedule.every().day.at(self.tasks['pre_market_precompute']['time']).do(self.run_pre_market_precompute)
+        schedule.every().day.at(self.tasks['auction_snapshot_save']['time']).do(self.run_auction_snapshot_save)  # 🆕 V19.6 新增
         schedule.every().day.at(self.tasks['post_market_review']['time']).do(self.run_post_market_review)
         schedule.every().sunday.at(self.tasks['weekly_check']['time']).do(self.run_weekly_check)
         
@@ -530,6 +615,7 @@ class ScheduledTaskMonitor:
         logger.info("✅ 定时任务已设置:")
         logger.info(f"  - 早盘前检查: {self.tasks['pre_market_check']['time']}")
         logger.info(f"  - 盘前预计算: {self.tasks['pre_market_precompute']['time']}")
+        logger.info(f"  - 竞价快照保存: {self.tasks['auction_snapshot_save']['time']}")  # 🆕 V19.6 新增
         logger.info(f"  - 收盘后复盘: {self.tasks['post_market_review']['time']}")
         logger.info(f"  - 每周检查: 周日 {self.tasks['weekly_check']['time']}")
         
