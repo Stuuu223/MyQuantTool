@@ -441,33 +441,34 @@ def render_dragon_strategy_tab(db, config):
             with st.spinner('🛡️ 正在执行低吸战法筛选 (回踩均线/弱转强)...'):
                 from logic.low_suction_engine import get_low_suction_engine
                 from logic.data_manager import DataManager
+                import akshare as ak
                 
                 engine = get_low_suction_engine()
                 dm = DataManager()
                 
                 # 获取股票列表
-                stock_list = dm.get_stock_list()
-                stock_codes = [s['code'] for s in stock_list[:scan_limit]]
+                stock_list_df = ak.stock_info_a_code_name()
+                stock_codes = stock_list_df['code'].head(scan_limit).tolist()
+                stock_dict = stock_list_df.set_index('code')['name'].to_dict()
                 
                 suction_stocks = []
                 for code in stock_codes:
                     try:
-                        realtime_data = dm.get_realtime_data(code)
+                        realtime_data = dm.get_realtime_data_dict(code)
                         if not realtime_data:
                             continue
                         
-                        current_price = realtime_data.get('price', 0)
-                        prev_close = realtime_data.get('prev_close', 0)
+                        current_price = realtime_data.get('now', 0)
+                        prev_close = realtime_data.get('close', 0)
                         
                         if current_price == 0 or prev_close == 0:
                             continue
                         
-                        # 获取分时数据
-                        intraday_data = dm.get_intraday_data(code)
+                        # 获取股票名称
+                        stock_name = stock_dict.get(code, '')
                         
-                        # 获取股票信息
-                        stock_info = dm.get_stock_info(code)
-                        stock_name = stock_info.get('name', '') if stock_info else ''
+                        # 获取分时数据（可选，暂时设为None）
+                        intraday_data = None
                         
                         # 分析低吸信号
                         result = engine.analyze_low_suction(
@@ -501,6 +502,7 @@ def render_dragon_strategy_tab(db, config):
             with st.spinner('🌙 正在执行尾盘选股扫描 (14:30-15:00)...'):
                 from logic.late_trading_scanner import get_late_trading_scanner
                 from logic.data_manager import DataManager
+                import akshare as ak
                 
                 scanner = get_late_trading_scanner()
                 dm = DataManager()
@@ -510,10 +512,15 @@ def render_dragon_strategy_tab(db, config):
                     st.warning("⚠️ 当前不在尾盘时段（14:30-15:00），扫描结果可能不准确")
                 
                 # 获取股票列表
-                stock_list = dm.get_stock_list()
-                stock_codes = [s['code'] for s in stock_list[:scan_limit]]
+                stock_list_df = ak.stock_info_a_code_name()
+                stock_codes = stock_list_df['code'].head(scan_limit).tolist()
+                stock_name_dict = stock_list_df.set_index('code')['name'].to_dict()
                 
-                scan_result = scanner.scan_late_trading_opportunities(stock_codes, max_stocks=scan_limit)
+                scan_result = scanner.scan_late_trading_opportunities(
+                    stock_codes, 
+                    stock_name_dict=stock_name_dict,
+                    max_stocks=scan_limit
+                )
                 
                 # 转换为统一格式
                 scan_result['数据状态'] = '正常' if scan_result.get('is_late_trading_time') else '非尾盘时段'

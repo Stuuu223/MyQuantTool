@@ -351,12 +351,14 @@ class LateTradingScanner:
         return result
     
     def scan_late_trading_opportunities(self, stock_list: List[str], 
+                                       stock_name_dict: Optional[Dict[str, str]] = None,
                                        max_stocks: int = 50) -> Dict[str, Any]:
         """
         扫描尾盘选股机会
         
         Args:
             stock_list: 股票代码列表
+            stock_name_dict: 股票代码到名称的映射（可选）
             max_stocks: 最大返回股票数
         
         Returns:
@@ -387,7 +389,7 @@ class LateTradingScanner:
             logger.info(f"开始扫描尾盘选股机会，目标股票数：{len(stock_list)}")
             
             # 获取实时数据
-            realtime_data_dict = self.data_manager.get_batch_realtime_data(stock_list)
+            realtime_data_dict = self.data_manager.get_fast_price(stock_list)
             
             for stock_code in stock_list:
                 try:
@@ -398,17 +400,17 @@ class LateTradingScanner:
                     if not realtime_data:
                         continue
                     
-                    current_price = realtime_data.get('price', 0)
-                    prev_close = realtime_data.get('prev_close', 0)
+                    current_price = realtime_data.get('now', 0)
+                    prev_close = realtime_data.get('close', 0)
                     
                     if current_price == 0 or prev_close == 0:
                         continue
                     
                     # 获取K线数据
-                    kline_data = self.data_manager.get_kline(stock_code, period='daily', count=20)
+                    kline_data = self.data_manager.get_history_data(stock_code, period='daily')
                     
-                    # 获取分时数据
-                    intraday_data = self.data_manager.get_intraday_data(stock_code)
+                    # 获取分时数据（暂时设为None，因为DataManager没有此方法）
+                    intraday_data = None
                     
                     # 检查三种模式
                     opportunities = []
@@ -439,8 +441,8 @@ class LateTradingScanner:
                     
                     # 如果有信号，添加到结果列表
                     if opportunities:
-                        stock_info = self.data_manager.get_stock_info(stock_code)
-                        stock_name = stock_info.get('name', '') if stock_info else ''
+                        # 获取股票名称
+                        stock_name = stock_name_dict.get(stock_code, '') if stock_name_dict else ''
                         
                         # 选择置信度最高的信号
                         best_signal = max(opportunities, key=lambda x: x['confidence'])

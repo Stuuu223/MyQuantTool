@@ -11,6 +11,7 @@ from pathlib import Path
 
 from logic.database_manager import DatabaseManager
 from logic.logger import get_logger
+from logic.auction_snapshot_manager import AuctionSnapshotManager
 
 logger = get_logger(__name__)
 
@@ -30,7 +31,15 @@ def render_dashboard_home():
 
     # 数据库和Redis状态检查
     if 'dashboard_db' not in st.session_state:
-        st.session_state.dashboard_db = DatabaseManager()
+        # 加载数据库配置
+        import json
+        config_path = Path(__file__).parent.parent / 'config_database.json'
+        if config_path.exists():
+            with open(config_path, 'r', encoding='utf-8') as f:
+                db_config = json.load(f)
+        else:
+            db_config = {}
+        st.session_state.dashboard_db = DatabaseManager(db_config)
 
     db = st.session_state.dashboard_db
 
@@ -88,7 +97,56 @@ def render_dashboard_home():
 
     st.markdown("---")
 
-    # 第二行：数据记录情况
+    # 第二行：竞价快照管理
+    st.subheader("⚡ 竞价快照管理")
+
+    auction_status = check_auction_snapshot_status(db)
+
+    col_auction1, col_auction2, col_auction3, col_auction4 = st.columns(4)
+
+    with col_auction1:
+        if auction_status['is_available']:
+            st.success(f"🟢 竞价快照: 可用")
+        else:
+            st.error(f"🔴 竞价快照: 不可用")
+            if 'error' in auction_status:
+                st.warning(f"错误: {auction_status['error']}")
+
+    with col_auction2:
+        if auction_status['is_auction_time']:
+            st.info(f"🕐 当前时间: 竞价时段")
+        elif auction_status['is_after_market_open']:
+            st.success(f"🕐 当前时间: 开盘后")
+        else:
+            st.info(f"🕐 当前时间: 非交易时段")
+
+    with col_auction3:
+        if auction_status['is_available']:
+            st.metric("今日快照数", auction_status.get('snapshot_count', 0))
+        else:
+            st.metric("今日快照数", "N/A")
+
+    with col_auction4:
+        st.metric("日期", auction_status.get('today', 'N/A'))
+
+    # 显示最近快照示例
+    if auction_status.get('recent_snapshots'):
+        st.markdown("### 📋 最近竞价快照（前5条）")
+        snapshot_df = pd.DataFrame(auction_status['recent_snapshots'])
+        snapshot_df['竞价量(手)'] = snapshot_df['auction_volume'].apply(lambda x: f"{x:,.0f}")
+        snapshot_df['竞价金额(元)'] = snapshot_df['auction_amount'].apply(lambda x: f"{x:,.0f}")
+        snapshot_df['快照时间'] = pd.to_datetime(snapshot_df['snapshot_time'], unit='s').dt.strftime('%H:%M:%S')
+        snapshot_df = snapshot_df[['stock_code', '竞价量(手)', '竞价金额(元)', '快照时间']]
+        snapshot_df.columns = ['股票代码', '竞价量(手)', '竞价金额(元)', '快照时间']
+        st.dataframe(snapshot_df, use_container_width=True)
+    elif auction_status['is_available']:
+        st.info("📭 今日暂无竞价快照数据")
+    else:
+        st.warning("⚠️ 竞价快照功能不可用，请检查 Redis 连接")
+
+    st.markdown("---")
+
+    # 第三行：数据记录情况
     st.subheader("📈 数据记录情况")
 
     col_left, col_right = st.columns([2, 1])
@@ -131,7 +189,7 @@ def render_dashboard_home():
 
     st.markdown("---")
 
-    # 第三行：数据问题诊断
+    # 第四行：数据问题诊断
     st.subheader("🔍 数据问题诊断")
 
     col_diag1, col_diag2 = st.columns([1, 1])
@@ -231,11 +289,17 @@ def render_dashboard_home():
 
 
 def check_redis_status(db):
-    """检查Redis状态"""
+    """检查Redis状态（懒加载模式）"""
     import time
     start_time = time.time()
 
     try:
+        # 尝试初始化Redis连接（如果尚未初始化）
+        if not db._redis_initialized:
+            db._init_redis()
+            db._redis_initialized = True
+
+        # 检查Redis客户端是否可用
         if db._redis_client:
             db._redis_client.ping()
             response_time = (time.time() - start_time) * 1000
@@ -257,7 +321,7 @@ def check_redis_status(db):
         else:
             return {
                 'status': 'offline',
-                'error': 'Redis客户端未初始化'
+                'error': 'Redis服务未运行或连接失败'
             }
     except Exception as e:
         return {
@@ -332,17 +396,114 @@ def calculate_data_health(db):
 def get_system_uptime():
     """获取系统运行时间"""
     try:
-        import psutil
-        boot_time = datetime.fromtimestamp(psutil.boot_time())
-        uptime = datetime.now() - boot_time
+        # 优先使用psutil（跨平台）
+        try:
+            import psutil
+            boot_time = datetime.fromtimestamp(psutil.boot_time())
+            uptime = datetime.now() - boot_time
 
-        days = uptime.days
-        hours, remainder = divmod(uptime.seconds, 3600)
+            days = uptime.days
+            hours, remainder = divmod(uptime.seconds, 3600)
+            minutes, _ = divmod(remainder, 60)
+
+            return f"{days}天 {hours}小时 {minutes}分钟"
+        except ImportError:
+            pass
+
+        # Windows系统：使用systeminfo命令
+        try:
+            import subprocess
+            import re
+            result = subprocess.run(['systeminfo'], capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                # 查找系统启动时间
+                match = re.search(r'系统启动时间:\s*(.+)', result.stdout)
+                if match:
+                    boot_time_str = match.group(1).strip()
+                    # 尝试解析启动时间
+                    try:
+                        # Windows中文系统格式：2026/1/21, 9:00:00
+                        boot_time = datetime.strptime(boot_time_str, '%Y/%m/%d, %H:%M:%S')
+                    except:
+                        # 尝试其他格式
+                        boot_time = datetime.strptime(boot_time_str.split(',')[0], '%Y/%m/%d')
+
+                    uptime = datetime.now() - boot_time
+                    days = uptime.days
+                    hours, remainder = divmod(uptime.seconds, 3600)
+                    minutes, _ = divmod(remainder, 60)
+
+                    return f"{days}天 {hours}小时 {minutes}分钟"
+        except:
+            pass
+
+        # 如果都失败，返回应用运行时间
+        from time import time
+        if 'app_start_time' not in st.session_state:
+            st.session_state.app_start_time = time()
+
+        app_uptime = time() - st.session_state.app_start_time
+        hours, remainder = divmod(int(app_uptime), 3600)
         minutes, _ = divmod(remainder, 60)
 
-        return f"{days}天 {hours}小时 {minutes}分钟"
+        return f"{hours}小时 {minutes}分钟（应用运行时间）"
+
     except:
         return "未知"
+
+
+def check_auction_snapshot_status(db):
+    """检查竞价快照状态"""
+    try:
+        # 初始化竞价快照管理器
+        auction_manager = AuctionSnapshotManager(db)
+        status = auction_manager.get_snapshot_status()
+
+        # 如果 Redis 可用，获取今日竞价快照数量
+        if status['is_available']:
+            try:
+                # 扫描 Redis 中的竞价快照键
+                today = status['today']
+                pattern = f"auction:{today}:*"
+
+                # 使用 Redis 的 SCAN 命令（如果可用）
+                if db._redis_client:
+                    # 尝试获取所有匹配的键
+                    keys = db._redis_client.keys(pattern)
+                    status['snapshot_count'] = len(keys)
+
+                    # 获取前5个快照示例
+                    status['recent_snapshots'] = []
+                    for key in keys[:5]:
+                        stock_code = key.split(':')[-1]
+                        raw_data = db._redis_client.get(key)
+                        if raw_data:
+                            import json
+                            data = json.loads(raw_data)
+                            status['recent_snapshots'].append({
+                                'stock_code': stock_code,
+                                'auction_volume': data.get('auction_volume', 0),
+                                'auction_amount': data.get('auction_amount', 0),
+                                'snapshot_time': data.get('snapshot_time', 0)
+                            })
+            except Exception as e:
+                logger.error(f"获取竞价快照统计失败: {e}")
+                status['snapshot_count'] = 0
+                status['recent_snapshots'] = []
+
+        return status
+    except Exception as e:
+        logger.error(f"检查竞价快照状态失败: {e}")
+        return {
+            'is_available': False,
+            'is_auction_time': False,
+            'is_after_market_open': False,
+            'today': datetime.now().strftime("%Y%m%d"),
+            'redis_connected': False,
+            'snapshot_count': 0,
+            'recent_snapshots': [],
+            'error': str(e)
+        }
 
 
 def get_data_record_trend(db):
