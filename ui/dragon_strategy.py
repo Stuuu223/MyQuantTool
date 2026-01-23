@@ -336,11 +336,11 @@ def render_dragon_strategy_tab(db, config):
     with st.expander("🎯 股票池过滤设置（减少扫描时间）", expanded=False):
         col_filter1, col_filter2, col_filter3 = st.columns(3)
         with col_filter1:
-            min_change_pct = st.slider("最小涨幅 (%)", 0.0, 10.0, 3.0, 0.5, key="filter_min_change_pct")
+            min_change_pct = st.slider("最小涨幅 (%)", 0.0, 10.0, 7.0, 0.5, key="filter_min_change_pct", help="龙头战法建议7%以上，捕捉接近涨停的股票")
         with col_filter2:
-            min_volume = st.number_input("最小成交量 (手)", min_value=1000, max_value=100000, value=5000, step=1000, key="filter_min_volume")
+            min_volume = st.number_input("最小成交量 (手)", min_value=1000, max_value=100000, value=2000, step=1000, key="filter_min_volume", help="降低门槛以捕捉小盘龙头")
         with col_filter3:
-            min_amount = st.number_input("最小成交额 (万元)", min_value=1000, max_value=50000, value=3000, step=1000, key="filter_min_amount")
+            min_amount = st.number_input("最小成交额 (万元)", min_value=1000, max_value=50000, value=1000, step=1000, key="filter_min_amount", help="降低门槛以捕捉小盘龙头")
         
         # 🆕 V19.6 新增：高级筛选选项
         st.write("**🔍 高级筛选选项**")
@@ -425,16 +425,16 @@ def render_dragon_strategy_tab(db, config):
         
         st.write(f"当前监控池：{len(watchlist)} 只股票")
         
-        st.info("💡 提示：设置过滤条件可以大幅减少需要下载K线的股票数量，提升扫描速度。建议：龙头战法使用默认值，趋势战法可降低涨幅要求。")
+        st.info("💡 提示：如果扫描结果为0，请尝试：\n1. 降低最小涨幅（如从7%降到5%）\n2. 降低最小成交量/成交额\n3. 增加扫描股票数量\n4. 添加目标股票到监控池（白名单）")
     
     # 执行扫描
     if st.session_state.get('scan_dragon', False):
         current_mode = st.session_state.get('strategy_mode', strategy_mode)
         
-        # 获取过滤参数
-        filter_min_change_pct = st.session_state.get('filter_min_change_pct', 9.9)
-        filter_min_volume = st.session_state.get('filter_min_volume', 5000)
-        filter_min_amount = st.session_state.get('filter_min_amount', 3000)
+        # 获取过滤参数（默认值与UI slider保持一致）
+        filter_min_change_pct = st.session_state.get('filter_min_change_pct', 7.0)
+        filter_min_volume = st.session_state.get('filter_min_volume', 2000)
+        filter_min_amount = st.session_state.get('filter_min_amount', 1000)
         
         # 根据模式调用不同的扫描函数
         # 🚀 V19.4.4 新增：获取复盘模式参数
