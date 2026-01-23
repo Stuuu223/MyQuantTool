@@ -84,7 +84,13 @@ def render_midway_strategy_tab(db, config):
                 ["低", "中", "高"],
                 help="选择可接受的风险等级"
             )
-            
+
+            only_20cm = st.checkbox(
+                "只扫描20cm标的",
+                value=False,
+                help="只扫描创业板(300)和科创板(688)的20cm股票，不勾选则包含主板10cm股票"
+            )
+
             auto_refresh = st.checkbox(
                 "自动刷新 (5分钟)",
                 value=False,
@@ -104,20 +110,23 @@ def render_midway_strategy_tab(db, config):
                     'min_change_pct': min_change_pct,
                     'max_change_pct': max_change_pct,
                     'min_score': min_score,
-                    'risk_tolerance': risk_tolerance
+                    'risk_tolerance': risk_tolerance,
+                    'only_20cm': only_20cm
                 }
-                
+
                 # 显示进度条，而不是让界面卡死
-                with st.spinner("🚀 [半路战法] 正在通过 DDE 显微镜扫描 20cm 标的... 请勿刷新页面"):
+                scan_target = "20cm标的" if only_20cm else "全市场股票（包含主板）"
+                with st.spinner(f"🚀 [半路战法] 正在通过 DDE 显微镜扫描 {scan_target}... 请勿刷新页面"):
                     # 🚀 V19 优化：使用懒加载函数获取策略实例
                     strategy = get_midway_strategy_instance()
-                    
+
                     # 执行核心逻辑
                     results = strategy.scan_market(
                         min_change_pct=min_change_pct,
                         max_change_pct=max_change_pct,
                         min_score=min_score,
-                        stock_limit=stock_limit
+                        stock_limit=stock_limit,
+                        only_20cm=only_20cm
                     )
                     
                     # 过滤风险等级

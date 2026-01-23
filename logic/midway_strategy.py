@@ -53,34 +53,44 @@ class MidwayStrategy:
     专攻创业板/科创板的20cm标的，捕捉分时均线支撑后的二次加速点
     """
 
-    def __init__(self, lookback_days: int = 30):
+    def __init__(self, lookback_days: int = 30, only_20cm: bool = False):
         """
         初始化半路战法分析器
 
         Args:
             lookback_days: 回看天数
+            only_20cm: 是否只扫描20cm标的（创业板300和科创板688），默认False（包含主板）
         """
         self.lookback_days = lookback_days
+        self.only_20cm = only_20cm
         self.db = DataManager()
         self.money_flow = MoneyFlowAdapter()
         
-        logger.info(f"🚀 [半路战法] 初始化完成，回看天数: {lookback_days}")
+        logger.info(f"🚀 [半路战法] 初始化完成，回看天数: {lookback_days}, 只扫描20cm: {only_20cm}")
 
-    def scan_market(self, min_change_pct: float = 3.0, max_change_pct: float = 12.0, 
-                   min_score: float = 0.6, stock_limit: int = 50) -> List[Dict]:
+    def scan_market(self, min_change_pct: float = 3.0, max_change_pct: float = 12.0,
+                   min_score: float = 0.6, stock_limit: int = 50, only_20cm: bool = None) -> List[Dict]:
         """
-        扫描全市场20cm标的（300/688）
-        
+        扫描全市场股票（可选择只扫描20cm标的）
+
         Args:
             min_change_pct: 最小涨幅（默认3%）
             max_change_pct: 最大涨幅（默认12%，避免追高）
             min_score: 最低信号强度（默认0.6）
             stock_limit: 扫描股票数量限制（默认50只）
-        
+            only_20cm: 是否只扫描20cm标的（默认None，使用初始化时的设置）
+
         Returns:
             List[Dict]: 符合条件的股票列表
         """
-        logger.info(f"🚀 [半路战法] 开始扫描全市场20cm标的...")
+        # 使用传入的参数或初始化时的设置
+        if only_20cm is None:
+            only_20cm = self.only_20cm
+
+        if only_20cm:
+            logger.info(f"🚀 [半路战法] 开始扫描全市场20cm标的（300/688）...")
+        else:
+            logger.info(f"🚀 [半路战法] 开始扫描全市场股票（包含主板）...")
         
         try:
             # 1. 获取全市场股票列表
@@ -91,10 +101,20 @@ class MidwayStrategy:
                 logger.error("❌ [半路战法] 获取股票列表失败")
                 return []
             
-            # 2. 筛选20cm标的（300xxx和688xxx）
-            stock_list_df = stock_list_df[
-                stock_list_df['代码'].str.startswith(('300', '688'))
-            ]
+            # 2. 筛选标的（根据only_20cm参数决定是否只扫描20cm标的）
+            if only_20cm:
+                # 只扫描20cm标的（创业板300和科创板688）
+                stock_list_df = stock_list_df[
+                    stock_list_df['代码'].str.startswith(('300', '688'))
+                ]
+                logger.info(f"🎯 [半路战法] 只扫描20cm标的，筛选后股票: {len(stock_list_df)} 只")
+            else:
+                # 扫描全市场股票（包含主板600/000）
+                # 过滤掉ST股票和退市股票
+                stock_list_df = stock_list_df[
+                    ~stock_list_df['名称'].str.contains('ST|退', na=False)
+                ]
+                logger.info(f"🎯 [半路战法] 扫描全市场股票（包含主板），筛选后股票: {len(stock_list_df)} 只")
             
             # 3. 筛选涨幅在范围内的股票
             stock_list_df = stock_list_df[

@@ -336,7 +336,7 @@ def render_dragon_strategy_tab(db, config):
     with st.expander("🎯 股票池过滤设置（减少扫描时间）", expanded=False):
         col_filter1, col_filter2, col_filter3 = st.columns(3)
         with col_filter1:
-            min_change_pct = st.slider("最小涨幅 (%)", 0.0, 10.0, 7.0, 0.5, key="filter_min_change_pct", help="龙头战法建议7%以上，捕捉接近涨停的股票")
+            min_change_pct = st.slider("最小涨幅 (%)", 0.0, 20.0, 7.0, 0.5, key="filter_min_change_pct", help="龙头战法建议7%以上，支持扫描20cm股票（10%-20%区间）")
         with col_filter2:
             min_volume = st.number_input("最小成交量 (手)", min_value=1000, max_value=100000, value=2000, step=1000, key="filter_min_volume", help="降低门槛以捕捉小盘龙头")
         with col_filter3:
