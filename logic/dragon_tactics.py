@@ -519,30 +519,48 @@ class DragonTactics:
         if ma20 > 0:
             bias_20 = (current_price - ma20) / ma20 * 100
         
-        # 乖离率否决逻辑
+        # 🚀 V19.5: 乖离率逻辑优化 - 移除死刑，改为高风险提示
+        # 判断是否为真正的龙头（龙一或有弱转强信号）
+        is_dragon_leader = (sector_role == '龙一（推断）' or 
+                           sector_role == '前三（推断）' or 
+                           weak_to_strong)
+        
         if bias_5 > 20:
-            # 极度超买：乖离率 > 20%，直接否决
-            return {
-                'total_score': 0,
-                'role': '杂毛',
-                'signal': 'SELL',
-                'action': '清仓/核按钮',
-                'confidence': 'HIGH',
-                'reason': f"🚨 [极度超买] 乖离率过高（{bias_5:.1f}%），追高风险极大，禁止买入",
-                'sector_role': '杂毛',
-                'auction_intensity': auction_intensity,
-                'weak_to_strong': weak_to_strong,
-                'intraday_support': intraday_support,
-                'bias_5': bias_5,
-                'bias_10': bias_10,
-                'bias_20': bias_20
-            }
+            # 极度超买：乖离率 > 20%
+            if is_dragon_leader:
+                # 真正的龙头可以无视乖离率，仅扣分
+                sector_role_score = max(0, sector_role_score - 10)
+                bias_warning = f"⚠️ [高乖离妖股] 乖离率{bias_5:.1f}%，注意仓位"
+                logger.info(f"🔥 [龙头战法] {stock_info.get('code', '')} 为龙头，允许高乖离率（{bias_5:.1f}%）")
+            else:
+                # 杂毛跟风股乖离率高，必须杀
+                return {
+                    'total_score': 0,
+                    'role': '杂毛',
+                    'signal': 'SELL',
+                    'action': '清仓/核按钮',
+                    'confidence': 'HIGH',
+                    'reason': f"🚨 [极度超买] 乖离率过高（{bias_5:.1f}%），追高风险极大，禁止买入",
+                    'sector_role': sector_role,
+                    'auction_intensity': auction_intensity,
+                    'weak_to_strong': weak_to_strong,
+                    'intraday_support': intraday_support,
+                    'bias_5': bias_5,
+                    'bias_10': bias_10,
+                    'bias_20': bias_20
+                }
         elif bias_5 > 15:
-            # 严重超买：乖离率 > 15%，大幅降低分数
-            sector_role_score = max(0, sector_role_score - 30)
-            bias_warning = f"⚠️ [严重超买] 乖离率过高（{bias_5:.1f}%），大幅降低评分"
+            # 严重超买：乖离率 > 15%
+            if is_dragon_leader:
+                # 龙头适度扣分
+                sector_role_score = max(0, sector_role_score - 15)
+                bias_warning = f"⚠️ [高乖离] 乖离率偏高（{bias_5:.1f}%），注意风险"
+            else:
+                # 杂毛大幅扣分
+                sector_role_score = max(0, sector_role_score - 30)
+                bias_warning = f"⚠️ [严重超买] 乖离率过高（{bias_5:.1f}%），大幅降低评分"
         elif bias_5 > 10:
-            # 轻度超买：乖离率 > 10%，适度降低分数
+            # 轻度超买：乖离率 > 10%
             sector_role_score = max(0, sector_role_score - 15)
             bias_warning = f"⚠️ [轻度超买] 乖离率偏高（{bias_5:.1f}%），适度降低评分"
         

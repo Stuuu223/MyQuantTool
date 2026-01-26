@@ -97,9 +97,42 @@ class LowSuctionEngine:
             # 4. 判断是否回踩到 5日均线下方 -2%
             if touch_distance <= self.MA5_TOUCH_THRESHOLD:
                 # 5. 检查成交量是否萎缩
+                # 🚀 V19.5: 盘中量能修正逻辑
                 current_volume = kline_data['volume'].iloc[-1]
                 prev_volume = kline_data['volume'].iloc[-2]
-                volume_ratio = current_volume / prev_volume if prev_volume > 0 else 1.0
+                
+                # 尝试获取当前时间，判断是否为盘中
+                try:
+                    from datetime import datetime
+                    now = datetime.now()
+                    hour = now.hour
+                    minute = now.minute
+                    
+                    # 计算盘中时间占比（9:30-15:00，共5.5小时=330分钟）
+                    if hour < 9 or (hour == 9 and minute < 30):
+                        # 盘前，使用昨日全天量
+                        volume_ratio = current_volume / prev_volume if prev_volume > 0 else 1.0
+                    elif hour < 15:
+                        # 盘中，计算时间修正系数
+                        market_minutes = (hour - 9) * 60 + (minute - 30)  # 已开盘分钟数
+                        total_minutes = 330  # 全天330分钟
+                        time_ratio = market_minutes / total_minutes  # 时间占比
+                        
+                        # 修正昨日成交量：昨日全天量 * 时间占比
+                        adjusted_prev_volume = prev_volume * time_ratio
+                        
+                        # 计算量比：当前量 / 修正后的昨日量
+                        if adjusted_prev_volume > 0:
+                            volume_ratio = current_volume / adjusted_prev_volume
+                        else:
+                            volume_ratio = 1.0
+                    else:
+                        # 收盘后，使用昨日全天量
+                        volume_ratio = current_volume / prev_volume if prev_volume > 0 else 1.0
+                except:
+                    # 时间计算失败，使用简单逻辑
+                    volume_ratio = current_volume / prev_volume if prev_volume > 0 else 1.0
+                
                 result['volume_ratio'] = volume_ratio
                 
                 if volume_ratio <= self.VOLUME_SHRINK_THRESHOLD:
@@ -108,16 +141,34 @@ class LowSuctionEngine:
                     if realtime_data:
                         dde_net_flow = realtime_data.get('dde_net_flow', 0)
                         
+                        # 🚀 V19.5: DDE 降级处理逻辑
                         if dde_net_flow > self.DDE_POSITIVE_THRESHOLD:
+                            # 正常逻辑：资金共振
                             result['has_suction'] = True
                             result['suction_type'] = 'ma5_suction'
                             result['confidence'] = min(0.8, abs(touch_distance) / 0.05)
                             result['reason'] = f'🔥 [5日均线低吸] 回踩5日均线{touch_distance:.2%}，缩量{volume_ratio:.2%}，DDE承接{dde_net_flow:.2f}亿'
                             logger.info(f"✅ [5日均线低吸] {stock_code} 检测到低吸信号：{result['reason']}")
+                        elif dde_net_flow == 0:
+                            # 降级逻辑：接口未返回 DDE，仅看技术形态
+                            # 此时置信度打折，但不要直接 return
+                            result['has_suction'] = True
+                            result['suction_type'] = 'ma5_suction'
+                            base_confidence = min(0.8, abs(touch_distance) / 0.05)
+                            result['confidence'] = base_confidence * 0.7  # 降权处理
+                            result['reason'] = f'⚠️ [5日均线低吸] 回踩5日均线{touch_distance:.2%}，缩量{volume_ratio:.2%}，DDE数据缺失(仅技术面)'
+                            logger.info(f"⚠️ [5日均线低吸] {stock_code} 检测到低吸信号（DDE缺失）：{result['reason']}")
                         else:
-                            result['reason'] = f'回踩5日均线{touch_distance:.2%}，缩量{volume_ratio:.2%}，但DDE为负（{dde_net_flow:.2f}亿）'
+                            # DDE 为负数，确实是主力出逃，才否决
+                            result['reason'] = f'❌ [5日均线低吸] 回踩5日均线{touch_distance:.2%}，缩量{volume_ratio:.2%}，但DDE大幅流出（{dde_net_flow:.2f}亿）'
                     else:
-                        result['reason'] = f'回踩5日均线{touch_distance:.2%}，缩量{volume_ratio:.2%}，但无法获取DDE数据'
+                        # 无法获取DDE数据，同样降级处理
+                        result['has_suction'] = True
+                        result['suction_type'] = 'ma5_suction'
+                        base_confidence = min(0.8, abs(touch_distance) / 0.05)
+                        result['confidence'] = base_confidence * 0.7
+                        result['reason'] = f'⚠️ [5日均线低吸] 回踩5日均线{touch_distance:.2%}，缩量{volume_ratio:.2%}，无法获取DDE数据(仅技术面)'
+                        logger.info(f"⚠️ [5日均线低吸] {stock_code} 检测到低吸信号（DDE缺失）：{result['reason']}")
                 else:
                     result['reason'] = f'回踩5日均线{touch_distance:.2%}，但成交量未萎缩（{volume_ratio:.2%}）'
             else:
@@ -185,6 +236,7 @@ class LowSuctionEngine:
                     dde_turn_red = dde_net_flow > 0
                     result['dde_turn_red'] = dde_turn_red
                     
+                    # 🚀 V19.5: DDE 降级处理逻辑
                     if dde_turn_red:
                         result['has_suction'] = True
                         result['suction_type'] = 'intraday_ma_suction'
@@ -193,10 +245,25 @@ class LowSuctionEngine:
                         result['confidence'] = min(0.9, max(0.6, confidence))
                         result['reason'] = f'🔥 [分时均线低吸] 回踩分时均线{touch_distance:.2%}（缓冲区内），DDE翻红（{dde_net_flow:.2f}亿）'
                         logger.info(f"✅ [分时均线低吸] {stock_code} 检测到低吸信号：{result['reason']}")
+                    elif dde_net_flow == 0:
+                        # 降级逻辑：DDE数据缺失，仅看技术形态
+                        result['has_suction'] = True
+                        result['suction_type'] = 'intraday_ma_suction'
+                        confidence = 1.0 - abs(touch_distance + 0.02) / 0.01
+                        result['confidence'] = min(0.9, max(0.6, confidence)) * 0.7  # 降权处理
+                        result['reason'] = f'⚠️ [分时均线低吸] 回踩分时均线{touch_distance:.2%}（缓冲区内），DDE数据缺失(仅技术面)'
+                        logger.info(f"⚠️ [分时均线低吸] {stock_code} 检测到低吸信号（DDE缺失）：{result['reason']}")
                     else:
-                        result['reason'] = f'回踩分时均线{touch_distance:.2%}（缓冲区内），但DDE未翻红（{dde_net_flow:.2f}亿）'
+                        # DDE为负数，否决
+                        result['reason'] = f'❌ [分时均线低吸] 回踩分时均线{touch_distance:.2%}（缓冲区内），但DDE大幅流出（{dde_net_flow:.2f}亿）'
                 else:
-                    result['reason'] = f'回踩分时均线{touch_distance:.2%}（缓冲区内），但无法获取DDE数据'
+                    # 无法获取DDE数据，降级处理
+                    result['has_suction'] = True
+                    result['suction_type'] = 'intraday_ma_suction'
+                    confidence = 1.0 - abs(touch_distance + 0.02) / 0.01
+                    result['confidence'] = min(0.9, max(0.6, confidence)) * 0.7
+                    result['reason'] = f'⚠️ [分时均线低吸] 回踩分时均线{touch_distance:.2%}（缓冲区内），无法获取DDE数据(仅技术面)'
+                    logger.info(f"⚠️ [分时均线低吸] {stock_code} 检测到低吸信号（DDE缺失）：{result['reason']}")
             else:
                 result['reason'] = f'未在分时均线缓冲区内（{touch_distance:.2%}，范围：{self.INTRADAY_MA_TOUCH_THRESHOLD_MIN:.2%} ~ {self.INTRADAY_MA_TOUCH_THRESHOLD_MAX:.2%}）'
         

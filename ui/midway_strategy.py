@@ -32,8 +32,8 @@ def render_midway_strategy_tab(db, config):
         db: 数据库实例
         config: 配置对象
     """
-    st.markdown("## 🚀 20cm 半路逼空战法 (Midway Acceleration)")
-    st.info("💡 专攻创业板/科创板：捕捉分时均线支撑后的二次加速点，结合DDE资金流向确认")
+    st.markdown("## 🚀 半路逼空战法 (Midway Acceleration)")
+    st.info("💡 捕捉分时均线支撑后的二次加速点，结合DDE资金流向确认。支持主板和20cm标的")
     st.markdown("---")
     
     # 1. 初始化 Session State (防止无限重跑)
@@ -79,6 +79,12 @@ def render_midway_strategy_tab(db, config):
             )
         
         with col3:
+            only_20cm = st.checkbox(
+                "只扫描20cm标的",
+                value=False,
+                help="勾选后只扫描创业板(300)和科创板(688)的20cm标的；不勾选则扫描全市场（主板+20cm）"
+            )
+            
             risk_tolerance = st.selectbox(
                 "风险容忍度",
                 ["低", "中", "高"],
@@ -104,11 +110,13 @@ def render_midway_strategy_tab(db, config):
                     'min_change_pct': min_change_pct,
                     'max_change_pct': max_change_pct,
                     'min_score': min_score,
-                    'risk_tolerance': risk_tolerance
+                    'risk_tolerance': risk_tolerance,
+                    'only_20cm': only_20cm
                 }
                 
                 # 显示进度条，而不是让界面卡死
-                with st.spinner("🚀 [半路战法] 正在通过 DDE 显微镜扫描 20cm 标的... 请勿刷新页面"):
+                scan_target = "20cm标的" if only_20cm else "全市场标的（主板+20cm）"
+                with st.spinner(f"🚀 [半路战法] 正在通过 DDE 显微镜扫描 {scan_target}... 请勿刷新页面"):
                     # 🚀 V19 优化：使用懒加载函数获取策略实例
                     strategy = get_midway_strategy_instance()
                     
@@ -117,7 +125,8 @@ def render_midway_strategy_tab(db, config):
                         min_change_pct=min_change_pct,
                         max_change_pct=max_change_pct,
                         min_score=min_score,
-                        stock_limit=stock_limit
+                        stock_limit=stock_limit,
+                        only_20cm=only_20cm
                     )
                     
                     # 过滤风险等级
@@ -134,7 +143,8 @@ def render_midway_strategy_tab(db, config):
                 if results:
                     st.success(f"✅ 扫描完成！捕获 {len(results)} 只潜在标的")
                 else:
-                    st.warning("⚠️ 扫描完成，但今日无符合【20cm加速 + DDE共振】的标的")
+                    target_desc = "20cm" if only_20cm else "全市场"
+                    st.warning(f"⚠️ 扫描完成，但今日无符合【{target_desc}加速 + DDE共振】的标的")
                 
                 st.rerun()  # 强制刷新以显示结果
             
@@ -233,11 +243,11 @@ def render_midway_strategy_tab(db, config):
         
         st.info("""
         **入场条件**：
-        - 创业板(300)或科创板(688)标的
+        - 支持主板(00/60)和20cm(300/688)标的
         - 涨幅在3%-12%之间（避免追高）
         - 分时均线支撑确认
         - 成交量萎缩后放大
-        - DDE资金净流入
+        - DDE资金净流入（可选）
         """)
         
         st.markdown("---")
