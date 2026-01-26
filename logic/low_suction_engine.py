@@ -46,6 +46,13 @@ class LowSuctionEngine:
         """初始化低吸逻辑引擎"""
         self.data_manager = DataManager()
         self.money_flow_master = get_money_flow_master()
+        self._sector_analyzer = None
+        try:
+            from logic.sector_analysis import FastSectorAnalyzer
+            self._sector_analyzer = FastSectorAnalyzer(self.data_manager)
+            logger.info("✅ [低吸战法] 板块共振分析器初始化完成")
+        except Exception as e:
+            logger.warning(f"⚠️ [低吸战法] 初始化板块分析器失败: {e}")
     
     def check_ma5_suction(self, stock_code: str, current_price: float, prev_close: float) -> Dict[str, Any]:
         """
@@ -83,9 +90,8 @@ class LowSuctionEngine:
         }
 
         try:
-            # 1. 获取 K线数据
-            kline_data = self.data_manager.get_kline(stock_code, period='daily', count=10)
-            if not kline_data or len(kline_data) < 5:
+kline_data = self.data_manager.get_history_data(symbol=stock_code, period='daily')
+            if kline_data is None or kline_data.empty or len(kline_data) < 5:
                 result['reason'] = 'K线数据不足'
                 return result
 
@@ -138,7 +144,7 @@ class LowSuctionEngine:
             # 4. 判断是否回踩到动态阈值
             if touch_distance <= dynamic_threshold:
                 # 5. 检查成交量是否萎缩
-                # 🚀 V19.6: 盘中量能修正逻辑（分段加权推演）
+                # 🚀 V19.7: 量能修正逻辑（更平滑的时间加权算法）
                 current_volume = kline_data['volume'].iloc[-1]
                 prev_volume = kline_data['volume'].iloc[-2]
                 
@@ -150,34 +156,36 @@ class LowSuctionEngine:
                     minute = now.minute
                     
                     # 计算盘中时间占比（9:30-15:00，共5.5小时=330分钟）
+                    trading_minutes = 330  # 全天330分钟
+                    
                     if hour < 9 or (hour == 9 and minute < 30):
                         # 盘前，使用昨日全天量
                         volume_ratio = current_volume / prev_volume if prev_volume > 0 else 1.0
                         logger.debug(f"[{stock_code}] 盘前量能计算: 当前量={current_volume:.0f}, 昨日量={prev_volume:.0f}, 量比={volume_ratio:.2f}")
                     elif hour < 15:
-                        # 盘中，计算时间修正系数
-                        market_minutes = (hour - 9) * 60 + (minute - 30)  # 已开盘分钟数
+                        # 盘中，计算已开盘分钟数
+                        market_minutes = (hour - 9) * 60 + (minute - 30)
                         
-                        # 🚀 V19.6: 使用分段加权推演，避免早盘线性放大导致的误判
-                        if market_minutes < 30:
-                            # 早盘30分钟（9:30-10:00）：成交量通常占全天的25%-30%
-                            # 使用保守估算，假设当前量占全天的25%（乘以4倍）
-                            # 而不是线性推演（可能放大24倍）
-                            volume_ratio = current_volume / (prev_volume * 0.25) if prev_volume > 0 else 1.0
-                            logger.debug(f"[{stock_code}] 早盘量能计算(分段加权): 当前量={current_volume:.0f}, 昨日量={prev_volume:.0f}, 时间={market_minutes}分钟, 量比={volume_ratio:.2f}")
+                        # 🚀 V19.7: 使用更平滑的时间加权算法
+                        if market_minutes < 15:
+                            # 开盘前15分钟极其不稳定，建议直接使用昨日量作为参考
+                            # 或者给予极低的权重
+                            volume_ratio = current_volume / prev_volume if prev_volume > 0 else 1.0
+                            logger.debug(f"[{stock_code}] 极早盘量能计算(参考昨日): 当前量={current_volume:.0f}, 昨日量={prev_volume:.0f}, 时间={market_minutes}分钟, 量比={volume_ratio:.2f}")
+                        elif market_minutes < 60:
+                            # 1小时内，随着时间推移增加权值
+                            # 使用线性推演和昨日量的加权平均
+                            weight = market_minutes / 60.0  # 时间权重（0-1）
+                            linear_project = current_volume * (trading_minutes / market_minutes) if market_minutes > 0 else 0
+                            # 加权平均：线性推演 * 权重 + 昨日量 * (1-权重)
+                            predicted_vol = (linear_project * weight) + (prev_volume * (1 - weight))
+                            volume_ratio = current_volume / predicted_vol if predicted_vol > 0 else 1.0
+                            logger.debug(f"[{stock_code}] 盘初量能计算(加权平均): 当前量={current_volume:.0f}, 昨日量={prev_volume:.0f}, 时间={market_minutes}分钟, 权重={weight:.2f}, 量比={volume_ratio:.2f}")
                         else:
-                            # 10点之后：使用线性推演
-                            total_minutes = 330  # 全天330分钟
-                            time_ratio = market_minutes / total_minutes  # 时间占比
-                            
-                            # 修正昨日成交量：昨日全天量 * 时间占比
+                            # 1小时后，线性推演较准
+                            time_ratio = market_minutes / trading_minutes
                             adjusted_prev_volume = prev_volume * time_ratio
-                            
-                            # 计算量比：当前量 / 修正后的昨日量
-                            if adjusted_prev_volume > 0:
-                                volume_ratio = current_volume / adjusted_prev_volume
-                            else:
-                                volume_ratio = 1.0
+                            volume_ratio = current_volume / adjusted_prev_volume if adjusted_prev_volume > 0 else 1.0
                             logger.debug(f"[{stock_code}] 盘中量能计算(线性推演): 当前量={current_volume:.0f}, 昨日量={prev_volume:.0f}, 时间={market_minutes}分钟, 量比={volume_ratio:.2f}")
                     else:
                         # 收盘后，使用昨日全天量
@@ -196,6 +204,26 @@ class LowSuctionEngine:
                     if realtime_data:
                         dde_net_flow = realtime_data.get('dde_net_flow', 0)
                         
+                        # 🆕 V19.7: 板块共振分析（全维板块共振系统）
+                        sector_resonance_score = 0.0
+                        sector_resonance_details = []
+                        is_sector_leader = False
+                        
+                        if self._sector_analyzer:
+                            try:
+                                stock_name = realtime_data.get('name', '')
+                                resonance_result = self._sector_analyzer.check_stock_full_resonance(
+                                    stock_code, stock_name
+                                )
+                                
+                                sector_resonance_score = resonance_result.get('resonance_score', 0.0)
+                                sector_resonance_details = resonance_result.get('resonance_details', [])
+                                is_sector_leader = resonance_result.get('is_leader', False)
+                                
+                                logger.info(f"🚀 [板块共振] {stock_code} 共振评分: {sector_resonance_score:+.1f}, 详情: {sector_resonance_details}")
+                            except Exception as e:
+                                logger.warning(f"⚠️ [板块共振] 分析失败: {e}")
+                        
                         # 🚀 V19.5: DDE 降级处理逻辑
                         if dde_net_flow > self.DDE_POSITIVE_THRESHOLD:
                             # 正常逻辑：资金共振
@@ -204,8 +232,17 @@ class LowSuctionEngine:
                             # 🆕 V19.6 优化：根据趋势强度调整置信度
                             base_confidence = min(0.8, abs(touch_distance) / 0.05)
                             trend_bonus = min(0.2, trend_strength * 0.5)  # 趋势越强，加分越多
-                            result['confidence'] = min(1.0, base_confidence + trend_bonus)
-                            result['reason'] = f'🔥 [5日均线低吸] {trend_desc}（10日涨幅{trend_strength*100:.1f}%），回踩5日均线{touch_distance:.2%}，缩量{volume_ratio:.2%}，DDE承接{dde_net_flow:.2f}亿'
+                            # 🆕 V19.7: 添加板块共振加分
+                            resonance_bonus = min(0.1, max(0, sector_resonance_score / 50.0))  # 共振评分/50，最多加0.1
+                            result['confidence'] = min(1.0, base_confidence + trend_bonus + resonance_bonus)
+                            
+                            # 构建原因描述
+                            reason_parts = [f'🔥 [5日均线低吸] {trend_desc}（10日涨幅{trend_strength*100:.1f}%），回踩5日均线{touch_distance:.2%}，缩量{volume_ratio:.2%}，DDE承接{dde_net_flow:.2f}亿']
+                            if sector_resonance_details:
+                                reason_parts.append(f"，板块共振加分{resonance_bonus:.2f}")
+                                if is_sector_leader:
+                                    reason_parts.append("（板块龙头）")
+                            result['reason'] = ''.join(reason_parts)
                             logger.info(f"✅ [5日均线低吸] {stock_code} 检测到低吸信号：{result['reason']}")
                         elif dde_net_flow == 0:
                             # 降级逻辑：接口未返回 DDE，仅看技术形态
@@ -213,8 +250,15 @@ class LowSuctionEngine:
                             result['has_suction'] = True
                             result['suction_type'] = 'ma5_suction'
                             base_confidence = min(0.8, abs(touch_distance) / 0.05)
-                            result['confidence'] = base_confidence * 0.7  # 降权处理
-                            result['reason'] = f'⚠️ [5日均线低吸] 回踩5日均线{touch_distance:.2%}，缩量{volume_ratio:.2%}，DDE数据缺失(仅技术面)'
+                            # 🆕 V19.7: 添加板块共振加分
+                            resonance_bonus = min(0.1, max(0, sector_resonance_score / 50.0)) if sector_resonance_score > 0 else 0
+                            result['confidence'] = (base_confidence * 0.7) + resonance_bonus  # 降权处理
+                            
+                            # 构建原因描述
+                            reason_parts = [f'⚠️ [5日均线低吸] 回踩5日均线{touch_distance:.2%}，缩量{volume_ratio:.2%}，DDE数据缺失(仅技术面)']
+                            if sector_resonance_score > 0:
+                                reason_parts.append(f"，板块共振加分{resonance_bonus:.2f}")
+                            result['reason'] = ''.join(reason_parts)
                             logger.info(f"⚠️ [5日均线低吸] {stock_code} 检测到低吸信号（DDE缺失）：{result['reason']}")
                         else:
                             # DDE 为负数，确实是主力出逃，才否决
@@ -224,8 +268,30 @@ class LowSuctionEngine:
                         result['has_suction'] = True
                         result['suction_type'] = 'ma5_suction'
                         base_confidence = min(0.8, abs(touch_distance) / 0.05)
-                        result['confidence'] = base_confidence * 0.7
-                        result['reason'] = f'⚠️ [5日均线低吸] 回踩5日均线{touch_distance:.2%}，缩量{volume_ratio:.2%}，无法获取DDE数据(仅技术面)'
+                        
+                        # 🆕 V19.7: 板块共振分析（DDE数据缺失时）
+                        sector_resonance_score = 0.0
+                        sector_resonance_details = []
+                        
+                        if self._sector_analyzer:
+                            try:
+                                resonance_result = self._sector_analyzer.check_stock_full_resonance(
+                                    stock_code, ''
+                                )
+                                sector_resonance_score = resonance_result.get('resonance_score', 0.0)
+                                sector_resonance_details = resonance_result.get('resonance_details', [])
+                            except Exception as e:
+                                logger.warning(f"⚠️ [板块共振] 分析失败: {e}")
+                        
+                        # 🆕 V19.7: 添加板块共振加分
+                        resonance_bonus = min(0.1, max(0, sector_resonance_score / 50.0)) if sector_resonance_score > 0 else 0
+                        result['confidence'] = (base_confidence * 0.7) + resonance_bonus
+                        
+                        # 构建原因描述
+                        reason_parts = [f'⚠️ [5日均线低吸] 回踩5日均线{touch_distance:.2%}，缩量{volume_ratio:.2%}，无法获取DDE数据(仅技术面)']
+                        if sector_resonance_score > 0:
+                            reason_parts.append(f"，板块共振加分{resonance_bonus:.2f}")
+                        result['reason'] = ''.join(reason_parts)
                         logger.info(f"⚠️ [5日均线低吸] {stock_code} 检测到低吸信号（DDE缺失）：{result['reason']}")
                 else:
                     result['reason'] = f'回踩5日均线{touch_distance:.2%}，但成交量未萎缩（{volume_ratio:.2%}）'
@@ -235,6 +301,19 @@ class LowSuctionEngine:
         except Exception as e:
             logger.error(f"检查 5日均线低吸失败: {e}")
             result['reason'] = f'检查失败: {e}'
+        
+        # 🆕 V19.7: 添加板块共振信息到返回结果
+        if result.get('has_suction'):
+            if self._sector_analyzer:
+                try:
+                    resonance_result = self._sector_analyzer.check_stock_full_resonance(
+                        stock_code, ''
+                    )
+                    result['sector_resonance_score'] = resonance_result.get('resonance_score', 0.0)
+                    result['sector_resonance_details'] = resonance_result.get('resonance_details', [])
+                    result['is_sector_leader'] = resonance_result.get('is_leader', False)
+                except Exception as e:
+                    logger.warning(f"⚠️ [板块共振] 添加共振信息失败: {e}")
         
         return result
     
@@ -443,8 +522,8 @@ class LowSuctionEngine:
         
         try:
             # 1. 获取K线数据
-            kline_data = self.data_manager.get_kline(stock_code, period='daily', count=10)
-            if not kline_data or len(kline_data) < 5:
+            kline_data = self.data_manager.get_history_data(symbol=stock_code, period='daily')
+            if kline_data is None or kline_data.empty or len(kline_data) < 5:
                 result['reason'] = 'K线数据不足'
                 return result
             
@@ -605,7 +684,7 @@ class LowSuctionEngine:
             # 5. 检查是否放量
             current_volume = realtime_data.get('volume', 0)
             # 获取昨日成交量
-            kline_data = self.data_manager.get_kline(stock_code, period='daily', count=5)
+            kline_data = self.data_manager.get_history_data(symbol=stock_code, period='daily')
             if kline_data is not None and len(kline_data) >= 2:
                 prev_volume = kline_data['volume'].iloc[-2]
                 if current_volume > prev_volume * 1.5:

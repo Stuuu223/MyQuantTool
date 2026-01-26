@@ -25,9 +25,20 @@ class DragonTactics:
     4. 决策矩阵输出
     """
     
-    def __init__(self):
-        """初始化龙头战法分析器"""
-        pass
+    def __init__(self, db=None):
+        """初始化龙头战法分析器
+        
+        Args:
+            db: DataManager 实例（可选）
+        """
+        self.db = db
+        self._sector_analyzer = None
+        if db:
+            try:
+                from logic.sector_analysis import FastSectorAnalyzer
+                self._sector_analyzer = FastSectorAnalyzer(db)
+            except Exception as e:
+                logger.warning(f"初始化板块分析器失败: {e}")
     
     def analyze_call_auction(self, 
                            current_open_volume: float,
@@ -465,6 +476,38 @@ class DragonTactics:
             sector_role_score = 0
             sector_role = '杂毛'
         
+        # 🆕 V19.7: 板块共振分析（全维板块共振系统）
+        sector_resonance_score = 0.0
+        sector_resonance_details = []
+        is_sector_leader = False
+        is_sector_follower = False
+        
+        if self._sector_analyzer:
+            try:
+                stock_code = stock_info.get('code', '')
+                stock_name = stock_info.get('name', '')
+                
+                resonance_result = self._sector_analyzer.check_stock_full_resonance(
+                    stock_code, stock_name
+                )
+                
+                sector_resonance_score = resonance_result.get('resonance_score', 0.0)
+                sector_resonance_details = resonance_result.get('resonance_details', [])
+                is_sector_leader = resonance_result.get('is_leader', False)
+                is_sector_follower = resonance_result.get('is_follower', False)
+                
+                # 根据板块共振结果调整板块地位评分
+                if is_sector_leader:
+                    sector_role_score = min(100, sector_role_score + 10)
+                    if sector_role_score >= 90:
+                        sector_role = '龙一（共振确认）'
+                elif is_sector_follower:
+                    sector_role_score = max(0, sector_role_score - 5)
+                
+                logger.info(f"🚀 [板块共振] {stock_code} 共振评分: {sector_resonance_score:+.1f}, 详情: {sector_resonance_details}")
+            except Exception as e:
+                logger.warning(f"⚠️ [板块共振] 分析失败: {e}")
+        
         # 5. 弱转强分析（基于昨日和今日涨跌幅，增加更多情况）
         prev_pct_change = stock_info.get('prev_pct_change', 0)
         if prev_pct_change < -3 and pct_change > 0:
@@ -572,7 +615,8 @@ class DragonTactics:
             weak_to_strong_score=weak_to_strong_score,
             intraday_support_score=intraday_support_score,
             current_change=pct_change,
-            is_20cm=is_20cm
+            is_20cm=is_20cm,
+            sector_resonance_score=sector_resonance_score
         )
         
         # 添加乖离率字段
@@ -588,6 +632,20 @@ class DragonTactics:
         decision['weak_to_strong'] = weak_to_strong
         decision['intraday_support'] = intraday_support
         
+        # 🆕 V19.7: 添加板块共振信息
+        decision['sector_resonance_score'] = sector_resonance_score
+        decision['sector_resonance_details'] = sector_resonance_details
+        decision['is_sector_leader'] = is_sector_leader
+        decision['is_sector_follower'] = is_sector_follower
+        
+        # 如果有板块共振详情，添加到reason中
+        if sector_resonance_details:
+            resonance_desc = " | ".join(sector_resonance_details)
+            if decision.get('reason'):
+                decision['reason'] = f"{resonance_desc}。{decision['reason']}"
+            else:
+                decision['reason'] = resonance_desc
+        
         return decision
     
     def make_decision_matrix(self,
@@ -596,7 +654,8 @@ class DragonTactics:
                            weak_to_strong_score: int,
                            intraday_support_score: int,
                            current_change: float,
-                           is_20cm: bool) -> Dict[str, Any]:
+                           is_20cm: bool,
+                           sector_resonance_score: float = 0.0) -> Dict[str, Any]:
         """
         决策矩阵
         
@@ -611,11 +670,12 @@ class DragonTactics:
         Returns:
             决策结果
         """
-        # 综合评分
-        total_score = (role_score * 0.4 + 
+        # 综合评分（🆕 V19.7: 添加板块共振评分，权重15%）
+        total_score = (role_score * 0.35 + 
                       auction_score * 0.2 + 
-                      weak_to_strong_score * 0.2 + 
-                      intraday_support_score * 0.2)
+                      weak_to_strong_score * 0.15 + 
+                      intraday_support_score * 0.15 +
+                      sector_resonance_score * 0.15)
         
         results = {
             'total_score': total_score,
