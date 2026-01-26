@@ -53,35 +53,44 @@ class MidwayStrategy:
     专攻创业板/科创板的20cm标的，捕捉分时均线支撑后的二次加速点
     """
 
-    def __init__(self, lookback_days: int = 30):
+    def __init__(self, lookback_days: int = 30, only_20cm: bool = False):
         """
         初始化半路战法分析器
 
         Args:
             lookback_days: 回看天数
+            only_20cm: 是否只扫描20cm标的（创业板300和科创板688），默认False（包含主板）
         """
         self.lookback_days = lookback_days
+        self.only_20cm = only_20cm
         self.db = DataManager()
         self.money_flow = MoneyFlowAdapter()
         
-        logger.info(f"🚀 [半路战法] 初始化完成，回看天数: {lookback_days}")
+        logger.info(f"🚀 [半路战法] 初始化完成，回看天数: {lookback_days}, 只扫描20cm: {only_20cm}")
 
-    def scan_market(self, min_change_pct: float = 3.0, max_change_pct: float = 12.0, 
-                   min_score: float = 0.6, stock_limit: int = 50, only_20cm: bool = False) -> List[Dict]:
+    def scan_market(self, min_change_pct: float = 3.0, max_change_pct: float = 12.0,
+                   min_score: float = 0.6, stock_limit: int = 50, only_20cm: bool = None) -> List[Dict]:
         """
-        扫描全市场标的（支持主板和20cm）
-        
+        扫描全市场股票（可选择只扫描20cm标的）
+
         Args:
             min_change_pct: 最小涨幅（默认3%）
             max_change_pct: 最大涨幅（默认12%，避免追高）
             min_score: 最低信号强度（默认0.6）
             stock_limit: 扫描股票数量限制（默认50只）
-            only_20cm: 是否只扫描20cm标的（默认False，扫描全市场）
-        
+            only_20cm: 是否只扫描20cm标的（默认None，使用初始化时的设置）
+
         Returns:
             List[Dict]: 符合条件的股票列表
         """
-        logger.info(f"🚀 [半路战法] 开始扫描全市场标的（only_20cm={only_20cm}）...")
+        # 使用传入的参数或初始化时的设置
+        if only_20cm is None:
+            only_20cm = self.only_20cm
+
+        if only_20cm:
+            logger.info(f"🚀 [半路战法] 开始扫描全市场20cm标的（300/688）...")
+        else:
+            logger.info(f"🚀 [半路战法] 开始扫描全市场股票（包含主板）...")
         
         try:
             # 1. 获取全市场股票列表
@@ -92,16 +101,20 @@ class MidwayStrategy:
                 logger.error("❌ [半路战法] 获取股票列表失败")
                 return []
             
-            # 2. 筛选标的（根据参数决定是否只扫描20cm）
+            # 2. 筛选标的（根据only_20cm参数决定是否只扫描20cm标的）
             if only_20cm:
-                # 只扫描20cm标的（300xxx和688xxx）
+                # 只扫描20cm标的（创业板300和科创板688）
                 stock_list_df = stock_list_df[
                     stock_list_df['代码'].str.startswith(('300', '688'))
                 ]
-                logger.info(f"🎯 [半路战法] 只扫描20cm标的")
+                logger.info(f"🎯 [半路战法] 只扫描20cm标的，筛选后股票: {len(stock_list_df)} 只")
             else:
-                # 扫描全市场（包括主板和20cm）
-                logger.info(f"🎯 [半路战法] 扫描全市场标的（主板+20cm）")
+                # 扫描全市场股票（包含主板600/000）
+                # 过滤掉ST股票和退市股票
+                stock_list_df = stock_list_df[
+                    ~stock_list_df['名称'].str.contains('ST|退', na=False)
+                ]
+                logger.info(f"🎯 [半路战法] 扫描全市场股票（包含主板），筛选后股票: {len(stock_list_df)} 只")
             
             # 3. 筛选涨幅在范围内的股票
             stock_list_df = stock_list_df[
@@ -369,18 +382,11 @@ class MidwayStrategy:
         latest = df.iloc[-1]
         prev = df.iloc[-2]
         
-        # 🚀 V19.5: 动态调整阈值 - 根据股票代码前缀判断主板还是20cm
-        is_main_board = code.startswith('00') or code.startswith('60')  # 主板
-        is_20cm = code.startswith('300') or code.startswith('688')  # 20cm
-        
-        # 动态调整震荡幅度阈值
-        max_price_range = 0.08 if is_main_board else 0.03  # 主板放宽到8%，20cm保持3%
-        
         # 检查是否突破平台
         recent_prices = df['close'].tail(10).values
         price_range = (recent_prices.max() - recent_prices.min()) / recent_prices.mean()
         
-        if price_range > max_price_range:
+        if price_range > 0.03:
             return None
         
         if latest['close'] <= recent_prices.max():
@@ -637,15 +643,8 @@ class MidwayStrategy:
         if prev2 is None:
             return None
         
-        # 🚀 V19.5: 动态调整涨停阈值 - 根据股票代码前缀判断主板还是20cm
-        is_main_board = code.startswith('00') or code.startswith('60')  # 主板
-        is_20cm = code.startswith('300') or code.startswith('688')  # 20cm
-        
-        # 动态调整涨停阈值
-        min_limit_up_threshold = 0.095 if is_main_board else 0.09  # 主板9.5%，20cm 9%
-        
         prev2_change = (prev2['close'] - prev2['open']) / prev2['open']
-        if prev2_change < min_limit_up_threshold:
+        if prev2_change < 0.09:
             return None
         
         prev_upper_shadow = prev['high'] - max(prev['open'], prev['close'])

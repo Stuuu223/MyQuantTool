@@ -50,14 +50,15 @@ class LowSuctionEngine:
     def check_ma5_suction(self, stock_code: str, current_price: float, prev_close: float) -> Dict[str, Any]:
         """
         检查 5日均线低吸信号
-        
+
         逻辑：股价回踩 5日均线下方 -2% 处，且成交量萎缩
-        
+        🆕 V19.6 优化：引入趋势强度因子，动态调整回踩阈值
+
         Args:
             stock_code: 股票代码
             current_price: 当前价格
             prev_close: 昨收价
-        
+
         Returns:
             dict: {
                 'has_suction': bool,      # 是否有低吸信号
@@ -66,7 +67,8 @@ class LowSuctionEngine:
                 'touch_distance': float,  # 触碰距离
                 'volume_ratio': float,    # 成交量比率
                 'confidence': float,      # 置信度（0-1）
-                'reason': str             # 原因
+                'reason': str,            # 原因
+                'trend_strength': float   # 🆕 趋势强度因子（0-1）
             }
         """
         result = {
@@ -76,26 +78,65 @@ class LowSuctionEngine:
             'touch_distance': 0.0,
             'volume_ratio': 1.0,
             'confidence': 0.0,
-            'reason': ''
+            'reason': '',
+            'trend_strength': 0.0
         }
-        
+
         try:
             # 1. 获取 K线数据
             kline_data = self.data_manager.get_kline(stock_code, period='daily', count=10)
             if not kline_data or len(kline_data) < 5:
                 result['reason'] = 'K线数据不足'
                 return result
-            
+
             # 2. 计算 5日均线
             ma5 = kline_data['close'].rolling(window=5).mean().iloc[-1]
             result['ma5_price'] = ma5
-            
+
             # 3. 计算触碰距离
             touch_distance = (current_price - ma5) / ma5
             result['touch_distance'] = touch_distance
-            
-            # 4. 判断是否回踩到 5日均线下方 -2%
-            if touch_distance <= self.MA5_TOUCH_THRESHOLD:
+
+            # 🆕 V19.6 新增：计算趋势强度因子
+            # 10日涨幅
+            if len(kline_data) >= 10:
+                price_10_days_ago = kline_data['close'].iloc[-10]
+                trend_strength_10d = (current_price - price_10_days_ago) / price_10_days_ago
+            else:
+                trend_strength_10d = 0
+
+            # 5日涨幅
+            if len(kline_data) >= 5:
+                price_5_days_ago = kline_data['close'].iloc[-5]
+                trend_strength_5d = (current_price - price_5_days_ago) / price_5_days_ago
+            else:
+                trend_strength_5d = 0
+
+            # 综合趋势强度（10日涨幅权重更高）
+            trend_strength = max(trend_strength_10d, trend_strength_5d)
+            result['trend_strength'] = trend_strength
+
+            # 🆕 V19.6 新增：根据趋势强度动态调整回踩阈值
+            # 趋势越强，回踩阈值越宽松
+            if trend_strength >= 0.30:  # 10日涨幅 >= 30%
+                # 超强趋势：允许回踩到MA5上方1%（轻度回踩即可）
+                dynamic_threshold = 0.01
+                trend_desc = "超强趋势"
+            elif trend_strength >= 0.20:  # 10日涨幅 >= 20%
+                # 强趋势：允许回踩到MA5下方0.5%
+                dynamic_threshold = -0.005
+                trend_desc = "强趋势"
+            elif trend_strength >= 0.10:  # 10日涨幅 >= 10%
+                # 中等趋势：允许回踩到MA5下方1%
+                dynamic_threshold = -0.01
+                trend_desc = "中等趋势"
+            else:
+                # 弱趋势：使用默认阈值
+                dynamic_threshold = self.MA5_TOUCH_THRESHOLD_MIN
+                trend_desc = "弱趋势"
+
+            # 4. 判断是否回踩到动态阈值
+            if touch_distance <= dynamic_threshold:
                 # 5. 检查成交量是否萎缩
                 # 🚀 V19.5: 盘中量能修正逻辑
                 current_volume = kline_data['volume'].iloc[-1]
@@ -146,8 +187,11 @@ class LowSuctionEngine:
                             # 正常逻辑：资金共振
                             result['has_suction'] = True
                             result['suction_type'] = 'ma5_suction'
-                            result['confidence'] = min(0.8, abs(touch_distance) / 0.05)
-                            result['reason'] = f'🔥 [5日均线低吸] 回踩5日均线{touch_distance:.2%}，缩量{volume_ratio:.2%}，DDE承接{dde_net_flow:.2f}亿'
+                            # 🆕 V19.6 优化：根据趋势强度调整置信度
+                            base_confidence = min(0.8, abs(touch_distance) / 0.05)
+                            trend_bonus = min(0.2, trend_strength * 0.5)  # 趋势越强，加分越多
+                            result['confidence'] = min(1.0, base_confidence + trend_bonus)
+                            result['reason'] = f'🔥 [5日均线低吸] {trend_desc}（10日涨幅{trend_strength*100:.1f}%），回踩5日均线{touch_distance:.2%}，缩量{volume_ratio:.2%}，DDE承接{dde_net_flow:.2f}亿'
                             logger.info(f"✅ [5日均线低吸] {stock_code} 检测到低吸信号：{result['reason']}")
                         elif dde_net_flow == 0:
                             # 降级逻辑：接口未返回 DDE，仅看技术形态
