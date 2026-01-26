@@ -171,11 +171,33 @@ def render_settings_tab(db, config):
         save_history = st.checkbox("保存历史记录", value=user_prefs.get('other', '保存历史记录', True))
         history_days = st.slider("历史记录保留天数", 7, 90, user_prefs.get('other', '历史记录保留天数', 30), 1)
 
+        # 🆕 V19.6: 调试模式
+        st.divider()
+        st.subheader("🐛 调试模式")
+        debug_mode = st.checkbox(
+            "启用调试模式",
+            value=user_prefs.get('other', '调试模式', False),
+            help="启用后，战法将忽略时间限制，允许在非交易时间测试战法功能"
+        )
+        if debug_mode:
+            st.warning("⚠️ 调试模式已启用！战法将忽略时间限制，仅在测试环境中使用。")
+
         if st.button("💾 保存其他设置", key="save_other_settings"):
             user_prefs.set('other', '自动刷新', auto_refresh)
             user_prefs.set('other', '保存历史记录', save_history)
             user_prefs.set('other', '历史记录保留天数', history_days)
+            user_prefs.set('other', '调试模式', debug_mode)
+            
+            # 🆕 V19.6: 动态更新config_system的DEBUG_MODE
+            try:
+                import config_system as config
+                config.DEBUG_MODE = debug_mode
+                logger.info(f"DEBUG_MODE已更新为: {debug_mode}")
+            except Exception as e:
+                logger.warning(f"更新DEBUG_MODE失败: {e}")
+            
             st.success("✅ 其他设置已保存")
+            st.rerun()
 
     # 重置设置
     st.divider()

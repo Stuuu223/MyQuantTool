@@ -1525,11 +1525,14 @@ class QuantAlgo:
                     
                     # 🆕 V9.9 新增：对涨停板股票进行二次过滤（成交量、成交额等）
                     # 🆕 V9.10 修复：添加监控池白名单
+                    # 🚀 V19.6 修复：降低过滤门槛，让更多涨停板股票通过
+                    # 原参数：min_volume=10000手, min_amount=5000万（过于严格）
+                    # 新参数：min_volume=3000手, min_amount=1000万（更宽松）
                     active_stocks = QuantAlgo.filter_active_stocks(
                         limit_up_stocks, 
                         min_change_pct=min_change_pct,
-                        min_volume=min_volume,
-                        min_amount=min_amount,
+                        min_volume=3000,  # 🚀 V19.6: 从10000降低到3000
+                        min_amount=1000,  # 🚀 V19.6: 从5000降低到1000
                         watchlist=watchlist
                     )
                     

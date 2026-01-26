@@ -53,9 +53,21 @@ class LateTradingScanner:
         """
         判断当前是否在尾盘时段（14:30 - 15:00）
         
+        🆕 V19.6: 支持DEBUG_MODE，允许在非交易时间测试战法
+        
         Returns:
-            bool: 是否在尾盘时段
+            bool: 是否在尾盘时段（或DEBUG_MODE开启）
         """
+        # 🆕 V19.6: 检查是否开启调试模式
+        try:
+            import config_system as config
+            if getattr(config, 'DEBUG_MODE', False):
+                logger.debug("🚀 [DEBUG_MODE] 已启用，忽略时间限制")
+                return True
+        except Exception as e:
+            logger.warning(f"检查DEBUG_MODE失败: {e}")
+        
+        # 正常模式：检查时间
         current_time = self.market_checker.get_current_time()
         return time(14, 30) <= current_time <= time(15, 0)
     

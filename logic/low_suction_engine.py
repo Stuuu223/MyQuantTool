@@ -138,7 +138,7 @@ class LowSuctionEngine:
             # 4. 判断是否回踩到动态阈值
             if touch_distance <= dynamic_threshold:
                 # 5. 检查成交量是否萎缩
-                # 🚀 V19.5: 盘中量能修正逻辑
+                # 🚀 V19.6: 盘中量能修正逻辑（分段加权推演）
                 current_volume = kline_data['volume'].iloc[-1]
                 prev_volume = kline_data['volume'].iloc[-2]
                 
@@ -153,26 +153,40 @@ class LowSuctionEngine:
                     if hour < 9 or (hour == 9 and minute < 30):
                         # 盘前，使用昨日全天量
                         volume_ratio = current_volume / prev_volume if prev_volume > 0 else 1.0
+                        logger.debug(f"[{stock_code}] 盘前量能计算: 当前量={current_volume:.0f}, 昨日量={prev_volume:.0f}, 量比={volume_ratio:.2f}")
                     elif hour < 15:
                         # 盘中，计算时间修正系数
                         market_minutes = (hour - 9) * 60 + (minute - 30)  # 已开盘分钟数
-                        total_minutes = 330  # 全天330分钟
-                        time_ratio = market_minutes / total_minutes  # 时间占比
                         
-                        # 修正昨日成交量：昨日全天量 * 时间占比
-                        adjusted_prev_volume = prev_volume * time_ratio
-                        
-                        # 计算量比：当前量 / 修正后的昨日量
-                        if adjusted_prev_volume > 0:
-                            volume_ratio = current_volume / adjusted_prev_volume
+                        # 🚀 V19.6: 使用分段加权推演，避免早盘线性放大导致的误判
+                        if market_minutes < 30:
+                            # 早盘30分钟（9:30-10:00）：成交量通常占全天的25%-30%
+                            # 使用保守估算，假设当前量占全天的25%（乘以4倍）
+                            # 而不是线性推演（可能放大24倍）
+                            volume_ratio = current_volume / (prev_volume * 0.25) if prev_volume > 0 else 1.0
+                            logger.debug(f"[{stock_code}] 早盘量能计算(分段加权): 当前量={current_volume:.0f}, 昨日量={prev_volume:.0f}, 时间={market_minutes}分钟, 量比={volume_ratio:.2f}")
                         else:
-                            volume_ratio = 1.0
+                            # 10点之后：使用线性推演
+                            total_minutes = 330  # 全天330分钟
+                            time_ratio = market_minutes / total_minutes  # 时间占比
+                            
+                            # 修正昨日成交量：昨日全天量 * 时间占比
+                            adjusted_prev_volume = prev_volume * time_ratio
+                            
+                            # 计算量比：当前量 / 修正后的昨日量
+                            if adjusted_prev_volume > 0:
+                                volume_ratio = current_volume / adjusted_prev_volume
+                            else:
+                                volume_ratio = 1.0
+                            logger.debug(f"[{stock_code}] 盘中量能计算(线性推演): 当前量={current_volume:.0f}, 昨日量={prev_volume:.0f}, 时间={market_minutes}分钟, 量比={volume_ratio:.2f}")
                     else:
                         # 收盘后，使用昨日全天量
                         volume_ratio = current_volume / prev_volume if prev_volume > 0 else 1.0
-                except:
+                        logger.debug(f"[{stock_code}] 收盘后量能计算: 当前量={current_volume:.0f}, 昨日量={prev_volume:.0f}, 量比={volume_ratio:.2f}")
+                except Exception as e:
                     # 时间计算失败，使用简单逻辑
                     volume_ratio = current_volume / prev_volume if prev_volume > 0 else 1.0
+                    logger.warning(f"[{stock_code}] 量能计算失败: {e}, 使用简单逻辑")
                 
                 result['volume_ratio'] = volume_ratio
                 
