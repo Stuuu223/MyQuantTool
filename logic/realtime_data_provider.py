@@ -452,6 +452,17 @@ class RealtimeDataProvider(DataProvider):
                 os.environ.pop("HTTPS_PROXY", None)
                 os.environ['NO_PROXY'] = '*'
                 
+                # 🆕 V19.11.9: 禁用requests和urllib3的代理
+                try:
+                    import requests
+                    # 禁用全局代理
+                    requests.Session().proxies = {}
+                    # 禁用验证（临时方案）
+                    import urllib3
+                    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+                except ImportError:
+                    pass
+                
                 import akshare as ak
                 import pandas as pd
                 import time
