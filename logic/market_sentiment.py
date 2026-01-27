@@ -183,3 +183,7 @@ class MarketSentiment:
         )
         
         return is_bad
+
+
+# 🆕 V19.8: 为了兼容性，添加 MarketSentimentIndexCalculator 类作为别名
+MarketSentimentIndexCalculator = MarketSentiment
