@@ -16,6 +16,7 @@ import pandas as pd
 from typing import Optional, Dict, Any, List
 from logic.logger import get_logger
 from logic.api_robust import robust_api_call, rate_limit_decorator
+from logic.proxy_manager import get_proxy_manager, record_failure, record_success
 
 logger = get_logger(__name__)
 
@@ -72,9 +73,14 @@ class SmartDataManager:
     def _init_enhanced_layer(self):
         """初始化增强层（akshare）"""
         try:
+            # 🆕 V19.10: 使用代理管理器设置直连模式，绕过Clash
+            # 这可以避免因为使用共享VPN节点而被封IP的问题
+            proxy_mgr = get_proxy_manager()
+            proxy_mgr.set_direct_mode()
+            
             import akshare as ak
             self.akshare = ak
-            logger.info("✅ [增强层] akshare 初始化成功")
+            logger.info("✅ [增强层] akshare 初始化成功（直连模式）")
         except ImportError:
             logger.warning("⚠️ [增强层] akshare 未安装，请运行: pip install akshare")
             self.akshare = None
@@ -168,9 +174,14 @@ class SmartDataManager:
                 
                 if not df.empty:
                     logger.info(f"✅ [基础层-akshare] 获取K线数据成功: {stock_code}")
+                    record_success()
                     return df
+                else:
+                    logger.warning(f"⚠️ [基础层-akshare] 获取K线数据返回空: {stock_code}")
+                    record_failure()
             except Exception as e:
                 logger.error(f"❌ [基础层-akshare] 获取K线数据失败: {stock_code}, {e}")
+                record_failure()
         
         # 所有数据源都失败
         logger.error(f"💀 [基础层] 所有数据源均失效: {stock_code}")
@@ -209,9 +220,14 @@ class SmartDataManager:
                     # 过滤出目标股票
                     df = df[df['代码'].isin(stock_list)]
                     logger.info(f"✅ [基础层-akshare] 获取实时行情成功: {len(df)} 只股票")
+                    record_success()
                     return df
+                else:
+                    logger.warning("⚠️ [基础层-akshare] 获取实时行情返回空数据")
+                    record_failure()
             except Exception as e:
                 logger.error(f"❌ [基础层-akshare] 获取实时行情失败: {e}")
+                record_failure()
         
         return pd.DataFrame()
     
@@ -235,6 +251,7 @@ class SmartDataManager:
         """
         if self.akshare is None:
             logger.error("❌ [增强层] akshare 未初始化")
+            record_failure()
             return None
         
         try:
@@ -246,12 +263,16 @@ class SmartDataManager:
             
             if not df.empty:
                 logger.debug(f"✅ [增强层] 获取资金流成功: {stock_code}")
+                record_success()
                 return df.iloc[0].to_dict()
             
+            logger.warning(f"⚠️ [增强层] 获取资金流返回空数据: {stock_code}")
+            record_failure()
             return None
             
         except Exception as e:
             logger.error(f"❌ [增强层] 获取资金流失败: {stock_code}, {e}")
+            record_failure()
             return None
     
     @robust_api_call(max_retries=3, delay=2, return_empty_df=True)
@@ -267,6 +288,7 @@ class SmartDataManager:
         """
         if self.akshare is None:
             logger.error("❌ [增强层] akshare 未初始化")
+            record_failure()
             return pd.DataFrame()
         
         try:
@@ -274,12 +296,16 @@ class SmartDataManager:
             
             if not df.empty:
                 logger.debug(f"✅ [增强层] 获取板块资金流成功: {len(df)} 个板块")
+                record_success()
                 return df
             
+            logger.warning("⚠️ [增强层] 获取板块资金流返回空数据")
+            record_failure()
             return pd.DataFrame()
             
         except Exception as e:
             logger.error(f"❌ [增强层] 获取板块资金流失败: {e}")
+            record_failure()
             return pd.DataFrame()
     
     # ==================== 通用接口（兼容旧代码） ====================
@@ -345,9 +371,14 @@ class SmartDataManager:
                         df = df[df['代码'] == code]
                     
                     logger.debug(f"✅ [增强层] 获取实时数据成功")
+                    record_success()
                     return df
+                else:
+                    logger.warning("⚠️ [增强层] 获取实时数据返回空数据")
+                    record_failure()
             except Exception as e:
                 logger.error(f"❌ [增强层] 获取实时数据失败: {e}")
+                record_failure()
         
         return pd.DataFrame()
 

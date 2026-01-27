@@ -12,7 +12,7 @@ def render_settings_tab(db, config):
     user_prefs = UserPreferences()
 
     # 功能选择
-    settings_mode = st.radio("选择设置", ["显示设置", "分析设置", "预警设置", "风险设置", "性能监控", "其他设置"], horizontal=True)
+    settings_mode = st.radio("选择设置", ["显示设置", "分析设置", "预警设置", "风险设置", "性能监控", "代理设置", "其他设置"], horizontal=True)
 
     if settings_mode == "显示设置":
         st.divider()
@@ -162,6 +162,171 @@ def render_settings_tab(db, config):
             st.success("✅ 所有缓存已清理")
             time.sleep(1)
             st.rerun()
+
+    elif settings_mode == "代理设置":
+        st.divider()
+        st.subheader("🌐 代理设置")
+        st.caption("配置网络代理，绕过Clash等VPN工具，避免IP封禁")
+
+        # 导入代理管理器
+        from logic.proxy_manager import get_proxy_manager, ProxyMode
+
+        proxy_mgr = get_proxy_manager()
+
+        # 显示当前代理配置
+        st.divider()
+        st.subheader("📊 当前代理配置")
+
+        config_info = proxy_mgr.get_proxy_config()
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            mode_map = {
+                "direct": "直连模式（推荐）",
+                "system": "系统代理模式",
+                "custom": "自定义代理"
+            }
+            st.metric("代理模式", mode_map.get(config_info['mode'], '未知'))
+            st.metric("HTTP代理", config_info.get('http_proxy', '未设置'))
+        with col2:
+            st.metric("HTTPS代理", config_info.get('https_proxy', '未设置'))
+            st.metric("NO_PROXY", config_info.get('no_proxy', '未设置'))
+
+        # 显示健康检查状态
+        st.divider()
+        col3, col4 = st.columns(2)
+        with col3:
+            health_status = "启用" if config_info.get('health_check_enabled') else "禁用"
+            st.metric("健康检查", health_status)
+        with col4:
+            failure_count = config_info.get('failure_count', 0)
+            max_failures = proxy_mgr.max_failures
+            st.metric("失败次数", f"{failure_count}/{max_failures}")
+
+        # 代理模式选择
+        st.divider()
+        st.subheader("🔧 代理模式配置")
+
+        proxy_mode = st.radio(
+            "选择代理模式",
+            ["直连模式（推荐）", "系统代理模式", "自定义代理"],
+            horizontal=True,
+            help="直连模式可以绕过Clash等VPN，避免IP封禁"
+        )
+
+        if proxy_mode == "直连模式（推荐）":
+            st.info("🛡️ 直连模式：绕过所有代理，直接使用本地宽带访问")
+            st.info("💡 推荐理由：避免使用共享VPN节点导致的IP封禁")
+            
+            if st.button("🚀 切换到直连模式", key="switch_direct"):
+                if proxy_mgr.set_direct_mode():
+                    st.success("✅ 已切换到直连模式")
+                    st.rerun()
+                else:
+                    st.error("❌ 切换失败")
+
+        elif proxy_mode == "系统代理模式":
+            st.warning("🔄 系统代理模式：使用系统配置的代理")
+            st.warning("⚠️ 注意：如果使用Clash等VPN，可能会导致IP被封")
+            
+            if st.button("🔄 切换到系统代理", key="switch_system"):
+                if proxy_mgr.set_system_proxy_mode():
+                    st.success("✅ 已切换到系统代理模式")
+                    st.rerun()
+                else:
+                    st.error("❌ 切换失败")
+
+        elif proxy_mode == "自定义代理":
+            st.info("🔗 自定义代理：使用指定的代理服务器")
+            
+            custom_proxy_url = st.text_input(
+                "代理URL",
+                placeholder="例如：http://127.0.0.1:7890",
+                help="支持HTTP和HTTPS代理"
+            )
+            
+            if st.button("🔗 应用自定义代理", key="apply_custom") and custom_proxy_url:
+                if proxy_mgr.set_custom_proxy(custom_proxy_url):
+                    st.success(f"✅ 已应用自定义代理: {custom_proxy_url}")
+                    st.rerun()
+                else:
+                    st.error("❌ 应用失败")
+
+        # 网络连接测试
+        st.divider()
+        st.subheader("🧪 网络连接测试")
+
+        col5, col6 = st.columns(2)
+        with col5:
+            if st.button("🌐 测试百度连接", key="test_baidu"):
+                with st.spinner("正在测试连接..."):
+                    if proxy_mgr.test_connection("https://www.baidu.com"):
+                        st.success("✅ 百度连接测试成功")
+                    else:
+                        st.error("❌ 百度连接测试失败")
+
+        with col6:
+            if st.button("📈 测试东方财富连接", key="test_eastmoney"):
+                with st.spinner("正在测试连接..."):
+                    if proxy_mgr.test_eastmoney_connection():
+                        st.success("✅ 东方财富连接测试成功")
+                    else:
+                        st.error("❌ 东方财富连接测试失败")
+
+        # 健康检查配置
+        st.divider()
+        st.subheader("🏥 健康检查配置")
+
+        health_check_enabled = st.checkbox(
+            "启用自动降级",
+            value=config_info.get('health_check_enabled', True),
+            help="启用后，连续失败5次将自动切换到直连模式"
+        )
+
+        if health_check_enabled:
+            proxy_mgr.enable_health_check()
+        else:
+            proxy_mgr.disable_health_check()
+
+        if st.button("💾 保存健康检查设置", key="save_health_check"):
+            st.success("✅ 健康检查设置已保存")
+
+        # 状态摘要
+        st.divider()
+        st.subheader("📋 状态摘要")
+        
+        with st.expander("查看详细状态", expanded=False):
+            st.code(proxy_mgr.get_status_summary(), language="text")
+
+        # 使用建议
+        st.divider()
+        st.subheader("💡 使用建议")
+
+        st.markdown("""
+        ### 🎯 推荐配置
+        
+        1. **直连模式（推荐）**
+           - 适用于大多数情况
+           - 避免使用共享VPN节点导致的IP封禁
+           - 如果家里宽带IP被封，可以重启光猫获取新IP
+
+        2. **手机热点（备选）**
+           - 如果直连模式失败，可以尝试连接手机热点
+           - 手机4G/5G网络的IP是动态的，极难被封
+           - 成本为0，是最快的解封方案
+
+        3. **国内短效代理（付费）**
+           - 如果以上方案都失败，可以考虑购买国内代理
+           - 推荐服务商：青果网络、阿布云、芝麻代理
+           - 价格：几块钱到十几块钱（1000 IP/天）
+
+        ### ⚠️ 注意事项
+        
+        - 不要使用国外代理（Smartproxy/BrightData）
+        - 国外IP访问东方财富速度慢且容易被封
+        - 如果使用Clash，建议关闭系统代理或使用直连模式
+        - 定期检查网络连接状态，及时发现IP封禁
+        """)
 
     elif settings_mode == "其他设置":
         st.divider()
