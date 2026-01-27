@@ -1,219 +1,244 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 """
-数据源管理器 - 实现多数据源备份和自动切换
+数据源管理器 - V19.8
+
+功能：
+- 管理多个数据源（AkShare, eFinance等）
+- 实现降级策略（Failover）
+- 自动切换到备用数据源
+- 统一的数据接口
+
+Author: iFlow CLI
+Version: V19.8
 """
 
 import pandas as pd
-from typing import Optional, Dict, List
-from enum import Enum
-import logging
-from abc import ABC, abstractmethod
+from typing import Optional, Dict, Any
+from logic.logger import get_logger
+from logic.api_robust import robust_api_call, rate_limit_decorator
 
-logger = logging.getLogger(__name__)
-
-
-class DataSourceStatus(Enum):
-    """数据源状态"""
-    HEALTHY = "健康"
-    DEGRADED = "降级"
-    UNAVAILABLE = "不可用"
-
-
-class DataSourceBase(ABC):
-    """数据源基类"""
-    
-    def __init__(self, name: str):
-        self.name = name
-        self.status = DataSourceStatus.HEALTHY
-        self.fail_count = 0
-        self.last_check_time = None
-    
-    @abstractmethod
-    def get_stock_data(self, symbol: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
-        """获取股票数据"""
-        pass
-    
-    @abstractmethod
-    def health_check(self) -> bool:
-        """健康检查"""
-        pass
-    
-    def mark_failure(self):
-        """标记失败"""
-        self.fail_count += 1
-        if self.fail_count >= 3:
-            self.status = DataSourceStatus.UNAVAILABLE
-            logger.warning(f"数据源 {self.name} 连续失败 {self.fail_count} 次，标记为不可用")
-    
-    def mark_success(self):
-        """标记成功"""
-        self.fail_count = 0
-        self.status = DataSourceStatus.HEALTHY
-
-
-class AkShareDataSource(DataSourceBase):
-    """AkShare 数据源"""
-    
-    def __init__(self):
-        super().__init__("AkShare")
-    
-    def get_stock_data(self, symbol: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
-        """获取股票数据"""
-        try:
-            import akshare as ak
-            df = ak.stock_zh_a_hist(symbol=symbol, start_date=start_date, end_date=end_date)
-            if df is None or df.empty:
-                logger.warning(f"AkShare 返回空数据: {symbol}")
-                self.mark_failure()
-                return None
-            
-            # 转换中文列名为英文列名
-            column_mapping = {
-                '日期': 'date',
-                '股票代码': 'symbol',
-                '开盘': 'open',
-                '收盘': 'close',
-                '最高': 'high',
-                '最低': 'low',
-                '成交量': 'volume',
-                '成交额': 'turnover',
-                '振幅': 'amplitude',
-                '涨跌幅': 'change_percent',
-                '涨跌额': 'change_amount',
-                '换手率': 'turnover_rate'
-            }
-            df = df.rename(columns=column_mapping)
-            
-            logger.info(f"AkShare 成功获取数据: {symbol}, 行数: {len(df)}")
-            self.mark_success()
-            return df
-        except Exception as e:
-            logger.error(f"AkShare 获取数据失败: {symbol}, 错误: {e}")
-            self.mark_failure()
-            return None
-    
-    def health_check(self) -> bool:
-        """健康检查"""
-        try:
-            import akshare as ak
-            # 尝试获取一个简单的数据
-            df = ak.stock_zh_a_hist(symbol="600519", start_date="20240101", end_date="20240102")
-            is_healthy = df is not None and not df.empty
-            self.last_check_time = pd.Timestamp.now()
-            return is_healthy
-        except Exception as e:
-            logger.error(f"AkShare 健康检查失败: {e}")
-            self.last_check_time = pd.Timestamp.now()
-            return False
-
-
-class CacheDataSource(DataSourceBase):
-    """缓存数据源"""
-    
-    def __init__(self, db):
-        super().__init__("Cache")
-        self.db = db
-    
-    def get_stock_data(self, symbol: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
-        """从缓存获取数据"""
-        try:
-            # DataManager使用get_history_data方法
-            df = self.db.get_history_data(symbol, start_date, end_date)
-            if df is not None and not df.empty:
-                self.mark_success()
-                return df
-            return None
-        except Exception as e:
-            logger.error(f"缓存数据源失败: {e}")
-            self.mark_failure()
-            return None
-    
-    def health_check(self) -> bool:
-        """健康检查"""
-        try:
-            # 检查数据库连接
-            return self.db is not None
-        except Exception as e:
-            logger.error(f"缓存数据源健康检查失败: {e}")
-            return False
+logger = get_logger(__name__)
 
 
 class DataSourceManager:
-    """数据源管理器"""
+    """
+    数据源管理器
     
-    def __init__(self, db):
-        self.db = db
-        self.sources: List[DataSourceBase] = []
-        self._init_sources()
+    功能：
+    1. 管理多个数据源
+    2. 实现降级策略（Failover）
+    3. 自动切换到备用数据源
+    4. 统一的数据接口
+    """
     
-    def _init_sources(self):
-        """初始化数据源"""
-        # 主数据源：AkShare
-        self.sources.append(AkShareDataSource())
-        # 备用数据源：缓存
-        self.sources.append(CacheDataSource(self.db))
+    def __init__(self):
+        """初始化数据源管理器"""
+        self.primary_source = "akshare"
+        self.fallback_source = "efinance"
+        self.current_source = self.primary_source
         
-        logger.info(f"已初始化 {len(self.sources)} 个数据源")
+        # 初始化数据源
+        self._init_akshare()
+        self._init_efinance()
+        
+        logger.info(f"✅ [数据源管理器] 初始化完成，主源: {self.primary_source}, 备用源: {self.fallback_source}")
     
-    def get_stock_data(self, symbol: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
+    def _init_akshare(self):
+        """初始化AkShare数据源"""
+        try:
+            import akshare as ak
+            self.akshare = ak
+            logger.info("✅ [数据源管理器] AkShare 初始化成功")
+        except ImportError:
+            logger.warning("⚠️ [数据源管理器] AkShare 未安装，请运行: pip install akshare")
+            self.akshare = None
+    
+    def _init_efinance(self):
+        """初始化eFinance数据源"""
+        try:
+            import efinance as ef
+            self.efinance = ef
+            logger.info("✅ [数据源管理器] eFinance 初始化成功")
+        except ImportError:
+            logger.warning("⚠️ [数据源管理器] eFinance 未安装，请运行: pip install efinance")
+            self.efinance = None
+    
+    @robust_api_call(max_retries=3, delay=2, return_empty_df=True)
+    def get_stock_realtime_data(self, code: Optional[str] = None) -> pd.DataFrame:
         """
-        获取股票数据（自动切换数据源）
+        获取股票实时数据（支持降级策略）
         
         Args:
-            symbol: 股票代码
-            start_date: 开始日期
-            end_date: 结束日期
+            code: 股票代码（可选，不传则获取全市场数据）
         
         Returns:
-            股票数据 DataFrame 或 None
+            DataFrame: 股票实时数据
         """
-        for source in self.sources:
-            if source.status == DataSourceStatus.UNAVAILABLE:
-                logger.debug(f"跳过不可用的数据源: {source.name}")
-                continue
-            
-            logger.info(f"尝试从 {source.name} 获取数据: {symbol}")
-            df = source.get_stock_data(symbol, start_date, end_date)
-            
-            if df is not None and not df.empty:
-                logger.info(f"成功从 {source.name} 获取数据")
-                return df
-            else:
-                logger.warning(f"{source.name} 获取数据失败，尝试下一个数据源")
+        # 尝试主数据源
+        if self.akshare is not None:
+            try:
+                if code:
+                    df = self.akshare.stock_zh_a_spot_em()
+                    df = df[df['代码'] == code]
+                else:
+                    df = self.akshare.stock_zh_a_spot_em()
+                
+                if not df.empty:
+                    logger.debug(f"✅ [AkShare] 获取实时数据成功")
+                    return df
+            except Exception as e:
+                logger.warning(f"⚠️ [AkShare] 获取实时数据失败: {e}")
         
-        logger.error(f"所有数据源均无法获取数据: {symbol}")
+        # 切换到备用数据源
+        if self.efinance is not None:
+            try:
+                logger.info(f"🔄 [降级策略] 切换到 eFinance 获取实时数据")
+                if code:
+                    df = self.efinance.stock.get_realtime_quotes([code])
+                else:
+                    df = self.efinance.stock.get_realtime_quotes()
+                
+                if not df.empty:
+                    logger.info(f"✅ [eFinance] 获取实时数据成功")
+                    return df
+            except Exception as e:
+                logger.error(f"❌ [eFinance] 获取实时数据失败: {e}")
+        
+        # 所有数据源都失败
+        logger.error(f"💀 [数据源管理器] 所有数据源均失效")
+        return pd.DataFrame()
+    
+    @robust_api_call(max_retries=3, delay=2, return_empty_df=True)
+    def get_stock_history_data(self, code: str, period: str = "daily", 
+                               adjust: str = "qfq") -> pd.DataFrame:
+        """
+        获取股票历史数据（支持降级策略）
+        
+        Args:
+            code: 股票代码
+            period: 周期（daily, weekly, monthly）
+            adjust: 复权方式（qfq: 前复权, hfq: 后复权, none: 不复权）
+        
+        Returns:
+            DataFrame: 历史数据
+        """
+        # 尝试主数据源
+        if self.akshare is not None:
+            try:
+                df = self.akshare.stock_zh_a_hist(
+                    symbol=code,
+                    period=period,
+                    adjust=adjust
+                )
+                
+                if not df.empty:
+                    logger.debug(f"✅ [AkShare] 获取历史数据成功: {code}")
+                    return df
+            except Exception as e:
+                logger.warning(f"⚠️ [AkShare] 获取历史数据失败: {code}, {e}")
+        
+        # 切换到备用数据源
+        if self.efinance is not None:
+            try:
+                logger.info(f"🔄 [降级策略] 切换到 eFinance 获取历史数据: {code}")
+                df = self.efinance.stock.get_quote_history(code)
+                
+                if not df.empty:
+                    logger.info(f"✅ [eFinance] 获取历史数据成功: {code}")
+                    return df
+            except Exception as e:
+                logger.error(f"❌ [eFinance] 获取历史数据失败: {code}, {e}")
+        
+        # 所有数据源都失败
+        logger.error(f"💀 [数据源管理器] 所有数据源均失效: {code}")
+        return pd.DataFrame()
+    
+    @robust_api_call(max_retries=3, delay=2, return_empty_df=True)
+    def get_sector_data(self) -> pd.DataFrame:
+        """
+        获取板块数据（支持降级策略）
+        
+        Returns:
+            DataFrame: 板块数据
+        """
+        # 尝试主数据源
+        if self.akshare is not None:
+            try:
+                df = self.akshare.stock_board_industry_name_em()
+                
+                if not df.empty:
+                    logger.debug(f"✅ [AkShare] 获取板块数据成功")
+                    return df
+            except Exception as e:
+                logger.warning(f"⚠️ [AkShare] 获取板块数据失败: {e}")
+        
+        # 切换到备用数据源
+        if self.efinance is not None:
+            try:
+                logger.info(f"🔄 [降级策略] 切换到 eFinance 获取板块数据")
+                df = self.efinance.stock.get_industry_list()
+                
+                if not df.empty:
+                    logger.info(f"✅ [eFinance] 获取板块数据成功")
+                    return df
+            except Exception as e:
+                logger.error(f"❌ [eFinance] 获取板块数据失败: {e}")
+        
+        # 所有数据源都失败
+        logger.error(f"💀 [数据源管理器] 所有数据源均失效")
+        return pd.DataFrame()
+    
+    @rate_limit_decorator(calls_per_second=3)
+    def get_stock_info(self, code: str) -> Optional[Dict[str, Any]]:
+        """
+        获取股票信息（带速率限制）
+        
+        Args:
+            code: 股票代码
+        
+        Returns:
+            Dict: 股票信息
+        """
+        # 尝试主数据源
+        if self.akshare is not None:
+            try:
+                df = self.akshare.stock_zh_a_spot_em()
+                df = df[df['代码'] == code]
+                
+                if not df.empty:
+                    return df.iloc[0].to_dict()
+            except Exception as e:
+                logger.warning(f"⚠️ [AkShare] 获取股票信息失败: {code}, {e}")
+        
+        # 切换到备用数据源
+        if self.efinance is not None:
+            try:
+                logger.info(f"🔄 [降级策略] 切换到 eFinance 获取股票信息: {code}")
+                df = self.efinance.stock.get_realtime_quotes([code])
+                
+                if not df.empty:
+                    return df.iloc[0].to_dict()
+            except Exception as e:
+                logger.error(f"❌ [eFinance] 获取股票信息失败: {code}, {e}")
+        
+        # 所有数据源都失败
+        logger.error(f"💀 [数据源管理器] 所有数据源均失效: {code}")
         return None
-    
-    def health_check(self) -> Dict[str, DataSourceStatus]:
-        """
-        检查所有数据源健康状态
-        
-        Returns:
-            数据源状态字典
-        """
-        results = {}
-        for source in self.sources:
-            is_healthy = source.health_check()
-            if is_healthy:
-                source.status = DataSourceStatus.HEALTHY
-            else:
-                source.status = DataSourceStatus.UNAVAILABLE
-            results[source.name] = source.status
-        
-        logger.info(f"数据源健康检查结果: {results}")
-        return results
-    
-    def get_available_sources(self) -> List[str]:
-        """获取可用的数据源列表"""
-        return [source.name for source in self.sources if source.status == DataSourceStatus.HEALTHY]
 
 
-# 全局实例
+# 全局单例
 _data_source_manager = None
 
 
-def get_data_source_manager(db) -> DataSourceManager:
-    """获取数据源管理器实例（单例）"""
+def get_data_source_manager() -> DataSourceManager:
+    """
+    获取数据源管理器单例
+    
+    Returns:
+        DataSourceManager: 数据源管理器实例
+    """
     global _data_source_manager
     if _data_source_manager is None:
-        _data_source_manager = DataSourceManager(db)
+        _data_source_manager = DataSourceManager()
     return _data_source_manager

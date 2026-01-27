@@ -400,6 +400,10 @@ class MidwayStrategy:
         df['volume_ma5'] = talib.SMA(df['volume'].values, timeperiod=5)
         df['volume_ratio'] = df['volume'] / df['volume_ma5']
         
+        # 🆕 V19.8: 计算VWAP（成交量加权平均价）
+        # VWAP = Σ(价格 × 成交量) / Σ成交量
+        df['vwap'] = (df['close'] * df['volume']).rolling(window=20).sum() / df['volume'].rolling(window=20).sum()
+        
         return df
     
     def _check_platform_breakout(self, df: pd.DataFrame, code: str, name: str, 
@@ -427,6 +431,11 @@ class MidwayStrategy:
         
         # 检查RSI
         if latest['rsi'] > 80:
+            return None
+        
+        # 🆕 V19.8: 检查Price > VWAP（现价 > 分时均价线）
+        # 这是半路板最核心的支撑逻辑。如果股价在均价线下方，涨幅再好也是诱多
+        if latest['close'] <= latest['vwap']:
             return None
         
         # 计算信号强度
@@ -509,6 +518,10 @@ class MidwayStrategy:
             return None
         
         if latest['rsi'] > 75:
+            return None
+        
+        # 🆕 V19.8: 检查Price > VWAP（现价 > 分时均价线）
+        if latest['close'] <= latest['vwap']:
             return None
         
         signal_strength = 0.5

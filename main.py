@@ -54,6 +54,16 @@ os.environ['TQDM_DISABLE'] = '1'
 
 import pandas as pd
 import plotly.graph_objects as go
+
+# 🆕 V19.8: 启用本地缓存层（requests_cache）
+try:
+    import requests_cache
+    # 开启缓存：所有的 API 请求结果都会存在本地 sqlite 文件里
+    # expire_after=180 表示 3 分钟内重复请求，直接读硬盘，不联网
+    requests_cache.install_cache('my_quant_cache', expire_after=180)
+    print("✅ 本地缓存系统已启动 (有效期3分钟)")
+except ImportError:
+    print("⚠️ requests_cache 未安装，请运行: pip install requests-cache")
 from logic.data_manager import DataManager
 from logic.algo import QuantAlgo
 from logic.algo_advanced import AdvancedAlgo

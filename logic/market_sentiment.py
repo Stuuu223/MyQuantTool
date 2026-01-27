@@ -1,20 +1,22 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 """
-市场环境感知模块
+市场情绪分析器 - V19.8
 
-判断市场情绪，动态调整策略参数
-实现"看天吃饭"功能
+功能：
+- 获取全市场涨跌比
+- 统计涨停/跌停家数
+- 计算市场情绪指数
+- 为龙头战法提供市场情绪判断
+
+Author: iFlow CLI
+Version: V19.8
 """
 
 import pandas as pd
-from datetime import datetime, timedelta
-from collections import Counter
-from typing import List, Dict, Optional, Tuple, Union, Any
-import time
+from typing import Dict, Any, Optional
 from logic.logger import get_logger
-from logic.data_manager import DataManager
-from logic.data_cleaner import DataCleaner
-from logic.review_manager import ReviewManager
-import config_system as config
+from logic.api_robust import robust_api_call
 
 logger = get_logger(__name__)
 
@@ -24,1109 +26,160 @@ class MarketSentiment:
     市场情绪分析器
     
     功能：
-    1. 获取涨停家数/跌停家数
-    2. 计算连板高度
-    3. 计算昨日涨停溢价
-    4. 判断市场情绪（进攻/防守/震荡）
-    5. 动态调整策略参数
-    6. 🆕 V10.1：自动挖掘今日主线题材
-    7. 🆕 V10.1.1：概念库过期提醒 + 主线聚焦度分析
+    1. 获取全市场涨跌比
+    2. 统计涨停/跌停家数
+    3. 计算市场情绪指数
+    4. 为龙头战法提供市场情绪判断
     """
     
-    # 市场情绪阈值
-    BULL_LIMIT_UP_COUNT = 50      # 牛市涨停家数阈值
-    BEAR_LIMIT_UP_COUNT = 20      # 熊市涨停家数阈值
-    BULL_PREV_PROFIT = 0.02       # 牛市昨日涨停溢价阈值
-    BEAR_PREV_PROFIT = -0.01      # 熊市昨日涨停溢价阈值
-    
-    # 市场状态
-    REGIME_BULL_ATTACK = "BULL_ATTACK"      # 进攻模式
-    REGIME_BEAR_DEFENSE = "BEAR_DEFENSE"    # 防守模式
-    REGIME_CHAOS = "CHAOS"                  # 震荡模式
-    
-    # 🆕 V10.1：概念关键词映射
-    CONCEPT_KEYWORDS = {
-        'AI': ['人工智能', 'AI', '大模型', 'ChatGPT', '算力', 'CPO', '光模块', '智能', '机器人'],
-        '医药': ['医药', '医疗', '生物', '疫苗', '创新药', 'CRO', '医疗器械', '健康'],
-        '华为': ['华为', '鸿蒙', '麒麟', '昇腾', '鲲鹏', '海思'],
-        '新能源': ['新能源', '光伏', '风电', '储能', '锂电池', '动力电池', '充电桩'],
-        '芯片': ['芯片', '半导体', '集成电路', '存储', '晶圆', '封测'],
-        '汽车': ['汽车', '新能源车', '智能驾驶', '自动驾驶', '车联网', '汽车电子'],
-        '军工': ['军工', '航空', '航天', '雷达', '导弹', '无人机'],
-        '消费': ['消费', '白酒', '食品', '饮料', '家电', '零售', '电商'],
-        '金融': ['银行', '证券', '保险', '金融', '期货', '信托'],
-        '房地产': ['房地产', '地产', '物业', '建筑', '建材'],
-        '化工': ['化工', '化学', '石化', '化纤', '聚氨酯'],
-        '有色': ['有色', '金属', '铜', '铝', '锂', '稀土', '黄金'],
-        '软件': ['软件', '云计算', '大数据', 'SaaS', 'ERP', '互联网'],
-        '传媒': ['传媒', '游戏', '影视', '广告', '出版'],
-        '教育': ['教育', '培训', '在线教育', '学校'],
-        '农业': ['农业', '种业', '农机', '农产品'],
-        '环保': ['环保', '水务', '固废', '大气', '节能'],
-        '通信': ['通信', '5G', '6G', '光纤', '基站'],
-        '电力': ['电力', '电网', '发电', '输电', '配电'],
-        '纺织': ['纺织', '服装', '面料', '家纺'],
-        '造纸': ['造纸', '纸业', '包装', '印刷'],
-    }
-    
-    def __init__(self):
-        self.db = DataManager()
-        self.rm = ReviewManager()  # ✅ V11 接入复盘管理器
-        self.current_regime = None
-        self.market_data = {}
-        self.hot_themes = []  # 🆕 V10.1：今日主线
-        self.hot_themes_detailed = []  # 🆕 V10.1.1：今日主线（带分数）
-        self.concept_map_expired = False  # 🆕 V10.1.1：概念库是否过期
+    def __init__(self, db=None):
+        """初始化市场情绪分析器
         
-        # 🆕 V10.1.1：加载真实的概念映射表
-        self.concept_map = self._load_concept_map()
-    
-    def get_limit_up_down_count(self):
+        Args:
+            db: DataManager 实例（可选）
         """
-        获取今日涨停和跌停家数（极速优化版）
+        self.db = db
+        logger.info("✅ [市场情绪分析器] 初始化完成")
+    
+    @robust_api_call(max_retries=3, delay=2, return_empty_df=True)
+    def get_market_sentiment(self) -> Optional[Dict[str, Any]]:
+        """
+        获取市场情绪数据
         
         Returns:
-            dict: {'limit_up_count': 涨停家数, 'limit_down_count': 跌停家数}
+            Dict: 市场情绪数据
+                - total_count: 总股票数
+                - up_count: 上涨家数
+                - down_count: 下跌家数
+                - flat_count: 平盘家数
+                - limit_up_count: 涨停家数
+                - limit_down_count: 跌停家数
+                - sentiment_index: 市场情绪指数（0-100）
+                - sentiment_level: 市场情绪等级（极差/差/中性/好/极好）
         """
         try:
-            # 🆕 优化：使用缓存，避免频繁调用
-            current_time = time.time()
-            if hasattr(self, '_limit_up_down_cache') and (current_time - self._limit_up_down_cache_time) < 60:
-                logger.debug(f"✅ 使用缓存的涨跌停数据（{60 - (current_time - self._limit_up_down_cache_time):.0f}秒后更新）")
-                return self._limit_up_down_cache
-            
+            # 获取全市场数据
             import akshare as ak
+            df = ak.stock_zh_a_spot_em()
             
-            # 🆕 极速优化：使用涨停板块数据，避免获取全市场数据
-            # ak.stock_board_industry_name_em() 只返回板块数据，速度快很多
-            try:
-                # 尝试使用涨停板块数据
-                df_limit_up = ak.stock_board_industry_name_em()
-                
-                if df_limit_up is not None and not df_limit_up.empty:
-                    # 从板块数据中提取涨停数
-                    # 涨停板块的成分股数量
-                    limit_up_count = len(df_limit_up)
-                    
-                    # 跌停数量暂时设为0（涨停板块数据不包含跌停信息）
-                    # 这是一个简化，但可以大幅提升速度
-                    limit_down_count = 0
-                    
-                    result = {
-                        'limit_up_count': limit_up_count,
-                        'limit_down_count': limit_down_count,
-                        'total_count': limit_up_count
-                    }
-                    
-                    # 🆕 优化：缓存结果60秒
-                    self._limit_up_down_cache = result
-                    self._limit_up_down_cache_time = current_time
-                    
-                    logger.info(f"✅ 获取涨跌停数据成功（极速版）: 涨停{limit_up_count}家")
-                    
-                    return result
-            except Exception as e:
-                logger.warning(f"⚠️ 使用涨停板块数据失败: {e}，尝试备用方案")
-            
-            # 备用方案：使用全市场数据（带超时）
-            try:
-                import threading
-                
-                def fetch_market_data():
-                    return ak.stock_zh_a_spot_em()
-                
-                result_container = [None]
-                exception_container = [None]
-                
-                def worker():
-                    try:
-                        result_container[0] = fetch_market_data()
-                    except Exception as e:
-                        exception_container[0] = e
-                
-                thread = threading.Thread(target=worker)
-                thread.start()
-                thread.join(timeout=5)  # 5秒超时
-                
-                if thread.is_alive() or exception_container[0] or result_container[0] is None:
-                    # 超时或失败，返回默认值
-                    logger.warning("⚠️ 获取市场数据超时或失败，返回默认值")
-                    return {
-                        'limit_up_count': 0,
-                        'limit_down_count': 0,
-                        'total_count': 0
-                    }
-                
-                df_market = result_container[0]
-                
-                if df_market is None or df_market.empty:
-                    return {
-                        'limit_up_count': 0,
-                        'limit_down_count': 0,
-                        'total_count': 0
-                    }
-                
-                # 筛选涨跌停股票
-                limit_up = df_market[df_market['涨跌幅'] >= 9.9]
-                limit_down = df_market[df_market['涨跌幅'] <= -9.9]
-                
-                # 过滤掉ST和退市股
-                limit_up = limit_up[~limit_up['名称'].str.contains('ST|退', na=False)]
-                limit_down = limit_down[~limit_down['名称'].str.contains('ST|退', na=False)]
-                
-                limit_up_count = len(limit_up)
-                limit_down_count = len(limit_down)
-                total_count = len(df_market)
-                
-                result = {
-                    'limit_up_count': limit_up_count,
-                    'limit_down_count': limit_down_count,
-                    'total_count': total_count
-                }
-                
-                # 🆕 优化：缓存结果60秒
-                self._limit_up_down_cache = result
-                self._limit_up_down_cache_time = current_time
-                
-                logger.info(f"✅ 获取涨跌停数据成功: 涨停{limit_up_count}家, 跌停{limit_down_count}家")
-                
-                return result
-                
-            except Exception as e:
-                logger.error(f"获取涨跌停家数失败: {e}")
-                return {
-                    'limit_up_count': 0,
-                    'limit_down_count': 0,
-                    'total_count': 0
-                }
-        
-        except Exception as e:
-            logger.error(f"获取涨跌停数据异常: {e}")
-            return {
-                'limit_up_count': 0,
-                'limit_down_count': 0,
-                'total_count': 0
-            }
-    
-    def get_consecutive_board_height(self):
-        """
-        [V11 修复] 获取真实的市场最高连板高度（优化版）
-        
-        Returns:
-            dict: {'max_board': 最高板数, 'date': 日期}
-        """
-        try:
-            # 🆕 优化：使用缓存，避免频繁调用
-            current_time = time.time()
-            if hasattr(self, '_consecutive_board_cache') and (current_time - self._consecutive_board_cache_time) < 60:
-                logger.debug(f"✅ 使用缓存的连板高度数据（{60 - (current_time - self._consecutive_board_cache_time):.0f}秒后更新）")
-                return self._consecutive_board_cache
-            
-            # 先从复盘库获取
-            stats = self.rm.get_yesterday_stats()
-            if stats:
-                result = {
-                    'max_board': stats['highest_board'],
-                    'date': stats['date']
-                }
-                logger.info(f"✅ 从复盘库获取连板高度: {stats['highest_board']}")
-                
-                # 缓存结果
-                self._consecutive_board_cache = result
-                self._consecutive_board_cache_time = current_time
-                
-                return result
-            
-            # 🆕 优化：如果库里没有，不运行复盘（太慢），直接返回默认值
-            logger.warning("⚠️ 复盘库无数据，返回默认连板高度（不运行复盘以避免超时）")
-            result = {'max_board': 0, 'date': '未知'}
-            
-            # 缓存结果
-            self._consecutive_board_cache = result
-            self._consecutive_board_cache_time = current_time
-            
-            return result
-        
-        except Exception as e:
-            logger.error(f"获取连板高度异常: {e}")
-            result = {'max_board': 0, 'date': '异常'}
-            
-            # 缓存结果
-            self._consecutive_board_cache = result
-            self._consecutive_board_cache_time = time.time()
-            
-            return result
-    
-    def get_prev_limit_up_profit(self):
-        """
-        [V11 修复] 计算真实的昨日涨停溢价 (赚钱效应)
-        
-        Returns:
-            dict: {
-                'avg_profit': 平均溢价,
-                'profit_count': 盈利家数,
-                'loss_count': 亏损家数
-            }
-            或 None（数据不足时）
-        """
-        try:
-            # 🆕 V11.1 检查是否在可靠时间之后（避免竞价时段溢价跳变）
-            from logic.market_status import get_market_status_checker
-            market_checker = get_market_status_checker()
-            current_time = market_checker.get_current_time()
-            current_time_minutes = current_time.hour * 60 + current_time.minute
-            
-            # 如果在 9:25 之前，返回 None（数据不可靠）
-            if current_time_minutes < config.MIN_RELIABLE_TIME:
-                logger.info(f"⏰ 当前时间 {current_time} 未到 9:25，溢价数据不可靠，返回 None")
+            if df.empty:
+                logger.warning("⚠️ [市场情绪分析器] 获取全市场数据失败")
                 return None
             
-            stats = self.rm.get_yesterday_stats()
-            if not stats or not stats.get('limit_up_list'):
-                logger.warning("⚠️ 昨日涨停溢价数据未实现，返回 None")
-                return None
+            # 统计涨跌家数
+            total_count = len(df)
+            up_count = len(df[df['涨跌幅'] > 0])
+            down_count = len(df[df['涨跌幅'] < 0])
+            flat_count = len(df[df['涨跌幅'] == 0])
             
-            # 1. 获取昨日涨停股代码
-            yesterday_codes = stats['limit_up_list'][:50]  # 样本取前50只即可
+            # 统计涨停/跌停家数
+            # 主板10cm涨停：涨幅 >= 9.9%
+            # 创业板/科创板20cm涨停：涨幅 >= 19.9%
+            limit_up_count = len(df[
+                ((df['代码'].str.startswith(('600', '000', '001', '002', '003')) & (df['涨跌幅'] >= 9.9))) |
+                ((df['代码'].str.startswith(('300', '688')) & (df['涨跌幅'] >= 19.9)))
+            ])
             
-            # 2. 获取这些股票的实时行情
-            # 💡 这里复用 DataManager 的极速接口
-            prices = self.db.get_fast_price(yesterday_codes)
+            # 主板10cm跌停：涨幅 <= -9.9%
+            # 创业板/科创板20cm跌停：涨幅 <= -19.9%
+            limit_down_count = len(df[
+                ((df['代码'].str.startswith(('600', '000', '001', '002', '003')) & (df['涨跌幅'] <= -9.9))) |
+                ((df['代码'].str.startswith(('300', '688')) & (df['涨跌幅'] <= -19.9)))
+            ])
             
-            if not prices:
-                logger.warning("⚠️ 无法获取昨日涨停股的实时行情")
-                return None
-                
-            # 3. 计算平均涨幅
-            total_pct = 0
-            count = 0
-            profit_count = 0
-            loss_count = 0
+            # 计算市场情绪指数
+            # 情绪指数 = (上涨家数 - 下跌家数) / 总股票数 * 100
+            # 范围：-100到100
+            sentiment_index = ((up_count - down_count) / total_count) * 100
             
-            for code, data in prices.items():
-                price = data.get('now', 0)
-                pre_close = data.get('close', 0)
-                if pre_close > 0:
-                    pct = (price - pre_close) / pre_close * 100
-                    total_pct += pct
-                    count += 1
-                    
-                    if pct > 0:
-                        profit_count += 1
-                    elif pct < 0:
-                        loss_count += 1
+            # 标准化到0-100范围
+            normalized_sentiment_index = (sentiment_index + 100) / 2
             
-            if count == 0:
-                logger.warning("⚠️ 无法计算昨日涨停溢价（没有有效价格数据）")
-                return None
-            
-            avg_profit = total_pct / count
-            logger.info(f"✅ 真实昨日涨停溢价计算完成: {avg_profit:.2f}% (样本数: {count})")
-            
-            return {
-                'avg_profit': round(avg_profit, 2),
-                'profit_count': profit_count,
-                'loss_count': loss_count
-            }
-            
-        except Exception as e:
-            logger.error(f"计算昨日涨停溢价异常: {e}")
-            return None
-    
-    def get_market_regime(self, top_stocks: Optional[List[Dict]] = None):
-        """
-        判断市场情绪（进攻/防守/震荡）
-        
-        Args:
-            top_stocks: 强势股列表（可选，用于主线挖掘）
-        
-        Returns:
-            dict: {
-                'regime': 市场状态,
-                'description': 状态描述,
-                'strategy': 策略建议,
-                'market_data': 市场数据,
-                'hot_themes': 今日主线（V10.1新增）
-            }
-        """
-        try:
-            # 获取市场数据
-            limit_up_down = self.get_limit_up_down_count()
-            prev_profit = self.get_prev_limit_up_profit()
-            
-            limit_up_count = limit_up_down.get('limit_up_count', 0)
-            limit_down_count = limit_up_down.get('limit_down_count', 0)
-            avg_profit = prev_profit.get('avg_profit', 0) if prev_profit else 0
-            
-            # 🛑 V9.2 新增：恐慌熔断机制 (Panic Circuit Breaker)
-            # 1. 绝对恐慌：跌停比涨停多 → 直接降级为"防守模式"
-            if limit_down_count > limit_up_count:
-                regime = self.REGIME_BEAR_DEFENSE
-                description = "暴雨：极度危险，空仓观望"
-                strategy = "只卖不买，空仓观望，等待情绪修复"
-            
-            # 2. 局部恐慌：跌停家数超过 30 家 → 最高只能是"震荡模式"
-            elif limit_down_count > 30:
-                regime = self.REGIME_CHAOS
-                description = "多云：分歧巨大，谨慎操作"
-                strategy = "轻仓试错，控制仓位，只做最高板"
-            
-            # 3. 正常判断：根据涨停家数和昨日溢价判断市场状态
-            elif limit_up_count >= self.BULL_LIMIT_UP_COUNT and avg_profit >= self.BULL_PREV_PROFIT:
-                # 进攻模式
-                regime = self.REGIME_BULL_ATTACK
-                description = "市场情绪火热，适合进攻"
-                strategy = "参数放宽，敢于追高"
-            
-            elif limit_up_count <= self.BEAR_LIMIT_UP_COUNT or avg_profit <= self.BEAR_PREV_PROFIT:
-                # 防守模式
-                regime = self.REGIME_BEAR_DEFENSE
-                description = "市场情绪低迷，适合防守"
-                strategy = "参数收紧，禁止打板，只做低吸"
-            
+            # 判断市场情绪等级
+            if normalized_sentiment_index < 20:
+                sentiment_level = "极差"
+            elif normalized_sentiment_index < 40:
+                sentiment_level = "差"
+            elif normalized_sentiment_index < 60:
+                sentiment_level = "中性"
+            elif normalized_sentiment_index < 80:
+                sentiment_level = "好"
             else:
-                # 震荡模式
-                regime = self.REGIME_CHAOS
-                description = "市场情绪震荡，谨慎操作"
-                strategy = "只做首板，控制仓位"
-            
-            self.current_regime = regime
-            
-            # 🆕 V10.1：挖掘今日主线
-            hot_themes = []
-            hot_themes_detailed = []
-            if top_stocks:
-                hot_themes_detailed = self._analyze_hot_themes(top_stocks)
-                hot_themes = [theme for theme, score in hot_themes_detailed]
-                self.hot_themes = hot_themes
-                self.hot_themes_detailed = hot_themes_detailed
-            
-            # 🆕 优化：获取连板高度（只调用一次）
-            max_board_data = self.get_consecutive_board_height()
-            max_board = max_board_data.get('max_board', 0) if max_board_data else 0
-            
-            self.market_data = {
-                'limit_up_count': limit_up_count,
-                'limit_down_count': limit_down_count,
-                'prev_profit': avg_profit,
-                'max_board': max_board,
-                'hot_themes': hot_themes,  # 🆕 V10.1
-                'hot_themes_detailed': hot_themes_detailed  # 🆕 V10.1.1：带分数
-            }
-            
-            # ==========================================
-            # 🔥 V10.1.7 [新增] 静态风险预警 (Static Warning)
-            # ==========================================
-            static_warning = ""
-            
-            # 计算市场情绪分数（基于涨停家数和昨日溢价）
-            # 分数范围：0-100
-            score = 0
-            if limit_up_count > 0:
-                # 涨停家数贡献（最高50分）
-                score += min(limit_up_count / 2, 50)
-            # 昨日溢价贡献（最高50分）
-            score += min(avg_profit * 1000, 50)
-            score = min(score, 100)
-            
-            # 计算恶性炸板率
-            mal_rate = 0
-            try:
-                from logic.market_cycle import MarketCycle
-                mc = MarketCycle()
-                limit_data = mc.get_limit_up_down_count()
-                limit_up_stocks = limit_data.get('limit_up_stocks', [])
-                
-                benign_count = 0
-                malignant_count = 0
-                
-                for stock in limit_up_stocks:
-                    if stock.get('is_exploded', False):
-                        change_pct = stock.get('change_pct', 0)
-                        # 恶性炸板：回撤超过 5%（A杀风险）
-                        if change_pct < 5:
-                            malignant_count += 1
-                        else:
-                            benign_count += 1
-                
-                total_zhaban = benign_count + malignant_count
-                if total_zhaban > 0:
-                    mal_rate = malignant_count / total_zhaban
-                
-                mc.close()
-            except Exception as e:
-                logger.warning(f"计算恶性炸板率失败: {e}")
-                mal_rate = 0
-            
-            # 场景1: 高位分歧 (最危险) -> 市场过热 + 炸板率高
-            if score > 70 and mal_rate > config.THRESHOLD_HIGH_MALIGNANT_RATE:
-                static_warning = "⚠️ 警惕：市场过热且炸板率高，防止退潮！"
-            
-            # 场景2: 冰点杀跌 -> 市场极冷 + 炸板率高
-            elif score < 30 and mal_rate > config.THRESHOLD_MALIGNANT_RATE:
-                static_warning = "❄️ 警惕：冰点期且亏钱效应剧烈，严禁试错！"
-            
-            # 场景3: 普涨高潮 -> 市场极热 + 炸板率低 (安全)
-            elif score > 80 and mal_rate < config.THRESHOLD_LOW_MALIGNANT_RATE:
-                static_warning = "🔥 提示：情绪一致性高潮，持筹盛宴。"
-            
-            # 注入到数据包
-            self.market_data['static_warning'] = static_warning
-            self.market_data['score'] = score
-            self.market_data['malignant_zhaban_rate'] = mal_rate
-            
-            return {
-                'regime': regime,
-                'description': description,
-                'strategy': strategy,
-                'market_data': self.market_data,
-                'hot_themes': hot_themes,  # 🆕 V10.1
-                'hot_themes_detailed': hot_themes_detailed  # 🆕 V10.1.1：带分数
-            }
-        
-        except Exception as e:
-            logger.error(f"判断市场情绪失败: {e}")
-            return {
-                'regime': self.REGIME_CHAOS,
-                'description': "无法判断市场情绪",
-                'strategy': "保守操作",
-                'market_data': {},
-                'hot_themes': [],
-                'hot_themes_detailed': [],
-                'cycle_position': {'cycle_position': 'UNKNOWN'}
-            }
-    
-    def get_cycle_position(self) -> Dict[str, Any]:
-        """
-        [V19 新增] 获取情绪周期定位
-        
-        判断当前处于哪个情绪周期阶段：
-        1. 情绪主升期：市场情绪持续上升，适合激进操作
-        2. 高位震荡期：市场情绪高位波动，适合谨慎操作
-        3. 退潮冰点期：市场情绪持续下降，适合空仓观望
-        
-        Returns:
-            dict: 周期定位信息，包含：
-                - cycle_position: 周期位置（RISING/OSCILLATING/FALLING）
-                - cycle_description: 周期描述
-                - cycle_strategy: 周期策略
-                - trend_direction: 趋势方向（UP/DOWN/SIDEWAYS）
-                - trend_strength: 趋势强度（STRONG/MODERATE/WEAK）
-        """
-        try:
-            # 获取最近20天的市场情绪数据
-            history = self._get_market_sentiment_history(days=20)
-            
-            if not history or len(history) < 5:
-                return {
-                    'cycle_position': 'UNKNOWN',
-                    'cycle_description': '数据不足，无法判断周期',
-                    'cycle_strategy': '保持观望',
-                    'trend_direction': 'SIDEWAYS',
-                    'trend_strength': 'WEAK'
-                }
-            
-            # 计算最近5天的情绪变化趋势
-            recent_scores = [h['market_score'] for h in history[:5]]
-            
-            # 计算趋势方向
-            if len(recent_scores) >= 2:
-                score_change = recent_scores[0] - recent_scores[-1]
-                if score_change > 10:
-                    trend_direction = 'UP'
-                    trend_strength = 'STRONG' if score_change > 20 else 'MODERATE'
-                elif score_change < -10:
-                    trend_direction = 'DOWN'
-                    trend_strength = 'STRONG' if score_change < -20 else 'MODERATE'
-                else:
-                    trend_direction = 'SIDEWAYS'
-                    trend_strength = 'WEAK'
-            else:
-                trend_direction = 'SIDEWAYS'
-                trend_strength = 'WEAK'
-            
-            # 计算当前情绪水平
-            current_score = recent_scores[0]
-            
-            # 判断周期位置
-            if trend_direction == 'UP' and current_score >= 70:
-                # 情绪主升期
-                cycle_position = 'RISING'
-                cycle_description = '情绪主升期：市场情绪持续上升，赚钱效应强'
-                cycle_strategy = '大胆做T字板、缩量板，敢于追高'
-            elif trend_direction == 'UP' and current_score >= 50:
-                # 情绪上升期
-                cycle_position = 'RISING'
-                cycle_description = '情绪上升期：市场情绪正在回暖，适合积极参与'
-                cycle_strategy = '提高仓位，积极寻找机会'
-            elif trend_direction == 'DOWN' and current_score <= 30:
-                # 退潮冰点期
-                cycle_position = 'FALLING'
-                cycle_description = '退潮冰点期：市场情绪持续低迷，赚钱效应弱'
-                cycle_strategy = '强制过滤掉所有非换手板，只做首板，或空仓观望'
-            elif trend_direction == 'DOWN' and current_score <= 50:
-                # 情绪下降期
-                cycle_position = 'FALLING'
-                cycle_description = '情绪下降期：市场情绪正在降温，风险加大'
-                cycle_strategy = '降低仓位，谨慎操作，只做确定性高的机会'
-            else:
-                # 高位震荡期
-                cycle_position = 'OSCILLATING'
-                cycle_description = '高位震荡期：市场情绪高位波动，多空分歧大'
-                cycle_strategy = '控制仓位，只做换手板，避免追高'
-            
-            return {
-                'cycle_position': cycle_position,
-                'cycle_description': cycle_description,
-                'cycle_strategy': cycle_strategy,
-                'trend_direction': trend_direction,
-                'trend_strength': trend_strength
-            }
-        
-        except Exception as e:
-            logger.error(f"❌ 获取周期定位失败: {e}")
-            return {
-                'cycle_position': 'UNKNOWN',
-                'cycle_description': '获取失败',
-                'cycle_strategy': '保持观望',
-                'trend_direction': 'SIDEWAYS',
-                'trend_strength': 'WEAK'
-            }
-    
-    def _get_market_sentiment_history(self, days: int = 20) -> List[Dict]:
-        """
-        获取市场情绪历史数据
-        
-        Args:
-            days: 回看天数
-        
-        Returns:
-            list: 市场情绪历史记录
-        """
-        try:
-            from logic.database_manager import get_db_manager
-            db = get_db_manager()
-            
-            # 从数据库获取历史数据
-            sql = """
-            SELECT date, highest_board, limit_up_count, limit_down_count, top_sectors
-            FROM market_summary
-            ORDER BY date DESC
-            LIMIT ?
-            """
-            results = db.sqlite_query(sql, (days,))
-            
-            if not results:
-                return []
-            
-            history = []
-            for row in results:
-                # 计算市场情绪评分
-                limit_up_count = row[2] if len(row) > 2 else 0
-                market_score = int(min(limit_up_count / 50 * 100, 100))
-                
-                history.append({
-                    'date': row[0],
-                    'highest_board': row[1] if len(row) > 1 else 0,
-                    'limit_up_count': limit_up_count,
-                    'limit_down_count': row[3] if len(row) > 3 else 0,
-                    'market_score': market_score,
-                    'top_sectors': row[4] if len(row) > 4 else None
-                })
-            
-            return history
-        
-        except Exception as e:
-            logger.error(f"❌ 获取市场情绪历史失败: {e}")
-            return []
-    
-    def get_strategy_parameters(self, regime=None):
-        """
-        根据市场状态获取策略参数
-        
-        Args:
-            regime: 市场状态（如果不提供，使用当前状态）
-        
-        Returns:
-            dict: 策略参数
-        """
-        if regime is None:
-            regime = self.current_regime
-        
-        if regime == self.REGIME_BULL_ATTACK:
-            # 进攻模式：参数放宽
-            return {
-                'dragon': {
-                    'min_score': 50,          # 降低评分门槛
-                    'min_change_pct': 5.0,    # 降低涨幅要求
-                    'min_volume_ratio': 1.5,  # 降低量比要求
-                    'max_position': 0.8       # 允许大仓位
-                },
-                'trend': {
-                    'min_score': 55,
-                    'min_change_pct': 1.5,
-                    'min_volume_ratio': 1.0,
-                    'max_position': 0.7
-                },
-                'halfway': {
-                    'min_score': 60,
-                    'min_change_pct': 10.0,
-                    'min_volume_ratio': 3.0,
-                    'max_position': 0.6
-                }
-            }
-        
-        elif regime == self.REGIME_BEAR_DEFENSE:
-            # 防守模式：参数收紧
-            return {
-                'dragon': {
-                    'min_score': 80,          # 提高评分门槛
-                    'min_change_pct': 9.0,    # 提高涨幅要求
-                    'min_volume_ratio': 3.0,  # 提高量比要求
-                    'max_position': 0.2       # 限制仓位
-                },
-                'trend': {
-                    'min_score': 75,
-                    'min_change_pct': 3.0,
-                    'min_volume_ratio': 2.0,
-                    'max_position': 0.3
-                },
-                'halfway': {
-                    'min_score': 85,          # 禁止半路战法
-                    'min_change_pct': 15.0,
-                    'min_volume_ratio': 5.0,
-                    'max_position': 0.1
-                }
-            }
-        
-        else:  # CHAOS
-            # 震荡模式：中等参数
-            return {
-                'dragon': {
-                    'min_score': 60,
-                    'min_change_pct': 7.0,
-                    'min_volume_ratio': 2.0,
-                    'max_position': 0.5
-                },
-                'trend': {
-                    'min_score': 65,
-                    'min_change_pct': 2.0,
-                    'min_volume_ratio': 1.5,
-                    'max_position': 0.5
-                },
-                'halfway': {
-                    'min_score': 70,
-                    'min_change_pct': 12.0,
-                    'min_volume_ratio': 4.0,
-                    'max_position': 0.4
-                }
-            }
-    
-    def get_market_weather_icon(self):
-        """
-        获取市场天气图标
-        
-        Returns:
-            str: 天气图标和描述
-        """
-        # 🆕 V9.2 更新：根据市场数据返回更准确的天气图标
-        if not self.market_data:
-            return "❓ 未知"
-        
-        limit_up_count = self.market_data.get('limit_up_count', 0)
-        limit_down_count = self.market_data.get('limit_down_count', 0)
-        
-        # 绝对恐慌：跌停比涨停多 → 暴雨
-        if limit_down_count > limit_up_count:
-            return "⛈️ 暴雨（极度危险）"
-        
-        # 局部恐慌：跌停家数超过 30 家 → 多云
-        elif limit_down_count > 30:
-            return "🌥️ 多云（分歧巨大）"
-        
-        # 正常判断
-        elif self.current_regime == self.REGIME_BULL_ATTACK:
-            return "☀️ 晴天（进攻）"
-        elif self.current_regime == self.REGIME_BEAR_DEFENSE:
-            return "🌧️ 雨天（防守）"
-        else:
-            return "☁️ 多云（震荡）"
-    
-    def generate_ai_context(self, top_stocks: Optional[List[Dict]] = None) -> Dict:
-        """
-        🆕 V10.1：生成 AI 上下文，让 AI 能够读取今日主线
-        🆕 V10.1.1：包含主线聚焦度信息（带分数）
-        
-        Args:
-            top_stocks: 强势股列表（可选）
-        
-        Returns:
-            dict: AI 上下文信息
-        """
-        try:
-            # 获取市场情绪
-            regime_info = self.get_market_regime(top_stocks)
-            
-            # 🆕 V10.1.1：格式化带分数的主线信息
-            hot_themes_detailed = regime_info.get('hot_themes_detailed', [])
-            if hot_themes_detailed:
-                # 格式化成 AI 易读的字符串
-                themes_str = ", ".join([f"{t[0]}({t[1]}分)" for t in hot_themes_detailed])
-                
-                # 🆕 V10.1.1：判断主线聚焦度
-                if len(hot_themes_detailed) >= 2:
-                    top_score = hot_themes_detailed[0][1]
-                    second_score = hot_themes_detailed[1][1]
-                    score_gap = top_score - second_score
-                    
-                    # 分数差距小且分数高 → 合力强
-                    if score_gap < 10 and top_score >= 30:
-                        focus_level = "主线明确，合力强"
-                    # 分数差距大 → 单一主线
-                    elif score_gap >= 20:
-                        focus_level = "单一主线，聚焦度高"
-                    # 分数低且分散 → 合力弱
-                    elif top_score < 20:
-                        focus_level = "主线分散，合力弱"
-                    else:
-                        focus_level = "主线一般"
-                else:
-                    focus_level = "主线不明确"
-                
-                themes_with_focus = f"{themes_str}（{focus_level}）"
-            else:
-                themes_with_focus = "无明显主线"
-            
-            # ==========================================
-            # 🔥 V10.1.6 [新增] 龙头身份认证协议 (Leader Identification)
-            # ==========================================
-            
-            # 1. 建立主线秩序：找到每个概念下的"最高板"
-            # 格式: {'新能源': {'name': '天龙集团', 'height': 3}, ...}
-            theme_leaders = {} 
-            
-            if top_stocks:
-                for stock in top_stocks:
-                    concepts = stock.get('concept_tags', [])
-                    # 解析连板高度 (如 "3连板" -> 3, "首板" -> 1)
-                    status = stock.get('lianban_status', '首板')
-                    try:
-                        if '连板' in status:
-                            height = int(status[0])
-                        else:
-                            height = 1
-                    except:
-                        height = 1
-                        
-                    for c in concepts:
-                        # 记录该概念下的最高身位
-                        current_leader = theme_leaders.get(c, {'height': -1})
-                        if height > current_leader['height']:
-                            theme_leaders[c] = {'name': stock['name'], 'height': height}
-                        # 如果高度一样，优先选封单额大的或者竞价强的 (此处简化为选涨幅大的)
-                        elif height == current_leader['height']:
-                            change_pct = stock.get('change_pct', 0) or stock.get('涨跌幅', 0)
-                            if change_pct > 9.5: # 涨停优先
-                                theme_leaders[c] = {'name': stock['name'], 'height': height}
-                
-                # 2. 标记个股身份：你是龙，还是虫？
-                for stock in top_stocks:
-                    concepts = stock.get('concept_tags', [])
-                    is_leader = False
-                    my_leader = "无"
-                    
-                    # 只要它是任何一个概念的最高板，它就是龙头
-                    for c in concepts:
-                        leader_info = theme_leaders.get(c)
-                        if leader_info:
-                            if stock['name'] == leader_info['name']:
-                                is_leader = True
-                            else:
-                                my_leader = leader_info['name']
-                    
-                    # 注入身份字段
-                    if is_leader:
-                        stock['role'] = "🐲 龙头 (真龙)"
-                    else:
-                        stock['role'] = f"🐕 跟风 (大哥是: {my_leader})"
-            
-            # ==========================================
-            # 🔥 V10.1.6 逻辑结束
-            # ==========================================
-            
-            # 构建上下文
-            context = {
-                'market_weather': self.get_market_weather_icon(),
-                'regime': regime_info.get('regime', ''),
-                'description': regime_info.get('description', ''),
-                'strategy': regime_info.get('strategy', ''),
-                'market_data': regime_info.get('market_data', {}),
-                'hot_themes': regime_info.get('hot_themes', []),  # 🆕 V10.1：今日主线（仅名称）
-                'hot_themes_detailed': themes_with_focus,  # 🆕 V10.1.1：今日主线（带分数 + 聚焦度）
-                'concept_map_expired': self.concept_map_expired,  # 🆕 V10.1.1：概念库是否过期
-                'theme_leaders': theme_leaders  # 🆕 V10.1.6：龙头信息
-            }
-            
-            return context
-        
-        except Exception as e:
-            logger.error(f"生成 AI 上下文失败: {e}")
-            return {
-                'market_weather': '未知',
-                'regime': self.REGIME_CHAOS,
-                'description': '无法判断市场情绪',
-                'strategy': '保守操作',
-                'market_data': {},
-                'hot_themes': [],
-                'hot_themes_detailed': '无明显主线',
-                'concept_map_expired': False
-            }
-    
-    def _load_concept_map(self) -> Dict:
-        """
-        🆕 V10.1.1：加载概念映射表（包含过期提醒）
-        
-        Returns:
-            dict: 股票代码 -> 概念列表的映射
-        """
-        import os
-        import json
-        import time
-        
-        concept_map_path = "data/concept_map.json"
-        
-        if os.path.exists(concept_map_path):
-            try:
-                # 🆕 V10.1.1：检查文件龄期
-                file_time = os.path.getmtime(concept_map_path)
-                days_old = (time.time() - file_time) / (24 * 3600)
-                
-                if days_old > 7:
-                    self.concept_map_expired = True
-                    logger.warning(f"⚠️ [警告] 概念库已过期 {int(days_old)} 天！建议运行 `python scripts/generate_concept_map.py` 更新。")
-                else:
-                    self.concept_map_expired = False
-                
-                with open(concept_map_path, 'r', encoding='utf-8') as f:
-                    concept_map = json.load(f)
-                logger.info(f"✅ 加载概念映射表成功，覆盖 {len(concept_map)} 只股票（{int(days_old)} 天前更新）")
-                return concept_map
-            except Exception as e:
-                logger.warning(f"读取概念映射表失败: {e}")
-        
-        self.concept_map_expired = True
-        logger.warning("⚠️ 概念映射表不存在，将使用名称推断法")
-        return {}
-    
-    def _get_concept_coverage(self) -> Dict:
-        """
-        🆕 V10.1.5：获取概念库覆盖率信息
-        
-        Returns:
-            dict: 包含覆盖率信息的字典
-                - covered_count: 已覆盖股票数量
-                - total_count: 市场总股票数量
-                - coverage_rate: 覆盖率（百分比）
-                - uncovered_count: 未覆盖股票数量
-        """
-        try:
-            import akshare as ak
-            
-            # 获取概念库覆盖的股票数量
-            covered_count = len(self.concept_map)
-            
-            # 获取市场总股票数量
-            stock_list_df = ak.stock_info_a_code_name()
-            total_count = len(stock_list_df)
-            
-            # 计算覆盖率
-            coverage_rate = (covered_count / total_count * 100) if total_count > 0 else 0
-            uncovered_count = total_count - covered_count
+                sentiment_level = "极好"
             
             result = {
-                'covered_count': covered_count,
                 'total_count': total_count,
-                'coverage_rate': round(coverage_rate, 2),
-                'uncovered_count': uncovered_count
+                'up_count': up_count,
+                'down_count': down_count,
+                'flat_count': flat_count,
+                'limit_up_count': limit_up_count,
+                'limit_down_count': limit_down_count,
+                'sentiment_index': sentiment_index,
+                'normalized_sentiment_index': normalized_sentiment_index,
+                'sentiment_level': sentiment_level,
+                'up_ratio': up_count / total_count * 100,
+                'down_ratio': down_count / total_count * 100
             }
             
-            logger.info(f"📊 概念库覆盖率: {coverage_rate:.2f}% ({covered_count}/{total_count})")
+            logger.info(f"✅ [市场情绪分析器] 获取完成: 上涨{up_count}家, 下跌{down_count}家, 涨停{limit_up_count}家, 跌停{limit_down_count}家, 情绪等级: {sentiment_level}")
+            
             return result
             
         except Exception as e:
-            logger.warning(f"获取概念库覆盖率失败: {e}")
-            return {
-                'covered_count': len(self.concept_map),
-                'total_count': 0,
-                'coverage_rate': 0,
-                'uncovered_count': 0
-            }
+            logger.error(f"❌ [市场情绪分析器] 获取失败: {e}")
+            return None
     
-    def _analyze_hot_themes(self, top_stocks: List[Dict]) -> List[Tuple[str, int]]:
+    def is_market_sentiment_good(self) -> bool:
         """
-        🔥 [V10.1.1 深化逻辑] 挖掘今日主线题材（加权评分版）
-        使用加权评分替代简单计数，优先识别涨停/连板股票的概念
-        
-        Args:
-            top_stocks: 强势股列表（涨停或高涨幅股票）
-            
-        Returns:
-            list: 今日主线题材列表（Top 3），格式为 [(概念, 分数), ...]
-        """
-        if not top_stocks:
-            return []
-        
-        # 🆕 V10.1.1：使用加权评分
-        theme_scores = {}
-        
-        for stock in top_stocks:
-            code = stock.get('code', '')
-            name = stock.get('name', '')
-            
-            # 获取该股票的概念列表
-            concepts = self.get_stock_concepts(code, name)
-            
-            if concepts:
-                # 同时把概念注入到 stock 对象里，方便 UI 显示
-                stock['concept_tags'] = concepts[:3]  # 只取前3个核心概念
-                
-                # 🔥 核心权重算法：
-                # 涨停板/连板 = 10分
-                # 涨幅 > 7% = 5分
-                # 涨幅 > 3% = 1分
-                weight = 1
-                
-                # 判断是否涨停
-                change_pct = stock.get('change_pct', 0)
-                is_limit_up = change_pct >= 9.5
-                
-                # 判断是否连板
-                lianban_count = stock.get('lianban_count', 0)
-                
-                if is_limit_up or lianban_count > 0:
-                    weight = 10  # 涨停板或连板
-                elif change_pct > 7.0:
-                    weight = 5   # 强势股
-                elif change_pct > 3.0:
-                    weight = 1   # 普通上涨
-                
-                for concept in concepts:
-                    # 过滤掉太宽泛的概念
-                    exclude_concepts = ['融资融券', '深股通', '标准普尔', 'MSCI', '富时罗素', '标普道琼斯', '沪股通']
-                    if concept in exclude_concepts:
-                        continue
-                    
-                    # 累加权重
-                    theme_scores[concept] = theme_scores.get(concept, 0) + weight
-        
-        # 按分数排序，而不是按数量排序
-        if not theme_scores:
-            return []
-        
-        sorted_themes = sorted(theme_scores.items(), key=lambda x: x[1], reverse=True)
-        
-        # 🆕 V10.1.1：返回 (名字, 分数) 而不只是名字
-        return sorted_themes[:3]
-    
-    def get_stock_concepts(self, code: str, name: str) -> List[str]:
-        """
-        🆕 V10.1.1：获取股票概念（优先查表，兜底推断）
-        
-        Args:
-            code: 股票代码
-            name: 股票名称
-            
-        Returns:
-            list: 概念列表
-        """
-        # 1. 优先查表（使用真实的 concept_map.json）
-        if code in self.concept_map:
-            concepts = self.concept_map[code]
-            # 过滤掉太宽泛的概念
-            exclude_concepts = ['融资融券', '深股通', '标准普尔', 'MSCI', '富时罗素', '标普道琼斯', '沪股通']
-            filtered_concepts = [c for c in concepts if c not in exclude_concepts]
-            return filtered_concepts if filtered_concepts else []
-        
-        # 2. 兜底：使用名称推断法
-        concepts = []
-        for theme, keywords in self.CONCEPT_KEYWORDS.items():
-            for keyword in keywords:
-                if keyword in name:
-                    if theme not in concepts:
-                        concepts.append(theme)
-                    break
-        
-        # 如果没有匹配到概念，返回空列表（不再返回"其他"）
-        return concepts
-    
-    def get_market_sentiment_score(self, top_stocks: Optional[List[Dict]] = None) -> Dict[str, Union[int, str]]:
-        """
-        [V16 新增] 获取市场情绪分数和状态，用于环境熔断
-        
-        Args:
-            top_stocks: 强势股列表（可选，用于主线挖掘）
+        判断市场情绪是否良好
         
         Returns:
-            dict: {
-                'score': 市场情绪分数 (0-100),
-                'status': 市场状态 ('主升', '退潮', '震荡', '冰点'),
-                'description': 状态描述,
-                'limit_up_count': 涨停家数,
-                'limit_down_count': 跌停家数,
-                'prev_profit': 昨日涨停溢价,
-                'malignant_zhaban_rate': 恶性炸板率
-            }
+            bool: 市场情绪是否良好
         """
-        try:
-            # 获取市场状态
-            regime_info = self.get_market_regime(top_stocks)
-            market_data = regime_info.get('market_data', {})
-            regime = regime_info.get('regime', self.REGIME_CHAOS)
-            
-            # 获取市场情绪分数
-            score = market_data.get('score', 50)
-            
-            # 映射 regime 到 V16 需要的状态
-            status_mapping = {
-                self.REGIME_BULL_ATTACK: '主升',
-                self.REGIME_BEAR_DEFENSE: '退潮',
-                self.REGIME_CHAOS: '震荡'
-            }
-            
-            # 特殊处理：如果分数 < 20，强制设为"冰点"
-            if score < 20:
-                status = '冰点'
-            else:
-                status = status_mapping.get(regime, '震荡')
-            
-            return {
-                'score': score,
-                'status': status,
-                'description': regime_info.get('description', '未知'),
-                'limit_up_count': market_data.get('limit_up_count', 0),
-                'limit_down_count': market_data.get('limit_down_count', 0),
-                'prev_profit': market_data.get('prev_profit', 0),
-                'malignant_zhaban_rate': market_data.get('malignant_zhaban_rate', 0)
-            }
+        sentiment_data = self.get_market_sentiment()
         
-        except Exception as e:
-            logger.error(f"获取市场情绪分数失败: {e}")
-            # 返回默认值
-            return {
-                'score': 50,
-                'status': '震荡',
-                'description': '无法判断市场情绪',
-                'limit_up_count': 0,
-                'limit_down_count': 0,
-                'prev_profit': 0,
-                'malignant_zhaban_rate': 0
-            }
+        if not sentiment_data:
+            return False
+        
+        # 市场情绪良好的条件：
+        # 1. 情绪等级为"好"或"极好"
+        # 2. 跌停家数 <= 10
+        # 3. 涨停家数 >= 30
+        
+        sentiment_level = sentiment_data.get('sentiment_level', '')
+        limit_down_count = sentiment_data.get('limit_down_count', 0)
+        limit_up_count = sentiment_data.get('limit_up_count', 0)
+        
+        is_good = (
+            sentiment_level in ['好', '极好'] and
+            limit_down_count <= 10 and
+            limit_up_count >= 30
+        )
+        
+        return is_good
     
-    def close(self):
-        """关闭数据库连接"""
-        if self.db:
-            self.db.close()
-
-
-# 别名，保持向后兼容
-MarketSentimentIndexCalculator = MarketSentiment
+    def is_market_sentiment_bad(self) -> bool:
+        """
+        判断市场情绪是否恶劣
+        
+        Returns:
+            bool: 市场情绪是否恶劣
+        """
+        sentiment_data = self.get_market_sentiment()
+        
+        if not sentiment_data:
+            return False
+        
+        # 市场情绪恶劣的条件：
+        # 1. 跌停家数 > 20
+        # 2. 下跌家数占比 > 70%
+        
+        limit_down_count = sentiment_data.get('limit_down_count', 0)
+        down_ratio = sentiment_data.get('down_ratio', 0)
+        
+        is_bad = (
+            limit_down_count > 20 or
+            down_ratio > 70
+        )
+        
+        return is_bad

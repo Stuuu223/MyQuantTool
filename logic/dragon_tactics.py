@@ -33,12 +33,22 @@ class DragonTactics:
         """
         self.db = db
         self._sector_analyzer = None
+        self._market_sentiment = None  # 🆕 V19.8: 市场情绪分析器
+        
         if db:
             try:
                 from logic.sector_analysis import FastSectorAnalyzer
                 self._sector_analyzer = FastSectorAnalyzer(db)
             except Exception as e:
                 logger.warning(f"初始化板块分析器失败: {e}")
+            
+            try:
+                # 🆕 V19.8: 初始化市场情绪分析器
+                from logic.market_sentiment import MarketSentiment
+                self._market_sentiment = MarketSentiment(db)
+                logger.info("✅ [龙头战法] 市场情绪分析器初始化完成")
+            except Exception as e:
+                logger.warning(f"初始化市场情绪分析器失败: {e}")
     
     def analyze_call_auction(self, 
                            current_open_volume: float,
@@ -700,8 +710,41 @@ class DragonTactics:
             'role_score': role_score,
             'auction_score': auction_score,
             'weak_to_strong_score': weak_to_strong_score,
-            'intraday_support_score': intraday_support_score
+            'intraday_support_score': intraday_support_score,
+            'sector_resonance_score': normalized_sector_score
         }
+        
+        # 🆕 V19.8: 引入市场情绪判断（全市场涨跌比）
+        # 如果全市场跌停家数 > 20，即使个股评分高，也强制降仓位。这是防大面的关键。
+        market_sentiment_warning = ""
+        if self._market_sentiment:
+            try:
+                sentiment_data = self._market_sentiment.get_market_sentiment()
+                if sentiment_data:
+                    limit_down_count = sentiment_data.get('limit_down_count', 0)
+                    limit_up_count = sentiment_data.get('limit_up_count', 0)
+                    
+                    # 如果全市场跌停家数 > 20，强制降仓位
+                    if limit_down_count > 20:
+                        market_sentiment_warning = f"⚠️ 市场情绪恶劣：跌停{limit_down_count}家，强制降仓位"
+                        logger.warning(f"⚠️ [市场情绪] 跌停{limit_down_count}家，强制降仓位")
+                        
+                        # 强制降低仓位
+                        if results.get('position') in ['满仓/重仓', '半仓']:
+                            results['position'] = '轻仓/试探'
+                            results['confidence'] = 'LOW'
+                            results['reason'] = f"{results.get('reason', '')}（市场情绪恶劣，降仓位）"
+                    
+                    # 如果全市场涨停家数 > 50，市场情绪好，可以适当激进
+                    elif limit_up_count > 50:
+                        market_sentiment_warning = f"✅ 市场情绪火热：涨停{limit_up_count}家"
+                        logger.info(f"✅ [市场情绪] 涨停{limit_up_count}家，市场情绪火热")
+            except Exception as e:
+                logger.warning(f"⚠️ [市场情绪] 获取失败: {e}")
+        
+        # 添加市场情绪警告到结果中
+        if market_sentiment_warning:
+            results['market_sentiment_warning'] = market_sentiment_warning
         
         # 判断角色
         if role_score >= 80:
