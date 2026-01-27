@@ -666,16 +666,34 @@ class DragonTactics:
             intraday_support_score: 分时承接评分
             current_change: 当前涨跌幅
             is_20cm: 是否为20cm标的
+            sector_resonance_score: 板块共振评分（范围可能是-10到+10）
             
         Returns:
             决策结果
         """
-        # 综合评分（🆕 V19.7: 添加板块共振评分，权重15%）
+        # 🆕 V19.8: 板块共振评分标准化和容错机制
+        # 板块共振分数的范围可能是-10到+10，需要标准化到0-100范围
+        # 如果获取不到板块分数（None 或 0），不要直接枪毙，而是给一个中性分或者降权处理
+        if sector_resonance_score is None or sector_resonance_score == 0:
+            # 无板块数据，跳过共振过滤，仅看个股
+            normalized_sector_score = 50  # 给个及格分
+            logger.debug(f"⚠️ [板块共振] 无板块数据，使用中性分50")
+        elif sector_resonance_score < 0:
+            # 板块逆风，但不要直接枪毙，而是降低评分
+            # 将-10到0映射到0-50范围
+            normalized_sector_score = 50 + (sector_resonance_score * 5)
+            logger.debug(f"⚠️ [板块共振] 板块逆风({sector_resonance_score})，标准化后{normalized_sector_score:.1f}")
+        else:
+            # 板块顺风，将0到+10映射到50-100范围
+            normalized_sector_score = 50 + (sector_resonance_score * 5)
+            logger.debug(f"✅ [板块共振] 板块顺风({sector_resonance_score})，标准化后{normalized_sector_score:.1f}")
+        
+        # 综合评分（🆕 V19.8: 使用标准化的板块共振评分，权重15%）
         total_score = (role_score * 0.35 + 
                       auction_score * 0.2 + 
                       weak_to_strong_score * 0.15 + 
                       intraday_support_score * 0.15 +
-                      sector_resonance_score * 0.15)
+                      normalized_sector_score * 0.15)
         
         results = {
             'total_score': total_score,

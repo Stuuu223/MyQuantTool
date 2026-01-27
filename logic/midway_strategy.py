@@ -74,7 +74,7 @@ class MidwayStrategy:
         扫描全市场股票（可选择只扫描20cm标的）
 
         Args:
-            min_change_pct: 最小涨幅（默认3%）
+            min_change_pct: 最小涨幅（默认3%，主板10cm的半路区间）
             max_change_pct: 最大涨幅（默认12%，避免追高）
             min_score: 最低信号强度（默认0.6）
             stock_limit: 扫描股票数量限制（默认50只）
@@ -90,7 +90,7 @@ class MidwayStrategy:
         if only_20cm:
             logger.info(f"🚀 [半路战法] 开始扫描全市场20cm标的（300/688）...")
         else:
-            logger.info(f"🚀 [半路战法] 开始扫描全市场股票（包含主板）...")
+            logger.info(f"🚀 [半路战法] 开始扫描全市场股票（包含主板600/000）...")
         
         try:
             # 1. 获取全市场股票列表
@@ -108,6 +108,14 @@ class MidwayStrategy:
                     stock_list_df['代码'].str.startswith(('300', '688'))
                 ]
                 logger.info(f"🎯 [半路战法] 只扫描20cm标的，筛选后股票: {len(stock_list_df)} 只")
+                
+                # 🆕 V19.8: 定义20cm标的的真正半路区间（5%-12%）
+                # 20cm涨停，半路应该是 5%-12%（避免追高）
+                stock_list_df = stock_list_df[
+                    (stock_list_df['涨跌幅'] >= 5.0) & 
+                    (stock_list_df['涨跌幅'] <= 12.0)
+                ]
+                logger.info(f"🎯 [半路战法] 20cm标的半路区间(5%-12%)，筛选后股票: {len(stock_list_df)} 只")
             else:
                 # 扫描全市场股票（包含主板600/000）
                 # 过滤掉ST股票和退市股票
@@ -115,12 +123,33 @@ class MidwayStrategy:
                     ~stock_list_df['名称'].str.contains('ST|退', na=False)
                 ]
                 logger.info(f"🎯 [半路战法] 扫描全市场股票（包含主板），筛选后股票: {len(stock_list_df)} 只")
+                
+                # 🆕 V19.8: 分别定义主板和20cm的半路区间
+                # 主板10cm涨停，半路应该是 2.5%-8%
+                # 20cm涨停，半路应该是 5%-12%
+                
+                # 主板股票（600/000）
+                main_board_mask = stock_list_df['代码'].str.startswith(('600', '000', '001', '002', '003'))
+                
+                # 20cm股票（300/688）
+                cm20_mask = stock_list_df['代码'].str.startswith(('300', '688'))
+                
+                # 应用不同的涨幅区间
+                stock_list_df = stock_list_df[
+                    ((main_board_mask) & (stock_list_df['涨跌幅'] >= 2.5) & (stock_list_df['涨跌幅'] <= 8.0)) |
+                    ((cm20_mask) & (stock_list_df['涨跌幅'] >= 5.0) & (stock_list_df['涨跌幅'] <= 12.0))
+                ]
+                logger.info(f"🎯 [半路战法] 主板半路区间(2.5%-8%)，20cm半路区间(5%-12%)，筛选后股票: {len(stock_list_df)} 只")
             
-            # 3. 筛选涨幅在范围内的股票
-            stock_list_df = stock_list_df[
-                (stock_list_df['涨跌幅'] >= min_change_pct) & 
-                (stock_list_df['涨跌幅'] <= max_change_pct)
-            ]
+            # 3. 按成交量排序，取最活跃的N只
+            if '成交量' in stock_list_df.columns:
+                stock_list_df = stock_list_df.sort_values('成交量', ascending=False)
+            elif '成交额' in stock_list_df.columns:
+                stock_list_df = stock_list_df.sort_values('成交额', ascending=False)
+            
+            stock_list_df = stock_list_df.head(stock_limit)
+            
+            logger.info(f"✅ [半路战法] 初筛完成，待分析股票: {len(stock_list_df)} 只")
             
             # 4. 按成交量排序，取最活跃的N只
             if '成交量' in stock_list_df.columns:

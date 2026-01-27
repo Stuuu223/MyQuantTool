@@ -90,7 +90,7 @@ class LowSuctionEngine:
         }
 
         try:
-kline_data = self.data_manager.get_history_data(symbol=stock_code, period='daily')
+            kline_data = self.data_manager.get_history_data(symbol=stock_code, period='daily')
             if kline_data is None or kline_data.empty or len(kline_data) < 5:
                 result['reason'] = 'K线数据不足'
                 return result
@@ -150,29 +150,28 @@ kline_data = self.data_manager.get_history_data(symbol=stock_code, period='daily
                 
                 # 尝试获取当前时间，判断是否为盘中
                 try:
-                    from datetime import datetime
+                    from datetime import datetime, time
                     now = datetime.now()
+                    current_time = now.time()
                     hour = now.hour
                     minute = now.minute
                     
-                    # 计算盘中时间占比（9:30-15:00，共5.5小时=330分钟）
-                    trading_minutes = 330  # 全天330分钟
-                    
-                    if hour < 9 or (hour == 9 and minute < 30):
+                    # 🆕 V19.8: 9:45之前，不要用当日量推算，直接使用昨日量作为参考
+                    if current_time < time(9, 45):
+                        # 早盘盲信，使用昨日量作为参考
+                        volume_ratio = current_volume / prev_volume if prev_volume > 0 else 1.0
+                        logger.debug(f"[{stock_code}] 早盘(9:45前)量能计算(参考昨日): 当前量={current_volume:.0f}, 昨日量={prev_volume:.0f}, 量比={volume_ratio:.2f}")
+                    elif hour < 9 or (hour == 9 and minute < 30):
                         # 盘前，使用昨日全天量
                         volume_ratio = current_volume / prev_volume if prev_volume > 0 else 1.0
                         logger.debug(f"[{stock_code}] 盘前量能计算: 当前量={current_volume:.0f}, 昨日量={prev_volume:.0f}, 量比={volume_ratio:.2f}")
                     elif hour < 15:
-                        # 盘中，计算已开盘分钟数
+                        # 盘中（9:45之后），计算已开盘分钟数
                         market_minutes = (hour - 9) * 60 + (minute - 30)
+                        trading_minutes = 330  # 全天330分钟
                         
-                        # 🚀 V19.7: 使用更平滑的时间加权算法
-                        if market_minutes < 15:
-                            # 开盘前15分钟极其不稳定，建议直接使用昨日量作为参考
-                            # 或者给予极低的权重
-                            volume_ratio = current_volume / prev_volume if prev_volume > 0 else 1.0
-                            logger.debug(f"[{stock_code}] 极早盘量能计算(参考昨日): 当前量={current_volume:.0f}, 昨日量={prev_volume:.0f}, 时间={market_minutes}分钟, 量比={volume_ratio:.2f}")
-                        elif market_minutes < 60:
+                        # 🚀 V19.8: 使用更平滑的时间加权算法
+                        if market_minutes < 60:
                             # 1小时内，随着时间推移增加权值
                             # 使用线性推演和昨日量的加权平均
                             weight = market_minutes / 60.0  # 时间权重（0-1）
