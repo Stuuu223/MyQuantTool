@@ -424,5 +424,15 @@ def get_smart_data_manager() -> SmartDataManager:
     return _smart_data_manager
 
 
+def get_data_source_manager() -> SmartDataManager:
+    """
+    获取数据源管理器单例（向后兼容别名）
+    
+    Returns:
+        SmartDataManager: 智能数据源管理器实例
+    """
+    return get_smart_data_manager()
+
+
 # 为了兼容性，保留旧的 DataSourceManager 类名
 DataSourceManager = SmartDataManager
