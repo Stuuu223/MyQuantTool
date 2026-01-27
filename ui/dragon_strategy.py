@@ -258,7 +258,7 @@ def render_dragon_strategy_tab(db, config):
     st.divider()
     strategy_mode = st.radio(
         "⚔️ 选择作战模式",
-        ("🔥 龙头掠食者 (抓连板/妖股)", "🛡️ 趋势中军猎手 (抓机构/业绩/诺思格)", "🚀 半路战法 (抓20cm加速逼空)", "🛡️ 低吸战法 (回踩均线/弱转强)", "🌙 尾盘选股 (14:30-15:00)"),
+        ("🔥 龙头掠食者 (抓连板/妖股)", "🛡️ 趋势中军猎手 (抓机构/业绩/诺思格)", "🚀 激进半路 (抓20cm 10%-18.5%加速逼空)", "🛡️ 保守半路 (主板2.5%-8% / 20cm 5%-12%)", "🛡️ 低吸战法 (回踩均线/弱转强)", "🌙 尾盘选股 (14:30-15:00)"),
         index=0,
         horizontal=True
     )
@@ -287,14 +287,22 @@ def render_dragon_strategy_tab(db, config):
         - 🔄 均线多头排列（价格 > MA5 > MA10 > MA20）
         - 🚀 **适合稳健投资，长期持有**
         """)
-    elif "半路" in strategy_mode:
+    elif "激进半路" in strategy_mode:
         st.info("""
-        **半路战法核心要点：**
-        - 🎯 专门抓20cm股票在10%-19%区间的半路板
+        **激进半路核心要点：**
+        - 🎯 专门抓20cm股票在10%-18.5%区间的半路板
         - 🚀 加速逼空段，半路扫货博弈20%涨停
         - 📊 攻击性放量（量比 > 3.0）
         - 🔄 买盘强（买一量 > 卖一量）
         - ⚠️ **风险较高，适合激进投资者**
+        """)
+    elif "保守半路" in strategy_mode:
+        st.info("""
+        **保守半路核心要点：**
+        - 🎯 主板股票涨幅2.5%-8.0%，20cm股票涨幅5.0%-12.0%
+        - 📊 温和放量（量比 > 1.5）
+        - 🔄 站稳分时均线或5日均线
+        - 🛡️ **风险较低，适合稳健投资者**
         """)
     elif "低吸" in strategy_mode:
         st.info("""
@@ -456,9 +464,26 @@ def render_dragon_strategy_tab(db, config):
         elif "趋势" in current_mode:
             with st.spinner('🛡️ 正在执行趋势中军筛选 (均线多头 + 温和放量)...'):
                 scan_result = QuantAlgo.scan_trend_stocks(limit=scan_limit, min_score=min_score)
-        elif "半路" in current_mode:
-            with st.spinner('🚀 正在执行半路战法筛选 (20cm加速逼空)...'):
+        elif "激进半路" in current_mode:
+            with st.spinner('🚀 正在执行激进半路筛选 (20cm 10%-18.5%加速逼空)...'):
                 scan_result = QuantAlgo.scan_halfway_stocks(limit=scan_limit, min_score=min_score)
+        elif "保守半路" in current_mode:
+            with st.spinner('🛡️ 正在执行保守半路筛选 (主板2.5%-8% / 20cm 5%-12%)...'):
+                from logic.midway_strategy import get_midway_strategy_instance
+                strategy = get_midway_strategy_instance()
+                results = strategy.scan_market(
+                    min_change_pct=2.5,  # 主板最小涨幅
+                    max_change_pct=12.0,  # 20cm最大涨幅
+                    min_score=0.6,
+                    stock_limit=scan_limit,
+                    only_20cm=False  # 包含主板和20cm
+                )
+                scan_result = {
+                    '数据状态': '正常',
+                    '扫描数量': len(results) if results else 0,
+                    '符合条件数量': len(results) if results else 0,
+                    '半路股票列表': results if results else []
+                }
         elif "低吸" in current_mode:
             with st.spinner('🛡️ 正在扫描低吸机会 (活跃股 TOP{})...'.format(scan_limit)):
                 from logic.low_suction_engine import get_low_suction_engine
@@ -591,9 +616,12 @@ def render_dragon_strategy_tab(db, config):
             elif "趋势" in current_mode:
                 st.success(f"扫描完成！共扫描 {scan_result['扫描数量']} 只股票，发现 {scan_result['符合条件数量']} 只符合趋势中军特征")
                 stock_list_key = '趋势股票列表'
-            elif "半路" in current_mode:
-                st.success(f"扫描完成！共扫描 {scan_result['扫描数量']} 只股票，发现 {scan_result['符合条件数量']} 只半路板机会")
+            elif "激进半路" in current_mode:
+                st.success(f"扫描完成！共扫描 {scan_result['扫描数量']} 只股票，发现 {scan_result['符合条件数量']} 只激进半路板机会")
                 stock_list_key = '半路板列表'
+            elif "保守半路" in current_mode:
+                st.success(f"扫描完成！共扫描 {scan_result['扫描数量']} 只股票，发现 {scan_result['符合条件数量']} 只保守半路机会")
+                stock_list_key = '半路股票列表'
             elif "低吸" in current_mode:
                 st.success(f"扫描完成！共扫描 {scan_result['扫描数量']} 只股票，发现 {scan_result['符合条件数量']} 只低吸机会")
                 stock_list_key = '低吸股票列表'
@@ -797,7 +825,7 @@ def render_dragon_strategy_tab(db, config):
                                 st.text(f"• 炸板次数: {stock['signal']['explosion_count']}")
                                 st.text(f"• 回封时间: {stock['signal']['reseal_time']}")
                 
-                else:  # 半路战法
+                else:  # 激进半路或保守半路
                     strong_halfway = [s for s in stocks if s['评分'] >= 80]
                     potential_halfway = [s for s in stocks if 70 <= s['评分'] < 80]
                     weak_halfway = [s for s in stocks if 60 <= s['评分'] < 70]
@@ -852,7 +880,7 @@ def render_dragon_strategy_tab(db, config):
                     st.warning("📋 建议：降低涨幅要求或调整过滤条件，重新扫描")
                 elif "趋势" in current_mode:
                     st.warning("📋 建议：降低评分要求或调整过滤条件，重新扫描")
-                else:  # 半路战法
+                else:  # 激进半路或保守半路
                     st.warning("📋 建议：降低评分要求或调整过滤条件，重新扫描")
                 
                 # 显示统计信息
