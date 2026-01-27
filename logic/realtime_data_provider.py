@@ -36,6 +36,46 @@ class RealtimeDataProvider(DataProvider):
     def __init__(self, **kwargs):
         """初始化实时数据提供者"""
         super().__init__()
+
+        # 🚨 V19.13: 强制清理代理配置，防止连接池爆满
+        import os
+        for key in ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy']:
+            os.environ.pop(key, None)
+        os.environ['NO_PROXY'] = '*'
+
+        # 🚨 V19.13: 初始化 Session 并扩容连接池
+        try:
+            import requests
+            from requests.adapters import HTTPAdapter
+
+            self._requests_session = requests.Session()
+
+            # ⚡ 关键改动：把连接池撑大到 200，并发随便跑
+            adapter = HTTPAdapter(
+                pool_connections=200,  # 允许连接 200 个不同主机
+                pool_maxsize=200,      # 每个主机允许 200 个并发
+                max_retries=2          # 失败重试 2 次
+            )
+            self._requests_session.mount("http://", adapter)
+            self._requests_session.mount("https://", adapter)
+
+            self._requests_session.trust_env = False  # 再次确认：不信系统的代理设置
+            self._requests_session.proxies = {}  # 清空代理
+
+            # 伪装头 (模拟 Chrome 浏览器)
+            self._requests_session.headers.update({
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "*/*",
+                "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+                "Connection": "keep-alive",
+                "Referer": "http://quote.eastmoney.com/"
+            })
+
+            logger.info("✅ [V19.13] requests连接池已扩容 (Max=200)，代理已禁用")
+        except ImportError:
+            self._requests_session = None
+            logger.warning("⚠️ [V19.13] requests 未安装，无法创建连接池")
+
         self.timeout = config.API_TIMEOUT
         # 🚀 V19.1 优化：放宽数据保质期阈值，避免网络拥堵时误报数据过期
         self.data_freshness_threshold = 180  # 3分钟（原15秒）

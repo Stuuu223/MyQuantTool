@@ -12,6 +12,9 @@ Author: iFlow CLI
 Version: V19.9
 """
 
+import os
+import sys
+import time
 import pandas as pd
 from typing import Optional, Dict, Any, List
 from logic.logger import get_logger
@@ -190,11 +193,30 @@ class SmartDataManager:
                 import time
                 time.sleep(0.5)
                 
+                # 🆕 V19.13: 临时清空环境变量，防止 akshare 读到残留的代理配置
+                env_backup = os.environ.copy()
+                os.environ.pop('HTTP_PROXY', None)
+                os.environ.pop('HTTPS_PROXY', None)
+                os.environ.pop('http_proxy', None)
+                os.environ.pop('https_proxy', None)
+                os.environ['NO_PROXY'] = '*'
+                
+                # 🆕 V19.13: 禁用requests的代理
+                try:
+                    import requests
+                    requests.Session().proxies = {}
+                    requests.Session().trust_env = False
+                except ImportError:
+                    pass
+                
                 df = self.akshare.stock_zh_a_hist(
                     symbol=stock_code,
                     period=period,
                     adjust="qfq"
                 )
+                
+                # 恢复环境变量（如果需要的话，但在你的场景下不恢复也没事）
+                # os.environ.update(env_backup)
                 
                 if not df.empty:
                     logger.info(f"✅ [基础层-akshare] 获取K线数据成功: {stock_code}")

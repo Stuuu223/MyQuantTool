@@ -16,6 +16,9 @@ Author: iFlow CLI
 Version: V19.0
 """
 
+import os
+import sys
+import time
 import pandas as pd
 import numpy as np
 from typing import Dict, List, Optional
@@ -77,7 +80,8 @@ class MidwayStrategy:
         logger.info(f"🚀 [半路战法] 初始化完成，回看天数: {lookback_days}, 只扫描20cm: {only_20cm}")
 
     def scan_market(self, min_change_pct: float = 3.0, max_change_pct: float = 12.0,
-                   min_score: float = 0.6, stock_limit: int = 50, only_20cm: bool = None) -> List[Dict]:
+                   min_score: float = 0.6, stock_limit: int = 50, only_20cm: bool = None,
+                   use_active_filter: bool = False) -> List[Dict]:
         """
         扫描全市场股票（可选择只扫描20cm标的）
 
@@ -87,20 +91,28 @@ class MidwayStrategy:
             min_score: 最低信号强度（默认0.6）
             stock_limit: 扫描股票数量限制（默认50只）
             only_20cm: 是否只扫描20cm标的（默认None，使用初始化时的设置）
+            use_active_filter: 是否使用活跃股筛选器（默认False，True时先筛选活跃股）
 
         Returns:
             List[Dict]: 符合条件的股票列表
         """
-        # 🛡️【核心修复】单位归一化处理
-        # 如果传入的是 2.5 (即2.5%)，自动转为 0.025
-        # 如果传入的是 0.025，保持不变
-        if min_change_pct > 1.0:
-            min_change_pct /= 100
-        if max_change_pct > 1.0:
-            max_change_pct /= 100
-        
-        logger.info(f"🔍 [半路战法] 归一化后参数: min={min_change_pct:.4f}, max={max_change_pct:.4f}")
-        
+        # 1. 强制类型转换 (防止 UI 传过来字符串)
+        min_p = float(min_change_pct)
+        max_p = float(max_change_pct)
+
+        # 2. 智能归一化 (兼容 2.5 和 0.025)
+        # 如果用户输入 2.5，我就当成 2.5% 处理
+        if min_p > 0.5:
+            min_p /= 100
+        if max_p > 0.5:
+            max_p /= 100
+
+        # 3. 20cm 标的阈值自动放大 (这步很重要，不要漏)
+        min_20cm = min_p * 1.5
+        max_20cm = max_p * 1.5
+
+        logger.info(f"🔎 扫描参数: 主板({min_p:.2%}~{max_p:.2%}), 20cm({min_20cm:.2%}~{max_20cm:.2%})")
+
         # 使用传入的参数或初始化时的设置
         if only_20cm is None:
             only_20cm = self.only_20cm
@@ -109,7 +121,7 @@ class MidwayStrategy:
             logger.info(f"🚀 [半路战法] 开始扫描全市场20cm标的（300/688）...")
         else:
             logger.info(f"🚀 [半路战法] 开始扫描全市场股票（包含主板600/000）...")
-        
+
         try:
             # --- ⚡ 暴力清除代理配置，强制直连 ---
             os.environ.pop("http_proxy", None)
@@ -117,9 +129,41 @@ class MidwayStrategy:
             os.environ.pop("HTTP_PROXY", None)
             os.environ.pop("HTTPS_PROXY", None)
             os.environ['NO_PROXY'] = '*'
-            
-            import akshare as ak
-            stock_list_df = ak.stock_zh_a_spot_em()
+
+            # 🆕 V19.13: 禁用requests的代理，防止连接池爆满
+            try:
+                import requests
+                requests.Session().proxies = {}
+                requests.Session().trust_env = False
+                logger.info("✅ [V19.13] requests代理已禁用，强制直连")
+            except ImportError:
+                pass
+
+            # 🆕 V19.13: 股票池选择
+            if use_active_filter:
+                # 保守半路：先使用活跃股筛选器
+                from logic.active_stock_filter import get_active_stocks
+                logger.info(f"🔍 [半路战法] 使用活跃股筛选器，筛选前 {stock_limit * 2} 只活跃股...")
+                active_stocks = get_active_stocks(
+                    limit=stock_limit * 2,  # 筛选更多股票，给后续筛选留空间
+                    sort_by='amount',
+                    skip_top=30,
+                    min_amplitude=3.0,
+                    only_20cm=only_20cm
+                )
+
+                if not active_stocks:
+                    logger.error("❌ [半路战法] 活跃股筛选器返回空列表")
+                    return []
+
+                # 转换为 DataFrame 格式，兼容后续逻辑
+                stock_list_df = pd.DataFrame(active_stocks)
+                stock_list_df.rename(columns={'code': '代码', 'name': '名称'}, inplace=True)
+                logger.info(f"✅ [半路战法] 活跃股筛选完成，共 {len(stock_list_df)} 只股票")
+            else:
+                # 激进半路：全市场扫描
+                import akshare as ak
+                stock_list_df = ak.stock_zh_a_spot_em()
             
             if stock_list_df.empty:
                 logger.error("❌ [半路战法] 获取股票列表失败")

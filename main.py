@@ -1,13 +1,12 @@
 # =============== 🚨 必须放在最第一行：强制直连 ===============
 import os
 import sys
-# 暴力清除系统代理，防止 requests/akshare 走 Clash
-os.environ.pop("http_proxy", None)
-os.environ.pop("https_proxy", None)
-os.environ.pop("HTTP_PROXY", None)
-os.environ.pop("HTTPS_PROXY", None)
+
+# 🚀 [最高优先级] 强杀代理：必须在 import 其他库之前执行！
+for key in ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy']:
+    os.environ.pop(key, None)
 os.environ['NO_PROXY'] = '*'
-print("🛡️ [System] 已强制清除所有代理配置，使用直连模式启动...")
+print("🛡️ [System] 代理已强制清除，启动直连模式...")
 # ==========================================================
 
 import streamlit as st

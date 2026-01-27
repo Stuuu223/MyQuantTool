@@ -476,7 +476,8 @@ def render_dragon_strategy_tab(db, config):
                     max_change_pct=8.0,  # 主板最大涨幅
                     min_score=0.6,
                     stock_limit=scan_limit,
-                    only_20cm=False  # 包含主板和20cm（20cm会自动扩展到5%-12%）
+                    only_20cm=False,  # 包含主板和20cm（20cm会自动扩展到5%-12%）
+                    use_active_filter=True  # 🆕 V19.13: 使用活跃股筛选器，提高效率
                 )
                 scan_result = {
                     '数据状态': '正常',
