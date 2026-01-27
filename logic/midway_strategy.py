@@ -1123,3 +1123,26 @@ class MidwayStrategy:
             return '中'
         else:
             return '高'
+
+
+# 🆕 V19.11: 添加单例获取函数，供UI模块调用
+_midway_strategy_instance = None
+
+def get_midway_strategy_instance(lookback_days: int = 30, only_20cm: bool = False) -> MidwayStrategy:
+    """
+    获取半路战法单例实例（懒加载）
+    
+    Args:
+        lookback_days: 回看天数
+        only_20cm: 是否只扫描20cm标的
+    
+    Returns:
+        MidwayStrategy: 半路战法实例
+    """
+    global _midway_strategy_instance
+    if _midway_strategy_instance is None:
+        _midway_strategy_instance = MidwayStrategy(
+            lookback_days=lookback_days,
+            only_20cm=only_20cm
+        )
+    return _midway_strategy_instance
