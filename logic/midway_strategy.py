@@ -91,6 +91,16 @@ class MidwayStrategy:
         Returns:
             List[Dict]: 符合条件的股票列表
         """
+        # 🛡️【核心修复】单位归一化处理
+        # 如果传入的是 2.5 (即2.5%)，自动转为 0.025
+        # 如果传入的是 0.025，保持不变
+        if min_change_pct > 1.0:
+            min_change_pct /= 100
+        if max_change_pct > 1.0:
+            max_change_pct /= 100
+        
+        logger.info(f"🔍 [半路战法] 归一化后参数: min={min_change_pct:.4f}, max={max_change_pct:.4f}")
+        
         # 使用传入的参数或初始化时的设置
         if only_20cm is None:
             only_20cm = self.only_20cm
@@ -123,15 +133,16 @@ class MidwayStrategy:
                 ]
                 logger.info(f"🎯 [半路战法] 只扫描20cm标的，筛选后股票: {len(stock_list_df)} 只")
                 
-                # 🆕 V19.11.2: 使用传入的参数动态设置20cm标的的半路区间
+                # 🆕 V19.11.3: 使用传入的参数动态设置20cm标的的半路区间
                 # 20cm涨停，半路区间应该是传入参数的1.5倍（因为20cm的涨幅区间应该比主板大）
-                min_20cm = min_change_pct * 1.5
-                max_20cm = min(max_change_pct * 1.5, 20.0)  # 最大不超过20%
+                # 注意：akshare返回的涨跌幅是百分比格式（例如2.5表示2.5%），所以需要将归一化后的参数转换为百分比
+                min_20cm_pct = min_change_pct * 100 * 1.5
+                max_20cm_pct = max_change_pct * 100 * 1.5
                 stock_list_df = stock_list_df[
-                    (stock_list_df['涨跌幅'] >= min_20cm) & 
-                    (stock_list_df['涨跌幅'] <= max_20cm)
+                    (stock_list_df['涨跌幅'] >= min_20cm_pct) & 
+                    (stock_list_df['涨跌幅'] <= max_20cm_pct)
                 ]
-                logger.info(f"🎯 [半路战法] 20cm标的半路区间({min_20cm:.1f}%-{max_20cm:.1f}%)，筛选后股票: {len(stock_list_df)} 只")
+                logger.info(f"🎯 [半路战法] 20cm标的半路区间({min_20cm_pct:.1f}%-{max_20cm_pct:.1f}%)，筛选后股票: {len(stock_list_df)} 只")
             else:
                 # 扫描全市场股票（包含主板600/000）
                 # 过滤掉ST股票和退市股票
@@ -140,23 +151,26 @@ class MidwayStrategy:
                 ]
                 logger.info(f"🎯 [半路战法] 扫描全市场股票（包含主板），筛选后股票: {len(stock_list_df)} 只")
                 
-                # 🆕 V19.11.2: 使用传入的参数动态设置涨幅区间
+                # 🆕 V19.11.3: 使用传入的参数动态设置涨幅区间
                 # 主板股票（600/000）
                 main_board_mask = stock_list_df['代码'].str.startswith(('600', '000', '001', '002', '003'))
                 
                 # 20cm股票（300/688）
                 cm20_mask = stock_list_df['代码'].str.startswith(('300', '688'))
                 
-                # 🆕 V19.11.2: 动态计算20cm标的的涨幅区间
-                min_20cm = min_change_pct * 1.5
-                max_20cm = min(max_change_pct * 1.5, 20.0)  # 最大不超过20%
+                # 🆕 V19.11.3: 动态计算20cm标的的涨幅区间
+                # 注意：akshare返回的涨跌幅是百分比格式（例如2.5表示2.5%），所以需要将归一化后的参数转换为百分比
+                min_main_pct = min_change_pct * 100
+                max_main_pct = max_change_pct * 100
+                min_20cm_pct = min_change_pct * 100 * 1.5
+                max_20cm_pct = max_change_pct * 100 * 1.5
                 
                 # 应用不同的涨幅区间（使用传入的参数）
                 stock_list_df = stock_list_df[
-                    ((main_board_mask) & (stock_list_df['涨跌幅'] >= min_change_pct) & (stock_list_df['涨跌幅'] <= max_change_pct)) |
-                    ((cm20_mask) & (stock_list_df['涨跌幅'] >= min_20cm) & (stock_list_df['涨跌幅'] <= max_20cm))
+                    ((main_board_mask) & (stock_list_df['涨跌幅'] >= min_main_pct) & (stock_list_df['涨跌幅'] <= max_main_pct)) |
+                    ((cm20_mask) & (stock_list_df['涨跌幅'] >= min_20cm_pct) & (stock_list_df['涨跌幅'] <= max_20cm_pct))
                 ]
-                logger.info(f"🎯 [半路战法] 主板半路区间({min_change_pct:.1f}%-{max_change_pct:.1f}%)，20cm半路区间({min_20cm:.1f}%-{max_20cm:.1f}%)，筛选后股票: {len(stock_list_df)} 只")
+                logger.info(f"🎯 [半路战法] 主板半路区间({min_main_pct:.1f}%-{max_main_pct:.1f}%)，20cm半路区间({min_20cm_pct:.1f}%-{max_20cm_pct:.1f}%)，筛选后股票: {len(stock_list_df)} 只")
             
             # 3. 按成交量排序，取最活跃的N只
             if '成交量' in stock_list_df.columns:
