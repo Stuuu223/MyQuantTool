@@ -118,7 +118,9 @@ class SmartDataManager:
                     'code': code,
                     'name': info.get('name', ''),
                     'price': info.get('now', 0),
+                    'now': info.get('now', 0),  # 兼容easyquotation原始格式
                     'open': info.get('open', 0),
+                    'close': info.get('close', 0),  # 昨日收盘价
                     'high': info.get('high', 0),
                     'low': info.get('low', 0),
                     'volume': info.get('volume', 0),

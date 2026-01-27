@@ -56,7 +56,7 @@ python --version
 if %errorlevel% neq 0 (
     echo Error: Python not found
     pause
-    exit /b 1
+    exit / 1
 )
 echo Python check passed
 echo.
@@ -106,7 +106,7 @@ echo.
 echo Auto-reload enabled:
 echo    - Code changes trigger automatic reload
 echo    - No manual restart needed
-echo    - Press R or click "Rerun" to refresh
+echo    - Press R or click "Rerun to refresh
 echo.
 
 python -m streamlit run main.py
