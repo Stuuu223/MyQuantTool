@@ -1,73 +1,298 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-数据源管理器 - V19.8
+智能数据源管理器 - V19.9 混合动力架构
 
 功能：
-- 管理多个数据源（AkShare, eFinance等）
-- 实现降级策略（Failover）
-- 自动切换到备用数据源
-- 统一的数据接口
+- 三级火箭架构：极速层/基础层/增强层
+- 自动选择最优数据源
+- 接口分层，降低单点故障风险
 
 Author: iFlow CLI
-Version: V19.8
+Version: V19.9
 """
 
 import pandas as pd
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from logic.logger import get_logger
 from logic.api_robust import robust_api_call, rate_limit_decorator
 
 logger = get_logger(__name__)
 
 
-class DataSourceManager:
+class SmartDataManager:
     """
-    数据源管理器
+    智能数据源管理器 - 三级火箭架构
     
-    功能：
-    1. 管理多个数据源
-    2. 实现降级策略（Failover）
-    3. 自动切换到备用数据源
-    4. 统一的数据接口
+    架构设计：
+    1. 极速层（用于盯盘/半路战法）-> 使用 easyquotation
+       - 特点：速度快（毫秒级），不封IP，数据包小
+       - 用途：实时监控现价、监控瞬间成交量、半路战法
+    
+    2. 基础层（用于复盘/低吸战法）-> 使用 efinance
+       - 特点：极其稳定，提供标准的OHLC历史数据
+       - 用途：获取过去N天的均线、计算RSI/KDJ指标、低吸战法
+    
+    3. 增强层（用于DDE/龙头战法）-> 使用 akshare（带缓存）
+       - 特点：数据最全，能爬到"东方财富"算好的DDE和板块资金流
+       - 用途：个股资金流排名、板块资金分析
     """
     
     def __init__(self):
-        """初始化数据源管理器"""
-        self.primary_source = "akshare"
-        self.fallback_source = "efinance"
-        self.current_source = self.primary_source
+        """初始化智能数据源管理器"""
+        self._init_fast_layer()      # 极速层
+        self._init_basic_layer()     # 基础层
+        self._init_enhanced_layer()  # 增强层
         
-        # 初始化数据源
-        self._init_akshare()
-        self._init_efinance()
-        
-        logger.info(f"✅ [数据源管理器] 初始化完成，主源: {self.primary_source}, 备用源: {self.fallback_source}")
+        logger.info("✅ [智能数据源管理器] 三级火箭架构初始化完成")
+        logger.info("   - 极速层: easyquotation（半路战法）")
+        logger.info("   - 基础层: efinance（低吸战法）")
+        logger.info("   - 增强层: akshare（龙头战法，带缓存）")
     
-    def _init_akshare(self):
-        """初始化AkShare数据源"""
+    def _init_fast_layer(self):
+        """初始化极速层（easyquotation）"""
         try:
-            import akshare as ak
-            self.akshare = ak
-            logger.info("✅ [数据源管理器] AkShare 初始化成功")
+            import easyquotation as eq
+            self.easy_q = eq.use('sina')  # 使用新浪行情源
+            logger.info("✅ [极速层] easyquotation 初始化成功")
         except ImportError:
-            logger.warning("⚠️ [数据源管理器] AkShare 未安装，请运行: pip install akshare")
-            self.akshare = None
+            logger.warning("⚠️ [极速层] easyquotation 未安装，请运行: pip install easyquotation")
+            self.easy_q = None
     
-    def _init_efinance(self):
-        """初始化eFinance数据源"""
+    def _init_basic_layer(self):
+        """初始化基础层（efinance）"""
         try:
             import efinance as ef
             self.efinance = ef
-            logger.info("✅ [数据源管理器] eFinance 初始化成功")
+            logger.info("✅ [基础层] efinance 初始化成功")
         except ImportError:
-            logger.warning("⚠️ [数据源管理器] eFinance 未安装，请运行: pip install efinance")
+            logger.warning("⚠️ [基础层] efinance 未安装，请运行: pip install efinance")
             self.efinance = None
+    
+    def _init_enhanced_layer(self):
+        """初始化增强层（akshare）"""
+        try:
+            import akshare as ak
+            self.akshare = ak
+            logger.info("✅ [增强层] akshare 初始化成功")
+        except ImportError:
+            logger.warning("⚠️ [增强层] akshare 未安装，请运行: pip install akshare")
+            self.akshare = None
+    
+    # ==================== 极速层接口（半路战法） ====================
+    
+    @rate_limit_decorator(calls_per_second=10)
+    def get_realtime_price_fast(self, stock_list: List[str]) -> Dict[str, Dict[str, Any]]:
+        """
+        极速层：获取实时价格（半路战法专用）
+        
+        特点：
+        - 只返回价格和瞬时量，速度最快
+        - 使用easyquotation，毫秒级响应
+        - 不封IP，适合高频调用
+        
+        Args:
+            stock_list: 股票代码列表
+        
+        Returns:
+            Dict: 股票实时数据字典
+        """
+        if self.easy_q is None:
+            logger.error("❌ [极速层] easyquotation 未初始化")
+            return {}
+        
+        try:
+            # easyquotation 返回格式：{'sh600000': {'name': '浦发银行', 'now': 10.5, ...}}
+            data = self.easy_q.stocks(stock_list)
+            
+            # 转换为统一格式
+            result = {}
+            for code, info in data.items():
+                result[code] = {
+                    'code': code,
+                    'name': info.get('name', ''),
+                    'price': info.get('now', 0),
+                    'open': info.get('open', 0),
+                    'high': info.get('high', 0),
+                    'low': info.get('low', 0),
+                    'volume': info.get('volume', 0),
+                    'turnover': info.get('turnover', 0),
+                    'time': info.get('time', '')
+                }
+            
+            logger.debug(f"✅ [极速层] 获取实时数据成功: {len(result)} 只股票")
+            return result
+            
+        except Exception as e:
+            logger.error(f"❌ [极速层] 获取实时数据失败: {e}")
+            return {}
+    
+    # ==================== 基础层接口（低吸战法） ====================
+    
+    @robust_api_call(max_retries=3, delay=2, return_empty_df=True)
+    def get_history_kline(self, stock_code: str, period: str = "daily") -> pd.DataFrame:
+        """
+        基础层：获取历史K线数据（低吸战法专用）
+        
+        策略：
+        - 优先用 efinance（更稳，不封IP）
+        - 失败了再用 akshare（备用）
+        
+        Args:
+            stock_code: 股票代码
+            period: 周期（daily, weekly, monthly）
+        
+        Returns:
+            DataFrame: 历史K线数据
+        """
+        # 优先使用 efinance
+        if self.efinance is not None:
+            try:
+                df = self.efinance.stock.get_quote_history(stock_code)
+                
+                if not df.empty:
+                    logger.debug(f"✅ [基础层-efinance] 获取K线数据成功: {stock_code}")
+                    return df
+            except Exception as e:
+                logger.warning(f"⚠️ [基础层-efinance] 获取K线数据失败: {stock_code}, {e}")
+        
+        # 切换到 akshare（备用）
+        if self.akshare is not None:
+            try:
+                logger.info(f"🔄 [基础层] 切换到 akshare 获取K线数据: {stock_code}")
+                df = self.akshare.stock_zh_a_hist(
+                    symbol=stock_code,
+                    period=period,
+                    adjust="qfq"
+                )
+                
+                if not df.empty:
+                    logger.info(f"✅ [基础层-akshare] 获取K线数据成功: {stock_code}")
+                    return df
+            except Exception as e:
+                logger.error(f"❌ [基础层-akshare] 获取K线数据失败: {stock_code}, {e}")
+        
+        # 所有数据源都失败
+        logger.error(f"💀 [基础层] 所有数据源均失效: {stock_code}")
+        return pd.DataFrame()
+    
+    @robust_api_call(max_retries=3, delay=2, return_empty_df=True)
+    def get_realtime_quotes(self, stock_list: List[str]) -> pd.DataFrame:
+        """
+        基础层：获取实时行情（低吸战法专用）
+        
+        使用 efinance，获取更详细的实时数据
+        
+        Args:
+            stock_list: 股票代码列表
+        
+        Returns:
+            DataFrame: 实时行情数据
+        """
+        if self.efinance is not None:
+            try:
+                df = self.efinance.stock.get_realtime_quotes(stock_list)
+                
+                if not df.empty:
+                    logger.debug(f"✅ [基础层-efinance] 获取实时行情成功: {len(df)} 只股票")
+                    return df
+            except Exception as e:
+                logger.warning(f"⚠️ [基础层-efinance] 获取实时行情失败: {e}")
+        
+        # 切换到 akshare（备用）
+        if self.akshare is not None:
+            try:
+                logger.info(f"🔄 [基础层] 切换到 akshare 获取实时行情")
+                df = self.akshare.stock_zh_a_spot_em()
+                
+                if not df.empty:
+                    # 过滤出目标股票
+                    df = df[df['代码'].isin(stock_list)]
+                    logger.info(f"✅ [基础层-akshare] 获取实时行情成功: {len(df)} 只股票")
+                    return df
+            except Exception as e:
+                logger.error(f"❌ [基础层-akshare] 获取实时行情失败: {e}")
+        
+        return pd.DataFrame()
+    
+    # ==================== 增强层接口（龙头战法） ====================
+    
+    @robust_api_call(max_retries=3, delay=2, return_empty_df=True)
+    def get_money_flow(self, stock_code: str, market: str = "sh") -> Optional[Dict[str, Any]]:
+        """
+        增强层：获取个股资金流（龙头战法专用）
+        
+        策略：
+        - 只能用 AkShare（因为它能爬到东方财富算好的DDE）
+        - 必须接受延迟（通过requests_cache缓存3分钟）
+        
+        Args:
+            stock_code: 股票代码
+            market: 市场（sh/sz）
+        
+        Returns:
+            Dict: 资金流数据
+        """
+        if self.akshare is None:
+            logger.error("❌ [增强层] akshare 未初始化")
+            return None
+        
+        try:
+            # AkShare 资金流接口
+            df = self.akshare.stock_individual_fund_flow(
+                stock=stock_code,
+                market=market
+            )
+            
+            if not df.empty:
+                logger.debug(f"✅ [增强层] 获取资金流成功: {stock_code}")
+                return df.iloc[0].to_dict()
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"❌ [增强层] 获取资金流失败: {stock_code}, {e}")
+            return None
+    
+    @robust_api_call(max_retries=3, delay=2, return_empty_df=True)
+    def get_sector_fund_flow(self) -> pd.DataFrame:
+        """
+        增强层：获取板块资金流（龙头战法专用）
+        
+        Args:
+            None
+        
+        Returns:
+            DataFrame: 板块资金流数据
+        """
+        if self.akshare is None:
+            logger.error("❌ [增强层] akshare 未初始化")
+            return pd.DataFrame()
+        
+        try:
+            df = self.akshare.stock_sector_fund_flow()
+            
+            if not df.empty:
+                logger.debug(f"✅ [增强层] 获取板块资金流成功: {len(df)} 个板块")
+                return df
+            
+            return pd.DataFrame()
+            
+        except Exception as e:
+            logger.error(f"❌ [增强层] 获取板块资金流失败: {e}")
+            return pd.DataFrame()
+    
+    # ==================== 通用接口（兼容旧代码） ====================
     
     @robust_api_call(max_retries=3, delay=2, return_empty_df=True)
     def get_stock_realtime_data(self, code: Optional[str] = None) -> pd.DataFrame:
         """
-        获取股票实时数据（支持降级策略）
+        获取股票实时数据（兼容旧代码）
+        
+        策略：
+        - 优先使用极速层（easyquotation）
+        - 失败后使用基础层（efinance）
+        - 最后使用增强层（akshare）
         
         Args:
             code: 股票代码（可选，不传则获取全市场数据）
@@ -75,170 +300,74 @@ class DataSourceManager:
         Returns:
             DataFrame: 股票实时数据
         """
-        # 尝试主数据源
-        if self.akshare is not None:
+        # 1. 尝试极速层（最快）
+        if code and self.easy_q is not None:
             try:
-                if code:
-                    df = self.akshare.stock_zh_a_spot_em()
-                    df = df[df['代码'] == code]
-                else:
-                    df = self.akshare.stock_zh_a_spot_em()
-                
-                if not df.empty:
-                    logger.debug(f"✅ [AkShare] 获取实时数据成功")
+                data = self.easy_q.stocks([code])
+                if data and code in data:
+                    info = data[code]
+                    df = pd.DataFrame([{
+                        '代码': code,
+                        '名称': info.get('name', ''),
+                        '现价': info.get('now', 0),
+                        '开盘价': info.get('open', 0),
+                        '最高价': info.get('high', 0),
+                        '最低价': info.get('low', 0),
+                        '成交量': info.get('volume', 0),
+                        '成交额': info.get('turnover', 0),
+                        '时间': info.get('time', '')
+                    }])
                     return df
             except Exception as e:
-                logger.warning(f"⚠️ [AkShare] 获取实时数据失败: {e}")
+                logger.debug(f"⚠️ [极速层] 获取实时数据失败: {e}")
         
-        # 切换到备用数据源
+        # 2. 尝试基础层
         if self.efinance is not None:
             try:
-                logger.info(f"🔄 [降级策略] 切换到 eFinance 获取实时数据")
                 if code:
                     df = self.efinance.stock.get_realtime_quotes([code])
                 else:
                     df = self.efinance.stock.get_realtime_quotes()
                 
                 if not df.empty:
-                    logger.info(f"✅ [eFinance] 获取实时数据成功")
+                    logger.debug(f"✅ [基础层] 获取实时数据成功")
                     return df
             except Exception as e:
-                logger.error(f"❌ [eFinance] 获取实时数据失败: {e}")
+                logger.warning(f"⚠️ [基础层] 获取实时数据失败: {e}")
         
-        # 所有数据源都失败
-        logger.error(f"💀 [数据源管理器] 所有数据源均失效")
-        return pd.DataFrame()
-    
-    @robust_api_call(max_retries=3, delay=2, return_empty_df=True)
-    def get_stock_history_data(self, code: str, period: str = "daily", 
-                               adjust: str = "qfq") -> pd.DataFrame:
-        """
-        获取股票历史数据（支持降级策略）
-        
-        Args:
-            code: 股票代码
-            period: 周期（daily, weekly, monthly）
-            adjust: 复权方式（qfq: 前复权, hfq: 后复权, none: 不复权）
-        
-        Returns:
-            DataFrame: 历史数据
-        """
-        # 尝试主数据源
-        if self.akshare is not None:
-            try:
-                df = self.akshare.stock_zh_a_hist(
-                    symbol=code,
-                    period=period,
-                    adjust=adjust
-                )
-                
-                if not df.empty:
-                    logger.debug(f"✅ [AkShare] 获取历史数据成功: {code}")
-                    return df
-            except Exception as e:
-                logger.warning(f"⚠️ [AkShare] 获取历史数据失败: {code}, {e}")
-        
-        # 切换到备用数据源
-        if self.efinance is not None:
-            try:
-                logger.info(f"🔄 [降级策略] 切换到 eFinance 获取历史数据: {code}")
-                df = self.efinance.stock.get_quote_history(code)
-                
-                if not df.empty:
-                    logger.info(f"✅ [eFinance] 获取历史数据成功: {code}")
-                    return df
-            except Exception as e:
-                logger.error(f"❌ [eFinance] 获取历史数据失败: {code}, {e}")
-        
-        # 所有数据源都失败
-        logger.error(f"💀 [数据源管理器] 所有数据源均失效: {code}")
-        return pd.DataFrame()
-    
-    @robust_api_call(max_retries=3, delay=2, return_empty_df=True)
-    def get_sector_data(self) -> pd.DataFrame:
-        """
-        获取板块数据（支持降级策略）
-        
-        Returns:
-            DataFrame: 板块数据
-        """
-        # 尝试主数据源
-        if self.akshare is not None:
-            try:
-                df = self.akshare.stock_board_industry_name_em()
-                
-                if not df.empty:
-                    logger.debug(f"✅ [AkShare] 获取板块数据成功")
-                    return df
-            except Exception as e:
-                logger.warning(f"⚠️ [AkShare] 获取板块数据失败: {e}")
-        
-        # 切换到备用数据源
-        if self.efinance is not None:
-            try:
-                logger.info(f"🔄 [降级策略] 切换到 eFinance 获取板块数据")
-                df = self.efinance.stock.get_industry_list()
-                
-                if not df.empty:
-                    logger.info(f"✅ [eFinance] 获取板块数据成功")
-                    return df
-            except Exception as e:
-                logger.error(f"❌ [eFinance] 获取板块数据失败: {e}")
-        
-        # 所有数据源都失败
-        logger.error(f"💀 [数据源管理器] 所有数据源均失效")
-        return pd.DataFrame()
-    
-    @rate_limit_decorator(calls_per_second=3)
-    def get_stock_info(self, code: str) -> Optional[Dict[str, Any]]:
-        """
-        获取股票信息（带速率限制）
-        
-        Args:
-            code: 股票代码
-        
-        Returns:
-            Dict: 股票信息
-        """
-        # 尝试主数据源
+        # 3. 尝试增强层
         if self.akshare is not None:
             try:
                 df = self.akshare.stock_zh_a_spot_em()
-                df = df[df['代码'] == code]
                 
                 if not df.empty:
-                    return df.iloc[0].to_dict()
+                    if code:
+                        df = df[df['代码'] == code]
+                    
+                    logger.debug(f"✅ [增强层] 获取实时数据成功")
+                    return df
             except Exception as e:
-                logger.warning(f"⚠️ [AkShare] 获取股票信息失败: {code}, {e}")
+                logger.error(f"❌ [增强层] 获取实时数据失败: {e}")
         
-        # 切换到备用数据源
-        if self.efinance is not None:
-            try:
-                logger.info(f"🔄 [降级策略] 切换到 eFinance 获取股票信息: {code}")
-                df = self.efinance.stock.get_realtime_quotes([code])
-                
-                if not df.empty:
-                    return df.iloc[0].to_dict()
-            except Exception as e:
-                logger.error(f"❌ [eFinance] 获取股票信息失败: {code}, {e}")
-        
-        # 所有数据源都失败
-        logger.error(f"💀 [数据源管理器] 所有数据源均失效: {code}")
-        return None
+        return pd.DataFrame()
 
 
 # 全局单例
-_data_source_manager = None
+_smart_data_manager = None
 
 
-def get_data_source_manager() -> DataSourceManager:
+def get_smart_data_manager() -> SmartDataManager:
     """
-    获取数据源管理器单例
+    获取智能数据源管理器单例
     
     Returns:
-        DataSourceManager: 数据源管理器实例
+        SmartDataManager: 智能数据源管理器实例
     """
-    global _data_source_manager
-    if _data_source_manager is None:
-        _data_source_manager = DataSourceManager()
-    return _data_source_manager
+    global _smart_data_manager
+    if _smart_data_manager is None:
+        _smart_data_manager = SmartDataManager()
+    return _smart_data_manager
+
+
+# 为了兼容性，保留旧的 DataSourceManager 类名
+DataSourceManager = SmartDataManager

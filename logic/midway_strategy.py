@@ -64,7 +64,15 @@ class MidwayStrategy:
         self.lookback_days = lookback_days
         self.only_20cm = only_20cm
         self.db = DataManager()
-        self.money_flow = MoneyFlowAdapter()
+        
+        # 🆕 V19.9: 绑定极速层（easyquotation）用于半路战法
+        try:
+            import easyquotation as eq
+            self.easy_q = eq.use('sina')  # 使用新浪行情源
+            logger.info("✅ [半路战法] 极速层（easyquotation）初始化成功")
+        except ImportError:
+            logger.warning("⚠️ [半路战法] easyquotation 未安装，请运行: pip install easyquotation")
+            self.easy_q = None
         
         logger.info(f"🚀 [半路战法] 初始化完成，回看天数: {lookback_days}, 只扫描20cm: {only_20cm}")
 
@@ -161,10 +169,39 @@ class MidwayStrategy:
             
             logger.info(f"✅ [半路战法] 初筛完成，待分析股票: {len(stock_list_df)} 只")
             
-            # 5. 获取实时数据
+            # 5. 获取实时数据（🆕 V19.9: 使用极速层easyquotation）
             stock_codes = stock_list_df['代码'].tolist()
             logger.info(f"🔄 [半路战法] 开始获取实时数据，股票数量: {len(stock_codes)}")
-            realtime_data = self.db.get_fast_price(stock_codes)
+            
+            # 🆕 V19.9: 使用极速层（easyquotation）获取实时数据
+            realtime_data = {}
+            if self.easy_q:
+                try:
+                    # easyquotation 返回格式：{'sh600000': {'name': '浦发银行', 'now': 10.5, ...}}
+                    easy_data = self.easy_q.stocks(stock_codes)
+                    
+                    # 转换为统一格式
+                    for code, info in easy_data.items():
+                        realtime_data[code] = {
+                            'code': code,
+                            'name': info.get('name', ''),
+                            'price': info.get('now', 0),
+                            'open': info.get('open', 0),
+                            'pre_close': info.get('close', 0),
+                            'high': info.get('high', 0),
+                            'low': info.get('low', 0),
+                            'volume': info.get('volume', 0),
+                            'turnover': info.get('turnover', 0),
+                            'time': info.get('time', '')
+                        }
+                    
+                    logger.info(f"✅ [半路战法-极速层] 实时数据获取完成，成功获取 {len(realtime_data)} 只股票数据")
+                except Exception as e:
+                    logger.error(f"❌ [半路战法-极速层] 获取实时数据失败: {e}")
+            else:
+                # 降级到DataManager
+                logger.warning("⚠️ [半路战法] easyquotation 未初始化，降级到DataManager")
+                realtime_data = self.db.get_fast_price(stock_codes)
             
             if not realtime_data:
                 logger.error(f"❌ [半路战法] 获取实时数据失败，可能原因：")
@@ -433,10 +470,34 @@ class MidwayStrategy:
         if latest['rsi'] > 80:
             return None
         
-        # 🆕 V19.8: 检查Price > VWAP（现价 > 分时均价线）
+        # 🆕 V19.9: 检查Price > VWAP（现价 > 分时均价线）
         # 这是半路板最核心的支撑逻辑。如果股价在均价线下方，涨幅再好也是诱多
         if latest['close'] <= latest['vwap']:
             return None
+        
+        # 🆕 V19.9: DDE确认（大单净量确认）
+        # 半路板必须有主力点火。没有真金白银流入的半路板都是耍流氓
+        # 要求主力净流入 > 500万
+        if self.akshare is not None:
+            try:
+                # 获取个股资金流
+                df_dde = self.akshare.stock_individual_fund_flow(
+                    stock=code,
+                    market="sh" if code.startswith('6') else "sz"
+                )
+                
+                if not df_dde.empty:
+                    main_net_inflow = df_dde.iloc[0].get('今日主力净流入-净额', 0)
+                    
+                    # 要求主力净流入 > 500万
+                    if main_net_inflow < 5000000:
+                        logger.debug(f"⚠️ [半路战法] {code} DDE不足: {main_net_inflow/10000:.1f}万")
+                        return None
+                    
+                    logger.debug(f"✅ [半路战法] {code} DDE确认: {main_net_inflow/10000:.1f}万")
+            except Exception as e:
+                logger.warning(f"⚠️ [半路战法] 获取DDE数据失败: {code}, {e}")
+                # DDE数据获取失败，降级为纯形态模式
         
         # 计算信号强度
         signal_strength = 0.6

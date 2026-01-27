@@ -35,6 +35,15 @@ class DragonTactics:
         self._sector_analyzer = None
         self._market_sentiment = None  # 🆕 V19.8: 市场情绪分析器
         
+        # 🆕 V19.9: 绑定增强层（akshare）用于龙头战法
+        try:
+            import akshare as ak
+            self.akshare = ak
+            logger.info("✅ [龙头战法] 增强层（akshare）初始化成功")
+        except ImportError:
+            logger.warning("⚠️ [龙头战法] akshare 未安装，请运行: pip install akshare")
+            self.akshare = None
+        
         if db:
             try:
                 from logic.sector_analysis import FastSectorAnalyzer

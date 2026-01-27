@@ -47,6 +47,16 @@ class LowSuctionEngine:
         self.data_manager = DataManager()
         self.money_flow_master = get_money_flow_master()
         self._sector_analyzer = None
+        
+        # 🆕 V19.9: 绑定基础层（efinance）用于低吸战法
+        try:
+            import efinance as ef
+            self.efinance = ef
+            logger.info("✅ [低吸战法] 基础层（efinance）初始化成功")
+        except ImportError:
+            logger.warning("⚠️ [低吸战法] efinance 未安装，请运行: pip install efinance")
+            self.efinance = None
+        
         try:
             from logic.sector_analysis import FastSectorAnalyzer
             self._sector_analyzer = FastSectorAnalyzer(self.data_manager)
@@ -90,7 +100,20 @@ class LowSuctionEngine:
         }
 
         try:
-            kline_data = self.data_manager.get_history_data(symbol=stock_code, period='daily')
+            # 🆕 V19.9: 优先使用基础层（efinance）获取历史K线数据
+            kline_data = None
+            
+            if self.efinance:
+                try:
+                    kline_data = self.efinance.stock.get_quote_history(stock_code)
+                    logger.debug(f"✅ [低吸战法-基础层] 获取K线数据成功: {stock_code}")
+                except Exception as e:
+                    logger.warning(f"⚠️ [低吸战法-基础层] 获取K线数据失败: {stock_code}, {e}")
+            
+            # 降级到DataManager
+            if kline_data is None or kline_data.empty:
+                kline_data = self.data_manager.get_history_data(symbol=stock_code, period='daily')
+            
             if kline_data is None or kline_data.empty or len(kline_data) < 5:
                 result['reason'] = 'K线数据不足'
                 return result
