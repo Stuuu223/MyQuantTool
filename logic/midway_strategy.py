@@ -101,7 +101,13 @@ class MidwayStrategy:
             logger.info(f"🚀 [半路战法] 开始扫描全市场股票（包含主板600/000）...")
         
         try:
-            # 1. 获取全市场股票列表
+            # --- ⚡ 暴力清除代理配置，强制直连 ---
+            os.environ.pop("http_proxy", None)
+            os.environ.pop("https_proxy", None)
+            os.environ.pop("HTTP_PROXY", None)
+            os.environ.pop("HTTPS_PROXY", None)
+            os.environ['NO_PROXY'] = '*'
+            
             import akshare as ak
             stock_list_df = ak.stock_zh_a_spot_em()
             

@@ -439,6 +439,14 @@ class RealtimeDataProvider(DataProvider):
             DataFrame: 历史数据
         """
         try:
+            # --- ⚡ 暴力清除代理配置，强制直连 ---
+            import os
+            os.environ.pop("http_proxy", None)
+            os.environ.pop("https_proxy", None)
+            os.environ.pop("HTTP_PROXY", None)
+            os.environ.pop("HTTPS_PROXY", None)
+            os.environ['NO_PROXY'] = '*'
+            
             import akshare as ak
             import pandas as pd
             
