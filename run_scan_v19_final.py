@@ -19,6 +19,14 @@ import time
 # 添加项目路径
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# --- ⚡ 暴力清除所有代理设置，强制直连 ---
+os.environ.pop("http_proxy", None)
+os.environ.pop("https_proxy", None)
+os.environ.pop("HTTP_PROXY", None)
+os.environ.pop("HTTPS_PROXY", None)
+os.environ['NO_PROXY'] = '*'  # 告诉 Python 任何地址都不走代理
+print("🛡️ 已强制清除所有系统代理配置，准备使用本机/热点IP直连...")
+
 from logic.data_source_manager import DataSourceManager
 from logic.midway_strategy_v19_final import MidwayStrategy
 from logic.logger import get_logger
