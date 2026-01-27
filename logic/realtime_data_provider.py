@@ -438,48 +438,63 @@ class RealtimeDataProvider(DataProvider):
         Returns:
             DataFrame: 历史数据
         """
-        try:
-            # --- ⚡ 暴力清除代理配置，强制直连 ---
-            import os
-            os.environ.pop("http_proxy", None)
-            os.environ.pop("https_proxy", None)
-            os.environ.pop("HTTP_PROXY", None)
-            os.environ.pop("HTTPS_PROXY", None)
-            os.environ['NO_PROXY'] = '*'
-            
-            import akshare as ak
-            import pandas as pd
-            
-            # 转换股票代码格式（AkShare 使用 'sh' 或 'sz' 前缀）
-            if symbol.startswith('6'):
-                ak_symbol = f'sh{symbol}'
-            else:
-                ak_symbol = f'sz{symbol}'
-            
-            # 获取历史数据
-            df = ak.stock_zh_a_hist(symbol=ak_symbol, period=period, adjust=adjust)
-            
-            # 重命名列以保持一致性
-            if not df.empty:
-                df.rename(columns={
-                    '日期': 'date',
-                    '开盘': 'open',
-                    '收盘': 'close',
-                    '最高': 'high',
-                    '最低': 'low',
-                    '成交量': 'volume',
-                    '成交额': 'amount',
-                    '涨跌幅': 'change_pct',
-                    '涨跌额': 'change_amount'
-                }, inplace=True)
-            
-            return df
+        # 🆕 V19.11.5: 添加重试机制
+        max_retries = 3
+        retry_delay = 1  # 秒
         
-        except Exception as e:
-            logger.error(f"获取历史数据失败: {e}")
-            # 返回空的 DataFrame
-            import pandas as pd
-            return pd.DataFrame()
+        for attempt in range(max_retries):
+            try:
+                # --- ⚡ 暴力清除代理配置，强制直连 ---
+                import os
+                os.environ.pop("http_proxy", None)
+                os.environ.pop("https_proxy", None)
+                os.environ.pop("HTTP_PROXY", None)
+                os.environ.pop("HTTPS_PROXY", None)
+                os.environ['NO_PROXY'] = '*'
+                
+                import akshare as ak
+                import pandas as pd
+                import time
+                
+                # 转换股票代码格式（AkShare 使用 'sh' 或 'sz' 前缀）
+                if symbol.startswith('6'):
+                    ak_symbol = f'sh{symbol}'
+                else:
+                    ak_symbol = f'sz{symbol}'
+                
+                # 获取历史数据
+                df = ak.stock_zh_a_hist(symbol=ak_symbol, period=period, adjust=adjust)
+                
+                # 重命名列以保持一致性
+                if not df.empty:
+                    df.rename(columns={
+                        '日期': 'date',
+                        '开盘': 'open',
+                        '收盘': 'close',
+                        '最高': 'high',
+                        '最低': 'low',
+                        '成交量': 'volume',
+                        '成交额': 'amount',
+                        '涨跌幅': 'change_pct',
+                        '涨跌额': 'change_amount'
+                    }, inplace=True)
+                
+                logger.debug(f"✅ [重试{attempt+1}/{max_retries}] {symbol} 历史数据获取成功")
+                return df
+            
+            except Exception as e:
+                logger.warning(f"⚠️ [重试{attempt+1}/{max_retries}] {symbol} 历史数据获取失败: {e}")
+                
+                # 如果不是最后一次重试，等待后重试
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # 指数退避
+                else:
+                    logger.error(f"❌ [重试{max_retries}/{max_retries}] {symbol} 历史数据获取失败（已达最大重试次数）")
+        
+        # 返回空的 DataFrame
+        import pandas as pd
+        return pd.DataFrame()
     
     def update_stock_priority(self, stock_code: str, priority_score: float):
         """
