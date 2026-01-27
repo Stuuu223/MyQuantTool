@@ -475,9 +475,13 @@ class MidwayStrategy:
         if latest['close'] <= latest['vwap']:
             return None
         
-        # 🆕 V19.9: DDE确认（大单净量确认）
+        # 🆕 V19.10: DDE确认（大单净量确认）- 修复版
         # 半路板必须有主力点火。没有真金白银流入的半路板都是耍流氓
         # 要求主力净流入 > 500万
+        # 🛠️ 修复：如果DDE数据获取失败，继续执行，标记为纯形态模式，而不是返回None
+        dde_mode = "纯形态模式"  # 默认为纯形态模式
+        main_net_inflow = 0
+        
         if self.akshare is not None:
             try:
                 # 获取个股资金流
@@ -490,14 +494,17 @@ class MidwayStrategy:
                     main_net_inflow = df_dde.iloc[0].get('今日主力净流入-净额', 0)
                     
                     # 要求主力净流入 > 500万
-                    if main_net_inflow < 5000000:
-                        logger.debug(f"⚠️ [半路战法] {code} DDE不足: {main_net_inflow/10000:.1f}万")
-                        return None
-                    
-                    logger.debug(f"✅ [半路战法] {code} DDE确认: {main_net_inflow/10000:.1f}万")
+                    if main_net_inflow >= 5000000:
+                        dde_mode = "DDE确认模式"
+                        logger.debug(f"✅ [半路战法] {code} DDE确认: {main_net_inflow/10000:.1f}万")
+                    else:
+                        logger.debug(f"⚠️ [半路战法] {code} DDE不足: {main_net_inflow/10000:.1f}万，降级为纯形态模式")
+                else:
+                    logger.debug(f"⚠️ [半路战法] {code} DDE数据为空，降级为纯形态模式")
             except Exception as e:
-                logger.warning(f"⚠️ [半路战法] 获取DDE数据失败: {code}, {e}")
-                # DDE数据获取失败，降级为纯形态模式
+                logger.warning(f"⚠️ [半路战法] 获取DDE数据失败: {code}, {e}，降级为纯形态模式")
+        else:
+            logger.debug(f"⚠️ [半路战法] akshare未初始化，降级为纯形态模式")
         
         # 计算信号强度
         signal_strength = 0.6
@@ -530,6 +537,12 @@ class MidwayStrategy:
             f"成交量放大{latest['volume']/df['volume_ma5'].iloc[-1]:.2f}倍",
             f"RSI={latest['rsi']:.1f}"
         ]
+        
+        # 🆕 V19.10: 添加DDE模式标记
+        if dde_mode == "DDE确认模式":
+            reasons.append(f"✅ DDE确认: {main_net_inflow/10000:.1f}万")
+        else:
+            reasons.append(f"⚠️ {dde_mode}(DDE数据缺失)")
         
         # 🚀 V19.4 盲扫模式：DDE 加分逻辑
         if dde_net > 0:
@@ -585,6 +598,27 @@ class MidwayStrategy:
         if latest['close'] <= latest['vwap']:
             return None
         
+        # 🆕 V19.10: DDE确认（大单净量确认）- 修复版
+        dde_mode = "纯形态模式"
+        main_net_inflow = 0
+        
+        if self.akshare is not None:
+            try:
+                df_dde = self.akshare.stock_individual_fund_flow(
+                    stock=code,
+                    market="sh" if code.startswith('6') else "sz"
+                )
+                
+                if not df_dde.empty:
+                    main_net_inflow = df_dde.iloc[0].get('今日主力净流入-净额', 0)
+                    if main_net_inflow >= 5000000:
+                        dde_mode = "DDE确认模式"
+                        logger.debug(f"✅ [半路战法] {code} DDE确认: {main_net_inflow/10000:.1f}万")
+                    else:
+                        logger.debug(f"⚠️ [半路战法] {code} DDE不足: {main_net_inflow/10000:.1f}万，降级为纯形态模式")
+            except Exception as e:
+                logger.warning(f"⚠️ [半路战法] 获取DDE数据失败: {code}, {e}，降级为纯形态模式")
+        
         signal_strength = 0.5
         
         if prev_upper_shadow > prev_body * 3:
@@ -620,6 +654,12 @@ class MidwayStrategy:
             f"突破前高{prev['high']:.2f}",
             f"成交量放大{latest['volume']/df['volume_ma5'].iloc[-1]:.2f}倍"
         ]
+        
+        # 🆕 V19.10: 添加DDE模式标记
+        if dde_mode == "DDE确认模式":
+            reasons.append(f"✅ DDE确认: {main_net_inflow/10000:.1f}万")
+        else:
+            reasons.append(f"⚠️ {dde_mode}(DDE数据缺失)")
         
         # 🚀 V19.4 盲扫模式：DDE 加分逻辑
         if dde_net > 0:
@@ -671,6 +711,27 @@ class MidwayStrategy:
         if latest['rsi'] > 75:
             return None
         
+        # 🆕 V19.10: DDE确认（大单净量确认）- 修复版
+        dde_mode = "纯形态模式"
+        main_net_inflow = 0
+        
+        if self.akshare is not None:
+            try:
+                df_dde = self.akshare.stock_individual_fund_flow(
+                    stock=code,
+                    market="sh" if code.startswith('6') else "sz"
+                )
+                
+                if not df_dde.empty:
+                    main_net_inflow = df_dde.iloc[0].get('今日主力净流入-净额', 0)
+                    if main_net_inflow >= 5000000:
+                        dde_mode = "DDE确认模式"
+                        logger.debug(f"✅ [半路战法] {code} DDE确认: {main_net_inflow/10000:.1f}万")
+                    else:
+                        logger.debug(f"⚠️ [半路战法] {code} DDE不足: {main_net_inflow/10000:.1f}万，降级为纯形态模式")
+            except Exception as e:
+                logger.warning(f"⚠️ [半路战法] 获取DDE数据失败: {code}, {e}，降级为纯形态模式")
+        
         signal_strength = 0.5
         
         if prev['volume'] < df['volume_ma5'].iloc[-2] * 0.7:
@@ -706,6 +767,12 @@ class MidwayStrategy:
             f"今日放量反包，成交量放大{latest['volume']/df['volume_ma5'].iloc[-1]:.2f}倍",
             f"RSI={latest['rsi']:.1f}"
         ]
+        
+        # 🆕 V19.10: 添加DDE模式标记
+        if dde_mode == "DDE确认模式":
+            reasons.append(f"✅ DDE确认: {main_net_inflow/10000:.1f}万")
+        else:
+            reasons.append(f"⚠️ {dde_mode}(DDE数据缺失)")
         
         # 🚀 V19.4 盲扫模式：DDE 加分逻辑
         if dde_net > 0:
@@ -765,6 +832,27 @@ class MidwayStrategy:
         if latest['rsi'] > 80:
             return None
         
+        # 🆕 V19.10: DDE确认（大单净量确认）- 修复版
+        dde_mode = "纯形态模式"
+        main_net_inflow = 0
+        
+        if self.akshare is not None:
+            try:
+                df_dde = self.akshare.stock_individual_fund_flow(
+                    stock=code,
+                    market="sh" if code.startswith('6') else "sz"
+                )
+                
+                if not df_dde.empty:
+                    main_net_inflow = df_dde.iloc[0].get('今日主力净流入-净额', 0)
+                    if main_net_inflow >= 5000000:
+                        dde_mode = "DDE确认模式"
+                        logger.debug(f"✅ [半路战法] {code} DDE确认: {main_net_inflow/10000:.1f}万")
+                    else:
+                        logger.debug(f"⚠️ [半路战法] {code} DDE不足: {main_net_inflow/10000:.1f}万，降级为纯形态模式")
+            except Exception as e:
+                logger.warning(f"⚠️ [半路战法] 获取DDE数据失败: {code}, {e}，降级为纯形态模式")
+        
         signal_strength = 0.5
         
         if prev_upper_shadow > prev_body:
@@ -800,6 +888,12 @@ class MidwayStrategy:
             f"昨日调整后今日上涨{abs(latest['close']-prev['close'])/prev['close']*100:.1f}%",
             f"成交量放大{latest['volume']/df['volume_ma5'].iloc[-1]:.2f}倍"
         ]
+        
+        # 🆕 V19.10: 添加DDE模式标记
+        if dde_mode == "DDE确认模式":
+            reasons.append(f"✅ DDE确认: {main_net_inflow/10000:.1f}万")
+        else:
+            reasons.append(f"⚠️ {dde_mode}(DDE数据缺失)")
         
         # 🚀 V19.4 盲扫模式：DDE 加分逻辑
         if dde_net > 0:
@@ -912,13 +1006,26 @@ class MidwayStrategy:
         if latest['rsi'] > 80:
             return None
 
-        # 🚀 V19.4 盲扫模式：解除资金流否决权
-        # 如果 DDE 为 0 (说明接口挂了)，暂时放行，标记为 [无资金数据]
-        if dde_net < 0:
-            return None  # DDE流出才拒绝
-        elif dde_net == 0:
-            # DDE 为 0，降级为纯价格形态模式
-            pass  # 不做任何操作，继续执行
+        # 🆕 V19.10: DDE确认（大单净量确认）- 修复版
+        dde_mode = "纯形态模式"
+        main_net_inflow = 0
+        
+        if self.akshare is not None:
+            try:
+                df_dde = self.akshare.stock_individual_fund_flow(
+                    stock=code,
+                    market="sh" if code.startswith('6') else "sz"
+                )
+                
+                if not df_dde.empty:
+                    main_net_inflow = df_dde.iloc[0].get('今日主力净流入-净额', 0)
+                    if main_net_inflow >= 5000000:
+                        dde_mode = "DDE确认模式"
+                        logger.debug(f"✅ [半路战法] {code} DDE确认: {main_net_inflow/10000:.1f}万")
+                    else:
+                        logger.debug(f"⚠️ [半路战法] {code} DDE不足: {main_net_inflow/10000:.1f}万，降级为纯形态模式")
+            except Exception as e:
+                logger.warning(f"⚠️ [半路战法] 获取DDE数据失败: {code}, {e}，降级为纯形态模式")
 
         # 6. 计算信号强度
         signal_strength = 0.6
@@ -965,6 +1072,12 @@ class MidwayStrategy:
             f"成交量放大{volume_ratio:.2f}倍"
         ]
 
+        # 🆕 V19.10: 添加DDE模式标记
+        if dde_mode == "DDE确认模式":
+            reasons.append(f"✅ DDE确认: {main_net_inflow/10000:.1f}万")
+        else:
+            reasons.append(f"⚠️ {dde_mode}(DDE数据缺失)")
+        
         # 🚀 V19.4 盲扫模式：DDE 加分逻辑
         if dde_net > 0:
             reasons.append(f"DDE净流入{dde_net/10000:.1f}万")

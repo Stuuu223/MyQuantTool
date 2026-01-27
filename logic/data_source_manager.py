@@ -166,6 +166,11 @@ class SmartDataManager:
         if self.akshare is not None:
             try:
                 logger.info(f"🔄 [基础层] 切换到 akshare 获取K线数据: {stock_code}")
+                
+                # 🆕 V19.10: 添加sleep规避IP封禁
+                import time
+                time.sleep(0.5)
+                
                 df = self.akshare.stock_zh_a_hist(
                     symbol=stock_code,
                     period=period,
@@ -214,6 +219,11 @@ class SmartDataManager:
         if self.akshare is not None:
             try:
                 logger.info(f"🔄 [基础层] 切换到 akshare 获取实时行情")
+                
+                # 🆕 V19.10: 添加sleep规避IP封禁
+                import time
+                time.sleep(0.5)
+                
                 df = self.akshare.stock_zh_a_spot_em()
                 
                 if not df.empty:
@@ -255,6 +265,10 @@ class SmartDataManager:
             return None
         
         try:
+            # 🆕 V19.10: 添加sleep规避IP封禁
+            import time
+            time.sleep(0.5)
+            
             # AkShare 资金流接口
             df = self.akshare.stock_individual_fund_flow(
                 stock=stock_code,
@@ -292,6 +306,10 @@ class SmartDataManager:
             return pd.DataFrame()
         
         try:
+            # 🆕 V19.10: 添加sleep规避IP封禁
+            import time
+            time.sleep(0.5)
+            
             df = self.akshare.stock_sector_fund_flow()
             
             if not df.empty:
@@ -364,6 +382,10 @@ class SmartDataManager:
         # 3. 尝试增强层
         if self.akshare is not None:
             try:
+                # 🆕 V19.10: 添加sleep规避IP封禁
+                import time
+                time.sleep(0.5)
+                
                 df = self.akshare.stock_zh_a_spot_em()
                 
                 if not df.empty:
