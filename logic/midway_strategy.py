@@ -357,6 +357,33 @@ class MidwayStrategy:
                     'confidence': s.confidence
                 })
             
+            # ================= 💾 强制存档逻辑 (V19.11.6 新增) =================
+            if result:
+                try:
+                    # 1. 转为 DataFrame
+                    df_save = pd.DataFrame(result)
+                    
+                    # 2. 生成文件名 (带时间戳)
+                    timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+                    save_path = f"data/scan_results/midway_{timestamp}.csv"
+                    
+                    # 3. 确保目录存在
+                    os.makedirs("data/scan_results", exist_ok=True)
+                    
+                    # 4. 存 CSV (Excel也能打开)
+                    df_save.to_csv(save_path, index=False, encoding='utf-8-sig')
+                    logger.info(f"💾 [半路战法] 扫描结果已保存至: {save_path}")
+                    
+                    # 5. (可选) 存数据库 - 如果你的 DatabaseManager 是好的
+                    # from logic.database_manager import DatabaseManager
+                    # db = DatabaseManager()
+                    # for res in result:
+                    #     db.save_opportunity(res) 
+                    
+                except Exception as e:
+                    logger.error(f"❌ [半路战法] 存档失败: {e}")
+            # ========================================================
+            
             return result
         
         except Exception as e:
