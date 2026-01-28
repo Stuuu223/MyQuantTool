@@ -19,7 +19,15 @@ Version: V1.1
 
 class IPythonApiClient:
     """占位符类"""
-    def __init__(self, config):
+    def __init__(self, name, config):
+        """
+        初始化 IPythonApiClient 占位符
+
+        Args:
+            name: 客户端名称
+            config: 配置文件路径
+        """
+        self.name = name
         self.config = config
         raise NotImplementedError(
             "IPythonApiClient 需要从 QMT 官方安装目录获取。\n"
