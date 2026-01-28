@@ -126,6 +126,19 @@ class ActiveStockFilter:
                 active_list = []
                 for _, row in df_active.iterrows():
                     stock = {
+                        '代码': row['代码'],
+                        '名称': row['名称'],
+                        '最新价': float(row.get('最新价', 0)) if pd.notna(row.get('最新价')) else 0.0,
+                        '昨收': float(row.get('昨收', 0)) if pd.notna(row.get('昨收')) else 0.0,
+                        '最高': float(row.get('最高', 0)) if pd.notna(row.get('最高')) else 0.0,
+                        '最低': float(row.get('最低', 0)) if pd.notna(row.get('最低')) else 0.0,
+                        '今开': float(row.get('今开', 0)) if pd.notna(row.get('今开')) else 0.0,
+                        '成交量': int(row.get('成交量', 0)) if pd.notna(row.get('成交量')) else 0,
+                        '成交额': float(row.get('成交额', 0)) if pd.notna(row.get('成交额')) else 0.0,
+                        '涨跌幅': float(row.get('涨跌幅', 0)) if pd.notna(row.get('涨跌幅')) else 0.0,
+                        '换手率': float(row.get('换手率', 0)) if pd.notna(row.get('换手率')) else 0.0,
+                        '振幅': float(row.get('振幅', 0)) if '振幅' in row else 0.0,
+                        # 🔥 V19.17: 添加英文字段兼容（EasyQuotation 格式）
                         'code': row['代码'],
                         'name': row['名称'],
                         'price': float(row.get('最新价', 0)) if pd.notna(row.get('最新价')) else 0.0,
@@ -137,7 +150,8 @@ class ActiveStockFilter:
                         'amount': float(row.get('成交额', 0)) if pd.notna(row.get('成交额')) else 0.0,
                         'change_pct': float(row.get('涨跌幅', 0)) if pd.notna(row.get('涨跌幅')) else 0.0,
                         'turnover': float(row.get('换手率', 0)) if pd.notna(row.get('换手率')) else 0.0,
-                        'amplitude': float(row.get('振幅', 0)) if '振幅' in row else 0.0
+                        'now': float(row.get('最新价', 0)) if pd.notna(row.get('最新价')) else 0.0,  # EasyQuotation 兼容
+                        'percent': float(row.get('涨跌幅', 0)) if pd.notna(row.get('涨跌幅')) else 0.0,  # EasyQuotation 兼容
                     }
                     active_list.append(stock)
 

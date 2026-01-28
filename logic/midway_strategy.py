@@ -249,6 +249,21 @@ class MidwayStrategy:
                 logger.error("❌ [半路战法] 获取股票列表失败")
                 return []
             
+            # 🆕 V19.17: 确保数据列存在，避免 KeyError
+            required_columns = ['涨跌幅', '成交量', '成交额']
+            missing_columns = [col for col in required_columns if col not in stock_list_df.columns]
+            
+            if missing_columns:
+                logger.error(f"❌ [半路战法] 缺少必需字段: {', '.join(missing_columns)}")
+                logger.error(f"❌ [半路战法] 可用字段: {', '.join(stock_list_df.columns)}")
+                return []
+            
+            # 🆕 V19.17: 尝试自动计算缺失的涨跌幅字段
+            if '涨跌幅' not in stock_list_df.columns and '最新价' in stock_list_df.columns and '昨收' in stock_list_df.columns:
+                logger.warning(f"⚠️ [半路战法] 缺少'涨跌幅'字段，尝试自动计算...")
+                stock_list_df['涨跌幅'] = ((stock_list_df['最新价'] - stock_list_df['昨收']) / stock_list_df['昨收'] * 100)
+                logger.info(f"✅ [半路战法] 自动计算'涨跌幅'字段成功")
+            
             # 2. 筛选标的（根据only_20cm参数决定是否只扫描20cm标的）
             if only_20cm:
                 # 只扫描20cm标的（创业板300和科创板688）
@@ -262,10 +277,17 @@ class MidwayStrategy:
                 # 🆕 V19.14: 修复涨幅区间计算逻辑，easyquotation 返回的涨跌幅已经是真实的百分比数值
                 min_20cm_pct = min_change_pct * 1.5  # 20cm最小涨幅（例如3.75）
                 max_20cm_pct = max_change_pct * 1.5  # 20cm最大涨幅（例如12.0）
-                stock_list_df = stock_list_df[
-                    (stock_list_df['涨跌幅'] >= min_20cm_pct) &
-                    (stock_list_df['涨跌幅'] <= max_20cm_pct)
-                ]
+                
+                # 🆕 V19.17: 检查涨跌幅字段是否存在
+                if '涨跌幅' in stock_list_df.columns:
+                    stock_list_df = stock_list_df[
+                        (stock_list_df['涨跌幅'] >= min_20cm_pct) &
+                        (stock_list_df['涨跌幅'] <= max_20cm_pct)
+                    ]
+                else:
+                    logger.error(f"❌ [半路战法] 缺少'涨跌幅'字段，无法进行涨幅筛选")
+                    return []
+                    
                 logger.info(f"🎯 [半路战法] 20cm标的半路区间({min_20cm_pct:.1f}%-{max_20cm_pct:.1f}%)，筛选后股票: {len(stock_list_df)} 只")
             else:
                 # 扫描全市场股票（包含主板600/000）
@@ -291,11 +313,17 @@ class MidwayStrategy:
                 min_20cm_pct = min_change_pct * 1.5  # 20cm最小涨幅（例如3.75）
                 max_20cm_pct = max_change_pct * 1.5  # 20cm最大涨幅（例如12.0）
 
-                # 应用不同的涨幅区间（使用传入的参数）
-                stock_list_df = stock_list_df[
-                    ((main_board_mask) & (stock_list_df['涨跌幅'] >= min_main_pct) & (stock_list_df['涨跌幅'] <= max_main_pct)) |
-                    ((cm20_mask) & (stock_list_df['涨跌幅'] >= min_20cm_pct) & (stock_list_df['涨跌幅'] <= max_20cm_pct))
-                ]
+                # 🆕 V19.17: 检查涨跌幅字段是否存在
+                if '涨跌幅' in stock_list_df.columns:
+                    # 应用不同的涨幅区间（使用传入的参数）
+                    stock_list_df = stock_list_df[
+                        ((main_board_mask) & (stock_list_df['涨跌幅'] >= min_main_pct) & (stock_list_df['涨跌幅'] <= max_main_pct)) |
+                        ((cm20_mask) & (stock_list_df['涨跌幅'] >= min_20cm_pct) & (stock_list_df['涨跌幅'] <= max_20cm_pct))
+                    ]
+                else:
+                    logger.error(f"❌ [半路战法] 缺少'涨跌幅'字段，无法进行涨幅筛选")
+                    return []
+                    
                 logger.info(f"🎯 [半路战法] 主板半路区间({min_main_pct:.1f}%-{max_main_pct:.1f}%)，20cm半路区间({min_20cm_pct:.1f}%-{max_20cm_pct:.1f}%)，筛选后股票: {len(stock_list_df)} 只")
             
             # 3. 按成交量排序，取最活跃的N只
@@ -410,6 +438,11 @@ class MidwayStrategy:
             # 🚀 V19.3 新增：本地筛选（涨幅 > 2% 且 量比 > 1.5）
             filtered_stock_list_df = stock_list_df.copy()
             filtered_stock_list_df['量比'] = filtered_stock_list_df['代码'].map(volume_ratio_cache)
+            
+            # 🆕 V19.17: 检查涨跌幅字段是否存在
+            if '涨跌幅' not in filtered_stock_list_df.columns:
+                logger.error(f"❌ [半路战法] 缺少'涨跌幅'字段，无法进行本地筛选")
+                return []
             
             # 筛选条件：涨幅 > 2% 且 量比 > 1.5
             filtered_stock_list_df = filtered_stock_list_df[
