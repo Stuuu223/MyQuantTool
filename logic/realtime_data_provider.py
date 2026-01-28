@@ -291,24 +291,31 @@ class RealtimeDataProvider(DataProvider):
                 # 将 QMT 格式转回标准格式
                 std_code = self.code_converter.to_standard(qmt_code)
 
+                # 🔥 V19.16: 关键修复 - QMT 单位转换
+                # QMT 返回的原始单位：
+                # - volume: 股数（需要 / 100 转为手）
+                # - amount: 元（需要 / 10000 转为万）
+                # - bidVol/askVol: 股数（需要 / 100 转为手）
                 stock_info = {
                     'code': std_code,
                     'name': '',  # QMT tick 数据不带名称
                     'price': data.get('lastPrice', 0),
+                    'now': data.get('lastPrice', 0),  # 🔥 V19.16: 兼容 easyquotation 格式
                     'change_pct': data.get('pctChg', 0) / 100 if data.get('pctChg') else 0,
-                    'volume': data.get('volume', 0),
-                    'amount': data.get('amount', 0),
+                    'volume': data.get('volume', 0) / 100,  # 股数 → 手数
+                    'amount': data.get('amount', 0) / 10000,  # 元 → 万元
                     'open': data.get('open', 0),
                     'high': data.get('high', 0),
                     'low': data.get('low', 0),
                     'pre_close': data.get('lastClose', 0),
+                    'close': data.get('lastClose', 0),  # 🔥 V19.16: 昨收价，战法期望的字段名
                     'data_timestamp': '',
                     'turnover': 0,  # QMT 不提供换手率
                     'volume_ratio': 0,  # QMT 不提供量比
                     'bid1': data.get('bidPrice', [0, 0, 0, 0, 0])[0] if data.get('bidPrice') else 0,
                     'ask1': data.get('askPrice', [0, 0, 0, 0, 0])[0] if data.get('askPrice') else 0,
-                    'bid1_volume': data.get('bidVol', [0, 0, 0, 0, 0])[0] if data.get('bidVol') else 0,
-                    'ask1_volume': data.get('askVol', [0, 0, 0, 0, 0])[0] if data.get('askVol') else 0,
+                    'bid1_volume': data.get('bidVol', [0, 0, 0, 0, 0])[0] / 100 if data.get('bidVol') else 0,  # 股数 → 手数
+                    'ask1_volume': data.get('askVol', [0, 0, 0, 0, 0])[0] / 100 if data.get('askVol') else 0,  # 股数 → 手数
                     # QMT 特有字段
                     'source': 'QMT'
                 }
