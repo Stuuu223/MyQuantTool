@@ -40,6 +40,13 @@ class QMTManager:
         self.data_connected = False
         self.trader_connected = False
         self.trader_client = None
+
+        # 🔥 关键修复：暴露 xtdata 模块给外部调用
+        if XT_AVAILABLE:
+            self.xtdata = xtdata
+        else:
+            self.xtdata = None
+
         self._init_data_interface()
         self._init_trader_interface()
         self._init_subscription()

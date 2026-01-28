@@ -493,6 +493,10 @@ def render_historical_replay_panel():
                 elif test_mode == "半路战法复盘":
                     _run_midway_strategy_replay(stocks_data, date, provider)
             
+            except Exception as e:
+                st.error(f"❌ 单点复盘模式失败: {e}")
+                logger.error(f"单点复盘模式失败: {e}")
+            
         except Exception as e:
             st.error(f"❌ 测试执行失败: {e}")
             logger.error(f"历史重演测试失败: {e}")
