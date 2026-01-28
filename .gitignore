@@ -79,3 +79,6 @@ test_*_results_*.txt
 .coverage
 htmlcov/
 .pytest_cache/
+
+# Sensitive configuration files
+config/qmt_config.json
