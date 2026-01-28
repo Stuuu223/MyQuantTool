@@ -333,9 +333,9 @@ def render_historical_replay_panel():
             if not stock_list:
                 st.error("❌ 请输入至少一只股票代码")
                 return
-        
-        # 🔥 V19.17.1: 时间步进模式
-        if time_step_mode and replay_mode == "QMT 毫秒级复盘 (推荐)":
+            
+            # 🔥 V19.17.1: 时间步进模式
+            if time_step_mode and replay_mode == "QMT 毫秒级复盘 (推荐)":
             st.info(f"⏰ 时间步进模式：从 09:30 到 15:00，每隔 {step_minutes} 分钟步进一次")
             
             # 初始化战法实例

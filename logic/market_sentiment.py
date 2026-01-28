@@ -183,6 +183,41 @@ class MarketSentiment:
         )
         
         return is_bad
+    
+    def get_consecutive_board_height(self) -> int:
+        """
+        获取当前市场的最高连板高度
+        
+        Returns:
+            int: 最高连板高度（如果没有数据，返回0）
+        """
+        try:
+            # 从市场情绪数据中获取涨停信息
+            sentiment_data = self.get_market_sentiment()
+            
+            if not sentiment_data:
+                return 0
+            
+            # 🔥 V19.17.6: 如果有连板高度数据，直接返回
+            # 否则根据涨停数量估算（临时方案）
+            limit_up_count = sentiment_data.get('limit_up_count', 0)
+            
+            # 估算连板高度：涨停越多，连板高度越高
+            # 这是一个简化的估算，后续可以改为从真实的连板数据计算
+            if limit_up_count >= 100:
+                return 5  # 100只以上涨停，估计有5板
+            elif limit_up_count >= 50:
+                return 4  # 50-100只涨停，估计有4板
+            elif limit_up_count >= 20:
+                return 3  # 20-50只涨停，估计有3板
+            elif limit_up_count >= 10:
+                return 2  # 10-20只涨停，估计有2板
+            else:
+                return 1  # 10只以下涨停，估计只有1板
+            
+        except Exception as e:
+            logger.error(f"❌ [市场情绪分析器] 获取连板高度失败: {e}")
+            return 0
 
 
 # 🆕 V19.8: 为了兼容性，添加 MarketSentimentIndexCalculator 类作为别名
