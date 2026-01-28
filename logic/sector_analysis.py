@@ -286,11 +286,80 @@ class FastSectorAnalyzer:
         
         return sector_stocks
     
+    def get_qmt_sector_ranking(self, sector_type='industry') -> pd.DataFrame:
+        """
+        🔥 V19.17.6: 使用 QMT 获取板块排名（去爬虫化）
+        
+        基于 QMT 实时数据和 stock_sector_map.json 计算板块排名
+        
+        Args:
+            sector_type: 板块类型 ('industry' 行业板块, 'concept' 概念板块)
+        
+        Returns:
+            DataFrame 包含以下列:
+            - 板块名称: 板块名称
+            - 涨跌幅: 平均涨跌幅(%)
+            - 成交额: 总成交额(万元)
+            - 股票数量: 板块内股票数量
+            - rank: 排名
+        """
+        try:
+            # 获取全市场快照数据
+            market_data = self.get_market_snapshot()
+            
+            if market_data is None or market_data.empty:
+                logger.warning("⚠️ [QMT板块排名] 市场数据为空")
+                return pd.DataFrame()
+            
+            # 按板块聚合数据
+            if sector_type == 'industry':
+                sector_col = 'industry'
+            else:  # concept
+                # 对于概念板块，需要展开概念列表
+                logger.warning("⚠️ [QMT板块排名] 概念板块排名尚未实现")
+                return pd.DataFrame()
+            
+            # 筛选有板块信息的股票
+            sector_stocks = market_data[market_data[sector_col].notna()]
+            
+            if sector_stocks.empty:
+                logger.warning(f"⚠️ [QMT板块排名] 没有{sector_type}板块信息的股票")
+                return pd.DataFrame()
+            
+            # 按板块聚合
+            sector_stats = sector_stocks.groupby(sector_col).agg({
+                'pct_chg': 'mean',  # 平均涨跌幅
+                'amount': 'sum',    # 总成交额
+                'code': 'count'     # 股票数量
+            }).reset_index()
+            
+            # 重命名列
+            sector_stats.columns = ['板块名称', '涨跌幅', '成交额', '股票数量']
+            
+            # 按涨跌幅排序
+            sector_stats = sector_stats.sort_values('涨跌幅', ascending=False).reset_index(drop=True)
+            sector_stats['rank'] = sector_stats.index + 1
+            
+            # 计算资金热度系数
+            sector_stats['资金热度'] = self._calculate_capital_heat(sector_stats)
+            
+            logger.info(f"✅ [QMT板块排名] 获取成功，共 {len(sector_stats)} 个{sector_type}板块")
+            return sector_stats
+            
+        except Exception as e:
+            logger.error(f"❌ [QMT板块排名] 获取失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return pd.DataFrame()
+    
     def get_akshare_sector_ranking(self) -> pd.DataFrame:
         """
-        🚀 V18: 使用 AkShare 获取行业板块排名（真实数据接口）
+        🔥 V19.17.6: 智能板块排名（优先使用 QMT，降级到 AkShare）
         
-        使用 akshare.stock_board_industry_name_em() 获取当日板块涨幅排名
+        策略：
+        1. 优先使用 QMT 本地数据（快速、稳定）
+        2. 如果 QMT 失败，降级到 AkShare 网络请求
+        3. 实现"去爬虫化"，减少网络依赖
         
         Returns:
             DataFrame 包含以下列:
@@ -300,6 +369,17 @@ class FastSectorAnalyzer:
             - 成交额: 成交额
             - rank: 排名
         """
+        # 🔥 V19.17.6: 优先使用 QMT
+        logger.info("🚀 [板块排名] 优先使用 QMT 接口...")
+        qmt_result = self.get_qmt_sector_ranking(sector_type='industry')
+        
+        if not qmt_result.empty:
+            logger.info("✅ [板块排名] QMT 数据获取成功")
+            return qmt_result
+        
+        # 降级到 AkShare
+        logger.warning("⚠️ [板块排名] QMT 数据为空，降级到 AkShare")
+        
         # 🚀 V19.2 紧急熔断：如果之前失败过，直接跳过，防止卡死
         if self.is_disabled:
             logger.debug("🚫 [板块分析熔断] 板块分析功能已熔断，跳过网络请求")
@@ -356,9 +436,10 @@ class FastSectorAnalyzer:
     
     def get_akshare_concept_ranking(self) -> pd.DataFrame:
         """
-        🚀 V18: 使用 AkShare 获取概念板块排名（真实数据接口）
+        🔥 V19.17.6: 智能概念板块排名（暂时使用 AkShare）
         
-        使用 akshare.stock_board_concept_name_em() 获取当日概念板块涨幅排名
+        注意：概念板块的 QMT 实现较为复杂，暂时保留 AkShare 接口
+        后续版本将实现完整的 QMT 概念板块排名
         
         Returns:
             DataFrame 包含以下列:
@@ -368,6 +449,8 @@ class FastSectorAnalyzer:
             - 成交额: 成交额
             - rank: 排名
         """
+        logger.info("⚠️ [概念板块排名] 暂时使用 AkShare 接口，后续将切换到 QMT")
+        
         # 🚀 V19.2 紧急熔断：如果之前失败过，直接跳过，防止卡死
         if self.is_disabled:
             logger.debug("🚫 [板块分析熔断] 板块分析功能已熔断，跳过网络请求")
