@@ -34,8 +34,25 @@ class RealtimeDataProvider(DataProvider):
     """
 
     def __init__(self, **kwargs):
-        """初始化实时数据提供者"""
+        """初始化实时数据提供者
+        
+        Args:
+            **kwargs: 额外参数
+                - replay_mode: 是否为复盘模式（默认 False）
+                - replay_date: 复盘日期（格式：'20260128'）
+                - replay_time: 复盘时间点（格式：'094000'，即 09:40:00）
+                - replay_period: 复盘数据周期（默认 '1m'）
+        """
         super().__init__()
+
+        # 🔥 V19.17: 复盘模式配置
+        self.replay_mode = kwargs.get('replay_mode', False)
+        self.replay_date = kwargs.get('replay_date', None)
+        self.replay_time = kwargs.get('replay_time', None)
+        self.replay_period = kwargs.get('replay_period', '1m')
+        
+        if self.replay_mode:
+            logger.info(f"⏪ [V19.17] 复盘模式已启用：日期={self.replay_date}, 时间={self.replay_time}, 周期={self.replay_period}")
 
         # 🆕 V19.15: 初始化 QMT 管理器（优先数据源）
         try:
@@ -230,6 +247,8 @@ class RealtimeDataProvider(DataProvider):
     def get_realtime_data(self, stock_list):
         """
         获取实时数据（混合模式：QMT 优先，降级到 EasyQuotation）
+        
+        🔥 V19.17: 支持复盘模式，使用历史数据代替实时数据
 
         Args:
             stock_list: 股票代码列表或包含股票信息的字典列表
@@ -237,6 +256,39 @@ class RealtimeDataProvider(DataProvider):
         Returns:
             list: 股票数据列表
         """
+        # 🔥 V19.17: 数据源路由 - 检查是否为复盘模式
+        if self.replay_mode:
+            logger.info(f"⏪ [V19.17] 复盘模式：使用历史数据代替实时数据")
+            logger.info(f"⏪ [V19.17] 复盘时间：{self.replay_date} {self.replay_time}")
+            
+            try:
+                from logic.qmt_historical_provider import QMTHistoricalProvider
+                
+                # 创建历史数据提供者
+                historical_provider = QMTHistoricalProvider(
+                    date=self.replay_date,
+                    time_point=self.replay_time,
+                    period=self.replay_period
+                )
+                
+                if historical_provider.qmt_available:
+                    # 获取历史数据
+                    history_data = historical_provider.get_realtime_data(stock_list)
+                    
+                    if history_data:
+                        logger.info(f"✅ [V19.17] 复盘模式：成功获取 {len(history_data)} 只股票的历史数据")
+                        # 注入 DDE 和乖离率数据（如果需要）
+                        self._inject_enhanced_data(history_data)
+                        return history_data
+                    else:
+                        logger.warning("⚠️ [V19.17] 复盘模式：未获取到历史数据，降级到实时数据")
+                else:
+                    logger.warning("⚠️ [V19.17] 复盘模式：QMT 历史数据接口不可用，降级到实时数据")
+                    
+            except Exception as e:
+                logger.error(f"❌ [V19.17] 复盘模式获取历史数据失败: {e}")
+                logger.warning("⚠️ [V19.17] 降级到实时数据")
+        
         # 🆕 V19.15: 提取股票代码
         if isinstance(stock_list[0], dict):
             codes = [stock['code'] for stock in stock_list]
