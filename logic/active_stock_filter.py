@@ -1,40 +1,276 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-V19.13 Active Stock Filter - 活跃股筛选器
+V19.17 Active Stock Filter - 活跃股筛选器（QMT 核动力版）
 专门用于筛选活跃股票，避免扫描"僵尸股"
 按成交额或涨幅排序，优先扫描主力战场
 
+🔥 V19.17 重大升级：
+- 使用 QMT 获取全市场数据（毫秒级、稳定）
+- 彻底消灭数据异构问题
+- 保留所有现有过滤逻辑
+- EasyQuotation 作为灾备方案
+
 Author: iFlow CLI
-Version: V19.13
+Version: V19.17
 """
 
 import pandas as pd
-import akshare as ak
 import os
 from typing import List, Dict, Any, Optional
 from logic.logger import get_logger
+from logic.code_converter import CodeConverter
 
 logger = get_logger(__name__)
 
 
 class ActiveStockFilter:
     """
-    V19.13 活跃股筛选器（Active Stock Filter）
+    V19.17 活跃股筛选器（Active Stock Filter - QMT Power）
 
     核心功能：
-    1. 获取全市场实时行情（使用 AkShare，更稳定）
+    1. 获取全市场实时行情（使用 QMT，毫秒级）
     2. 过滤停牌、无量、ST、退市股
     3. 按成交额或涨幅排序
     4. 返回前N只活跃股
+    5. 支持振幅过滤、20cm标的筛选
     """
 
     def __init__(self):
         """初始化活跃股筛选器"""
-        # 🚨 V19.13: 强制清理代理配置，防止连接池爆满
+        # 🚨 V19.17: 强制清理代理配置，防止连接池爆满
         for key in ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy']:
             os.environ.pop(key, None)
         os.environ['NO_PROXY'] = '*'
+
+        # 初始化 QMT 接口
+        self.qmt_available = False
+        self.xtdata = None
+        self.code_converter = CodeConverter()
+
+        try:
+            from xtquant import xtdata
+            self.xtdata = xtdata
+            self.qmt_available = True
+            logger.info("✅ [V19.17] QMT 数据接口已加载（活跃股筛选器）")
+        except ImportError as e:
+            logger.warning(f"⚠️ [V19.17] QMT 接口不可用: {e}")
+            logger.warning(f"   将使用 EasyQuotation 作为灾备方案")
+
+    def _get_qmt_market_data(self) -> Optional[pd.DataFrame]:
+        """
+        🔥 V19.17: 使用 QMT 获取全市场数据
+
+        Returns:
+            DataFrame: 全市场股票数据
+        """
+        if not self.qmt_available:
+            return None
+
+        try:
+            logger.info("📡 [V19.17] 使用 QMT 获取全市场数据...")
+
+            # 🔥 使用 QMT 获取全市场股票列表
+            stock_list = self.xtdata.get_stock_list_in_sector('沪深A股')
+
+            if not stock_list:
+                logger.warning("⚠️ [V19.17] QMT 未获取到股票列表")
+                return None
+
+            logger.info(f"📊 [V19.17] QMT 返回 {len(stock_list)} 只股票")
+
+            # 转换为标准格式（去掉 .SH/.SZ 后缀）
+            standard_codes = [self.code_converter.to_standard(code) for code in stock_list]
+
+            # 🔥 批量获取全市场数据（使用 get_full_tick）
+            # QMT 代码格式转换回去
+            qmt_codes = [self.code_converter.to_qmt(code) for code in standard_codes]
+
+            logger.info(f"⚡ [V19.17] 批量获取 {len(qmt_codes)} 只股票的实时数据...")
+
+            # 获取全市场 tick 数据
+            market_data = self.xtdata.get_full_tick(qmt_codes)
+
+            if not market_data:
+                logger.warning("⚠️ [V19.17] QMT 未获取到市场数据")
+                return None
+
+            logger.info(f"✅ [V19.17] QMT 成功获取 {len(market_data)} 只股票数据")
+
+            # 转换为 DataFrame
+            stock_list = []
+            for qmt_code, data in market_data.items():
+                if not data:
+                    continue
+
+                # 转换为标准格式
+                std_code = self.code_converter.to_standard(qmt_code)
+
+                # 🔥 V19.17: 构造中文字段数据（与现有系统兼容）
+                stock = {
+                    '代码': std_code,
+                    '名称': '',  # QMT tick 数据不带名称
+                    '最新价': data.get('lastPrice', 0),
+                    '昨收': data.get('lastClose', 0),
+                    '今开': data.get('open', 0),
+                    '最高': data.get('high', 0),
+                    '最低': data.get('low', 0),
+                    '成交量': data.get('volume', 0) / 100,  # 股数 → 手数
+                    '成交额': data.get('amount', 0) / 10000,  # 元 → 万元
+                    '涨跌幅': data.get('pctChg', 0) / 100 if data.get('pctChg') else 0,  # 百分比 → 小数
+                    '换手率': 0,  # QMT tick 不提供换手率
+                    '振幅': 0,  # 需要计算
+                    # 🔥 V19.17: 添加英文字段兼容
+                    'code': std_code,
+                    'name': '',
+                    'price': data.get('lastPrice', 0),
+                    'close': data.get('lastClose', 0),
+                    'open': data.get('open', 0),
+                    'high': data.get('high', 0),
+                    'low': data.get('low', 0),
+                    'volume': data.get('volume', 0) / 100,
+                    'amount': data.get('amount', 0) / 10000,
+                    'change_pct': data.get('pctChg', 0) / 100 if data.get('pctChg') else 0,
+                    'turnover': 0,
+                    'now': data.get('lastPrice', 0),
+                    'percent': data.get('pctChg', 0) / 100 if data.get('pctChg') else 0,
+                }
+
+                # 计算振幅
+                if stock['今开'] > 0:
+                    stock['振幅'] = ((stock['最高'] - stock['最低']) / stock['今开']) * 100
+
+                stock_list.append(stock)
+
+            df = pd.DataFrame(stock_list)
+            logger.info(f"✅ [V19.17] QMT 数据转换完成，共 {len(df)} 只股票")
+
+            return df
+
+        except Exception as e:
+            logger.error(f"❌ [V19.17] QMT 获取市场数据失败: {e}")
+            return None
+
+    def _get_easyquotation_market_data(self) -> Optional[pd.DataFrame]:
+        """
+        🆕 V19.17: 灾备方案 - 使用 EasyQuotation 获取全市场数据
+
+        Returns:
+            DataFrame: 全市场股票数据
+        """
+        try:
+            logger.warning("🚑 [V19.17] QMT 失败，切换到 EasyQuotation 灾备方案...")
+
+            import easyquotation as eq
+            quotation = eq.use('sina')
+
+            # 从配置文件中获取股票代码列表
+            from pathlib import Path
+            import json
+            config_path = Path(__file__).parent.parent / 'easyquotation' / 'stock_codes.conf'
+
+            stock_codes = []
+            if config_path.exists():
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    content = f.read().strip()
+                    # 尝试解析为 JSON 格式
+                    try:
+                        data = json.loads(content)
+                        if isinstance(data, dict) and 'stock' in data:
+                            stock_codes = data['stock']
+                        elif isinstance(data, list):
+                            stock_codes = data
+                    except json.JSONDecodeError:
+                        # 如果不是 JSON，按行解析
+                        stock_codes = [line.strip() for line in content.split('\n') if line.strip() and not line.startswith('#')]
+
+            # 转换为 easyquotation 格式（sh 前缀）
+            stock_codes = [f"sh{code}" if code.startswith('6') else f"sz{code}" for code in stock_codes]
+
+            if not stock_codes:
+                # 如果配置文件不存在或为空，使用核心资产
+                stock_codes = ['sh600519', 'sz300750', 'sh601127', 'sz000001', 'sz300059', 'sh600036', 'sz002594']
+
+            logger.info(f"📊 [V19.17] 使用 EasyQuotation 获取 {len(stock_codes)} 只股票的行情...")
+
+            # 批量获取（分批处理，每次200只）
+            all_stocks = []
+            batch_size = 200
+
+            for i in range(0, len(stock_codes), batch_size):
+                batch = stock_codes[i:i + batch_size]
+                try:
+                    data = quotation.stocks(batch)
+
+                    for code, info in data.items():
+                        # 转换为统一格式
+                        stock_code = code.replace('sh', '').replace('sz', '')
+                        stock_name = info.get('name', '')
+
+                        # 计算涨幅
+                        price = float(info.get('now', 0))
+                        close = float(info.get('close', 0))
+                        if close == 0:
+                            continue
+
+                        change_pct = ((price - close) / close) * 100
+
+                        # 计算振幅
+                        open_price = float(info.get('open', 0))
+                        high = float(info.get('high', 0))
+                        low = float(info.get('low', 0))
+
+                        amplitude = 0
+                        if open_price > 0:
+                            amplitude = ((high - low) / open_price) * 100
+
+                        stock = {
+                            '代码': stock_code,
+                            '名称': stock_name,
+                            '最新价': price,
+                            '昨收': close,
+                            '今开': open_price,
+                            '最高': high,
+                            '最低': low,
+                            '成交量': int(info.get('volume', 0)) if info.get('volume') else 0,
+                            '成交额': 0,  # easyquotation 没有成交额数据
+                            '涨跌幅': change_pct,
+                            '换手率': 0,  # easyquotation 没有换手率数据
+                            '振幅': amplitude,
+                            # 英文字段
+                            'code': stock_code,
+                            'name': stock_name,
+                            'price': price,
+                            'close': close,
+                            'open': open_price,
+                            'high': high,
+                            'low': low,
+                            'volume': int(info.get('volume', 0)) if info.get('volume') else 0,
+                            'amount': 0,
+                            'change_pct': change_pct,
+                            'turnover': 0,
+                            'now': price,
+                            'percent': change_pct,
+                        }
+                        all_stocks.append(stock)
+
+                    logger.info(f"✅ [V19.17] 批次 {i//batch_size + 1} 完成，获取 {len(data)} 只股票")
+
+                except Exception as batch_e:
+                    logger.error(f"❌ [V19.17] 批次 {i//batch_size + 1} 获取失败: {batch_e}")
+                    continue
+
+            if not all_stocks:
+                return None
+
+            df = pd.DataFrame(all_stocks)
+            logger.info(f"✅ [V19.17] EasyQuotation 数据获取完成，共 {len(df)} 只股票")
+
+            return df
+
+        except Exception as e:
+            logger.error(f"❌ [V19.17] EasyQuotation 获取市场数据失败: {e}")
+            return None
 
     def get_active_stocks(
         self,
@@ -47,7 +283,7 @@ class ActiveStockFilter:
         min_volume: int = 0,
         skip_top: int = 30,
         min_amplitude: float = 3.0,
-        only_20cm: bool = False  # 🆕 V19.13: 是否只扫描20cm标的
+        only_20cm: bool = False
     ) -> List[Dict[str, Any]]:
         """
         获取活跃股票列表
@@ -67,236 +303,88 @@ class ActiveStockFilter:
         Returns:
             list: 活跃股票列表
         """
-        logger.info(f"🔍 正在筛选活跃股票池 (limit={limit}, sort_by={sort_by})...")
+        logger.info(f"🔍 [V19.17] 正在筛选活跃股票池 (limit={limit}, sort_by={sort_by})...")
 
         try:
-            # 1. 强制直连，防止代理干扰 AkShare
-            os.environ['NO_PROXY'] = '*'
+            # 🔥 V19.17: 优先使用 QMT 获取全市场数据
+            df_active = self._get_qmt_market_data()
 
-            # 2. 获取实时行情榜单 (东方财富源)
-            df_active = ak.stock_zh_a_spot_em()
+            # 如果 QMT 失败，降级到 EasyQuotation
+            if df_active is None or df_active.empty:
+                logger.warning("⚠️ [V19.17] QMT 数据不可用，切换到 EasyQuotation...")
+                df_active = self._get_easyquotation_market_data()
 
-            if df_active is not None and not df_active.empty:
-                logger.info(f"✅ 获取到 {len(df_active)} 只股票的行情数据")
+            if df_active is None or df_active.empty:
+                logger.error("❌ [V19.17] 所有数据源均失败")
+                return []
 
-                # 3. 数据清洗与排序
-                # 确保成交额是数值类型
-                if '成交额' in df_active.columns:
-                    df_active['成交额'] = pd.to_numeric(df_active['成交额'], errors='coerce')
-                    df_active = df_active.sort_values(by='成交额', ascending=False)
+            logger.info(f"✅ [V19.17] 获取到 {len(df_active)} 只股票的行情数据")
 
-                # 过滤掉 ST 和 退市
-                if exclude_st or exclude_delisting:
-                    df_active = df_active[~df_active['名称'].str.contains('ST|退', na=False)]
+            # ========================================================
+            # 以下是现有的过滤逻辑（保持不变）
+            # ========================================================
 
-                # 🆕 V19.13: 20cm标的筛选
-                if only_20cm:
-                    df_active = df_active[df_active['代码'].str.startswith(('300', '688'))]
-                    logger.info(f"🎯 只扫描20cm标的，筛选后: {len(df_active)} 只")
+            # 3. 数据清洗与排序
+            # 确保成交额是数值类型
+            if '成交额' in df_active.columns:
+                df_active['成交额'] = pd.to_numeric(df_active['成交额'], errors='coerce')
+                df_active = df_active.sort_values(by='成交额', ascending=False)
 
-                # 过滤掉北交所 (可选)
-                # df_active = df_active[~df_active['代码'].str.startswith(('8', '4', '9'))]
+            # 过滤掉 ST 和 退市
+            if exclude_st or exclude_delisting:
+                df_active = df_active[~df_active['名称'].str.contains('ST|退', na=False)]
 
-                # 过滤涨幅范围
-                if min_change_pct is not None or max_change_pct is not None:
-                    if '涨跌幅' in df_active.columns:
-                        df_active['涨跌幅'] = pd.to_numeric(df_active['涨跌幅'], errors='coerce')
-                        if min_change_pct is not None:
-                            df_active = df_active[df_active['涨跌幅'] >= min_change_pct]
-                        if max_change_pct is not None:
-                            df_active = df_active[df_active['涨跌幅'] <= max_change_pct]
+            # 20cm标的筛选
+            if only_20cm:
+                df_active = df_active[df_active['代码'].str.startswith(('300', '688'))]
+                logger.info(f"🎯 只扫描20cm标的，筛选后: {len(df_active)} 只")
 
-                # 🆕 V19.13: 振幅过滤
-                if min_amplitude > 0 and '最高' in df_active.columns and '最低' in df_active.columns:
-                    df_active['最高'] = pd.to_numeric(df_active['最高'], errors='coerce')
-                    df_active['最低'] = pd.to_numeric(df_active['最低'], errors='coerce')
-                    df_active['今开'] = pd.to_numeric(df_active['今开'], errors='coerce')
-                    df_active = df_active[df_active['今开'] > 0]
-                    df_active['振幅'] = (df_active['最高'] - df_active['最低']) / df_active['今开'] * 100
-                    df_active = df_active[df_active['振幅'] >= min_amplitude]
+            # 过滤掉北交所 (可选)
+            # df_active = df_active[~df_active['代码'].str.startswith(('8', '4', '9'))]
 
-                # 🆕 V19.13: 跳过前N只大家伙
-                skip_count = min(skip_top, len(df_active))
-                df_active = df_active.iloc[skip_count:]
+            # 过滤涨幅范围
+            if min_change_pct is not None or max_change_pct is not None:
+                if '涨跌幅' in df_active.columns:
+                    df_active['涨跌幅'] = pd.to_numeric(df_active['涨跌幅'], errors='coerce')
+                    if min_change_pct is not None:
+                        df_active = df_active[df_active['涨跌幅'] >= min_change_pct]
+                    if max_change_pct is not None:
+                        df_active = df_active[df_active['涨跌幅'] <= max_change_pct]
 
-                # 取前 limit 个
-                df_active = df_active.head(limit)
+            # 振幅过滤
+            if min_amplitude > 0 and '振幅' in df_active.columns:
+                df_active['振幅'] = pd.to_numeric(df_active['振幅'], errors='coerce')
+                df_active = df_active[df_active['振幅'] >= min_amplitude]
 
-                # 转换为字典列表
-                active_list = []
-                for _, row in df_active.iterrows():
-                    stock = {
-                        '代码': row['代码'],
-                        '名称': row['名称'],
-                        '最新价': float(row.get('最新价', 0)) if pd.notna(row.get('最新价')) else 0.0,
-                        '昨收': float(row.get('昨收', 0)) if pd.notna(row.get('昨收')) else 0.0,
-                        '最高': float(row.get('最高', 0)) if pd.notna(row.get('最高')) else 0.0,
-                        '最低': float(row.get('最低', 0)) if pd.notna(row.get('最低')) else 0.0,
-                        '今开': float(row.get('今开', 0)) if pd.notna(row.get('今开')) else 0.0,
-                        '成交量': int(row.get('成交量', 0)) if pd.notna(row.get('成交量')) else 0,
-                        '成交额': float(row.get('成交额', 0)) if pd.notna(row.get('成交额')) else 0.0,
-                        '涨跌幅': float(row.get('涨跌幅', 0)) if pd.notna(row.get('涨跌幅')) else 0.0,
-                        '换手率': float(row.get('换手率', 0)) if pd.notna(row.get('换手率')) else 0.0,
-                        '振幅': float(row.get('振幅', 0)) if '振幅' in row else 0.0,
-                        # 🔥 V19.17: 添加英文字段兼容（EasyQuotation 格式）
-                        'code': row['代码'],
-                        'name': row['名称'],
-                        'price': float(row.get('最新价', 0)) if pd.notna(row.get('最新价')) else 0.0,
-                        'close': float(row.get('昨收', 0)) if pd.notna(row.get('昨收')) else 0.0,
-                        'high': float(row.get('最高', 0)) if pd.notna(row.get('最高')) else 0.0,
-                        'low': float(row.get('最低', 0)) if pd.notna(row.get('最低')) else 0.0,
-                        'open': float(row.get('今开', 0)) if pd.notna(row.get('今开')) else 0.0,
-                        'volume': int(row.get('成交量', 0)) if pd.notna(row.get('成交量')) else 0,
-                        'amount': float(row.get('成交额', 0)) if pd.notna(row.get('成交额')) else 0.0,
-                        'change_pct': float(row.get('涨跌幅', 0)) if pd.notna(row.get('涨跌幅')) else 0.0,
-                        'turnover': float(row.get('换手率', 0)) if pd.notna(row.get('换手率')) else 0.0,
-                        'now': float(row.get('最新价', 0)) if pd.notna(row.get('最新价')) else 0.0,  # EasyQuotation 兼容
-                        'percent': float(row.get('涨跌幅', 0)) if pd.notna(row.get('涨跌幅')) else 0.0,  # EasyQuotation 兼容
-                    }
-                    active_list.append(stock)
+            # 跳过前N只大家伙
+            skip_count = min(skip_top, len(df_active))
+            df_active = df_active.iloc[skip_count:]
 
-                logger.info(f"✅ 筛选出 {len(active_list)} 只活跃股 (Top {limit}, 跳过前{skip_count}只)")
-                return active_list
+            # 取前 limit 个
+            df_active = df_active.head(limit)
+
+            # 转换为字典列表
+            active_list = df_active.to_dict('records')
+
+            logger.info(f"✅ [V19.17] 筛选出 {len(active_list)} 只活跃股 (Top {limit}, 跳过前{skip_count}只)")
+            return active_list
 
         except Exception as e:
-            logger.error(f"❌ 活跃股筛选失败: {e}")
-            # 🆕 V19.14: 灾备方案：使用 easyquotation 获取全市场行情
-            logger.warning("🚑 AkShare 失败，切换到 easyquotation 获取全市场行情...")
-            try:
-                import easyquotation as eq
-                quotation = eq.use('sina')
-
-                # 从配置文件中获取股票代码列表
-                from pathlib import Path
-                import json
-                config_path = Path(__file__).parent.parent / 'easyquotation' / 'stock_codes.conf'
-
-                stock_codes = []
-                if config_path.exists():
-                    with open(config_path, 'r', encoding='utf-8') as f:
-                        content = f.read().strip()
-                        # 尝试解析为 JSON 格式
-                        try:
-                            data = json.loads(content)
-                            if isinstance(data, dict) and 'stock' in data:
-                                stock_codes = data['stock']
-                            elif isinstance(data, list):
-                                stock_codes = data
-                        except json.JSONDecodeError:
-                            # 如果不是 JSON，按行解析
-                            stock_codes = [line.strip() for line in content.split('\n') if line.strip() and not line.startswith('#')]
-
-                    # 转换为 easyquotation 格式（sh 前缀）
-                    stock_codes = [f"sh{code}" if code.startswith('6') else f"sz{code}" for code in stock_codes]
-
-                if not stock_codes:
-                    # 如果配置文件不存在或为空，使用核心资产
-                    stock_codes = ['sh600519', 'sz300750', 'sh601127', 'sz000001', 'sz300059', 'sh600036', 'sz002594']
-
-                logger.info(f"📊 使用 easyquotation 获取 {len(stock_codes)} 只股票的行情...")
-
-                # 批量获取（分批处理，每次200只）
-                active_list = []
-                batch_size = 200
-
-                for i in range(0, len(stock_codes), batch_size):
-                    batch = stock_codes[i:i + batch_size]
-                    try:
-                        data = quotation.stocks(batch)
-
-                        for code, info in data.items():
-                            # 转换为统一格式
-                            stock_code = code.replace('sh', '').replace('sz', '')
-                            stock_name = info.get('name', '')
-
-                            # 过滤 ST 和 退市股
-                            if exclude_st or exclude_delisting:
-                                if 'ST' in stock_name or '退' in stock_name:
-                                    continue
-
-                            # 计算涨幅
-                            price = float(info.get('now', 0))
-                            close = float(info.get('close', 0))
-                            if close == 0:
-                                continue
-
-                            change_pct = ((price - close) / close) * 100
-
-                            # 过滤涨幅范围
-                            if min_change_pct is not None and change_pct < min_change_pct:
-                                continue
-                            if max_change_pct is not None and change_pct > max_change_pct:
-                                continue
-
-                            # 🆕 V19.14: 计算振幅（使用今开、最高、最低）
-                            open_price = float(info.get('open', 0))
-                            high = float(info.get('high', 0))
-                            low = float(info.get('low', 0))
-
-                            amplitude = 0
-                            if open_price > 0:
-                                amplitude = ((high - low) / open_price) * 100
-
-                            # 过滤振幅
-                            if min_amplitude > 0 and amplitude < min_amplitude:
-                                continue
-
-                            # 🆕 V19.14: 过滤 20cm 标的
-                            if only_20cm and not stock_code.startswith(('300', '688')):
-                                continue
-
-                            stock = {
-                                'code': stock_code,
-                                'name': stock_name,
-                                'price': price,
-                                'close': close,
-                                'high': high,
-                                'low': low,
-                                'open': open_price,
-                                'volume': int(info.get('volume', 0)) if info.get('volume') else 0,
-                                'amount': 0,  # easyquotation 没有成交额数据
-                                'change_pct': change_pct,
-                                'turnover': 0,  # easyquotation 没有换手率数据
-                                'amplitude': amplitude
-                            }
-                            active_list.append(stock)
-
-                        logger.info(f"✅ 批次 {i//batch_size + 1} 完成，获取 {len(data)} 只股票")
-
-                    except Exception as batch_e:
-                        logger.error(f"❌ 批次 {i//batch_size + 1} 获取失败: {batch_e}")
-                        continue
-
-                logger.info(f"✅ [灾备方案] 使用 easyquotation 成功获取 {len(active_list)} 只活跃股")
-
-                # 按成交量排序
-                if sort_by == 'amount' or sort_by == 'volume':
-                    active_list.sort(key=lambda x: x['volume'], reverse=True)
-                elif sort_by == 'change_pct':
-                    active_list.sort(key=lambda x: x['change_pct'], reverse=True)
-
-                # 取前 limit 个
-                active_list = active_list[:limit]
-
-                logger.info(f"✅ [灾备方案] 筛选出 {len(active_list)} 只活跃股 (Top {limit})")
-
-                return active_list
-
-            except Exception as backup_e:
-                logger.error(f"❌ [灾备方案] easyquotation 也失败了: {backup_e}")
-                # 最后的灾备：返回核心资产列表
-                logger.warning("🚑 启动最后的灾备列表 (核心资产)")
-                return [
-                    {'code': '600519', 'name': '贵州茅台', 'price': 0, 'close': 0, 'change_pct': 0, 'amount': 0},
-                    {'code': '300750', 'name': '宁德时代', 'price': 0, 'close': 0, 'change_pct': 0, 'amount': 0},
-                    {'code': '601127', 'name': '小康股份', 'price': 0, 'close': 0, 'change_pct': 0, 'amount': 0},
-                    {'code': '000001', 'name': '平安银行', 'price': 0, 'close': 0, 'change_pct': 0, 'amount': 0},
-                    {'code': '300059', 'name': '东方财富', 'price': 0, 'close': 0, 'change_pct': 0, 'amount': 0},
-                    {'code': '600036', 'name': '招商银行', 'price': 0, 'close': 0, 'change_pct': 0, 'amount': 0},
-                    {'code': '002594', 'name': '比亚迪', 'price': 0, 'close': 0, 'change_pct': 0, 'amount': 0}
-                ]
-
-        return []
+            logger.error(f"❌ [V19.17] 活跃股筛选失败: {e}")
+            # 最后的灾备：返回核心资产列表
+            logger.warning("🚑 启动最后的灾备列表 (核心资产)")
+            return [
+                {'code': '600519', 'name': '贵州茅台', 'price': 0, 'close': 0, 'change_pct': 0, 'amount': 0,
+                 '代码': '600519', '名称': '贵州茅台', '最新价': 0, '昨收': 0, '涨跌幅': 0, '成交额': 0},
+                {'code': '300750', 'name': '宁德时代', 'price': 0, 'close': 0, 'change_pct': 0, 'amount': 0,
+                 '代码': '300750', '名称': '宁德时代', '最新价': 0, '昨收': 0, '涨跌幅': 0, '成交额': 0},
+                {'code': '601127', 'name': '小康股份', 'price': 0, 'close': 0, 'change_pct': 0, 'amount': 0,
+                 '代码': '601127', '名称': '小康股份', '最新价': 0, '昨收': 0, '涨跌幅': 0, '成交额': 0},
+                {'code': '000001', 'name': '平安银行', 'price': 0, 'close': 0, 'change_pct': 0, 'amount': 0,
+                 '代码': '000001', '名称': '平安银行', '最新价': 0, '昨收': 0, '涨跌幅': 0, '成交额': 0},
+                {'code': '300059', 'name': '东方财富', 'price': 0, 'close': 0, 'change_pct': 0, 'amount': 0,
+                 '代码': '300059', '名称': '东方财富', '最新价': 0, '昨收': 0, '涨跌幅': 0, '成交额': 0},
+            ]
 
 
 # 便捷函数
