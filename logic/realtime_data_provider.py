@@ -647,84 +647,101 @@ class RealtimeDataProvider(DataProvider):
     
     def get_history_data(self, symbol: str, period: str = 'daily', adjust: str = 'qfq'):
         """
-        获取历史数据（使用 AkShare）
-        
+        获取历史数据（使用 QMT）
+
         Args:
             symbol: 股票代码
             period: 周期（daily, weekly, monthly）
             adjust: 复权方式（qfq: 前复权, hfq: 后复权, none: 不复权）
-        
+
         Returns:
             DataFrame: 历史数据
         """
-        # 🆕 V19.11.5: 添加重试机制
-        max_retries = 3
-        retry_delay = 1  # 秒
-        
-        for attempt in range(max_retries):
-            try:
-                # --- ⚡ 暴力清除代理配置，强制直连 ---
-                import os
-                os.environ.pop("http_proxy", None)
-                os.environ.pop("https_proxy", None)
-                os.environ.pop("HTTP_PROXY", None)
-                os.environ.pop("HTTPS_PROXY", None)
-                os.environ['NO_PROXY'] = '*'
-                
-                # 🆕 V19.11.9: 禁用requests和urllib3的代理
-                try:
-                    import requests
-                    # 禁用全局代理
-                    requests.Session().proxies = {}
-                    # 禁用验证（临时方案）
-                    import urllib3
-                    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-                except ImportError:
-                    pass
-                
-                import akshare as ak
-                import pandas as pd
-                import time
-                
-                # 转换股票代码格式（AkShare 使用 'sh' 或 'sz' 前缀）
-                if symbol.startswith('6'):
-                    ak_symbol = f'sh{symbol}'
+        try:
+            import pandas as pd
+
+            # 检查 QMT 是否可用
+            if not self.qmt or not self.qmt.is_available():
+                logger.warning(f"⚠️ [QMT] QMT 接口不可用，无法获取历史数据")
+                return pd.DataFrame()
+
+            # 转换股票代码格式为 QMT 格式
+            qmt_symbol = self.code_converter.to_qmt(symbol)
+
+            # 转换周期格式
+            period_map = {
+                'daily': '1d',
+                'weekly': '1w',
+                'monthly': '1m'
+            }
+            qmt_period = period_map.get(period, '1d')
+
+            # 转换复权方式
+            dividend_map = {
+                'qfq': 'front',
+                'hfq': 'back',
+                'none': 'none'
+            }
+            dividend_type = dividend_map.get(adjust, 'front')
+
+            # 使用 QMT 接口获取历史数据
+            # 注意：这里使用 get_market_data_ex 而不是 download_history_data
+            # 因为 download_history_data 只下载数据，不返回数据
+            data = self.qmt.xtdata.get_market_data_ex(
+                stock_list=[qmt_symbol],
+                period=qmt_period,
+                start_time='20200101',  # 从 2020 年开始获取足够的数据
+                end_time='',
+                count=-1,  # 获取所有数据
+                dividend_type=dividend_type,
+                fill_data=True
+            )
+
+            # 检查数据
+            if not data or qmt_symbol not in data or data[qmt_symbol] is None:
+                logger.warning(f"⚠️ [QMT] {symbol} 历史数据为空")
+                return pd.DataFrame()
+
+            # 转换为 DataFrame
+            df = data[qmt_symbol]
+
+            # QMT 返回的数据格式是：
+            # index: 时间戳（如 20200101）
+            # columns: ['open', 'high', 'low', 'close', 'volume', 'amount', 'money']
+
+            # 重命名列以保持一致性
+            if not df.empty:
+                df.reset_index(inplace=True)
+                df.rename(columns={
+                    'time': 'date',
+                    'open': 'open',
+                    'high': 'high',
+                    'low': 'low',
+                    'close': 'close',
+                    'volume': 'volume',
+                    'amount': 'amount',
+                    'money': 'amount'
+                }, inplace=True)
+
+                # 确保 date 列存在
+                if 'date' in df.columns:
+                    # 将时间戳转换为字符串格式
+                    df['date'] = df['date'].astype(str)
                 else:
-                    ak_symbol = f'sz{symbol}'
-                
-                # 获取历史数据
-                df = ak.stock_zh_a_hist(symbol=ak_symbol, period=period, adjust=adjust)
-                
-                # 重命名列以保持一致性
-                if not df.empty:
-                    df.rename(columns={
-                        '日期': 'date',
-                        '开盘': 'open',
-                        '收盘': 'close',
-                        '最高': 'high',
-                        '最低': 'low',
-                        '成交量': 'volume',
-                        '成交额': 'amount',
-                        '涨跌幅': 'change_pct',
-                        '涨跌额': 'change_amount'
-                    }, inplace=True)
-                
-                logger.debug(f"✅ [重试{attempt+1}/{max_retries}] {symbol} 历史数据获取成功")
-                return df
-            
-            except Exception as e:
-                logger.warning(f"⚠️ [重试{attempt+1}/{max_retries}] {symbol} 历史数据获取失败: {e}")
-                
-                # 如果不是最后一次重试，等待后重试
-                if attempt < max_retries - 1:
-                    time.sleep(retry_delay)
-                    retry_delay *= 2  # 指数退避
-                else:
-                    logger.error(f"❌ [重试{max_retries}/{max_retries}] {symbol} 历史数据获取失败（已达最大重试次数）")
-        
-        # 返回空的 DataFrame
-        import pandas as pd
-        return pd.DataFrame()
+                    # 如果没有 date 列，尝试使用索引
+                    df.reset_index(inplace=True)
+                    df.rename(columns={'index': 'date'}, inplace=True)
+                    df['date'] = df['date'].astype(str)
+
+                logger.debug(f"✅ [QMT] {symbol} 历史数据获取成功，共 {len(df)} 条")
+
+            return df
+
+        except Exception as e:
+            logger.error(f"❌ [QMT] {symbol} 历史数据获取失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return pd.DataFrame()
     
     def update_stock_priority(self, stock_code: str, priority_score: float):
         """
