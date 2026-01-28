@@ -30,11 +30,19 @@ def render_historical_replay_panel():
     with st.sidebar:
         st.header("⚙️ 测试设置")
         
-        # 🔥 V19.17: 复盘模式选择
+        # 🔥 V19.17.1: 复盘模式开关
         st.subheader("🎬 复盘模式")
+        enable_replay = st.checkbox(
+            "启用复盘模式",
+            value=True,
+            help="启用后将获取历史数据而不是实时数据"
+        )
+        
+        # 数据源选择
         replay_mode = st.radio(
             "数据源选择",
             ["QMT 毫秒级复盘 (推荐)", "AkShare 日线复盘"],
+            disabled=not enable_replay,
             help="QMT 模式支持精确时间点快照（如 14:56:55）"
         )
         
@@ -43,46 +51,76 @@ def render_historical_replay_panel():
         date = st.text_input(
             "📅 测试日期",
             value=default_date,
-            help="格式：YYYYMMDD，例如 20260128"
+            help="格式：YYYYMMDD，例如 20260128",
+            disabled=not enable_replay
         )
         
-        # 🔥 V19.17: 时间点选择（仅 QMT 模式）
-        if replay_mode == "QMT 毫秒级复盘 (推荐)":
-            st.subheader("⏰ 时间点选择")
-            time_point_option = st.selectbox(
-                "常用时间点",
-                ["自定义时间", "9:30:00 开盘", "10:30:00 早盘", "11:30:00 午盘", "13:00:00 开盘", "14:00:00 午后", "14:30:00 尾盘", "14:56:00 尾盘冲刺", "15:00:00 收盘"],
-                help="选择常用时间点或自定义"
+        # 🔥 V19.17.1: 时间步进功能
+        if replay_mode == "QMT 毫秒级复盘 (推荐)" and enable_replay:
+            st.subheader("⏰ 时间步进功能")
+            time_step_mode = st.checkbox(
+                "启用时间步进",
+                value=False,
+                help="启用后将从 09:30 逐步推进到 15:00"
             )
             
-            if time_point_option == "自定义时间":
-                time_point = st.text_input(
-                    "自定义时间点",
-                    value="145600",
-                    help="格式：HHMMSS，例如 145600 表示 14:56:00"
+            if time_step_mode:
+                st.info("📊 时间步进模式：")
+                st.write("- 从 09:30 开始，每分钟步进一次")
+                st.write("- 自动记录每个时间点的战法信号")
+                st.write("- 适合复盘'尾盘偷袭'战法")
+            
+            # 时间点选择（单点模式）
+            if not time_step_mode:
+                st.subheader("⏰ 时间点选择（单点模式）")
+                time_point_option = st.selectbox(
+                    "常用时间点",
+                    ["自定义时间", "9:30:00 开盘", "10:30:00 早盘", "11:30:00 午盘", "13:00:00 开盘", "14:00:00 午后", "14:30:00 尾盘", "14:56:00 尾盘冲刺", "15:00:00 收盘"],
+                    help="选择常用时间点或自定义"
+                )
+                
+                if time_point_option == "自定义时间":
+                    time_point = st.text_input(
+                        "自定义时间点",
+                        value="145600",
+                        help="格式：HHMMSS，例如 145600 表示 14:56:00"
+                    )
+                else:
+                    # 预设时间点映射
+                    time_map = {
+                        "9:30:00 开盘": "093000",
+                        "10:30:00 早盘": "103000",
+                        "11:30:00 午盘": "113000",
+                        "13:00:00 开盘": "130000",
+                        "14:00:00 午后": "140000",
+                        "14:30:00 尾盘": "143000",
+                        "14:56:00 尾盘冲刺": "145600",
+                        "15:00:00 收盘": "150000",
+                    }
+                    time_point = time_map[time_point_option]
+                
+                period = st.selectbox(
+                    "数据周期",
+                    ["1m", "5m", "tick"],
+                    help="1m: 1分钟线（推荐）, 5m: 5分钟线, tick: 分笔数据（最精确）"
                 )
             else:
-                # 预设时间点映射
-                time_map = {
-                    "9:30:00 开盘": "093000",
-                    "10:30:00 早盘": "103000",
-                    "11:30:00 午盘": "113000",
-                    "13:00:00 开盘": "130000",
-                    "14:00:00 午后": "140000",
-                    "14:30:00 尾盘": "143000",
-                    "14:56:00 尾盘冲刺": "145600",
-                    "15:00:00 收盘": "150000",
-                }
-                time_point = time_map[time_point_option]
-            
-            period = st.selectbox(
-                "数据周期",
-                ["1m", "5m", "tick"],
-                help="1m: 1分钟线（推荐）, 5m: 5分钟线, tick: 分笔数据（最精确）"
-            )
+                # 时间步进模式：定义起始时间、结束时间和步长
+                time_point = "093000"  # 默认从 09:30 开始
+                end_time = "150000"  # 默认到 15:00 结束
+                step_minutes = st.slider(
+                    "步进间隔（分钟）",
+                    min_value=1,
+                    max_value=30,
+                    value=5,
+                    help="每隔多少分钟步进一次"
+                )
+                period = "1m"  # 时间步进模式默认使用 1分钟线
         else:
             time_point = None
             period = None
+            time_step_mode = False
+            step_minutes = 5
         
         # 测试股票
         test_stocks = st.text_area(
@@ -295,50 +333,164 @@ def render_historical_replay_panel():
             st.error("❌ 请输入至少一只股票代码")
             return
         
-        # 创建数据提供者
-        try:
-            if replay_mode == "QMT 毫秒级复盘 (推荐)":
-                provider = DataProviderFactory.get_provider(
-                    mode='qmt_replay',
-                    date=date,
-                    time_point=time_point,
-                    period=period,
-                    stock_list=stock_list
-                )
-            else:
-                provider = DataProviderFactory.get_provider(
-                    mode='replay',
-                    date=date,
-                    stock_list=stock_list
-                )
+        # 🔥 V19.17.1: 时间步进模式
+        if time_step_mode and replay_mode == "QMT 毫秒级复盘 (推荐)":
+            st.info(f"⏰ 时间步进模式：从 09:30 到 15:00，每隔 {step_minutes} 分钟步进一次")
             
-            # 获取历史数据
-            with st.spinner("📥 正在获取历史数据..."):
-                stocks_data = provider.get_realtime_data(stock_list)
-            
-            if not stocks_data:
-                st.error("❌ 未获取到历史数据，请检查日期和股票代码")
+            # 初始化战法实例
+            try:
+                from logic.midway_strategy_v19_final import MidwayStrategy
+                midway = MidwayStrategy(DataProviderFactory.get_provider('live'))
+            except Exception as e:
+                st.error(f"❌ 战法初始化失败: {e}")
                 return
             
-            st.success(f"✅ 成功获取 {len(stocks_data)} 只股票的历史数据")
+            # 生成时间点列表
+            start_time_str = "093000"
+            end_time_str = "150000"
+            current_time = datetime.strptime(start_time_str, "%H%M%S")
+            end_time = datetime.strptime(end_time_str, "%H%M%S")
             
-            # 显示数据表格
-            st.subheader("📊 历史数据预览")
-            df_preview = pd.DataFrame(stocks_data)
-            display_cols = ['code', 'price', 'change_pct', 'volume', 'amount']
-            if 'replay_time' in df_preview.columns:
-                display_cols.insert(1, 'replay_time')
-            st.dataframe(df_preview[display_cols])
+            # 记录所有时间点的信号
+            all_signals = []
             
-            # 根据测试模式执行测试
-            if test_mode == "技术分析测试":
-                _run_technical_analysis_test(stocks_data, date)
-            elif test_mode == "AI识别测试":
-                _run_ai_recognition_test(stocks_data, date)
-            elif test_mode == "完整回放测试":
-                _run_full_replay_test(stocks_data, date, provider)
-            elif test_mode == "半路战法复盘":
-                _run_midway_strategy_replay(stocks_data, date, provider)
+            time_step_progress = st.progress(0)
+            total_steps = int((end_time - current_time).total_seconds() / 60 / step_minutes)
+            
+            step_count = 0
+            while current_time <= end_time:
+                step_count += 1
+                current_time_str = current_time.strftime("%H%M%S")
+                
+                st.info(f"📍 当前时间点：{current_time_str}")
+                
+                # 创建数据提供者
+                try:
+                    provider = DataProviderFactory.get_provider(
+                        mode='qmt_replay',
+                        date=date,
+                        time_point=current_time_str,
+                        period=period,
+                        stock_list=stock_list
+                    )
+                    
+                    # 获取历史数据
+                    stocks_data = provider.get_realtime_data(stock_list)
+                    
+                    if stocks_data:
+                        # 执行战法匹配
+                        for stock in stocks_data:
+                            code = stock['code']
+                            is_hit, reason = midway.check_breakout(code, stock)
+                            
+                            signal_record = {
+                                '时间': current_time_str,
+                                '代码': code,
+                                '现价': stock['price'],
+                                '涨幅%': f"{stock['change_pct']*100:.2f}",
+                                '是否命中': "✅ 命中" if is_hit else "⚫ 忽略",
+                                '原因': reason,
+                            }
+                            all_signals.append(signal_record)
+                        
+                        # 显示当前时间点的命中数
+                        hit_count = sum(1 for s in all_signals if s['时间'] == current_time_str and "命中" in s['是否命中'])
+                        if hit_count > 0:
+                            st.success(f"✅ {current_time_str} 发现 {hit_count} 个信号")
+                
+                except Exception as e:
+                    logger.error(f"时间点 {current_time_str} 获取数据失败: {e}")
+                
+                # 更新进度
+                progress = step_count / total_steps
+                time_step_progress.progress(progress)
+                
+                # 步进到下一个时间点
+                current_time = current_time + timedelta(minutes=step_minutes)
+            
+            # 显示所有信号汇总
+            st.markdown("---")
+            st.subheader(f"📊 时间步进复盘总结 ({date})")
+            
+            if all_signals:
+                df_signals = pd.DataFrame(all_signals)
+                st.dataframe(df_signals, use_container_width=True)
+                
+                # 统计分析
+                st.subheader("📈 信号统计")
+                
+                total_hit = sum(1 for s in all_signals if "命中" in s['是否命中'])
+                total_check = len(all_signals)
+                
+                col1, col2, col3 = st.columns(3)
+                col1.metric("🎯 总命中数", total_hit)
+                col2.metric("📊 总检查数", total_check)
+                col3.metric("🎯 命中率", f"{total_hit/total_check*100:.1f}%" if total_check > 0 else "0%")
+                
+                # 按时间点统计
+                st.subheader("⏰ 按时间点统计")
+                time_stats = df_signals.groupby('时间')['是否命中'].apply(lambda x: sum(1 for v in x if "命中" in v)).reset_index()
+                time_stats.columns = ['时间', '命中数']
+                st.bar_chart(time_stats.set_index('时间'))
+                
+                # 命中股票统计
+                if total_hit > 0:
+                    st.subheader("🎯 命中股票分析")
+                    hit_stocks = df_signals[df_signals['是否命中'].str.contains('命中', na=False)].groupby('代码').size().reset_index()
+                    hit_stocks.columns = ['代码', '命中次数']
+                    hit_stocks = hit_stocks.sort_values('命中次数', ascending=False)
+                    st.dataframe(hit_stocks, use_container_width=True)
+                
+                st.success(f"✅ 时间步进复盘完成！共检查 {total_check} 次股票，命中 {total_hit} 次")
+            else:
+                st.warning("⚠️ 未发现任何信号")
+            
+        else:
+            # 🔥 V19.17.1: 单点复盘模式（原有逻辑）
+            # 创建数据提供者
+            try:
+                if replay_mode == "QMT 毫秒级复盘 (推荐)":
+                    provider = DataProviderFactory.get_provider(
+                        mode='qmt_replay',
+                        date=date,
+                        time_point=time_point,
+                        period=period,
+                        stock_list=stock_list
+                    )
+                else:
+                    provider = DataProviderFactory.get_provider(
+                        mode='replay',
+                        date=date,
+                        stock_list=stock_list
+                    )
+                
+                # 获取历史数据
+                with st.spinner("📥 正在获取历史数据..."):
+                    stocks_data = provider.get_realtime_data(stock_list)
+                
+                if not stocks_data:
+                    st.error("❌ 未获取到历史数据，请检查日期和股票代码")
+                    return
+                
+                st.success(f"✅ 成功获取 {len(stocks_data)} 只股票的历史数据")
+                
+                # 显示数据表格
+                st.subheader("📊 历史数据预览")
+                df_preview = pd.DataFrame(stocks_data)
+                display_cols = ['code', 'price', 'change_pct', 'volume', 'amount']
+                if 'replay_time' in df_preview.columns:
+                    display_cols.insert(1, 'replay_time')
+                st.dataframe(df_preview[display_cols])
+                
+                # 根据测试模式执行测试
+                if test_mode == "技术分析测试":
+                    _run_technical_analysis_test(stocks_data, date)
+                elif test_mode == "AI识别测试":
+                    _run_ai_recognition_test(stocks_data, date)
+                elif test_mode == "完整回放测试":
+                    _run_full_replay_test(stocks_data, date, provider)
+                elif test_mode == "半路战法复盘":
+                    _run_midway_strategy_replay(stocks_data, date, provider)
             
         except Exception as e:
             st.error(f"❌ 测试执行失败: {e}")
