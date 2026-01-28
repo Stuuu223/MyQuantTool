@@ -19,6 +19,7 @@ import os
 import sys
 import json
 import time
+from datetime import datetime, timedelta
 from pathlib import Path
 
 # 添加项目根目录到路径
@@ -64,17 +65,22 @@ def test_qmt_data_connection():
             test_stock = stock_list[0]
             print(f"\n📈 测试获取 {test_stock} 的实时数据...")
 
+            # 使用动态日期（最近30天）
+            today = datetime.now()
+            start_date = (today - timedelta(days=30)).strftime('%Y%m%d')
+            end_date = today.strftime('%Y%m%d')
+
             # 下载历史数据
-            print(f"\n📅 测试下载 {test_stock} 的历史数据...")
-            xtdata.download_history_data(test_stock, period='1d', start_time='20240101', end_time='20240131')
+            print(f"\n📅 测试下载 {test_stock} 的历史数据 ({start_date}-{end_date})...")
+            xtdata.download_history_data(test_stock, period='1d', start_time=start_date, end_time=end_date)
             print(f"✅ 历史数据下载成功")
 
             # 获取本地数据
             data = xtdata.get_local_data(field_list=['time', 'open', 'high', 'low', 'close'],
                                          stock_list=[test_stock],
                                          period='1d',
-                                         start_time='20240101',
-                                         end_time='20240131')
+                                         start_time=start_date,
+                                         end_time=end_date)
 
             if data and test_stock in data:
                 print(f"✅ 成功获取 {test_stock} 的本地数据，共 {len(data[test_stock])} 条记录")

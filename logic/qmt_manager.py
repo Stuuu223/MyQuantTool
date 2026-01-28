@@ -10,12 +10,14 @@ QMT 接口管理类
 
 Author: iFlow CLI
 Date: 2026-01-28
+Version: V1.1 (修复回调GC问题，添加代码格式转换，优化订阅功能)
 """
 
 import json
 import time
 from pathlib import Path
 from typing import Optional, List, Dict, Any
+from concurrent.futures import ThreadPoolExecutor
 
 try:
     from xtquant import xtdata, xttrader
@@ -40,6 +42,7 @@ class QMTManager:
         self.trader_client = None
         self._init_data_interface()
         self._init_trader_interface()
+        self._init_subscription()
 
     def _load_config(self, config_path: Optional[str]) -> Dict:
         """加载配置文件"""
@@ -98,9 +101,12 @@ class QMTManager:
                 def on_disconnected(self):
                     print("❌ QMT 交易接口连接断开")
 
+            # 修复：将回调保存为实例属性，防止被 GC 回收
+            self._trader_callback = DefaultCallback()
+
             # 创建交易客户端
             self.trader_client = xttrader.XtQuantTrader(
-                DefaultCallback(),
+                self._trader_callback,
                 trader_config.get('session_id', 123456)
             )
 
@@ -146,7 +152,8 @@ class QMTManager:
             return None
 
     def download_history_data(self, stock_code: str, period: str = '1d',
-                             start_time: str = None, end_time: str = None) -> bool:
+                             start_time: str = None, end_time: str = None,
+                             async_mode: bool = False) -> bool:
         """
         下载历史数据
 
@@ -155,6 +162,7 @@ class QMTManager:
             period: 周期（1d, 1h, 1m 等）
             start_time: 开始时间（格式：YYYYMMDD）
             end_time: 结束时间（格式：YYYYMMDD）
+            async_mode: 是否异步执行（避免阻塞主线程）
 
         Returns:
             是否成功
@@ -162,12 +170,23 @@ class QMTManager:
         if not self.is_available():
             return False
 
-        try:
-            xtdata.download_history_data(stock_code, period, start_time, end_time)
-            return True
-        except Exception as e:
-            print(f"❌ 下载历史数据失败: {e}")
-            return False
+        def _download():
+            try:
+                # 标准化股票代码
+                normalized_code = self.normalize_code(stock_code)
+                xtdata.download_history_data(normalized_code, period, start_time, end_time)
+                return True
+            except Exception as e:
+                print(f"❌ 下载历史数据失败: {e}")
+                return False
+
+        if async_mode:
+            # 异步执行，避免阻塞
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(_download)
+                return future.result(timeout=300)  # 5分钟超时
+        else:
+            return _download()
 
     def get_local_data(self, stock_list: List[str], field_list: List[str],
                       period: str = '1d', start_time: str = None,
@@ -244,6 +263,69 @@ class QMTManager:
             'trader_connected': self.trader_connected,
             'config_loaded': bool(self.config)
         }
+
+    def _init_subscription(self):
+        """初始化数据订阅"""
+        if not self.is_available():
+            return
+
+        subscribe_config = self.config.get('data_subscribe', {})
+        if not subscribe_config.get('enabled', False):
+            return
+
+        try:
+            symbols = subscribe_config.get('symbols', [])
+            if symbols:
+                # 转换股票代码格式
+                formatted_symbols = [self.normalize_code(s) for s in symbols]
+                xtdata.subscribe_quote(formatted_symbols)
+                print(f"✅ 已订阅 {len(formatted_symbols)} 只股票的行情数据")
+        except Exception as e:
+            print(f"⚠️  数据订阅失败: {e}")
+
+    @staticmethod
+    def normalize_code(code: str) -> str:
+        """
+        标准化股票代码格式为 QMT 格式（######.SH / ######.SZ）
+
+        Args:
+            code: 股票代码，支持多种格式（600519, sh600519, 600519.SH 等）
+
+        Returns:
+            QMT 标准格式的股票代码
+
+        Examples:
+            >>> QMTManager.normalize_code('600519')
+            '600519.SH'
+            >>> QMTManager.normalize_code('sh600519')
+            '600519.SH'
+            >>> QMTManager.normalize_code('300750')
+            '300750.SZ'
+        """
+        if not code:
+            return code
+
+        # 移除可能的分隔符
+        code = code.strip().replace('.', '')
+
+        # 如果已经包含交易所后缀，直接返回
+        if code.endswith('.SH') or code.endswith('.SZ'):
+            return code
+
+        # 提取6位数字代码
+        if code.startswith('sh'):
+            stock_code = code[2:]
+            return f"{stock_code}.SH"
+        elif code.startswith('sz'):
+            stock_code = code[2:]
+            return f"{stock_code}.SZ"
+        elif code.startswith('6'):
+            return f"{code}.SH"
+        elif code.startswith(('0', '3')):
+            return f"{code}.SZ"
+        else:
+            # 默认为主板
+            return f"{code}.SH"
 
 
 # 全局 QMT 管理器实例

@@ -7,6 +7,7 @@ QMT 连接快速测试脚本
 
 Author: iFlow CLI
 Date: 2026-01-28
+Version: V1.1 (添加代码格式转换测试)
 """
 
 import sys
@@ -63,4 +64,23 @@ def test_basic_connection():
 
 
 if __name__ == "__main__":
+    # 测试代码格式转换
+    print("=" * 60)
+    print("🧪 股票代码格式转换测试")
+    print("=" * 60)
+
+    try:
+        from logic.qmt_manager import QMTManager
+
+        test_codes = ['600519', 'sh600519', '300750', 'sz300750', '000001']
+        print("\n📝 测试代码格式转换:")
+        for code in test_codes:
+            normalized = QMTManager.normalize_code(code)
+            print(f"  {code:10s} -> {normalized}")
+
+        print("\n✅ 代码格式转换测试通过")
+    except Exception as e:
+        print(f"\n❌ 代码格式转换测试失败: {e}")
+
+    print("\n")
     test_basic_connection()
