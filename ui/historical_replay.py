@@ -323,15 +323,16 @@ def render_historical_replay_panel():
     
     # 开始测试
     if start_test:
-        st.markdown("---")
-        st.subheader("🔬 测试执行中...")
-        
-        # 解析股票代码
-        stock_list = [code.strip() for code in test_stocks.split(',') if code.strip()]
-        
-        if not stock_list:
-            st.error("❌ 请输入至少一只股票代码")
-            return
+        try:
+            st.markdown("---")
+            st.subheader("🔬 测试执行中...")
+            
+            # 解析股票代码
+            stock_list = [code.strip() for code in test_stocks.split(',') if code.strip()]
+            
+            if not stock_list:
+                st.error("❌ 请输入至少一只股票代码")
+                return
         
         # 🔥 V19.17.1: 时间步进模式
         if time_step_mode and replay_mode == "QMT 毫秒级复盘 (推荐)":
