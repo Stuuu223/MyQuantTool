@@ -276,6 +276,18 @@ class MidwayStrategy:
                 logger.error("❌ [半路战法] 获取股票列表失败")
                 return []
             
+            # 🔥 V19.17: 去重和强转（修复 DataFrame.str 报错）
+            # 1. 强制去除重复列（保留第一列）
+            stock_list_df = stock_list_df.loc[:, ~stock_list_df.columns.duplicated()]
+            
+            # 2. 强制转换关键列为字符串类型
+            for col in ['代码', '名称']:
+                if col in stock_list_df.columns:
+                    stock_list_df[col] = stock_list_df[col].astype(str)
+            
+            # 3. 调试：打印列名（可选）
+            # logger.debug(f"📊 [半路战法] 数据列名: {stock_list_df.columns.tolist()}")
+            
             # 🆕 V19.17: 确保数据列存在，避免 KeyError
             required_columns = ['涨跌幅', '成交量', '成交额']
             missing_columns = [col for col in required_columns if col not in stock_list_df.columns]
@@ -295,7 +307,7 @@ class MidwayStrategy:
             if only_20cm:
                 # 只扫描20cm标的（创业板300和科创板688）
                 stock_list_df = stock_list_df[
-                    stock_list_df['代码'].str.startswith(('300', '688'))
+                    stock_list_df['代码'].str.startswith(('300', '688'), na=False)
                 ]
                 logger.info(f"🎯 [半路战法] 只扫描20cm标的，筛选后股票: {len(stock_list_df)} 只")
                 
@@ -326,10 +338,10 @@ class MidwayStrategy:
                 
                 # 🆕 V19.11.3: 使用传入的参数动态设置涨幅区间
                 # 主板股票（600/000）
-                main_board_mask = stock_list_df['代码'].str.startswith(('600', '000', '001', '002', '003'))
+                main_board_mask = stock_list_df['代码'].str.startswith(('600', '000', '001', '002', '003'), na=False)
 
                 # 20cm股票（300/688）
-                cm20_mask = stock_list_df['代码'].str.startswith(('300', '688'))
+                cm20_mask = stock_list_df['代码'].str.startswith(('300', '688'), na=False)
 
                 # 🆕 V19.14: 修复涨幅区间计算逻辑
                 # easyquotation 返回的涨跌幅已经是真实的百分比数值（例如3.18表示3.18%）
