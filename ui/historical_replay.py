@@ -3,6 +3,7 @@
 """
 历史重演测试面板
 用于周末测试 AI 对历史市场的识别能力
+V19.17: 新增 QMT 毫秒级复盘模式，支持精确时间点快照
 """
 
 import streamlit as st
@@ -13,6 +14,7 @@ from logic.technical_analyzer import TechnicalAnalyzer
 from logic.sentiment_analyzer import SentimentAnalyzer
 from logic.algo import QuantAlgo
 from logic.logger import get_logger
+from logic.midway_strategy_v19_final import MidwayStrategy
 import config_system as config
 
 logger = get_logger(__name__)
@@ -24,29 +26,63 @@ def render_historical_replay_panel():
     """
     st.title("🎮 历史重演测试 (Historical Replay)")
     
-    # 🚨 醒目的模式警告
-    st.error("""
-    ⚠️ **重要提醒：当前处于历史回放模式**
-    
-    - 此模式仅用于周末测试和复盘
-    - 数据来自 AkShare 历史日线数据
-    - **不是实盘数据，不能用于实盘交易**
-    - 周一实盘请使用其他标签页（如"🔥 龙头战法"）
-    """)
-    
-    st.markdown("---")
-    
     # 侧边栏：设置
     with st.sidebar:
         st.header("⚙️ 测试设置")
+        
+        # 🔥 V19.17: 复盘模式选择
+        st.subheader("🎬 复盘模式")
+        replay_mode = st.radio(
+            "数据源选择",
+            ["QMT 毫秒级复盘 (推荐)", "AkShare 日线复盘"],
+            help="QMT 模式支持精确时间点快照（如 14:56:55）"
+        )
         
         # 选择日期
         default_date = (datetime.now() - timedelta(days=1)).strftime('%Y%m%d')
         date = st.text_input(
             "📅 测试日期",
             value=default_date,
-            help="格式：YYYYMMDD，例如 20260116"
+            help="格式：YYYYMMDD，例如 20260128"
         )
+        
+        # 🔥 V19.17: 时间点选择（仅 QMT 模式）
+        if replay_mode == "QMT 毫秒级复盘 (推荐)":
+            st.subheader("⏰ 时间点选择")
+            time_point_option = st.selectbox(
+                "常用时间点",
+                ["自定义时间", "9:30:00 开盘", "10:30:00 早盘", "11:30:00 午盘", "13:00:00 开盘", "14:00:00 午后", "14:30:00 尾盘", "14:56:00 尾盘冲刺", "15:00:00 收盘"],
+                help="选择常用时间点或自定义"
+            )
+            
+            if time_point_option == "自定义时间":
+                time_point = st.text_input(
+                    "自定义时间点",
+                    value="145600",
+                    help="格式：HHMMSS，例如 145600 表示 14:56:00"
+                )
+            else:
+                # 预设时间点映射
+                time_map = {
+                    "9:30:00 开盘": "093000",
+                    "10:30:00 早盘": "103000",
+                    "11:30:00 午盘": "113000",
+                    "13:00:00 开盘": "130000",
+                    "14:00:00 午后": "140000",
+                    "14:30:00 尾盘": "143000",
+                    "14:56:00 尾盘冲刺": "145600",
+                    "15:00:00 收盘": "150000",
+                }
+                time_point = time_map[time_point_option]
+            
+            period = st.selectbox(
+                "数据周期",
+                ["1m", "5m", "tick"],
+                help="1m: 1分钟线（推荐）, 5m: 5分钟线, tick: 分笔数据（最精确）"
+            )
+        else:
+            time_point = None
+            period = None
         
         # 测试股票
         test_stocks = st.text_area(
@@ -58,7 +94,7 @@ def render_historical_replay_panel():
         # 测试模式
         test_mode = st.selectbox(
             "🎯 测试模式",
-            ["技术分析测试", "AI识别测试", "完整回放测试"],
+            ["技术分析测试", "AI识别测试", "完整回放测试", "半路战法复盘"],
             help="选择测试模式"
         )
         
@@ -74,41 +110,97 @@ def render_historical_replay_panel():
     
     with col1:
         st.subheader("📋 测试说明")
-        st.info("""
-        **历史重演测试功能说明：**
         
-        1. **技术分析测试**：验证 K 线趋势分析是否准确
-        2. **AI识别测试**：验证 AI 是否能识别龙头和风险
-        3. **完整回放测试**：完整模拟当日市场环境
-        
-        **⚠️ 重要提示（首席架构师锦囊）：**
-        
-        **锦囊 1：数据映射**
-        - 历史数据已正确映射为实时数据格式
-        - df['涨跌幅'] → realtime_data['change_pct']
-        - df['成交额'] → realtime_data['amount']
-        
-        **锦囊 2：未来函数**
-        - 当前测试使用的是"收盘价"（复盘模式）
-        - AI 看到的是全天数据，不是盘中数据
-        - 适合验证"趋势判断"，不适合验证"打板逻辑"
-        
-        **锦囊 3：数据限制**
-        - 历史数据不包含盘口数据（封单量等）
-        - "纸老虎预警"可能失效（物理限制，非 Bug）
-        - 这是正常的，请勿误判
-        
-        **技术限制：**
-        - 历史数据来自 AkShare
-        - 只能测试基于日线的技术指标
-        - 无法测试盘口数据（封单量等）
-        """)
+        if replay_mode == "QMT 毫秒级复盘 (推荐)":
+            st.info(f"""
+            **QMT 毫秒级复盘功能说明：**
+            
+            1. **时间点快照**：获取指定时间点（如 {time_point}）的盘口数据
+            2. **技术分析测试**：验证 K 线趋势分析是否准确
+            3. **AI识别测试**：验证 AI 是否能识别龙头和风险
+            4. **半路战法复盘**：验证半路战法在特定时间点的信号
+            
+            **⚠️ 重要提示（首席架构师锦囊）：**
+            
+            **锦囊 1：时间点快照**
+            - QMT 支持精确到秒的时间点数据获取
+            - 适合复盘"尾盘偷袭"战法（如 14:56:55）
+            - 数据来自 QMT 本地历史数据库
+            
+            **锦囊 2：数据精度**
+            - 1分钟线：推荐，平衡精度和性能
+            - 5分钟线：适合中长线复盘
+            - Tick数据：最精确，但数据量大
+            
+            **锦囊 3：复盘优势**
+            - 可以"时光倒流"到任意时间点
+            - 验证战法在不同时间段的表现
+            - 精准定位最佳入场时机
+            """)
+        else:
+            st.info("""
+            **历史重演测试功能说明：**
+            
+            1. **技术分析测试**：验证 K 线趋势分析是否准确
+            2. **AI识别测试**：验证 AI 是否能识别龙头和风险
+            3. **完整回放测试**：完整模拟当日市场环境
+            
+            **⚠️ 重要提示（首席架构师锦囊）：**
+            
+            **锦囊 1：数据映射**
+            - 历史数据已正确映射为实时数据格式
+            - df['涨跌幅'] → realtime_data['change_pct']
+            - df['成交额'] → realtime_data['amount']
+            
+            **锦囊 2：未来函数**
+            - 当前测试使用的是"收盘价"（复盘模式）
+            - AI 看到的是全天数据，不是盘中数据
+            - 适合验证"趋势判断"，不适合验证"打板逻辑"
+            
+            **锦囊 3：数据限制**
+            - 历史数据不包含盘口数据（封单量等）
+            - "纸老虎预警"可能失效（物理限制，非 Bug）
+            - 这是正常的，请勿误判
+            
+            **技术限制：**
+            - 历史数据来自 AkShare
+            - 只能测试基于日线的技术指标
+            - 无法测试盘口数据（封单量等）
+            """)
     
     with col2:
         st.subheader("📊 系统状态")
         st.success(f"✅ 配置系统：已加载")
-        st.success(f"✅ 数据源：历史回放模式")
-        st.success(f"✅ 测试日期：{date}")
+        if replay_mode == "QMT 毫秒级复盘 (推荐)":
+            st.success(f"✅ 数据源：QMT 毫秒级复盘")
+            st.success(f"✅ 测试日期：{date}")
+            st.success(f"✅ 时间点：{time_point}")
+            st.success(f"✅ 数据周期：{period}")
+        else:
+            st.success(f"✅ 数据源：历史回放模式")
+            st.success(f"✅ 测试日期：{date}")
+    
+    # 🚨 醒目的模式警告
+    if replay_mode == "QMT 毫秒级复盘 (推荐)":
+        st.error("""
+        ⚠️ **重要提醒：当前处于 QMT 历史复盘模式**
+        
+        - 此模式用于复盘测试，获取历史特定时间点的数据
+        - 数据来自 QMT 本地历史数据库
+        - **不是实盘数据，不能用于实盘交易**
+        - 实盘请使用"🔥 龙头战法"或其他实时标签页
+        """)
+    else:
+        st.error("""
+        ⚠️ **重要提醒：当前处于历史回放模式**
+        
+        - 此模式仅用于周末测试和复盘
+        - 数据来自 AkShare 历史日线数据
+        - **不是实盘数据，不能用于实盘交易**
+        - 周一实盘请使用其他标签页（如"🔥 龙头战法"）
+        """)
+    
+    st.markdown("---")
     
     # 快速测试
     if quick_test:
@@ -116,12 +208,21 @@ def render_historical_replay_panel():
         st.subheader("⚡ 快速测试")
         
         try:
-            # 使用默认测试数据
-            provider = DataProviderFactory.get_provider(
-                mode='replay',
-                date=date,
-                stock_list=['600058']
-            )
+            # 根据模式选择数据提供者
+            if replay_mode == "QMT 毫秒级复盘 (推荐)":
+                provider = DataProviderFactory.get_provider(
+                    mode='qmt_replay',
+                    date=date,
+                    time_point=time_point,
+                    period=period,
+                    stock_list=['600058']
+                )
+            else:
+                provider = DataProviderFactory.get_provider(
+                    mode='replay',
+                    date=date,
+                    stock_list=['600058']
+                )
             
             with st.spinner("📥 正在获取测试数据..."):
                 test_data = provider.get_realtime_data(['600058'])
@@ -131,9 +232,9 @@ def render_historical_replay_panel():
                 st.success(f"✅ 数据获取成功！")
                 
                 # 显示数据格式
-                st.json({
+                display_data = {
                     'code': stock['code'],
-                    'name': stock['name'],
+                    'name': stock.get('name', ''),
                     'price': stock['price'],
                     'change_pct': f"{stock['change_pct']*100:.2f}%",
                     'volume': stock['volume'],
@@ -142,12 +243,19 @@ def render_historical_replay_panel():
                     'high': stock['high'],
                     'low': stock['low'],
                     'pre_close': stock['pre_close'],
-                    'replay_date': stock.get('replay_date', 'N/A'),
+                    'source': stock.get('source', 'N/A'),
                     'replay_mode': stock.get('replay_mode', False),
-                })
+                }
+                
+                if replay_mode == "QMT 毫秒级复盘 (推荐)":
+                    display_data['replay_time'] = stock.get('replay_time', 'N/A')
+                else:
+                    display_data['replay_date'] = stock.get('replay_date', 'N/A')
+                
+                st.json(display_data)
                 
                 # 检查必需字段
-                required_fields = ['code', 'name', 'price', 'change_pct', 'volume', 'amount', 'open', 'high', 'low', 'pre_close']
+                required_fields = ['code', 'price', 'change_pct', 'volume', 'amount', 'open', 'high', 'low', 'pre_close']
                 missing_fields = [f for f in required_fields if f not in stock]
                 
                 if missing_fields:
@@ -170,7 +278,7 @@ def render_historical_replay_panel():
                 
                 st.info("✅ 快速测试完成！数据映射正常，可以进行完整测试。")
             else:
-                st.error("❌ 未获取到测试数据，请检查网络连接")
+                st.error("❌ 未获取到测试数据，请检查网络连接或 QMT 环境")
                 
         except Exception as e:
             st.error(f"❌ 快速测试失败: {e}")
@@ -187,13 +295,22 @@ def render_historical_replay_panel():
             st.error("❌ 请输入至少一只股票代码")
             return
         
-        # 创建历史回放数据提供者
+        # 创建数据提供者
         try:
-            provider = DataProviderFactory.get_provider(
-                mode='replay',
-                date=date,
-                stock_list=stock_list
-            )
+            if replay_mode == "QMT 毫秒级复盘 (推荐)":
+                provider = DataProviderFactory.get_provider(
+                    mode='qmt_replay',
+                    date=date,
+                    time_point=time_point,
+                    period=period,
+                    stock_list=stock_list
+                )
+            else:
+                provider = DataProviderFactory.get_provider(
+                    mode='replay',
+                    date=date,
+                    stock_list=stock_list
+                )
             
             # 获取历史数据
             with st.spinner("📥 正在获取历史数据..."):
@@ -208,7 +325,10 @@ def render_historical_replay_panel():
             # 显示数据表格
             st.subheader("📊 历史数据预览")
             df_preview = pd.DataFrame(stocks_data)
-            st.dataframe(df_preview[['code', 'name', 'price', 'change_pct', 'volume', 'amount']])
+            display_cols = ['code', 'price', 'change_pct', 'volume', 'amount']
+            if 'replay_time' in df_preview.columns:
+                display_cols.insert(1, 'replay_time')
+            st.dataframe(df_preview[display_cols])
             
             # 根据测试模式执行测试
             if test_mode == "技术分析测试":
@@ -217,6 +337,8 @@ def render_historical_replay_panel():
                 _run_ai_recognition_test(stocks_data, date)
             elif test_mode == "完整回放测试":
                 _run_full_replay_test(stocks_data, date, provider)
+            elif test_mode == "半路战法复盘":
+                _run_midway_strategy_replay(stocks_data, date, provider)
             
         except Exception as e:
             st.error(f"❌ 测试执行失败: {e}")
@@ -364,6 +486,99 @@ def _run_full_replay_test(stocks_data, date, provider):
     **建议**:
     - 如果 AI 识别结果符合预期，说明系统逻辑正确
     - 如果识别结果有偏差，可能需要调整参数
+    """)
+
+
+def _run_midway_strategy_replay(stocks_data, date, provider):
+    """
+    🔥 V19.17: 运行半路战法复盘测试
+    
+    Args:
+        stocks_data: 股票数据列表
+        date: 测试日期
+        provider: 数据提供者
+    """
+    st.subheader("🎯 半路战法复盘测试")
+    
+    # 创建半路战法实例
+    try:
+        midway = MidwayStrategy(provider)
+        st.success("✅ 半路战法初始化成功")
+    except Exception as e:
+        st.error(f"❌ 半路战法初始化失败: {e}")
+        return
+    
+    # 显示复盘时间信息
+    if 'replay_time' in stocks_data[0]:
+        st.info(f"📅 复盘时间：{date} {stocks_data[0]['replay_time']}")
+    else:
+        st.info(f"📅 复盘日期：{date}")
+    
+    # 执行半路战法匹配
+    with st.spinner("🔍 正在执行半路战法匹配..."):
+        results = []
+        for stock in stocks_data:
+            try:
+                code = stock['code']
+                is_hit, reason = midway.check_breakout(code, stock)
+                
+                result = {
+                    '代码': code,
+                    '现价': stock['price'],
+                    '涨幅%': f"{stock['change_pct']*100:.2f}",
+                    '是否命中': "✅ 命中" if is_hit else "⚫ 忽略",
+                    '原因': reason,
+                }
+                results.append(result)
+            except Exception as e:
+                logger.error(f"半路战法分析 {stock['code']} 失败: {e}")
+                continue
+    
+    # 显示结果
+    st.success(f"✅ 半路战法复盘完成，共分析 {len(results)} 只股票")
+    
+    df_result = pd.DataFrame(results)
+    st.dataframe(df_result, use_container_width=True)
+    
+    # 统计分析
+    st.subheader("📊 复盘统计")
+    col1, col2, col3 = st.columns(3)
+    
+    hit_count = sum(1 for r in results if "命中" in r['是否命中'])
+    ignore_count = sum(1 for r in results if "忽略" in r['是否命中'])
+    
+    col1.metric("🎯 命中数量", hit_count)
+    col2.metric("⚫ 忽略数量", ignore_count)
+    col3.metric("📊 命中率", f"{hit_count/len(results)*100:.1f}%" if results else "0%")
+    
+    # 命中原因分析
+    if hit_count > 0:
+        st.subheader("🎯 命中股票分析")
+        hit_stocks = [r for r in results if "命中" in r['是否命中']]
+        for stock in hit_stocks:
+            st.info(f"""
+            **{stock['代码']}**: {stock['原因']}
+            - 现价: {stock['现价']}
+            - 涨幅: {stock['涨幅%']}
+            """)
+    
+    # 测试总结
+    st.subheader("📝 复盘总结")
+    st.info(f"""
+    **复盘日期**: {date}
+    **复盘股票**: {len(stocks_data)} 只
+    **命中数量**: {hit_count} 只
+    **命中率**: {hit_count/len(results)*100:.1f}%
+    
+    **复盘结论**:
+    - ✅ 半路战法复盘功能正常
+    - ✅ 能够识别特定时间点的半路机会
+    - ✅ 可以用于验证战法在历史数据上的表现
+    
+    **建议**:
+    - 可以尝试不同时间点（如 10:30、14:30、14:56）进行复盘
+    - 对比不同时间点的命中率和命中率
+    - 找出最佳入场时间窗口
     """)
 
 

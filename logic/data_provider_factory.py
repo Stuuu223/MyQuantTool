@@ -27,9 +27,12 @@ class DataProviderFactory:
         Args:
             mode: 数据模式
                 - 'live': 实时数据模式（默认）
-                - 'replay': 历史回放模式
+                - 'replay': 历史回放模式（AkShare 日线数据）
+                - 'qmt_replay': QMT 历史复盘模式（支持时间点快照）
             **kwargs: 额外参数
-                - date: 历史日期（仅 replay 模式需要，格式：'20260116'）
+                - date: 历史日期（仅 replay/qmt_replay 模式需要，格式：'20260116'）
+                - time_point: 时间点（仅 qmt_replay 模式需要，格式：'145600'，即 14:56:00）
+                - period: 数据周期（仅 qmt_replay 模式，默认 '1m'）
                 - stock_list: 股票列表（可选）
         
         Returns:
@@ -41,6 +44,10 @@ class DataProviderFactory:
         elif mode == 'replay':
             from logic.historical_replay_provider import HistoricalReplayProvider
             return HistoricalReplayProvider(**kwargs)
+        elif mode == 'qmt_replay':
+            # 🔥 V19.17: 新增 QMT 历史复盘模式
+            from logic.qmt_historical_provider import QMTHistoricalProvider
+            return QMTHistoricalProvider(**kwargs)
         else:
             raise ValueError(f"不支持的 data mode: {mode}")
 
