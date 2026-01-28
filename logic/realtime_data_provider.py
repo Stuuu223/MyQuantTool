@@ -37,6 +37,22 @@ class RealtimeDataProvider(DataProvider):
         """初始化实时数据提供者"""
         super().__init__()
 
+        # 🆕 V19.15: 初始化 QMT 管理器（优先数据源）
+        try:
+            from logic.qmt_manager import get_qmt_manager
+            self.qmt = get_qmt_manager()
+            if self.qmt.is_available():
+                logger.info("✅ [V19.15] QMT 数据接口已加载（优先数据源）")
+            else:
+                logger.info("⚠️  [V19.15] QMT 数据接口不可用，将使用降级数据源")
+        except Exception as e:
+            logger.warning(f"⚠️  [V19.15] QMT 管理器初始化失败: {e}")
+            self.qmt = None
+
+        # 🆕 V19.15: 初始化代码转换器
+        from logic.code_converter import CodeConverter
+        self.code_converter = CodeConverter
+
         # 🚨 V19.13: 强制清理代理配置，防止连接池爆满
         import os
         for key in ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy']:
@@ -213,65 +229,158 @@ class RealtimeDataProvider(DataProvider):
 
     def get_realtime_data(self, stock_list):
         """
-        获取实时数据
-        
+        获取实时数据（混合模式：QMT 优先，降级到 EasyQuotation）
+
         Args:
             stock_list: 股票代码列表或包含股票信息的字典列表
-        
+
+        Returns:
+            list: 股票数据列表
+        """
+        # 🆕 V19.15: 提取股票代码
+        if isinstance(stock_list[0], dict):
+            codes = [stock['code'] for stock in stock_list]
+        else:
+            codes = stock_list
+
+        # 🆕 V19.15: 尝试使用 QMT（极速模式）
+        if self.qmt and self.qmt.is_available():
+            try:
+                logger.info(f"⚡ [V19.15] 使用 QMT 获取实时数据（共 {len(codes)} 只股票）")
+                qmt_data = self._get_qmt_realtime_data(codes)
+                if qmt_data:
+                    logger.info(f"✅ [V19.15] QMT 数据获取成功（共 {len(qmt_data)} 只股票）")
+                    # 注入 DDE 和乖离率数据
+                    self._inject_enhanced_data(qmt_data)
+                    return qmt_data
+                else:
+                    logger.warning("⚠️  [V19.15] QMT 返回空数据，降级到 EasyQuotation")
+            except Exception as e:
+                logger.warning(f"⚠️  [V19.15] QMT 获取数据失败: {e}，降级到 EasyQuotation")
+
+        # 🆕 V19.15: 降级使用 EasyQuotation（兼容模式）
+        logger.info(f"🔄 [V19.15] 使用 EasyQuotation 获取实时数据（共 {len(codes)} 只股票）")
+        return self._get_easyquotation_data(stock_list)
+
+    def _get_qmt_realtime_data(self, stock_list: list) -> list:
+        """
+        🆕 V19.15: 使用 QMT 获取实时数据
+
+        Args:
+            stock_list: 股票代码列表（标准格式）
+
+        Returns:
+            list: 股票数据列表
+        """
+        try:
+            # 转换为 QMT 格式
+            qmt_codes = [self.code_converter.to_qmt(code) for code in stock_list]
+
+            # 获取 QMT tick 数据
+            qmt_ticks = self.qmt.get_full_tick(qmt_codes)
+
+            if not qmt_ticks:
+                return []
+
+            # 转换为标准格式
+            result = []
+            for qmt_code, data in qmt_ticks.items():
+                if not data:
+                    continue
+
+                # 将 QMT 格式转回标准格式
+                std_code = self.code_converter.to_standard(qmt_code)
+
+                stock_info = {
+                    'code': std_code,
+                    'name': '',  # QMT tick 数据不带名称
+                    'price': data.get('lastPrice', 0),
+                    'change_pct': data.get('pctChg', 0) / 100 if data.get('pctChg') else 0,
+                    'volume': data.get('volume', 0),
+                    'amount': data.get('amount', 0),
+                    'open': data.get('open', 0),
+                    'high': data.get('high', 0),
+                    'low': data.get('low', 0),
+                    'pre_close': data.get('lastClose', 0),
+                    'data_timestamp': '',
+                    'turnover': 0,  # QMT 不提供换手率
+                    'volume_ratio': 0,  # QMT 不提供量比
+                    'bid1': data.get('bidPrice', [0, 0, 0, 0, 0])[0] if data.get('bidPrice') else 0,
+                    'ask1': data.get('askPrice', [0, 0, 0, 0, 0])[0] if data.get('askPrice') else 0,
+                    'bid1_volume': data.get('bidVol', [0, 0, 0, 0, 0])[0] if data.get('bidVol') else 0,
+                    'ask1_volume': data.get('askVol', [0, 0, 0, 0, 0])[0] if data.get('askVol') else 0,
+                    # QMT 特有字段
+                    'source': 'QMT'
+                }
+                result.append(stock_info)
+
+            return result
+
+        except Exception as e:
+            logger.error(f"❌ [V19.15] QMT 实时数据获取失败: {e}")
+            return []
+
+    def _get_easyquotation_data(self, stock_list) -> list:
+        """
+        🆕 V19.15: 使用 EasyQuotation 获取实时数据（降级方案）
+
+        Args:
+            stock_list: 股票代码列表或包含股票信息的字典列表
+
         Returns:
             list: 股票数据列表
         """
         try:
             import easyquotation as eq
-            
+
             # 🆕 V19.5 盲扫模式优化：使用 tencent 数据源以获取正确的换手率和量比
             quotation = eq.use('tencent')
-            
+
             # 提取股票代码
             if isinstance(stock_list[0], dict):
                 codes = [stock['code'] for stock in stock_list]
             else:
                 codes = stock_list
-            
+
             # 🚀 V19.4 盲扫模式：批次处理，防止扫描中断
             # 将大列表拆分为小批次，每次只请求 20 只，失败了不影响下一批
             batch_size = 20
             all_market_data = {}
             total_batches = (len(codes) + batch_size - 1) // batch_size
-            
+
             logger.info(f"🚀 [盲扫模式] 开始批次处理，共 {len(codes)} 只股票，{total_batches} 个批次")
-            
+
             for i in range(0, len(codes), batch_size):
                 batch = codes[i : i + batch_size]
                 batch_num = i // batch_size + 1
-                
+
                 logger.info(f"📊 [批次 {batch_num}/{total_batches}] 正在扫描 {len(batch)} 只股票...")
-                
+
                 try:
                     # 获取实时数据
                     market_data = quotation.stocks(batch)
-                    
+
                     if market_data:
                         all_market_data.update(market_data)
                         logger.info(f"✅ [批次 {batch_num}] 成功获取 {len(market_data)} 只股票数据")
                     else:
                         logger.warning(f"⚠️ [批次 {batch_num}] 未获取到数据")
-                    
+
                     # 🚀 V19.4 优化：短暂休眠，主动释放 GIL，防止卡死主线程
                     import time
                     time.sleep(0.01)
-                    
+
                 except Exception as e:
                     # [关键] 捕获错误，打印日志，但绝不 crash！
                     logger.error(f"❌ [批次 {batch_num}] 扫描失败: {e}，跳过此批次")
                     continue  # 继续下一批！
-            
+
             market_data = all_market_data
-            
+
             # 🚀 V19.4 盲扫模式：检查是否获取到数据
             if not market_data:
                 logger.warning(f"⚠️ [盲扫模式] 所有批次均失败，未获取到任何数据")
-                
+
                 # 🚀 V19.4 降级机制：尝试使用单次请求（可能被限制，但值得一试）
                 logger.info(f"🔄 [盲扫模式] 尝试降级为单次请求...")
                 try:
@@ -282,26 +391,26 @@ class RealtimeDataProvider(DataProvider):
                         logger.warning(f"⚠️ [盲扫模式] 降级失败，仍未获取到数据")
                 except Exception as e:
                     logger.error(f"❌ [盲扫模式] 降级请求失败: {e}")
-                
+
                 if not market_data:
                     return []
             else:
                 logger.info(f"✅ [盲扫模式] 批次处理完成，共获取 {len(market_data)} 只股票数据")
-            
+
             # V16.2 新增：数据保质期校验
             current_time = datetime.now()
             current_hour = current_time.hour
             current_minute = current_time.minute
-            
+
             # 判断是否在竞价期间（9:15-9:30）
             is_auction_period = (current_hour == 9 and 15 <= current_minute < 30)
-            
+
             # 格式化数据
             result = []
             for code, data in market_data.items():
                 if not data:
                     continue
-                
+
                 # V16.2 新增：检查数据时间戳
                 data_time_str = data.get('time', '')
                 if data_time_str and not is_auction_period:
@@ -363,7 +472,7 @@ class RealtimeDataProvider(DataProvider):
                             continue
                     except Exception as e:
                         logger.warning(f"⚠️ [时间解析失败] {code} 无法解析时间戳 {data_time_str}: {e}")
-                
+
                 stock_info = {
                     'code': code,
                     'name': data.get('name', ''),
@@ -382,53 +491,64 @@ class RealtimeDataProvider(DataProvider):
                     'ask1': data.get('ask1', 0),  # 🆕 V19.6 新增：卖一价
                     'bid1_volume': data.get('bid1_volume', 0),  # 🆕 V19.6 新增：买一量
                     'ask1_volume': data.get('ask1_volume', 0),  # 🆕 V19.6 新增：卖一量
+                    'source': 'EasyQuotation'  # 🆕 V19.15 新增：数据源标识
                 }
                 result.append(stock_info)
 
-            # 🆕 V18.6.1: 从内存缓存中瞬间注入 DDE 数据和乖离率（0 延迟）
-            # 不再同步调用网络请求，避免阻塞主线程
-            if result:
-                for stock_info in result:
-                    code = stock_info['code']
-
-                    # 从缓存中注入 DDE 数据（瞬间完成）
-                    if code in self.dde_cache:
-                        dde_data = self.dde_cache[code]
-                        stock_info['dde_net_amount'] = dde_data.get('dde_net_amount', 0)
-                        stock_info['scramble_degree'] = dde_data.get('scramble_degree', 0)
-                        stock_info['super_big_order'] = dde_data.get('super_big_order', 0)
-                        stock_info['big_order'] = dde_data.get('big_order', 0)
-                    else:
-                        # 没有缓存数据时补 0，绝不发起网络请求
-                        stock_info['dde_net_amount'] = 0
-                        stock_info['scramble_degree'] = 0
-                        stock_info['super_big_order'] = 0
-                        stock_info['big_order'] = 0
-
-                    # 注入 DDE 加速度
-                    if code in self.dde_velocity_cache:
-                        stock_info['dde_velocity'] = self.dde_velocity_cache[code]
-                    else:
-                        stock_info['dde_velocity'] = 0
-
-                    # 注入乖离率（使用缓存或快速计算）
-                    current_price = stock_info.get('price', 0)
-                    if current_price > 0:
-                        # 🆕 V19.5: 使用盘前缓存计算乖离率（0 网络请求）
-                        # 优先使用盘前缓存，如果缓存不存在则返回 0
-                        bias = self.pre_market_cache.calculate_ma_bias(code, current_price)
-                        if bias is not None:
-                            stock_info['bias_rate'] = bias
-                        else:
-                            stock_info['bias_rate'] = 0
-                    else:
-                        stock_info['bias_rate'] = 0
+            # 注入 DDE 和乖离率数据
+            self._inject_enhanced_data(result)
 
             return result
-            
+
         except Exception as e:
             logger.error(f"获取实时数据失败: {e}")
             return []
+
+    def _inject_enhanced_data(self, stock_list: list):
+        """
+        🆕 V19.15: 注入增强数据（DDE、乖离率等）
+
+        Args:
+            stock_list: 股票数据列表
+        """
+        if not stock_list:
+            return
+
+        for stock_info in stock_list:
+            code = stock_info['code']
+
+            # 从缓存中注入 DDE 数据（瞬间完成）
+            if code in self.dde_cache:
+                dde_data = self.dde_cache[code]
+                stock_info['dde_net_amount'] = dde_data.get('dde_net_amount', 0)
+                stock_info['scramble_degree'] = dde_data.get('scramble_degree', 0)
+                stock_info['super_big_order'] = dde_data.get('super_big_order', 0)
+                stock_info['big_order'] = dde_data.get('big_order', 0)
+            else:
+                # 没有缓存数据时补 0，绝不发起网络请求
+                stock_info['dde_net_amount'] = 0
+                stock_info['scramble_degree'] = 0
+                stock_info['super_big_order'] = 0
+                stock_info['big_order'] = 0
+
+            # 注入 DDE 加速度
+            if code in self.dde_velocity_cache:
+                stock_info['dde_velocity'] = self.dde_velocity_cache[code]
+            else:
+                stock_info['dde_velocity'] = 0
+
+            # 注入乖离率（使用缓存或快速计算）
+            current_price = stock_info.get('price', 0)
+            if current_price > 0:
+                # 🆕 V19.5: 使用盘前缓存计算乖离率（0 网络请求）
+                # 优先使用盘前缓存，如果缓存不存在则返回 0
+                bias = self.pre_market_cache.calculate_ma_bias(code, current_price)
+                if bias is not None:
+                    stock_info['bias_rate'] = bias
+                else:
+                    stock_info['bias_rate'] = 0
+            else:
+                stock_info['bias_rate'] = 0
     
     def get_market_data(self):
         """
