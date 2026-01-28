@@ -159,6 +159,33 @@ class MidwayStrategy:
                 # 转换为 DataFrame 格式，兼容后续逻辑
                 stock_list_df = pd.DataFrame(active_stocks)
                 stock_list_df.rename(columns={'code': '代码', 'name': '名称'}, inplace=True)
+                
+                # 🔥 V19.17: 紧急修复 - 字段映射（英文 -> 中文）
+                # 解决活跃股筛选器返回英文字段，战法期望中文字段的问题
+                key_mapping = {
+                    'change_pct': '涨跌幅',
+                    'volume': '成交量',
+                    'amount': '成交额',
+                    'turnover': '换手率',
+                    'price': '最新价',
+                    'now': '最新价',  # easyquotation 有时候用 now
+                    'close': '昨收',
+                    'high': '最高',
+                    'low': '最低',
+                    'open': '今开'
+                }
+                
+                # 映射所有可能的英文字段
+                for eng_key, cn_key in key_mapping.items():
+                    if eng_key in stock_list_df.columns and cn_key not in stock_list_df.columns:
+                        stock_list_df[cn_key] = stock_list_df[eng_key]
+                
+                # 特殊处理：如果连涨跌幅都没有，必须手动算
+                if '涨跌幅' not in stock_list_df.columns and '最新价' in stock_list_df.columns and '昨收' in stock_list_df.columns:
+                    logger.warning(f"⚠️ [半路战法] 缺少'涨跌幅'字段，尝试手动计算...")
+                    stock_list_df['涨跌幅'] = ((stock_list_df['最新价'] - stock_list_df['昨收']) / stock_list_df['昨收'] * 100)
+                    logger.info(f"✅ [半路战法] 手动计算'涨跌幅'字段成功")
+                
                 logger.info(f"✅ [半路战法] 活跃股筛选完成，共 {len(stock_list_df)} 只股票")
             else:
                 # 激进半路：全市场扫描
