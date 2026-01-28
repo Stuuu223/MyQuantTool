@@ -162,9 +162,89 @@ class MidwayStrategy:
                 logger.info(f"✅ [半路战法] 活跃股筛选完成，共 {len(stock_list_df)} 只股票")
             else:
                 # 激进半路：全市场扫描
-                import akshare as ak
-                stock_list_df = ak.stock_zh_a_spot_em()
-            
+                # 🆕 V19.14: 优先使用 easyquotation（更稳定）
+                try:
+                    import easyquotation as eq
+                    quotation = eq.use('sina')
+
+                    # 从配置文件中获取股票代码列表
+                    from pathlib import Path
+                    import json
+                    config_path = Path(__file__).parent.parent / 'easyquotation' / 'stock_codes.conf'
+
+                    stock_codes = []
+                    if config_path.exists():
+                        with open(config_path, 'r', encoding='utf-8') as f:
+                            content = f.read().strip()
+                            try:
+                                data = json.loads(content)
+                                if isinstance(data, dict) and 'stock' in data:
+                                    stock_codes = data['stock']
+                                elif isinstance(data, list):
+                                    stock_codes = data
+                            except json.JSONDecodeError:
+                                stock_codes = [line.strip() for line in content.split('\n') if line.strip() and not line.startswith('#')]
+
+                        # 转换为 easyquotation 格式（sh 前缀）
+                        stock_codes = [f"sh{code}" if code.startswith('6') else f"sz{code}" for code in stock_codes]
+
+                    if not stock_codes:
+                        logger.error("❌ [半路战法] 无法获取股票代码列表")
+                        return []
+
+                    logger.info(f"📊 [半路战法] 使用 easyquotation 获取全市场行情（{len(stock_codes)} 只股票）...")
+
+                    # 批量获取（分批处理，每次200只）
+                    all_stocks = []
+                    batch_size = 200
+
+                    for i in range(0, len(stock_codes), batch_size):
+                        batch = stock_codes[i:i + batch_size]
+                        try:
+                            data = quotation.stocks(batch)
+                            for code, info in data.items():
+                                stock_code = code.replace('sh', '').replace('sz', '')
+                                stock_name = info.get('name', '')
+
+                                # 过滤 ST 和 退市股
+                                if 'ST' in stock_name or '退' in stock_name:
+                                    continue
+
+                                price = float(info.get('now', 0))
+                                close = float(info.get('close', 0))
+                                if close == 0:
+                                    continue
+
+                                change_pct = ((price - close) / close) * 100
+
+                                stock = {
+                                    '代码': stock_code,
+                                    '名称': stock_name,
+                                    '最新价': price,
+                                    '昨收': close,
+                                    '涨跌幅': change_pct,
+                                    '成交量': int(info.get('volume', 0)) if info.get('volume') else 0
+                                }
+                                all_stocks.append(stock)
+
+                        except Exception as batch_e:
+                            logger.error(f"❌ 批次 {i//batch_size + 1} 获取失败: {batch_e}")
+                            continue
+
+                    stock_list_df = pd.DataFrame(all_stocks)
+                    logger.info(f"✅ [半路战法] 使用 easyquotation 成功获取 {len(stock_list_df)} 只股票")
+
+                except Exception as e:
+                    logger.error(f"❌ [半路战法] easyquotation 获取失败: {e}")
+                    # 降级到 AkShare
+                    try:
+                        import akshare as ak
+                        stock_list_df = ak.stock_zh_a_spot_em()
+                        logger.info(f"✅ [半路战法] 使用 AkShare 获取 {len(stock_list_df)} 只股票")
+                    except Exception as ak_e:
+                        logger.error(f"❌ [半路战法] AkShare 也失败了: {ak_e}")
+                        return []
+
             if stock_list_df.empty:
                 logger.error("❌ [半路战法] 获取股票列表失败")
                 return []
@@ -179,11 +259,11 @@ class MidwayStrategy:
                 
                 # 🆕 V19.11.3: 使用传入的参数动态设置20cm标的的半路区间
                 # 20cm涨停，半路区间应该是传入参数的1.5倍（因为20cm的涨幅区间应该比主板大）
-                # 注意：akshare返回的涨跌幅是百分比格式（例如2.5表示2.5%），所以需要将归一化后的参数转换为百分比
-                min_20cm_pct = min_change_pct * 100 * 1.5
-                max_20cm_pct = max_change_pct * 100 * 1.5
+                # 🆕 V19.14: 修复涨幅区间计算逻辑，easyquotation 返回的涨跌幅已经是真实的百分比数值
+                min_20cm_pct = min_change_pct * 1.5  # 20cm最小涨幅（例如3.75）
+                max_20cm_pct = max_change_pct * 1.5  # 20cm最大涨幅（例如12.0）
                 stock_list_df = stock_list_df[
-                    (stock_list_df['涨跌幅'] >= min_20cm_pct) & 
+                    (stock_list_df['涨跌幅'] >= min_20cm_pct) &
                     (stock_list_df['涨跌幅'] <= max_20cm_pct)
                 ]
                 logger.info(f"🎯 [半路战法] 20cm标的半路区间({min_20cm_pct:.1f}%-{max_20cm_pct:.1f}%)，筛选后股票: {len(stock_list_df)} 只")
@@ -198,17 +278,19 @@ class MidwayStrategy:
                 # 🆕 V19.11.3: 使用传入的参数动态设置涨幅区间
                 # 主板股票（600/000）
                 main_board_mask = stock_list_df['代码'].str.startswith(('600', '000', '001', '002', '003'))
-                
+
                 # 20cm股票（300/688）
                 cm20_mask = stock_list_df['代码'].str.startswith(('300', '688'))
-                
-                # 🆕 V19.11.3: 动态计算20cm标的的涨幅区间
-                # 注意：akshare返回的涨跌幅是百分比格式（例如2.5表示2.5%），所以需要将归一化后的参数转换为百分比
-                min_main_pct = min_change_pct * 100
-                max_main_pct = max_change_pct * 100
-                min_20cm_pct = min_change_pct * 100 * 1.5
-                max_20cm_pct = max_change_pct * 100 * 1.5
-                
+
+                # 🆕 V19.14: 修复涨幅区间计算逻辑
+                # easyquotation 返回的涨跌幅已经是真实的百分比数值（例如3.18表示3.18%）
+                # akshare 返回的涨跌幅也是真实的百分比数值（例如2.5表示2.5%）
+                # 所以不需要乘以100，直接使用传入的参数即可
+                min_main_pct = min_change_pct  # 主板最小涨幅（例如2.5）
+                max_main_pct = max_change_pct  # 主板最大涨幅（例如8.0）
+                min_20cm_pct = min_change_pct * 1.5  # 20cm最小涨幅（例如3.75）
+                max_20cm_pct = max_change_pct * 1.5  # 20cm最大涨幅（例如12.0）
+
                 # 应用不同的涨幅区间（使用传入的参数）
                 stock_list_df = stock_list_df[
                     ((main_board_mask) & (stock_list_df['涨跌幅'] >= min_main_pct) & (stock_list_df['涨跌幅'] <= max_main_pct)) |

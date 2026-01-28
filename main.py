@@ -242,28 +242,77 @@ def main():
                         st.error(f"执行失败: {e}")
         
         with col2:
-            if st.button("收割历史数据 (防止断网)"):
-                with st.spinner("正在下载关注股票历史数据..."):
+            if st.button("🚜 数据收割机 (增量更新)"):
+                with st.spinner("正在收割活跃股数据..."):
                     try:
-                        os.system("python tools/harvest_data.py")
-                        st.success("数据收割机已启动！请查看后台日志")
+                        from logic.data_harvester import get_data_harvester
+
+                        harvester = get_data_harvester()
+
+                        st.info("📋 开始收割活跃股数据（增量更新，慢慢存、不封号）...")
+
+                        result = harvester.harvest_active_stocks(
+                            limit=300,
+                            days=60,
+                            force_update=False,
+                            delay=0.5
+                        )
+
+                        # 显示结果
+                        st.success(f"✅ 收割完成！")
+                        col_a, col_b, col_c = st.columns(3)
+                        col_a.metric("总数", result['total'])
+                        col_b.metric("成功", result['success'])
+                        col_c.metric("失败", result['failed'])
+
+                        # 显示详情
+                        if result['failed'] > 0:
+                            with st.expander("查看失败详情"):
+                                failed_details = [d for d in result['details'] if d['status'] != 'success']
+                                for detail in failed_details:
+                                    st.write(f"❌ {detail['code']} {detail['name']}: {detail['message']}")
+
                     except Exception as e:
                         st.error(f"启动失败: {e}")
+                        import traceback
+                        traceback.print_exc()
         
         st.divider()
-        st.write("### 📊 系统状态")
-        
+        st.write("### 📊 数据库统计")
+
+        try:
+            from logic.data_harvester import get_data_harvester
+
+            harvester = get_data_harvester()
+            stats = harvester.get_database_stats()
+
+            col3, col4, col5, col6 = st.columns(4)
+            with col3:
+                st.metric("股票数量", stats['stock_count'])
+            with col4:
+                st.metric("数据总量", f"{stats['total_records']:,}")
+            with col5:
+                st.metric("最新日期", stats['latest_date'] or "无")
+            with col6:
+                st.metric("数据库大小", f"{stats['db_size_mb']} MB")
+
+        except Exception as e:
+            st.warning(f"⚠️ 无法获取数据库统计: {e}")
+
+        st.divider()
+        st.write("### 📁 文件系统状态")
+
         # 显示文件夹大小
-        col3, col4, col5 = st.columns(3)
-        with col3:
+        col7, col8, col9 = st.columns(3)
+        with col7:
             scan_results_size = DataMaintenance.get_folder_size("data/scan_results")
             st.metric("扫描结果", scan_results_size)
-        
-        with col4:
+
+        with col8:
             history_size = DataMaintenance.get_folder_size("data/history_kline")
             st.metric("历史K线", history_size)
-        
-        with col5:
+
+        with col9:
             auction_size = DataMaintenance.get_folder_size("data/auction_snapshots")
             st.metric("竞价快照", auction_size)
 

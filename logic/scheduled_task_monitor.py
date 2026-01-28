@@ -5,13 +5,14 @@
 
 功能：
 1. 每天9:10检查Redis是否启动，未启动则自动启动
-2. 检查早盘前需要运行的Python文件
-3. 检查收盘后复盘需要运行的文件
-4. 检查每周需要运行的文件
-5. UI提示和控制台告警
+2. 每天9:20检查竞价快照是否获取，如果没有查明原因
+3. 检查早盘前需要运行的Python文件
+4. 检查收盘后复盘需要运行的文件
+5. 检查每周需要运行的文件
+6. UI提示和控制台告警
 
 Author: iFlow CLI
-Version: V1.0
+Version: V1.1
 """
 
 import os
@@ -57,6 +58,12 @@ class ScheduledTaskMonitor:
                 'time': '09:20',
                 'enabled': True,
                 'description': '盘前MA4预计算'
+            },
+            # 竞价快照检查（9:20）
+            'auction_snapshot_check': {
+                'time': '09:20',
+                'enabled': True,
+                'description': '检查竞价快照是否获取'
             },
             # 🆕 V19.6 新增：竞价快照保存（9:25）
             'auction_snapshot_save': {
@@ -418,6 +425,119 @@ class ScheduledTaskMonitor:
                 )
             
             return report
+    
+    def run_check_auction_snapshot(self):
+        """检查竞价快照是否获取（9:20）"""
+        logger.info("=" * 80)
+        logger.info("🕐 检查竞价快照是否获取 (9:20)")
+        logger.info("=" * 80)
+        
+        try:
+            # 检查 Redis 中是否有竞价快照数据
+            redis_has_data = False
+            snapshot_count = 0
+            
+            if hasattr(self.dm, 'auction_snapshot_manager') and self.dm.auction_snapshot_manager:
+                # 检查 Redis 连接
+                status = self.dm.auction_snapshot_manager.get_snapshot_status()
+                
+                if not status['is_available']:
+                    logger.error("❌ Redis 未连接，无法检查竞价快照")
+                    self._save_alert(
+                        'auction_snapshot_check',
+                        'ERROR',
+                        'Redis 未连接，无法检查竞价快照',
+                        {'redis_connected': False}
+                    )
+                    return {
+                        'timestamp': datetime.now().isoformat(),
+                        'success': False,
+                        'snapshot_count': 0,
+                        'error': 'Redis 未连接',
+                        'overall_status': 'ERROR'
+                    }
+                
+                # 检查 Redis 中今日的竞价快照数量
+                try:
+                    today = self.dm.auction_snapshot_manager.get_today_str()
+                    pattern = f"auction:{today}:*"
+                    keys = self.dm._redis_client.keys(pattern)
+                    snapshot_count = len(keys)
+                    redis_has_data = snapshot_count > 0
+                except Exception as e:
+                    logger.error(f"❌ 检查 Redis 竞价快照失败: {e}")
+            
+            # 检查文件系统中的竞价快照
+            file_has_data = False
+            file_path = None
+            
+            try:
+                import os
+                from datetime import datetime as dt
+                date_str = dt.now().strftime("%Y%m%d")
+                file_path = f"data/auction_snapshots/auction_{date_str}.csv"
+                file_has_data = os.path.exists(file_path) and os.path.getsize(file_path) > 0
+            except Exception as e:
+                logger.error(f"❌ 检查文件竞价快照失败: {e}")
+            
+            # 生成报告
+            report = {
+                'timestamp': datetime.now().isoformat(),
+                'redis_has_data': redis_has_data,
+                'redis_snapshot_count': snapshot_count,
+                'file_has_data': file_has_data,
+                'file_path': file_path,
+                'overall_status': 'OK' if (redis_has_data or file_has_data) else 'WARNING'
+            }
+            
+            if redis_has_data or file_has_data:
+                logger.info(f"✅ 竞价快照检查通过:")
+                logger.info(f"  - Redis 快照数量: {snapshot_count}")
+                logger.info(f"  - 文件快照存在: {'是' if file_has_data else '否'}")
+                logger.info(f"  - 状态: {report['overall_status']}")
+            else:
+                logger.warning("⚠️ 竞价快照未获取到数据")
+                logger.warning("⚠️ 可能的原因:")
+                logger.warning("  1. 数据源未启动或连接失败")
+                logger.warning("  2. 9:15-9:20 期间程序未运行")
+                logger.warning("  3. 股票代码列表为空")
+                logger.warning("  4. 网络问题导致数据获取失败")
+                
+                # 保存告警
+                self._save_alert(
+                    'auction_snapshot_check',
+                    'WARNING',
+                    '9:20 未获取到竞价快照数据',
+                    {
+                        'redis_has_data': redis_has_data,
+                        'redis_snapshot_count': snapshot_count,
+                        'file_has_data': file_has_data,
+                        'file_path': file_path,
+                        'possible_reasons': [
+                            '数据源未启动或连接失败',
+                            '9:15-9:20 期间程序未运行',
+                            '股票代码列表为空',
+                            '网络问题导致数据获取失败'
+                        ]
+                    }
+                )
+            
+            return report
+            
+        except Exception as e:
+            logger.error(f"❌ 检查竞价快照失败: {e}")
+            self._save_alert(
+                'auction_snapshot_check',
+                'ERROR',
+                f'检查竞价快照异常: {str(e)}',
+                {'error': str(e)}
+            )
+            return {
+                'timestamp': datetime.now().isoformat(),
+                'success': False,
+                'error': str(e),
+                'overall_status': 'ERROR'
+            }
             
         except Exception as e:
             logger.error(f"❌ 竞价快照保存任务执行失败: {e}")
@@ -606,6 +726,7 @@ class ScheduledTaskMonitor:
         # 设置定时任务
         schedule.every().day.at(self.tasks['pre_market_check']['time']).do(self.run_pre_market_check)
         schedule.every().day.at(self.tasks['pre_market_precompute']['time']).do(self.run_pre_market_precompute)
+        schedule.every().day.at(self.tasks['auction_snapshot_check']['time']).do(self.run_check_auction_snapshot)
         schedule.every().day.at(self.tasks['auction_snapshot_save']['time']).do(self.run_auction_snapshot_save)  # 🆕 V19.6 新增
         schedule.every().day.at(self.tasks['post_market_review']['time']).do(self.run_post_market_review)
         schedule.every().sunday.at(self.tasks['weekly_check']['time']).do(self.run_weekly_check)
@@ -615,6 +736,7 @@ class ScheduledTaskMonitor:
         logger.info("✅ 定时任务已设置:")
         logger.info(f"  - 早盘前检查: {self.tasks['pre_market_check']['time']}")
         logger.info(f"  - 盘前预计算: {self.tasks['pre_market_precompute']['time']}")
+        logger.info(f"  - 竞价快照检查: {self.tasks['auction_snapshot_check']['time']}")
         logger.info(f"  - 竞价快照保存: {self.tasks['auction_snapshot_save']['time']}")  # 🆕 V19.6 新增
         logger.info(f"  - 收盘后复盘: {self.tasks['post_market_review']['time']}")
         logger.info(f"  - 每周检查: 周日 {self.tasks['weekly_check']['time']}")

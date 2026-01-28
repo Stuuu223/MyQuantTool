@@ -1732,17 +1732,49 @@ class QuantAlgo:
             else:
                 # 原有的实时扫描模式
                 db = DataManager()
-                
-                # 使用 akshare 获取股票列表
-                stock_list_df = ak.stock_info_a_code_name()
-                if stock_list_df.empty:
-                    return {
-                        '数据状态': '无法获取股票列表',
-                        '说明': '可能是数据源限制'
-                    }
-                
-                # 获取全市场所有股票
-                stock_list = stock_list_df['code'].tolist()
+
+                # 🆕 V19.14: 尝试使用 AkShare 获取股票列表，失败时使用本地文件
+                stock_list = []
+                try:
+                    stock_list_df = ak.stock_info_a_code_name()
+                    if not stock_list_df.empty:
+                        stock_list = stock_list_df['code'].tolist()
+                        logger.info(f"✅ 使用 AkShare 获取到 {len(stock_list)} 只股票")
+                except Exception as e:
+                    logger.warning(f"⚠️ AkShare 获取股票列表失败: {e}，使用本地文件...")
+
+                # 如果 AkShare 失败，使用本地股票代码文件
+                if not stock_list:
+                    try:
+                        from pathlib import Path
+                        import json
+                        config_path = Path(__file__).parent.parent / 'easyquotation' / 'stock_codes.conf'
+
+                        if config_path.exists():
+                            with open(config_path, 'r', encoding='utf-8') as f:
+                                content = f.read().strip()
+                                try:
+                                    data = json.loads(content)
+                                    if isinstance(data, dict) and 'stock' in data:
+                                        stock_list = data['stock']
+                                    elif isinstance(data, list):
+                                        stock_list = data
+                                except json.JSONDecodeError:
+                                    stock_list = [line.strip() for line in content.split('\n') if line.strip() and not line.startswith('#')]
+
+                            logger.info(f"✅ 使用本地文件获取到 {len(stock_list)} 只股票")
+                        else:
+                            logger.error("❌ 无法获取股票列表")
+                            return {
+                                '数据状态': '无法获取股票列表',
+                                '说明': 'AkShare 失败且本地文件不存在'
+                            }
+                    except Exception as e:
+                        logger.error(f"❌ 读取本地股票代码文件失败: {e}")
+                        return {
+                            '数据状态': '无法获取股票列表',
+                            '说明': f'读取本地文件失败: {e}'
+                        }
 
                 # 使用 Easyquotation 极速获取全市场实时数据
                 logger.info(f"开始扫描全市场 {len(stock_list)} 只股票的实时行情...")
@@ -3496,17 +3528,49 @@ class QuantAlgo:
         try:
             from logic.data_manager import DataManager
 
-            # 获取股票列表
-            import akshare as ak
-            stock_list_df = ak.stock_info_a_code_name()
+            # 🆕 V19.14: 尝试使用 AkShare 获取股票列表，失败时使用本地文件
+            stock_list = []
+            try:
+                import akshare as ak
+                stock_list_df = ak.stock_info_a_code_name()
+                if not stock_list_df.empty:
+                    stock_list = stock_list_df['code'].tolist()
+                    logger.info(f"✅ 使用 AkShare 获取到 {len(stock_list)} 只股票")
+            except Exception as e:
+                logger.warning(f"⚠️ AkShare 获取股票列表失败: {e}，使用本地文件...")
 
-            if stock_list_df.empty:
-                return {
-                    '数据状态': '无法获取股票列表',
-                    '说明': '可能是数据源限制'
-                }
+            # 如果 AkShare 失败，使用本地股票代码文件
+            if not stock_list:
+                try:
+                    from pathlib import Path
+                    import json
+                    config_path = Path(__file__).parent.parent / 'easyquotation' / 'stock_codes.conf'
 
-            stock_list = stock_list_df['code'].tolist()
+                    if config_path.exists():
+                        with open(config_path, 'r', encoding='utf-8') as f:
+                            content = f.read().strip()
+                            try:
+                                data = json.loads(content)
+                                if isinstance(data, dict) and 'stock' in data:
+                                    stock_list = data['stock']
+                                elif isinstance(data, list):
+                                    stock_list = data
+                            except json.JSONDecodeError:
+                                stock_list = [line.strip() for line in content.split('\n') if line.strip() and not line.startswith('#')]
+
+                        logger.info(f"✅ 使用本地文件获取到 {len(stock_list)} 只股票")
+                    else:
+                        logger.error("❌ 无法获取股票列表")
+                        return {
+                            '数据状态': '无法获取股票列表',
+                            '说明': 'AkShare 失败且本地文件不存在'
+                        }
+                except Exception as e:
+                    logger.error(f"❌ 读取本地股票代码文件失败: {e}")
+                    return {
+                        '数据状态': '无法获取股票列表',
+                        '说明': f'读取本地文件失败: {e}'
+                    }
 
             # 使用 Easyquotation 极速获取全市场实时数据
             db = DataManager()
@@ -3832,17 +3896,49 @@ class QuantAlgo:
         try:
             from logic.data_manager import DataManager
 
-            # 获取股票列表
-            import akshare as ak
-            stock_list_df = ak.stock_info_a_code_name()
+            # 🆕 V19.14: 尝试使用 AkShare 获取股票列表，失败时使用本地文件
+            stock_list = []
+            try:
+                import akshare as ak
+                stock_list_df = ak.stock_info_a_code_name()
+                if not stock_list_df.empty:
+                    stock_list = stock_list_df['code'].tolist()
+                    logger.info(f"✅ 使用 AkShare 获取到 {len(stock_list)} 只股票")
+            except Exception as e:
+                logger.warning(f"⚠️ AkShare 获取股票列表失败: {e}，使用本地文件...")
 
-            if stock_list_df.empty:
-                return {
-                    '数据状态': '无法获取股票列表',
-                    '说明': '可能是数据源限制'
-                }
+            # 如果 AkShare 失败，使用本地股票代码文件
+            if not stock_list:
+                try:
+                    from pathlib import Path
+                    import json
+                    config_path = Path(__file__).parent.parent / 'easyquotation' / 'stock_codes.conf'
 
-            stock_list = stock_list_df['code'].tolist()
+                    if config_path.exists():
+                        with open(config_path, 'r', encoding='utf-8') as f:
+                            content = f.read().strip()
+                            try:
+                                data = json.loads(content)
+                                if isinstance(data, dict) and 'stock' in data:
+                                    stock_list = data['stock']
+                                elif isinstance(data, list):
+                                    stock_list = data
+                            except json.JSONDecodeError:
+                                stock_list = [line.strip() for line in content.split('\n') if line.strip() and not line.startswith('#')]
+
+                        logger.info(f"✅ 使用本地文件获取到 {len(stock_list)} 只股票")
+                    else:
+                        logger.error("❌ 无法获取股票列表")
+                        return {
+                            '数据状态': '无法获取股票列表',
+                            '说明': 'AkShare 失败且本地文件不存在'
+                        }
+                except Exception as e:
+                    logger.error(f"❌ 读取本地股票代码文件失败: {e}")
+                    return {
+                        '数据状态': '无法获取股票列表',
+                        '说明': f'读取本地文件失败: {e}'
+                    }
 
             # 使用 Easyquotation 极速获取全市场实时数据
             db = DataManager()
