@@ -1404,10 +1404,16 @@ class QuantAlgo:
         """
         if watchlist is None:
             watchlist = []
-        
+
+        # 🔥 V20.0: 打印启动日志,方便排查过滤参数
+        logger.info(
+            f"⭐ 股票池过滤启动: 全市场 {len(all_stocks)} 只, "
+            f"min_change_pct={min_change_pct}, min_volume={min_volume}, min_amount={min_amount}"
+        )
+
         # 转换监控池为集合，提高查找效率
         watchlist_set = set(watchlist)
-        
+
         filtered_stocks = []
         watchlist_matched = []
         
@@ -1467,16 +1473,16 @@ class QuantAlgo:
         return result
     
     @staticmethod
-    def scan_dragon_stocks(limit=50, min_score=60, min_change_pct=5.0, min_volume=1000, min_amount=500, watchlist=None, use_history=False, date=None):
+    def scan_dragon_stocks(limit=50, min_score=60, min_change_pct=5.0, min_volume=200, min_amount=50, watchlist=None, use_history=False, date=None):
         """
         扫描市场中的潜在龙头股
-        
+
         Args:
             limit: 扫描的股票数量限制
             min_score: 最低评分门槛
-            min_change_pct: 最小涨幅（默认9.9%，即涨停板）
-            min_volume: 最小成交量（手，默认5000手）
-            min_amount: 最小成交额（万元，默认3000万）
+            min_change_pct: 最小涨幅（默认5%）
+            min_volume: 最小成交量（手，默认200手）🔥 V20.0: 从1000降低
+            min_amount: 最小成交额（万元，默认50万）🔥 V20.0: 从500降低
             watchlist: 核心监控池白名单（这些股票跳过过滤条件）
             use_history: 是否使用历史数据（复盘模式）
             date: 复盘日期（格式：YYYYMMDD），默认为今天
@@ -1840,8 +1846,8 @@ class QuantAlgo:
                             '卖一价': data.get('ask1', 0),
                             '买一量': data.get('bid1_volume', 0),
                             '卖一量': data.get('ask1_volume', 0),
-                            '成交量': data.get('volume', 0) / 100,  # 转换为手
-                            '成交额': data.get('turnover', 0) / 10000,  # 🔥 修复：EasyQuotation turnover 单位是元，需要转换为万元
+                            '成交量': data.get('volume', 0),  # 🔥 V20.0 修复：volume 已经是手数（QMT 转换过），不能再除以 100
+                            '成交额': data.get('amount', 0),  # 🔥 V20.0 修复：amount 才是成交额（万元），不是 turnover
                             '开盘价': data.get('open', 0),
                             '昨收价': data.get('close', 0),
                             '最高价': data.get('high', 0),
