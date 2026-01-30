@@ -1967,11 +1967,14 @@ class QuantAlgo:
                                 elif avg_volume > 0:
                                     volume_ratio = current_volume / avg_volume
                         
-                        # 计算换手率（使用历史数据中的换手率）
-                        turnover_rate = 0
-                        if not df.empty:
-                            # 使用最近一天的换手率
-                            turnover_rate = df['turnover_rate'].iloc[-1] if 'turnover_rate' in df.columns else 0
+                        # 🔥 V20.3 修复：使用实时数据的换手率（历史数据没有 turnover_rate 字段）
+                        # 历史数据（QMT）只有：open, high, low, close, volume, amount, money
+                        # 换手率必须从实时数据（EasyQuotation）获取
+                        turnover_rate = realtime_data_item.get('turnover', 0)  # EasyQuotation 的 turnover 是换手率（百分比）
+                        
+                        # 如果 realtime_data_item 也没有换手率，尝试从 stock_info 中获取
+                        if turnover_rate == 0 and '换手率' in stock_info:
+                            turnover_rate = stock_info['换手率']
                         
                         # 获取竞价数据
                         bid1_volume = realtime_data_item.get('bid1_volume', 0)  # 买一量（手数，来自Easyquotation）
