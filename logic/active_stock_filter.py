@@ -307,8 +307,8 @@ class ActiveStockFilter:
         exclude_st: bool = True,
         exclude_delisting: bool = True,
         min_volume: int = 0,
-        skip_top: int = 30,
-        min_amplitude: float = 3.0,
+        skip_top: int = 10,  # 🔥 V20.0: 从30降到10
+        min_amplitude: float = 1.0,  # 🔥 V20.0: 从3.0降到1.0
         only_20cm: bool = False
     ) -> List[Dict[str, Any]]:
         """
@@ -432,8 +432,8 @@ def get_active_stocks(
     exclude_st: bool = True,
     exclude_delisting: bool = True,
     min_volume: int = 0,
-    skip_top: int = 30,
-    min_amplitude: float = 3.0,
+    skip_top: int = 10,  # 🔥 V20.0: 从30降到10
+    min_amplitude: float = 1.0,  # 🔥 V20.0: 从3.0降到1.0
     only_20cm: bool = False
 ) -> List[Dict[str, Any]]:
     """

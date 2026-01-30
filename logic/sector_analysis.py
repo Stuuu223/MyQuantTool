@@ -903,52 +903,86 @@ class FastSectorAnalyzer:
     def _auto_refresh_loop(self):
         """
         🚀 V18.1: 后台自动刷新循环
-        
+
         每隔 60 秒自动更新板块数据，用户点击时直接从内存读取
+        🔥 V20.0 修复：增加重试机制和错误处理，防止连接中断频繁报错
         """
         import time
-        
+        import random
+
         logger.info("🔄 [V18.1 Turbo Boost] 后台刷新线程已启动")
-        
+
+        consecutive_failures = 0
+        max_consecutive_failures = 5
+
         while self._auto_refresh_running:
             try:
                 time.sleep(60)  # 每 60 秒刷新一次
-                
+
                 # 静默刷新数据
                 self._auto_refresh_data()
-                
+
+                # 刷新成功，重置失败计数器
+                consecutive_failures = 0
                 logger.debug("✅ [V18.1] 后台数据刷新完成")
-                
+
             except Exception as e:
-                logger.error(f"❌ [V18.1] 后台刷新失败: {e}")
-                time.sleep(10)  # 失败后等待 10 秒再试
+                consecutive_failures += 1
+                error_msg = str(e)
+
+                # 🔥 V20.0 修复：对 RemoteDisconnected 错误进行特殊处理
+                if 'RemoteDisconnected' in error_msg or 'Connection aborted' in error_msg:
+                    if consecutive_failures <= max_consecutive_failures:
+                        # 前5次只警告，不打印错误
+                        logger.warning(f"⚠️ [V18.1] 网络连接中断（第{consecutive_failures}次），将在60秒后重试...")
+                    else:
+                        # 超过5次后降级日志级别
+                        logger.debug(f"⚠️ [V18.1] 网络连接中断（连续{consecutive_failures}次），使用缓存数据")
+
+                    # 添加随机延迟，避免多个客户端同时重试
+                    delay = 60 + random.randint(0, 30)
+                    time.sleep(delay)
+                else:
+                    # 其他错误正常处理
+                    logger.error(f"❌ [V18.1] 后台刷新失败: {e}")
+                    time.sleep(10)  # 失败后等待 10 秒再试
+
+                # 如果连续失败次数过多，延长刷新间隔
+                if consecutive_failures > max_consecutive_failures:
+                    logger.warning(f"⚠️ [V18.1] 连续刷新失败{consecutive_failures}次，延长刷新间隔至300秒")
+                    time.sleep(300)  # 延长到5分钟
     
-    def _auto_refresh_data(self):
+    def _auto_refresh_data(self, max_retries: int = 2):
         """
         🚀 V18.1: 静默刷新板块数据
-        
+        🔥 V20.0 修复：增加重试机制，防止连接中断
+
         在后台更新板块数据，不阻塞用户操作
+
+        Args:
+            max_retries: 最大重试次数（默认2次）
         """
-        try:
-            # 刷新行业板块
-            industry_df = ak.stock_board_industry_name_em()
-            if industry_df is not None and not industry_df.empty:
-                industry_df = industry_df.sort_values('涨跌幅', ascending=False).reset_index(drop=True)
-                industry_df['rank'] = industry_df.index + 1
-                industry_df['资金热度'] = self._calculate_capital_heat(industry_df)
-                self._akshare_industry_cache = industry_df
-                self._akshare_cache_timestamp = datetime.now()
-            
-            # 刷新概念板块（带超时控制）
-            # 🆕 修复：使用跨平台的超时方案，避免Windows上signal.SIGALRM不可用的问题
-            import threading
-            
-            def fetch_with_timeout():
-                try:
-                    return ak.stock_board_concept_name_em()
-                except Exception as e:
-                    logger.error(f"获取概念板块数据失败: {e}")
-                    return None
+        for attempt in range(max_retries + 1):
+            try:
+                # 刷新行业板块
+                industry_df = ak.stock_board_industry_name_em()
+                if industry_df is not None and not industry_df.empty:
+                    industry_df = industry_df.sort_values('涨跌幅', ascending=False).reset_index(drop=True)
+                    industry_df['rank'] = industry_df.index + 1
+                    industry_df['资金热度'] = self._calculate_capital_heat(industry_df)
+                    self._akshare_industry_cache = industry_df
+                    self._akshare_cache_timestamp = datetime.now()
+
+                # 刷新概念板块（带超时控制）
+                # 🆕 修复：使用跨平台的超时方案，避免Windows上signal.SIGALRM不可用的问题
+                import threading
+
+                def fetch_with_timeout():
+                    try:
+                        return ak.stock_board_concept_name_em()
+                    except Exception as e:
+                        logger.error(f"获取概念板块数据失败: {e}")
+                        return None
             
             try:
                 # 使用线程实现超时控制（跨平台兼容）

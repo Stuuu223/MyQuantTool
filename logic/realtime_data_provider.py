@@ -348,19 +348,23 @@ class RealtimeDataProvider(DataProvider):
                 # - volume: 股数（需要 / 100 转为手）
                 # - amount: 元（需要 / 10000 转为万）
                 # - bidVol/askVol: 股数（需要 / 100 转为手）
+                # 🔥 V20.0 修复：QMT没有pctChg字段，手动计算涨跌幅
+                last_price = data.get('lastPrice', 0)
+                last_close = data.get('lastClose', 0)
+                change_pct = ((last_price - last_close) / last_close * 100) if last_close > 0 else 0
                 stock_info = {
                     'code': std_code,
                     'name': '',  # QMT tick 数据不带名称
-                    'price': data.get('lastPrice', 0),
-                    'now': data.get('lastPrice', 0),  # 🔥 V19.16: 兼容 easyquotation 格式
-                    'change_pct': data.get('pctChg', 0) / 100 if data.get('pctChg') else 0,
+                    'price': last_price,
+                    'now': last_price,  # 🔥 V19.16: 兼容 easyquotation 格式
+                    'change_pct': change_pct,  # 🔥 V20.0: 手动计算涨跌幅
                     'volume': data.get('volume', 0) / 100,  # 股数 → 手数
                     'amount': data.get('amount', 0) / 10000,  # 元 → 万元
                     'open': data.get('open', 0),
                     'high': data.get('high', 0),
                     'low': data.get('low', 0),
-                    'pre_close': data.get('lastClose', 0),
-                    'close': data.get('lastClose', 0),  # 🔥 V19.16: 昨收价，战法期望的字段名
+                    'pre_close': last_close,
+                    'close': last_close,  # 🔥 V19.16: 昨收价，战法期望的字段名
                     'data_timestamp': '',
                     'turnover': 0,  # QMT 不提供换手率
                     'volume_ratio': 0,  # QMT 不提供量比

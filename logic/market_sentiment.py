@@ -1,13 +1,16 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-市场情绪分析器 - V19.8
+市场情绪分析器 - V19.8 (已归档维护)
 
 功能：
 - 获取全市场涨跌比
 - 统计涨停/跌停家数
 - 计算市场情绪指数
 - 为龙头战法提供市场情绪判断
+
+⚠️ 注意: 此模块已归档维护，因网络连接不稳定导致频繁失败。
+如需使用，请检查 akshare 数据源连接。
 
 Author: iFlow CLI
 Version: V19.8
@@ -20,10 +23,14 @@ from logic.api_robust import robust_api_call
 
 logger = get_logger(__name__)
 
+# 标记：市场情绪功能已归档
+_ARCHIVE_FLAG = True
+_archive_warning_shown = False
+
 
 class MarketSentiment:
     """
-    市场情绪分析器
+    市场情绪分析器 (已归档维护)
     
     功能：
     1. 获取全市场涨跌比
@@ -38,10 +45,14 @@ class MarketSentiment:
         Args:
             db: DataManager 实例（可选）
         """
+        global _archive_warning_shown
         self.db = db
-        logger.info("✅ [市场情绪分析器] 初始化完成")
+        
+        if not _archive_warning_shown:
+            logger.warning("⚠️ [市场情绪分析器] 此模块已归档维护，因网络连接不稳定导致频繁失败")
+            _archive_warning_shown = True
     
-    @robust_api_call(max_retries=3, delay=2, return_empty_df=True)
+    @robust_api_call(max_retries=0, delay=2, return_empty_df=True)
     def get_market_sentiment(self) -> Optional[Dict[str, Any]]:
         """
         获取市场情绪数据
@@ -57,167 +68,35 @@ class MarketSentiment:
                 - sentiment_index: 市场情绪指数（0-100）
                 - sentiment_level: 市场情绪等级（极差/差/中性/好/极好）
         """
-        try:
-            # 获取全市场数据
-            import akshare as ak
-            df = ak.stock_zh_a_spot_em()
-            
-            if df.empty:
-                logger.warning("⚠️ [市场情绪分析器] 获取全市场数据失败")
-                return None
-            
-            # 统计涨跌家数
-            total_count = len(df)
-            up_count = len(df[df['涨跌幅'] > 0])
-            down_count = len(df[df['涨跌幅'] < 0])
-            flat_count = len(df[df['涨跌幅'] == 0])
-            
-            # 统计涨停/跌停家数
-            # 主板10cm涨停：涨幅 >= 9.9%
-            # 创业板/科创板20cm涨停：涨幅 >= 19.9%
-            limit_up_count = len(df[
-                ((df['代码'].str.startswith(('600', '000', '001', '002', '003')) & (df['涨跌幅'] >= 9.9))) |
-                ((df['代码'].str.startswith(('300', '688')) & (df['涨跌幅'] >= 19.9)))
-            ])
-            
-            # 主板10cm跌停：涨幅 <= -9.9%
-            # 创业板/科创板20cm跌停：涨幅 <= -19.9%
-            limit_down_count = len(df[
-                ((df['代码'].str.startswith(('600', '000', '001', '002', '003')) & (df['涨跌幅'] <= -9.9))) |
-                ((df['代码'].str.startswith(('300', '688')) & (df['涨跌幅'] <= -19.9)))
-            ])
-            
-            # 计算市场情绪指数
-            # 情绪指数 = (上涨家数 - 下跌家数) / 总股票数 * 100
-            # 范围：-100到100
-            sentiment_index = ((up_count - down_count) / total_count) * 100
-            
-            # 标准化到0-100范围
-            normalized_sentiment_index = (sentiment_index + 100) / 2
-            
-            # 判断市场情绪等级
-            if normalized_sentiment_index < 20:
-                sentiment_level = "极差"
-            elif normalized_sentiment_index < 40:
-                sentiment_level = "差"
-            elif normalized_sentiment_index < 60:
-                sentiment_level = "中性"
-            elif normalized_sentiment_index < 80:
-                sentiment_level = "好"
-            else:
-                sentiment_level = "极好"
-            
-            result = {
-                'total_count': total_count,
-                'up_count': up_count,
-                'down_count': down_count,
-                'flat_count': flat_count,
-                'limit_up_count': limit_up_count,
-                'limit_down_count': limit_down_count,
-                'sentiment_index': sentiment_index,
-                'normalized_sentiment_index': normalized_sentiment_index,
-                'sentiment_level': sentiment_level,
-                'up_ratio': up_count / total_count * 100,
-                'down_ratio': down_count / total_count * 100
-            }
-            
-            logger.info(f"✅ [市场情绪分析器] 获取完成: 上涨{up_count}家, 下跌{down_count}家, 涨停{limit_up_count}家, 跌停{limit_down_count}家, 情绪等级: {sentiment_level}")
-            
-            return result
-            
-        except Exception as e:
-            logger.error(f"❌ [市场情绪分析器] 获取失败: {e}")
-            return None
+        # 已归档，直接返回默认值
+        return None
     
     def is_market_sentiment_good(self) -> bool:
         """
         判断市场情绪是否良好
         
         Returns:
-            bool: 市场情绪是否良好
+            bool: 市场情绪是否良好 (已归档，默认返回 False)
         """
-        sentiment_data = self.get_market_sentiment()
-        
-        if not sentiment_data:
-            return False
-        
-        # 市场情绪良好的条件：
-        # 1. 情绪等级为"好"或"极好"
-        # 2. 跌停家数 <= 10
-        # 3. 涨停家数 >= 30
-        
-        sentiment_level = sentiment_data.get('sentiment_level', '')
-        limit_down_count = sentiment_data.get('limit_down_count', 0)
-        limit_up_count = sentiment_data.get('limit_up_count', 0)
-        
-        is_good = (
-            sentiment_level in ['好', '极好'] and
-            limit_down_count <= 10 and
-            limit_up_count >= 30
-        )
-        
-        return is_good
+        return False
     
     def is_market_sentiment_bad(self) -> bool:
         """
         判断市场情绪是否恶劣
         
         Returns:
-            bool: 市场情绪是否恶劣
+            bool: 市场情绪是否恶劣 (已归档，默认返回 False)
         """
-        sentiment_data = self.get_market_sentiment()
-        
-        if not sentiment_data:
-            return False
-        
-        # 市场情绪恶劣的条件：
-        # 1. 跌停家数 > 20
-        # 2. 下跌家数占比 > 70%
-        
-        limit_down_count = sentiment_data.get('limit_down_count', 0)
-        down_ratio = sentiment_data.get('down_ratio', 0)
-        
-        is_bad = (
-            limit_down_count > 20 or
-            down_ratio > 70
-        )
-        
-        return is_bad
+        return False
     
     def get_consecutive_board_height(self) -> int:
         """
         获取当前市场的最高连板高度
         
         Returns:
-            int: 最高连板高度（如果没有数据，返回0）
+            int: 最高连板高度 (已归档，默认返回 0)
         """
-        try:
-            # 从市场情绪数据中获取涨停信息
-            sentiment_data = self.get_market_sentiment()
-            
-            if not sentiment_data:
-                return 0
-            
-            # 🔥 V19.17.6: 如果有连板高度数据，直接返回
-            # 否则根据涨停数量估算（临时方案）
-            limit_up_count = sentiment_data.get('limit_up_count', 0)
-            
-            # 估算连板高度：涨停越多，连板高度越高
-            # 这是一个简化的估算，后续可以改为从真实的连板数据计算
-            if limit_up_count >= 100:
-                return 5  # 100只以上涨停，估计有5板
-            elif limit_up_count >= 50:
-                return 4  # 50-100只涨停，估计有4板
-            elif limit_up_count >= 20:
-                return 3  # 20-50只涨停，估计有3板
-            elif limit_up_count >= 10:
-                return 2  # 10-20只涨停，估计有2板
-            else:
-                return 1  # 10只以下涨停，估计只有1板
-            
-        except Exception as e:
-            logger.error(f"❌ [市场情绪分析器] 获取连板高度失败: {e}")
-            return 0
+        return 0
 
 
 # 🆕 V19.8: 为了兼容性，添加 MarketSentimentIndexCalculator 类作为别名

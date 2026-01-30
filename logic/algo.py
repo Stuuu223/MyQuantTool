@@ -1384,8 +1384,9 @@ class QuantAlgo:
         return suggestions
     
     @staticmethod
-    def filter_active_stocks(all_stocks: list, min_change_pct: float = 3.0, 
-                            min_volume: float = 10000, min_amount: float = 5000,
+    def filter_active_stocks(all_stocks: list, min_change_pct: float = 3.0,
+                            min_volume: float = 500,  # 🔥 V20.0: 从10000降到500，避免零结果
+                            min_amount: float = 200,  # 🔥 V20.0: 从5000降到200，避免零结果,
                             watchlist: list = None) -> list:
         """
         🆕 V9.9：股票池过滤（基于快照数据的粗筛）
@@ -1394,8 +1395,8 @@ class QuantAlgo:
         Args:
             all_stocks: 全市场股票列表（来自get_fast_price）
             min_change_pct: 最小涨幅（默认3%）
-            min_volume: 最小成交量（手，默认10000手）
-            min_amount: 最小成交额（万元，默认5000万）
+            min_volume: 最小成交量（手，默认500手）🔥 V20.0: 从10000降低
+            min_amount: 最小成交额（万元，默认200万）🔥 V20.0: 从5000降低
             watchlist: 核心监控池白名单（这些股票跳过过滤条件）
         
         Returns:
@@ -1420,29 +1421,43 @@ class QuantAlgo:
                     logger.debug(f"✅ 监控池命中: {code} ({stock.get('名称', '')})")
                     continue
                 
+                # 🔍 调试日志：打印股票关键数据
+                change_pct = stock.get('涨跌幅', 0)
+                volume = stock.get('成交量', 0)
+                amount = stock.get('成交额', 0)
+                price = stock.get('最新价', 0)
+                name = stock.get('名称', '')
+                
                 # 1. 涨幅过滤
-                if stock.get('涨跌幅', 0) < min_change_pct:
+                if change_pct < min_change_pct:
+                    logger.info(f"⚫ 过滤[{code} {name}] 涨幅过低: {change_pct:.2f}% < {min_change_pct}%")
                     continue
                 
                 # 2. 成交量过滤
-                if stock.get('成交量', 0) < min_volume:
+                if volume < min_volume:
+                    logger.info(f"⚫ 过滤[{code} {name}] 成交量过低: {volume} < {min_volume}")
                     continue
                 
                 # 3. 成交额过滤
-                if stock.get('成交额', 0) < min_amount:
+                if amount < min_amount:
+                    logger.info(f"⚫ 过滤[{code} {name}] 成交额过低: {amount:.2f}万 < {min_amount}万")
                     continue
                 
                 # 4. 排除ST股票（可选）
-                name = stock.get('名称', '')
                 if 'ST' in name.upper() or '退' in name:
+                    logger.info(f"⚫ 过滤[{code} {name}] ST或退市股")
                     continue
                 
                 # 5. 排除停牌股票（价格为0或成交量为0）
-                if stock.get('最新价', 0) == 0 or stock.get('成交量', 0) == 0:
+                if price == 0 or volume == 0:
+                    logger.info(f"⚫ 过滤[{code} {name}] 停牌或无数据: 价={price}, 量={volume}")
                     continue
                 
+                # ✅ 通过所有过滤条件
+                logger.info(f"✅ 通过过滤[{code} {name}] 涨幅:{change_pct:.2f}% 成交量:{volume} 成交额:{amount:.2f}万")
                 filtered_stocks.append(stock)
             except Exception as e:
+                logger.error(f"❌ 过滤股票时异常: {e}")
                 continue
         
         # 🆕 V9.10 修复：监控池股票优先返回
@@ -1452,7 +1467,7 @@ class QuantAlgo:
         return result
     
     @staticmethod
-    def scan_dragon_stocks(limit=50, min_score=60, min_change_pct=9.9, min_volume=5000, min_amount=3000, watchlist=None, use_history=False, date=None):
+    def scan_dragon_stocks(limit=50, min_score=60, min_change_pct=5.0, min_volume=1000, min_amount=500, watchlist=None, use_history=False, date=None):
         """
         扫描市场中的潜在龙头股
         
@@ -1531,8 +1546,8 @@ class QuantAlgo:
                     active_stocks = QuantAlgo.filter_active_stocks(
                         limit_up_stocks, 
                         min_change_pct=min_change_pct,
-                        min_volume=3000,  # 🚀 V19.6: 从10000降低到3000
-                        min_amount=1000,  # 🚀 V19.6: 从5000降低到1000
+                        min_volume=500,  # 🔥 V20.0: 从3000降低到500，避免零结果
+                        min_amount=200,  # 🔥 V20.0: 从1000降低到200，避免零结果
                         watchlist=watchlist
                     )
                     
@@ -1826,7 +1841,7 @@ class QuantAlgo:
                             '买一量': data.get('bid1_volume', 0),
                             '卖一量': data.get('ask1_volume', 0),
                             '成交量': data.get('volume', 0) / 100,  # 转换为手
-                            '成交额': data.get('turnover', 0),
+                            '成交额': data.get('turnover', 0) / 10000,  # 🔥 修复：EasyQuotation turnover 单位是元，需要转换为万元
                             '开盘价': data.get('open', 0),
                             '昨收价': data.get('close', 0),
                             '最高价': data.get('high', 0),
