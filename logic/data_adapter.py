@@ -84,11 +84,12 @@ class DataAdapter:
 
         # 2. 统一涨跌幅单位（确保是百分比，不是小数）
         if '涨跌幅' in df.columns:
-            # 如果是小数形式（0.05），转为百分比（5.0）
-            max_val = df['涨跌幅'].abs().max()
-            if max_val < 1:  # 说明是小数形式
+            # 🔥 改进判断：使用中位数而非最大值，更准确
+            sample_val = df['涨跌幅'].abs().quantile(0.5)  # 使用中位数
+            if sample_val < 1:  # 说明是小数形式
                 df['涨跌幅'] = df['涨跌幅'] * 100
                 df['change_pct'] = df['涨跌幅']
+                logger.debug(f"✅ [DataAdapter] 涨跌幅已从小数转换为百分比格式")
 
         # 3. 统一成交额单位（确保是万元）
         # QMT 已经是万元，无需转换

@@ -142,7 +142,7 @@ class ActiveStockFilter:
                     '最低': low_price,
                     '成交量': data.get('volume', 0) / 100,  # 股数 → 手数
                     '成交额': data.get('amount', 0) / 10000,  # 元 → 万元
-                    '涨跌幅': pct_change,  # 小数形式（如 0.05 表示 5%）
+                    '涨跌幅': pct_change * 100,  # 🔥 直接转为百分比（如 5.0 表示 5%）
                     '换手率': 0,  # QMT tick 不提供换手率
                     '振幅': amplitude,  # 🔥 修正后的振幅
                     # 🔥 V19.17: 添加英文字段兼容
@@ -155,10 +155,10 @@ class ActiveStockFilter:
                     'low': low_price,
                     'volume': data.get('volume', 0) / 100,
                     'amount': data.get('amount', 0) / 10000,
-                    'change_pct': pct_change,
+                    'change_pct': pct_change * 100,  # 🔥 英文字段也转为百分比
                     'turnover': 0,
                     'now': last_price,
-                    'percent': pct_change,
+                    'percent': pct_change * 100,  # 🔥 EasyQuotation 风格也转为百分比
                 }
 
                 stock_list.append(stock)
