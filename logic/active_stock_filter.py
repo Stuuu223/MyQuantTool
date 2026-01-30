@@ -17,6 +17,7 @@ Version: V19.17
 
 import pandas as pd
 import os
+from datetime import datetime
 from typing import List, Dict, Any, Optional
 from logic.logger import get_logger
 from logic.code_converter import CodeConverter
@@ -106,6 +107,27 @@ class ActiveStockFilter:
 
             logger.info(f"✅ [V19.17] QMT 成功获取 {len(market_data)} 只股票数据")
 
+            # 🔥 V20.2: 尝试从 EasyQuotation 获取换手率数据（作为补充）
+            turnover_rates = {}
+            try:
+                logger.info("⚡ [V20.2] 尝试从 EasyQuotation 获取换手率数据...")
+                import easyquotation as eq
+                eq_source = eq.use('tencent')
+                
+                # 批量获取股票列表
+                std_codes = [self.code_converter.to_standard(code) for code in market_data.keys()]
+                eq_data = eq_source.stocks(std_codes)
+                
+                if eq_data:
+                    for std_code, eq_stock in eq_data.items():
+                        if eq_stock and 'turnover' in eq_stock:
+                            # EasyQuotation 的 turnover 是百分比，直接使用
+                            turnover_rates[std_code] = eq_stock['turnover']
+                
+                logger.info(f"✅ [V20.2] 成功获取 {len(turnover_rates)} 只股票的换手率")
+            except Exception as e:
+                logger.warning(f"⚠️ [V20.2] 获取换手率失败: {e}")
+
             # 转换为 DataFrame
             stock_list = []
             for qmt_code, data in market_data.items():
@@ -132,6 +154,9 @@ class ActiveStockFilter:
                 if last_close > 0:
                     amplitude = ((high_price - low_price) / last_close) * 100
 
+                # 🔥 V20.2: 优先使用 EasyQuotation 的换手率，否则使用 0
+                turnover_rate = turnover_rates.get(std_code, 0)
+
                 stock = {
                     '代码': std_code,
                     '名称': '',  # 稍后批量补充
@@ -143,7 +168,7 @@ class ActiveStockFilter:
                     '成交量': data.get('volume', 0) / 100,  # 股数 → 手数
                     '成交额': data.get('amount', 0) / 10000,  # 元 → 万元
                     '涨跌幅': pct_change * 100,  # 🔥 直接转为百分比（如 5.0 表示 5%）
-                    '换手率': 0,  # QMT tick 不提供换手率
+                    '换手率': turnover_rate,  # 🔥 V20.2: 使用 EasyQuotation 的换手率
                     '振幅': amplitude,  # 🔥 修正后的振幅
                     # 🔥 V19.17: 添加英文字段兼容
                     'code': std_code,
@@ -156,7 +181,7 @@ class ActiveStockFilter:
                     'volume': data.get('volume', 0) / 100,
                     'amount': data.get('amount', 0) / 10000,
                     'change_pct': pct_change * 100,  # 🔥 英文字段也转为百分比
-                    'turnover': 0,
+                    'turnover': turnover_rate,  # 🔥 V20.2: 使用 EasyQuotation 的换手率
                     'now': last_price,
                     'percent': pct_change * 100,  # 🔥 EasyQuotation 风格也转为百分比
                 }
