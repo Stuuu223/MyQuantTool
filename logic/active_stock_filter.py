@@ -57,6 +57,15 @@ class ActiveStockFilter:
             logger.warning(f"⚠️ [V19.17] QMT 接口不可用: {e}")
             logger.warning(f"   将使用 EasyQuotation 作为灾备方案")
 
+        # 🆕 添加股票信息管理器（用于补充股票名称）
+        self.stock_info = None
+        try:
+            from logic.qmt_stock_info import get_qmt_stock_info
+            self.stock_info = get_qmt_stock_info()
+            logger.info("✅ [V19.17] 股票信息管理器已初始化")
+        except Exception as e:
+            logger.warning(f"⚠️ [V19.17] 股票信息管理器初始化失败: {e}")
+
     def _get_qmt_market_data(self) -> Optional[pd.DataFrame]:
         """
         🔥 V19.17: 使用 QMT 获取全市场数据
@@ -107,43 +116,60 @@ class ActiveStockFilter:
                 std_code = self.code_converter.to_standard(qmt_code)
 
                 # 🔥 V19.17: 构造中文字段数据（与现有系统兼容）
+                last_price = data.get('lastPrice', 0)
+                last_close = data.get('lastClose', 0)
+                open_price = data.get('open', 0)
+                high_price = data.get('high', 0)
+                low_price = data.get('low', 0)
+
+                # 手动计算涨跌幅（QMT 不提供 pctChg 字段）
+                pct_change = 0
+                if last_close > 0:
+                    pct_change = ((last_price - last_close) / last_close)
+
+                # 🔥 修正：使用昨收价计算振幅（标准公式）
+                amplitude = 0
+                if last_close > 0:
+                    amplitude = ((high_price - low_price) / last_close) * 100
+
                 stock = {
                     '代码': std_code,
-                    '名称': '',  # QMT tick 数据不带名称
-                    '最新价': data.get('lastPrice', 0),
-                    '昨收': data.get('lastClose', 0),
-                    '今开': data.get('open', 0),
-                    '最高': data.get('high', 0),
-                    '最低': data.get('low', 0),
+                    '名称': '',  # 稍后批量补充
+                    '最新价': last_price,
+                    '昨收': last_close,
+                    '今开': open_price,
+                    '最高': high_price,
+                    '最低': low_price,
                     '成交量': data.get('volume', 0) / 100,  # 股数 → 手数
                     '成交额': data.get('amount', 0) / 10000,  # 元 → 万元
-                    '涨跌幅': data.get('pctChg', 0) / 100 if data.get('pctChg') else 0,  # 百分比 → 小数
+                    '涨跌幅': pct_change,  # 小数形式（如 0.05 表示 5%）
                     '换手率': 0,  # QMT tick 不提供换手率
-                    '振幅': 0,  # 需要计算
+                    '振幅': amplitude,  # 🔥 修正后的振幅
                     # 🔥 V19.17: 添加英文字段兼容
                     'code': std_code,
                     'name': '',
-                    'price': data.get('lastPrice', 0),
-                    'close': data.get('lastClose', 0),
-                    'open': data.get('open', 0),
-                    'high': data.get('high', 0),
-                    'low': data.get('low', 0),
+                    'price': last_price,
+                    'close': last_close,
+                    'open': open_price,
+                    'high': high_price,
+                    'low': low_price,
                     'volume': data.get('volume', 0) / 100,
                     'amount': data.get('amount', 0) / 10000,
-                    'change_pct': data.get('pctChg', 0) / 100 if data.get('pctChg') else 0,
+                    'change_pct': pct_change,
                     'turnover': 0,
-                    'now': data.get('lastPrice', 0),
-                    'percent': data.get('pctChg', 0) / 100 if data.get('pctChg') else 0,
+                    'now': last_price,
+                    'percent': pct_change,
                 }
-
-                # 计算振幅
-                if stock['今开'] > 0:
-                    stock['振幅'] = ((stock['最高'] - stock['最低']) / stock['今开']) * 100
 
                 stock_list.append(stock)
 
             df = pd.DataFrame(stock_list)
-            logger.info(f"✅ [V19.17] QMT 数据转换完成，共 {len(df)} 只股票")
+
+            # 🔥 批量补充股票名称
+            if self.stock_info:
+                df = self.stock_info.enrich_dataframe(df, code_column='代码')
+
+            logger.info(f"✅ [V19.17] QMT 数据转换完成，共 {len(df)} 只股票（已补充名称）")
 
             return df
 
