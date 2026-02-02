@@ -42,6 +42,41 @@ def main():
     print("📡 正在切换至 QMT 高速通道...")
     data_provider = RealtimeDataProvider()
     
+    # 🔥 检查 QMT 连接状态
+    if not data_provider.qmt or not data_provider.qmt.is_available():
+        print("=" * 60)
+        print("❌❌❌ QMT 未启动或连接失败！❌❌❌")
+        print("=" * 60)
+        print()
+        print("🔴 严重警告：QMT 高速数据接口不可用！")
+        print()
+        print("原因：")
+        print("  1. QMT 交易端未启动")
+        print("  2. QMT 未登录账号")
+        print("  3. QMT 数据接口未连接")
+        print()
+        print("解决方案：")
+        print("  1. 启动 QMT 交易端")
+        print("  2. 登录账号")
+        print("  3. 等待数据接口连接成功（约30秒）")
+        print("  4. 重新运行扫描脚本")
+        print()
+        print("降级模式：")
+        print("  ⚠️  系统将自动降级到 EasyQuotation（新浪数据）")
+        print("  ⚠️  新浪数据可能有延迟，不建议用于实盘交易")
+        print()
+        print("=" * 60)
+        print()
+        
+        # 询问用户是否继续
+        user_input = input("是否继续使用 EasyQuotation 降级模式？(y/n，默认 n): ").strip().lower()
+        if user_input not in ['y', 'yes']:
+            print("❌ 用户取消扫描")
+            return
+        print()
+        print("⚠️  警告：当前使用 EasyQuotation 降级模式，数据可能有延迟")
+        print()
+    
     # 2. 初始化策略
     print("🎯 正在初始化半路战法...")
     midway = MidwayStrategy(data_provider)
@@ -50,13 +85,21 @@ def main():
     # 600000(浦发), 000001(平安), 300059(东方财富), 601127(赛力斯)
     test_stocks = ['600000', '000001', '300059', '601127', '300750']
     
-    print(f"📊 正在获取 {len(test_stocks)} 只股票的毫秒级实时数据 (QMT)...")
+    # 显示当前使用的数据源
+    if data_provider.qmt and data_provider.qmt.is_available():
+        print(f"📊 正在获取 {len(test_stocks)} 只股票的毫秒级实时数据 (QMT 高速通道)...")
+    else:
+        print(f"📊 正在获取 {len(test_stocks)} 只股票的实时数据 (EasyQuotation 降级模式)...")
     
-    # 🔥 使用 QMT 高速接口
+    # 🔥 使用数据接口
     realtime_data = data_provider.get_realtime_data(test_stocks)
     
     if not realtime_data:
-        print("❌ 获取行情失败，请检查 QMT 连接")
+        print("❌ 获取行情失败")
+        if not data_provider.qmt or not data_provider.qmt.is_available():
+            print("   原因：QMT 不可用，且 EasyQuotation 也无法获取数据")
+        else:
+            print("   原因：数据接口返回空数据")
         return
     
     print(f"✅ 获取成功，开始策略匹配...")
