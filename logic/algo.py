@@ -1473,7 +1473,7 @@ class QuantAlgo:
         return result
     
     @staticmethod
-    def scan_dragon_stocks(limit=50, min_score=60, min_change_pct=5.0, min_volume=200, min_amount=50, watchlist=None, use_history=False, date=None):
+    def scan_dragon_stocks(limit=50, min_score=60, min_change_pct=5.0, min_volume=200, min_amount=50, watchlist=None, use_history=False, date=None, is_review_mode=False):
         """
         扫描市场中的潜在龙头股
 
@@ -1486,6 +1486,7 @@ class QuantAlgo:
             watchlist: 核心监控池白名单（这些股票跳过过滤条件）
             use_history: 是否使用历史数据（复盘模式）
             date: 复盘日期（格式：YYYYMMDD），默认为今天
+            is_review_mode: 复盘模式开关（V20.5新增，禁用时间衰减）
         
         返回: 符合条件的龙头股列表
         """
@@ -1493,6 +1494,10 @@ class QuantAlgo:
             import akshare as ak
             from logic.data_manager import DataManager
             from datetime import datetime
+            
+            # 🆕 V20.5: 记录复盘模式状态
+            if is_review_mode:
+                logger.info("📝 龙头战法扫描：复盘模式已启用（禁用时间衰减）")
             
             # 获取涨停板股票
             if use_history:
@@ -3543,14 +3548,23 @@ class QuantAlgo:
             }
 
     @staticmethod
-    def scan_trend_stocks(limit=100, min_score=60):
+    def scan_trend_stocks(limit=100, min_score=60, is_review_mode=False):
         """
         趋势中军扫描模式 (专门抓 诺思格/宁德时代 这类机构票)
         特征：不一定天天涨停，但沿着 5日线/10日线不停涨
         资金：主要靠机构推土机式买入，而不是游资一日游
+        
+        Args:
+            limit: 扫描的股票数量限制
+            min_score: 最低评分门槛
+            is_review_mode: 复盘模式开关（V20.5新增，禁用时间衰减）
         """
         try:
             from logic.data_manager import DataManager
+            
+            # 🆕 V20.5: 记录复盘模式状态
+            if is_review_mode:
+                logger.info("📝 趋势中军扫描：复盘模式已启用（禁用时间衰减）")
 
             # 🆕 V19.14: 尝试使用 AkShare 获取股票列表，失败时使用本地文件
             stock_list = []
@@ -3911,14 +3925,23 @@ class QuantAlgo:
             }
 
     @staticmethod
-    def scan_halfway_stocks(limit=100, min_score=60):
+    def scan_halfway_stocks(limit=100, min_score=60, is_review_mode=False):
         """
         半路战法扫描模式 (专门抓 20cm 股票在 10%-19% 区间的半路板)
         特征：20cm 股票在加速逼空段，但还未封板
         机会：半路扫货，博弈 20% 涨停
+        
+        Args:
+            limit: 扫描的股票数量限制
+            min_score: 最低评分门槛
+            is_review_mode: 复盘模式开关（V20.5新增，禁用时间衰减）
         """
         try:
             from logic.data_manager import DataManager
+            
+            # 🆕 V20.5: 记录复盘模式状态
+            if is_review_mode:
+                logger.info("📝 激进半路扫描：复盘模式已启用（禁用时间衰减）")
 
             # 🆕 V19.14: 尝试使用 AkShare 获取股票列表，失败时使用本地文件
             stock_list = []

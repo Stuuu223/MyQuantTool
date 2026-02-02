@@ -5,6 +5,10 @@ V10.1.9 系统配置文件
 集中管理所有"开关"和"阈值"
 """
 
+# 🆕 V20.5: 导入 logger
+from logic.logger import get_logger
+logger = get_logger(__name__)
+
 # ==========================================
 # 市场情绪阈值
 # ==========================================
@@ -272,6 +276,7 @@ class Config:
     
     _instance = None
     _config_data = None
+    _review_mode = False  # 🆕 V20.5: 复盘模式开关
     
     def __new__(cls):
         if cls._instance is None:
@@ -295,6 +300,25 @@ class Config:
         else:
             print(f"⚠️ 配置文件不存在: {config_path}")
             self._config_data = {}
+    
+    def set_review_mode(self, enabled: bool):
+        """
+        🆕 V20.5: 设置复盘模式
+        
+        Args:
+            enabled: 是否启用复盘模式
+        """
+        self._review_mode = enabled
+        logger.info(f"📝 复盘模式已{'开启' if enabled else '关闭'}")
+    
+    def is_review_mode(self) -> bool:
+        """
+        🆕 V20.5: 获取复盘模式状态
+        
+        Returns:
+            bool: 当前是否为复盘模式
+        """
+        return self._review_mode
     
     def get(self, key, default=None):
         """

@@ -178,6 +178,10 @@ def render_dragon_strategy_tab(db, config):
             help="开启后，所有股票的时间权重将设为 1.0，便于分析全天涨停质量"
         )
         
+        # 🆕 V20.5: 同步复盘模式到全局配置
+        config.set_review_mode(review_mode)
+        logger.info(f"📝 UI更新：复盘模式已{'开启' if review_mode else '关闭'}")
+        
         # 🆕 V9.13.1 修复：添加盘前准备按钮
         st.sidebar.divider()
         st.sidebar.subheader("🚀 盘前准备")
@@ -240,6 +244,10 @@ def render_dragon_strategy_tab(db, config):
             value=is_after_hours,  # 盘后自动开启
             help="开启后，所有股票的时间权重将设为 1.0，便于分析全天涨停质量"
         )
+        
+        # 🆕 V20.5: 同步复盘模式到全局配置
+        config.set_review_mode(review_mode)
+        logger.info(f"📝 UI更新：复盘模式已{'开启' if review_mode else '关闭'}")
     
     # 🆕 V9.11: 市场情绪仪表盘
     if use_advanced_features:
@@ -459,14 +467,15 @@ def render_dragon_strategy_tab(db, config):
                     min_amount=filter_min_amount,
                     watchlist=watchlist,  # 🆕 V9.10 新增：传递监控池
                     use_history=use_history,  # 🚀 V19.4.4 新增：复盘模式
-                    date=review_date  # 🚀 V19.4.4 新增：复盘日期
+                    date=review_date,  # 🚀 V19.4.4 新增：复盘日期
+                    is_review_mode=review_mode  # 🆕 V20.5: 传递复盘模式标志
                 )
         elif "趋势" in current_mode:
             with st.spinner('🛡️ 正在执行趋势中军筛选 (均线多头 + 温和放量)...'):
-                scan_result = QuantAlgo.scan_trend_stocks(limit=scan_limit, min_score=min_score)
+                scan_result = QuantAlgo.scan_trend_stocks(limit=scan_limit, min_score=min_score, is_review_mode=review_mode)  # 🆕 V20.5: 传递复盘模式标志
         elif "激进半路" in current_mode:
             with st.spinner('🚀 正在执行激进半路筛选 (20cm 10%-18.5%加速逼空)...'):
-                scan_result = QuantAlgo.scan_halfway_stocks(limit=scan_limit, min_score=min_score)
+                scan_result = QuantAlgo.scan_halfway_stocks(limit=scan_limit, min_score=min_score, is_review_mode=review_mode)  # 🆕 V20.5: 传递复盘模式标志
         elif "保守半路" in current_mode:
             with st.spinner('🛡️ 正在执行保守半路筛选 (主板2.5%-8% / 20cm 5%-12%)...'):
                 from logic.midway_strategy import get_midway_strategy_instance
