@@ -31,7 +31,8 @@ def get_analysis_file_path(stock_code, days, mode='analyze'):
     os.makedirs(stock_dir, exist_ok=True)
 
     # 生成文件名：股票代码_日期_天数days[_mode].json
-    date_str = datetime.now().strftime('%Y%m%d')
+    # 添加详细时间戳（包含时分秒）便于追踪
+    date_str = datetime.now().strftime('%Y%m%d_%H%M%S')
     if mode == 'enhanced':
         filename = f"{stock_code}_{date_str}_{days}days_enhanced.json"
     else:
