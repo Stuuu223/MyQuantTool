@@ -23,16 +23,30 @@ class TrapDetector:
         """初始化检测器"""
         self.detected_traps = []
 
-    def detect_pump_and_dump(self, daily_data: List[Dict[str, Any]], max_traps: int = 5) -> Dict[str, Any]:
+    def detect_pump_and_dump(self, daily_data: List[Dict[str, Any]], max_traps: int = 5, strict_mode: bool = True) -> Dict[str, Any]:
         """
         检测"吸筹-反手卖"诱多陷阱
 
-        排序策略: 按吸筹金额从大到小
-        理由: 危害性 ∝ 吸筹金额
+        严格模式（strict_mode=True）：
+        - 吸筹 >= 1000万
+        - 隔日卖出 >= 当日吸筹的 80%（必须反手卖）
+        - 5日/10日滚动仍在流出（持续流出）
+        - 排除小额试单
+
+        普通模式（strict_mode=False）：
+        - 吸筹 >= 5000万
+        - 隔日卖出 >= 2500万
+        - 3个特征至少满足2个
+
+        时间衰减权重：
+        - 最近30天：权重 100%
+        - 30-60天：权重 70%
+        - 60+天：权重 30%
 
         Args:
             daily_data: 每日资金流向数据
             max_traps: 最多返回的陷阱数量（默认5个）
+            strict_mode: 是否使用严格模式（默认True）
 
         Returns:
             检测结果字典
@@ -57,57 +71,125 @@ class TrapDetector:
             prev_day = daily_data[i]
             curr_day = daily_data[i + 1]
 
-            # 特征 1: 前一天大额吸筹（提高阈值到5000万，只检测真正的大额吸筹）
-            big_inflow = prev_day.get('institution', 0) > 5000
+            inflow_amount = prev_day.get('institution', 0)
+            dump_amount = curr_day.get('institution', 0)
 
-            # 特征 2: 当天反手卖出（降低阈值到-2500万，避免漏检）
-            big_outflow = curr_day.get('institution', 0) < -2500
+            # 计算距今天数
+            inflow_date = datetime.strptime(prev_day['date'], '%Y-%m-%d')
+            days_ago = (today - inflow_date).days
 
-            # 特征 3: 前一天涨幅明显（如果有价格数据，提高阈值到3%）
-            price_surge = prev_day.get('pct_chg', 0) > 3.0
+            # ========== 严格模式 ==========
+            if strict_mode:
+                # 严格条件 1: 吸筹金额 >= 1000万
+                if inflow_amount < 1000:
+                    continue
 
-            # 综合判断（3个特征至少满足2个，但前两个特征必须至少满足1个）
-            feature_count = sum([big_inflow, big_outflow, price_surge])
-            has_volume_feature = big_inflow or big_outflow
+                # 严格条件 2: 隔日卖出必须是流出
+                if dump_amount >= 0:
+                    continue
 
-            if feature_count >= 2 and has_volume_feature:
-                # 计算距今天数
-                inflow_date = datetime.strptime(prev_day['date'], '%Y-%m-%d')
-                days_ago = (today - inflow_date).days
+                # 严格条件 3: 反手卖比例 >= 80%
+                dump_ratio = abs(dump_amount) / inflow_amount
+                if dump_ratio < 0.80:
+                    continue  # 没有反手卖，只是部分减仓
 
-                # 判断严重程度（基于吸筹金额）
-                inflow_amount = prev_day.get('institution', 0)
-                if inflow_amount > 15000:
+                # 严格条件 4: 5日/10日滚动仍在流出
+                flow_5d = curr_day.get('flow_5d_net', 0)
+                flow_10d = curr_day.get('flow_10d_net', 0)
+                if flow_5d > 0 or flow_10d > 0:
+                    continue  # 还在吸筹中，不是诱多
+
+                # 计算时间衰减权重
+                if days_ago > 60:
+                    time_weight = 0.30
+                elif days_ago > 30:
+                    time_weight = 0.70
+                else:
+                    time_weight = 1.00
+
+                # 计算严重程度（基于吸筹金额）
+                if inflow_amount > 10000:
                     severity = "CRITICAL"
-                elif inflow_amount > 10000:
-                    severity = "HIGH"
                 elif inflow_amount > 5000:
+                    severity = "HIGH"
+                elif inflow_amount > 3000:
                     severity = "MEDIUM"
                 else:
                     severity = "LOW"
 
-                # 计算置信度
-                confidence = 0.60 + (feature_count * 0.10)  # 基础0.6，每多一个特征+0.1
-                if big_inflow and big_outflow and price_surge:
-                    confidence = 0.90
+                # 计算置信度（基础0.7，乘以时间权重）
+                confidence = 0.70 * time_weight
+                if dump_ratio >= 1.0:
+                    confidence += 0.15  # 完全反手卖
                 if inflow_amount > 10000:
-                    confidence = min(confidence + 0.05, 0.95)
+                    confidence += 0.05
 
                 detected_traps.append({
                     'detected': True,
                     'type': 'PUMP_AND_DUMP',
                     'type_name': '诱多陷阱（吸筹-反手卖）',
-                    'confidence': round(confidence, 2),
+                    'confidence': round(min(confidence, 0.95), 2),
                     'inflow_day': prev_day['date'],
                     'inflow_amount': inflow_amount,
                     'dump_day': curr_day['date'],
-                    'dump_amount': curr_day.get('institution', 0),
+                    'dump_amount': dump_amount,
+                    'dump_ratio': round(dump_ratio * 100, 2),  # 反手卖比例（百分比）
                     'price_change_prev': prev_day.get('pct_chg', 0),
                     'evidence': self._format_pump_dump_evidence(prev_day, curr_day),
                     'severity': severity,
                     'is_recent': days_ago <= 30,
-                    'days_ago': days_ago
+                    'days_ago': days_ago,
+                    'time_weight': time_weight
                 })
+
+            # ========== 普通模式（向后兼容）==========
+            else:
+                # 特征 1: 前一天大额吸筹（阈值5000万）
+                big_inflow = prev_day.get('institution', 0) > 5000
+
+                # 特征 2: 当天反手卖出（阈值-2500万）
+                big_outflow = curr_day.get('institution', 0) < -2500
+
+                # 特征 3: 前一天涨幅明显（阈值3%）
+                price_surge = prev_day.get('pct_chg', 0) > 3.0
+
+                # 综合判断（3个特征至少满足2个，但前两个特征必须至少满足1个）
+                feature_count = sum([big_inflow, big_outflow, price_surge])
+                has_volume_feature = big_inflow or big_outflow
+
+                if feature_count >= 2 and has_volume_feature:
+                    # 计算严重程度（基于吸筹金额）
+                    if inflow_amount > 15000:
+                        severity = "CRITICAL"
+                    elif inflow_amount > 10000:
+                        severity = "HIGH"
+                    elif inflow_amount > 5000:
+                        severity = "MEDIUM"
+                    else:
+                        severity = "LOW"
+
+                    # 计算置信度
+                    confidence = 0.60 + (feature_count * 0.10)
+                    if big_inflow and big_outflow and price_surge:
+                        confidence = 0.90
+                    if inflow_amount > 10000:
+                        confidence = min(confidence + 0.05, 0.95)
+
+                    detected_traps.append({
+                        'detected': True,
+                        'type': 'PUMP_AND_DUMP',
+                        'type_name': '诱多陷阱（吸筹-反手卖）',
+                        'confidence': round(confidence, 2),
+                        'inflow_day': prev_day['date'],
+                        'inflow_amount': inflow_amount,
+                        'dump_day': curr_day['date'],
+                        'dump_amount': dump_amount,
+                        'price_change_prev': prev_day.get('pct_chg', 0),
+                        'evidence': self._format_pump_dump_evidence(prev_day, curr_day),
+                        'severity': severity,
+                        'is_recent': days_ago <= 30,
+                        'days_ago': days_ago
+                    })
 
         if detected_traps:
             # 按吸筹金额排序（从大到小）
@@ -117,14 +199,15 @@ class TrapDetector:
             top_traps = detected_traps[:max_traps]
 
             # 风险总结
+            recent_critical_traps = sum(1 for t in top_traps if t.get('severity') == 'CRITICAL' and t.get('is_recent', False))
+            any_recent_trap = any(t.get('is_recent', False) for t in top_traps)
+
             risk_summary = {
                 'total_traps': len(detected_traps),
-                'critical_traps': sum(1 for t in detected_traps if t['severity'] == 'CRITICAL'),
-                'recent_traps': sum(1 for t in detected_traps if t['is_recent']),
+                'critical_traps': sum(1 for t in detected_traps if t.get('severity') == 'CRITICAL'),
+                'recent_traps': sum(1 for t in detected_traps if t.get('is_recent', False)),
                 'max_inflow': max(t['inflow_amount'] for t in detected_traps),
-                'recommendation': 'AVOID - 检测到诱多陷阱，建议回避' if any(
-                    t['severity'] in ['CRITICAL', 'HIGH'] or t['is_recent'] for t in top_traps
-                ) else 'WAIT_AND_WATCH'
+                'recommendation': 'AVOID - 检测到诱多陷阱，建议回避' if (recent_critical_traps > 0 or any_recent_trap) else 'WAIT_AND_WATCH'
             }
 
             return {
@@ -271,7 +354,7 @@ class TrapDetector:
 
     def comprehensive_trap_scan(self, daily_data: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
-        综合扫描所有陷阱模式
+        综合扫描所有陷阱模式（使用严格模式）
 
         Args:
             daily_data: 每日资金流向数据
@@ -281,8 +364,8 @@ class TrapDetector:
         """
         self.detected_traps = []
 
-        # 检测 1: 诱多陷阱
-        pump_dump = self.detect_pump_and_dump(daily_data)
+        # 检测 1: 诱多陷阱（使用严格模式）
+        pump_dump = self.detect_pump_and_dump(daily_data, strict_mode=True)
         if pump_dump['detected']:
             self.detected_traps.extend(pump_dump['detected_traps'])
 
@@ -299,8 +382,13 @@ class TrapDetector:
         # 计算累计流出（用于风险评分）
         total_outflow = sum(d.get('institution', 0) for d in daily_data)
 
-        # 计算综合风险评分
-        risk_score = self._calculate_comprehensive_risk(total_outflow)
+        # 获取当前滚动趋势
+        latest = daily_data[-1]
+        flow_5d = latest.get('flow_5d_net', 0)
+        flow_10d = latest.get('flow_10d_net', 0)
+
+        # 计算综合风险评分（考虑当前趋势）
+        risk_score = self._calculate_comprehensive_risk(total_outflow, flow_5d, flow_10d)
 
         return {
             'detected_traps': self.detected_traps,
@@ -313,49 +401,80 @@ class TrapDetector:
             'scan_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }
 
-    def _calculate_comprehensive_risk(self, total_outflow: float = 0) -> float:
+    def _calculate_comprehensive_risk(self, total_outflow: float = 0, flow_5d: float = 0, flow_10d: float = 0) -> float:
         """
         计算综合风险评分（0-1）
 
-        评分规则:
-        - CRITICAL级别: 置信度 * 0.6
-        - HIGH级别: 置信度 * 0.4
-        - MEDIUM级别: 置信度 * 0.3
-        - 多个陷阱叠加风险更高
-        - 累计流出越大风险越高
+        评分规则（最终优化版）：
+        - 优先考虑当前趋势（5日/10日滚动）
+        - 如果当前在吸筹（5日>0且10日>0），大幅降低风险
+        - 只考虑最近30天内的诱多
+        - CRITICAL级别: 置信度 * 0.3（大幅降低）
+        - HIGH级别: 置信度 * 0.2
+        - MEDIUM级别: 置信度 * 0.1
+
+        Args:
+            total_outflow: 90天累计流出
+            flow_5d: 5日滚动净流入
+            flow_10d: 10日滚动净流入
         """
         if not self.detected_traps:
             return 0.0
 
+        # 只考虑最近30天内的诱多
+        recent_traps = [t for t in self.detected_traps if t.get('is_recent', False)]
+
+        # 如果没有最近诱多，风险很低
+        if not recent_traps:
+            return 0.0
+
         base_risk = 0.0
 
-        for trap in self.detected_traps:
+        for trap in recent_traps:
             confidence = trap.get('confidence', 0)
-            risk_level = trap.get('risk_level', 'LOW')
+            severity = trap.get('severity', 'LOW')
 
-            # 根据风险等级计算权重
-            if risk_level == 'CRITICAL':
-                weight = 0.6
-            elif risk_level == 'HIGH':
-                weight = 0.4
-            elif risk_level == 'MEDIUM':
-                weight = 0.3
+            # 根据严重程度计算权重（大幅降低）
+            if severity == 'CRITICAL':
+                weight = 0.3  # 从 0.5 降低到 0.3
+            elif severity == 'HIGH':
+                weight = 0.2  # 从 0.3 降低到 0.2
+            elif severity == 'MEDIUM':
+                weight = 0.1  # 从 0.2 降低到 0.1
             else:
-                weight = 0.2
+                weight = 0.05
 
             base_risk += confidence * weight
 
-        # 陷阱数量加成（增加权重）
-        trap_count_bonus = (len(self.detected_traps) - 1) * 0.2
+        # 陷阱数量加成（大幅降低）
+        trap_count_bonus = (len(recent_traps) - 1) * 0.05  # 从 0.10 降低到 0.05
 
-        # 累计流出加成
-        if total_outflow < -5000:  # 5000万流出
-            outflow_bonus = min(abs(total_outflow) / 50000, 0.15)  # 最多加 0.15
+        # 累计流出加成（几乎不考虑）
+        if total_outflow < -100000:  # 10亿流出
+            outflow_bonus = min(abs(total_outflow) / 500000, 0.02)  # 最多加 0.02
         else:
             outflow_bonus = 0
 
+        # 当前趋势调整（关键！大幅提高权重）
+        if flow_5d > 0 and flow_10d > 0:
+            # 正在吸筹，大幅降低风险
+            trend_adjustment = -0.40  # 从 -0.30 提高到 -0.40
+        elif flow_5d > 0:
+            # 5日流入，适度降低风险
+            trend_adjustment = -0.20  # 从 -0.15 提高到 -0.20
+        elif flow_5d < -10000:
+            # 5日大幅流出，增加风险
+            trend_adjustment = 0.30
+        elif flow_5d < 0:
+            # 5日小幅流出，轻微增加风险
+            trend_adjustment = 0.15
+        else:
+            trend_adjustment = 0
+
         # 限制在 0-1
-        return max(0.0, min(1.0, base_risk + trap_count_bonus + outflow_bonus))
+        final_risk = max(0.0, min(1.0, base_risk + trap_count_bonus + outflow_bonus + trend_adjustment))
+
+        return final_risk
 
     def _get_highest_risk_level(self) -> str:
         """获取最高风险等级"""
