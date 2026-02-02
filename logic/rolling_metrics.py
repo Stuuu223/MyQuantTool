@@ -77,18 +77,23 @@ class RollingMetricsCalculator:
 
             # ========== 3. 额外的辅助指标 ==========
 
-            # 流入级别（基于百分位）
-            percentile = enhanced['inflow_rank_percentile']
-            if percentile >= 0.9:
-                enhanced['inflow_level'] = 'MEGA'  # 前10%
-            elif percentile >= 0.75:
-                enhanced['inflow_level'] = 'LARGE'  # 前25%
-            elif percentile >= 0.5:
-                enhanced['inflow_level'] = 'MEDIUM'  # 前50%
-            elif percentile >= 0.25:
-                enhanced['inflow_level'] = 'SMALL'  # 前75%
+            # 流入级别（基于绝对值，不是百分位）
+            # TINY: < 500万
+            # SMALL: 500-1500万
+            # MEDIUM: 1500-3000万
+            # LARGE: 3000-5000万
+            # MEGA: > 5000万
+            inflow_amount = abs(record.get('institution', 0))
+            if inflow_amount >= 5000:
+                enhanced['inflow_level'] = 'MEGA'
+            elif inflow_amount >= 3000:
+                enhanced['inflow_level'] = 'LARGE'
+            elif inflow_amount >= 1500:
+                enhanced['inflow_level'] = 'MEDIUM'
+            elif inflow_amount >= 500:
+                enhanced['inflow_level'] = 'SMALL'
             else:
-                enhanced['inflow_level'] = 'TINY'  # 后25%
+                enhanced['inflow_level'] = 'TINY'
 
             enriched.append(enhanced)
 
