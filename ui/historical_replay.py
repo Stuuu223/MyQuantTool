@@ -15,7 +15,7 @@ from logic.sentiment_analyzer import SentimentAnalyzer
 from logic.algo import QuantAlgo
 from logic.logger import get_logger
 from logic.midway_strategy_v19_final import MidwayStrategy
-import config_system as config
+from config.config_system import Config
 
 logger = get_logger(__name__)
 

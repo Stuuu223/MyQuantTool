@@ -11,7 +11,7 @@ import pandas as pd
 import streamlit as st
 from typing import Optional, Dict, Union
 from logic.logger import get_logger
-import config_system as config
+import config.config_system as config
 
 logger = get_logger(__name__)
 

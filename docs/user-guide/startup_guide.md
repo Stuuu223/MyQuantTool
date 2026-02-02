@@ -126,7 +126,7 @@ sudo apt-get install redis-server
 sudo service redis-server start
 ```
 
-详细说明请参考：[Redis 安装和配置指南](redis_setup_guide.md)
+详细说明请参考：[Redis 安装和配置指南](../setup/redis_setup_guide.md)
 
 ## 测试 Redis
 
@@ -262,8 +262,8 @@ start_with_redis.bat
 
 ## 相关文档
 
-- [Redis 安装和配置指南](redis_setup_guide.md)
-- [数据库使用指南](database_guide.md)
+- [Redis 安装和配置指南](../setup/redis_setup_guide.md)
+- [数据库使用指南](../setup/database_guide.md)
 
 ## 总结
 

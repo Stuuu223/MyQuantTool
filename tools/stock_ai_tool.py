@@ -2,43 +2,47 @@
 AI 便捷接口
 让 AI 可以轻松调用个股分析工具
 """
-from comprehensive_stock_tool import comprehensive_stock_analysis, quick_analysis
-from enhanced_stock_analyzer import analyze_stock_enhanced, analyze_stock_json
+from tools.comprehensive_stock_tool import comprehensive_stock_analysis, quick_analysis
+from tools.enhanced_stock_analyzer import analyze_stock_enhanced, analyze_stock_json
 import json
 import os
 from datetime import datetime
 
 
-def get_analysis_file_path(stock_code, days):
+def get_analysis_file_path(stock_code, days, mode='analyze'):
     """
     生成分析文件路径（自动创建文件夹）
 
     Args:
         stock_code: 股票代码
         days: 分析天数
+        mode: 分析模式（用于文件命名）
 
     Returns:
         str: 文件路径
     """
     # 基础目录
     base_dir = 'E:/MyQuantTool/data/stock_analysis'
-    
+
     # 按股票代码分类
     stock_dir = os.path.join(base_dir, stock_code)
-    
+
     # 确保目录存在
     os.makedirs(stock_dir, exist_ok=True)
-    
-    # 生成文件名：股票代码_日期_天数days.json
+
+    # 生成文件名：股票代码_日期_天数days[_mode].json
     date_str = datetime.now().strftime('%Y%m%d')
-    filename = f"{stock_code}_{date_str}_{days}days.json"
-    
+    if mode == 'enhanced':
+        filename = f"{stock_code}_{date_str}_{days}days_enhanced.json"
+    else:
+        filename = f"{stock_code}_{date_str}_{days}days.json"
+
     file_path = os.path.join(stock_dir, filename)
-    
+
     return file_path
 
 
-def save_analysis_result(result, stock_code, days):
+def save_analysis_result(result, stock_code, days, mode='analyze'):
     """
     保存分析结果到文件（自动归类）
 
@@ -46,15 +50,16 @@ def save_analysis_result(result, stock_code, days):
         result: 分析结果（dict）
         stock_code: 股票代码
         days: 分析天数
+        mode: 分析模式（用于文件命名）
 
     Returns:
         str: 保存的文件路径
     """
-    file_path = get_analysis_file_path(stock_code, days)
-    
+    file_path = get_analysis_file_path(stock_code, days, mode)
+
     with open(file_path, 'w', encoding='utf-8') as f:
         json.dump(result, f, indent=2, ensure_ascii=False)
-    
+
     return file_path
 
 
@@ -71,6 +76,7 @@ def analyze_stock(stock_code, days=10, mode='analyze', use_qmt=None, output_all_
             - 'akshare': 仅AkShare分析（资金流向）
             - 'qmt': 仅QMT分析（技术指标，不含资金流向）
             - 'json': 返回JSON格式的结构化数据（AkShare+QMT，便于AI处理）
+            - 'enhanced': 增强分析模式（包含滚动指标、诱多检测、资金性质分类、风险评分）
         use_qmt: 是否使用 QMT 数据（None=根据模式自动判断，True=强制使用，False=强制不使用）
         output_all_data: 是否输出所有数据（仅在非json模式有效）
         pure_data: 是否只输出纯数据（不包含主观判断和建议，仅在json模式有效）
@@ -128,32 +134,38 @@ def analyze_stock(stock_code, days=10, mode='analyze', use_qmt=None, output_all_
     elif mode in ['analyze', 'full']:
         result = analyze_stock_enhanced(stock_code, days=days, use_qmt=use_qmt, output_all_data=output_all_data, pure_data=pure_data)
         if auto_save:
-            file_path = save_analysis_result(result, stock_code, days)
+            file_path = save_analysis_result(result, stock_code, days, mode)
             return result, file_path
         return result
     elif mode == 'akshare':
         result = analyze_stock_enhanced(stock_code, days=days, use_qmt=False, output_all_data=output_all_data, pure_data=pure_data)
         if auto_save:
-            file_path = save_analysis_result(result, stock_code, days)
+            file_path = save_analysis_result(result, stock_code, days, mode)
             return result, file_path
         return result
     elif mode == 'qmt':
         result = analyze_stock_enhanced(stock_code, days=days, use_qmt=True, output_all_data=output_all_data, pure_data=pure_data)
         if auto_save:
-            file_path = save_analysis_result(result, stock_code, days)
+            file_path = save_analysis_result(result, stock_code, days, mode)
             return result, file_path
         return result
     elif mode == 'json':
         result = analyze_stock_json(stock_code, days=days, use_qmt=use_qmt, auto_download=True, pure_data=pure_data)
         if auto_save:
-            file_path = save_analysis_result(result, stock_code, days)
+            file_path = save_analysis_result(result, stock_code, days, mode)
+            return result, file_path
+        return result
+    elif mode == 'enhanced':
+        result = analyze_stock_json(stock_code, days=days, use_qmt=use_qmt, auto_download=True, pure_data=pure_data)
+        if auto_save:
+            file_path = save_analysis_result(result, stock_code, days, mode)
             return result, file_path
         return result
     else:
         # 默认为分析模式
         result = analyze_stock_enhanced(stock_code, days=days, use_qmt=True, output_all_data=output_all_data, pure_data=pure_data)
         if auto_save:
-            file_path = save_analysis_result(result, stock_code, days)
+            file_path = save_analysis_result(result, stock_code, days, mode)
             return result, file_path
         return result
 
@@ -265,11 +277,11 @@ def analyze_stock_structured(stock_code, days=60, use_qmt=True, auto_download=Tr
             print(f"{day['date']}: {day['signal']} - {day['description']}")
     """
     result = analyze_stock_json(stock_code, days=days, use_qmt=use_qmt, auto_download=auto_download, pure_data=True)
-    
+
     if auto_save:
-        file_path = save_analysis_result(result, stock_code, days)
+        file_path = save_analysis_result(result, stock_code, days, mode)
         return result, file_path
-    
+
     return result
 
 

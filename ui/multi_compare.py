@@ -12,7 +12,7 @@ from logic.data_manager import DataManager
 from logic.comparator import StockComparator
 from logic.formatter import Formatter
 from logic.logger import get_logger
-from config_system import Config
+from config.config_system import Config
 
 logger = get_logger(__name__)
 

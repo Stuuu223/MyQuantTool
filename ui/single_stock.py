@@ -15,7 +15,7 @@ from logic.formatter import Formatter
 from logic.logger import get_logger
 from logic.iron_rule_monitor import IronRuleMonitor
 from logic.iron_rule_alert import IronRuleAlert
-from config_system import Config
+from config.config_system import Config
 
 logger = get_logger(__name__)
 

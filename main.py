@@ -325,7 +325,7 @@ def get_db_instance():
 
 def get_config():
     """获取配置实例"""
-    from config_system import Config
+    from config.config_system import Config
     return Config()
 
 

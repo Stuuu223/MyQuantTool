@@ -12,7 +12,7 @@ from logic.data_provider_factory import DataProvider
 from logic.logger import get_logger
 from logic.utils import Utils
 from logic.data_adapter_akshare import MoneyFlowAdapter
-import config_system as config
+import config.config_system as config
 from datetime import datetime
 import threading
 import time

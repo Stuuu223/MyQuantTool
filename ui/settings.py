@@ -355,7 +355,7 @@ def render_settings_tab(db, config):
             
             # 🆕 V19.6: 动态更新config_system的DEBUG_MODE
             try:
-                import config_system as config
+                import config.config_system as config
                 config.DEBUG_MODE = debug_mode
                 logger.info(f"DEBUG_MODE已更新为: {debug_mode}")
             except Exception as e:

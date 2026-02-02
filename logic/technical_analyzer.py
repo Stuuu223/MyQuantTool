@@ -2,7 +2,7 @@ import akshare as ak
 import pandas as pd
 import concurrent.futures
 from datetime import datetime
-import config_system as config
+import config.config_system as config
 
 class TechnicalAnalyzer:
     def __init__(self):
