@@ -346,9 +346,9 @@ def render_dragon_strategy_tab(db, config):
         with col_filter1:
             min_change_pct = st.slider("最小涨幅 (%)", 0.0, 20.0, 7.0, 0.5, key="filter_min_change_pct", help="龙头战法建议7%以上，支持扫描20cm股票（10%-20%区间）")
         with col_filter2:
-            min_volume = st.number_input("最小成交量 (手)", min_value=1000, max_value=100000, value=2000, step=1000, key="filter_min_volume", help="降低门槛以捕捉小盘龙头")
+            min_volume = st.number_input("最小成交量 (手)", min_value=100, max_value=100000, value=200, step=100, key="filter_min_volume", help="降低门槛以捕捉小盘龙头 🔥 V20.0: 默认从2000降至200")
         with col_filter3:
-            min_amount = st.number_input("最小成交额 (万元)", min_value=1000, max_value=50000, value=1000, step=1000, key="filter_min_amount", help="降低门槛以捕捉小盘龙头")
+            min_amount = st.number_input("最小成交额 (万元)", min_value=10, max_value=50000, value=50, step=50, key="filter_min_amount", help="降低门槛以捕捉小盘龙头 🔥 V20.0: 默认从1000降至50")
         
         # 🆕 V19.6 新增：高级筛选选项
         st.write("**🔍 高级筛选选项**")
@@ -441,8 +441,8 @@ def render_dragon_strategy_tab(db, config):
         
         # 获取过滤参数（默认值与UI slider保持一致）
         filter_min_change_pct = st.session_state.get('filter_min_change_pct', 7.0)
-        filter_min_volume = st.session_state.get('filter_min_volume', 2000)
-        filter_min_amount = st.session_state.get('filter_min_amount', 1000)
+        filter_min_volume = st.session_state.get('filter_min_volume', 200)  # 🔥 V20.0: 默认从2000降至200
+        filter_min_amount = st.session_state.get('filter_min_amount', 50)  # 🔥 V20.0: 默认从1000降至50
         
         # 根据模式调用不同的扫描函数
         # 🚀 V19.4.4 新增：获取复盘模式参数

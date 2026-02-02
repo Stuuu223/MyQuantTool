@@ -3784,7 +3784,7 @@ class QuantAlgo:
                     df = history_data_cache.get(symbol)
                     
                     # 🚀 V19.5 盲扫模式：允许在没有历史数据的情况下继续分析
-                    if df is None or df.empty:
+                    if df is None or (hasattr(df, "empty") and df.empty):
                         df = None  # 标记为无历史数据
                         logger.debug(f"[{symbol}] 🚀 盲扫模式：无历史数据，使用默认值")
                         
@@ -4210,7 +4210,7 @@ class QuantAlgo:
                     df = history_data_cache.get(symbol)
                     
                     # 🚀 V19.5 盲扫模式：允许在没有历史数据的情况下继续分析
-                    if df is None or df.empty:
+                    if df is None or (hasattr(df, "empty") and df.empty):
                         df = None  # 标记为无历史数据
                         logger.debug(f"[{symbol}] 🚀 盲扫模式：无历史数据，使用默认值")
 
@@ -4219,7 +4219,7 @@ class QuantAlgo:
                     turnover_rate = stock.get('换手率', 0)
                     
                     # 如果实时换手率为0且有历史数据，尝试从历史数据获取
-                    if turnover_rate == 0 and df is not None and 'turnover_rate' in df.columns:
+                    if turnover_rate == 0 and df is not None and hasattr(df, 'empty') and hasattr(df, 'columns') and 'turnover_rate' in df.columns:
                         turnover_rate = df['turnover_rate'].iloc[-1]
 
                     # 计算评分
