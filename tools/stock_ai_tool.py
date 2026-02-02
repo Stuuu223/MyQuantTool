@@ -21,8 +21,8 @@ def get_analysis_file_path(stock_code, days, mode='analyze'):
     Returns:
         str: 文件路径
     """
-    # 基础目录
-    base_dir = 'E:/MyQuantTool/data/stock_analysis'
+    # 基础目录（使用相对路径）
+    base_dir = 'data/stock_analysis'
 
     # 按股票代码分类
     stock_dir = os.path.join(base_dir, stock_code)
