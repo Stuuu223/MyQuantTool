@@ -60,7 +60,7 @@ class LateTradingScanner:
         """
         # 🆕 V19.6: 检查是否开启调试模式
         try:
-            import config_system as config
+            import config.config_system as config
             if getattr(config, 'DEBUG_MODE', False):
                 logger.debug("🚀 [DEBUG_MODE] 已启用，忽略时间限制")
                 return True

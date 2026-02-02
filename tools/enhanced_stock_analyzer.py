@@ -17,6 +17,11 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # 导入速率限制器
 from logic.rate_limiter import get_rate_limiter, safe_request
 
+# 导入新模块
+from logic.trap_detector import TrapDetector
+from logic.capital_classifier import CapitalClassifier
+from logic.rolling_metrics import RollingMetricsCalculator
+
 
 class EnhancedStockAnalyzer:
     """增强版个股分析器"""
@@ -42,6 +47,11 @@ class EnhancedStockAnalyzer:
             except ImportError:
                 print("⚠️ 无法导入 QMT 模块，将跳过 QMT 数据分析")
                 self.qmt_available = False
+
+        # 初始化新模块
+        self.trap_detector = TrapDetector()
+        self.capital_classifier = CapitalClassifier()
+        self.rolling_calculator = RollingMetricsCalculator()
 
     def calculate_technical_indicators(self, df):
         """
@@ -316,6 +326,56 @@ class EnhancedStockAnalyzer:
         except Exception as e:
             print(f"❌ 获取 QMT Tick 数据失败: {e}")
             return None
+
+    def _get_risk_level(self, score: float) -> str:
+        """
+        获取风险等级
+
+        Args:
+            score: 风险评分（0-1）
+
+        Returns:
+            str: 风险等级
+        """
+        if score >= 0.8:
+            return 'CRITICAL'
+        elif score >= 0.6:
+            return 'HIGH'
+        elif score >= 0.4:
+            return 'MEDIUM'
+        else:
+            return 'LOW'
+
+    def _get_recommendation(self, score: float, capital_classification: dict) -> str:
+        """
+        获取操作建议
+
+        Args:
+            score: 风险评分（0-1）
+            capital_classification: 资金分类结果
+
+        Returns:
+            str: 操作建议
+        """
+        capital_type = capital_classification.get('type', 'UNCLEAR')
+        capital_confidence = capital_classification.get('confidence', 0)
+
+        if score >= 0.8:
+            return 'AVOID - 高风险诱多陷阱，建议立即回避'
+        elif score >= 0.6:
+            if capital_type == 'HOT_MONEY' and capital_confidence >= 0.7:
+                return 'WAIT_AND_WATCH - 疑似游资操盘，观察1-3天后再决策'
+            else:
+                return 'CAUTIOUS - 谨慎观察，设置严格止损'
+        elif score >= 0.4:
+            return 'MODERATE - 中等风险，可小仓位参与'
+        else:
+            if capital_type == 'LONG_TERM' and capital_confidence >= 0.7:
+                return 'OPPORTUNITY - 长线资金进场，可考虑布局'
+            elif capital_type == 'INSTITUTIONAL' and capital_confidence >= 0.7:
+                return 'FOLLOW - 机构稳健吸筹，可考虑跟随'
+            else:
+                return 'NEUTRAL - 无明显信号，继续观察'
 
     def analyze_fund_flow(self, stock_code, days=60):
         """
@@ -820,6 +880,44 @@ def analyze_stock_json(stock_code, days=60, use_qmt=True, auto_download=True, pu
                 'signal_type': sig_type,
                 'description': desc
             })
+
+        # ========== 新增：滚动指标计算 ==========
+        if result['fund_flow']['daily_data']:
+            daily_data = result['fund_flow']['daily_data'].copy()
+            enriched_data = analyzer.rolling_calculator.add_rolling_metrics(daily_data)
+            result['fund_flow']['daily_data'] = enriched_data
+
+            # 添加滚动指标汇总
+            rolling_summary = analyzer.rolling_calculator.get_rolling_summary(enriched_data)
+            result['fund_flow']['rolling_summary'] = rolling_summary
+
+            # ========== 新增：诱多陷阱检测 ==========
+            trap_detection = analyzer.trap_detector.comprehensive_trap_scan(enriched_data)
+            result['trap_detection'] = trap_detection
+
+            # ========== 新增：资金性质分类 ==========
+            capital_classification = analyzer.capital_classifier.classify(enriched_data, window=30)
+            result['capital_analysis'] = capital_classification
+
+            # ========== 新增：综合风险评分 ==========
+            trap_risk_score = trap_detection.get('comprehensive_risk_score', 0.0)
+            capital_type = capital_classification.get('type', 'UNCLEAR')
+
+            # 调整风险评分（游资类型风险更高）
+            adjusted_risk_score = trap_risk_score
+            if capital_type == 'HOT_MONEY':
+                adjusted_risk_score = min(trap_risk_score + 0.15, 1.0)
+            elif capital_type == 'LONG_TERM':
+                adjusted_risk_score = max(trap_risk_score - 0.15, 0.0)
+            elif capital_type == 'INSTITUTIONAL':
+                adjusted_risk_score = max(trap_risk_score - 0.10, 0.0)
+
+            result['risk_assessment'] = {
+                'trap_risk_score': round(trap_risk_score, 2),
+                'adjusted_risk_score': round(adjusted_risk_score, 2),
+                'risk_level': analyzer._get_risk_level(adjusted_risk_score),
+                'recommendation': analyzer._get_recommendation(adjusted_risk_score, capital_classification)
+            }
 
     # QMT数据
     if use_qmt and analyzer.qmt_available:

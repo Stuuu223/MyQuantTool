@@ -44,7 +44,7 @@ def calculate_macd(prices, fast=12, slow=26, signal=9):
     return macd, signal_line, histogram
 
 
-def comprehensive_stock_analysis(stock_code, days=10, use_qmt=True):
+def comprehensive_stock_analysis(stock_code, days=10, use_qmt=True, auto_save=False):
     """
     综合个股分析
 
@@ -52,9 +52,11 @@ def comprehensive_stock_analysis(stock_code, days=10, use_qmt=True):
         stock_code: 股票代码（如 '300997'）
         days: 分析最近几天（默认10天）
         use_qmt: 是否使用 QMT 数据（默认 True）
+        auto_save: 是否自动保存报告到文件（默认 False）
 
     Returns:
         str: 格式化的综合分析报告
+        如果 auto_save=True，还会返回文件路径
     """
     # 自动判断市场
     if stock_code.startswith('6'):
@@ -326,7 +328,49 @@ def comprehensive_stock_analysis(stock_code, days=10, use_qmt=True):
 
     report.append(f"\n{'=' * 80}")
 
-    return "\n".join(report)
+    # 生成最终报告
+    final_report = "\n".join(report)
+
+    # 自动保存到文件
+    if auto_save:
+        file_path = save_comprehensive_report(stock_code, days, final_report)
+        return final_report, file_path
+
+    return final_report
+
+
+def save_comprehensive_report(stock_code, days, report_text):
+    """
+    保存综合分析报告到文件
+
+    Args:
+        stock_code: 股票代码
+        days: 分析天数
+        report_text: 报告文本内容
+
+    Returns:
+        str: 保存的文件路径
+    """
+    # 基础目录（使用相对路径，与 stock_ai_tool.py 保持一致）
+    base_dir = 'data/stock_analysis'
+
+    # 按股票代码分类
+    stock_dir = os.path.join(base_dir, stock_code)
+
+    # 确保目录存在
+    os.makedirs(stock_dir, exist_ok=True)
+
+    # 生成文件名：股票代码_日期_天数days_report.txt
+    date_str = datetime.now().strftime('%Y%m%d')
+    filename = f"{stock_code}_{date_str}_{days}days_report.txt"
+
+    file_path = os.path.join(stock_dir, filename)
+
+    # 保存文件
+    with open(file_path, 'w', encoding='utf-8') as f:
+        f.write(report_text)
+
+    return file_path
 
 
 def quick_analysis(stock_code, days=5):
@@ -417,7 +461,17 @@ if __name__ == "__main__":
     else:
         days = 10
 
+    # 检查是否启用自动保存
+    auto_save = '--save' in sys.argv or '-s' in sys.argv
+
     if len(sys.argv) > 3 and sys.argv[3] == 'quick':
-        print(quick_analysis(stock_code, days))
+        result = quick_analysis(stock_code, days)
+        print(result)
     else:
-        print(comprehensive_stock_analysis(stock_code, days))
+        result = comprehensive_stock_analysis(stock_code, days, auto_save=auto_save)
+        if auto_save:
+            report, file_path = result
+            print(report)
+            print(f"\n✅ 报告已保存到: {file_path}")
+        else:
+            print(result)
