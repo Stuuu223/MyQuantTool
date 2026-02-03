@@ -25,14 +25,18 @@ from typing import Dict, Any
 import json
 import os
 
+# 🔧 新增：导入日志系统
+from logic.logger import get_logger
+logger = get_logger(__name__)
+
 # 尝试导入AkShare
 try:
     import akshare as ak
     AKSHARE_AVAILABLE = True
-    print("✅ AkShare 导入成功")
+    logger.info("✅ AkShare 导入成功")
 except ImportError:
     AKSHARE_AVAILABLE = False
-    print("❌ AkShare 导入失败")
+    logger.warning("❌ AkShare 导入失败")
 
 
 class IntraDayMonitor:
@@ -58,37 +62,37 @@ class IntraDayMonitor:
         try:
             from xtquant import xtdata as xt_module
             self.xtdata = xt_module
-            print("✅ [IntraDayMonitor] xtdata 导入成功")
+            logger.info("✅ [IntraDayMonitor] xtdata 导入成功")
         except Exception as e:
-            print(f"❌ [IntraDayMonitor] xtdata 导入失败: {e}")
+            logger.warning(f"❌ [IntraDayMonitor] xtdata 导入失败: {e}")
             # 不要return，继续初始化其他组件
-        
+
         # 尝试加载 CodeConverter
         try:
             from logic.code_converter import CodeConverter
             self.converter = CodeConverter()
-            print("✅ [IntraDayMonitor] CodeConverter 初始化成功")
+            logger.info("✅ [IntraDayMonitor] CodeConverter 初始化成功")
         except Exception as e:
-            print(f"❌ [IntraDayMonitor] CodeConverter 初始化失败: {e}")
+            logger.warning(f"❌ [IntraDayMonitor] CodeConverter 初始化失败: {e}")
             # 只有xtdata可以工作也可以继续
-        
+
         # 如果xtdata和converter都成功，启用 QMT
         if self.xtdata is not None and self.converter is not None:
             self.qmt = True
-            print("✅ [IntraDayMonitor] QMT 数据源已启用")
+            logger.info("✅ [IntraDayMonitor] QMT 数据源已启用")
         elif self.xtdata is not None:
-            print("⚠️ [IntraDayMonitor] xtdata可用但CodeConverter失败，QMT功能受限")
+            logger.warning("⚠️ [IntraDayMonitor] xtdata可用但CodeConverter失败，QMT功能受限")
         else:
-            print("⚠️ [IntraDayMonitor] QMT功能不可用")
-        
+            logger.warning("⚠️ [IntraDayMonitor] QMT功能不可用")
+
         # AkShare 状态
         if self.akshare_available:
             try:
                 import akshare as ak
                 self.ak = ak
-                print("✅ AkShare 数据源可用")
+                logger.info("✅ AkShare 数据源可用")
             except Exception as e:
-                print(f"❌ AkShare 初始化失败: {e}")
+                logger.warning(f"❌ AkShare 初始化失败: {e}")
                 self.akshare_available = False
     
     def is_trading_time(self) -> bool:
@@ -200,20 +204,20 @@ class IntraDayMonitor:
 
         # 策略1: QMT实时数据（仅连续竞价时间）
         if self.is_trading_time() and self.qmt:
-            print(f"🔍 尝试策略1: QMT实时数据")
+            logger.debug(f"🔍 尝试策略1: QMT实时数据")
             snapshot = self._get_qmt_realtime(stock_code)
             if snapshot['success']:
                 snapshot['data_source'] = 'QMT_REALTIME'
                 snapshot['data_freshness'] = 'FRESH'
                 snapshot['phase'] = phase
-                print(f"✅ QMT实时数据获取成功")
+                logger.debug(f"✅ QMT实时数据获取成功")
                 return snapshot
             else:
-                print(f"❌ QMT失败: {snapshot.get('error')}")
+                logger.debug(f"❌ QMT失败: {snapshot.get('error')}")
 
         # 策略2: AkShare实时行情（东方财富，有盘口数据）
         if self.akshare_available:
-            print(f"🔍 尝试策略2: AkShare实时行情")
+            logger.debug(f"🔍 尝试策略2: AkShare实时行情")
             snapshot = self._get_akshare_realtime(stock_code)
             if snapshot['success']:
                 snapshot['data_source'] = 'AKSHARE_REALTIME'
@@ -227,40 +231,40 @@ class IntraDayMonitor:
                 else:
                     snapshot['data_freshness'] = 'STALE'  # 收盘后
 
-                print(f"✅ AkShare实时行情获取成功")
+                logger.debug(f"✅ AkShare实时行情获取成功")
                 return snapshot
             else:
-                print(f"❌ AkShare实时行情失败: {snapshot.get('error')}")
+                logger.debug(f"❌ AkShare实时行情失败: {snapshot.get('error')}")
 
         # 策略3: AkShare分钟线（备用）
         if self.akshare_available:
-            print(f"🔍 尝试策略3: AkShare分钟线")
+            logger.debug(f"🔍 尝试策略3: AkShare分钟线")
             snapshot = self._get_akshare_minute_last(stock_code)
             if snapshot['success']:
                 snapshot['data_source'] = 'AKSHARE_MINUTE'
                 snapshot['data_freshness'] = 'DELAYED'
                 snapshot['phase'] = phase
-                print(f"✅ AkShare分钟线获取成功")
+                logger.debug(f"✅ AkShare分钟线获取成功")
                 return snapshot
             else:
-                print(f"❌ AkShare分钟线失败: {snapshot.get('error')}")
+                logger.debug(f"❌ AkShare分钟线失败: {snapshot.get('error')}")
 
         # 策略4: QMT分时历史（最后一笔）
         if self.qmt:
-            print(f"🔍 尝试策略4: QMT分时历史")
+            logger.debug(f"🔍 尝试策略4: QMT分时历史")
             snapshot = self._get_qmt_minute_last(stock_code)
             if snapshot['success']:
                 snapshot['data_source'] = 'QMT_HISTORY'
                 snapshot['data_freshness'] = 'DELAYED'
                 snapshot['phase'] = phase
-                print(f"✅ QMT分时历史获取成功")
+                logger.debug(f"✅ QMT分时历史获取成功")
                 return snapshot
             else:
-                print(f"❌ QMT分时历史失败: {snapshot.get('error')}")
+                logger.debug(f"❌ QMT分时历史失败: {snapshot.get('error')}")
 
         # 策略5: 全部失败
         error_msg = '所有数据源均不可用，请检查网络或QMT连接'
-        print(f"❌ {error_msg}")
+        logger.error(f"❌ {error_msg}")
         result['error'] = error_msg
         return result
     
@@ -385,9 +389,9 @@ class IntraDayMonitor:
                 
             except Exception as e:
                 error_msg = f'AkShare实时数据获取失败: {str(e)}'
-                
+
                 if attempt < max_retries - 1:
-                    print(f"⚠️ 第{attempt + 1}次尝试失败，{retry_delay}秒后重试...")
+                    logger.warning(f"⚠️ 第{attempt + 1}次尝试失败，{retry_delay}秒后重试...")
                     time.sleep(retry_delay)
                     retry_delay *= 2  # 指数退避
                 else:
@@ -523,9 +527,9 @@ class IntraDayMonitor:
                 
             except Exception as e:
                 error_msg = f'AkShare分钟线获取失败: {str(e)}'
-                
+
                 if attempt < max_retries - 1:
-                    print(f"⚠️ 第{attempt + 1}次尝试失败，{retry_delay}秒后重试...")
+                    logger.warning(f"⚠️ 第{attempt + 1}次尝试失败，{retry_delay}秒后重试...")
                     time.sleep(retry_delay)
                     retry_delay *= 2  # 指数退避
                 else:
@@ -614,6 +618,7 @@ class IntraDayMonitor:
         1. 获取14:57前最后一笔数据
         2. 标注为 STALE（已过期）
         3. 给出明确警告
+        4. 🔧 新增：保存竞价数据用于Phase 3集合竞价分析
         """
         # 尝试获取最后一笔数据
         last_snapshot = None
@@ -626,7 +631,11 @@ class IntraDayMonitor:
                 last_snapshot['data_freshness'] = 'STALE'
                 last_snapshot['phase'] = 'CLOSING_AUCTION'
                 last_snapshot['warning'] = '⚠️ 收盘竞价中（14:57-15:00），数据为14:57前最后一笔，建议等待15:05后重新分析'
-                print(f"✅ 获取到14:57前最后一笔数据: {last_snapshot.get('price', 0)}")
+                logger.debug(f"✅ 获取到14:57前最后一笔数据: {last_snapshot.get('price', 0)}")
+
+                # 🔧 新增：保存竞价数据
+                self._save_auction_data(stock_code, last_snapshot)
+
                 return last_snapshot
 
         # 备选：尝试 QMT 分时历史
@@ -637,7 +646,11 @@ class IntraDayMonitor:
                 last_snapshot['data_freshness'] = 'STALE'
                 last_snapshot['phase'] = 'CLOSING_AUCTION'
                 last_snapshot['warning'] = '⚠️ 收盘竞价中（14:57-15:00），数据为14:57前最后一笔，建议等待15:05后重新分析'
-                print(f"✅ 获取到14:57前最后一笔数据: {last_snapshot.get('price', 0)}")
+                logger.debug(f"✅ 获取到14:57前最后一笔数据: {last_snapshot.get('price', 0)}")
+
+                # 🔧 新增：保存竞价数据
+                self._save_auction_data(stock_code, last_snapshot)
+
                 return last_snapshot
 
         # 全部失败
@@ -654,6 +667,61 @@ class IntraDayMonitor:
             'bid_ask_pressure': 0,
             'signal': '收盘竞价中，数据暂不可用'
         }
+
+    def _save_auction_data(self, stock_code: str, auction_data: Dict[str, Any]) -> bool:
+        """
+        保存收盘竞价数据（Phase 3集合竞价分析用）
+
+        Args:
+            stock_code: 股票代码
+            auction_data: 竞价数据字典
+
+        Returns:
+            是否保存成功
+        """
+        try:
+            # 创建竞价缓存目录
+            auction_cache_dir = Path("data/auction_cache")
+            auction_cache_dir.mkdir(parents=True, exist_ok=True)
+
+            # 生成文件名：{code}_{date}.json
+            today_str = datetime.now().strftime("%Y%m%d")
+            cache_file = auction_cache_dir / f"{stock_code}_{today_str}.json"
+
+            # 准备保存的数据
+            save_data = {
+                "stock_code": stock_code,
+                "date": today_str,
+                "auction_phase": "CLOSING_AUCTION",
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "data": {
+                    "last_price": auction_data.get('price', 0),
+                    "volume": auction_data.get('volume', 0),
+                    "amount": auction_data.get('amount', 0),
+                    "pct_change": auction_data.get('pct_change', 0),
+                    "bid_ask_pressure": auction_data.get('bid_ask_pressure', 0),
+                    "high": auction_data.get('high', 0),
+                    "low": auction_data.get('low', 0),
+                    "open": auction_data.get('open', 0)
+                },
+                "metadata": {
+                    "data_source": auction_data.get('data_source', 'UNKNOWN'),
+                    "data_freshness": auction_data.get('data_freshness', 'STALE'),
+                    "warning": auction_data.get('warning', ''),
+                    "signal": auction_data.get('signal', '')
+                }
+            }
+
+            # 保存到JSON文件
+            with open(cache_file, 'w', encoding='utf-8') as f:
+                json.dump(save_data, f, ensure_ascii=False, indent=2)
+
+            logger.info(f"✅ 收盘竞价数据已保存: {cache_file}")
+            return True
+
+        except Exception as e:
+            logger.error(f"❌ 保存竞价数据失败: {e}")
+            return False
 
     def compare_with_yesterday(
         self, 
@@ -791,22 +859,22 @@ class IntraDayMonitor:
 # 使用示例
 if __name__ == '__main__':
     monitor = IntraDayMonitor()
-    
+
     # 检查交易阶段
     phase = monitor.get_trading_phase()
-    print(f"当前交易阶段: {phase}")
-    
+    logger.info(f"当前交易阶段: {phase}")
+
     # 获取实时快照（任何时候都能用）
     snapshot = monitor.get_intraday_snapshot('300997')
-    
+
     if snapshot['success']:
-        print(f"\n实时快照:")
-        print(f"数据来源: {snapshot['data_source']}")
-        print(f"数据新鲜度: {snapshot['data_freshness']}")
-        print(f"时间: {snapshot['time']}")
-        print(f"价格: {snapshot['price']}")
-        print(f"涨跌幅: {snapshot['pct_change']}%")
-        print(f"买卖压力: {snapshot['bid_ask_pressure']}")
-        print(f"信号: {snapshot['signal']}")
+        logger.info(f"\n实时快照:")
+        logger.info(f"数据来源: {snapshot['data_source']}")
+        logger.info(f"数据新鲜度: {snapshot['data_freshness']}")
+        logger.info(f"时间: {snapshot['time']}")
+        logger.info(f"价格: {snapshot['price']}")
+        logger.info(f"涨跌幅: {snapshot['pct_change']}%")
+        logger.info(f"买卖压力: {snapshot['bid_ask_pressure']}")
+        logger.info(f"信号: {snapshot['signal']}")
     else:
-        print(f"错误: {snapshot['error']}")
+        logger.error(f"错误: {snapshot['error']}")
