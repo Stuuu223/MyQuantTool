@@ -50,14 +50,21 @@ class IntraDayMonitor:
         
         # 数据源初始化
         self.qmt = None
+        self.xtdata = None
+        self.qmt_available = False
+        self.code_converter = None
         self.akshare_available = AKSHARE_AVAILABLE
         
-        # 尝试导入QMT
+        # 尝试导入QMT（直接使用xtdata，不依赖data_sources.qmt_source）
         try:
-            from data_sources.qmt_source import QMTDataSource
-            self.qmt = QMTDataSource()
-        except ImportError:
-            print("警告: QMT数据源不可用")
+            from xtquant import xtdata
+            from logic.code_converter import CodeConverter
+            self.xtdata = xtdata
+            self.code_converter = CodeConverter()
+            self.qmt_available = True
+            print("✅ QMT数据源可用（xtdata）")
+        except ImportError as e:
+            print(f"警告: QMT数据源不可用: {e}")
         
         # AkShare 状态
         if self.akshare_available:
@@ -210,26 +217,36 @@ class IntraDayMonitor:
         return result
     
     def _get_qmt_realtime(self, stock_code: str) -> Dict[str, Any]:
-        """获取QMT实时数据（原有逻辑）"""
+        """获取QMT实时数据（使用xtdata）"""
         result = {'success': False}
         
+        if not self.qmt_available:
+            result['error'] = 'QMT接口不可用'
+            return result
+        
         try:
+            # 转换股票代码为QMT格式
+            qmt_code = self.code_converter.to_qmt(stock_code)
+            
             # QMT实时快照
-            snapshot = self.qmt.get_market_data(
-                stock_list=[stock_code],
+            from datetime import timedelta
+            start_time = (datetime.now() - timedelta(days=5)).strftime('%Y%m%d 09:30:00')
+            end_time = datetime.now().strftime('%Y%m%d 15:00:00')
+            
+            snapshot = self.xtdata.get_market_data(
+                stock_list=[qmt_code],
                 period='1d',
-                count=-1
+                start_time=start_time,
+                end_time=end_time,
+                dividend_type='front'  # 前复权
             )
             
-            if snapshot is None or len(snapshot) == 0:
+            if snapshot is None or qmt_code not in snapshot or len(snapshot[qmt_code]) == 0:
                 result['error'] = 'QMT返回空数据'
                 return result
             
-            # 五档行情
-            order_book = self.qmt.get_full_tick([stock_code])
-            
-            # 解析数据
-            latest = snapshot[stock_code].iloc[-1]
+            # 解析数据（取最后一根日线）
+            latest = snapshot[qmt_code].iloc[-1]
             
             result.update({
                 'success': True,
@@ -239,15 +256,12 @@ class IntraDayMonitor:
                 'low': float(latest['low']),
                 'volume': int(latest['volume']),
                 'amount': float(latest['amount']),
-                'turnover_rate': float(latest.get('turnoverRate', 0)),
-                'pct_change': float((latest['close'] - latest['open']) / latest['open'] * 100),
+                'turnover_rate': 0.0,  # xtdata日线数据没有换手率
+                'pct_change': float((latest['close'] - latest['open']) / latest['open'] * 100) if latest['open'] > 0 else 0,
             })
             
-            # 买卖盘压力
-            if order_book and stock_code in order_book:
-                result['bid_ask_pressure'] = self._calculate_bid_ask_pressure(order_book[stock_code])
-            else:
-                result['bid_ask_pressure'] = 0.0
+            # QMT没有直接的五档行情，使用默认值
+            result['bid_ask_pressure'] = 0.0
             
             # 信号
             result['signal'] = self._generate_intraday_signal(result)
@@ -342,26 +356,40 @@ class IntraDayMonitor:
     
     def _get_qmt_minute_last(self, stock_code: str) -> Dict[str, Any]:
         """
-        获取QMT分时历史的最后一笔数据
+        获取QMT分时历史的最后一笔数据（使用xtdata）
         
         用途: 午休/收盘后，取最近一笔分时数据
         """
         result = {'success': False}
         
+        if not self.qmt_available:
+            result['error'] = 'QMT接口不可用'
+            return result
+        
         try:
-            # 获取今日分时数据
-            minute_data = self.qmt.get_market_data(
-                stock_list=[stock_code],
-                period='1m',  # 1分钟K线
-                count=300  # 最多300根（5小时）
+            # 转换股票代码为QMT格式
+            qmt_code = self.code_converter.to_qmt(stock_code)
+            
+            # 获取今日分时数据（1分钟K线）
+            from datetime import timedelta
+            start_time = (datetime.now() - timedelta(days=1)).strftime('%Y%m%d 09:30:00')
+            end_time = datetime.now().strftime('%Y%m%d 15:00:00')
+            
+            # 使用xtdata获取历史数据
+            df = self.xtdata.get_market_data(
+                stock_list=[qmt_code],
+                period='1m',
+                start_time=start_time,
+                end_time=end_time,
+                dividend_type='front'  # 前复权
             )
             
-            if minute_data is None or len(minute_data) == 0:
+            if df is None or qmt_code not in df or len(df[qmt_code]) == 0:
                 result['error'] = 'QMT分时数据为空'
                 return result
             
             # 取最后一笔
-            latest = minute_data[stock_code].iloc[-1]
+            latest = df[qmt_code].iloc[-1]
             
             result.update({
                 'success': True,
@@ -372,7 +400,7 @@ class IntraDayMonitor:
                 'volume': int(latest['volume']),
                 'amount': float(latest['amount']),
                 'turnover_rate': 0.0,  # 分时数据没有换手率
-                'pct_change': float((latest['close'] - latest['open']) / latest['open'] * 100),
+                'pct_change': float((latest['close'] - latest['open']) / latest['open'] * 100) if latest['open'] > 0 else 0,
                 'bid_ask_pressure': 0.0  # 历史数据没有盘口
             })
             

@@ -31,3 +31,4 @@ timestamp,mode,phase,decision,confidence,price,pct_change,risk_score
 2026-02-03 15:21:24,after_hours,AFTER_HOURS,,0,0,0,0
 2026-02-03 15:22:26,after_hours,AFTER_HOURS,,0,0,0,0
 2026-02-03 15:23:33,after_hours,AFTER_HOURS,,0,0,0,0
+2026-02-03 15:28:36,after_hours,AFTER_HOURS,,0,0,0,0
