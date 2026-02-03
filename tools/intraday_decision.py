@@ -29,7 +29,7 @@ from typing import Dict, Any, Literal
 # 添加项目根目录到路径
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from logic.intraday_analyzer import IntraDayAnalyzer
+from logic.intraday_monitor import IntraDayMonitor
 
 
 class IntraDayDecisionTool:
@@ -37,7 +37,7 @@ class IntraDayDecisionTool:
     
     def __init__(self):
         """初始化决策工具"""
-        self.analyzer = IntraDayAnalyzer()
+        self.analyzer = IntraDayMonitor()
         
         # 决策阈值配置
         self.thresholds = {
@@ -118,11 +118,8 @@ class IntraDayDecisionTool:
         
         # 获取实时数据
         if yesterday_file:
-            # 先加载昨天的数据
-            with open(yesterday_file, 'r', encoding='utf-8') as f:
-                yesterday_data = json.load(f)
-            
-            comparison = self.analyzer.compare_with_yesterday(stock_code, yesterday_data)
+            # IntraDayMonitor.compare_with_yesterday 接受文件路径
+            comparison = self.analyzer.compare_with_yesterday(stock_code, yesterday_file)
             if 'error' in comparison:
                 result['reason'] = comparison['error']
                 return result
@@ -130,6 +127,10 @@ class IntraDayDecisionTool:
             today = comparison['today']
             yesterday = comparison['yesterday']
             comp = comparison['comparison']
+            
+            # 加载昨日数据（用于提取摘要）
+            with open(yesterday_file, 'r', encoding='utf-8') as f:
+                yesterday_data = json.load(f)
             
             # 从 yesterday_data 中提取 90天摘要
             yesterday_summary = {

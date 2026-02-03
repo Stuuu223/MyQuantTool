@@ -16,10 +16,23 @@
 更新日期: 2026-02-03
 """
 
+# 🚀 [最高优先级] 禁用代理：必须在 import 其他库之前执行！
+from logic.network_utils import disable_proxy
+disable_proxy()
+
 from datetime import datetime, time
 from typing import Dict, Any
 import json
 import os
+
+# 尝试导入AkShare
+try:
+    import akshare as ak
+    AKSHARE_AVAILABLE = True
+    print("✅ AkShare 导入成功")
+except ImportError:
+    AKSHARE_AVAILABLE = False
+    print("❌ AkShare 导入失败")
 
 
 class IntraDayMonitor:
@@ -37,7 +50,7 @@ class IntraDayMonitor:
         
         # 数据源初始化
         self.qmt = None
-        self.akshare_available = False
+        self.akshare_available = AKSHARE_AVAILABLE
         
         # 尝试导入QMT
         try:
@@ -46,13 +59,15 @@ class IntraDayMonitor:
         except ImportError:
             print("警告: QMT数据源不可用")
         
-        # 尝试导入AkShare
-        try:
-            import akshare as ak
-            self.ak = ak
-            self.akshare_available = True
-        except ImportError:
-            print("警告: AkShare不可用，部分功能受限")
+        # AkShare 状态
+        if self.akshare_available:
+            try:
+                import akshare as ak
+                self.ak = ak
+                print("✅ AkShare 数据源可用")
+            except Exception as e:
+                print(f"❌ AkShare 初始化失败: {e}")
+                self.akshare_available = False
     
     def is_trading_time(self) -> bool:
         """判断当前是否交易时间"""
@@ -221,35 +236,36 @@ class IntraDayMonitor:
         """
         获取AkShare实时行情
         
-        使用接口: stock_zh_a_spot_em()
+        使用接口: stock_individual_fund_flow (更稳定)
         优势: 午休/收盘后也能用
         """
         result = {'success': False}
         
         try:
-            # 获取A股实时行情
-            df = self.ak.stock_zh_a_spot_em()
+            # 使用更稳定的接口
+            df = self.ak.stock_individual_fund_flow(
+                stock=stock_code,
+                market="sz" if stock_code.startswith('3') else "sh"
+            )
             
-            # 查找目标股票
-            stock_data = df[df['代码'] == stock_code]
-            
-            if stock_data.empty:
+            if df is None or len(df) == 0:
                 result['error'] = f'AkShare未找到股票 {stock_code}'
                 return result
             
-            row = stock_data.iloc[0]
+            # 获取最新的数据
+            latest = df.iloc[-1]
             
             result.update({
                 'success': True,
-                'price': float(row['最新价']),
-                'open': float(row['今开']),
-                'high': float(row['最高']),
-                'low': float(row['最低']),
-                'volume': int(row['成交量']),
-                'amount': float(row['成交额']),
-                'turnover_rate': float(row.get('换手率', 0)),
-                'pct_change': float(row['涨跌幅']),
-                'bid_ask_pressure': 0.0  # AkShare没有五档，暂时为0
+                'price': float(latest.get('收盘价', 0)),
+                'open': float(latest.get('收盘价', 0)),  # fund_flow 没有今开
+                'high': float(latest.get('收盘价', 0)),  # fund_flow 没有最高
+                'low': float(latest.get('收盘价', 0)),  # fund_flow 没有最低
+                'volume': int(latest.get('成交量', 0)),
+                'amount': float(latest.get('成交额', 0)),
+                'turnover_rate': 0.0,  # fund_flow 没有换手率
+                'pct_change': 0.0,  # fund_flow 没有涨跌幅
+                'bid_ask_pressure': 0.0  # fund_flow 没有五档
             })
             
             # 信号
