@@ -1,0 +1,64 @@
+{
+  "stock_code": "300997",
+  "fetch_time": "2026-02-03 11:33:02",
+  "turnover_rate": null,
+  "tick_validation": {
+    "error": "收盘价数据为空，可能不是交易日"
+  },
+  "intraday_ma_1m": {
+    "error": "今日没有分时数据"
+  },
+  "intraday_ma_5m": {
+    "error": "今日没有分时数据"
+  },
+  "order_book": {
+    "bid": [
+      {
+        "price": 24.62,
+        "volume": 81
+      },
+      {
+        "price": 24.61,
+        "volume": 10
+      },
+      {
+        "price": 24.6,
+        "volume": 10
+      },
+      {
+        "price": 24.59,
+        "volume": 45
+      },
+      {
+        "price": 24.57,
+        "volume": 26
+      }
+    ],
+    "ask": [
+      {
+        "price": 24.63,
+        "volume": 377
+      },
+      {
+        "price": 24.64,
+        "volume": 926
+      },
+      {
+        "price": 24.65,
+        "volume": 28
+      },
+      {
+        "price": 24.66,
+        "volume": 253
+      },
+      {
+        "price": 24.67,
+        "volume": 30
+      }
+    ],
+    "bid_total": 172,
+    "ask_total": 1614,
+    "bid_ask_imbalance": -0.81,
+    "pressure": "卖盘压力大"
+  }
+}

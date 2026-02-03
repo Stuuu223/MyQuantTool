@@ -1,0 +1,33 @@
+{
+  "success": true,
+  "mode": "realtime",
+  "phase": "TRADING",
+  "stock_code": "300997",
+  "analysis_time": "2026-02-03 14:20:25",
+  "realtime_snapshot": {
+    "data_source": "UNKNOWN",
+    "data_freshness": "UNKNOWN",
+    "price": 24.88,
+    "pct_change": 0,
+    "bid_ask_pressure": -0.3,
+    "signal": "⚪ 盘面平稳，继续观察"
+  },
+  "decision": {
+    "action": "WAIT",
+    "confidence": 0.5,
+    "reason": "盘面不明确，继续观察",
+    "operation": {}
+  },
+  "risk_assessment": {
+    "trap_risk": 0.19749999999999995,
+    "capital_type": "UNKNOWN",
+    "flow_5d_trend": "UNKNOWN",
+    "bid_ask_pressure": -0.3,
+    "overall_risk": "LOW",
+    "risk_score": 0
+  },
+  "position_info": {
+    "current_position": 0.0,
+    "entry_price": null
+  }
+}

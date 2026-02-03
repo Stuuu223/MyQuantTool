@@ -1,0 +1,523 @@
+{
+  "stock_code": "300033",
+  "fetch_time": "2026-02-03 12:36:07",
+  "turnover_rate": [
+    {
+      "date": "2025-09-18",
+      "turnover_rate": 7.29,
+      "level": "正常"
+    },
+    {
+      "date": "2025-09-19",
+      "turnover_rate": 3.12,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-09-22",
+      "turnover_rate": 2.95,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-09-23",
+      "turnover_rate": 3.47,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-09-24",
+      "turnover_rate": 3.12,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-09-25",
+      "turnover_rate": 3.6,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-09-26",
+      "turnover_rate": 2.38,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-09-29",
+      "turnover_rate": 6.95,
+      "level": "正常"
+    },
+    {
+      "date": "2025-09-30",
+      "turnover_rate": 4.25,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-10-09",
+      "turnover_rate": 4.94,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-10-10",
+      "turnover_rate": 3.71,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-10-13",
+      "turnover_rate": 2.83,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-10-14",
+      "turnover_rate": 3.17,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-10-15",
+      "turnover_rate": 2.21,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-10-16",
+      "turnover_rate": 1.98,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-10-17",
+      "turnover_rate": 2.7,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-10-20",
+      "turnover_rate": 2.53,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-10-21",
+      "turnover_rate": 2.4,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-10-22",
+      "turnover_rate": 1.65,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-10-23",
+      "turnover_rate": 2.97,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-10-24",
+      "turnover_rate": 3.91,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-10-27",
+      "turnover_rate": 4.8,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-10-28",
+      "turnover_rate": 5.28,
+      "level": "正常"
+    },
+    {
+      "date": "2025-10-29",
+      "turnover_rate": 7.49,
+      "level": "正常"
+    },
+    {
+      "date": "2025-10-30",
+      "turnover_rate": 5.69,
+      "level": "正常"
+    },
+    {
+      "date": "2025-10-31",
+      "turnover_rate": 2.81,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-11-03",
+      "turnover_rate": 2.55,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-11-04",
+      "turnover_rate": 2.19,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-11-05",
+      "turnover_rate": 1.71,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-11-06",
+      "turnover_rate": 2.37,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-11-07",
+      "turnover_rate": 2.14,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-11-10",
+      "turnover_rate": 2.16,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-11-11",
+      "turnover_rate": 2.6,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-11-12",
+      "turnover_rate": 3.2,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-11-13",
+      "turnover_rate": 2.31,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-11-14",
+      "turnover_rate": 1.71,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-11-17",
+      "turnover_rate": 1.4,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-11-18",
+      "turnover_rate": 1.61,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-11-19",
+      "turnover_rate": 1.33,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-11-20",
+      "turnover_rate": 1.91,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-11-21",
+      "turnover_rate": 2.35,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-11-24",
+      "turnover_rate": 1.97,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-11-25",
+      "turnover_rate": 1.67,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-11-26",
+      "turnover_rate": 1.8,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-11-27",
+      "turnover_rate": 1.6,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-11-28",
+      "turnover_rate": 1.37,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-12-01",
+      "turnover_rate": 1.85,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-12-02",
+      "turnover_rate": 1.96,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-12-03",
+      "turnover_rate": 1.27,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-12-04",
+      "turnover_rate": 1.24,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-12-05",
+      "turnover_rate": 5.25,
+      "level": "正常"
+    },
+    {
+      "date": "2025-12-08",
+      "turnover_rate": 4.48,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-12-09",
+      "turnover_rate": 2.36,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-12-10",
+      "turnover_rate": 1.81,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-12-11",
+      "turnover_rate": 1.92,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-12-12",
+      "turnover_rate": 2.17,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-12-15",
+      "turnover_rate": 2.13,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-12-16",
+      "turnover_rate": 1.73,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-12-17",
+      "turnover_rate": 2.94,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-12-18",
+      "turnover_rate": 1.56,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-12-19",
+      "turnover_rate": 1.81,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-12-22",
+      "turnover_rate": 1.94,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-12-23",
+      "turnover_rate": 1.5,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-12-24",
+      "turnover_rate": 1.93,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-12-25",
+      "turnover_rate": 2.35,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-12-26",
+      "turnover_rate": 2.88,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-12-29",
+      "turnover_rate": 1.81,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-12-30",
+      "turnover_rate": 1.69,
+      "level": "低迷"
+    },
+    {
+      "date": "2025-12-31",
+      "turnover_rate": 1.97,
+      "level": "低迷"
+    },
+    {
+      "date": "2026-01-05",
+      "turnover_rate": 3.22,
+      "level": "低迷"
+    },
+    {
+      "date": "2026-01-06",
+      "turnover_rate": 8.84,
+      "level": "正常"
+    },
+    {
+      "date": "2026-01-07",
+      "turnover_rate": 5.27,
+      "level": "正常"
+    },
+    {
+      "date": "2026-01-08",
+      "turnover_rate": 4.72,
+      "level": "低迷"
+    },
+    {
+      "date": "2026-01-09",
+      "turnover_rate": 4.64,
+      "level": "低迷"
+    },
+    {
+      "date": "2026-01-12",
+      "turnover_rate": 9.96,
+      "level": "正常"
+    },
+    {
+      "date": "2026-01-13",
+      "turnover_rate": 9.11,
+      "level": "正常"
+    },
+    {
+      "date": "2026-01-14",
+      "turnover_rate": 10.35,
+      "level": "活跃"
+    },
+    {
+      "date": "2026-01-15",
+      "turnover_rate": 5.25,
+      "level": "正常"
+    },
+    {
+      "date": "2026-01-16",
+      "turnover_rate": 4.38,
+      "level": "低迷"
+    },
+    {
+      "date": "2026-01-19",
+      "turnover_rate": 4.5,
+      "level": "低迷"
+    },
+    {
+      "date": "2026-01-20",
+      "turnover_rate": 3.14,
+      "level": "低迷"
+    },
+    {
+      "date": "2026-01-21",
+      "turnover_rate": 4.02,
+      "level": "低迷"
+    },
+    {
+      "date": "2026-01-22",
+      "turnover_rate": 3.64,
+      "level": "低迷"
+    },
+    {
+      "date": "2026-01-23",
+      "turnover_rate": 4.02,
+      "level": "低迷"
+    },
+    {
+      "date": "2026-01-26",
+      "turnover_rate": 3.79,
+      "level": "低迷"
+    },
+    {
+      "date": "2026-01-27",
+      "turnover_rate": 3.01,
+      "level": "低迷"
+    },
+    {
+      "date": "2026-01-28",
+      "turnover_rate": 2.4,
+      "level": "低迷"
+    },
+    {
+      "date": "2026-01-29",
+      "turnover_rate": 4.7,
+      "level": "低迷"
+    },
+    {
+      "date": "2026-01-30",
+      "turnover_rate": 3.15,
+      "level": "低迷"
+    },
+    {
+      "date": "2026-02-02",
+      "turnover_rate": 2.94,
+      "level": "低迷"
+    }
+  ],
+  "tick_validation": {
+    "is_valid": true,
+    "volume_unit": "股",
+    "error_ratio": 0.0177,
+    "理论成交额(元)": 3185026517.4,
+    "实际成交额": 3241356129.0,
+    "成交量(股)": 9210603.0,
+    "成交量(手)": 92106.03,
+    "amount_unit": "元",
+    "异常说明": "成交额单位正常"
+  },
+  "intraday_ma_1m": {
+    "error": "QMT 未返回分时数据（可能是休盘时间）"
+  },
+  "intraday_ma_5m": {
+    "error": "QMT 未返回分时数据（可能是休盘时间）"
+  },
+  "order_book": {
+    "bid": [
+      {
+        "price": 349.66,
+        "volume": 1
+      },
+      {
+        "price": 349.62,
+        "volume": 4
+      },
+      {
+        "price": 349.56,
+        "volume": 2
+      },
+      {
+        "price": 349.55,
+        "volume": 1
+      },
+      {
+        "price": 349.54,
+        "volume": 3
+      }
+    ],
+    "ask": [
+      {
+        "price": 349.82,
+        "volume": 1
+      },
+      {
+        "price": 349.83,
+        "volume": 9
+      },
+      {
+        "price": 349.86,
+        "volume": 1
+      },
+      {
+        "price": 349.88,
+        "volume": 2
+      },
+      {
+        "price": 349.89,
+        "volume": 1
+      }
+    ],
+    "bid_total": 11,
+    "ask_total": 14,
+    "bid_ask_imbalance": -0.12,
+    "pressure": "买卖均衡"
+  }
+}

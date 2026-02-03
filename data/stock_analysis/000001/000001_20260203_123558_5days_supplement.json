@@ -1,0 +1,98 @@
+{
+  "stock_code": "000001",
+  "fetch_time": "2026-02-03 12:35:57",
+  "turnover_rate": [
+    {
+      "date": "2026-01-27",
+      "turnover_rate": 0.46,
+      "level": "低迷"
+    },
+    {
+      "date": "2026-01-28",
+      "turnover_rate": 0.74,
+      "level": "低迷"
+    },
+    {
+      "date": "2026-01-29",
+      "turnover_rate": 0.95,
+      "level": "低迷"
+    },
+    {
+      "date": "2026-01-30",
+      "turnover_rate": 0.56,
+      "level": "低迷"
+    },
+    {
+      "date": "2026-02-02",
+      "turnover_rate": 0.63,
+      "level": "低迷"
+    }
+  ],
+  "tick_validation": {
+    "is_valid": true,
+    "volume_unit": "股",
+    "error_ratio": 0.007,
+    "理论成交额(元)": 1328365899.72,
+    "实际成交额": 1337643445.0,
+    "成交量(股)": 122317302.0,
+    "成交量(手)": 1223173.02,
+    "amount_unit": "元",
+    "异常说明": "成交额单位正常"
+  },
+  "intraday_ma_1m": {
+    "error": "QMT 未返回分时数据（可能是休盘时间）"
+  },
+  "intraday_ma_5m": {
+    "error": "QMT 未返回分时数据（可能是休盘时间）"
+  },
+  "order_book": {
+    "bid": [
+      {
+        "price": 10.82,
+        "volume": 329
+      },
+      {
+        "price": 10.81,
+        "volume": 3418
+      },
+      {
+        "price": 10.8,
+        "volume": 8381
+      },
+      {
+        "price": 10.79,
+        "volume": 9875
+      },
+      {
+        "price": 10.78,
+        "volume": 12747
+      }
+    ],
+    "ask": [
+      {
+        "price": 10.83,
+        "volume": 3751
+      },
+      {
+        "price": 10.84,
+        "volume": 4310
+      },
+      {
+        "price": 10.85,
+        "volume": 5298
+      },
+      {
+        "price": 10.86,
+        "volume": 6227
+      },
+      {
+        "price": 10.87,
+        "volume": 2091
+      }
+    ],
+    "bid_total": 34750,
+    "ask_total": 21677,
+    "bid_ask_imbalance": 0.23,
+    "pressure": "买卖均衡"
+  }
+}
