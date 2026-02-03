@@ -337,6 +337,13 @@ class UnifiedStockAnalyzer:
                 })
                 print(f"✅ 实时快照补充: 收盘 {today_data['close']:.2f}")
         
+        # 生成明日策略
+        tomorrow_strategy = self._generate_tomorrow_strategy(
+            historical_result if isinstance(historical_result, dict) else {},
+            position,
+            entry_price
+        )
+        
         result = {
             'success': True,
             'mode': 'after_hours',
@@ -345,6 +352,7 @@ class UnifiedStockAnalyzer:
             'analysis_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             'historical_report': historical_result,
             'today_summary': today_data,
+            'tomorrow_strategy': tomorrow_strategy,
             'output_file': None  # 收盘后分析不保存单独的JSON文件
         }
         
@@ -936,22 +944,37 @@ class UnifiedStockAnalyzer:
                         lines.append(f"\n数据范围: {fund_flow.get('date_range', 'N/A')}")
                         lines.append(f"总天数: {fund_flow.get('total_days', 0)} 天")
                         lines.append("\n📅 每日资金流向详情（单位：万元）：\n")
-                        lines.append(f"{'日期':<12} {'超大单':>10} {'大单':>10} {'中单':>10} {'小单':>10} {'机构':>10} {'散户':>10} {'信号':<10}")
-                        lines.append("-" * 90)
+                        
+                        # 按月份分组显示
+                        from collections import defaultdict
+                        monthly_data = defaultdict(list)
                         
                         for day in fund_flow['daily_data']:
-                            signal = "🟢 吸筹" if day.get('institution', 0) > 0 else "⛔ 接盘"
-                            lines.append(
-                                f"{day.get('date', 'N/A'):<12} "
-                                f"{day.get('super_large', 0):>10.2f} "
-                                f"{day.get('large', 0):>10.2f} "
-                                f"{day.get('medium', 0):>10.2f} "
-                                f"{day.get('small', 0):>10.2f} "
-                                f"{day.get('institution', 0):>10.2f} "
-                                f"{day.get('retail', 0):>10.2f} "
-                                f"{signal:<10}"
-                            )
+                            date_str = day.get('date', 'N/A')
+                            if date_str != 'N/A':
+                                month = date_str[:7]  # 提取年月部分，如 '2025-09'
+                                monthly_data[month].append(day)
                         
+                        # 按月份显示数据
+                        for month in sorted(monthly_data.keys(), reverse=True):  # 从最新月份开始
+                            lines.append(f"\n📅 {month}月数据（最新）\n")
+                            lines.append(f"{'日期':<12} {'超大单':>10} {'大单':>10} {'中单':>10} {'小单':>10} {'机构':>10} {'散户':>10} {'信号':<10}")
+                            lines.append("-" * 90)
+                            
+                            # 按日期倒序显示该月数据（最新的在前）
+                            month_days = sorted(monthly_data[month], key=lambda x: x.get('date', ''), reverse=True)
+                            for day in month_days:
+                                signal = "🟢 吸筹" if day.get('institution', 0) > 0 else "⛔ 接盘"
+                                lines.append(
+                                    f"{day.get('date', 'N/A'):<12} "
+                                    f"{day.get('super_large', 0):>10.2f} "
+                                    f"{day.get('large', 0):>10.2f} "
+                                    f"{day.get('medium', 0):>10.2f} "
+                                    f"{day.get('small', 0):>10.2f} "
+                                    f"{day.get('institution', 0):>10.2f} "
+                                    f"{day.get('retail', 0):>10.2f} "
+                                    f"{signal:<10}"
+                                )                        
                         lines.append("\n📊 资金流向统计：")
                         lines.append(f"  吸筹天数: {fund_flow.get('buying_days', 0)} 天 ({fund_flow.get('buying_ratio', 0):.1%})")
                         lines.append(f"  减仓天数: {fund_flow.get('selling_days', 0)} 天 ({fund_flow.get('selling_ratio', 0):.1%})")
