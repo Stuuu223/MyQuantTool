@@ -537,8 +537,28 @@ class EnhancedStockAnalyzer:
             report.append(f"  总天数: {fund_stats['total_days']} 天")
             report.append(f"  吸筹信号: {fund_stats['bullish_days']} 天 ({fund_stats['bullish_days']/fund_stats['total_days']*100:.1f}%)")
             report.append(f"  接盘信号: {fund_stats['bearish_days']} 天 ({fund_stats['bearish_days']/fund_stats['total_days']*100:.1f}%)")
-            report.append(f"  累计机构: {fund_stats['total_institution']:>10.2f} 万元")
-            report.append(f"  累计散户: {fund_stats['total_retail']:>10.2f} 万元")
+            report.append(f"  【{days}天累计】机构: {fund_stats['total_institution']:>10.2f} 万元")
+            report.append(f"  【{days}天累计】散户: {fund_stats['total_retail']:>10.2f} 万元")
+            
+            # 添加资金来源说明
+            if fund_stats['total_institution'] < 0 and fund_stats['total_retail'] > 0:
+                report.append(f"\n💰 资金来源说明：")
+                report.append(f"  - 【{days}天累计】机构净流出 {abs(fund_stats['total_institution']):.2f} 万元（主力出货）")
+                report.append(f"  - 【{days}天累计】散户净流入 {fund_stats['total_retail']:.2f} 万元（散户接盘）")
+                report.append(f"  - 说明：资金从机构流向散户，通常意味着主力在出货")
+            elif fund_stats['total_institution'] > 0 and fund_stats['total_retail'] < 0:
+                report.append(f"\n💰 资金来源说明：")
+                report.append(f"  - 【{days}天累计】机构净流入 {fund_stats['total_institution']:.2f} 万元（主力吸筹）")
+                report.append(f"  - 【{days}天累计】散户净流出 {abs(fund_stats['total_retail']):.2f} 万元（散户割肉）")
+                report.append(f"  - 说明：资金从散户流向机构，通常意味着主力在吸筹")
+            elif fund_stats['total_institution'] > 0 and fund_stats['total_retail'] > 0:
+                report.append(f"\n💰 资金来源说明：")
+                report.append(f"  - 【{days}天累计】机构和散户同时净流入")
+                report.append(f"  - 说明：市场共同看好，可能有大行情")
+            elif fund_stats['total_institution'] < 0 and fund_stats['total_retail'] < 0:
+                report.append(f"\n💰 资金来源说明：")
+                report.append(f"  - 【{days}天累计】机构和散户同时净流出")
+                report.append(f"  - 说明：市场整体悲观，注意风险")
 
             # 纯数据模式不输出趋势判断和建议
             if not pure_data:
@@ -765,7 +785,7 @@ class EnhancedStockAnalyzer:
             if fund_stats:
                 report.append(f"  - 资金面: {'强势' if fund_stats['bullish_days'] > fund_stats['bearish_days'] else '弱势'}")
                 report.append(f"  - 吸筹: {fund_stats['bullish_days']}天 | 减仓: {fund_stats['bearish_days']}天")
-                report.append(f"  - 累计机构: {fund_stats['total_institution']:.2f}万元")
+                report.append(f"  - 【{days}天累计】机构: {fund_stats['total_institution']:.2f}万元")
 
             if self.qmt_available and qmt_df is not None and not qmt_df.empty:
                 if 'close' in qmt_df.columns and 'MA5' in qmt_df.columns:
@@ -1034,6 +1054,9 @@ def analyze_stock_json(stock_code, days=60, use_qmt=True, auto_download=True, pu
             result['summary']['bullish_days'] = fund_stats['bullish_days']
             result['summary']['bearish_days'] = fund_stats['bearish_days']
             result['summary']['total_institution'] = fund_stats['total_institution']
+            result['summary']['total_institution_unit'] = f'{days}天累计（万元）'
+            result['summary']['total_retail'] = fund_stats['total_retail']
+            result['summary']['total_retail_unit'] = f'{days}天累计（万元）'
 
         if use_qmt and analyzer.qmt_available and qmt_df is not None and not qmt_df.empty:
             if 'close' in qmt_df.columns and 'MA5' in qmt_df.columns:
@@ -1053,7 +1076,9 @@ def analyze_stock_json(stock_code, days=60, use_qmt=True, auto_download=True, pu
             'bullish_days': fund_stats['bullish_days'] if fund_stats else None,
             'bearish_days': fund_stats['bearish_days'] if fund_stats else None,
             'total_institution': fund_stats['total_institution'] if fund_stats else None,
+            'total_institution_unit': f'{days}天累计（万元）' if fund_stats else None,
             'total_retail': fund_stats['total_retail'] if fund_stats else None,
+            'total_retail_unit': f'{days}天累计（万元）' if fund_stats else None,
             'total_days': fund_stats['total_days'] if fund_stats else None,
         }
 

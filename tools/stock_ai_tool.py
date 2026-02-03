@@ -173,6 +173,51 @@ def analyze_stock(stock_code, days=10, mode='analyze', use_qmt=None, output_all_
             file_path = save_analysis_result(result, stock_code, days, mode)
             return result, file_path
         return result
+    elif mode == 'intraday':
+        # 盘中实时分析模式（QMT 实时数据）
+        from logic.intraday_analyzer import IntraDayAnalyzer
+        analyzer = IntraDayAnalyzer()
+        
+        # 检查 QMT 是否可用
+        if not analyzer.is_available():
+            return {'error': 'QMT 不可用，无法获取盘中数据'}
+        
+        # 检查是否交易时间
+        if not analyzer.is_trading_time():
+            time_info = analyzer.get_trading_time_info()
+            return {
+                'error': '非交易时间，无法获取盘中数据',
+                'time_info': time_info,
+                'suggestion': '请使用 enhanced 模式分析历史数据'
+            }
+        
+        # 获取盘中快照
+        result = analyzer.get_intraday_snapshot(stock_code)
+        
+        # 如果需要，加载昨天的历史数据进行对比
+        yesterday_file = get_analysis_file_path(stock_code, days, 'enhanced')
+        if os.path.exists(yesterday_file):
+            with open(yesterday_file, 'r', encoding='utf-8') as f:
+                yesterday_data = json.load(f)
+            result = analyzer.compare_with_yesterday(stock_code, yesterday_data)
+        
+        if auto_save:
+            file_path = save_analysis_result(result, stock_code, days, mode)
+            return result, file_path
+        return result
+    elif mode == 'auto':
+        # 自动判断模式：交易时间内用 intraday，否则用 enhanced
+        from logic.intraday_analyzer import IntraDayAnalyzer
+        analyzer = IntraDayAnalyzer()
+        
+        if analyzer.is_available() and analyzer.is_trading_time():
+            # 交易时间：使用盘中实时分析
+            return analyze_stock(stock_code, days=days, mode='intraday', use_qmt=use_qmt, 
+                             output_all_data=output_all_data, pure_data=pure_data, auto_save=auto_save)
+        else:
+            # 非交易时间：使用历史数据分析
+            return analyze_stock(stock_code, days=days, mode='enhanced', use_qmt=use_qmt, 
+                             output_all_data=output_all_data, pure_data=pure_data, auto_save=auto_save)
     else:
         # 默认为分析模式
         result = analyze_stock_enhanced(stock_code, days=days, use_qmt=True, output_all_data=output_all_data, pure_data=pure_data)
