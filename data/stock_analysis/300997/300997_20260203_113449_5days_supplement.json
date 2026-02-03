@@ -1,0 +1,17 @@
+{
+  "stock_code": "300997",
+  "fetch_time": "2026-02-03 11:34:49",
+  "turnover_rate": null,
+  "tick_validation": {
+    "error": "QMT 不可用"
+  },
+  "intraday_ma_1m": {
+    "error": "QMT 不可用"
+  },
+  "intraday_ma_5m": {
+    "error": "QMT 不可用"
+  },
+  "order_book": {
+    "error": "QMT 不可用"
+  }
+}
