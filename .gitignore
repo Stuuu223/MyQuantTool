@@ -70,6 +70,12 @@ data/auction_cache.db
 data/concept_*.json
 data/industry_*.json
 
+# 分析结果文件
+data/stock_analysis/
+
+# 临时文件
+temp/
+
 # 备份文件
 *_backup.*
 config_backup_*
