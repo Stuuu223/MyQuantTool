@@ -1,48 +1,45 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-"""
-网络工具模块
-处理代理设置和网络相关功能
-"""
-import os
+import socket
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 import urllib.request
-
+from urllib.request import ProxyHandler, build_opener
+import ssl
 
 def disable_proxy():
-    """
-    禁用所有代理设置
-
-    解决问题：
-    - 系统代理可能导致 AkShare API 调用失败
-    - 某些代理服务器可能不兼容或配置错误
-
-    使用方法：
-        在程序启动时调用（在任何 import 之前）
-
-    示例：
-        from logic.network_utils import disable_proxy
-        disable_proxy()
-        import akshare as ak
-        df = ak.stock_zh_a_hist(symbol='300997', period='daily')
-    """
-    # 1. 清除环境变量代理
-    proxy_keys = [
-        'HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy',
-        'ALL_PROXY', 'all_proxy', 'FTP_PROXY', 'ftp_proxy'
-    ]
-    for key in proxy_keys:
-        os.environ.pop(key, None)
-
-    # 2. 设置 NO_PROXY
-    os.environ['NO_PROXY'] = '*'
-
-    # 3. 清除 urllib 的代理缓存
-    try:
-        urllib.request.getproxies.cache_clear()
-    except Exception:
-        pass
-
+    """禁用系统代理以确保AkShare直连"""
+    import os
+    # 临时禁用系统代理
+    os.environ['HTTP_PROXY'] = ''
+    os.environ['HTTPS_PROXY'] = ''
+    os.environ['http_proxy'] = ''
+    os.environ['https_proxy'] = ''
+    
+    # 禁用urllib代理
+    proxy_handler = ProxyHandler({})
+    opener = build_opener(proxy_handler)
+    urllib.request.install_opener(opener)
+    
+    # 设置SSL上下文
+    ssl._create_default_https_context = ssl._create_unverified_context
+    
     print("✅ [Network] 代理已禁用，使用直连模式")
+
+def test_connection(url="https://www.baidu.com", timeout=10):
+    """测试网络连接"""
+    try:
+        response = requests.get(url, timeout=timeout)
+        return response.status_code == 200
+    except:
+        return False
+
+def setup_urllib_proxy():
+    """为urllib设置无代理"""
+    import os
+    # 确保urllib也不使用代理
+    proxy_handler = ProxyHandler({})
+    opener = build_opener(proxy_handler)
+    urllib.request.install_opener(opener)
 
 
 def check_proxy_status():
