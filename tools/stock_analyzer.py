@@ -289,137 +289,62 @@ class UnifiedStockAnalyzer:
         收盘后分析（15:00-次日09:30）
         
         策略:
-        1. 获取全天数据（AkShare）
-        2. 生成90天历史分析
-        3. 预测明日走势
-        4. 输出明日策略
+        1. 生成90天历史分析（优先）
+        2. 从历史分析提取今日数据
+        3. 如果历史分析失败，尝试实时快照
+        4. 预测明日走势
+        5. 输出明日策略
         """
         print(f"\n{'='*60}")
         print(f"🌆 收盘后深度分析 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"{'='*60}\n")
         
-        # 获取今日收盘数据
-        snapshot = self.monitor.get_intraday_snapshot(stock_code)
-        
-        # 🔍 DEBUG: 检查snapshot是否成功
-        print(f"\n🔍 DEBUG: Snapshot 结果")
-        print(f"   success: {snapshot.get('success')}")
-        print(f"   error: {snapshot.get('error')}")
-        print(f"   data_source: {snapshot.get('data_source')}")
-        print(f"   price: {snapshot.get('price')}")
-        print(f"   pct_change: {snapshot.get('pct_change')}")
-        print()
-        
-        if not snapshot['success']:
-            print(f"⚠️ 警告: 快照获取失败，尝试从历史数据补充")
-            
-            # 🔍 尝试从本地历史文件中提取最新数据
-            yesterday_file = self._find_latest_analysis(stock_code)
-            if yesterday_file and os.path.exists(yesterday_file):
-                print(f"📁 找到历史文件: {yesterday_file}")
-                try:
-                    with open(yesterday_file, 'r', encoding='utf-8') as f:
-                        historical_data = json.load(f)
-                    
-                    # 从历史数据中提取最新价格信息
-                    if 'today_summary' in historical_data:
-                        summary = historical_data['today_summary']
-                        today_data = {
-                            'price': summary.get('close', 0),
-                            'pct_change': summary.get('pct_change', 0),
-                            'high': summary.get('high', 0),
-                            'low': summary.get('low', 0),
-                            'data_source': 'HISTORICAL_CACHE',
-                            'data_freshness': 'STALE'
-                        }
-                    else:
-                        # 尝试从实时分析文件中获取价格数据
-                        # 查找最近的analysis.json文件
-                        analysis_dir = f'data/stock_analysis/{stock_code}'
-                        if os.path.exists(analysis_dir):
-                            import glob
-                            analysis_files = glob.glob(os.path.join(analysis_dir, '*_analysis.json'))
-                            if analysis_files:
-                                # 按时间排序，取最新的
-                                analysis_files.sort(reverse=True)
-                                latest_analysis_file = analysis_files[0]
-                                print(f"📁 找到实时分析文件: {os.path.basename(latest_analysis_file)}")
-                                try:
-                                    with open(latest_analysis_file, 'r', encoding='utf-8') as f:
-                                        analysis_data = json.load(f)
-                                    
-                                    # 从实时分析中提取价格
-                                    latest_price = 0
-                                    if 'layer1_realtime' in analysis_data:
-                                        latest_price = analysis_data['layer1_realtime'].get('price', 0)
-                                    elif 'today_summary' in analysis_data:
-                                        latest_price = analysis_data['today_summary'].get('close', 0)
-                                    
-                                    today_data = {
-                                        'price': latest_price,
-                                        'pct_change': 0,
-                                        'high': 0,
-                                        'low': 0,
-                                        'data_source': 'HISTORICAL_CACHE',
-                                        'data_freshness': 'STALE'
-                                    }
-                                    print(f"✅ 从实时分析文件提取数据:")
-                                    print(f"   最新价格: {latest_price}")
-                                except Exception as e:
-                                    print(f"❌ 读取实时分析文件失败: {e}")
-                                    today_data = snapshot
-                            else:
-                                today_data = snapshot
-                        else:
-                            today_data = snapshot
-                except Exception as e:
-                    print(f"❌ 读取历史文件失败: {e}")
-                    today_data = snapshot
-            else:
-                print(f"⚠️ 未找到历史文件")
-                today_data = snapshot
-        else:
-            today_data = snapshot
-        
-        # 生成90天历史分析
+        # 生成90天历史分析（优先）
         print("正在生成90天历史分析（增强版）...")
-        historical_report = self.historical_analyzer.comprehensive_analysis(stock_code, days=90, output_all_data=True)
+        historical_result = self.historical_analyzer.comprehensive_analysis(stock_code, days=90, output_all_data=True)
         
-        # comprehensive_analysis返回字符串，我们创建结果字典
-        result = {
-            'success': True,
-            'mode': 'after_hours',
-            'phase': 'AFTER_HOURS',
-            'stock_code': stock_code,
-            'analysis_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'historical_report': historical_report,
-            'today_summary': {
-                'data_freshness': today_data.get('data_freshness', 'STALE'),
-                'close': today_data.get('price', 0),
-                'pct_change': today_data.get('pct_change', 0),
-                'high': today_data.get('high', 0),
-                'low': today_data.get('low', 0),
-                'data_source': today_data.get('data_source', 'UNKNOWN')
-            },
-            'output_file': None  # 收盘后分析不保存单独的JSON文件
+        # 从历史分析提取今日数据
+        today_data = {
+            'data_freshness': 'HISTORICAL',
+            'close': 0,
+            'pct_change': 0,
+            'high': 0,
+            'low': 0
         }
         
-        # comprehensive_analysis返回字符串，我们创建结果字典
+        # 尝试从历史分析结果中提取数据
+        if isinstance(historical_result, str):
+            # 如果返回的是字符串（报告），尝试解析
+            print("⚠️ 历史分析返回字符串，无法提取今日数据")
+        else:
+            # 尝试从字典中提取数据
+            if isinstance(historical_result, dict):
+                today_data = self._extract_today_from_history(historical_result)
+        
+        # 如果历史分析没有今日数据，尝试实时快照
+        if today_data['close'] == 0:
+            print("⚠️ 历史分析无今日数据，尝试实时快照...")
+            snapshot = self.monitor.get_intraday_snapshot(stock_code)
+            
+            if snapshot['success']:
+                today_data.update({
+                    'close': snapshot.get('price', 0),
+                    'pct_change': snapshot.get('pct_change', 0),
+                    'high': snapshot.get('high', 0),
+                    'low': snapshot.get('low', 0),
+                    'data_freshness': 'REALTIME_FALLBACK',
+                    'data_source': snapshot.get('data_source', 'UNKNOWN')
+                })
+                print(f"✅ 实时快照补充: 收盘 {today_data['close']:.2f}")
+        
         result = {
             'success': True,
             'mode': 'after_hours',
             'phase': 'AFTER_HOURS',
             'stock_code': stock_code,
             'analysis_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'historical_report': historical_report,
-            'today_summary': {
-                'data_freshness': today_data.get('data_freshness', 'STALE'),
-                'close': today_data.get('price', 0),
-                'pct_change': today_data.get('pct_change', 0),
-                'high': today_data.get('high', 0),
-                'low': today_data.get('low', 0),
-                'data_source': today_data.get('data_source', 'UNKNOWN')
-            },
+            'historical_report': historical_result,
+            'today_summary': today_data,
             'output_file': None  # 收盘后分析不保存单独的JSON文件
         }
         
@@ -427,6 +352,46 @@ class UnifiedStockAnalyzer:
         self._print_after_hours_report(result)
         
         return result
+    
+    def _extract_today_from_history(self, historical_data: Dict) -> Dict[str, Any]:
+        """
+        从90天历史分析中提取今日数据
+        
+        优先级:
+        1. QMT K线数据（最准确）
+        2. 资金流向数据（次选）
+        3. 返回空数据
+        """
+        today_data = {
+            'data_freshness': 'HISTORICAL',
+            'close': 0,
+            'pct_change': 0,
+            'high': 0,
+            'low': 0
+        }
+        
+        # 优先：QMT K线数据
+        qmt_data = historical_data.get('qmt', {})
+        if qmt_data and 'kline_1d' in qmt_data and qmt_data['kline_1d']:
+            last_day = qmt_data['kline_1d'][-1]
+            today_data.update({
+                'close': last_day.get('close', 0),
+                'pct_change': last_day.get('pct_change', 0),
+                'high': last_day.get('high', 0),
+                'low': last_day.get('low', 0),
+                'data_freshness': 'QMT_KLINE'
+            })
+            print(f"✅ 从QMT K线提取今日数据: 收盘 {today_data['close']:.2f}")
+            return today_data
+        
+        # 次选：资金流向数据（只有日期，没有价格）
+        fund_flow = historical_data.get('fund_flow', {})
+        if fund_flow and 'daily_data' in fund_flow and fund_flow['daily_data']:
+            last_day = fund_flow['daily_data'][-1]
+            print(f"⚠️ 资金流向数据无价格信息，日期: {last_day.get('date', 'N/A')}")
+        
+        print(f"❌ 历史分析中无今日数据")
+        return today_data
     
     def _weekend_analysis(self, stock_code: str) -> Dict[str, Any]:
         """
