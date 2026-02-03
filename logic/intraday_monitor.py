@@ -110,48 +110,66 @@ class IntraDayMonitor:
     
     def get_trading_phase(self) -> str:
         """
-        获取当前交易阶段
+        获取当前交易阶段（增强版）
         
         Returns:
-            'MORNING' | 'LUNCH_BREAK' | 'AFTERNOON' | 'AFTER_HOURS' | 'WEEKEND'
+            'OPENING_AUCTION' | 'MORNING' | 'LUNCH_BREAK' | 'AFTERNOON' | 
+            'CLOSING_AUCTION' | 'AFTER_HOURS' | 'WEEKEND'
         """
         now = datetime.now()
+        hour, minute = now.hour, now.minute
         current_time = now.time()
         
         # 周末
         if now.weekday() >= 5:
             return 'WEEKEND'
         
-        # 上午
+        # 🔧 新增：开盘竞价（09:15-09:30）
+        if hour == 9 and 15 <= minute < 30:
+            return 'OPENING_AUCTION'
+        
+        # 上午连续竞价（09:30-11:30）
         if self.trading_hours['morning_start'] <= current_time <= self.trading_hours['morning_end']:
             return 'MORNING'
         
-        # 午休
+        # 午休（11:30-13:00）
         if self.trading_hours['morning_end'] < current_time < self.trading_hours['afternoon_start']:
             return 'LUNCH_BREAK'
         
-        # 下午
-        if self.trading_hours['afternoon_start'] <= current_time <= self.trading_hours['afternoon_end']:
+        # 下午连续竞价（13:00-14:57）
+        if self.trading_hours['afternoon_start'] <= current_time <= time(14, 57):
             return 'AFTERNOON'
+        
+        # 🔧 新增：收盘竞价（14:57-15:00）
+        if hour == 14 and minute >= 57:
+            return 'CLOSING_AUCTION'
         
         # 收盘后
         return 'AFTER_HOURS'
     
-    def get_intraday_snapshot(self, stock_code: str) -> Dict[str, Any]:
+    def get_intraday_snapshot(self, stock_code: str, auto_fallback: bool = True) -> Dict[str, Any]:
         """
-        获取盘中实时快照（增强版）
-        
+        获取盘中实时快照（增强版：自动降级 + 阶段特殊处理）
+
         策略:
-        1. 交易时间内 → 尝试QMT实时数据
-        2. AkShare实时行情（东方财富，有盘口数据）
-        3. AkShare分钟线（备用，无盘口数据）
-        4. QMT分时历史（最后一笔）
-        
+        1. 开盘竞价（09:15-09:30）→ 返回警告
+        2. 收盘竞价（14:57-15:00）→ 使用14:57前最后数据 + 警告
+        3. 交易时间内 → 尝试QMT实时数据
+        4. AkShare实时行情（东方财富，有盘口数据）
+        5. AkShare分钟线（备用，无盘口数据）
+        6. QMT分时历史（最后一笔）
+
+        Args:
+            stock_code: 股票代码
+            auto_fallback: 是否启用自动降级（QMT失败 → AkShare）
+
         Returns:
             {
                 'success': bool,
                 'data_source': 'QMT_REALTIME' | 'AKSHARE_REALTIME' | 'AKSHARE_MINUTE' | 'QMT_HISTORY',
                 'data_freshness': 'FRESH' | 'DELAYED' | 'STALE',
+                'phase': str,  # 当前交易阶段
+                'warning': str | None,  # 警告信息
                 'time': '2026-02-03 14:30:00',
                 'price': 24.63,
                 'pct_change': 3.44,
@@ -159,48 +177,61 @@ class IntraDayMonitor:
                 'signal': '...'
             }
         """
+        phase = self.get_trading_phase()
+
         result = {
             'success': False,
             'error': None,
             'data_source': None,
             'data_freshness': None,
+            'phase': phase,
+            'warning': None,
             'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'trading_phase': self.get_trading_phase()
+            'trading_phase': phase
         }
-        
-        # 策略1: QMT实时数据（仅交易时间）
+
+        # 🔧 新增：开盘竞价特殊处理（09:15-09:30）
+        if phase == 'OPENING_AUCTION':
+            return self._handle_opening_auction(stock_code)
+
+        # 🔧 新增：收盘竞价特殊处理（14:57-15:00）
+        if phase == 'CLOSING_AUCTION':
+            return self._handle_closing_auction(stock_code)
+
+        # 策略1: QMT实时数据（仅连续竞价时间）
         if self.is_trading_time() and self.qmt:
             print(f"🔍 尝试策略1: QMT实时数据")
             snapshot = self._get_qmt_realtime(stock_code)
             if snapshot['success']:
                 snapshot['data_source'] = 'QMT_REALTIME'
                 snapshot['data_freshness'] = 'FRESH'
+                snapshot['phase'] = phase
                 print(f"✅ QMT实时数据获取成功")
                 return snapshot
             else:
                 print(f"❌ QMT失败: {snapshot.get('error')}")
-        
+
         # 策略2: AkShare实时行情（东方财富，有盘口数据）
         if self.akshare_available:
             print(f"🔍 尝试策略2: AkShare实时行情")
             snapshot = self._get_akshare_realtime(stock_code)
             if snapshot['success']:
                 snapshot['data_source'] = 'AKSHARE_REALTIME'
-                
+                snapshot['phase'] = phase
+
                 # 判断数据新鲜度
-                phase = self.get_trading_phase()
                 if phase in ['MORNING', 'AFTERNOON']:
                     snapshot['data_freshness'] = 'FRESH'
                 elif phase == 'LUNCH_BREAK':
                     snapshot['data_freshness'] = 'DELAYED'  # 午休取上午最后
                 else:
                     snapshot['data_freshness'] = 'STALE'  # 收盘后
-                
+
                 print(f"✅ AkShare实时行情获取成功")
                 return snapshot
             else:
                 print(f"❌ AkShare实时行情失败: {snapshot.get('error')}")
-        
+
         # 策略3: AkShare分钟线（备用）
         if self.akshare_available:
             print(f"🔍 尝试策略3: AkShare分钟线")
@@ -208,11 +239,12 @@ class IntraDayMonitor:
             if snapshot['success']:
                 snapshot['data_source'] = 'AKSHARE_MINUTE'
                 snapshot['data_freshness'] = 'DELAYED'
+                snapshot['phase'] = phase
                 print(f"✅ AkShare分钟线获取成功")
                 return snapshot
             else:
                 print(f"❌ AkShare分钟线失败: {snapshot.get('error')}")
-        
+
         # 策略4: QMT分时历史（最后一笔）
         if self.qmt:
             print(f"🔍 尝试策略4: QMT分时历史")
@@ -220,11 +252,12 @@ class IntraDayMonitor:
             if snapshot['success']:
                 snapshot['data_source'] = 'QMT_HISTORY'
                 snapshot['data_freshness'] = 'DELAYED'
+                snapshot['phase'] = phase
                 print(f"✅ QMT分时历史获取成功")
                 return snapshot
             else:
                 print(f"❌ QMT分时历史失败: {snapshot.get('error')}")
-        
+
         # 策略5: 全部失败
         error_msg = '所有数据源均不可用，请检查网络或QMT连接'
         print(f"❌ {error_msg}")
@@ -538,7 +571,7 @@ class IntraDayMonitor:
         pressure = snapshot.get('bid_ask_pressure', 0)
         pct_change = snapshot.get('pct_change', 0)
         turnover = snapshot.get('turnover_rate', 0)
-        
+
         if pressure < -0.7 and pct_change < 0:
             return '卖盘压力大，游资出货，建议减仓'
         elif pressure < -0.5 and turnover > 15:
@@ -551,7 +584,77 @@ class IntraDayMonitor:
             return '盘面平稳，多空均衡，观望'
         else:
             return '盘面震荡，等待明确信号'
-    
+
+    def _handle_opening_auction(self, stock_code: str) -> Dict[str, Any]:
+        """
+        开盘竞价处理（09:15-09:30）
+
+        策略:
+        1. 返回警告信息
+        2. 建议等待开盘后30分钟再分析
+        """
+        return {
+            'success': True,
+            'data_source': 'NONE',
+            'data_freshness': 'STALE',
+            'phase': 'OPENING_AUCTION',
+            'warning': '⚠️ 开盘竞价期间（09:15-09:30），数据不可信，建议等待09:45后重新分析',
+            'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'price': 0,
+            'pct_change': 0,
+            'bid_ask_pressure': 0,
+            'signal': '开盘竞价中，数据暂不可用'
+        }
+
+    def _handle_closing_auction(self, stock_code: str) -> Dict[str, Any]:
+        """
+        收盘竞价处理（14:57-15:00）
+
+        策略:
+        1. 获取14:57前最后一笔数据
+        2. 标注为 STALE（已过期）
+        3. 给出明确警告
+        """
+        # 尝试获取最后一笔数据
+        last_snapshot = None
+
+        # 优先尝试 AkShare 实时行情
+        if self.akshare_available:
+            last_snapshot = self._get_akshare_realtime(stock_code)
+            if last_snapshot['success']:
+                last_snapshot['data_source'] = 'AKSHARE_LAST_TICK'
+                last_snapshot['data_freshness'] = 'STALE'
+                last_snapshot['phase'] = 'CLOSING_AUCTION'
+                last_snapshot['warning'] = '⚠️ 收盘竞价中（14:57-15:00），数据为14:57前最后一笔，建议等待15:05后重新分析'
+                print(f"✅ 获取到14:57前最后一笔数据: {last_snapshot.get('price', 0)}")
+                return last_snapshot
+
+        # 备选：尝试 QMT 分时历史
+        if self.qmt:
+            last_snapshot = self._get_qmt_minute_last(stock_code)
+            if last_snapshot['success']:
+                last_snapshot['data_source'] = 'QMT_LAST_TICK'
+                last_snapshot['data_freshness'] = 'STALE'
+                last_snapshot['phase'] = 'CLOSING_AUCTION'
+                last_snapshot['warning'] = '⚠️ 收盘竞价中（14:57-15:00），数据为14:57前最后一笔，建议等待15:05后重新分析'
+                print(f"✅ 获取到14:57前最后一笔数据: {last_snapshot.get('price', 0)}")
+                return last_snapshot
+
+        # 全部失败
+        return {
+            'success': False,
+            'error': '收盘竞价期间无法获取14:57前数据，建议等待15:05后重新分析',
+            'data_source': 'NONE',
+            'data_freshness': 'STALE',
+            'phase': 'CLOSING_AUCTION',
+            'warning': '⚠️ 收盘竞价中（14:57-15:00），数据暂不可用，建议等待15:05后重新分析',
+            'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'price': 0,
+            'pct_change': 0,
+            'bid_ask_pressure': 0,
+            'signal': '收盘竞价中，数据暂不可用'
+        }
+
     def compare_with_yesterday(
         self, 
         stock_code: str, 

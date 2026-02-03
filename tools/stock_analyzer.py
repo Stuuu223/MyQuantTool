@@ -280,29 +280,29 @@ class UnifiedStockAnalyzer:
         return result
     
     def _after_hours_analysis(
-        self, 
-        stock_code: str, 
-        position: float, 
+        self,
+        stock_code: str,
+        position: float,
         entry_price: float | None
     ) -> Dict[str, Any]:
         """
         收盘后分析（15:00-次日09:30）
-        
-        策略:
+
+        策略（增强版）:
         1. 生成90天历史分析（优先）
-        2. 从历史分析提取今日数据
-        3. 如果历史分析失败，尝试实时快照
+        2. 从历史分析提取今日数据（不尝试获取五档）
+        3. 检查数据新鲜度
         4. 预测明日走势
         5. 输出明日策略
         """
         print(f"\n{'='*60}")
         print(f"🌆 收盘后深度分析 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"{'='*60}\n")
-        
+
         # 生成90天历史分析（优先）
         print("正在生成90天历史分析（增强版）...")
         historical_result = self.historical_analyzer.comprehensive_analysis(stock_code, days=90, output_all_data=True)
-        
+
         # 从历史分析提取今日数据
         today_data = {
             'data_freshness': 'HISTORICAL',
@@ -311,7 +311,7 @@ class UnifiedStockAnalyzer:
             'high': 0,
             'low': 0
         }
-        
+
         # 尝试从历史分析结果中提取数据
         if isinstance(historical_result, str):
             # 如果返回的是字符串（报告），尝试解析
@@ -320,30 +320,23 @@ class UnifiedStockAnalyzer:
             # 尝试从字典中提取数据
             if isinstance(historical_result, dict):
                 today_data = self._extract_today_from_history(historical_result)
-        
-        # 如果历史分析没有今日数据，尝试实时快照
+
+        # 🔧 修复：收盘后不尝试获取五档（QMT/AkShare 实时快照），直接使用历史K线数据
+        # 原因：收盘后（如20:55）QMT客户端可能已关闭，五档数据返回0
         if today_data['close'] == 0:
-            print("⚠️ 历史分析无今日数据，尝试实时快照...")
-            snapshot = self.monitor.get_intraday_snapshot(stock_code)
-            
-            if snapshot['success']:
-                today_data.update({
-                    'close': snapshot.get('price', 0),
-                    'pct_change': snapshot.get('pct_change', 0),
-                    'high': snapshot.get('high', 0),
-                    'low': snapshot.get('low', 0),
-                    'data_freshness': 'REALTIME_FALLBACK',
-                    'data_source': snapshot.get('data_source', 'UNKNOWN')
-                })
-                print(f"✅ 实时快照补充: 收盘 {today_data['close']:.2f}")
-        
+            print("⚠️ 历史分析无今日数据，尝试从 AkShare 获取当日K线...")
+            today_data = self._get_today_kline_from_akshare(stock_code)
+
+        # 🔧 新增：检查数据新鲜度
+        freshness_warning = self._check_data_freshness(today_data)
+
         # 生成明日策略
         tomorrow_strategy = self._generate_tomorrow_strategy(
             historical_result if isinstance(historical_result, dict) else {},
             position,
             entry_price
         )
-        
+
         result = {
             'success': True,
             'mode': 'after_hours',
@@ -352,19 +345,20 @@ class UnifiedStockAnalyzer:
             'analysis_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             'historical_report': historical_result,
             'today_summary': today_data,
+            'data_freshness_warning': freshness_warning,  # 🔧 新增
             'tomorrow_strategy': tomorrow_strategy,
             'output_file': None  # 收盘后分析不保存单独的JSON文件
         }
-        
+
         # 打印报告
         self._print_after_hours_report(result)
-        
+
         return result
     
     def _extract_today_from_history(self, historical_data: Dict) -> Dict[str, Any]:
         """
         从90天历史分析中提取今日数据
-        
+
         优先级:
         1. QMT K线数据（最准确）
         2. 资金流向数据（次选）
@@ -377,7 +371,7 @@ class UnifiedStockAnalyzer:
             'high': 0,
             'low': 0
         }
-        
+
         # 优先：QMT K线数据
         qmt_data = historical_data.get('qmt', {})
         if qmt_data and 'kline_1d' in qmt_data and qmt_data['kline_1d']:
@@ -391,16 +385,132 @@ class UnifiedStockAnalyzer:
             })
             print(f"✅ 从QMT K线提取今日数据: 收盘 {today_data['close']:.2f}")
             return today_data
-        
+
         # 次选：资金流向数据（只有日期，没有价格）
         fund_flow = historical_data.get('fund_flow', {})
         if fund_flow and 'daily_data' in fund_flow and fund_flow['daily_data']:
             last_day = fund_flow['daily_data'][-1]
             print(f"⚠️ 资金流向数据无价格信息，日期: {last_day.get('date', 'N/A')}")
-        
+
         print(f"❌ 历史分析中无今日数据")
         return today_data
-    
+
+    def _check_data_freshness(self, data: dict) -> str | None:
+        """
+        检查数据新鲜度（新增方法）
+
+        Args:
+            data: 数据字典
+
+        Returns:
+            警告信息（如果数据过期），否则返回 None
+        """
+        if not data:
+            return None
+
+        # 检查数据新鲜度标签
+        freshness = data.get('data_freshness', '')
+        if freshness == 'STALE':
+            return f"⚠️ 数据已过期（来源: {data.get('data_source', 'N/A')}）"
+
+        # 检查 K 线数据日期
+        if freshness == 'QMT_KLINE':
+            kline_date = data.get('date', '')
+            if kline_date:
+                current_date = datetime.now().strftime('%Y-%m-%d')
+                if kline_date != current_date:
+                    return f"⚠️ K线数据非当日（{kline_date} vs {current_date}）"
+
+        # 检查价格是否有效
+        if data.get('close', 0) == 0:
+            return "⚠️ 收盘价格为0，数据可能无效"
+
+        return None
+
+    def _get_today_kline_from_akshare(self, stock_code: str) -> Dict[str, Any]:
+        """
+        从 AkShare 获取当日 K 线数据（新增方法）
+
+        用途：收盘后分析，获取当日完整的 K 线数据
+
+        Args:
+            stock_code: 股票代码
+
+        Returns:
+            {
+                'data_freshness': 'AKSHARE_DAILY',
+                'close': float,
+                'pct_change': float,
+                'high': float,
+                'low': float,
+                'date': str
+            }
+        """
+        today_data = {
+            'data_freshness': 'AKSHARE_DAILY',
+            'close': 0,
+            'pct_change': 0,
+            'high': 0,
+            'low': 0,
+            'date': ''
+        }
+
+        try:
+            from datetime import timedelta
+            import akshare as ak
+
+            # 获取今日 K 线
+            today = datetime.now()
+            today_str = today.strftime('%Y%m%d')
+
+            df = ak.stock_zh_a_hist(
+                symbol=stock_code,
+                period="daily",
+                start_date=today_str,
+                end_date=today_str,
+                adjust="qfq"
+            )
+
+            if df is not None and not df.empty:
+                row = df.iloc[0]
+                today_data.update({
+                    'close': float(row['收盘']),
+                    'pct_change': float(row['涨跌幅']),
+                    'high': float(row['最高']),
+                    'low': float(row['最低']),
+                    'date': str(row['日期'])
+                })
+                print(f"✅ 从 AkShare 获取今日 K 线: 收盘 {today_data['close']:.2f}")
+            else:
+                print(f"⚠️ AkShare 今日 K 线数据为空，尝试获取最近1天...")
+                # 备选：获取最近1天的数据
+                yesterday = today - timedelta(days=1)
+                yesterday_str = yesterday.strftime('%Y%m%d')
+
+                df = ak.stock_zh_a_hist(
+                    symbol=stock_code,
+                    period="daily",
+                    start_date=yesterday_str,
+                    end_date=yesterday_str,
+                    adjust="qfq"
+                )
+
+                if df is not None and not df.empty:
+                    row = df.iloc[0]
+                    today_data.update({
+                        'close': float(row['收盘']),
+                        'pct_change': float(row['涨跌幅']),
+                        'high': float(row['最高']),
+                        'low': float(row['最低']),
+                        'date': str(row['日期'])
+                    })
+                    print(f"✅ 从 AkShare 获取昨日 K 线: 收盘 {today_data['close']:.2f}")
+
+        except Exception as e:
+            print(f"❌ 从 AkShare 获取 K 线数据失败: {e}")
+
+        return today_data
+
     def _weekend_analysis(self, stock_code: str) -> Dict[str, Any]:
         """
         周末深度分析
@@ -1199,26 +1309,33 @@ class UnifiedStockAnalyzer:
         print("\n" + "="*60 + "\n")
     
     def _print_after_hours_report(self, result: Dict):
-        """打印收盘后报告"""
+        """打印收盘后报告（增强版）"""
         today = result.get('today_summary', {})
         tomorrow = result.get('tomorrow_strategy', {})
-        
+        freshness_warning = result.get('data_freshness_warning', None)
+
         print("\n" + "="*60)
         print(f"🌆 今日交易总结")
         print("="*60)
+
+        # 🔧 新增：显示数据新鲜度警告
+        if freshness_warning:
+            print(f"\n⚠️ 数据新鲜度警告: {freshness_warning}")
+
+        print(f"数据来源: {today.get('data_freshness', 'N/A')}")
         print(f"收盘价: {today.get('close', 0):.2f} ({today.get('pct_change', 0):.2f}%)")
         print(f"区间: {today.get('low', 0):.2f} - {today.get('high', 0):.2f}")
-        
+
         print(f"\n🔮 明日策略")
         print("="*60)
         print(f"开盘动作: {tomorrow.get('open_action', 'N/A')}")
         print(f"目标仓位: {tomorrow.get('target_position', 0):.0%}")
-        
+
         if tomorrow.get('notes'):
             print("\n备注:")
             for note in tomorrow['notes']:
                 print(f"  - {note}")
-        
+
         print(f"\n📁 详细分析已保存: {result.get('output_file', 'N/A')}")
         print("\n" + "="*60 + "\n")
     
