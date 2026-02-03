@@ -15,6 +15,11 @@
 import argparse
 import sys
 from pathlib import Path
+
+# 在导入其他模块前先禁用代理
+from logic.network_utils import disable_proxy
+disable_proxy()
+
 from tools.stock_analyzer import UnifiedStockAnalyzer
 
 

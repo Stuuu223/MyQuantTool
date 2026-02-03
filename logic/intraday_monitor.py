@@ -61,7 +61,7 @@ class IntraDayMonitor:
             print("✅ [IntraDayMonitor] xtdata 导入成功")
         except Exception as e:
             print(f"❌ [IntraDayMonitor] xtdata 导入失败: {e}")
-            return
+            # 不要return，继续初始化其他组件
         
         # 尝试加载 CodeConverter
         try:
@@ -70,12 +70,16 @@ class IntraDayMonitor:
             print("✅ [IntraDayMonitor] CodeConverter 初始化成功")
         except Exception as e:
             print(f"❌ [IntraDayMonitor] CodeConverter 初始化失败: {e}")
-            self.xtdata = None
-            return
+            # 只有xtdata可以工作也可以继续
         
-        # 全部成功，启用 QMT
-        self.qmt = True
-        print("✅ [IntraDayMonitor] QMT 数据源已启用")
+        # 如果xtdata和converter都成功，启用 QMT
+        if self.xtdata is not None and self.converter is not None:
+            self.qmt = True
+            print("✅ [IntraDayMonitor] QMT 数据源已启用")
+        elif self.xtdata is not None:
+            print("⚠️ [IntraDayMonitor] xtdata可用但CodeConverter失败，QMT功能受限")
+        else:
+            print("⚠️ [IntraDayMonitor] QMT功能不可用")
         
         # AkShare 状态
         if self.akshare_available:
@@ -228,7 +232,7 @@ class IntraDayMonitor:
         return result
     
     def _get_qmt_realtime(self, stock_code: str) -> Dict[str, Any]:
-        """获取QMT实时数据（使用xtdata）"""
+        """获取QMT实时数据（使用get_full_tick）"""
         result = {'success': False}
         
         if not self.qmt:
@@ -239,40 +243,45 @@ class IntraDayMonitor:
             # 转换股票代码为QMT格式
             qmt_code = self.converter.to_qmt(stock_code)
             
-            # QMT实时快照
-            from datetime import timedelta
-            start_time = (datetime.now() - timedelta(days=5)).strftime('%Y%m%d 09:30:00')
-            end_time = datetime.now().strftime('%Y%m%d 15:00:00')
+            # 使用 get_full_tick 获取实时数据（已测试可用）
+            data = self.xtdata.get_full_tick([qmt_code])
             
-            snapshot = self.xtdata.get_market_data(
-                stock_list=[qmt_code],
-                period='1d',
-                start_time=start_time,
-                end_time=end_time,
-                dividend_type='front'  # 前复权
-            )
-            
-            if snapshot is None or qmt_code not in snapshot or len(snapshot[qmt_code]) == 0:
+            if not data or qmt_code not in data:
                 result['error'] = 'QMT返回空数据'
                 return result
             
-            # 解析数据（取最后一根日线）
-            latest = snapshot[qmt_code].iloc[-1]
+            stock_data = data[qmt_code]
+            
+            # 计算涨跌幅
+            last_price = stock_data.get('lastPrice', 0)
+            last_close = stock_data.get('lastClose', 0)
+            pct_change = (last_price - last_close) / last_close * 100 if last_close > 0 else 0
             
             result.update({
                 'success': True,
-                'price': float(latest['close']),
-                'open': float(latest['open']),
-                'high': float(latest['high']),
-                'low': float(latest['low']),
-                'volume': int(latest['volume']),
-                'amount': float(latest['amount']),
-                'turnover_rate': 0.0,  # xtdata日线数据没有换手率
-                'pct_change': float((latest['close'] - latest['open']) / latest['open'] * 100) if latest['open'] > 0 else 0,
+                'price': float(last_price),
+                'open': float(stock_data.get('open', 0)),
+                'high': float(stock_data.get('high', 0)),
+                'low': float(stock_data.get('low', 0)),
+                'volume': int(stock_data.get('volume', 0)),
+                'amount': float(stock_data.get('amount', 0)),
+                'turnover_rate': 0.0,  # get_full_tick没有换手率
+                'pct_change': pct_change,
             })
             
-            # QMT没有直接的五档行情，使用默认值
-            result['bid_ask_pressure'] = 0.0
+            # 计算买卖压力（使用五档行情）
+            bid_prices = stock_data.get('bidPrice', [])
+            ask_prices = stock_data.get('askPrice', [])
+            bid_vols = stock_data.get('bidVol', [])
+            ask_vols = stock_data.get('askVol', [])
+            
+            bid_total = sum(bid_vols) if bid_vols else 0
+            ask_total = sum(ask_vols) if ask_vols else 0
+            
+            if bid_total + ask_total > 0:
+                result['bid_ask_pressure'] = (bid_total - ask_total) / (bid_total + ask_total)
+            else:
+                result['bid_ask_pressure'] = 0.0
             
             # 信号
             result['signal'] = self._generate_intraday_signal(result)
@@ -293,6 +302,9 @@ class IntraDayMonitor:
         result = {'success': False}
         
         import time
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        
         max_retries = 3
         retry_delay = 2
         
@@ -310,16 +322,26 @@ class IntraDayMonitor:
                 
                 row = stock_data.iloc[0]
                 
+                # 确保数据有效性
+                price = float(row['最新价']) if pd.notna(row['最新价']) and row['最新价'] != '-' else 0.0
+                pct_change = float(row['涨跌幅']) if pd.notna(row['涨跌幅']) and row['涨跌幅'] != '-' else 0.0
+                high = float(row['最高']) if pd.notna(row['最高']) and row['最高'] != '-' else 0.0
+                low = float(row['最低']) if pd.notna(row['最低']) and row['最低'] != '-' else 0.0
+                open_price = float(row['今开']) if pd.notna(row['今开']) and row['今开'] != '-' else 0.0
+                volume = int(float(row['成交量'])) if pd.notna(row['成交量']) and row['成交量'] != '-' else 0
+                amount = float(row['成交额']) if pd.notna(row['成交额']) and row['成交额'] != '-' else 0.0
+                turnover_rate = float(row.get('换手率', 0)) if pd.notna(row.get('换手率', 0)) else 0.0
+                
                 result.update({
                     'success': True,
-                    'price': float(row['最新价']),
-                    'open': float(row['今开']),
-                    'high': float(row['最高']),
-                    'low': float(row['最低']),
-                    'volume': int(row['成交量']),
-                    'amount': float(row['成交额']),
-                    'turnover_rate': float(row.get('换手率', 0)),
-                    'pct_change': float(row['涨跌幅']),
+                    'price': price,
+                    'open': open_price,
+                    'high': high,
+                    'low': low,
+                    'volume': volume,
+                    'amount': amount,
+                    'turnover_rate': turnover_rate,
+                    'pct_change': pct_change,
                     'bid_ask_pressure': self._calculate_bid_ask_pressure_from_spot(row)
                 })
                 
@@ -367,7 +389,7 @@ class IntraDayMonitor:
     
     def _get_qmt_minute_last(self, stock_code: str) -> Dict[str, Any]:
         """
-        获取QMT分时历史的最后一笔数据（使用xtdata）
+        获取QMT分时历史的最后一笔数据（使用get_full_tick）
         
         用途: 午休/收盘后，取最近一笔分时数据
         """
@@ -381,37 +403,30 @@ class IntraDayMonitor:
             # 转换股票代码为QMT格式
             qmt_code = self.converter.to_qmt(stock_code)
             
-            # 获取今日分时数据（1分钟K线）
-            from datetime import timedelta
-            start_time = (datetime.now() - timedelta(days=1)).strftime('%Y%m%d 09:30:00')
-            end_time = datetime.now().strftime('%Y%m%d 15:00:00')
+            # 使用 get_full_tick 获取实时数据（即使收盘后也能获取最后的数据）
+            data = self.xtdata.get_full_tick([qmt_code])
             
-            # 使用xtdata获取历史数据
-            df = self.xtdata.get_market_data(
-                stock_list=[qmt_code],
-                period='1m',
-                start_time=start_time,
-                end_time=end_time,
-                dividend_type='front'  # 前复权
-            )
-            
-            if df is None or qmt_code not in df or len(df[qmt_code]) == 0:
-                result['error'] = 'QMT分时数据为空'
+            if not data or qmt_code not in data:
+                result['error'] = 'QMT返回空数据'
                 return result
             
-            # 取最后一笔
-            latest = df[qmt_code].iloc[-1]
+            stock_data = data[qmt_code]
+            
+            # 计算涨跌幅
+            last_price = stock_data.get('lastPrice', 0)
+            last_close = stock_data.get('lastClose', 0)
+            pct_change = (last_price - last_close) / last_close * 100 if last_close > 0 else 0
             
             result.update({
                 'success': True,
-                'price': float(latest['close']),
-                'open': float(latest['open']),
-                'high': float(latest['high']),
-                'low': float(latest['low']),
-                'volume': int(latest['volume']),
-                'amount': float(latest['amount']),
-                'turnover_rate': 0.0,  # 分时数据没有换手率
-                'pct_change': float((latest['close'] - latest['open']) / latest['open'] * 100) if latest['open'] > 0 else 0,
+                'price': float(last_price),
+                'open': float(stock_data.get('open', 0)),
+                'high': float(stock_data.get('high', 0)),
+                'low': float(stock_data.get('low', 0)),
+                'volume': int(stock_data.get('volume', 0)),
+                'amount': float(stock_data.get('amount', 0)),
+                'turnover_rate': 0.0,  # get_full_tick没有换手率
+                'pct_change': pct_change,
                 'bid_ask_pressure': 0.0  # 历史数据没有盘口
             })
             
