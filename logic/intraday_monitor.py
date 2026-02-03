@@ -121,14 +121,14 @@ class IntraDayMonitor:
         
         策略:
         1. 交易时间内 → 尝试QMT实时数据
-        2. 午休/收盘后 → 尝试AkShare实时行情
-        3. AkShare失败 → 尝试QMT分时历史（最后一笔）
-        4. 都失败 → 使用昨日收盘 + 警告
+        2. AkShare实时行情（东方财富，有盘口数据）
+        3. AkShare分钟线（备用，无盘口数据）
+        4. QMT分时历史（最后一笔）
         
         Returns:
             {
                 'success': bool,
-                'data_source': 'QMT_REALTIME' | 'AKSHARE_REALTIME' | 'QMT_HISTORY' | 'YESTERDAY',
+                'data_source': 'QMT_REALTIME' | 'AKSHARE_REALTIME' | 'AKSHARE_MINUTE' | 'QMT_HISTORY',
                 'data_freshness': 'FRESH' | 'DELAYED' | 'STALE',
                 'time': '2026-02-03 14:30:00',
                 'price': 24.63,
@@ -154,7 +154,7 @@ class IntraDayMonitor:
                 snapshot['data_freshness'] = 'FRESH'
                 return snapshot
         
-        # 策略2: AkShare实时行情（任何时候都能用）
+        # 策略2: AkShare实时行情（东方财富，有盘口数据）
         if self.akshare_available:
             snapshot = self._get_akshare_realtime(stock_code)
             if snapshot['success']:
@@ -171,7 +171,15 @@ class IntraDayMonitor:
                 
                 return snapshot
         
-        # 策略3: QMT分时历史（最后一笔）
+        # 策略3: AkShare分钟线（备用）
+        if self.akshare_available:
+            snapshot = self._get_akshare_minute_last(stock_code)
+            if snapshot['success']:
+                snapshot['data_source'] = 'AKSHARE_MINUTE'
+                snapshot['data_freshness'] = 'DELAYED'
+                return snapshot
+        
+        # 策略4: QMT分时历史（最后一笔）
         if self.qmt:
             snapshot = self._get_qmt_minute_last(stock_code)
             if snapshot['success']:
@@ -179,7 +187,7 @@ class IntraDayMonitor:
                 snapshot['data_freshness'] = 'DELAYED'
                 return snapshot
         
-        # 策略4: 全部失败
+        # 策略5: 全部失败
         result['error'] = '所有数据源均不可用，请检查网络或QMT连接'
         return result
     
@@ -236,36 +244,35 @@ class IntraDayMonitor:
         """
         获取AkShare实时行情
         
-        使用接口: stock_individual_fund_flow (更稳定)
-        优势: 午休/收盘后也能用
+        使用接口: stock_zh_a_spot_em() - 东方财富实时行情
+        优势: 有五档盘口数据
         """
         result = {'success': False}
         
         try:
-            # 使用更稳定的接口
-            df = self.ak.stock_individual_fund_flow(
-                stock=stock_code,
-                market="sz" if stock_code.startswith('3') else "sh"
-            )
+            # 获取A股实时行情
+            df = self.ak.stock_zh_a_spot_em()
             
-            if df is None or len(df) == 0:
+            # 查找目标股票
+            stock_data = df[df['代码'] == stock_code]
+            
+            if stock_data.empty:
                 result['error'] = f'AkShare未找到股票 {stock_code}'
                 return result
             
-            # 获取最新的数据
-            latest = df.iloc[-1]
+            row = stock_data.iloc[0]
             
             result.update({
                 'success': True,
-                'price': float(latest.get('收盘价', 0)),
-                'open': float(latest.get('收盘价', 0)),  # fund_flow 没有今开
-                'high': float(latest.get('收盘价', 0)),  # fund_flow 没有最高
-                'low': float(latest.get('收盘价', 0)),  # fund_flow 没有最低
-                'volume': int(latest.get('成交量', 0)),
-                'amount': float(latest.get('成交额', 0)),
-                'turnover_rate': 0.0,  # fund_flow 没有换手率
-                'pct_change': 0.0,  # fund_flow 没有涨跌幅
-                'bid_ask_pressure': 0.0  # fund_flow 没有五档
+                'price': float(row['最新价']),
+                'open': float(row['今开']),
+                'high': float(row['最高']),
+                'low': float(row['最低']),
+                'volume': int(row['成交量']),
+                'amount': float(row['成交额']),
+                'turnover_rate': float(row.get('换手率', 0)),
+                'pct_change': float(row['涨跌幅']),
+                'bid_ask_pressure': self._calculate_bid_ask_pressure_from_spot(row)
             })
             
             # 信号
@@ -276,6 +283,29 @@ class IntraDayMonitor:
         except Exception as e:
             result['error'] = f'AkShare实时数据获取失败: {str(e)}'
             return result
+    
+    def _calculate_bid_ask_pressure_from_spot(self, row) -> float:
+        """计算买卖压力（基于东方财富实时行情的盘口数据）"""
+        try:
+            # 买一到买五
+            bid_vol = sum([
+                int(row.get(f'买{i}量', 0)) for i in range(1, 6)
+            ])
+            
+            # 卖一到卖五
+            ask_vol = sum([
+                int(row.get(f'卖{i}量', 0)) for i in range(1, 6)
+            ])
+            
+            if ask_vol == 0:
+                return 1.0 if bid_vol > 0 else 0.0
+            
+            # 压力 = (买盘 - 卖盘) / (买盘 + 卖盘)
+            pressure = (bid_vol - ask_vol) / (bid_vol + ask_vol)
+            return round(pressure, 2)
+            
+        except Exception:
+            return 0.0
     
     def _get_qmt_minute_last(self, stock_code: str) -> Dict[str, Any]:
         """
@@ -320,6 +350,54 @@ class IntraDayMonitor:
             
         except Exception as e:
             result['error'] = f'QMT分时历史获取失败: {str(e)}'
+            return result
+    
+    def _get_akshare_minute_last(self, stock_code: str) -> Dict[str, Any]:
+        """
+        获取AkShare最新分钟线（备用方案）
+        
+        用途: 当实时行情接口失败时，使用分钟线作为备用
+        """
+        result = {'success': False}
+        
+        try:
+            from datetime import timedelta
+            
+            # 获取最新1分钟K线
+            df = self.ak.stock_zh_a_hist_min_em(
+                symbol=stock_code,
+                period='1',  # 1分钟
+                adjust='qfq',  # 前复权
+                start_date=(datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d %H:%M:%S'),
+                end_date=datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            )
+            
+            if df.empty:
+                result['error'] = 'AkShare分钟线数据为空'
+                return result
+            
+            # 取最新一条
+            row = df.iloc[-1]
+            
+            result.update({
+                'success': True,
+                'price': float(row['收盘']),
+                'open': float(row['开盘']),
+                'high': float(row['最高']),
+                'low': float(row['最低']),
+                'volume': int(row['成交量']),
+                'amount': float(row['成交额']),
+                'pct_change': ((float(row['收盘']) - float(row['开盘'])) / float(row['开盘']) * 100) if float(row['开盘']) > 0 else 0,
+                'bid_ask_pressure': 0.0,  # 分钟线无盘口数据
+                'turnover_rate': 0.0
+            })
+            
+            result['signal'] = self._generate_intraday_signal(result)
+            
+            return result
+            
+        except Exception as e:
+            result['error'] = f'AkShare分钟线获取失败: {str(e)}'
             return result
     
     def _calculate_bid_ask_pressure(self, tick_data: Dict) -> float:
