@@ -1,7 +1,7 @@
 # MyQuantTool AI 助手 System Prompt
 
-**最后更新**: 2026-02-02  
-**版本**: 1.0
+**最后更新**: 2026-02-03  
+**版本**: 1.2
 
 ---
 
@@ -17,6 +17,78 @@ MyQuantTool 是一个量化交易分析工具，支持：
 - 龙头战法策略
 
 **当前版本**: V9.4.5
+
+---
+
+## 📋 项目概述
+
+MyQuantTool 是一个量化交易分析工具，支持：
+- AkShare + QMT 双数据源
+- 实时数据采集和分析
+- 技术指标计算
+- 资金流向分析
+- 诱多陷阱检测
+- 历史复盘
+- 龙头战法策略
+
+**当前版本**: V9.4.5
+
+---
+
+## 📝 文档引用规则
+
+**重要**: 当系统提示（SYSTEM_PROMPT）中需要添加过长内容时，应遵循以下规则：
+
+### 文档引用原则
+
+1. **内容长度阈值**: 超过 50 行的内容应提取到独立文档
+2. **文档位置**: 技术细节放在 `docs/tech/`，使用指南放在 `docs/user-guide/`
+3. **引用方式**: 在 SYSTEM_PROMPT 中使用简短说明 + 文档链接
+4. **命名规范**: 使用描述性文件名，如 `akshare防封规则.md`、`qmt_venv_setup.md`
+
+### 示例
+
+**❌ 错误做法**: 在 SYSTEM_PROMPT 中直接粘贴长内容
+
+```markdown
+## AkShare 防封规则
+
+[这里写 100+ 行的详细规则内容...]
+```
+
+**✅ 正确做法**: 提取到文档，在 SYSTEM_PROMPT 中引用
+
+```markdown
+## AkShare 防封规则
+
+详细文档: [AkShare 防封规则](../docs/tech/akshare防封规则.md)
+
+快速参考:
+- 使用 safe_request 包装所有调用
+- 历史数据间隔 3-5 秒
+- 实时数据间隔 1-2 秒
+```
+
+### 何时创建新文档
+
+以下情况应创建独立文档：
+- API 文档和接口说明
+- 配置指南和安装教程
+- 防封规则和限制说明
+- 架构设计和数据流图
+- 最佳实践和代码示例
+- 故障排查和常见问题
+
+### SYSTEM_PROMPT 内容准则
+
+SYSTEM_PROMPT 应该保持精简，只包含：
+- 项目概述和核心概念
+- 目录结构和文件命名规范
+- 常用命令和快捷方式
+- 关键工具的快速参考
+- 简短的使用示例
+
+详细内容统一放在 `docs/` 目录下。
 
 ---
 
@@ -142,6 +214,14 @@ UI 类：页面名称（如 dashboard_home.py）
 ---
 
 ## 🛠️ 常用工具和命令
+
+### 虚拟环境配置
+
+**重要**: QMT 模块需要 Python 3.10，项目使用 `venv_qmt` 虚拟环境（277 MB）。
+
+- **详细配置文档**: [QMT 虚拟环境配置指南](../docs/setup/qmt_venv_setup.md)
+- **VSCode 已配置**: 自动使用 `venv_qmt` 虚拟环境
+- **启动脚本**: `analyze_supplement.bat`（自动使用虚拟环境）
 
 ### 文件操作（Windows）
 
@@ -508,6 +588,30 @@ password = config.get('database.password')
     "password": ""  // 不提交到 Git
   }
 }
+```
+
+---
+
+## 🛡️ AkShare 防封规则
+
+**重要**: AkShare 虽然完全免费且稳定性高，但过度频繁调用仍可能触发数据源限制导致 IP 封禁。
+
+**详细文档**: [AkShare 防封规则](../docs/tech/akshare防封规则.md)
+
+**快速参考**:
+- 使用 `safe_request` 包装所有 AkShare 调用
+- 历史数据间隔 3-5 秒
+- 实时数据间隔 1-2 秒
+- 使用 Redis 缓存减少重复请求
+
+```python
+from logic.rate_limiter import safe_request
+import akshare as ak
+
+def get_stock_history(code):
+    return safe_request(
+        lambda: ak.stock_zh_a_hist(symbol=code, period="daily")
+    )
 ```
 
 ---
