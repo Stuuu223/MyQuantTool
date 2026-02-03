@@ -49,22 +49,33 @@ class IntraDayMonitor:
         }
         
         # 数据源初始化
-        self.qmt = None
         self.xtdata = None
-        self.qmt_available = False
-        self.code_converter = None
+        self.converter = None
+        self.qmt = False
         self.akshare_available = AKSHARE_AVAILABLE
         
-        # 尝试导入QMT（直接使用xtdata，不依赖data_sources.qmt_source）
+        # 尝试加载 xtquant
         try:
-            from xtquant import xtdata
+            from xtquant import xtdata as xt_module
+            self.xtdata = xt_module
+            print("✅ [IntraDayMonitor] xtdata 导入成功")
+        except Exception as e:
+            print(f"❌ [IntraDayMonitor] xtdata 导入失败: {e}")
+            return
+        
+        # 尝试加载 CodeConverter
+        try:
             from logic.code_converter import CodeConverter
-            self.xtdata = xtdata
-            self.code_converter = CodeConverter()
-            self.qmt_available = True
-            print("✅ QMT数据源可用（xtdata）")
-        except ImportError as e:
-            print(f"警告: QMT数据源不可用: {e}")
+            self.converter = CodeConverter()
+            print("✅ [IntraDayMonitor] CodeConverter 初始化成功")
+        except Exception as e:
+            print(f"❌ [IntraDayMonitor] CodeConverter 初始化失败: {e}")
+            self.xtdata = None
+            return
+        
+        # 全部成功，启用 QMT
+        self.qmt = True
+        print("✅ [IntraDayMonitor] QMT 数据源已启用")
         
         # AkShare 状态
         if self.akshare_available:
@@ -220,13 +231,13 @@ class IntraDayMonitor:
         """获取QMT实时数据（使用xtdata）"""
         result = {'success': False}
         
-        if not self.qmt_available:
+        if not self.qmt:
             result['error'] = 'QMT接口不可用'
             return result
         
         try:
             # 转换股票代码为QMT格式
-            qmt_code = self.code_converter.to_qmt(stock_code)
+            qmt_code = self.converter.to_qmt(stock_code)
             
             # QMT实时快照
             from datetime import timedelta
@@ -362,13 +373,13 @@ class IntraDayMonitor:
         """
         result = {'success': False}
         
-        if not self.qmt_available:
+        if not self.qmt:
             result['error'] = 'QMT接口不可用'
             return result
         
         try:
             # 转换股票代码为QMT格式
-            qmt_code = self.code_converter.to_qmt(stock_code)
+            qmt_code = self.converter.to_qmt(stock_code)
             
             # 获取今日分时数据（1分钟K线）
             from datetime import timedelta
