@@ -903,7 +903,7 @@ class UnifiedStockAnalyzer:
             print(f"✅ TXT结果已保存: {txt_file}")
     
     def _format_to_txt(self, result: Dict) -> str:
-        """格式化为TXT（人类可读）"""
+        """格式化为TXT（人类可读）- 包含完整90天历史明细"""
         lines = []
         lines.append("=" * 80)
         lines.append(f"📊 股票分析报告")
@@ -913,8 +913,163 @@ class UnifiedStockAnalyzer:
         lines.append(f"分析时间: {result.get('analysis_time', 'N/A')}")
         lines.append("=" * 80)
         
+        # 🔥 收盘后/周末/历史分析 - 输出完整90天明细
+        if result.get('mode') in ['after_hours', 'weekend', 'historical']:
+            # 检查是否包含完整的90天历史分析报告
+            historical_report = result.get('historical_report', '')
+            
+            if historical_report:
+                # 直接使用完整的90天历史报告
+                lines.append("\n" + historical_report)
+            else:
+                # Fallback: 处理结构化数据
+                historical_data = result.get('historical_analysis') or result.get('data', {})
+                
+                if historical_data:
+                    lines.append("\n" + "=" * 80)
+                    lines.append("📈 第一部分：资金流向分析（90天明细）")
+                    lines.append("=" * 80)
+                    
+                    # 资金流向每日明细
+                    fund_flow = historical_data.get('fund_flow', {})
+                    if fund_flow.get('daily_data'):
+                        lines.append(f"\n数据范围: {fund_flow.get('date_range', 'N/A')}")
+                        lines.append(f"总天数: {fund_flow.get('total_days', 0)} 天")
+                        lines.append("\n📅 每日资金流向详情（单位：万元）：\n")
+                        lines.append(f"{'日期':<12} {'超大单':>10} {'大单':>10} {'中单':>10} {'小单':>10} {'机构':>10} {'散户':>10} {'信号':<10}")
+                        lines.append("-" * 90)
+                        
+                        for day in fund_flow['daily_data']:
+                            signal = "🟢 吸筹" if day.get('institution', 0) > 0 else "⛔ 接盘"
+                            lines.append(
+                                f"{day.get('date', 'N/A'):<12} "
+                                f"{day.get('super_large', 0):>10.2f} "
+                                f"{day.get('large', 0):>10.2f} "
+                                f"{day.get('medium', 0):>10.2f} "
+                                f"{day.get('small', 0):>10.2f} "
+                                f"{day.get('institution', 0):>10.2f} "
+                                f"{day.get('retail', 0):>10.2f} "
+                                f"{signal:<10}"
+                            )
+                        
+                        lines.append("\n📊 资金流向统计：")
+                        lines.append(f"  吸筹天数: {fund_flow.get('buying_days', 0)} 天 ({fund_flow.get('buying_ratio', 0):.1%})")
+                        lines.append(f"  减仓天数: {fund_flow.get('selling_days', 0)} 天 ({fund_flow.get('selling_ratio', 0):.1%})")
+                        lines.append(f"  【90天累计】机构: {fund_flow.get('total_institution', 0):>10.2f} 万元")
+                        lines.append(f"  【90天累计】散户: {fund_flow.get('total_retail', 0):>10.2f} 万元")
+                        lines.append(f"  整体趋势: {fund_flow.get('trend', 'N/A')}")
+                    
+                    # QMT技术分析每日明细
+                    lines.append("\n" + "=" * 80)
+                    lines.append("📊 第二部分：技术分析（QMT）")
+                    lines.append("=" * 80)
+                    
+                    qmt_data = historical_data.get('qmt', {})
+                    if qmt_data.get('kline_1d'):
+                        lines.append(f"\n数据范围: {qmt_data.get('date_range', 'N/A')}")
+                        lines.append(f"总天数: {len(qmt_data['kline_1d'])} 天")
+                        lines.append("\n📅 每日技术指标详情（最近30天）：\n")
+                        lines.append(f"{'日期':<12} {'开盘':>7} {'最高':>7} {'最低':>7} {'收盘':>7} {'成交量':>9} {'MA5':>7} {'MA10':>7} {'MA20':>7} {'BIAS5':>7} {'RSI':>6} {'MACD':>7}")
+                        lines.append("-" * 130)
+                        
+                        # 只显示最近30天（避免过长）
+                        recent_days = qmt_data['kline_1d'][-30:]
+                        for day in recent_days:
+                            lines.append(
+                                f"{day.get('date', 'N/A'):<12} "
+                                f"{day.get('open', 0):>7.2f} "
+                                f"{day.get('high', 0):>7.2f} "
+                                f"{day.get('low', 0):>7.2f} "
+                                f"{day.get('close', 0):>7.2f} "
+                                f"{day.get('volume', 0):>9.0f} "
+                                f"{day.get('MA5', 0):>7.2f} "
+                                f"{day.get('MA10', 0):>7.2f} "
+                                f"{day.get('MA20', 0):>7.2f} "
+                                f"{day.get('BIAS_5', 0):>7.2%} "
+                                f"{day.get('RSI', 0):>6.2f} "
+                                f"{day.get('MACD', 0):>7.3f}"
+                            )
+                        
+                        # 技术面总结
+                        last_day = qmt_data['kline_1d'][-1]
+                        lines.append("\n📊 技术面分析（最新）：")
+                        lines.append(f"  当前价格: {last_day.get('close', 0):.2f}")
+                        lines.append(f"  涨跌幅: {last_day.get('pct_change', 0):.2f}%")
+                        lines.append(f"  均线: MA5={last_day.get('MA5', 0):.2f} | MA10={last_day.get('MA10', 0):.2f} | MA20={last_day.get('MA20', 0):.2f}")
+                        lines.append(f"  乖离率: BIAS_5={last_day.get('BIAS_5', 0):.2%} | BIAS_10={last_day.get('BIAS_10', 0):.2%}")
+                        lines.append(f"  RSI: {last_day.get('RSI', 0):.2f}")
+                        lines.append(f"  MACD: {last_day.get('MACD', 0):.3f}")
+                        lines.append(f"  布林带: 上轨={last_day.get('BOLL_UB', 0):.2f} | 中轨={last_day.get('BOLL_MB', 0):.2f} | 下轨={last_day.get('BOLL_LB', 0):.2f}")
+                        lines.append(f"  ATR: {last_day.get('ATR', 0):.2f}")
+                    
+                    # DDE分析
+                    if qmt_data.get('tick'):
+                        tick = qmt_data['tick']
+                        lines.append("\n📊 第三部分：DDE 大单分析")
+                        lines.append("=" * 80)
+                        lines.append(f"  买盘压力: {tick.get('bid_pressure', 0):.2%}")
+                        lines.append(f"  卖盘压力: {tick.get('ask_pressure', 0):.2%}")
+                        lines.append(f"  买价: {tick.get('bid_price', 0):.2f}")
+                        lines.append(f"  卖价: {tick.get('ask_price', 0):.2f}")
+                        lines.append(f"  价差: {tick.get('spread', 0):.2f}")
+                        lines.append(f"  买盘总量: {tick.get('bid_volume', 0):.0f}手")
+                        lines.append(f"  卖盘总量: {tick.get('ask_volume', 0):.0f}手")
+                    
+                    # 诱多陷阱检测
+                    trap_detection = historical_data.get('trap_detection', {})
+                    if trap_detection:
+                        lines.append("\n📊 第四部分：诱多陷阱检测")
+                        lines.append("=" * 80)
+                        lines.append(f"  综合风险评分: {trap_detection.get('comprehensive_risk_score', 0):.2f}")
+                        lines.append(f"  风险等级: {trap_detection.get('risk_level', 'N/A')}")
+                        lines.append(f"  建议: {trap_detection.get('advice', 'N/A')}")
+            
+            # 今日总结（收盘后模式）
+            if result.get('mode') == 'after_hours':
+                today = result.get('today_summary', {})
+                tomorrow = result.get('tomorrow_strategy', {})
+                
+                lines.append("\n" + "=" * 80)
+                lines.append("🌆 今日总结:")
+                lines.append("=" * 80)
+                lines.append(f"  收盘价: {today.get('close', 0):.2f}")
+                lines.append(f"  涨跌幅: {today.get('pct_change', 0):.2f}%")
+                lines.append(f"  最高: {today.get('high', 0):.2f}")
+                lines.append(f"  最低: {today.get('low', 0):.2f}")
+                
+                lines.append("\n🔮 明日策略:")
+                lines.append(f"  开盘动作: {tomorrow.get('open_action', 'N/A')}")
+                lines.append(f"  目标仓位: {tomorrow.get('target_position', 0):.0%}")
+                if tomorrow.get('notes'):
+                    for note in tomorrow['notes']:
+                        lines.append(f"  - {note}")
+            
+            # 下周计划（周末模式）
+            elif result.get('mode') == 'weekend':
+                plan = result.get('next_week_plan', {})
+                
+                lines.append("\n" + "=" * 80)
+                lines.append("📅 下周交易计划")
+                lines.append("=" * 80)
+                lines.append(f"  策略: {plan.get('week_strategy', 'N/A')}")
+                
+                if plan.get('entry_timing'):
+                    lines.append("  进场时机:")
+                    for timing in plan['entry_timing']:
+                        lines.append(f"    - {timing}")
+                
+                if plan.get('exit_timing'):
+                    lines.append("  离场时机:")
+                    for timing in plan['exit_timing']:
+                        lines.append(f"    - {timing}")
+                
+                if plan.get('notes'):
+                    lines.append("  备注:")
+                    for note in plan['notes']:
+                        lines.append(f"    - {note}")
+        
         # 实时分析
-        if result.get('mode') == 'realtime':
+        elif result.get('mode') == 'realtime':
             snapshot = result.get('realtime_snapshot', {})
             decision = result.get('decision', {})
             
@@ -945,46 +1100,6 @@ class UnifiedStockAnalyzer:
             lines.append(f"  建议: {afternoon.get('action', 'N/A')}")
             lines.append(f"  置信度: {afternoon.get('confidence', 0):.0%}")
             lines.append(f"  理由: {afternoon.get('reason', 'N/A')}")
-        
-        # 收盘后分析
-        elif result.get('mode') == 'after_hours':
-            today = result.get('today_summary', {})
-            tomorrow = result.get('tomorrow_strategy', {})
-            
-            lines.append("\n🌆 今日总结:")
-            lines.append(f"  收盘价: {today.get('close', 0):.2f}")
-            lines.append(f"  涨跌幅: {today.get('pct_change', 0):.2f}%")
-            lines.append(f"  最高: {today.get('high', 0):.2f}")
-            lines.append(f"  最低: {today.get('low', 0):.2f}")
-            
-            lines.append("\n🔮 明日策略:")
-            lines.append(f"  开盘动作: {tomorrow.get('open_action', 'N/A')}")
-            lines.append(f"  目标仓位: {tomorrow.get('target_position', 0):.0%}")
-            if tomorrow.get('notes'):
-                for note in tomorrow['notes']:
-                    lines.append(f"  - {note}")
-        
-        # 周末分析
-        elif result.get('mode') == 'weekend':
-            plan = result.get('next_week_plan', {})
-            
-            lines.append("\n📅 下周计划:")
-            lines.append(f"  策略: {plan.get('week_strategy', 'N/A')}")
-            
-            if plan.get('entry_timing'):
-                lines.append("  进场时机:")
-                for timing in plan['entry_timing']:
-                    lines.append(f"    - {timing}")
-            
-            if plan.get('exit_timing'):
-                lines.append("  离场时机:")
-                for timing in plan['exit_timing']:
-                    lines.append(f"    - {timing}")
-            
-            if plan.get('notes'):
-                lines.append("  备注:")
-                for note in plan['notes']:
-                    lines.append(f"    - {note}")
         
         lines.append("\n" + "=" * 80)
         lines.append("风险提示: 本分析仅供参考，不构成投资建议")
