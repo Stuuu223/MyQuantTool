@@ -5,6 +5,6 @@ echo    一键式股票分析工具
 echo ========================================
 echo.
 
-python %~dp0quick_analyze.py %*
+%~dp0venv_qmt\Scripts\python.exe %~dp0quick_analyze.py %*
 
 pause
