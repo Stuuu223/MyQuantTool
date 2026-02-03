@@ -42,7 +42,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 from logic.intraday_monitor import IntraDayMonitor
 from tools.intraday_decision import IntraDayDecisionTool
-from tools.enhanced_stock_analyzer import EnhancedStockAnalyzer
+from logic.enhanced_stock_analyzer import EnhancedStockAnalyzer
 
 
 class UnifiedStockAnalyzer:
@@ -120,23 +120,22 @@ class UnifiedStockAnalyzer:
         entry_price: float | None
     ) -> Dict[str, Any]:
         """
-        实时分析（开盘中）- 三层数据融合
+        实时分析（开盘中）
         
         策略:
-        1. Layer 1: 获取实时快照（QMT/AkShare）
-        2. Layer 2: 获取今日分时走势（分钟K线）
-        3. Layer 3: 加载历史分析（90天数据）
-        4. 综合三层数据生成智能决策
-        5. 输出三层数据融合报告
+        1. 获取实时快照（QMT/AkShare）
+        2. 加载昨日历史分析
+        3. 生成交易决策
+        4. 输出盘中报告
         """
         print(f"\n{'='*60}")
-        print(f"⏰ 盘中实时分析（三层数据融合） - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"⏰ 盘中实时分析 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"{'='*60}\n")
         
         # 查找昨日分析文件
         yesterday_file = self._find_latest_analysis(stock_code)
         
-        # 生成基础决策（获取 Layer 1 数据）
+        # 生成决策
         decision = self.decision_tool.make_decision(
             stock_code=stock_code,
             yesterday_file=yesterday_file,
@@ -151,39 +150,8 @@ class UnifiedStockAnalyzer:
                 'mode': 'realtime'
             }
         
-        # Layer 1: 实时快照
+        # 补充实时数据
         today_data = decision.get('data', {}).get('today', {})
-        realtime_snapshot = {
-            'data_source': today_data.get('data_source', 'UNKNOWN'),
-            'data_freshness': today_data.get('data_freshness', 'UNKNOWN'),
-            'price': today_data.get('price', 0),
-            'pct_change': today_data.get('pct_change', 0),
-            'bid_ask_pressure': today_data.get('bid_ask_pressure', 0),
-            'signal': today_data.get('signal', '')
-        }
-        
-        # Layer 2: 今日分时走势
-        intraday_trend = self._get_intraday_trend(stock_code, minutes_count=120)
-        if intraday_trend['success']:
-            intraday_trend['pattern'] = self._analyze_intraday_pattern(intraday_trend['trend_data'])
-        
-        # Layer 3: 历史分析
-        historical_analysis = {}
-        if yesterday_file and os.path.exists(yesterday_file):
-            try:
-                with open(yesterday_file, 'r', encoding='utf-8') as f:
-                    historical_analysis = json.load(f)
-            except:
-                pass
-        
-        # 综合三层数据生成智能决策
-        integrated_decision = self._make_integrated_decision(
-            realtime_snapshot=realtime_snapshot,
-            intraday_trend=intraday_trend,
-            historical_analysis=historical_analysis,
-            position=position,
-            entry_price=entry_price
-        )
         
         result = {
             'success': True,
@@ -191,24 +159,29 @@ class UnifiedStockAnalyzer:
             'phase': 'TRADING',
             'stock_code': stock_code,
             'analysis_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'layer1_realtime': realtime_snapshot,
-            'layer2_intraday': intraday_trend,
-            'layer3_historical': historical_analysis,
-            'integrated_decision': integrated_decision,
+            'realtime_snapshot': {
+                'data_source': today_data.get('data_source', 'UNKNOWN'),
+                'data_freshness': today_data.get('data_freshness', 'UNKNOWN'),
+                'price': today_data.get('price', 0),
+                'pct_change': today_data.get('pct_change', 0),
+                'bid_ask_pressure': today_data.get('bid_ask_pressure', 0),
+                'signal': today_data.get('signal', '')
+            },
+            'decision': {
+                'action': decision['decision'],
+                'confidence': decision['confidence'],
+                'reason': decision['reason'],
+                'operation': decision.get('action', {})
+            },
+            'risk_assessment': decision.get('risk_assessment', {}),
             'position_info': {
                 'current_position': position,
                 'entry_price': entry_price
             }
         }
         
-        # 打印三层数据融合报告
-        self._print_integrated_report(
-            stock_code=stock_code,
-            realtime_snapshot=realtime_snapshot,
-            intraday_trend=intraday_trend,
-            historical_analysis=historical_analysis,
-            decision=integrated_decision
-        )
+        # 打印决策报告
+        self.decision_tool.print_decision_report(decision)
         
         return result
     
@@ -301,126 +274,40 @@ class UnifiedStockAnalyzer:
         # 获取今日收盘数据
         snapshot = self.monitor.get_intraday_snapshot(stock_code)
         
-        # 🔍 DEBUG: 检查snapshot是否成功
-        print(f"\n🔍 DEBUG: Snapshot 结果")
-        print(f"   success: {snapshot.get('success')}")
-        print(f"   error: {snapshot.get('error')}")
-        print(f"   data_source: {snapshot.get('data_source')}")
-        print(f"   price: {snapshot.get('price')}")
-        print(f"   pct_change: {snapshot.get('pct_change')}")
-        print()
-        
-        if not snapshot['success']:
-            print(f"⚠️ 警告: 快照获取失败，尝试从历史数据补充")
-            
-            # 🔍 尝试从本地历史文件中提取最新数据
-            yesterday_file = self._find_latest_analysis(stock_code)
-            if yesterday_file and os.path.exists(yesterday_file):
-                print(f"📁 找到历史文件: {yesterday_file}")
-                try:
-                    with open(yesterday_file, 'r', encoding='utf-8') as f:
-                        historical_data = json.load(f)
-                    
-                    # 从历史数据中提取最新价格信息
-                    if 'today_summary' in historical_data:
-                        summary = historical_data['today_summary']
-                        today_data = {
-                            'price': summary.get('close', 0),
-                            'pct_change': summary.get('pct_change', 0),
-                            'high': summary.get('high', 0),
-                            'low': summary.get('low', 0),
-                            'data_source': 'HISTORICAL_CACHE',
-                            'data_freshness': 'STALE'
-                        }
-                    else:
-                        # 尝试从实时分析文件中获取价格数据
-                        # 查找最近的analysis.json文件
-                        analysis_dir = f'data/stock_analysis/{stock_code}'
-                        if os.path.exists(analysis_dir):
-                            import glob
-                            analysis_files = glob.glob(os.path.join(analysis_dir, '*_analysis.json'))
-                            if analysis_files:
-                                # 按时间排序，取最新的
-                                analysis_files.sort(reverse=True)
-                                latest_analysis_file = analysis_files[0]
-                                print(f"📁 找到实时分析文件: {os.path.basename(latest_analysis_file)}")
-                                try:
-                                    with open(latest_analysis_file, 'r', encoding='utf-8') as f:
-                                        analysis_data = json.load(f)
-                                    
-                                    # 从实时分析中提取价格
-                                    latest_price = 0
-                                    if 'layer1_realtime' in analysis_data:
-                                        latest_price = analysis_data['layer1_realtime'].get('price', 0)
-                                    elif 'today_summary' in analysis_data:
-                                        latest_price = analysis_data['today_summary'].get('close', 0)
-                                    
-                                    today_data = {
-                                        'price': latest_price,
-                                        'pct_change': 0,
-                                        'high': 0,
-                                        'low': 0,
-                                        'data_source': 'HISTORICAL_CACHE',
-                                        'data_freshness': 'STALE'
-                                    }
-                                    print(f"✅ 从实时分析文件提取数据:")
-                                    print(f"   最新价格: {latest_price}")
-                                except Exception as e:
-                                    print(f"❌ 读取实时分析文件失败: {e}")
-                                    today_data = snapshot
-                            else:
-                                today_data = snapshot
-                        else:
-                            today_data = snapshot
-                except Exception as e:
-                    print(f"❌ 读取历史文件失败: {e}")
-                    today_data = snapshot
-            else:
-                print(f"⚠️ 未找到历史文件")
-                today_data = snapshot
-        else:
-            today_data = snapshot
-        
         # 生成90天历史分析
         print("正在生成90天历史分析（增强版）...")
-        historical_report = self.historical_analyzer.comprehensive_analysis(stock_code, days=90, output_all_data=True)
+        historical_result = self.historical_analyzer.analyze_stock(stock_code, days=90)
         
-        # comprehensive_analysis返回字符串，我们创建结果字典
+        if not historical_result['success']:
+            return {
+                'success': False,
+                'error': historical_result['message'],
+                'mode': 'after_hours'
+            }
+        
+        # 保存历史分析
+        output_file = historical_result['output_file']
+        
         result = {
             'success': True,
             'mode': 'after_hours',
             'phase': 'AFTER_HOURS',
             'stock_code': stock_code,
             'analysis_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'historical_report': historical_report,
             'today_summary': {
-                'data_freshness': today_data.get('data_freshness', 'STALE'),
-                'close': today_data.get('price', 0),
-                'pct_change': today_data.get('pct_change', 0),
-                'high': today_data.get('high', 0),
-                'low': today_data.get('low', 0),
-                'data_source': today_data.get('data_source', 'UNKNOWN')
+                'data_freshness': 'STALE',
+                'close': snapshot.get('price', 0) if snapshot['success'] else 0,
+                'pct_change': snapshot.get('pct_change', 0) if snapshot['success'] else 0,
+                'high': snapshot.get('high', 0) if snapshot['success'] else 0,
+                'low': snapshot.get('low', 0) if snapshot['success'] else 0
             },
-            'output_file': None  # 收盘后分析不保存单独的JSON文件
-        }
-        
-        # comprehensive_analysis返回字符串，我们创建结果字典
-        result = {
-            'success': True,
-            'mode': 'after_hours',
-            'phase': 'AFTER_HOURS',
-            'stock_code': stock_code,
-            'analysis_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'historical_report': historical_report,
-            'today_summary': {
-                'data_freshness': today_data.get('data_freshness', 'STALE'),
-                'close': today_data.get('price', 0),
-                'pct_change': today_data.get('pct_change', 0),
-                'high': today_data.get('high', 0),
-                'low': today_data.get('low', 0),
-                'data_source': today_data.get('data_source', 'UNKNOWN')
-            },
-            'output_file': None  # 收盘后分析不保存单独的JSON文件
+            'historical_analysis': historical_result['data'],
+            'tomorrow_strategy': self._generate_tomorrow_strategy(
+                historical_result['data'], 
+                position, 
+                entry_price
+            ),
+            'output_file': output_file
         }
         
         # 打印报告
@@ -444,7 +331,14 @@ class UnifiedStockAnalyzer:
         
         # 生成90天历史分析
         print("正在生成90天历史分析（增强版）...")
-        historical_report = self.historical_analyzer.comprehensive_analysis(stock_code, days=90, output_all_data=True)
+        historical_result = self.historical_analyzer.analyze_stock(stock_code, days=90)
+        
+        if not historical_result['success']:
+            return {
+                'success': False,
+                'error': historical_result['message'],
+                'mode': 'weekend'
+            }
         
         result = {
             'success': True,
@@ -452,8 +346,9 @@ class UnifiedStockAnalyzer:
             'phase': 'WEEKEND',
             'stock_code': stock_code,
             'analysis_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'historical_report': historical_report,
-            'output_file': None  # 周末分析不保存单独的JSON文件
+            'historical_analysis': historical_result['data'],
+            'next_week_plan': self._generate_weekly_plan(historical_result['data']),
+            'output_file': historical_result['output_file']
         }
         
         # 打印报告
@@ -472,350 +367,23 @@ class UnifiedStockAnalyzer:
         print(f"{'='*60}\n")
         
         # 生成90天历史分析
-        historical_report = self.historical_analyzer.comprehensive_analysis(stock_code, days=90, output_all_data=True)
+        historical_result = self.historical_analyzer.analyze_stock(stock_code, days=90)
+        
+        if not historical_result['success']:
+            return {
+                'success': False,
+                'error': historical_result['message'],
+                'mode': 'historical'
+            }
         
         return {
             'success': True,
             'mode': 'historical',
             'stock_code': stock_code,
             'analysis_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'historical_report': historical_report,
-            'output_file': None  # 历史分析不保存单独的JSON文件
+            'data': historical_result['data'],
+            'output_file': historical_result['output_file']
         }
-    
-    def _get_intraday_trend(self, stock_code: str, minutes_count: int = 120) -> Dict[str, Any]:
-        """
-        获取今日分时走势（三层数据融合 Layer 2）
-        
-        Args:
-            stock_code: 股票代码
-            minutes_count: 获取的分钟数（默认120分钟=2小时）
-        
-        Returns:
-            {
-                'success': bool,
-                'data_source': 'QMT' | 'AKSHARE',
-                'trend_data': [...],  # 分钟K线数据
-                'pattern': 'PUMP_AND_DUMP' | 'SUSTAINED_RISE' | 'NARROW_TRADING' | 'UNKNOWN',
-                'high_price': 0.0,
-                'low_price': 0.0,
-                'volatility': 0.0
-            }
-        """
-        result = {
-            'success': False,
-            'data_source': None,
-            'trend_data': [],
-            'pattern': 'UNKNOWN',
-            'high_price': 0.0,
-            'low_price': 0.0,
-            'volatility': 0.0
-        }
-        
-        try:
-            from datetime import timedelta
-            
-            # 策略1: 尝试使用 AkShare 分钟线
-            if self.monitor.akshare_available:
-                df = self.monitor.ak.stock_zh_a_hist_min_em(
-                    symbol=stock_code,
-                    period='1',  # 1分钟
-                    adjust='qfq',  # 前复权
-                    start_date=(datetime.now() - timedelta(minutes=minutes_count)).strftime('%Y-%m-%d %H:%M:%S'),
-                    end_date=datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                )
-                
-                if df is not None and not df.empty:
-                    result['success'] = True
-                    result['data_source'] = 'AKSHARE'
-                    
-                    # 转换为列表格式
-                    for idx, row in df.iterrows():
-                        result['trend_data'].append({
-                            'time': row['时间'],
-                            'open': float(row['开盘']),
-                            'high': float(row['high']),
-                            'low': float(row['low']),
-                            'close': float(row['收盘']),
-                            'volume': int(row['成交量'])
-                        })
-                    
-                    # 计算统计
-                    if result['trend_data']:
-                        result['high_price'] = max(d['high'] for d in result['trend_data'])
-                        result['low_price'] = min(d['low'] for d in result['trend_data'])
-                        result['volatility'] = (result['high_price'] - result['low_price']) / result['low_price'] * 100 if result['low_price'] > 0 else 0
-                    return result
-            
-        except Exception as e:
-            pass
-        
-        return result
-    
-    def _analyze_intraday_pattern(self, trend_data: list) -> str:
-        """
-        识别分时模式（三层数据融合 Layer 2）
-        
-        Args:
-            trend_data: 分钟K线数据列表
-        
-        Returns:
-            'PUMP_AND_DUMP' | 'SUSTAINED_RISE' | 'NARROW_TRADING' | 'UNKNOWN'
-        """
-        if not trend_data or len(trend_data) < 10:
-            return 'UNKNOWN'
-        
-        # 计算关键指标
-        prices = [d['close'] for d in trend_data]
-        volumes = [d['volume'] for d in trend_data]
-        
-        first_price = prices[0]
-        last_price = prices[-1]
-        max_price = max(prices)
-        min_price = min(prices)
-        avg_price = sum(prices) / len(prices)
-        
-        # 冲高回落判断
-        if max_price > avg_price * 1.02 and last_price < avg_price * 0.99:
-            return 'PUMP_AND_DUMP'
-        
-        # 持续拉升判断
-        if prices[-1] > prices[0] * 1.01 and prices[-1] > prices[-5] * 1.005:
-            return 'SUSTAINED_RISE'
-        
-        # 窄幅震荡判断
-        if max_price < avg_price * 1.01 and min_price > avg_price * 0.99:
-            return 'NARROW_TRADING'
-        
-        return 'UNKNOWN'
-    
-    def _make_integrated_decision(
-        self,
-        realtime_snapshot: Dict,
-        intraday_trend: Dict,
-        historical_analysis: Dict,
-        position: float,
-        entry_price: float | None
-    ) -> Dict[str, Any]:
-        """
-        综合三层数据的智能决策引擎（三层数据融合 Layer 3）
-        
-        Args:
-            realtime_snapshot: Layer 1 - 实时快照
-            intraday_trend: Layer 2 - 今日分时走势
-            historical_analysis: Layer 3 - 90天历史分析
-            position: 当前持仓
-            entry_price: 建仓价格
-        
-        Returns:
-            {
-                'decision': 'BUY' | 'SELL' | 'HOLD' | 'WAIT',
-                'confidence': 0.0,
-                'reason': '',
-                'action': {...}
-            }
-        """
-        decision = {
-            'decision': 'WAIT',
-            'confidence': 0.0,
-            'reason': '',
-            'action': {
-                'type': 'WAIT',
-                'target_position': position,
-                'stop_loss': None,
-                'stop_profit': None,
-                'urgency': 'LOW'
-            }
-        }
-        
-        # 提取关键指标
-        # Layer 1: 实时数据
-        bid_ask_pressure = realtime_snapshot.get('bid_ask_pressure', 0)
-        current_price = realtime_snapshot.get('price', 0)
-        pct_change = realtime_snapshot.get('pct_change', 0)
-        
-        # Layer 2: 分时模式
-        pattern = intraday_trend.get('pattern', 'UNKNOWN')
-        
-        # Layer 3: 历史数据
-        trap_risk = historical_analysis.get('trap_detection', {}).get('comprehensive_risk_score', 0.5)
-        capital_type = historical_analysis.get('capital_classification', {}).get('type', 'UNKNOWN')
-        flow_5d_trend = historical_analysis.get('fund_flow', {}).get('trend', 'UNKNOWN')
-        
-        # 止损/止盈检查
-        if entry_price and position > 0:
-            profit_pct = (current_price - entry_price) / entry_price * 100
-            if profit_pct <= -3.0:
-                decision['decision'] = 'SELL'
-                decision['confidence'] = 0.9
-                decision['reason'] = f'触发止损：亏损{profit_pct:.2f}%'
-                decision['action'] = {
-                    'type': 'SELL',
-                    'target_position': 0,
-                    'stop_loss': entry_price * 0.97,
-                    'stop_profit': None,
-                    'urgency': 'HIGH'
-                }
-                return decision
-            elif profit_pct >= 10.0:
-                decision['decision'] = 'SELL'
-                decision['confidence'] = 0.8
-                decision['reason'] = f'触发止盈：盈利{profit_pct:.2f}%'
-                decision['action'] = {
-                    'type': 'SELL',
-                    'target_position': 0,
-                    'stop_loss': entry_price * 0.97,
-                    'stop_profit': None,
-                    'urgency': 'MEDIUM'
-                }
-                return decision
-        
-        # 高风险 + 冲高回落 → 减仓止损
-        if trap_risk > 0.7 and pattern == 'PUMP_AND_DUMP':
-            decision['decision'] = 'SELL'
-            decision['confidence'] = 0.85
-            decision['reason'] = '高风险+冲高回落，建议减仓止损'
-            decision['action'] = {
-                'type': 'SELL',
-                'target_position': max(0, position - 0.5),
-                'stop_loss': entry_price * 0.97 if entry_price else None,
-                'stop_profit': None,
-                'urgency': 'HIGH'
-            }
-            return decision
-        
-        # 游资 + 持续下跌 → 清仓离场
-        if capital_type == 'HOT_MONEY' and pattern == 'SUSTAINED_FALL' and bid_ask_pressure < -0.5:
-            decision['decision'] = 'SELL'
-            decision['confidence'] = 0.8
-            decision['reason'] = '游资+持续下跌，建议清仓离场'
-            decision['action'] = {
-                'type': 'SELL',
-                'target_position': 0,
-                'stop_loss': entry_price * 0.97 if entry_price else None,
-                'stop_profit': None,
-                'urgency': 'HIGH'
-            }
-            return decision
-        
-        # 低风险 + 持续拉升 + 买盘强 → 适度加仓
-        if trap_risk < 0.3 and pattern == 'SUSTAINED_RISE' and bid_ask_pressure > 0.5:
-            decision['decision'] = 'BUY'
-            decision['confidence'] = 0.7
-            decision['reason'] = '低风险+持续拉升+买盘强，可适度加仓'
-            decision['action'] = {
-                'type': 'BUY',
-                'target_position': min(1.0, position + 0.2),
-                'stop_loss': entry_price * 0.97 if entry_price else None,
-                'stop_profit': entry_price * 1.1 if entry_price else None,
-                'urgency': 'MEDIUM'
-            }
-            return decision
-        
-        # 震荡横盘 → 观望
-        if pattern == 'NARROW_TRADING':
-            decision['decision'] = 'WAIT'
-            decision['confidence'] = 0.6
-            decision['reason'] = '震荡横盘，继续观望'
-            decision['action'] = {
-                'type': 'WAIT',
-                'target_position': position,
-                'stop_loss': entry_price * 0.97 if entry_price else None,
-                'stop_profit': entry_price * 1.1 if entry_price else None,
-                'urgency': 'LOW'
-            }
-            return decision
-        
-        # 默认：观望
-        decision['decision'] = 'WAIT'
-        decision['confidence'] = 0.5
-        decision['reason'] = '盘面不明确，继续观察'
-        
-        return decision
-    
-    def _print_integrated_report(
-        self,
-        stock_code: str,
-        realtime_snapshot: Dict,
-        intraday_trend: Dict,
-        historical_analysis: Dict,
-        decision: Dict
-    ):
-        """
-        打印三层数据融合报告
-        """
-        print("\n" + "="*80)
-        print(f"📊 三层数据融合分析报告 - {stock_code}")
-        print("="*80)
-        
-        # Layer 1: 实时快照
-        print("\n【Layer 1】实时快照")
-        print(f"  数据来源: {realtime_snapshot.get('data_source', 'N/A')}")
-        print(f"  数据新鲜度: {realtime_snapshot.get('data_freshness', 'N/A')}")
-        print(f"  当前价格: {realtime_snapshot.get('price', 0):.2f}")
-        print(f"  涨跌幅: {realtime_snapshot.get('pct_change', 0):.2f}%")
-        print(f"  买卖压力: {realtime_snapshot.get('bid_ask_pressure', 0):.2f}")
-        print(f"  信号: {realtime_snapshot.get('signal', 'N/A')}")
-        
-        # Layer 2: 分时走势
-        print("\n【Layer 2】今日分时走势")
-        if intraday_trend['success']:
-            print(f"  数据来源: {intraday_trend['data_source']}")
-            print(f"  模式: {self._translate_pattern(intraday_trend['pattern'])}")
-            print(f"  最高价: {intraday_trend['high_price']:.2f}")
-            print(f"  最低价: {intraday_trend['low_price']:.2f}")
-            print(f"  波动率: {intraday_trend['volatility']:.2f}%")
-            print(f"  K线数量: {len(intraday_trend['trend_data'])}根")
-        else:
-            print("  暂无分时数据")
-        
-        # Layer 3: 历史分析
-        print("\n【Layer 3】90天历史分析")
-        trap_risk = historical_analysis.get('trap_detection', {}).get('comprehensive_risk_score', 0.5)
-        capital_type = historical_analysis.get('capital_classification', {}).get('type', 'UNKNOWN')
-        total_institution = historical_analysis.get('fund_flow', {}).get('total_institution', 0)
-        
-        print(f"  诱多风险: {trap_risk:.2f}")
-        print(f"  资金性质: {self._translate_capital_type(capital_type)}")
-        print(f"  【90天累计】机构净流入: {total_institution:.2f}万元")
-        
-        # 综合决策
-        print("\n【智能决策】")
-        print(f"  决策: {decision['decision']}")
-        print(f"  置信度: {decision['confidence']:.0%}")
-        print(f"  理由: {decision['reason']}")
-        
-        if decision['action']:
-            print(f"\n  操作建议:")
-            action = decision['action']
-            print(f"    动作类型: {action.get('type', 'N/A')}")
-            print(f"    目标仓位: {action.get('target_position', 0):.0%}")
-            if action.get('stop_loss'):
-                print(f"    止损价: {action['stop_loss']:.2f}")
-            if action.get('stop_profit'):
-                print(f"    止盈价: {action['stop_profit']:.2f}")
-            print(f"    紧急程度: {action.get('urgency', 'N/A')}")
-        
-        print("\n" + "="*80 + "\n")
-    
-    def _translate_pattern(self, pattern: str) -> str:
-        """翻译模式名称"""
-        pattern_map = {
-            'PUMP_AND_DUMP': '冲高回落',
-            'SUSTAINED_RISE': '持续拉升',
-            'NARROW_TRADING': '窄幅震荡',
-            'UNKNOWN': '未知'
-        }
-        return pattern_map.get(pattern, pattern)
-    
-    def _translate_capital_type(self, capital_type: str) -> str:
-        """翻译资金性质"""
-        type_map = {
-            'HOT_MONEY': '短期游资',
-            'INSTITUTION': '机构资金',
-            'UNKNOWN': '未知'
-        }
-        return type_map.get(capital_type, capital_type)
     
     def _find_latest_analysis(self, stock_code: str) -> str | None:
         """查找最新的历史分析文件"""
