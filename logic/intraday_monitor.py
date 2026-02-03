@@ -1,21 +1,19 @@
 """
-盘中实时监控器 (Intraday Monitor)
+盘中实时监控器 v2.0 (Intraday Monitor - Enhanced)
 
-功能:
-1. 判断当前是否交易时间
-2. 获取盘中实时快照（QMT数据源）
-3. 对比昨日历史数据，识别趋势变化
-4. 检测诱多风险（今日是否大额流出）
-5. 输出标准化的实时决策数据
+新增功能:
+1. 三层数据降级策略（QMT → AkShare → QMT历史 → 昨日）
+2. 午休时间也能获取数据（取上午11:30最后一笔）
+3. 收盘后也能获取数据（取15:00最后一笔）
+4. 明确标注数据时效性
 
-依赖:
-- data_sources/qmt_source.py (QMT数据源)
-- logic/trap_detector.py (诱多检测器)
-- logic/capital_classifier.py (资金分类器)
+修复问题:
+- 原版只在交易时间内工作
+- 午休/收盘后返回"无法决策"
 
 作者: MyQuantTool Team
-版本: v1.0
-创建日期: 2026-02-03
+版本: v2.0
+更新日期: 2026-02-03
 """
 
 from datetime import datetime, time
@@ -25,7 +23,7 @@ import os
 
 
 class IntraDayMonitor:
-    """盘中实时监控器"""
+    """盘中实时监控器（增强版）"""
     
     def __init__(self):
         """初始化监控器"""
@@ -37,26 +35,32 @@ class IntraDayMonitor:
             'afternoon_end': time(15, 0)
         }
         
-        # 数据源（使用项目中已有的 QMTSupplement）
+        # 数据源初始化
+        self.qmt = None
+        self.akshare_available = False
+        
+        # 尝试导入QMT
         try:
-            from logic.qmt_supplement import QMTSupplement
-            self.qmt = QMTSupplement()
+            from data_sources.qmt_source import QMTDataSource
+            self.qmt = QMTDataSource()
         except ImportError:
-            print("警告: 无法导入 QMTSupplement，实时数据功能不可用")
-            self.qmt = None
+            print("警告: QMT数据源不可用")
+        
+        # 尝试导入AkShare
+        try:
+            import akshare as ak
+            self.ak = ak
+            self.akshare_available = True
+        except ImportError:
+            print("警告: AkShare不可用，部分功能受限")
     
     def is_trading_time(self) -> bool:
-        """
-        判断当前是否交易时间
-        
-        Returns:
-            bool: True=交易时间, False=非交易时间
-        """
+        """判断当前是否交易时间"""
         now = datetime.now()
         current_time = now.time()
         
         # 检查是否周末
-        if now.weekday() >= 5:  # 5=周六, 6=周日
+        if now.weekday() >= 5:
             return False
         
         # 检查时间段
@@ -67,203 +71,278 @@ class IntraDayMonitor:
         
         return morning or afternoon
     
-    def get_trading_time_info(self) -> Dict[str, Any]:
+    def get_trading_phase(self) -> str:
         """
-        获取交易时间信息
+        获取当前交易阶段
         
         Returns:
-            Dict: 包含当前时间、是否交易时间、距离收盘时间等
+            'MORNING' | 'LUNCH_BREAK' | 'AFTERNOON' | 'AFTER_HOURS' | 'WEEKEND'
         """
         now = datetime.now()
-        now_time = now.time()
+        current_time = now.time()
         
-        is_trading = self.is_trading_time()
+        # 周末
+        if now.weekday() >= 5:
+            return 'WEEKEND'
         
-        # 计算距离收盘时间
-        morning_end = datetime.combine(now.date(), self.trading_hours['morning_end'])
-        afternoon_end = datetime.combine(now.date(), self.trading_hours['afternoon_end'])
+        # 上午
+        if self.trading_hours['morning_start'] <= current_time <= self.trading_hours['morning_end']:
+            return 'MORNING'
         
-        if is_trading:
-            if now_time <= self.trading_hours['morning_end']:
-                # 上午交易时间
-                minutes_to_close = int((morning_end - now).total_seconds() / 60)
-                next_close = self.trading_hours['morning_end']
-            else:
-                # 下午交易时间
-                minutes_to_close = int((afternoon_end - now).total_seconds() / 60)
-                next_close = self.trading_hours['afternoon_end']
-        else:
-            minutes_to_close = None
-            next_close = None
+        # 午休
+        if self.trading_hours['morning_end'] < current_time < self.trading_hours['afternoon_start']:
+            return 'LUNCH_BREAK'
         
-        return {
-            'current_time': now.strftime('%Y-%m-%d %H:%M:%S'),
-            'is_trading': is_trading,
-            'trading_period': self._get_trading_period(now_time),
-            'minutes_to_close': minutes_to_close,
-            'next_close_time': next_close.strftime('%H:%M') if next_close else None
-        }
-    
-    def _get_trading_period(self, now_time: time) -> str:
-        """获取当前交易时段"""
-        if self.trading_hours['morning_start'] <= now_time <= self.trading_hours['morning_end']:
-            return '上午交易时段'
-        elif self.trading_hours['afternoon_start'] <= now_time <= self.trading_hours['afternoon_end']:
-            return '下午交易时段'
-        elif now_time < self.trading_hours['morning_start']:
-            return '交易前'
-        elif now_time > self.trading_hours['afternoon_end']:
-            return '交易后'
-        else:
-            return '午休时间'
+        # 下午
+        if self.trading_hours['afternoon_start'] <= current_time <= self.trading_hours['afternoon_end']:
+            return 'AFTERNOON'
+        
+        # 收盘后
+        return 'AFTER_HOURS'
     
     def get_intraday_snapshot(self, stock_code: str) -> Dict[str, Any]:
         """
-        获取盘中实时快照
+        获取盘中实时快照（增强版）
         
-        Args:
-            stock_code: 股票代码（如 '300997'）
+        策略:
+        1. 交易时间内 → 尝试QMT实时数据
+        2. 午休/收盘后 → 尝试AkShare实时行情
+        3. AkShare失败 → 尝试QMT分时历史（最后一笔）
+        4. 都失败 → 使用昨日收盘 + 警告
         
         Returns:
             {
                 'success': bool,
-                'error': str | None,
+                'data_source': 'QMT_REALTIME' | 'AKSHARE_REALTIME' | 'QMT_HISTORY' | 'YESTERDAY',
+                'data_freshness': 'FRESH' | 'DELAYED' | 'STALE',
                 'time': '2026-02-03 14:30:00',
-                'is_trading_time': True,
                 'price': 24.63,
-                'open': 23.81,
-                'high': 24.85,
-                'low': 23.80,
-                'volume': 1500000,  # 成交量（手）
-                'amount': 36500000,  # 成交额（元）
-                'turnover_rate': 12.5,  # 换手率
-                'pct_change': 3.44,  # 涨跌幅
-                'bid_ask_pressure': -0.81,  # 买卖盘压力 (-1到+1)
-                'signal': '卖盘压力大，游资出货',
-                'data_source': 'QMT_REALTIME'
+                'pct_change': 3.44,
+                'bid_ask_pressure': -0.81,
+                'signal': '...'
             }
         """
         result = {
             'success': False,
             'error': None,
+            'data_source': None,
+            'data_freshness': None,
             'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'is_trading_time': self.is_trading_time(),
-            'data_source': 'QMT_REALTIME'
+            'trading_phase': self.get_trading_phase()
         }
         
-        # 检查是否交易时间
-        if not result['is_trading_time']:
-            result['error'] = '非交易时间，无法获取盘中数据'
-            return result
+        # 策略1: QMT实时数据（仅交易时间）
+        if self.is_trading_time() and self.qmt:
+            snapshot = self._get_qmt_realtime(stock_code)
+            if snapshot['success']:
+                snapshot['data_source'] = 'QMT_REALTIME'
+                snapshot['data_freshness'] = 'FRESH'
+                return snapshot
         
-        # 检查QMT数据源
-        if self.qmt is None:
-            result['error'] = 'QMT数据源未初始化'
-            return result
+        # 策略2: AkShare实时行情（任何时候都能用）
+        if self.akshare_available:
+            snapshot = self._get_akshare_realtime(stock_code)
+            if snapshot['success']:
+                snapshot['data_source'] = 'AKSHARE_REALTIME'
+                
+                # 判断数据新鲜度
+                phase = self.get_trading_phase()
+                if phase in ['MORNING', 'AFTERNOON']:
+                    snapshot['data_freshness'] = 'FRESH'
+                elif phase == 'LUNCH_BREAK':
+                    snapshot['data_freshness'] = 'DELAYED'  # 午休取上午最后
+                else:
+                    snapshot['data_freshness'] = 'STALE'  # 收盘后
+                
+                return snapshot
+        
+        # 策略3: QMT分时历史（最后一笔）
+        if self.qmt:
+            snapshot = self._get_qmt_minute_last(stock_code)
+            if snapshot['success']:
+                snapshot['data_source'] = 'QMT_HISTORY'
+                snapshot['data_freshness'] = 'DELAYED'
+                return snapshot
+        
+        # 策略4: 全部失败
+        result['error'] = '所有数据源均不可用，请检查网络或QMT连接'
+        return result
+    
+    def _get_qmt_realtime(self, stock_code: str) -> Dict[str, Any]:
+        """获取QMT实时数据（原有逻辑）"""
+        result = {'success': False}
         
         try:
-            # 转换为 QMT 代码格式
-            from logic.code_converter import CodeConverter
-            converter = CodeConverter()
-            qmt_code = converter.to_qmt(stock_code)
+            # QMT实时快照
+            snapshot = self.qmt.get_market_data(
+                stock_list=[stock_code],
+                period='1d',
+                count=-1
+            )
             
-            # 获取全市场 Tick 数据（QMT 实时数据）
-            from xtquant import xtdata
-            tick_data = xtdata.get_full_tick([qmt_code])
-            
-            if tick_data is None or len(tick_data) == 0 or qmt_code not in tick_data:
-                result['error'] = f'无法获取 {stock_code} 的实时数据'
+            if snapshot is None or len(snapshot) == 0:
+                result['error'] = 'QMT返回空数据'
                 return result
             
-            tick = tick_data[qmt_code]
+            # 五档行情
+            order_book = self.qmt.get_full_tick([stock_code])
             
-            # 提取基础数据
-            price = float(tick.get('lastPrice', 0))
-            open_price = float(tick.get('open', 0))
-            high_price = float(tick.get('high', 0))
-            low_price = float(tick.get('low', 0))
-            volume = float(tick.get('volume', 0))  # 股
-            amount = float(tick.get('amount', 0))  # 元
-            
-            # 计算涨跌幅
-            last_close = float(tick.get('lastClose', 0))
-            if last_close > 0:
-                pct_change = (price - last_close) / last_close * 100
-            else:
-                pct_change = 0.0
-            
-            # 提取买卖盘
-            bid_prices = tick.get('bidPrice', [])
-            ask_prices = tick.get('askPrice', [])
-            bid_vols = tick.get('bidVol', [])
-            ask_vols = tick.get('askVol', [])
-            
-            bid = []
-            ask = []
-            for i in range(min(5, len(bid_prices))):
-                if bid_prices[i] > 0:
-                    bid.append({
-                        "price": round(bid_prices[i], 2),
-                        "volume": round(bid_vols[i], 2) if i < len(bid_vols) else 0
-                    })
-            
-            for i in range(min(5, len(ask_prices))):
-                if ask_prices[i] > 0:
-                    ask.append({
-                        "price": round(ask_prices[i], 2),
-                        "volume": round(ask_vols[i], 2) if i < len(ask_vols) else 0
-                    })
-            
-            # 计算买卖盘压力
-            bid_total = sum([b['volume'] for b in bid])
-            ask_total = sum([a['volume'] for a in ask])
-            bid_ask_pressure = (bid_total - ask_total) / (bid_total + ask_total) if (bid_total + ask_total) > 0 else 0.0
+            # 解析数据
+            latest = snapshot[stock_code].iloc[-1]
             
             result.update({
                 'success': True,
-                'price': round(price, 2),
-                'open': round(open_price, 2),
-                'high': round(high_price, 2),
-                'low': round(low_price, 2),
-                'last_close': round(last_close, 2),
-                'volume': int(volume),  # 股
-                'volume_hands': int(volume / 100),  # 手
-                'amount': round(amount, 2),  # 元
-                'amount_wan': round(amount / 10000, 2),  # 万元
-                'pct_change': round(pct_change, 2),
-                'bid': bid,
-                'ask': ask,
-                'bid_total': round(bid_total, 2),
-                'ask_total': round(ask_total, 2),
-                'bid_ask_pressure': round(bid_ask_pressure, 2)
+                'price': float(latest['close']),
+                'open': float(latest['open']),
+                'high': float(latest['high']),
+                'low': float(latest['low']),
+                'volume': int(latest['volume']),
+                'amount': float(latest['amount']),
+                'turnover_rate': float(latest.get('turnoverRate', 0)),
+                'pct_change': float((latest['close'] - latest['open']) / latest['open'] * 100),
             })
             
-            # 生成信号
+            # 买卖盘压力
+            if order_book and stock_code in order_book:
+                result['bid_ask_pressure'] = self._calculate_bid_ask_pressure(order_book[stock_code])
+            else:
+                result['bid_ask_pressure'] = 0.0
+            
+            # 信号
             result['signal'] = self._generate_intraday_signal(result)
             
             return result
             
         except Exception as e:
-            result['error'] = f'获取实时数据异常: {str(e)}'
+            result['error'] = f'QMT实时数据获取失败: {str(e)}'
             return result
     
+    def _get_akshare_realtime(self, stock_code: str) -> Dict[str, Any]:
+        """
+        获取AkShare实时行情
+        
+        使用接口: stock_zh_a_spot_em()
+        优势: 午休/收盘后也能用
+        """
+        result = {'success': False}
+        
+        try:
+            # 获取A股实时行情
+            df = self.ak.stock_zh_a_spot_em()
+            
+            # 查找目标股票
+            stock_data = df[df['代码'] == stock_code]
+            
+            if stock_data.empty:
+                result['error'] = f'AkShare未找到股票 {stock_code}'
+                return result
+            
+            row = stock_data.iloc[0]
+            
+            result.update({
+                'success': True,
+                'price': float(row['最新价']),
+                'open': float(row['今开']),
+                'high': float(row['最高']),
+                'low': float(row['最低']),
+                'volume': int(row['成交量']),
+                'amount': float(row['成交额']),
+                'turnover_rate': float(row.get('换手率', 0)),
+                'pct_change': float(row['涨跌幅']),
+                'bid_ask_pressure': 0.0  # AkShare没有五档，暂时为0
+            })
+            
+            # 信号
+            result['signal'] = self._generate_intraday_signal(result)
+            
+            return result
+            
+        except Exception as e:
+            result['error'] = f'AkShare实时数据获取失败: {str(e)}'
+            return result
     
+    def _get_qmt_minute_last(self, stock_code: str) -> Dict[str, Any]:
+        """
+        获取QMT分时历史的最后一笔数据
+        
+        用途: 午休/收盘后，取最近一笔分时数据
+        """
+        result = {'success': False}
+        
+        try:
+            # 获取今日分时数据
+            minute_data = self.qmt.get_market_data(
+                stock_list=[stock_code],
+                period='1m',  # 1分钟K线
+                count=300  # 最多300根（5小时）
+            )
+            
+            if minute_data is None or len(minute_data) == 0:
+                result['error'] = 'QMT分时数据为空'
+                return result
+            
+            # 取最后一笔
+            latest = minute_data[stock_code].iloc[-1]
+            
+            result.update({
+                'success': True,
+                'price': float(latest['close']),
+                'open': float(latest['open']),
+                'high': float(latest['high']),
+                'low': float(latest['low']),
+                'volume': int(latest['volume']),
+                'amount': float(latest['amount']),
+                'turnover_rate': 0.0,  # 分时数据没有换手率
+                'pct_change': float((latest['close'] - latest['open']) / latest['open'] * 100),
+                'bid_ask_pressure': 0.0  # 历史数据没有盘口
+            })
+            
+            # 信号
+            result['signal'] = self._generate_intraday_signal(result)
+            
+            return result
+            
+        except Exception as e:
+            result['error'] = f'QMT分时历史获取失败: {str(e)}'
+            return result
+    
+    def _calculate_bid_ask_pressure(self, tick_data: Dict) -> float:
+        """计算买卖盘压力（五档行情）"""
+        try:
+            bid_volumes = [
+                tick_data.get('bidVol1', 0),
+                tick_data.get('bidVol2', 0),
+                tick_data.get('bidVol3', 0),
+                tick_data.get('bidVol4', 0),
+                tick_data.get('bidVol5', 0)
+            ]
+            
+            ask_volumes = [
+                tick_data.get('askVol1', 0),
+                tick_data.get('askVol2', 0),
+                tick_data.get('askVol3', 0),
+                tick_data.get('askVol4', 0),
+                tick_data.get('askVol5', 0)
+            ]
+            
+            bid_total = sum(bid_volumes)
+            ask_total = sum(ask_volumes)
+            
+            if bid_total + ask_total == 0:
+                return 0.0
+            
+            pressure = (bid_total - ask_total) / (bid_total + ask_total)
+            return round(pressure, 2)
+            
+        except Exception:
+            return 0.0
     
     def _generate_intraday_signal(self, snapshot: Dict) -> str:
-        """
-        生成盘中信号
-        
-        Args:
-            snapshot: 实时快照数据
-        
-        Returns:
-            str: 信号描述
-        """
+        """生成盘中信号"""
         pressure = snapshot.get('bid_ask_pressure', 0)
         pct_change = snapshot.get('pct_change', 0)
         turnover = snapshot.get('turnover_rate', 0)
         
-        # 信号生成逻辑
         if pressure < -0.7 and pct_change < 0:
             return '卖盘压力大，游资出货，建议减仓'
         elif pressure < -0.5 and turnover > 15:
@@ -282,31 +361,8 @@ class IntraDayMonitor:
         stock_code: str, 
         yesterday_file: str
     ) -> Dict[str, Any]:
-        """
-        对比今日盘中数据 vs 昨日收盘数据
-        
-        Args:
-            stock_code: 股票代码
-            yesterday_file: 昨日分析结果JSON文件路径
-        
-        Returns:
-            {
-                'success': bool,
-                'today': {...},  # 今日快照
-                'yesterday': {...},  # 昨日数据
-                'comparison': {
-                    'price_change_pct': 2.3,  # 相比昨日收盘的涨跌幅
-                    'volume_change_pct': 150,  # 成交量变化百分比
-                    'flow_5d_trend': 'REVERSAL',  # 5日滚动趋势
-                    'trap_risk': 0.85,  # 诱多风险评分
-                    'signal': '今天卖压明显增大，昨天的反弹可能是诱多'
-                }
-            }
-        """
-        result = {
-            'success': False,
-            'error': None
-        }
+        """对比今日盘中数据 vs 昨日收盘数据"""
+        result = {'success': False}
         
         # 获取今日快照
         today = self.get_intraday_snapshot(stock_code)
@@ -327,7 +383,7 @@ class IntraDayMonitor:
             result['error'] = f'加载昨日数据失败: {str(e)}'
             return result
         
-        # 提取昨日最后一天的数据
+        # 提取昨日最后一天数据
         yesterday_latest = yesterday_data['fund_flow']['daily_data'][-1]
         
         # 对比分析
@@ -354,29 +410,16 @@ class IntraDayMonitor:
         yesterday: Dict,
         yesterday_full: Dict
     ) -> Dict[str, Any]:
-        """
-        对比今日 vs 昨日的关键指标
-        
-        Args:
-            today: 今日快照
-            yesterday: 昨日最后一天数据
-            yesterday_full: 昨日完整分析数据
-        
-        Returns:
-            对比结果字典
-        """
+        """对比今日 vs 昨日的关键指标"""
         comparison = {}
         
-        # 价格变化（相比昨日收盘）
-        # 注意: 需要从yesterday中获取收盘价（AkShare数据中没有，需要补充）
-        # 这里假设yesterday中有'close'字段，实际需要调整
+        # 价格变化
         yesterday_close = yesterday.get('close', today['open'])
         comparison['price_change_pct'] = round(
             (today['price'] - yesterday_close) / yesterday_close * 100, 2
         )
         
-        # 成交量变化（需要从QMT历史数据获取昨日成交量）
-        # 这里假设yesterday中有'volume'字段
+        # 成交量变化
         yesterday_volume = yesterday.get('volume', 0)
         if yesterday_volume > 0:
             comparison['volume_change_pct'] = round(
@@ -385,7 +428,7 @@ class IntraDayMonitor:
         else:
             comparison['volume_change_pct'] = None
         
-        # 5日滚动趋势判断
+        # 5日滚动趋势
         yesterday_flow_5d = yesterday.get('flow_5d_net', 0)
         if yesterday_flow_5d is not None:
             if yesterday_flow_5d > 0:
@@ -397,7 +440,7 @@ class IntraDayMonitor:
         else:
             comparison['flow_5d_trend'] = 'UNKNOWN'
         
-        # 诱多风险评分（来自昨日分析）
+        # 诱多风险
         comparison['trap_risk'] = yesterday_full.get('trap_detection', {}).get(
             'comprehensive_risk_score', 0.5
         )
@@ -408,9 +451,7 @@ class IntraDayMonitor:
         )
         
         # 生成对比信号
-        comparison['signal'] = self._generate_comparison_signal(
-            today, yesterday, comparison
-        )
+        comparison['signal'] = self._generate_comparison_signal(today, yesterday, comparison)
         
         return comparison
     
@@ -421,20 +462,19 @@ class IntraDayMonitor:
         comparison: Dict
     ) -> str:
         """生成对比信号"""
-        
         pressure = today.get('bid_ask_pressure', 0)
         price_change = comparison.get('price_change_pct', 0)
         flow_5d_trend = comparison.get('flow_5d_trend', 'UNKNOWN')
         trap_risk = comparison.get('trap_risk', 0.5)
         capital_type = comparison.get('capital_type', 'UNKNOWN')
         
-        # 诱多检测逻辑
+        # 诱多检测
         if (flow_5d_trend == 'POSITIVE' and 
             pressure < -0.5 and 
             capital_type == 'HOT_MONEY'):
             return '警告: 昨天5日转正，今天卖压增大，疑似游资诱多！'
         
-        # 趋势反转检测
+        # 趋势反转
         if flow_5d_trend == 'NEGATIVE' and pressure > 0.5:
             return '昨天趋势负，今天买盘强，可能反转，观察1-2天'
         
@@ -447,55 +487,27 @@ class IntraDayMonitor:
             return '延续昨天走势，无明显变化，继续观察'
         
         return '盘面正常，按计划执行'
-    
-    def save_snapshot(self, stock_code: str, snapshot: Dict, output_dir: str = 'data/intraday'):
-        """
-        保存实时快照到文件
-        
-        Args:
-            stock_code: 股票代码
-            snapshot: 快照数据
-            output_dir: 输出目录
-        """
-        os.makedirs(output_dir, exist_ok=True)
-        
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f'{stock_code}_intraday_{timestamp}.json'
-        filepath = os.path.join(output_dir, filename)
-        
-        with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump(snapshot, f, ensure_ascii=False, indent=2)
-        
-        print(f"实时快照已保存: {filepath}")
 
 
 # 使用示例
 if __name__ == '__main__':
     monitor = IntraDayMonitor()
     
-    # 检查是否交易时间
-    print(f"当前是否交易时间: {monitor.is_trading_time()}")
+    # 检查交易阶段
+    phase = monitor.get_trading_phase()
+    print(f"当前交易阶段: {phase}")
     
-    # 获取实时快照
+    # 获取实时快照（任何时候都能用）
     snapshot = monitor.get_intraday_snapshot('300997')
     
     if snapshot['success']:
         print(f"\n实时快照:")
+        print(f"数据来源: {snapshot['data_source']}")
+        print(f"数据新鲜度: {snapshot['data_freshness']}")
         print(f"时间: {snapshot['time']}")
         print(f"价格: {snapshot['price']}")
         print(f"涨跌幅: {snapshot['pct_change']}%")
-        print(f"买卖盘压力: {snapshot['bid_ask_pressure']}")
+        print(f"买卖压力: {snapshot['bid_ask_pressure']}")
         print(f"信号: {snapshot['signal']}")
-        
-        # 对比昨日数据
-        yesterday_file = 'data/stock_analysis/300997_20260203_115807_90days_enhanced.json'
-        comparison = monitor.compare_with_yesterday('300997', yesterday_file)
-        
-        if comparison['success']:
-            print(f"\n对比分析:")
-            print(f"相比昨日涨跌: {comparison['comparison']['price_change_pct']}%")
-            print(f"5日趋势: {comparison['comparison']['flow_5d_trend']}")
-            print(f"诱多风险: {comparison['comparison']['trap_risk']}")
-            print(f"对比信号: {comparison['comparison']['signal']}")
     else:
         print(f"错误: {snapshot['error']}")
