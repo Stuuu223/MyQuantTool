@@ -228,6 +228,17 @@ class FullMarketScanner:
         hot_pool = candidates_l1[:hot_pool_size]
         logger.info(f"✅ 热门票池构建完成: TOP {hot_pool_size} (热门评分范围: {hot_pool[0]['hot_score']:.4f} - {hot_pool[-1]['hot_score']:.4f})")
         
+        # ===== 检查风险标签（仅对热门池）=====
+        logger.info(f"  检查风险标签...")
+        for candidate in hot_pool:
+            code = candidate['code']
+            risk_tag = self._check_short_term_risk(code)
+            candidate['risk_tag'] = risk_tag
+        
+        # 统计风险标签分布
+        extreme_risk_count = sum(1 for c in hot_pool if c.get('risk_tag') == '短期涨幅极端')
+        logger.info(f"  ✅ 风险标签检查完成: 正常 {len(hot_pool) - extreme_risk_count} 只, 极端风险 {extreme_risk_count} 只")
+        
         # 收集证据矩阵
         evidence_matrix = {
             'technical': {
@@ -675,6 +686,109 @@ class FullMarketScanner:
         logger.info(f"  ✅ 相对热门度计算完成")
         
         return candidates_sorted
+    
+    def _check_short_term_risk(self, code: str) -> Optional[str]:
+        """
+        检查短期涨幅风险（10 日涨幅）
+        
+        Args:
+            code: 股票代码（QMT格式）
+        
+        Returns:
+            None 或 '短期涨幅极端'
+        """
+        try:
+            # 获取最近 10 个交易日收盘价
+            kline = xtdata.get_market_data(
+                field_list=['close'],
+                stock_list=[code],
+                period='1d',
+                start_time='',
+                end_time='',
+                count=10,
+                dividend_type='none'
+            )
+            
+            if not kline or code not in kline or len(kline[code]) < 10:
+                return None
+            
+            # 提取收盘价数据
+            close_prices = kline[code]['close']
+            if len(close_prices) < 10:
+                return None
+            
+            # 计算 10 日累计涨幅
+            close_10_days_ago = close_prices[0]
+            close_today = close_prices[-1]
+            
+            if close_10_days_ago == 0:
+                return None
+            
+            r10 = (close_today - close_10_days_ago) / close_10_days_ago
+            
+            # 风险标签（两档）
+            if r10 >= 0.8:  # 10 日涨幅 ≥ 80%
+                return '短期涨幅极端'
+            else:
+                return None
+        
+        except Exception as e:
+            logger.warning(f"⚠️  检查短期涨幅风险失败 {code}: {e}")
+            return None
+    
+    def check_before_order(self, code: str, position_pct: float, max_system_confidence: float = 0.7, 
+                          max_single_position: float = 0.05, hot_pool_codes: List[str] = None) -> Tuple[bool, str]:
+        """
+        下单前的强制检查（硬刹车）
+        
+        Args:
+            code: 股票代码（QMT格式）
+            position_pct: 拟下单仓位（%）
+            max_system_confidence: 最大系统置信度阈值（默认 0.7）
+            max_single_position: 单票最大仓位（默认 5%）
+            hot_pool_codes: 热门票池代码列表
+        
+        Returns:
+            (是否允许下单, 拒绝原因)
+        """
+        # 转换为 6 位代码（如果需要）
+        code_6digit = CodeConverter.to_akshare(code) if '.' in code else code
+        
+        # 检查 1：系统置信度
+        try:
+            from logic.risk_manager import RiskManager
+            risk_manager = RiskManager()
+            
+            # 构建证据矩阵（简化版）
+            evidence_matrix = {
+                'technical': {'available': True, 'quality': 'GOOD'},
+                'fund_flow': {'available': False, 'quality': 'NONE'},  # 假设资金流不可用
+                'market_sentiment': {'available': True, 'quality': 'MEDIUM'}
+            }
+            
+            confidence_result = risk_manager.assess_confidence(evidence_matrix)
+            system_confidence = confidence_result.get('confidence', 0)
+            
+            if system_confidence < max_system_confidence:
+                return False, f"系统置信度过低（{system_confidence:.1%}，阈值 {max_system_confidence:.1%}），建议降低仓位"
+        except Exception as e:
+            logger.warning(f"⚠️  检查系统置信度失败: {e}")
+        
+        # 检查 2：单票仓位上限
+        if position_pct > max_single_position:
+            return False, f"单票仓位超限（拟开 {position_pct:.1%}，上限 {max_single_position:.1%}）"
+        
+        # 检查 3：极端风险标签
+        risk_tag = self._check_short_term_risk(code)
+        if risk_tag == '短期涨幅极端':
+            return False, f"短期涨幅极端（10 日涨幅 ≥ 80%），建议不参与"
+        
+        # 检查 4：是否在热门池
+        if hot_pool_codes and code not in hot_pool_codes and code_6digit not in hot_pool_codes:
+            return False, f"不在热门池内，建议只参与热门票池"
+        
+        # 所有检查通过
+        return True, "检查通过"
     
     def _level2_capital_analysis(self, candidates: List[str]) -> List[dict]:
         """
