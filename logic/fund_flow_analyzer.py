@@ -9,14 +9,32 @@ import pandas as pd
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 import time
+from logic.fund_flow_cache import get_fund_flow_cache
+from logic.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class FundFlowAnalyzer:
-    """资金流向分析器"""
+    """资金流向分析器（支持缓存）"""
 
-    def __init__(self):
+    def __init__(self, enable_cache: bool = True):
+        """
+        初始化资金流向分析器
+        
+        Args:
+            enable_cache: 是否启用缓存，默认 True
+        """
         self.base_url = "http://push2.eastmoney.com/api/qt/stock/fflow/kline/get"
-        self.cache = {}  # 简单缓存
+        self.cache = {}  # 简单缓存（内存缓存）
+        self.enable_cache = enable_cache
+        
+        if enable_cache:
+            self.db_cache = get_fund_flow_cache()
+            logger.info("✅ FundFlowAnalyzer 缓存已启用")
+        else:
+            self.db_cache = None
+            logger.info("⚠️  FundFlowAnalyzer 缓存未启用")
 
     def parse_stock_code(self, stock_code: str) -> str:
         """
@@ -43,9 +61,9 @@ class FundFlowAnalyzer:
             # 深交所
             return f"0.{code}"
 
-    def get_fund_flow(self, stock_code: str, days: int = 5) -> Dict:
+    def _get_fund_flow_from_eastmoney(self, stock_code: str, days: int = 5) -> Dict:
         """
-        获取资金流向数据
+        从东方财富 API 获取资金流向数据（私有方法）
 
         Args:
             stock_code: 股票代码
@@ -97,6 +115,67 @@ class FundFlowAnalyzer:
 
         except Exception as e:
             return {"error": str(e), "stock_code": stock_code}
+    
+    def get_fund_flow_cached(self, stock_code: str, days: int = 5) -> Dict:
+        """
+        获取资金流向数据（显式缓存版本）
+        
+        优先使用 SQLite 缓存，未命中则调用东方财富 API 并回写缓存。
+        
+        Args:
+            stock_code: 股票代码
+            days: 获取最近几天的数据
+            
+        Returns:
+            资金流向数据字典
+        """
+        # 确保是6位代码
+        stock_code_6 = stock_code.replace('.SZ', '').replace('.SH', '').replace('.sz', '').replace('.sh', '')
+        
+        # 1) 先查 SQLite 缓存
+        if self.enable_cache and self.db_cache:
+            today = datetime.now().strftime('%Y-%m-%d')
+            cached_data = self.db_cache.get(stock_code_6, today)
+            
+            if cached_data:
+                # 缓存命中，返回数据（转换为原始格式）
+                logger.debug(f"✅ 缓存命中: {stock_code_6}")
+                return {
+                    "stock_code": stock_code,
+                    "records": [cached_data],
+                    "latest": cached_data,
+                    "from_cache": True
+                }
+        
+        # 2) 调用东方财富 API
+        data = self._get_fund_flow_from_eastmoney(stock_code, days)
+        
+        # 3) 写回 SQLite 缓存
+        if self.enable_cache and self.db_cache and "error" not in data:
+            latest = data.get('latest')
+            if latest:
+                self.db_cache.save(stock_code_6, latest.get('date', ''), data)
+                logger.debug(f"✅ 缓存写入: {stock_code_6}")
+        
+        return data
+    
+    def get_fund_flow(self, stock_code: str, days: int = 5) -> Dict:
+        """
+        获取资金流向数据（自动使用缓存）
+        
+        这是默认方法，会自动使用缓存（如果启用）。
+        
+        Args:
+            stock_code: 股票代码
+            days: 获取最近几天的数据
+            
+        Returns:
+            资金流向数据字典
+        """
+        if self.enable_cache:
+            return self.get_fund_flow_cached(stock_code, days)
+        else:
+            return self._get_fund_flow_from_eastmoney(stock_code, days)
 
     def analyze_fund_flow(self, stock_code: str) -> Dict:
         """
