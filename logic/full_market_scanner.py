@@ -456,9 +456,10 @@ class FullMarketScanner:
             try:
                 tick_data = xtdata.get_full_tick(batch)
                 
-                # 类型检查：确保 tick_data 是字典
+                # 详细日志：检查返回值
+                logger.info(f"批次 {batch_num} 获取成功, tick_data 类型: {type(tick_data)}")
                 if not isinstance(tick_data, dict):
-                    logger.warning(f"⚠️  批次 {batch_num} 返回数据类型异常: {type(tick_data)}")
+                    logger.warning(f"⚠️  批次 {batch_num} 返回数据类型异常: {type(tick_data)}, 值: {str(tick_data)[:200]}")
                     continue
                 
                 # 本地过滤
@@ -467,7 +468,7 @@ class FullMarketScanner:
                     
                     # 类型检查：确保 tick 是字典
                     if not isinstance(tick, dict):
-                        logger.warning(f"⚠️  股票 {code} Tick 数据类型异常: {type(tick)}")
+                        logger.warning(f"⚠️  股票 {code} Tick 数据类型异常: {type(tick)}, 值: {str(tick)[:200]}")
                         continue
                     
                     if tick and self._check_level1_criteria(code, tick):
