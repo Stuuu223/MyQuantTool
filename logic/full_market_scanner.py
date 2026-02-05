@@ -73,7 +73,7 @@ class FullMarketScanner:
         self.trap_detector = TrapDetector()
         self.capital_classifier = CapitalClassifier()
         self.fund_flow = FundFlowAnalyzer()
-        self.limiter = RateLimiter(max_calls=18, period=60)  # AkShare 限速
+        self.limiter = RateLimiter(max_requests_per_minute=18, max_requests_per_hour=200, min_request_interval=3)  # AkShare 限速
         self.converter = CodeConverter()
         
         # 获取全市场股票列表
