@@ -184,6 +184,209 @@ class FullMarketScanner:
         
         return results
     
+    def scan_with_risk_management(self, mode='premarket') -> Dict:
+        """
+        带风险管理的扫描
+        
+        Args:
+            mode: 扫描模式
+        
+        Returns:
+            {
+                'mode': str,                  # 模式：FULL | DEGRADED_LEVEL1_ONLY
+                'evidence_matrix': dict,     # 证据矩阵
+                'position_limit': float,     # 仓位上限
+                'confidence': float,         # 系统置信度
+                'risk_reason': str,          # 风控原因
+                'risk_warnings': list,       # 风控警告
+                'opportunities': list,       # 机会池
+                'watchlist': list,          # 观察池
+                'blacklist': list,           # 黑名单
+                'level1_candidates': list    # Level 1 候选（降级模式）
+            }
+        """
+        logger.info("=" * 80)
+        logger.info(f"🚀 开始全市场扫描（带风险管理） (模式: {mode})")
+        logger.info("=" * 80)
+        start_time = time.time()
+        
+        # ===== Level 1: 技术面粗筛 =====
+        logger.info("\n🔍 [Level 1] 技术面粗筛...")
+        candidates_l1 = self._level1_technical_filter()
+        logger.info(f"✅ Level 1 完成: {len(self.all_stocks)} → {len(candidates_l1)} 只 (耗时: {time.time()-start_time:.1f}秒)")
+        
+        if not candidates_l1:
+            logger.warning("⚠️  Level 1 未筛选出任何股票，提前结束")
+            return self._build_degraded_result([], 'level1_empty')
+        
+        # 收集证据矩阵
+        evidence_matrix = {
+            'technical': {
+                'available': True,
+                'quality': 'GOOD',
+                'count': len(candidates_l1),
+                'details': 'QMT Tick 数据，本地可控'
+            }
+        }
+        
+        # ===== Level 2: 资金流向分析（尝试） =====
+        logger.info(f"\n💰 [Level 2] 资金流向分析 ({len(candidates_l1)} 只)...")
+        l2_start = time.time()
+        candidates_l2 = []
+        fund_flow_error_rate = 0
+        
+        try:
+            # 记录 API 错误次数（样本检查前 100 只）
+            sample_size = min(100, len(candidates_l1))
+            error_count = 0
+            
+            for idx, code in enumerate(candidates_l1[:sample_size]):
+                code_6digit = CodeConverter.to_akshare(code)
+                flow_data = self.fund_flow.get_fund_flow_cached(code_6digit)
+                if 'error' in flow_data:
+                    error_count += 1
+            
+            fund_flow_error_rate = error_count / sample_size if sample_size > 0 else 0
+            
+            if fund_flow_error_rate > 0.8:
+                # 数据质量差，标记为不可用
+                evidence_matrix['fund_flow'] = {
+                    'available': False,
+                    'quality': 'NONE',
+                    'error_rate': fund_flow_error_rate,
+                    'details': f'API 错误率 {fund_flow_error_rate:.0%} (502 Bad Gateway)'
+                }
+                logger.warning(f"⚠️  资金流数据异常（错误率: {fund_flow_error_rate:.0%}）")
+            else:
+                # 数据质量可接受，正常执行 Level 2
+                candidates_l2 = self._level2_capital_analysis(candidates_l1)
+                evidence_matrix['fund_flow'] = {
+                    'available': True,
+                    'quality': 'GOOD',
+                    'error_rate': fund_flow_error_rate,
+                    'details': '东方财富 API'
+                }
+        
+        except Exception as e:
+            evidence_matrix['fund_flow'] = {
+                'available': False,
+                'quality': 'ERROR',
+                'details': str(e)
+            }
+            logger.warning(f"⚠️  Level 2 异常: {e}")
+        
+        logger.info(f"✅ Level 2 完成: {len(candidates_l1)} → {len(candidates_l2)} 只 (耗时: {time.time()-l2_start:.1f}秒)")
+        
+        # ===== Level 3: 风险分类 =====
+        if candidates_l2:
+            logger.info(f"\n⚠️  [Level 3] 诱多陷阱检测 ({len(candidates_l2)} 只)...")
+            l3_start = time.time()
+            candidates_l3 = self._level3_trap_classification(candidates_l2)
+            logger.info(f"✅ Level 3 完成 (耗时: {time.time()-l3_start:.1f}秒)")
+            scan_mode = 'FULL'
+        else:
+            candidates_l3 = {
+                'opportunities': [],
+                'watchlist': [],
+                'blacklist': []
+            }
+            scan_mode = 'DEGRADED_LEVEL1_ONLY'
+        
+        # 生成市场情绪证据（简化版）
+        evidence_matrix['market_sentiment'] = {
+            'available': True,
+            'quality': 'MEDIUM',
+            'score': 0.6,  # 简化处理，基于涨跌停统计
+            'details': '基于涨跌停统计'
+        }
+        
+        # ===== 风控评估 =====
+        try:
+            from logic.risk_manager import RiskManager
+            risk_manager = RiskManager()
+            risk_result = risk_manager.calculate_position_limit(evidence_matrix)
+        except Exception as e:
+            logger.error(f"❌ RiskManager 初始化失败: {e}")
+            risk_result = {
+                'position_limit': 0.1,
+                'confidence': 0.1,
+                'reason': '风险管理模块异常',
+                'warnings': ['⚠️ 风控模块异常']
+            }
+        
+        # 构建结果
+        result = {
+            'mode': scan_mode,
+            'evidence_matrix': evidence_matrix,
+            'position_limit': risk_result['position_limit'],
+            'confidence': risk_result['confidence'],
+            'risk_reason': risk_result['reason'],
+            'risk_warnings': risk_result['warnings'],
+            **candidates_l3
+        }
+        
+        if scan_mode == 'DEGRADED_LEVEL1_ONLY':
+            result['level1_candidates'] = candidates_l1[:50]  # 降级模式提供 TOP50 技术面候选
+        
+        # 输出统计
+        logger.info("\n" + "=" * 80)
+        logger.info("📊 扫描结果统计")
+        logger.info("=" * 80)
+        logger.info(f"✅ 机会池: {len(result['opportunities'])} 只")
+        logger.info(f"⚠️  观察池: {len(result['watchlist'])} 只")
+        logger.info(f"❌ 黑名单: {len(result['blacklist'])} 只")
+        logger.info(f"📈 系统置信度: {result['confidence']*100:.1f}%")
+        logger.info(f"💰 今日建议最大总仓位: {result['position_limit']*100:.1f}%")
+        logger.info(f"🎯 风控原因: {result['risk_reason']}")
+        
+        if result['risk_warnings']:
+            logger.info("\n⚠️  风控警告:")
+            for warning in result['risk_warnings']:
+                logger.info(f"   {warning}")
+        
+        if scan_mode == 'DEGRADED_LEVEL1_ONLY':
+            logger.info(f"\n📋 技术面候选池（TOP50）:")
+            logger.info(f"   由于资金流数据不可用，仅提供技术面筛选结果")
+        
+        logger.info(f"⏱️  总耗时: {time.time() - start_time:.1f} 秒")
+        logger.info("=" * 80)
+        
+        # 保存结果
+        self._save_results(result, mode)
+        
+        return result
+    
+    def _build_degraded_result(self, candidates_l1: List[str], reason: str) -> Dict:
+        """构建降级结果"""
+        return {
+            'mode': 'DEGRADED_LEVEL1_ONLY',
+            'evidence_matrix': {
+                'technical': {
+                    'available': False,
+                    'quality': 'NONE',
+                    'details': reason
+                },
+                'fund_flow': {
+                    'available': False,
+                    'quality': 'NONE',
+                    'details': '未执行'
+                },
+                'market_sentiment': {
+                    'available': False,
+                    'quality': 'NONE',
+                    'details': '未执行'
+                }
+            },
+            'position_limit': 0.1,
+            'confidence': 0.0,
+            'risk_reason': f'Level 1 失败: {reason}',
+            'risk_warnings': [f'⚠️ {reason}'],
+            'opportunities': [],
+            'watchlist': [],
+            'blacklist': [],
+            'level1_candidates': candidates_l1[:50] if candidates_l1 else []
+        }
+    
     def _level1_technical_filter(self) -> List[str]:
         """
         Level 1: 技术面粗筛

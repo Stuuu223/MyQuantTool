@@ -1,200 +1,182 @@
+# -*- coding: utf-8 -*-
 """
-风险管理器 - 实时风控指标和红绿灯系统
+风险管理器
+
+功能：
+- 评估系统置信度（基于证据矩阵）
+- 计算仓位上限
+- 生成风控建议
+
+Author: iFlow CLI
+Date: 2026-02-05
+Version: V1.0
 """
 
-import numpy as np
-import pandas as pd
-from typing import Tuple, Dict
-from logic.enhanced_metrics import EnhancedMetrics
 import logging
+from typing import Dict, List
 
 logger = logging.getLogger(__name__)
 
 
 class RiskManager:
-    """
-    风险管理与风控指标
+    """风险管理器
     
-    实时风控提示 (红绿灯系统):
-    - GREEN: 风险可控
-    - YELLOW: 需要关注
-    - RED: 立即止损
+    职责：
+    1. 评估系统置信度（基于证据矩阵）
+    2. 计算仓位上限
+    3. 生成风控建议
     """
     
-    def __init__(self, equity_curve, monthly_returns, returns):
+    def __init__(self, config: Dict = None):
         """
         初始化风险管理器
         
         Args:
-            equity_curve: 权益曲线
-            monthly_returns: 月度收益率
-            returns: 日收益率
+            config: 配置字典
         """
-        self.equity_curve = np.array(equity_curve) if equity_curve is not None else None
-        self.monthly_returns = np.array(monthly_returns) if monthly_returns is not None else None
-        self.returns = np.array(returns) if returns is not None else None
-        
-        # 初始化指标系统
-        if self.returns is not None:
-            self.metrics = EnhancedMetrics(self.returns)
-        else:
-            self.metrics = None
+        self.config = config or self._get_default_config()
+        logger.info("✅ RiskManager 初始化成功")
     
-    def assess_risk_level(self) -> Tuple[str, str]:
+    def _get_default_config(self) -> Dict:
         """
-        整体风险评估 (红绿灯系统)
+        获取默认配置
         
         Returns:
-            (风险等级, 风险消息)
-            风险等级: 'GREEN', 'YELLOW', 'RED'
+            默认配置字典
         """
-        if self.metrics is None:
-            return 'GREEN', "无法评估风险"
-        
-        score = 100
-        reasons = []
-        
-        # 1. 最大回撤检查 (-15% ~ -50%)
-        max_dd = self.metrics.max_drawdown
-        if max_dd < -0.5:
-            score -= 50
-            reasons.append(f"最大回撤过大: {max_dd:.1%}")
-        elif max_dd < -0.2:
-            score -= 30
-            reasons.append(f"最大回撤较大: {max_dd:.1%}")
-        elif max_dd < -0.15:
-            score -= 15
-            reasons.append(f"最大回撤: {max_dd:.1%}")
-        
-        # 2. 夏普比率检查 (0 ~ 2.0)
-        sharpe = self.metrics.sharpe_ratio
-        if sharpe < 0.5:
-            score -= 25
-            reasons.append(f"夏普比率过低: {sharpe:.2f}")
-        elif sharpe < 1.0:
-            score -= 10
-            reasons.append(f"夏普比率不足: {sharpe:.2f}")
-        elif sharpe > 1.5:
-            score += 10
-        
-        # 3. 连续亏损检查
-        consecutive_losses = self.metrics.max_consecutive_losses
-        if consecutive_losses > 6:
-            score -= 30
-            reasons.append(f"连续亏损超过 6 个月")
-        elif consecutive_losses > 3:
-            score -= 15
-            reasons.append(f"连续亏损 {consecutive_losses} 个月")
-        
-        # 4. VaR 检查
-        var_95 = self.metrics.var_95
-        if var_95 < -0.05:
-            score -= 20
-            reasons.append(f"单日最大风险过高: {var_95:.2%}")
-        
-        # 5. 索提诺比率检查
-        sortino = self.metrics.sortino_ratio
-        if sortino < 0.5:
-            score -= 15
-            reasons.append(f"下行风险调整收益过低: {sortino:.2f}")
-        
-        # 最终评定
-        if score > 75:
-            level = 'GREEN'
-            msg = "风险可控" if not reasons else "风险可控: " + ", ".join(reasons)
-        elif score > 50:
-            level = 'YELLOW'
-            msg = "需要关注: " + ", ".join(reasons)
-        else:
-            level = 'RED'
-            msg = "难以持续: " + ", ".join(reasons)
-        
-        return level, msg
-    
-    @property
-    def risk_dashboard(self) -> Dict[str, any]:
-        """
-        风控仪表板 (用于 UI 显示)
-        
-        Returns:
-            风控指标字典
-        """
-        if self.metrics is None:
-            return {}
-        
         return {
-            '最大回撤': f"{self.metrics.max_drawdown:.2%}",
-            '夏普比率': f"{self.metrics.sharpe_ratio:.2f}",
-            '索提诺比率': f"{self.metrics.sortino_ratio:.2f}",
-            '卡玛比率': f"{self.metrics.calmar_ratio:.2f}",
-            '信息比率': f"{self.metrics.information_ratio:.2f}",
-            '连续亏损': f"{self.metrics.max_consecutive_losses} 个月",
-            'VaR@95%': f"{self.metrics.var_95:.2%}",
-            '恢复时间': f"{self.metrics.recovery_time} 天",
-            '年化收益': f"{self.metrics.annual_return:.2%}",
-            '总收益': f"{self.metrics.total_return:.2%}",
-            '胜率': f"{self.metrics.win_rate:.2%}",
-            '风险等级': self.assess_risk_level()[0],
+            'base_position': 0.8,        # 基础仓位上限（80%）
+            'min_position': 0.1,         # 最低仓位（10%）
+            'key_factors': ['technical', 'fund_flow', 'market_sentiment'],
+            'factor_weights': {
+                'fund_flow': 2.0,        # 资金流最重要（识别诱多陷阱的关键）
+                'technical': 1.0,
+                'market_sentiment': 1.0
+            }
         }
     
-    def check_trading_limits(self) -> Tuple[bool, str]:
+    def assess_confidence(self, evidence_matrix: Dict) -> Dict:
         """
-        检查是否触发了交易限制
+        评估系统置信度
+        
+        Args:
+            evidence_matrix: 证据矩阵
+                {
+                    'technical': {'available': bool, 'quality': str, ...},
+                    'fund_flow': {'available': bool, 'quality': str, ...},
+                    'market_sentiment': {'available': bool, 'quality': str, ...}
+                }
         
         Returns:
-            (是否允许交易, 原因)
+            {
+                'completeness': float,  # 完整性得分（0-1）
+                'quality': float,       # 质量得分（0-1）
+                'confidence': float,    # 综合置信度（0-1）
+                'details': dict          # 详细信息
+            }
         """
-        if self.metrics is None:
-            return True, "无法检查限制"
+        key_factors = self.config['key_factors']
+        weights = self.config['factor_weights']
         
-        # 1. 最大回撤限制
-        if self.metrics.max_drawdown < -0.2:
-            return False, f"触发风控止损：最大回撤达到 {self.metrics.max_drawdown:.1%}"
+        # 1. 计算完整性得分（加权平均）
+        available_count = sum(1 for f in key_factors if evidence_matrix.get(f, {}).get('available', False))
+        completeness = available_count / len(key_factors)
         
-        # 2. 连续亏损限制
-        if self.metrics.max_consecutive_losses > 6:
-            return False, f"触发风控止损：连续亏损 {self.metrics.max_consecutive_losses} 个月"
+        # 2. 计算质量得分（加权平均）
+        quality_map = {'GOOD': 1.0, 'MEDIUM': 0.7, 'LOW': 0.4, 'NONE': 0.0}
         
-        # 3. VaR 限制
-        if self.metrics.var_95 < -0.08:
-            return False, f"触发风控止损：单日风险价值 {self.metrics.var_95:.1%}"
+        total_weight = 0
+        total_quality = 0
         
-        return True, "风控检查通过"
+        for factor in key_factors:
+            factor_info = evidence_matrix.get(factor, {})
+            quality = quality_map.get(factor_info.get('quality', 'NONE'), 0)
+            weight = weights.get(factor, 1.0)
+            
+            if factor_info.get('available', False):
+                total_quality += quality * weight
+                total_weight += weight
+        
+        quality = total_quality / total_weight if total_weight > 0 else 0
+        
+        # 3. 综合置信度
+        confidence = completeness * quality
+        
+        return {
+            'completeness': completeness,
+            'quality': quality,
+            'confidence': confidence,
+            'details': {
+                'available_factors': available_count,
+                'total_factors': len(key_factors),
+                'weighted_quality': total_quality,
+                'total_weight': total_weight
+            }
+        }
     
-    def get_risk_summary(self) -> str:
+    def calculate_position_limit(self, evidence_matrix: Dict) -> Dict:
         """
-        获取风险摘要
+        计算仓位上限
+        
+        Args:
+            evidence_matrix: 证据矩阵
         
         Returns:
-            格式化的摘要字符串
+            {
+                'position_limit': float,  # 仓位上限（0-1）
+                'confidence': float,       # 系统置信度（0-1）
+                'reason': str,             # 决策原因
+                'warnings': list,          # 警告列表
+                'suggestions': list        # 建议
+            }
         """
-        if self.metrics is None:
-            return "无法生成风险摘要"
+        # 评估置信度
+        confidence_result = self.assess_confidence(evidence_matrix)
+        confidence = confidence_result['confidence']
         
-        level, msg = self.assess_risk_level()
-        dashboard = self.risk_dashboard
+        # 计算仓位上限
+        base_position = self.config['base_position']
+        min_position = self.config['min_position']
         
-        summary = f"""
-🛡️ 风险评估报告
-================
-🚦 风险等级: {level}
-📊 风险消息: {msg}
-
-📈 收益指标:
-  - 年化收益: {dashboard['年化收益']}
-  - 总收益: {dashboard['总收益']}
-  - 胜率: {dashboard['胜率']}
-
-🎯 风险调整收益:
-  - 夏普比率: {dashboard['夏普比率']}
-  - 索提诺比率: {dashboard['索提诺比率']}
-  - 卡玛比率: {dashboard['卡玛比率']}
-  - 信息比率: {dashboard['信息比率']}
-
-⚠️ 风险指标:
-  - 最大回撤: {dashboard['最大回撤']}
-  - VaR@95%: {dashboard['VaR@95%']}
-  - 连续亏损: {dashboard['连续亏损']}
-  - 恢复时间: {dashboard['恢复时间']}
-"""
-        return summary
+        position_limit = base_position * confidence
+        position_limit = max(position_limit, min_position)
+        
+        # 生成警告和建议
+        warnings = []
+        suggestions = []
+        
+        # 检查资金流
+        fund_flow_info = evidence_matrix.get('fund_flow', {})
+        if not fund_flow_info.get('available', False):
+            warnings.append("⚠️ 资金流数据不可用，无法识别诱多陷阱")
+            suggestions.append("建议降低仓位，避免追高风险")
+        
+        # 检查完整性
+        if confidence_result['completeness'] < 0.5:
+            warnings.append("⚠️ 关键因子缺失（完整度 < 50%）")
+            suggestions.append("建议谨慎操作，控制风险敞口")
+        
+        # 检查质量
+        if confidence_result['quality'] < 0.5:
+            warnings.append("⚠️ 数据质量较差（平均质量 < 50%）")
+            suggestions.append("建议等待数据恢复后再做决策")
+        
+        # 决策原因
+        if confidence < 0.2:
+            reason = "系统置信度极低（< 20%），禁止交易"
+        elif confidence < 0.3:
+            reason = "系统置信度极低（< 30%），强制降低仓位"
+        elif confidence < 0.5:
+            reason = "系统置信度较低（< 50%），适当降低仓位"
+        elif confidence < 0.7:
+            reason = "系统置信度一般（< 70%），正常仓位"
+        else:
+            reason = "系统置信度高（≥ 70%），允许高仓位"
+        
+        return {
+            'position_limit': position_limit,
+            'confidence': confidence,
+            'reason': reason,
+            'warnings': warnings,
+            'suggestions': suggestions
+        }
