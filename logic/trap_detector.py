@@ -122,12 +122,23 @@ class TrapDetector:
             # 转换信号格式（从 detected_traps 转换为 signals）
             signals = []
             for trap in result.get('detected_traps', []):
-                signals.append({
-                    'type': trap.get('trap_type', 'UNKNOWN'),
-                    'severity': trap.get('confidence', 0),
-                    'date': trap.get('date', ''),
-                    'description': trap.get('description', '')
-                })
+                # 兼容两种字段名：trap_type 或 type
+                trap_type = trap.get('trap_type') or trap.get('type', 'UNKNOWN')
+                # 转换为中文信号名称，便于 _calculate_risk_score 识别
+                if trap_type == 'PUMP_AND_DUMP':
+                    signals.append('单日暴量+隔日反手')
+                elif trap_type == 'HOT_MONEY_RAID':
+                    signals.append('游资突袭')
+                elif trap_type == 'SELF_TRADING_RISK':
+                    signals.append('长期流出+单日巨量')
+                else:
+                    # 保留原始类型，同时添加详细信息
+                    signals.append({
+                        'type': trap_type,
+                        'severity': trap.get('confidence', 0),
+                        'date': trap.get('date', ''),
+                        'description': trap.get('description', '')
+                    })
 
             result['signals'] = signals
 

@@ -935,8 +935,8 @@ class FullMarketScanner:
                 # 转换为6位代码（AkShare格式）
                 code_6digit = CodeConverter.to_akshare(code)
 
-                # 获取资金流向（东方财富 API，不需要严格限速）
-                flow_data = self.fund_flow.get_fund_flow(code_6digit)
+                # 获取资金流向（东方财富 API，获取30天数据用于Level3分析）
+                flow_data = self.fund_flow.get_fund_flow(code_6digit, days=30)
 
                 if not flow_data:
                     continue
@@ -1017,8 +1017,30 @@ class FullMarketScanner:
                 # 诱多检测
                 trap_result = self.trap_detector.detect(code_6digit)
                 
-                # 资金性质分类
-                capital_result = self.capital_classifier.classify(code_6digit)
+                # 资金性质分类：转换数据格式
+                flow_records = item.get('flow_data', {}).get('records', [])
+                # 将 main_net_inflow 映射为 institution（机构净流入）
+                daily_data = []
+                for record in flow_records:
+                    # 确保 date 是字符串格式（可能从 fund_flow_analyzer 返回的是 datetime.date 对象）
+                    date_value = record.get('date', '')
+                    if hasattr(date_value, 'strftime'):
+                        date_value = date_value.strftime('%Y-%m-%d')
+                    elif isinstance(date_value, str):
+                        # 已经是字符串，保持原样
+                        pass
+                    else:
+                        date_value = str(date_value)
+                    
+                    daily_data.append({
+                        'date': date_value,
+                        'institution': record.get('main_net_inflow', 0),  # 机构净流入 = 主力净流入
+                        'super_large': record.get('super_large_net', 0),
+                        'large': record.get('large_net', 0),
+                        'medium': record.get('medium_net', 0),
+                        'small': record.get('small_net', 0)
+                    })
+                capital_result = self.capital_classifier.classify(daily_data)
                 
                 # 综合风险评分
                 risk_score = self._calculate_risk_score(trap_result, capital_result)
