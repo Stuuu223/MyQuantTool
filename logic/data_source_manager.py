@@ -16,6 +16,7 @@ import os
 import sys
 import time
 import pandas as pd
+from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
 from logic.logger import get_logger
 from logic.api_robust import robust_api_call, rate_limit_decorator
@@ -188,11 +189,11 @@ class SmartDataManager:
         if self.akshare is not None:
             try:
                 logger.info(f"🔄 [基础层] 切换到 akshare 获取K线数据: {stock_code}")
-                
+
                 # 🆕 V19.10: 添加sleep规避IP封禁
                 import time
                 time.sleep(0.5)
-                
+
                 # 🆕 V19.13: 临时清空环境变量，防止 akshare 读到残留的代理配置
                 env_backup = os.environ.copy()
                 os.environ.pop('HTTP_PROXY', None)
@@ -200,7 +201,7 @@ class SmartDataManager:
                 os.environ.pop('http_proxy', None)
                 os.environ.pop('https_proxy', None)
                 os.environ['NO_PROXY'] = '*'
-                
+
                 # 🆕 V19.13: 禁用requests的代理
                 try:
                     import requests
@@ -208,16 +209,27 @@ class SmartDataManager:
                     requests.Session().trust_env = False
                 except ImportError:
                     pass
-                
-                df = self.akshare.stock_zh_a_hist(
-                    symbol=stock_code,
-                    period=period,
-                    adjust="qfq"
-                )
-                
+
+                # 🔧 修复：分钟线使用专门的接口
+                if period == '1min':
+                    df = self.akshare.stock_zh_a_hist_min_em(
+                        symbol=stock_code,
+                        period='1',  # 1分钟
+                        adjust='qfq',
+                        start_date=(datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d %H:%M:%S'),
+                        end_date=datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    )
+                else:
+                    # 日线等其他周期使用 stock_zh_a_hist
+                    df = self.akshare.stock_zh_a_hist(
+                        symbol=stock_code,
+                        period=period,
+                        adjust="qfq"
+                    )
+
                 # 恢复环境变量（如果需要的话，但在你的场景下不恢复也没事）
                 # os.environ.update(env_backup)
-                
+
                 if not df.empty:
                     logger.info(f"✅ [基础层-akshare] 获取K线数据成功: {stock_code}")
                     record_success()
