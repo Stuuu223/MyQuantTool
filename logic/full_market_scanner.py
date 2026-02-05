@@ -1107,6 +1107,60 @@ class FullMarketScanner:
         
         return min(max(score, 0.0), 1.0)
     
+    def generate_state_signature(self, results: dict) -> str:
+        """
+        生成状态指纹，用于检测结果是否发生有意义的变化
+        
+        状态指纹包含：
+        1. 机会池股票代码（排序后）
+        2. 每只机会股的风险评分（四舍五入到2位小数）
+        3. 系统置信度（四舍五入到1位小数）
+        4. 推荐最大仓位（四舍五入到1位小数）
+        5. 池子大小（机会池/观察池/黑名单数量）
+        
+        Args:
+            results: 扫描结果字典
+            
+        Returns:
+            状态指纹的哈希字符串
+        """
+        import hashlib
+        import json
+        
+        # 提取机会池股票代码（排序）
+        opportunity_codes = sorted([item['code'] for item in results.get('opportunities', [])])
+        
+        # 提取风险评分（四舍五入到2位小数）
+        risk_scores = [round(item.get('risk_score', 0), 2) for item in results.get('opportunities', [])]
+        
+        # 提取系统置信度（四舍五入到1位小数）
+        confidence = round(results.get('confidence', 0), 1)
+        
+        # 提取推荐最大仓位（四舍五入到1位小数）
+        position_limit = round(results.get('position_limit', 0), 1)
+        
+        # 提取池子大小
+        pool_sizes = {
+            'opportunities': len(results.get('opportunities', [])),
+            'watchlist': len(results.get('watchlist', [])),
+            'blacklist': len(results.get('blacklist', []))
+        }
+        
+        # 构建状态指纹
+        state_data = {
+            'codes': opportunity_codes,
+            'risk_scores': risk_scores,
+            'confidence': confidence,
+            'position_limit': position_limit,
+            'pool_sizes': pool_sizes
+        }
+        
+        # 计算哈希
+        state_str = json.dumps(state_data, sort_keys=True)
+        state_hash = hashlib.md5(state_str.encode('utf-8')).hexdigest()
+        
+        return state_hash
+    
     def _save_results(self, results: dict, mode: str):
         """保存扫描结果到文件"""
         os.makedirs('data/scan_results', exist_ok=True)
