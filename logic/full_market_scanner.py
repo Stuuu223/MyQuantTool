@@ -1102,8 +1102,17 @@ class FullMarketScanner:
             'results': results
         }
         
+        # 自定义 JSON 编码器处理 datetime.date 对象
+        class DateTimeEncoder(json.JSONEncoder):
+            def default(self, obj):
+                if hasattr(obj, 'strftime'):
+                    return obj.strftime('%Y-%m-%d')
+                elif hasattr(obj, 'isoformat'):
+                    return obj.isoformat()
+                return super().default(obj)
+        
         with open(filename, 'w', encoding='utf-8') as f:
-            json.dump(output, f, ensure_ascii=False, indent=2)
+            json.dump(output, f, ensure_ascii=False, indent=2, cls=DateTimeEncoder)
         
         logger.info(f"💾 结果已保存: {filename}")
 
