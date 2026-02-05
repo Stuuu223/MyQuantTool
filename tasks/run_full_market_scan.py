@@ -107,9 +107,14 @@ def main():
                 avg_relative_volume = np.mean([c.get('relative_volume', 0) for c in hot_pool])
                 avg_hot_score = np.mean([c.get('hot_score', 0) for c in hot_pool])
                 
+                # 统计数据有效性
+                valid_data_count = sum(1 for c in hot_pool if c.get('hot_data_valid', False))
+                invalid_data_count = len(hot_pool) - valid_data_count
+                
                 # 统计风险标签分布
                 extreme_risk_count = sum(1 for c in hot_pool if c.get('risk_tag') == '短期涨幅极端')
                 
+                print(f"   数据有效性: 有效 {valid_data_count} 只, 无效 {invalid_data_count} 只")
                 print(f"   平均换手率: {avg_turnover:.2f}%")
                 print(f"   平均相对放量: {avg_relative_volume:.4f}")
                 print(f"   平均热门度: {avg_hot_score:.4f}")
@@ -130,6 +135,7 @@ def main():
                     hot_score = candidate.get('hot_score', 0)
                     amount = candidate.get('amount', 0) / 1e8
                     risk_tag = candidate.get('risk_tag', '')
+                    data_valid = candidate.get('hot_data_valid', False)
                     
                     # 风险标签显示
                     if risk_tag == '短期涨幅极端':
@@ -137,12 +143,16 @@ def main():
                     else:
                         risk_display = "✅"
                     
+                    # 数据有效性显示
+                    data_display = "✅" if data_valid else "⚠️"
+                    
                     print(f"{idx:2d}. {CodeConverter.to_akshare(code)} {name} | "
                           f"涨幅: {pct_chg:+.1f}% | "
                           f"换手率: {turnover_rate:.1f}% | "
                           f"相对放量: {relative_volume:.4f} | "
                           f"热门度: {hot_score:.4f} | "
                           f"成交额: {amount:.2f}亿 | "
+                          f"数据: {data_display} | "
                           f"风险: {risk_display}")
                 
                 # 显示更多候选池统计

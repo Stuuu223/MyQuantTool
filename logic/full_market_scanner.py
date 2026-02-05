@@ -223,21 +223,38 @@ class FullMarketScanner:
         logger.info(f"\n🔥 计算相对热门度...")
         candidates_l1 = self._calculate_relative_hotness(candidates_l1)
         
-        # ===== 构建热门池（TOP 100）=====
+        # ===== 构建热门池（TOP 100，只使用数据有效的票）=====
         hot_pool_size = 100
-        hot_pool = candidates_l1[:hot_pool_size]
-        logger.info(f"✅ 热门票池构建完成: TOP {hot_pool_size} (热门评分范围: {hot_pool[0]['hot_score']:.4f} - {hot_pool[-1]['hot_score']:.4f})")
+        
+        # 只用数据有效的票构建热门池
+        valid_candidates = [c for c in candidates_l1 if c.get('hot_data_valid', False)]
+        invalid_candidates = [c for c in candidates_l1 if not c.get('hot_data_valid', False)]
+        
+        logger.info(f"  数据有效性统计: 有效 {len(valid_candidates)} 只, 无效 {len(invalid_candidates)} 只")
+        
+        if len(valid_candidates) < hot_pool_size:
+            logger.warning(f"⚠️  有效数据票数不足 {hot_pool_size} 只，热门池将只包含 {len(valid_candidates)} 只")
+            hot_pool = valid_candidates
+        else:
+            hot_pool = valid_candidates[:hot_pool_size]
+        
+        if hot_pool:
+            logger.info(f"✅ 热门票池构建完成: TOP {len(hot_pool)} (热门评分范围: {hot_pool[0]['hot_score']:.4f} - {hot_pool[-1]['hot_score']:.4f})")
+        else:
+            logger.warning(f"⚠️  没有有效数据的票，热门池为空")
+            hot_pool = []
         
         # ===== 检查风险标签（仅对热门池）=====
-        logger.info(f"  检查风险标签...")
-        for candidate in hot_pool:
-            code = candidate['code']
-            risk_tag = self._check_short_term_risk(code)
-            candidate['risk_tag'] = risk_tag
-        
-        # 统计风险标签分布
-        extreme_risk_count = sum(1 for c in hot_pool if c.get('risk_tag') == '短期涨幅极端')
-        logger.info(f"  ✅ 风险标签检查完成: 正常 {len(hot_pool) - extreme_risk_count} 只, 极端风险 {extreme_risk_count} 只")
+        if hot_pool:
+            logger.info(f"  检查风险标签...")
+            for candidate in hot_pool:
+                code = candidate['code']
+                risk_tag = self._check_short_term_risk(code)
+                candidate['risk_tag'] = risk_tag
+            
+            # 统计风险标签分布
+            extreme_risk_count = sum(1 for c in hot_pool if c.get('risk_tag') == '短期涨幅极端')
+            logger.info(f"  ✅ 风险标签检查完成: 正常 {len(hot_pool) - extreme_risk_count} 只, 极端风险 {extreme_risk_count} 只")
         
         # 收集证据矩阵
         evidence_matrix = {
@@ -439,15 +456,39 @@ class FullMarketScanner:
             try:
                 tick_data = xtdata.get_full_tick(batch)
                 
+                # 类型检查：确保 tick_data 是字典
+                if not isinstance(tick_data, dict):
+                    logger.warning(f"⚠️  批次 {batch_num} 返回数据类型异常: {type(tick_data)}")
+                    continue
+                
                 # 本地过滤
                 for code in batch:
                     tick = tick_data.get(code, {})
+                    
+                    # 类型检查：确保 tick 是字典
+                    if not isinstance(tick, dict):
+                        logger.warning(f"⚠️  股票 {code} Tick 数据类型异常: {type(tick)}")
+                        continue
+                    
                     if tick and self._check_level1_criteria(code, tick):
                         # 构建候选股票详细信息
                         last_close = tick.get('lastClose', 0)
                         last_price = tick.get('lastPrice', 0)
                         amount = tick.get('amount', 0)
-                        volume = tick.get('totalVolume', 0)
+                        
+                        # 尝试多个可能的成交量字段名
+                        volume = (
+                            tick.get('totalVolume') or 
+                            tick.get('volume') or 
+                            tick.get('total_volume') or 
+                            tick.get('turnoverVolume') or 
+                            tick.get('turnover_volume') or 
+                            0
+                        )
+                        
+                        # 如果没有成交量字段，尝试用成交额和价格估算
+                        if volume == 0 and amount > 0 and last_price > 0:
+                            volume = amount / last_price
                         
                         # 计算涨跌幅
                         if last_close > 0:
@@ -532,11 +573,11 @@ class FullMarketScanner:
             }
         """
         try:
-            # 尝试使用不同的 QMT API 获取流通股本
-            # 方法 1: 使用 get_market_data 获取
+            # 方法 1: 使用 get_market_data 获取流通股本（尝试多个字段）
             try:
+                # 尝试多个可能的流通股本字段
                 financial_data = xtdata.get_market_data(
-                    field_list=['SH_FLOAT_VAL'],  # 流通股本
+                    field_list=['SH_FLOAT_VAL', 'FLOAT_VAL', 'TOTAL_SHARES'],  # 尝试多个字段
                     stock_list=[code],
                     period='1d',
                     start_time='',
@@ -545,7 +586,15 @@ class FullMarketScanner:
                 )
                 
                 if financial_data and code in financial_data:
-                    circulating_shares = financial_data[code].get('SH_FLOAT_VAL', 0)
+                    data = financial_data[code]
+                    # 尝试不同的字段名
+                    circulating_shares = (
+                        data.get('SH_FLOAT_VAL') or 
+                        data.get('FLOAT_VAL') or 
+                        data.get('TOTAL_SHARES') or 
+                        0
+                    )
+                    
                     if circulating_shares and circulating_shares > 0:
                         # 获取当前价格
                         tick_data = xtdata.get_full_tick([code])
@@ -553,6 +602,7 @@ class FullMarketScanner:
                             current_price = tick_data[code].get('lastPrice', 0)
                             if current_price > 0:
                                 circulating_market_cap = circulating_shares * current_price
+                                logger.debug(f"✅ 获取流通股本成功 {code}: {circulating_shares/1e8:.2f}亿股")
                                 return {
                                     'circulating_shares': circulating_shares,
                                     'circulating_market_cap': circulating_market_cap
@@ -560,21 +610,65 @@ class FullMarketScanner:
             except Exception as e:
                 logger.debug(f"方法 1 获取流通股本失败 {code}: {e}")
             
-            # 方法 2: 使用 get_instrument_type + 简化计算
-            # 如果方法 1 失败，使用成交额和换手率的关系来估算
-            # 换手率 = 成交量 / 流通股本
-            # 如果没有流通股本数据，可以使用总股本作为近似
+            # 方法 2: 使用 get_instrument_detail 获取股票详细信息
             try:
-                # 获取股票基本信息
-                stock_info = xtdata.get_instrument_type(code)
-                if stock_info:
-                    # 尝试获取其他可能的字段
-                    pass
+                instrument_detail = xtdata.get_instrument_detail(code)
+                if instrument_detail:
+                    # 尝试从详细信息中获取流通股本
+                    circulating_shares = (
+                        instrument_detail.get('FloatVolume') or 
+                        instrument_detail.get('FloatShares') or 
+                        instrument_detail.get('CirculatingShares') or 
+                        0
+                    )
+                    
+                    if circulating_shares and circulating_shares > 0:
+                        current_price = instrument_detail.get('LastPrice', 0)
+                        if current_price > 0:
+                            circulating_market_cap = circulating_shares * current_price
+                            logger.debug(f"✅ 方法2获取流通股本成功 {code}: {circulating_shares/1e8:.2f}亿股")
+                            return {
+                                'circulating_shares': circulating_shares,
+                                'circulating_market_cap': circulating_market_cap
+                            }
             except Exception as e:
                 logger.debug(f"方法 2 获取流通股本失败 {code}: {e}")
             
-            # 方法 3: 使用成交额作为替代指标
-            # 如果无法获取流通股本，则返回 0，后续计算时会处理
+            # 方法 3: 使用 get_full_tick 中的流通市值字段
+            try:
+                tick_data = xtdata.get_full_tick([code])
+                if tick_data and code in tick_data:
+                    tick = tick_data[code]
+                    # 尝试从 tick 数据中获取流通市值
+                    circulating_market_cap = (
+                        tick.get('marketCap') or 
+                        tick.get('circulatingMarketCap') or 
+                        tick.get('totalMarketCap') or 
+                        0
+                    )
+                    
+                    if circulating_market_cap and circulating_market_cap > 0:
+                        current_price = tick.get('lastPrice', 0)
+                        if current_price > 0:
+                            circulating_shares = circulating_market_cap / current_price
+                            logger.debug(f"✅ 方法3获取流通股本成功 {code}: {circulating_shares/1e8:.2f}亿股")
+                            return {
+                                'circulating_shares': circulating_shares,
+                                'circulating_market_cap': circulating_market_cap
+                            }
+            except Exception as e:
+                logger.debug(f"方法 3 获取流通股本失败 {code}: {e}")
+            
+            # 方法 4: 不再估算流通市值，返回 0
+            # 在热门度计算中使用成交额归一化
+            return {
+                'circulating_shares': 0,
+                'circulating_market_cap': 0,
+                'use_amount_normalization': True  # 标记为使用成交额归一化
+            }
+            
+            # 所有方法都失败，返回 0
+            logger.warning(f"⚠️  所有方法获取流通股本失败 {code}")
             return {
                 'circulating_shares': 0,
                 'circulating_market_cap': 0
@@ -649,7 +743,12 @@ class FullMarketScanner:
         min_amount = min(amounts) if amounts else 0
         amount_range = max_amount - min_amount if max_amount > min_amount else 1
         
+        logger.info(f"  成交额范围: {min_amount/1e8:.2f}亿 - {max_amount/1e8:.2f}亿，范围: {amount_range/1e8:.2f}亿")
+        
         # 计算换手率和相对放量因子
+        valid_count = 0
+        invalid_count = 0
+        
         for candidate in candidates:
             code = candidate['code']
             volume = candidate.get('volume', 0)
@@ -657,23 +756,39 @@ class FullMarketScanner:
             circulating_shares = candidate.get('circulating_shares', 0)
             circulating_market_cap = candidate.get('circulating_market_cap', 0)
             
-            # 计算换手率
-            turnover_rate = self._calculate_turnover_rate(code, volume, circulating_shares)
-            candidate['turnover_rate'] = turnover_rate
+            # 数据校验：只要成交额和成交量有效，就认为数据有效
+            # 即使流通股本和流通市值是 0，也可以用成交额归一化
+            data_valid = (volume > 0 and amount > 0)
             
-            # 计算相对放量因子
-            relative_volume = self._calculate_relative_volume(code, amount, circulating_market_cap)
-            candidate['relative_volume'] = relative_volume
-            
-            # 计算相对热门度
-            if turnover_rate > 0 or relative_volume > 0:
-                # 如果有流通股本数据，使用换手率 + 相对放量
-                hot_score = turnover_rate * 0.6 + relative_volume * 0.4
+            if data_valid:
+                # 数据有效，尝试计算换手率和相对放量
+                if circulating_shares > 0 and circulating_market_cap > 0:
+                    # 有流通股本数据，使用换手率 + 相对放量
+                    turnover_rate = self._calculate_turnover_rate(code, volume, circulating_shares)
+                    relative_volume = self._calculate_relative_volume(code, amount, circulating_market_cap)
+                    hot_score = turnover_rate * 0.6 + relative_volume * 0.4
+                    data_source = "流通股本数据"
+                else:
+                    # 没有流通股本数据，使用成交额归一化作为替代
+                    turnover_rate = 0.0
+                    relative_volume = 0.0
+                    hot_score = (amount - min_amount) / amount_range if amount_range > 0 else 0.0
+                    data_source = "成交额归一化"
+                
+                valid_count += 1
             else:
-                # 如果没有流通股本数据，使用成交额归一化作为替代
-                hot_score = (amount - min_amount) / amount_range
+                # 数据无效
+                turnover_rate = 0.0
+                relative_volume = 0.0
+                hot_score = 0.0
+                data_source = "数据无效"
+                invalid_count += 1
             
+            candidate['turnover_rate'] = turnover_rate
+            candidate['relative_volume'] = relative_volume
             candidate['hot_score'] = hot_score
+            candidate['hot_data_valid'] = data_valid
+            candidate['data_source'] = data_source
         
         # 计算排名
         candidates_sorted = sorted(candidates, key=lambda x: x['hot_score'], reverse=True)
@@ -683,7 +798,7 @@ class FullMarketScanner:
             candidate['hot_rank'] = idx + 1
             candidate['hot_percentile'] = (total - idx) / total  # 热门百分位
         
-        logger.info(f"  ✅ 相对热门度计算完成")
+        logger.info(f"  ✅ 相对热门度计算完成 (有效数据: {valid_count} 只, 无效数据: {invalid_count} 只)")
         
         return candidates_sorted
     
