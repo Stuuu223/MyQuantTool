@@ -236,11 +236,10 @@ class FullMarketScanner:
             if code.startswith(('688', '8', '4')):  # 科创板、北交所
                 return False
             
-            # 获取价格数据
+            # 获取价格数据（仅使用 QMT Tick 实际存在的字段）
             last_close = tick.get('lastClose', 0)
             last_price = tick.get('lastPrice', 0)
             amount = tick.get('amount', 0)
-            turnover = tick.get('turnoverRate', 0)
             
             # 计算涨跌幅
             if last_close == 0:
@@ -249,13 +248,14 @@ class FullMarketScanner:
             
             cfg = self.config['level1']
             
-            # 三个条件必须同时满足
+            # 两个条件必须同时满足（暂时去掉换手率，需要额外 API 获取流通市值）
             if pct_chg < cfg['pct_chg_min']:
                 return False
             if amount < cfg['amount_min']:
                 return False
-            if turnover < cfg['turnover_min']:
-                return False
+            # TODO: 换手率需要单独调用 QMT 的其他接口获取流通市值，暂时注释掉
+            # if turnover < cfg['turnover_min']:
+            #     return False
             
             return True
             
