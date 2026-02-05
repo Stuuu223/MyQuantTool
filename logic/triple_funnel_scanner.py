@@ -510,156 +510,141 @@ class Level4Monitor:
         }
 
     def calculate_vwap(self, code: str) -> float:
-        """
-        计算 VWAP (成交量加权平均价)
-
-        策略:
-        1. 优先使用 QMT 分钟线数据（实时、无限制）
-        2. QMT 不可用时降级到 AkShare（遵守防封规则）
-        3. 从当前交易日的开盘开始计算
-
-        Args:
-            code: 股票代码
-
-        Returns:
-            VWAP 价格
-        """
-        try:
-            from datetime import datetime
-            from logic.qmt_manager import get_qmt_manager
-
-            # 🔥 优先策略1: 使用 QMT 数据
-            qmt_manager = get_qmt_manager()
-            logger.debug(f"🔍 [QMT] 管理器状态: available={qmt_manager.is_available()}")
-
-            if qmt_manager.is_available():
-                try:
-                    # 转换代码格式为 QMT 格式
-                    qmt_code = self.converter.to_qmt(code)
-                    logger.info(f"🔍 [QMT] 尝试获取 {code} ({qmt_code}) 的分钟线数据")
-
-                    # 先下载今天的数据
-                    today = datetime.now().strftime('%Y%m%d')
-                    logger.debug(f"📥 [QMT] 开始下载 {code} 的分钟线数据...")
-                    download_success = qmt_manager.download_history_data(
-                        qmt_code,
-                        period='1m',
-                        start_time=today,
-                        end_time=today,
-                        async_mode=False
-                    )
-
-                    if download_success:
-                        logger.info(f"✅ [QMT] 数据下载成功: {code}")
-
-                        # 获取本地数据
-                        data = qmt_manager.get_local_data(
-                            stock_list=[qmt_code],
-                            field_list=['time', 'amount', 'volume'],
-                            period='1m',
-                            start_time=today,
-                            end_time=today
-                        )
-                        logger.info(f"📦 [QMT] get_local_data 返回类型: {type(data)}, 内容: {data}")
-
-                        # 🔧 修复：安全检查数据
-                        has_data = False
-                        if data is not None:
-                            # 检查 data 是否是字典且包含目标代码
+            """
+            计算 VWAP (成交量加权平均价)
+    
+            策略:
+            1. 优先使用 QMT Tick 数据（实时、最快）
+            2. QMT 不可用时使用分钟线数据
+            3. 最后降级到 AkShare（遵守防封规则）
+    
+            Args:
+                code: 股票代码
+    
+            Returns:
+                VWAP 价格
+            """
+            try:
+                from logic.qmt_manager import get_qmt_manager
+    
+                # 🔥 优先策略1: 使用 QMT Tick 数据（实时、最快）
+                qmt_manager = get_qmt_manager()
+                logger.debug(f"🔍 [QMT] 管理器状态: available={qmt_manager.is_available()}")
+    
+                if qmt_manager.is_available():
+                    try:
+                        qmt_code = self.converter.to_qmt(code)
+                        logger.info(f"🔍 [QMT] 尝试获取 {code} ({qmt_code}) 的 Tick 数据")
+    
+                        tick_data = qmt_manager.get_full_tick([qmt_code])
+                        logger.debug(f"📦 [QMT] get_full_tick 返回类型: {type(tick_data)}")
+    
+                        if tick_data and qmt_code in tick_data:
+                            data = tick_data[qmt_code]
+                            logger.debug(f"📊 [QMT] Tick 数据类型: {type(data)}")
+    
                             if isinstance(data, dict):
-                                has_data = qmt_code in data
-                            # 检查 data 是否是 pandas Series 且包含目标代码
-                            elif hasattr(data, '__contains__'):
-                                try:
-                                    has_data = qmt_code in data
-                                except:
-                                    has_data = False
-
-                        if has_data:
-                            df = data[qmt_code]
-                            logger.debug(f"📊 [QMT] 获取到数据类型: {type(df)}")
-
-                            # 尝试计算 VWAP
-                            try:
-                                total_amount = 0
-                                total_volume = 0
-
-                                # QMT 返回的是 numpy 数组，格式为 [time, amount, volume, ...]
-                                if isinstance(df, np.ndarray):
-                                    logger.debug(f"📊 [QMT] 数据形状: {df.shape}")
-                                    if df.ndim == 2 and df.shape[1] >= 3:
-                                        # 二维数组，假设列顺序是 [time, amount, volume, ...]
-                                        total_amount = np.sum(df[:, 1])  # amount 列
-                                        total_volume = np.sum(df[:, 2])  # volume 列
-                                        logger.debug(f"💰 [QMT] 成交额: {total_amount}, 成交量: {total_volume}")
-                                elif hasattr(df, '__len__') and len(df) > 0:
-                                    # 其他可迭代格式
-                                    logger.debug(f"📊 [QMT] 数据长度: {len(df)}")
-                                    # 尝试转换并计算
-                                    df_array = np.array(df)
-                                    if df_array.ndim == 2 and df_array.shape[1] >= 3:
-                                        total_amount = np.sum(df_array[:, 1])
-                                        total_volume = np.sum(df_array[:, 2])
-                                        logger.debug(f"💰 [QMT] 成交额: {total_amount}, 成交量: {total_volume}")
-
-                                if total_volume > 0:
-                                    vwap = total_amount / total_volume
-                                    logger.info(f"✅ [QMT] VWAP计算成功: {code} = {vwap:.2f}")
+                                amount = data.get('amount', 0)
+                                volume = data.get('volume', 0)
+                                logger.debug(f"💰 [QMT] 成交额: {amount}, 成交量: {volume}")
+    
+                                if volume > 0:
+                                    vwap = amount / volume
+                                    logger.info(f"✅ [QMT Tick] VWAP计算成功: {code} = {vwap:.2f}")
                                     return vwap
                                 else:
-                                    logger.warning(f"⚠️ [QMT] 成交量为0: {code}")
-
-                            except Exception as inner_e:
-                                logger.warning(f"⚠️ [QMT] 数据处理失败: {inner_e}")
-                                raise
+                                    logger.warning(f"⚠️ [QMT Tick] 成交量为0: {code}")
                             else:
-                                logger.warning(f"⚠️ [QMT] 数据为空: {code}")
+                                logger.warning(f"⚠️ [QMT Tick] 数据格式异常: {type(data)}")
                         else:
-                            logger.warning(f"⚠️ [QMT] 未获取到数据: {code}")
+                            logger.warning(f"⚠️ [QMT Tick] 未获取到数据: {code}")
+    
+                    except Exception as e:
+                        logger.warning(f"⚠️ QMT Tick VWAP计算失败: {e}, 尝试使用分钟线")
+                        import traceback
+                        logger.debug(traceback.format_exc())
+    
+                    # 🔥 策略2: 使用 QMT 分钟线数据（备用）
+                    try:
+                        from datetime import datetime
+                        qmt_code = self.converter.to_qmt(code)
+                        today = datetime.now().strftime('%Y%m%d')
+    
+                        logger.debug(f"📥 [QMT] 下载分钟线数据...")
+                        download_success = qmt_manager.download_history_data(
+                            qmt_code,
+                            period='1m',
+                            start_time=today,
+                            end_time=today,
+                            async_mode=False
+                        )
+    
+                        if download_success:
+                            data = qmt_manager.get_local_data(
+                                stock_list=[qmt_code],
+                                field_list=['time', 'amount', 'volume'],
+                                period='1m',
+                                start_time=today,
+                                end_time=today
+                            )
+    
+                            if data and qmt_code in data:
+                                df = data[qmt_code]
+                                logger.debug(f"📊 [QMT] 分钟线数据类型: {type(df)}")
+    
+                                if hasattr(df, '__len__') and len(df) > 0:
+                                    if isinstance(df, pd.DataFrame):
+                                        total_amount = df['amount'].sum()
+                                        total_volume = df['volume'].sum()
+                                    else:
+                                        import numpy as np
+                                        df_array = np.array(df)
+                                        if df_array.ndim == 2 and df_array.shape[1] >= 3:
+                                            total_amount = np.sum(df_array[:, 1])
+                                            total_volume = np.sum(df_array[:, 2])
+    
+                                    logger.debug(f"💰 [QMT] 分钟线成交额: {total_amount}, 成交量: {total_volume}")
+    
+                                    if total_volume > 0:
+                                        vwap = total_amount / total_volume
+                                        logger.info(f"✅ [QMT 分钟线] VWAP计算成功: {code} = {vwap:.2f}")
+                                        return vwap
+    
+                    except Exception as e:
+                        logger.warning(f"⚠️ QMT 分钟线 VWAP计算失败: {e}")
+    
+                # 🔥 降级策略3: 使用 AkShare 数据（遵守防封规则）
+                logger.info(f"🔄 [AkShare] 降级到 AkShare 计算 VWAP: {code}")
+    
+                from logic.rate_limiter import safe_request
+    
+                def _get_akshare_vwap():
+                    df = self.data_manager.get_history_kline(code, period='1min')
+                    if df.empty:
+                        return 0.0
+    
+                    total_amount = df['成交额'].sum()
+                    total_volume = df['成交量'].sum()
+    
+                    if total_volume > 0:
+                        return total_amount / total_volume
                     else:
-                        logger.warning(f"⚠️ [QMT] 数据下载失败: {code}")
-
-                except Exception as e:
-                    logger.warning(f"⚠️ QMT VWAP计算失败: {e}, 降级到 AkShare")
-                    import traceback
-                    logger.debug(traceback.format_exc())
-
-            # 🔥 降级策略2: 使用 AkShare 数据（遵守防封规则）
-            logger.info(f"🔄 [AkShare] 降级到 AkShare 计算 VWAP: {code}")
-
-            # 使用 RateLimiter 限制频率
-            from logic.rate_limiter import safe_request
-
-            def _get_akshare_vwap():
-                df = self.data_manager.get_history_kline(code, period='1min')
-                if df.empty:
-                    return 0.0
-
-                # 计算VWAP
-                total_amount = df['成交额'].sum()
-                total_volume = df['成交量'].sum()
-
-                if total_volume > 0:
-                    return total_amount / total_volume
+                        return 0.0
+    
+                vwap = safe_request(_get_akshare_vwap)
+    
+                if vwap > 0:
+                    logger.info(f"✅ [AkShare] VWAP计算成功: {code} = {vwap:.2f}")
                 else:
-                    return 0.0
-
-            # 使用 safe_request 包装，遵守防封规则
-            vwap = safe_request(_get_akshare_vwap)
-
-            if vwap > 0:
-                logger.info(f"✅ [AkShare] VWAP计算成功: {code} = {vwap:.2f}")
-            else:
-                logger.warning(f"⚠️ VWAP计算失败: {code}")
-
-            return vwap
-
-        except Exception as e:
-            logger.warning(f"计算VWAP失败: {code}, {e}")
-            import traceback
-            logger.debug(traceback.format_exc())
-            return 0.0
-
+                    logger.warning(f"⚠️ VWAP计算失败: {code}")
+    
+                return vwap
+    
+            except Exception as e:
+                logger.warning(f"计算VWAP失败: {code}, {e}")
+                import traceback
+                logger.debug(traceback.format_exc())
+                return 0.0
     def detect_vwap_breakout(self, code: str, snapshot: Dict) -> Optional[TradingSignal]:
         """
         检测 VWAP 突破
