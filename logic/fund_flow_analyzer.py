@@ -1,14 +1,14 @@
 """
 资金流向分析工具
-支持东方财富 API 资金流向分析
+支持 AkShare 资金流向分析
 提供正确的资金分类和解读
 """
 
-import requests
 import pandas as pd
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 import time
+import akshare as ak
 from logic.fund_flow_cache import get_fund_flow_cache
 from logic.logger import get_logger
 
@@ -21,11 +21,10 @@ class FundFlowAnalyzer:
     def __init__(self, enable_cache: bool = True):
         """
         初始化资金流向分析器
-        
+
         Args:
             enable_cache: 是否启用缓存，默认 True
         """
-        self.base_url = "http://push2.eastmoney.com/api/qt/stock/fflow/kline/get"
         self.cache = {}  # 简单缓存（内存缓存）
         self.enable_cache = enable_cache
         
@@ -36,34 +35,9 @@ class FundFlowAnalyzer:
             self.db_cache = None
             logger.info("⚠️  FundFlowAnalyzer 缓存未启用")
 
-    def parse_stock_code(self, stock_code: str) -> str:
+    def _get_fund_flow_from_akshare(self, stock_code: str, days: int = 5) -> Dict:
         """
-        解析股票代码为东方财富格式
-
-        Args:
-            stock_code: 股票代码，支持多种格式
-                - '000001' → '0.000001'
-                - '000001.SZ' → '0.000001'
-                - '600000' → '1.600000'
-                - '600000.SH' → '1.600000'
-
-        Returns:
-            东方财富格式的股票代码（如 '0.000001'）
-        """
-        # 移除后缀
-        code = stock_code.replace('.SZ', '').replace('.SH', '').replace('.sz', '').replace('.sh', '')
-
-        # 判断市场
-        if code.startswith('6') or code.startswith('5'):
-            # 上交所
-            return f"1.{code}"
-        else:
-            # 深交所
-            return f"0.{code}"
-
-    def _get_fund_flow_from_eastmoney(self, stock_code: str, days: int = 5) -> Dict:
-        """
-        从东方财富 API 获取资金流向数据（私有方法）
+        从 AkShare 获取资金流向数据（私有方法）
 
         Args:
             stock_code: 股票代码
@@ -73,40 +47,34 @@ class FundFlowAnalyzer:
             资金流向数据字典
         """
         try:
-            secid = self.parse_stock_code(stock_code)
+            # 移除后缀，确保是6位代码
+            code = stock_code.replace('.SZ', '').replace('.SH', '').replace('.sz', '').replace('.sh', '')
 
-            params = {
-                "secid": secid,
-                "fields1": "f1,f2,f3,f7",
-                "fields2": "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61,f62,f63",
-                "klt": "101",  # 日线
-                "lmt": days
-            }
+            # 判断市场
+            market = "sh" if code.startswith('6') or code.startswith('5') else "sz"
 
-            response = requests.get(self.base_url, params=params, timeout=10)
-            response.raise_for_status()
+            # 使用 AkShare 接口
+            df = ak.stock_individual_fund_flow(stock=code, market=market)
 
-            data = response.json()
-
-            if 'data' not in data or 'klines' not in data['data']:
+            if df.empty:
                 return {"error": "未获取到数据", "stock_code": stock_code}
 
-            # 解析数据
-            klines = data['data']['klines']
-            records = []
+            # 只取最近 days 条数据（AkShare 返回的是从新到旧排序）
+            df = df.head(days)
 
-            for kline in klines:
-                parts = kline.split(',')
+            # 转换为内部格式
+            records = []
+            for _, row in df.iterrows():
                 records.append({
-                    "date": parts[0],
-                    # 注意：f51-f55 的真实含义
-                    "main_net_inflow": float(parts[1]),  # 散户资金（中单+小单）
-                    "super_large_net": float(parts[2]),  # 超大单净流入（机构）
-                    "large_net": float(parts[3]),        # 大单净流入（游资）
-                    "medium_net": float(parts[4]),       # 中单净流入
-                    "small_net": float(parts[5]),        # 小单净流入
+                    "date": row['日期'],
+                    "main_net_inflow": row['超大单净流入-净额'] + row['大单净流入-净额'],  # 主力净流入（超大单+大单）
+                    "super_large_net": row['超大单净流入-净额'],  # 超大单净流入（机构）
+                    "large_net": row['大单净流入-净额'],  # 大单净流入（游资）
+                    "medium_net": row['中单净流入-净额'],  # 中单净流入
+                    "small_net": row['小单净流入-净额'],  # 小单净流入
                 })
 
+            # 返回结果，latest 是最近一个交易日（第一条）
             return {
                 "stock_code": stock_code,
                 "records": records,
@@ -119,24 +87,24 @@ class FundFlowAnalyzer:
     def get_fund_flow_cached(self, stock_code: str, days: int = 5) -> Dict:
         """
         获取资金流向数据（显式缓存版本）
-        
-        优先使用 SQLite 缓存，未命中则调用东方财富 API 并回写缓存。
-        
+
+        优先使用 SQLite 缓存，未命中则调用 AkShare 接口并回写缓存。
+
         Args:
             stock_code: 股票代码
             days: 获取最近几天的数据
-            
+
         Returns:
             资金流向数据字典
         """
         # 确保是6位代码
         stock_code_6 = stock_code.replace('.SZ', '').replace('.SH', '').replace('.sz', '').replace('.sh', '')
-        
+
         # 1) 先查 SQLite 缓存
         if self.enable_cache and self.db_cache:
             today = datetime.now().strftime('%Y-%m-%d')
             cached_data = self.db_cache.get(stock_code_6, today)
-            
+
             if cached_data:
                 # 缓存命中，返回数据（转换为原始格式）
                 logger.debug(f"✅ 缓存命中: {stock_code_6}")
@@ -146,36 +114,36 @@ class FundFlowAnalyzer:
                     "latest": cached_data,
                     "from_cache": True
                 }
-        
-        # 2) 调用东方财富 API
-        data = self._get_fund_flow_from_eastmoney(stock_code, days)
-        
+
+        # 2) 调用 AkShare 接口
+        data = self._get_fund_flow_from_akshare(stock_code, days)
+
         # 3) 写回 SQLite 缓存
         if self.enable_cache and self.db_cache and "error" not in data:
             latest = data.get('latest')
             if latest:
                 self.db_cache.save(stock_code_6, latest.get('date', ''), data)
                 logger.debug(f"✅ 缓存写入: {stock_code_6}")
-        
+
         return data
     
     def get_fund_flow(self, stock_code: str, days: int = 5) -> Dict:
         """
         获取资金流向数据（自动使用缓存）
-        
+
         这是默认方法，会自动使用缓存（如果启用）。
-        
+
         Args:
             stock_code: 股票代码
             days: 获取最近几天的数据
-            
+
         Returns:
             资金流向数据字典
         """
         if self.enable_cache:
             return self.get_fund_flow_cached(stock_code, days)
         else:
-            return self._get_fund_flow_from_eastmoney(stock_code, days)
+            return self._get_fund_flow_from_akshare(stock_code, days)
 
     def analyze_fund_flow(self, stock_code: str) -> Dict:
         """
@@ -267,7 +235,7 @@ class FundFlowAnalyzer:
             "decision": decision,
             "risk_level": risk_level,
             "reason": reason,
-            "data_source": "EASTMONEY_REALTIME"
+            "data_source": "AKSHARE_REALTIME"
         }
 
     def format_analysis(self, result: Dict) -> str:
