@@ -205,10 +205,14 @@ def main():
             print("-" * 80)
             if results['opportunities']:
                 for idx, item in enumerate(results['opportunities'][:10], 1):
+                    # 获取最近一天的主力流入
+                    records = item.get('flow_data', {}).get('records', [])
+                    latest_inflow = records[0].get('main_net_inflow', 0) if records else 0
+
                     print(f"{idx:2d}. {item['code_6digit']} - "
                           f"风险评分: {item['risk_score']:.2f} - "
                           f"类型: {item['capital_type']} - "
-                          f"主力流入: {item['flow_data'].get('main_net_inflow', 0)/1e6:.1f}百万")
+                          f"主力流入: {latest_inflow/1e6:.1f}百万")
             else:
                 print("   (无)")
             
