@@ -1,14 +1,1 @@
-{
-  "level1": {
-    "pct_chg_min": 3.0,
-    "amount_min": 30000000,
-    "turnover_min": 2.0
-  },
-  "level2": {
-    "main_inflow_min": 5000000,
-    "super_ratio_min": 0.3
-  },
-  "level3": {
-    "risk_score_max": 0.6
-  }
-}
+{"level1": {"pct_chg_min": 2.0, "amount_min": 20000000, "turnover_min": 1.5}, "level2": {"main_inflow_min": 5000000, "super_ratio_min": 0.3}, "level3": {"risk_score_max": 0.6}}

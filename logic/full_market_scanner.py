@@ -73,7 +73,7 @@ class FullMarketScanner:
         self.trap_detector = TrapDetector()
         self.capital_classifier = CapitalClassifier()
         self.fund_flow = FundFlowAnalyzer()
-        self.limiter = RateLimiter(max_requests_per_minute=18, max_requests_per_hour=200, min_request_interval=3)  # AkShare 限速
+        self.limiter = RateLimiter(max_requests_per_minute=60, max_requests_per_hour=2000, min_request_interval=0.1)  # 东方财富 API 限速
         self.converter = CodeConverter()
         
         # 获取全市场股票列表
@@ -286,28 +286,26 @@ class FullMarketScanner:
             # 进度打印
             if idx % 10 == 0 or idx == total - 1:
                 logger.info(f"  进度: {idx+1}/{total} ({(idx+1)/total*100:.1f}%)")
-            
-            # 限速
-            with self.limiter:
-                try:
-                    # 转换为6位代码（AkShare格式）
-                    code_6digit = self.converter.to_6digit(code)
-                    
-                    # 获取资金流向
-                    flow_data = self.fund_flow.get_fund_flow(code_6digit)
-                    
-                    if not flow_data:
-                        continue
-                    
-                    # 检查资金条件
-                    if self._check_level2_criteria(code, flow_data):
-                        results.append({
-                            'code': code,
-                            'flow_data': flow_data
-                        })
-                except Exception as e:
-                    logger.warning(f"⚠️  {code} Level2 分析失败: {e}")
+
+            try:
+                # 转换为6位代码（AkShare格式）
+                code_6digit = CodeConverter.to_akshare(code)
+
+                # 获取资金流向（东方财富 API，不需要严格限速）
+                flow_data = self.fund_flow.get_fund_flow(code_6digit)
+
+                if not flow_data:
                     continue
+
+                # 检查资金条件
+                if self._check_level2_criteria(code, flow_data):
+                    results.append({
+                        'code': code,
+                        'flow_data': flow_data
+                    })
+            except Exception as e:
+                logger.warning(f"⚠️  {code} Level2 分析失败: {e}")
+                continue
         
         return results
     
@@ -315,20 +313,30 @@ class FullMarketScanner:
         """检查 Level 2 资金条件"""
         try:
             cfg = self.config['level2']
-            
-            # 条件 1: 主力净流入必须为正
-            main_inflow = flow_data.get('main_net_inflow', 0)
-            if main_inflow <= 0:
+
+            # 获取最新一天的数据
+            latest = flow_data.get('latest')
+            if not latest:
                 return False
-            
-            # 条件 2: 超大单占比
-            super_ratio = flow_data.get('super_ratio', 0)
-            if super_ratio < cfg['super_ratio_min']:
+
+            # 条件 1: 主力净流入（超大单 + 大单）必须为正
+            super_large_net = latest.get('super_large_net', 0)
+            large_net = latest.get('large_net', 0)
+            institution_net = super_large_net + large_net
+
+            if institution_net <= 0:
                 return False
-            
+
+            # 条件 2: 超大单占比（超大单 / 主力净流入）
+            if institution_net > 0:
+                super_ratio = abs(super_large_net / institution_net)
+                if super_ratio < cfg['super_ratio_min']:
+                    return False
+
             return True
-            
-        except Exception:
+
+        except Exception as e:
+            logger.warning(f"⚠️  {code} Level2 条件检查失败: {e}")
             return False
     
     def _level3_trap_classification(self, candidates: List[dict]) -> Dict[str, List[dict]]:
@@ -360,7 +368,7 @@ class FullMarketScanner:
             
             try:
                 # 转换为6位代码
-                code_6digit = self.converter.to_6digit(code)
+                code_6digit = CodeConverter.to_akshare(code)
                 
                 # 诱多检测
                 trap_result = self.trap_detector.detect(code_6digit)
