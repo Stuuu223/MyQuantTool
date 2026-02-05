@@ -23,6 +23,129 @@ class TrapDetector:
         """初始化检测器"""
         self.detected_traps = []
 
+    def detect(self, stock_code: str, days: int = 30) -> Dict[str, Any]:
+        """
+        统一入口：检测股票的诱多陷阱
+
+        Args:
+            stock_code: 股票代码（6位）
+            days: 分析天数（默认30天）
+
+        Returns:
+            检测结果，格式：
+            {
+                'signals': List[Dict],  # 诱多信号列表
+                'detected_traps': List[Dict],  # 检测到的陷阱
+                'trap_count': int,  # 陷阱数量
+                'highest_severity': float,  # 最高严重程度
+                'highest_risk_level': str,  # 最高风险等级
+                'total_outflow': float,  # 累计流出
+                'comprehensive_risk_score': float,  # 综合风险评分
+                'risk_assessment': str,  # 风险评估
+                'scan_time': str  # 扫描时间
+            }
+        """
+        try:
+            # 延迟导入，避免循环依赖
+            from logic.fund_flow_analyzer import FundFlowAnalyzer
+
+            # 初始化资金流向分析器
+            analyzer = FundFlowAnalyzer(enable_cache=True)
+
+            # 获取资金流向数据
+            fund_flow_data = analyzer.get_fund_flow(stock_code, days=days)
+
+            if "error" in fund_flow_data:
+                return {
+                    'signals': [],
+                    'detected_traps': [],
+                    'trap_count': 0,
+                    'highest_severity': 0,
+                    'highest_risk_level': 'NONE',
+                    'total_outflow': 0,
+                    'comprehensive_risk_score': 0,
+                    'risk_assessment': f"数据获取失败: {fund_flow_data['error']}",
+                    'scan_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                }
+
+            # 提取每日数据
+            daily_data = fund_flow_data.get('records', [])
+
+            if not daily_data:
+                return {
+                    'signals': [],
+                    'detected_traps': [],
+                    'trap_count': 0,
+                    'highest_severity': 0,
+                    'highest_risk_level': 'NONE',
+                    'total_outflow': 0,
+                    'comprehensive_risk_score': 0,
+                    'risk_assessment': '无资金流向数据',
+                    'scan_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                }
+
+            # 转换数据格式（从 fund_flow_analyzer 格式转换为 trap_detector 格式）
+            converted_data = []
+            for record in daily_data:
+                date_value = record.get('date', '')
+                # 如果是 datetime.date 类型，转换为字符串
+                if hasattr(date_value, 'strftime'):
+                    date_value = date_value.strftime('%Y-%m-%d')
+                elif not isinstance(date_value, str):
+                    date_value = str(date_value)
+
+                converted_data.append({
+                    'date': date_value,
+                    'institution': record.get('super_large_net', 0) + record.get('large_net', 0),  # 机构资金
+                    'super_large': record.get('super_large_net', 0),
+                    'large': record.get('large_net', 0),
+                    'medium': record.get('medium_net', 0),
+                    'small': record.get('small_net', 0),
+                    'retail': record.get('medium_net', 0) + record.get('small_net', 0)  # 散户资金
+                })
+
+            # 计算滚动趋势
+            for i in range(len(converted_data)):
+                # 5日滚动
+                start_idx = max(0, i - 4)
+                flow_5d = sum(d['institution'] for d in converted_data[start_idx:i+1])
+                converted_data[i]['flow_5d_net'] = flow_5d
+
+                # 10日滚动
+                start_idx = max(0, i - 9)
+                flow_10d = sum(d['institution'] for d in converted_data[start_idx:i+1])
+                converted_data[i]['flow_10d_net'] = flow_10d
+
+            # 调用综合扫描
+            result = self.comprehensive_trap_scan(converted_data)
+
+            # 转换信号格式（从 detected_traps 转换为 signals）
+            signals = []
+            for trap in result.get('detected_traps', []):
+                signals.append({
+                    'type': trap.get('trap_type', 'UNKNOWN'),
+                    'severity': trap.get('confidence', 0),
+                    'date': trap.get('date', ''),
+                    'description': trap.get('description', '')
+                })
+
+            result['signals'] = signals
+
+            return result
+
+        except Exception as e:
+            return {
+                'signals': [],
+                'detected_traps': [],
+                'trap_count': 0,
+                'highest_severity': 0,
+                'highest_risk_level': 'NONE',
+                'total_outflow': 0,
+                'comprehensive_risk_score': 0,
+                'risk_assessment': f"检测失败: {str(e)}",
+                'scan_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }
+
     def detect_pump_and_dump(self, daily_data: List[Dict[str, Any]], max_traps: int = 5, strict_mode: bool = True) -> Dict[str, Any]:
         """
         检测"吸筹-反手卖"诱多陷阱
