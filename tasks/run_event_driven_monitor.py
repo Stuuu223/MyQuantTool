@@ -38,6 +38,7 @@ from logic.leader_event_detector import LeaderEventDetector
 from logic.qmt_tick_monitor import get_tick_monitor
 from logic.event_recorder import get_event_recorder
 from logic.logger import get_logger
+from logic.market_phase_checker import MarketPhaseChecker
 
 logger = get_logger(__name__)
 
@@ -79,12 +80,20 @@ class EventDrivenMonitor:
         self.event_manager = EventManager()
         self.event_recorder = get_event_recorder()  # 初始化事件记录器
         
+        # 初始化市场阶段检查器
+        self.phase_checker = MarketPhaseChecker(self.market_checker)
+        
         # 状态管理
         self.last_signature = None
         self.scan_count = 0
         self.event_count = 0
         self.save_count = 0
         self.start_time = None
+        
+        # 真实候选池（带时间戳）
+        self.hot_candidates = {}  # {code: {'timestamp': datetime, 'trigger_reason': str}}
+        self.candidate_ttl_minutes = 10  # 候选池TTL：10分钟
+        self.last_deep_scan_time = None  # 上次深扫时间
         
         # 初始化事件检测器
         self._init_event_detectors()
@@ -350,32 +359,40 @@ class EventDrivenMonitor:
             time.sleep(10)  # 每10秒检查一次
     
     def run(self):
-        """运行持续监控"""
+        """运行持续监控 - 统一入口，内部自动切换策略"""
         self.start_time = datetime.now()
         
         logger.info("=" * 80)
-        logger.info("🚀 事件驱动持续监控启动 - 第二阶段框架")
+        logger.info("🚀 事件驱动持续监控启动 - 第二阶段框架（重构版）")
         logger.info("=" * 80)
         logger.info(f"📅 启动时间: {self.start_time.strftime('%Y-%m-%d %H:%M:%S')}")
-        logger.info(f"⏱️  扫描间隔: {self.scan_interval} 秒 ({self.scan_interval/60:.1f} 分钟)")
-        logger.info(f"🎯 模式: {self.mode}")
-        logger.info(f"🎯 智能快照: 仅在状态变化时保存")
-        
-        if self.mode == "event_driven":
-            logger.info(f"🎯 事件驱动: 支持 {len(self.event_manager.detectors)} 个事件检测器")
-            logger.info(f"📊 监控股票: {len(self.monitor_stocks)} 只")
-        
+        logger.info(f"🎯 运行模式: 自动策略切换")
+        logger.info(f"🎯 支持策略: auction（竞价） / event_driven（盘中） / idle（空闲）")
         logger.info("=" * 80)
         
         print("\n🎯 事件驱动监控已启动，按 Ctrl+C 停止")
         print("=" * 80 + "\n")
         
         try:
-            if self.mode == "event_driven":
-                self.run_event_driven()
-            else:
-                self.run_fixed_interval()
+            # 调度循环
+            while True:
+                # 1. 确定当前策略
+                strategy = self.phase_checker.determine_strategy()
                 
+                # 2. 打印策略
+                logger.info(f"🎯 当前策略: {strategy}")
+                
+                # 3. 按策略分发
+                if strategy == 'auction':
+                    self._run_auction_strategy()
+                elif strategy == 'event_driven':
+                    self._run_event_driven_strategy()
+                elif strategy == 'idle':
+                    self._run_idle_strategy()
+                else:
+                    logger.warning(f"⚠️ 未知策略: {strategy}")
+                    time.sleep(60)
+                    
         except KeyboardInterrupt:
             logger.info("\n" + "=" * 80)
             logger.info("🛑 持续监控已停止")
@@ -386,10 +403,153 @@ class EventDrivenMonitor:
             logger.info(f"   快照保存次数: {self.save_count}")
             logger.info(f"   运行时长: {datetime.now() - self.start_time}")
             logger.info("=" * 80)
+    
+    def _run_auction_strategy(self):
+        """竞价策略 - 第一版（最小功能）"""
+        logger.info("📢 [AUCTION] 进入竞价模式")
+        
+        # 1. 调用竞价事件检测器（验证能否工作）
+        try:
+            events = self.auction_detector.detect_all()
+            logger.info(f"   检测到竞价事件: {len(events)} 个")
             
-            # 停止Tick监控器
-            if self.tick_monitor:
-                self.tick_monitor.stop()
+            if events:
+                # 只打印前3个，避免日志刷屏
+                for event in events[:3]:
+                    logger.info(f"   - {event.stock_code}: {event.event_type}")
+                if len(events) > 3:
+                    logger.info(f"   ... 还有 {len(events) - 3} 个事件")
+        except Exception as e:
+            logger.warning(f"   竞价事件检测失败: {e}")
+        
+        # 2. 模拟深扫（跳过，第一版只验证阶段切换）
+        logger.info("   模拟深扫: 跳过（第一版只验证阶段切换）")
+        
+        # 3. 等待下次循环（验证循环能跑通）
+        logger.info("   等待 30 秒后重新检测...")
+        time.sleep(30)
+    
+    def _run_event_driven_strategy(self):
+        """事件驱动策略 - 第二版（真实候选池 + 深扫）"""
+        logger.info("📡 [EVENT_DRIVEN] 进入事件驱动模式")
+        
+        # 1. 清理过期候选
+        self._cleanup_expired_candidates()
+        
+        # 2. 从全市场扫描更新候选池
+        self._update_candidates_from_market_scan()
+        
+        # 3. 打印候选池状态
+        logger.info(f"   候选池: {len(self.hot_candidates)} 只")
+        if self.hot_candidates:
+            logger.info(f"   候选池: {list(self.hot_candidates.keys())[:3]}...")
+        
+        # 4. 如果有候选，执行深扫
+        if self.hot_candidates:
+            self._deep_scan_candidates()
+        else:
+            logger.info("   候选池为空，跳过深扫")
+        
+        # 5. 等待下次循环
+        logger.info("   等待 30 秒后重新检测...")
+        time.sleep(30)
+    
+    def _update_candidates_from_market_scan(self):
+        """从全市场扫描更新候选池"""
+        try:
+            # 只运行Level1初筛（轻量级）
+            level1_passed = self.scanner.run_level1_screening()
+            
+            if level1_passed:
+                new_candidates_count = 0
+                for stock_code in level1_passed:
+                    # 添加到候选池
+                    if self._add_candidate(stock_code, 'level1_screening'):
+                        new_candidates_count += 1
+                
+                if new_candidates_count > 0:
+                    logger.info(f"   全市场初筛: 新增 {new_candidates_count} 只候选")
+        except Exception as e:
+            logger.warning(f"   全市场初筛失败: {e}")
+    
+    def _add_candidate(self, code: str, trigger_reason: str = 'unknown') -> bool:
+        """
+        添加股票到候选池
+        
+        Args:
+            code: 股票代码
+            trigger_reason: 触发原因
+        
+        Returns:
+            bool: 是否成功添加（如果已存在且未过期，返回False）
+        """
+        if code in self.hot_candidates:
+            # 已存在，更新时间戳
+            self.hot_candidates[code]['timestamp'] = datetime.now()
+            self.hot_candidates[code]['trigger_reason'] = trigger_reason
+            return False
+        
+        # 检查候选池大小限制
+        if len(self.hot_candidates) >= 100:
+            logger.warning(f"   候选池已满（{len(self.hot_candidates)} 只），跳过添加")
+            return False
+        
+        # 添加新候选
+        self.hot_candidates[code] = {
+            'timestamp': datetime.now(),
+            'trigger_reason': trigger_reason
+        }
+        return True
+    
+    def _cleanup_expired_candidates(self):
+        """清理过期的候选（TTL）"""
+        if not self.hot_candidates:
+            return
+        
+        expired_codes = []
+        now = datetime.now()
+        
+        for code, data in self.hot_candidates.items():
+            age_minutes = (now - data['timestamp']).total_seconds() / 60
+            if age_minutes > self.candidate_ttl_minutes:
+                expired_codes.append(code)
+        
+        for code in expired_codes:
+            del self.hot_candidates[code]
+        
+        if expired_codes:
+            logger.info(f"   清理过期候选: {len(expired_codes)} 只")
+    
+    def _deep_scan_candidates(self):
+        """对候选池执行深度扫描"""
+        try:
+            # 提取候选股票代码列表
+            candidate_codes = list(self.hot_candidates.keys())
+            
+            logger.info(f"   开始深度扫描: {len(candidate_codes)} 只候选")
+            
+            # 执行深度扫描（只扫描候选集）
+            results = self.scanner.scan_with_risk_management(
+                stock_list=candidate_codes,
+                mode='intraday'
+            )
+            
+            # 打印结果摘要
+            self.print_summary(results)
+            
+            # 更新扫描时间
+            self.last_deep_scan_time = datetime.now()
+            
+        except Exception as e:
+            logger.error(f"   深度扫描失败: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def _run_idle_strategy(self):
+        """空闲策略 - 非交易时间"""
+        logger.info("⏸️  [IDLE] 当前不在交易时间")
+        logger.info("   等待 60 秒后重新检测...")
+        time.sleep(60)
 
 
 if __name__ == "__main__":

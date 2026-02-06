@@ -184,12 +184,13 @@ class FullMarketScanner:
         
         return results
     
-    def scan_with_risk_management(self, mode='premarket') -> Dict:
+    def scan_with_risk_management(self, mode='premarket', stock_list=None) -> Dict:
         """
         带风险管理的扫描
         
         Args:
             mode: 扫描模式
+            stock_list: 可选，指定扫描的股票列表（None=全市场）
         
         Returns:
             {
@@ -206,14 +207,25 @@ class FullMarketScanner:
             }
         """
         logger.info("=" * 80)
-        logger.info(f"🚀 开始全市场扫描（带风险管理） (模式: {mode})")
+        if stock_list:
+            logger.info(f"🚀 开始候选池扫描（带风险管理） (模式: {mode})")
+            logger.info(f"   扫描范围: {len(stock_list)} 只候选股票")
+        else:
+            logger.info(f"🚀 开始全市场扫描（带风险管理） (模式: {mode})")
         logger.info("=" * 80)
         start_time = time.time()
         
         # ===== Level 1: 技术面粗筛 =====
         logger.info("\n🔍 [Level 1] 技术面粗筛...")
-        candidates_l1 = self._level1_technical_filter()
-        logger.info(f"✅ Level 1 完成: {len(self.all_stocks)} → {len(candidates_l1)} 只 (耗时: {time.time()-start_time:.1f}秒)")
+        
+        if stock_list:
+            # 只扫描指定的股票列表（候选池模式）
+            candidates_l1 = self._level1_technical_filter_stocks(stock_list)
+        else:
+            # 全市场扫描
+            candidates_l1 = self._level1_technical_filter()
+        
+        logger.info(f"✅ Level 1 完成: {len(self.all_stocks) if not stock_list else len(stock_list)} → {len(candidates_l1)} 只 (耗时: {time.time()-start_time:.1f}秒)")
         
         if not candidates_l1:
             logger.warning("⚠️  Level 1 未筛选出任何股票，提前结束")
@@ -463,13 +475,49 @@ class FullMarketScanner:
                     continue
                 
                 # 本地过滤
-                for code in batch:
+                batch_samples = []  # 收集每批次的样本（用于打印涨跌幅最高的）
+                
+                for idx, code in enumerate(batch):
                     tick = tick_data.get(code, {})
                     
                     # 类型检查：确保 tick 是字典
                     if not isinstance(tick, dict):
                         logger.warning(f"⚠️  股票 {code} Tick 数据类型异常: {type(tick)}, 值: {str(tick)[:200]}")
                         continue
+                    
+                    # 收集样本数据
+                    if tick:
+                        last_close = tick.get('lastClose', 0)
+                        last_price = tick.get('lastPrice', 0)
+                        amount = tick.get('amount', 0)
+                        pct_chg = abs((last_price - last_close) / last_close * 100) if last_close > 0 else 0
+                        volume = (
+                            tick.get('totalVolume') or 
+                            tick.get('volume') or 
+                            tick.get('total_volume') or 
+                            tick.get('turnoverVolume') or 
+                            tick.get('turnover_volume') or 
+                            0
+                        )
+                        if volume == 0 and amount > 0 and last_price > 0:
+                            volume = amount / last_price
+                        
+                        # 计算量比
+                        volume_ratio = self._check_volume_ratio(code, volume, tick)
+                        volume_ratio_str = f"{volume_ratio:.2f}" if volume_ratio is not None else "数据缺失"
+                        
+                        # 获取市值
+                        market_cap = self._get_market_cap(code, tick)
+                        market_cap_str = f"{market_cap/1e8:.2f}亿" if market_cap > 0 else "0"
+                        
+                        # 添加到样本列表
+                        batch_samples.append({
+                            'code': code,
+                            'pct_chg': pct_chg,
+                            'amount': amount,
+                            'volume_ratio_str': volume_ratio_str,
+                            'market_cap_str': market_cap_str
+                        })
                     
                     if tick and self._check_level1_criteria(code, tick):
                         # 构建候选股票详细信息
@@ -521,7 +569,257 @@ class FullMarketScanner:
         
         return candidates
     
+    def _level1_technical_filter_stocks(self, stock_list: List[str]) -> List[dict]:
+        """
+        对指定股票列表进行 Level 1 技术面筛选
+        
+        Args:
+            stock_list: 要筛选的股票代码列表
+        
+        Returns:
+            候选股票详细信息列表
+        """
+        candidates = []
+        batch_size = 1000
+        
+        for i in range(0, len(stock_list), batch_size):
+            batch = stock_list[i:i+batch_size]
+            batch_num = i // batch_size + 1
+            
+            # 分批获取 QMT Tick 数据
+            try:
+                tick_data = xtdata.get_full_tick(batch)
+                
+                logger.info(f"批次 {batch_num} 获取成功, tick_data 类型: {type(tick_data)}")
+                if not isinstance(tick_data, dict):
+                    logger.warning(f"⚠️  批次 {batch_num} 返回数据类型异常: {type(tick_data)}")
+                    continue
+                
+                # 本地过滤
+                for code in batch:
+                    tick = tick_data.get(code, {})
+                    
+                    if not isinstance(tick, dict):
+                        continue
+                    
+                    if tick and self._check_level1_criteria(code, tick):
+                        # 构建候选股票详细信息
+                        last_close = tick.get('lastClose', 0)
+                        last_price = tick.get('lastPrice', 0)
+                        amount = tick.get('amount', 0)
+                        
+                        volume = (
+                            tick.get('totalVolume') or 
+                            tick.get('volume') or 
+                            tick.get('total_volume') or 
+                            tick.get('turnoverVolume') or 
+                            tick.get('turnover_volume') or 
+                            0
+                        )
+                        
+                        if volume == 0 and amount > 0 and last_price > 0:
+                            volume = amount / last_price
+                        
+                        if last_close > 0:
+                            pct_chg = (last_price - last_close) / last_close * 100
+                        else:
+                            pct_chg = 0
+                        
+                        financial_info = self._get_stock_financial_info(code)
+                        
+                        candidates.append({
+                            'code': code,
+                            'name': tick.get('stockName', ''),
+                            'last_price': last_price,
+                            'last_close': last_close,
+                            'pct_chg': pct_chg,
+                            'amount': amount,
+                            'volume': volume,
+                            'circulating_shares': financial_info.get('circulating_shares', 0),
+                            'circulating_market_cap': financial_info.get('circulating_market_cap', 0),
+                        })
+                
+                hit_count = len([c for c in batch if any(c['code'] == x['code'] for x in candidates)])
+                logger.info(f"  批次 {batch_num}: 获取 {len(batch)} 只股票 (命中: {hit_count} 只)")
+                
+                # 打印每批次涨跌幅最高的样本
+                if batch_samples:
+                    # 按涨跌幅降序排序
+                    sorted_samples = sorted(batch_samples, key=lambda x: x['pct_chg'], reverse=True)
+                    # 打印前3只涨跌幅最高的
+                    for sample in sorted_samples[:3]:
+                        logger.info(f"[L1样本] {sample['code']}: 涨跌幅={sample['pct_chg']:.2f}%, 成交额={sample['amount']/1e8:.2f}亿, 量比={sample['volume_ratio_str']}, 市值={sample['market_cap_str']}")
+                
+            except Exception as e:
+                logger.warning(f"⚠️  批次 {batch_num} 获取失败: {e}")
+                continue
+        
+        return candidates
+    
+    def _check_volume_ratio(self, code: str, current_volume: float, tick: dict) -> Optional[float]:
+        """
+        检查量比（当日成交量 / 5日平均成交量）- 返回量比供外部判断
+        
+        Args:
+            code: 股票代码
+            current_volume: 当日成交量
+            tick: Tick数据（用于获取流通市值）
+        
+        Returns:
+            Optional[float]: 
+                - None: 数据缺失（K线不足、接口失败等）
+                - float: 量比（当日成交量 / 5日平均成交量），可能小于1
+        """
+        try:
+            # 获取最近5日K线数据（只需要成交量）
+            kline_data = xtdata.get_market_data_ex(
+                field_list=['volume'],
+                stock_list=[code],
+                period='1d',
+                start_time='',
+                end_time='',
+                count=5,
+                dividend_type='none'
+            )
+            
+            # 数据缺失：返回None
+            if not kline_data or code not in kline_data:
+                logger.debug(f"[量比缺失] {code}: K线数据为空")
+                return None
+            
+            # 类型检查：确保返回的是字典
+            code_data = kline_data[code]
+            if not isinstance(code_data, dict):
+                logger.debug(f"[量比异常] {code}: 数据类型异常 {type(code_data)}, 期望dict")
+                return None
+            
+            # 提取成交量数据
+            if 'volume' not in code_data:
+                logger.debug(f"[量比缺失] {code}: 缺少volume字段")
+                return None
+            
+            volumes = code_data['volume']
+            if len(volumes) < 5:
+                logger.debug(f"[量比缺失] {code}: K线天数不足 {len(volumes)} < 5")
+                return None
+            
+            # 计算5日平均成交量
+            avg_volume_5d = sum(volumes) / len(volumes)
+            
+            if avg_volume_5d == 0:
+                logger.debug(f"[量比缺失] {code}: 5日平均成交量为0")
+                return None
+            
+            # 计算量比（可能小于1，表示缩量）
+            volume_ratio = current_volume / avg_volume_5d
+            
+            return volume_ratio
+            
+        except Exception as e:
+            logger.debug(f"[量比异常] {code}: {e}")
+            return None
+    
+    def _get_market_cap(self, code: str, tick: dict) -> float:
+        """
+        获取流通市值（元）
+        
+        Args:
+            code: 股票代码
+            tick: Tick数据
+        
+        Returns:
+            float: 流通市值（元），如果无法获取返回0
+        """
+        try:
+            # 尝试从 tick 数据中获取流通市值
+            market_cap = (
+                tick.get('circulatingMarketCap') or 
+                tick.get('SH_FLOAT_VAL') or 
+                tick.get('FLOAT_VAL') or 
+                0
+            )
+            
+            if market_cap > 0:
+                return market_cap
+            
+            # 如果 tick 中没有，尝试从 QMT 获取
+            try:
+                financial_data = xtdata.get_market_data(
+                    field_list=['SH_FLOAT_VAL', 'FLOAT_VAL'],
+                    stock_list=[code],
+                    period='1d',
+                    start_time='',
+                    end_time='',
+                    dividend_type='none'
+                )
+                
+                if financial_data and code in financial_data:
+                    data = financial_data[code]
+                    market_cap = (
+                        data.get('SH_FLOAT_VAL') or 
+                        data.get('FLOAT_VAL') or 
+                        0
+                    )
+                    
+                    if market_cap > 0:
+                        return market_cap
+            
+            except Exception as e:
+                logger.debug(f"从 QMT 获取市值失败 {code}: {e}")
+            
+            return 0.0
+            
+        except Exception as e:
+            logger.debug(f"获取市值失败 {code}: {e}")
+            return 0.0
+    
+    def get_volume_ratio_threshold(self, market_cap: float) -> float:
+        """
+        根据市值分层获取量比阈值
+        
+        Args:
+            market_cap: 流通市值（单位：元）
+        
+        Returns:
+            float: 量比阈值
+                - 小盘（<80亿）：2.0
+                - 中盘（80-200亿）：1.7
+                - 大盘（≥200亿）：1.4
+        """
+        # 市值单位转换：元 → 亿
+        market_cap_yi = market_cap / 1_000_000_000
+        
+        if market_cap_yi < 80:
+            # 小盘
+            return 2.0
+        elif market_cap_yi < 200:
+            # 中盘
+            return 1.7
+        else:
+            # 大盘
+            return 1.4
+    
+    def run_level1_screening(self) -> List[str]:
+        """
+        运行 Level 1 初筛（公开方法）
+        
+        返回:
+            List[str]: 通过 Level 1 筛选的股票代码列表
+        """
+        candidates = self._level1_technical_filter()
+        return [c['code'] for c in candidates]
+    
     def _check_level1_criteria(self, code: str, tick: dict) -> bool:
+        """
+        检查 Level 1 筛选条件（增强版：添加量比过滤）
+        
+        筛选条件：
+        1. 基础风控：剔除垃圾股
+        2. 涨跌幅：|涨跌幅| > 3%
+        3. 成交额：> 2000万
+        4. 换手率：> 2%
+        5. 量比：> 1.5（新增）
+        """
         """检查 Level 1 筛选条件"""
         if not tick:
             return False
@@ -539,6 +837,20 @@ class FullMarketScanner:
             last_price = tick.get('lastPrice', 0)
             amount = tick.get('amount', 0)
             
+            # 获取成交量
+            volume = (
+                tick.get('totalVolume') or 
+                tick.get('volume') or 
+                tick.get('total_volume') or 
+                tick.get('turnoverVolume') or 
+                tick.get('turnover_volume') or 
+                0
+            )
+            
+            # 如果没有成交量字段，尝试用成交额和价格估算
+            if volume == 0 and amount > 0 and last_price > 0:
+                volume = amount / last_price
+            
             # 计算涨跌幅
             if last_close == 0:
                 return False
@@ -546,15 +858,40 @@ class FullMarketScanner:
             
             cfg = self.config['level1']
             
-            # 两个条件必须同时满足（暂时去掉换手率，需要额外 API 获取流通市值）
+            # 两个条件必须同时满足
             if pct_chg < cfg['pct_chg_min']:
                 return False
             if amount < cfg['amount_min']:
                 return False
-            # TODO: 换手率需要单独调用 QMT 的其他接口获取流通市值，暂时注释掉
-            # if turnover < cfg['turnover_min']:
-            #     return False
             
+            # 检查量比（新增：市值分层阈值）
+            volume_ratio = self._check_volume_ratio(code, volume, tick)
+            
+            # 量比数据缺失：跳过这条过滤（不要因为技术问题淘汰强势票）
+            if volume_ratio is None:
+                logger.debug(f"[L1警告] {code}: 量比数据缺失，跳过量比过滤")
+                # 跳过量比检查，继续执行后面的逻辑
+            else:
+                # 量比数据正常：按市值分层阈值判断
+                # 获取流通市值用于分层
+                market_cap = self._get_market_cap(code, tick)
+                
+                # 市值为0时，使用默认阈值（1.5）
+                if market_cap == 0:
+                    volume_ratio_threshold = 1.5
+                    logger.debug(f"[L1检查] {code}: 市值=0，使用默认量比阈值 1.5")
+                else:
+                    volume_ratio_threshold = self.get_volume_ratio_threshold(market_cap)
+                    logger.debug(f"[L1检查] {code}: 市值={market_cap/1e8:.2f}亿，阈值={volume_ratio_threshold:.2f}")
+                
+                # 检查量比是否达标
+                if volume_ratio < volume_ratio_threshold:
+                    logger.debug(f"[L1过滤] {code}: 量比={volume_ratio:.2f} < 阈值={volume_ratio_threshold:.2f}")
+                    return False
+            
+            # 所有检查通过
+            volume_ratio_str = f"{volume_ratio:.2f}" if volume_ratio is not None else "数据缺失"
+            logger.debug(f"[L1通过] {code}: 涨跌幅={pct_chg:.2f}%, 成交额={amount/1e8:.2f}亿, 量比={volume_ratio_str}")
             return True
             
         except Exception as e:
