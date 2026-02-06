@@ -76,11 +76,15 @@ class FullMarketScanner:
         self.limiter = RateLimiter(max_requests_per_minute=60, max_requests_per_hour=2000, min_request_interval=0.1)  # 东方财富 API 限速
         self.converter = CodeConverter()
         
+        # 加载本地股本信息（用于市值分层）
+        self.equity_info = self._load_equity_info()
+        
         # 获取全市场股票列表
         self.all_stocks = self._init_qmt_stock_list()
         
         logger.info(f"✅ 全市场扫描器初始化完成")
         logger.info(f"   - 股票池: {len(self.all_stocks)} 只")
+        logger.info(f"   - 股本信息: {len(self.equity_info)} 只股票")
         logger.info(f"   - Level 1 阈值: 涨跌幅>{self.config['level1']['pct_chg_min']}%, 成交额>{self.config['level1']['amount_min']/1e7:.0f}千万")
         logger.info(f"   - Level 2 阈值: 主力流入>{self.config['level2']['main_inflow_min']/1e6:.0f}百万")
         logger.info(f"   - Level 3 阈值: 风险评分<{self.config['level3']['risk_score_max']}")
@@ -93,6 +97,32 @@ class FullMarketScanner:
         else:
             logger.warning(f"⚠️  配置文件不存在: {config_path}，使用默认配置")
             return self._default_config()
+    
+    def _load_equity_info(self) -> dict:
+        """
+        加载本地股本信息（优先使用完整版，备选MVP版）
+        
+        Returns:
+            dict: 股本信息字典 {code: {name, total_shares, float_shares, ...}}
+        """
+        try:
+            # 优先使用完整版
+            with open('data/equity_info.json', 'r', encoding='utf-8') as f:
+                equity_info = json.load(f)
+            logger.info(f"✅ 加载股本信息（完整版）: {len(equity_info)} 只股票")
+            return equity_info
+        except Exception as e:
+            logger.warning(f"⚠️ 加载完整版失败: {e}")
+            
+            try:
+                # 备用：使用MVP版本
+                with open('data/equity_info_mvp.json', 'r', encoding='utf-8') as f:
+                    equity_info = json.load(f)
+                logger.info(f"✅ 加载股本信息（MVP版）: {len(equity_info)} 只股票")
+                return equity_info
+            except Exception as e2:
+                logger.warning(f"⚠️ 加载MVP版也失败: {e2}")
+                return {}
     
     def _default_config(self) -> dict:
         """默认配置"""
@@ -745,7 +775,7 @@ class FullMarketScanner:
     
     def _get_market_cap(self, code: str, tick: dict) -> float:
         """
-        获取流通市值（元）
+        获取流通市值（元）- 优先使用本地股本信息
         
         Args:
             code: 股票代码
@@ -755,7 +785,16 @@ class FullMarketScanner:
             float: 流通市值（元），如果无法获取返回0
         """
         try:
-            # 尝试从 tick 数据中获取流通市值
+            # 1. 优先使用本地股本信息（更可靠、更快速）
+            if code in self.equity_info:
+                equity = self.equity_info[code]
+                last_price = tick.get('lastPrice', 0) or equity.get('last_close', 0)
+                float_shares = equity.get('float_shares', 0)
+                
+                if float_shares > 0 and last_price > 0:
+                    return float_shares * last_price
+            
+            # 2. 备用：尝试从 tick 数据中获取
             market_cap = (
                 tick.get('circulatingMarketCap') or 
                 tick.get('SH_FLOAT_VAL') or 
@@ -766,7 +805,7 @@ class FullMarketScanner:
             if market_cap > 0:
                 return market_cap
             
-            # 如果 tick 中没有，尝试从 QMT 获取
+            # 3. 备用：尝试从 QMT 获取
             try:
                 financial_data = xtdata.get_market_data(
                     field_list=['SH_FLOAT_VAL', 'FLOAT_VAL'],
@@ -799,29 +838,31 @@ class FullMarketScanner:
     
     def get_volume_ratio_threshold(self, market_cap: float) -> float:
         """
-        根据市值分层获取量比阈值
+        根据市值分层获取量比阈值（市场共识版）
+        
+        市值分层逻辑：
+        - 小盘（<80亿）：量比≥2.0（小盘股波动大，需要明显放量）
+        - 中盘（80-200亿）：量比≥1.5（平衡机会和质量）
+        - 大盘（≥200亿）：量比≥1.3（大盘股流动性好，小幅放量就有意义）
         
         Args:
             market_cap: 流通市值（单位：元）
         
         Returns:
             float: 量比阈值
-                - 小盘（<80亿）：2.0
-                - 中盘（80-200亿）：1.7
-                - 大盘（≥200亿）：1.4
         """
         # 市值单位转换：元 → 亿
         market_cap_yi = market_cap / 1_000_000_000
         
         if market_cap_yi < 80:
-            # 小盘
+            # 小盘：需要明显放量
             return 2.0
         elif market_cap_yi < 200:
-            # 中盘
-            return 1.7
+            # 中盘：平衡机会和质量
+            return 1.5
         else:
-            # 大盘
-            return 1.4
+            # 大盘：流动性好，小幅放量就有意义
+            return 1.3
     
     def run_level1_screening(self) -> List[str]:
         """
