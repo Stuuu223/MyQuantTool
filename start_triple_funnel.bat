@@ -1,27 +1,39 @@
 @echo off
 chcp 65001 > nul
 echo ========================================
-echo   三漏斗扫描系统 - 启动脚本
+echo   Triple Funnel Scanner - Startup
 echo ========================================
 echo.
 
-REM 检查Python环境
-python --version >nul 2>&1
-if errorlevel 1 (
-    echo [错误] 未找到Python环境，请先安装Python
+REM Check if venv_qmt exists
+if not exist "venv_qmt\Scripts\activate.bat" (
+    echo [ERROR] QMT virtual environment not found: venv_qmt
+    echo Please run: C:\Python310\python.exe -m venv venv_qmt
     pause
     exit /b 1
 )
 
-echo [信息] 启动三漏斗扫描系统UI...
+REM Activate virtual environment
+call venv_qmt\Scripts\activate.bat
+
+REM Check Python environment
+python --version >nul 2>&1
+if errorlevel 1 (
+    echo [ERROR] Python not found in virtual environment
+    pause
+    exit /b 1
+)
+
+echo [INFO] Using QMT virtual environment: venv_qmt
+echo [INFO] Starting Triple Funnel Scanner UI...
 echo.
 
-REM 启动Streamlit应用
-python -m streamlit run ui/triple_funnel_tab.py
+REM Start Streamlit app (no auto-open browser)
+python -m streamlit run ui/triple_funnel_tab.py --server.headless true
 
 if errorlevel 1 (
     echo.
-    echo [错误] 启动失败
+    echo [ERROR] Startup failed
     pause
     exit /b 1
 )

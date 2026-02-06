@@ -155,23 +155,17 @@ class ContinuousMonitor:
         
         try:
             while True:
-                # 检查是否在交易时间
-                if not self.is_trading_time():
+                # 检查是否在交易时间（使用 IntraDayMonitor 判断）
+                from logic.intraday_monitor import IntraDayMonitor
+                monitor = IntraDayMonitor()
+                phase = monitor.get_trading_phase()
+                
+                # 非交易时间：收盘后、周末
+                if phase in ['AFTER_HOURS', 'WEEKEND']:
                     current_time = datetime.now()
-                    
-                    # 判断是否在交易时间外
-                    trading_times = [
-                        (dt_time(9, 25), dt_time(11, 30)),
-                        (dt_time(13, 0), dt_time(15, 0))
-                    ]
-                    
-                    now_time = current_time.time()
-                    in_trading = any(start <= now_time <= end for start, end in trading_times)
-                    
-                    if not in_trading:
-                        logger.info(f"⏰ 当前不在交易时间 ({current_time.strftime('%H:%M:%S')})，等待中...")
-                        time.sleep(60)  # 每分钟检查一次
-                        continue
+                    logger.info(f"⏰ 当前阶段: {phase} ({current_time.strftime('%H:%M:%S')})，等待中...")
+                    time.sleep(60)  # 每分钟检查一次
+                    continue
                 
                 # 执行扫描
                 logger.info(f"\n🔍 开始扫描 #{self.scan_count + 1}")
