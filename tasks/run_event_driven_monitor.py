@@ -246,6 +246,126 @@ class EventDrivenMonitor:
         else:
             logger.info(f"⏭️  [状态未变] 跳过保存，状态指纹: {current_signature[:8]}...")
     
+    def _compress_trap_signals(self, trap_signals: list) -> str:
+        """压缩诱多信号为短字符串"""
+        if not trap_signals:
+            return "-"
+
+        # 信号映射表
+        signal_map = {
+            "单日暴量+隔日反手": "暴量",
+            "长期流出+单日巨量": "长+巨",
+            "游资突袭": "突袭",
+            "连续涨停+巨量": "连涨",
+            "尾盘拉升+巨量": "尾拉",
+            "开盘暴跌+巨量": "开跌",
+        }
+
+        # 统计信号出现次数
+        signal_count = {}
+        for signal in trap_signals:
+            short = signal_map.get(signal, signal[:4])  # 最多取前4个字符
+            signal_count[short] = signal_count.get(short, 0) + 1
+
+        # 生成压缩字符串
+        compressed_parts = []
+        for short, count in signal_count.items():
+            if count > 1:
+                compressed_parts.append(f"{short}*{count}")
+            else:
+                compressed_parts.append(short)
+
+        return ",".join(compressed_parts)[:8]  # 限制最多8个字符
+
+    def _calculate_decision_tag(self, ratio: float, risk_score: float, trap_signals: list) -> str:
+        """计算决策标签"""
+        # TRAP：占比 >5%
+        if ratio and ratio > 5:
+            return "TRAP❌"
+
+        # BLOCK：占比 <0.5% 或（有诱多信号 AND M0.4+）
+        if ratio and ratio < 0.5:
+            return "BLOCK❌"
+        if trap_signals and risk_score >= 0.4:
+            return "BLOCK❌"
+
+        # FOCUS：占比 1-3% AND L0.0-L0.2 AND 无诱多信号
+        if ratio and 1 <= ratio <= 3 and risk_score <= 0.2 and not trap_signals:
+            return "FOCUS✅"
+
+        # 其他情况：默认为 BLOCK
+        return "BLOCK❌"
+
+    def _print_low_risk_opportunities(self, opportunities: list):
+        """打印低风险机会池表格（风险≤0.2）"""
+        # 过滤低风险股票
+        low_risk = [item for item in opportunities if item.get('risk_score', 0) <= 0.2]
+
+        if not low_risk:
+            return
+
+        print(f"\n【低风险机会池】（风险≤0.2，{len(low_risk)} 只）")
+        print("=" * 125)
+        print(f"{'代码':<8} {'名称':<10} {'价格':>6} {'涨跌幅':>7} {'成交额(亿)':>9} {'流通市值(亿)':>11} {'主力净入(亿)':>12} {'占比(%)':>6} {'资金':>6} {'风险':>5} {'诱多信号':<8} {'决策':<8}")
+        print("-" * 125)
+
+        for item in low_risk:
+            # 获取基础字段
+            code = item.get('code', '')
+            name = item.get('name', '')
+            last_price = item.get('last_price', 0)
+            pct_chg = item.get('pct_chg', 0)
+
+            # 计算流通市值（优先使用 circulating_market_cap，否则用 circulating_shares * last_price）
+            circulating_market_cap = item.get('circulating_market_cap', 0)
+            if circulating_market_cap == 0:
+                circulating_shares = item.get('circulating_shares', 0)
+                circulating_market_cap = circulating_shares * last_price
+
+            # 获取成交额
+            amount_yuan = item.get('amount', 0)
+
+            # 获取主力净流入
+            flow_data = item.get('flow_data', {})
+            latest = flow_data.get('latest', {})
+            main_net_yuan = latest.get('main_net_inflow', 0)
+
+            # 单位转换：元→亿
+            amount_yi = amount_yuan / 1e8
+            float_mv_yi = circulating_market_cap / 1e8
+            main_net_yi = main_net_yuan / 1e8
+
+            # 计算占比（主力净入占流通市值比）
+            if circulating_market_cap > 0:
+                ratio = main_net_yuan / circulating_market_cap * 100
+            else:
+                ratio = None
+
+            # 风险标签
+            risk_score = item.get('risk_score', 0)
+            risk_str = f"L{risk_score:.1f}"
+
+            # 资金类型
+            capital_type = item.get('capital_type', 'UNKNOWN')
+            capital_abbr = {
+                'HOT_MONEY': 'HOT',
+                'INSTITUTIONAL': 'INST',
+                'SPECULATION': 'SPEC',
+                'UNKNOWN': 'UNKN'
+            }.get(capital_type, capital_type[:4])
+
+            # 诱多信号压缩
+            trap_signals = item.get('trap_signals', [])
+            trap_short = self._compress_trap_signals(trap_signals)
+
+            # 计算决策标签
+            decision_tag = self._calculate_decision_tag(ratio, risk_score, trap_signals)
+
+            # 打印行
+            print(f"{code:<8} {name:<10} {last_price:>6.2f} {pct_chg:>7.2f} {amount_yi:>9.2f} {float_mv_yi:>11.2f} {main_net_yi:>12.2f} {f'{ratio:>6.2f}' if ratio is not None else '  --  ':>6} {capital_abbr:>6} {risk_str:>5} {trap_short:<8} {decision_tag:<8}")
+
+        print("=" * 125)
+
     def print_summary(self, results: dict):
         """打印扫描结果摘要"""
         print("\n" + "=" * 80)
@@ -258,17 +378,31 @@ class EventDrivenMonitor:
         print(f"💰 今日建议最大总仓位: {results['position_limit']*100:.1f}%")
         print(f"🎯 累计保存快照: {self.save_count} 次")
         print(f"🔔 累计检测事件: {self.event_count} 次")
-        
-        # 显示机会池前3只
+
+        # 显示低风险机会池表格
         if results['opportunities']:
-            print(f"\n🔥 机会池 TOP3:")
-            for item in results['opportunities'][:3]:
+            self._print_low_risk_opportunities(results['opportunities'])
+
+        # 显示机会池全部股票（简化版）
+        if results['opportunities']:
+            print(f"\n🔥 机会池 ({len(results['opportunities'])} 只):")
+            for item in results['opportunities']:
                 risk_score = item.get('risk_score', 0)
                 capital_type = item.get('capital_type', 'UNKNOWN')
                 trap_signals = item.get('trap_signals', [])
                 signal_str = f" 诱多信号: {', '.join(trap_signals)}" if trap_signals else ""
                 print(f"   {item['code']} - 风险: {risk_score:.2f} - 类型: {capital_type}{signal_str}")
-        
+
+        # 显示观察池全部股票
+        if results['watchlist']:
+            print(f"\n⚠️  观察池 ({len(results['watchlist'])} 只):")
+            for item in results['watchlist']:
+                risk_score = item.get('risk_score', 0)
+                capital_type = item.get('capital_type', 'UNKNOWN')
+                trap_signals = item.get('trap_signals', [])
+                signal_str = f" 诱多信号: {', '.join(trap_signals)}" if trap_signals else ""
+                print(f"   {item['code']} - 风险: {risk_score:.2f} - 类型: {capital_type}{signal_str}")
+
         print("=" * 80 + "\n")
     
     def run_fixed_interval(self):
@@ -491,7 +625,7 @@ class EventDrivenMonitor:
         
         # 检查候选池大小限制
         if len(self.hot_candidates) >= 100:
-            logger.warning(f"   候选池已满（{len(self.hot_candidates)} 只），跳过添加")
+            # 静默处理，不重复输出警告
             return False
         
         # 添加新候选

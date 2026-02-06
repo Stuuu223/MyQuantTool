@@ -53,7 +53,7 @@ class FundFlowCache:
         """
         self.db_path = db_path
         self._init_database()
-        logger.info(f"✅ FundFlowCache 初始化成功，数据库: {db_path}")
+        logger.debug(f"✅ FundFlowCache 初始化成功，数据库: {db_path}")
     
     def _init_database(self):
         """初始化数据库表结构"""

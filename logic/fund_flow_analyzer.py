@@ -30,7 +30,8 @@ class FundFlowAnalyzer:
         
         if enable_cache:
             self.db_cache = get_fund_flow_cache()
-            logger.info("✅ FundFlowAnalyzer 缓存已启用")
+            # 改为debug级别，避免刷屏
+            logger.debug("✅ FundFlowAnalyzer 缓存已启用")
         else:
             self.db_cache = None
             logger.info("⚠️  FundFlowAnalyzer 缓存未启用")
