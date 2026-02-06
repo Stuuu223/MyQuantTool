@@ -8,12 +8,16 @@
 2. 盘中监控 (Level 4) - 交易时间实时运行
 3. 观察池管理 - 添加/移除股票
 4. 信号查看 - 查看最近的信号
+5. 自动模式 - 根据当前时间自动选择运行模式
 
 使用方式：
-    # 盘后扫描
+    # 自动模式 (推荐) - 根据当前时间自动判断
+    python tasks/run_triple_funnel_scan.py
+
+    # 指定盘后扫描
     python tasks/run_triple_funnel_scan.py --mode post-market
 
-    # 盘中监控
+    # 指定盘中监控
     python tasks/run_triple_funnel_scan.py --mode intraday
 
     # 查看信号
@@ -23,8 +27,8 @@
     python tasks/run_triple_funnel_scan.py --mode add --code 000001 --name 平安银行
 
 作者: iFlow CLI
-版本: V1.0
-日期: 2026-02-05
+版本: V1.1
+日期: 2026-02-06
 """
 
 import argparse
@@ -201,11 +205,52 @@ def show_watchlist(scanner: TripleFunnelScanner):
             logger.info(f"   Level3: {status} (得分: {item.level3_result.comprehensive_score:.0f})")
 
 
+def auto_detect_mode():
+    """
+    自动检测运行模式
+
+    Returns:
+        str: 运行模式 (post-market, intraday, weekend, after-hours)
+    """
+    from logic.intraday_monitor import IntraDayMonitor
+
+    monitor = IntraDayMonitor()
+    phase = monitor.get_trading_phase()
+
+    logger.info(f"🕐 当前交易阶段: {phase}")
+
+    # 根据交易阶段自动判断
+    # 交易时间（上午、下午、开盘竞价、收盘竞价）
+    if phase in ['OPENING_AUCTION', 'MORNING', 'AFTERNOON', 'CLOSING_AUCTION']:
+        logger.info("📈 检测到交易时间，自动运行盘中监控模式")
+        return 'intraday'
+    
+    # 午休时间 - 也运行盘中监控（保持连接）
+    elif phase == 'LUNCH_BREAK':
+        logger.info("⏰ 检测到午休时间，运行盘中监控模式（保持连接）")
+        return 'intraday'
+    
+    # 收盘后
+    elif phase == 'AFTER_HOURS':
+        logger.info("🌙 检测到收盘后时间，自动运行盘后扫描模式")
+        return 'post-market'
+    
+    # 周末
+    elif phase == 'WEEKEND':
+        logger.info("🏖️ 检测到周末，运行盘后扫描模式（查看历史数据）")
+        return 'post-market'
+    
+    # 未知阶段
+    else:
+        logger.warning(f"⚠️ 未知阶段 {phase}，默认运行盘后扫描模式")
+        return 'post-market'
+
+
 def main():
     """主函数"""
     parser = argparse.ArgumentParser(description="三漏斗扫描系统")
-    parser.add_argument("--mode", choices=["post-market", "intraday", "signals", "add", "remove", "watchlist"],
-                       required=True, help="运行模式")
+    parser.add_argument("--mode", choices=["post-market", "intraday", "signals", "add", "remove", "watchlist", "auto"],
+                       default="auto", help="运行模式 (默认: auto 自动检测)")
     parser.add_argument("--code", help="股票代码")
     parser.add_argument("--name", help="股票名称")
     parser.add_argument("--reason", help="添加原因")
@@ -216,6 +261,10 @@ def main():
 
     # 创建扫描器
     scanner = TripleFunnelScanner()
+
+    # 自动检测模式
+    if args.mode == "auto":
+        args.mode = auto_detect_mode()
 
     # 根据模式执行
     if args.mode == "post-market":
