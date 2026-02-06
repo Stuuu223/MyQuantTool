@@ -682,13 +682,28 @@ class EventDrivenMonitor:
     def _run_idle_strategy(self):
         """空闲策略 - 非交易时间"""
         logger.info("⏸️  [IDLE] 当前不在交易时间")
+        
+        # 检查是否刚刚收盘（15:00-15:10之间）
+        now = datetime.now()
+        if now.hour == 15 and now.minute < 10:
+            logger.info("=" * 80)
+            logger.info("📊 收盘后复盘提示")
+            logger.info("=" * 80)
+            logger.info("")
+            logger.info("💡 建议操作：")
+            logger.info("   1. 记录今日成交：python tasks/record_trade.py")
+            logger.info("   2. 运行复盘脚本：python tasks/review_daily.py --date today")
+            logger.info("   3. 重点分析B类样本（系统FOCUS + 没上）")
+            logger.info("")
+            logger.info("=" * 80)
+        
         logger.info("   等待 60 秒后重新检测...")
         time.sleep(60)
 
 
 if __name__ == "__main__":
     import argparse
-    
+
     # 解析命令行参数
     parser = argparse.ArgumentParser(description='事件驱动持续监控')
     parser.add_argument(
@@ -711,15 +726,195 @@ if __name__ == "__main__":
         default=[],
         help='监控的股票列表，仅在事件驱动模式下生效'
     )
-    
+    # 新增：复盘模式参数
+    parser.add_argument(
+        '--replay',
+        action='store_true',
+        help='启用缓存回放模式'
+    )
+    parser.add_argument(
+        '--date',
+        type=str,
+        help='复盘日期（格式：YYYY-MM-DD），例如：2026-02-06'
+    )
+    parser.add_argument(
+        '--timepoint',
+        type=str,
+        help='复盘时间点（格式：HHMMSS），例如：093027'
+    )
+    parser.add_argument(
+        '--list-snapshots',
+        action='store_true',
+        help='列出指定日期的所有可用快照'
+    )
+
     args = parser.parse_args()
-    
+
+    # ===== 复盘模式逻辑 =====
+    if args.replay:
+        if not args.date:
+            print("❌ 错误：--replay 模式需要指定 --date 参数")
+            print("示例：python tasks/run_event_driven_monitor.py --replay --date 2026-02-06")
+            sys.exit(1)
+
+        from logic.cache_replay_provider import CacheReplayProvider
+
+        # 创建缓存回放提供器
+        provider = CacheReplayProvider(args.date)
+
+        # 验证复盘是否可行
+        possible, message = provider.validate_replay_possible()
+        print(message)
+        if not possible:
+            sys.exit(1)
+
+        # 列出快照
+        if args.list_snapshots:
+            print("\n📋 可用时间点：")
+            for tp in provider.list_available_timepoints():
+                snapshot = provider.get_snapshot(tp)
+                if snapshot:
+                    summary = snapshot.get('summary', {})
+                    print(f"   {tp}: 机会{summary.get('opportunities', 0)} | 观察{summary.get('watchlist', 0)} | 黑名单{summary.get('blacklist', 0)}")
+            sys.exit(0)
+
+        # 回放指定时间点
+        if not args.timepoint:
+            print("❌ 错误：需要指定 --timepoint 参数")
+            print(f"可用时间点：{provider.list_available_timepoints()}")
+            print("示例：python tasks/run_event_driven_monitor.py --replay --date 2026-02-06 --timepoint 093027")
+            sys.exit(1)
+
+        # 读取快照
+        snapshot = provider.get_snapshot(args.timepoint)
+        if not snapshot:
+            print(f"❌ 无法读取时间点 {args.timepoint} 的快照")
+            sys.exit(1)
+
+        # 打印回放报告
+        print("\n" + "=" * 80)
+        print(f"📜 复盘报告：{snapshot['scan_time']} ({snapshot['mode']})")
+        print("=" * 80)
+
+        # 打印风控结论
+        results = snapshot['results']
+        print(f"\n📊 风控结论:")
+        print(f"   系统置信度: {results['confidence']*100:.1f}%")
+        print(f"   建议最大仓位: {results['position_limit']*100:.1f}%")
+        if results.get('risk_warnings'):
+            print(f"   风险提示:")
+            for warning in results['risk_warnings']:
+                print(f"     {warning}")
+
+        # 打印机会池表格（复用现有的打印逻辑）
+        opportunities = results.get('opportunities', [])
+        watchlist = results.get('watchlist', [])
+        blacklist = results.get('blacklist', [])
+
+        print(f"\n✅ 机会池: {len(opportunities)} 只")
+        print(f"⚠️  观察池: {len(watchlist)} 只")
+        print(f"❌ 黑名单: {len(blacklist)} 只")
+
+        # 打印机会池表格（全部）
+        if opportunities:
+            print(f"\n【机会池】（{len(opportunities)} 只）")
+            print("=" * 125)
+            print(f"{'代码':<8} {'名称':<10} {'价格':>6} {'涨跌幅':>7} {'成交额(亿)':>9} {'流通市值(亿)':>11} {'主力净入(亿)':>12} {'占比(%)':>6} {'资金':>6} {'风险':>5} {'诱多信号':<8} {'决策':<8}")
+            print("-" * 125)
+
+            for item in opportunities:
+                code = item.get('code', '')
+                name = item.get('name', '')
+                last_price = item.get('last_price', 0)
+                pct_chg = item.get('pct_chg', 0)
+
+                # 计算流通市值
+                circulating_market_cap = item.get('circulating_market_cap', 0)
+                if circulating_market_cap == 0:
+                    circulating_shares = item.get('circulating_shares', 0)
+                    circulating_market_cap = circulating_shares * last_price
+
+                # 获取成交额
+                amount_yuan = item.get('amount', 0)
+
+                # 获取主力净流入
+                flow_data = item.get('flow_data', {})
+                latest = flow_data.get('latest', {})
+                main_net_yuan = latest.get('main_net_inflow', 0)
+
+                # 单位转换
+                amount_yi = amount_yuan / 1e8
+                float_mv_yi = circulating_market_cap / 1e8
+                main_net_yi = main_net_yuan / 1e8
+
+                # 计算占比
+                if circulating_market_cap > 0:
+                    ratio = main_net_yuan / circulating_market_cap * 100
+                else:
+                    ratio = None
+
+                # 风险标签
+                risk_score = item.get('risk_score', 0)
+                risk_str = f"L{risk_score:.1f}"
+
+                # 资金类型
+                capital_type = item.get('capital_type', 'UNKNOWN')
+                capital_abbr = {
+                    'HOT_MONEY': 'HOT',
+                    'INSTITUTIONAL': 'INST',
+                    'SPECULATION': 'SPEC',
+                    'UNKNOWN': 'UNKN'
+                }.get(capital_type, capital_type[:4])
+
+                # 诱多信号压缩
+                trap_signals = item.get('trap_signals', [])
+                signal_map = {
+                    "单日暴量+隔日反手": "暴量",
+                    "长期流出+单日巨量": "长+巨",
+                    "游资突袭": "突袭",
+                    "连续涨停+巨量": "连涨",
+                    "尾盘拉升+巨量": "尾拉",
+                    "开盘暴跌+巨量": "开跌",
+                }
+                signal_count = {}
+                for signal in trap_signals:
+                    short = signal_map.get(signal, signal[:4])
+                    signal_count[short] = signal_count.get(short, 0) + 1
+                compressed_parts = []
+                for short, count in signal_count.items():
+                    if count > 1:
+                        compressed_parts.append(f"{short}*{count}")
+                    else:
+                        compressed_parts.append(short)
+                trap_short = ",".join(compressed_parts)[:8] if trap_signals else "-"
+
+                # 决策标签
+                if ratio and ratio > 5:
+                    decision_tag = "TRAP❌"
+                elif ratio and ratio < 0.5:
+                    decision_tag = "BLOCK❌"
+                elif trap_signals and risk_score >= 0.4:
+                    decision_tag = "BLOCK❌"
+                elif ratio and 1 <= ratio <= 3 and risk_score <= 0.2 and not trap_signals:
+                    decision_tag = "FOCUS✅"
+                else:
+                    decision_tag = "BLOCK❌"
+
+                # 打印行
+                print(f"{code:<8} {name:<10} {last_price:>6.2f} {pct_chg:>7.2f} {amount_yi:>9.2f} {float_mv_yi:>11.2f} {main_net_yi:>12.2f} {f'{ratio:>6.2f}' if ratio is not None else '  --  ':>6} {capital_abbr:>6} {risk_str:>5} {trap_short:<8} {decision_tag:<8}")
+
+            print("=" * 125)
+
+        print("=" * 80 + "\n")
+        sys.exit(0)
+
+    # ===== 实时监控模式逻辑 =====
     # 创建监控器
     monitor = EventDrivenMonitor(
         scan_interval=args.interval,
         mode=args.mode,
         monitor_stocks=args.stocks
     )
-    
+
     # 运行监控
     monitor.run()
