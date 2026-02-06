@@ -684,39 +684,63 @@ class FullMarketScanner:
             
             # 数据缺失：返回None
             if not kline_data or code not in kline_data:
-                logger.debug(f"[量比缺失] {code}: K线数据为空")
+                print(f"[量比DEBUG] {code}: kline_data为空={not kline_data}, code不在数据中={code not in kline_data}")
+                print(f"[量比DEBUG] {code}: 返回None, 原因=no_data_for_code")
                 return None
             
-            # 类型检查：确保返回的是字典
+            # 类型检查：支持pandas.DataFrame和dict两种类型
             code_data = kline_data[code]
-            if not isinstance(code_data, dict):
-                logger.debug(f"[量比异常] {code}: 数据类型异常 {type(code_data)}, 期望dict")
+            if isinstance(code_data, dict):
+                # 字典类型
+                if 'volume' not in code_data:
+                    print(f"[量比DEBUG] {code}: code_data keys={list(code_data.keys())}")
+                    print(f"[量比DEBUG] {code}: 缺少volume字段")
+                    print(f"[量比DEBUG] {code}: 返回None, 原因=no_volume_field")
+                    return None
+                volumes = code_data['volume']
+            elif hasattr(code_data, '__class__') and code_data.__class__.__name__ == 'DataFrame':
+                # pandas.DataFrame类型
+                import pandas as pd
+                if not isinstance(code_data, pd.DataFrame):
+                    print(f"[量比DEBUG] {code}: 数据类型={type(code_data)}, 期望dict或DataFrame")
+                    print(f"[量比DEBUG] {code}: 返回None, 原因=invalid_data_type")
+                    return None
+                if 'volume' not in code_data.columns:
+                    print(f"[量比DEBUG] {code}: DataFrame columns={list(code_data.columns)}")
+                    print(f"[量比DEBUG] {code}: 缺少volume列")
+                    print(f"[量比DEBUG] {code}: 返回None, 原因=no_volume_column")
+                    return None
+                volumes = code_data['volume'].tolist()
+            else:
+                print(f"[量比DEBUG] {code}: 数据类型={type(code_data)}, 期望dict或DataFrame")
+                print(f"[量比DEBUG] {code}: 返回None, 原因=invalid_data_type")
                 return None
+            print(f"[量比DEBUG] {code}: len(volumes)={len(volumes)}, 需要5")
             
-            # 提取成交量数据
-            if 'volume' not in code_data:
-                logger.debug(f"[量比缺失] {code}: 缺少volume字段")
-                return None
-            
-            volumes = code_data['volume']
             if len(volumes) < 5:
-                logger.debug(f"[量比缺失] {code}: K线天数不足 {len(volumes)} < 5")
+                print(f"[量比DEBUG] {code}: 最后3根成交量={volumes[-3:] if len(volumes) >= 3 else volumes}")
+                print(f"[量比DEBUG] {code}: 返回None, 原因=not_enough_bars")
                 return None
             
             # 计算5日平均成交量
             avg_volume_5d = sum(volumes) / len(volumes)
             
             if avg_volume_5d == 0:
-                logger.debug(f"[量比缺失] {code}: 5日平均成交量为0")
+                print(f"[量比DEBUG] {code}: 5日成交量={volumes}")
+                print(f"[量比DEBUG] {code}: 返回None, 原因=avg_volume_zero")
                 return None
             
             # 计算量比（可能小于1，表示缩量）
             volume_ratio = current_volume / avg_volume_5d
             
+            print(f"[量比DEBUG] {code}: current_volume={current_volume}, avg_5d={avg_volume_5d:.2f}, ratio={volume_ratio:.2f}")
+            
             return volume_ratio
             
         except Exception as e:
-            logger.debug(f"[量比异常] {code}: {e}")
+            print(f"[量比DEBUG] {code}: 异常={e}")
+            import traceback
+            print(f"[量比DEBUG] {code}: traceback={traceback.format_exc()}")
             return None
     
     def _get_market_cap(self, code: str, tick: dict) -> float:
