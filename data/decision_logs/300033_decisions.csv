@@ -1,0 +1,11 @@
+timestamp,mode,phase,decision,confidence,price,pct_change,risk_score
+2026-02-03 16:18:37,after_hours,AFTER_HOURS,,0,0,0,0
+2026-02-03 16:20:56,after_hours,AFTER_HOURS,,0,0,0,0
+2026-02-03 16:45:34,after_hours,AFTER_HOURS,,0,0,0,0
+2026-02-03 17:15:25,after_hours,AFTER_HOURS,,0,0,0,0
+2026-02-03 17:21:37,after_hours,AFTER_HOURS,,0,0,0,0
+2026-02-03 17:26:25,after_hours,AFTER_HOURS,,0,0,0,0
+2026-02-03 17:27:33,after_hours,AFTER_HOURS,,0,0,0,0
+2026-02-03 17:28:20,after_hours,AFTER_HOURS,,0,0,0,0
+2026-02-03 18:15:41,after_hours,AFTER_HOURS,,0,0,0,0
+2026-02-03 18:25:46,after_hours,AFTER_HOURS,,0,0,0,0
