@@ -100,29 +100,38 @@ class FullMarketScanner:
     
     def _load_equity_info(self) -> dict:
         """
-        加载本地股本信息（优先使用完整版，备选MVP版）
+        加载本地股本信息（优先级: Tushare > 完整版 > MVP版）
         
         Returns:
             dict: 股本信息字典 {code: {name, total_shares, float_shares, ...}}
         """
+        # 优先级1: Tushare版本
         try:
-            # 优先使用完整版
+            with open('data/equity_info_tushare.json', 'r', encoding='utf-8') as f:
+                equity_info = json.load(f)
+            logger.info(f"✅ 加载股本信息（Tushare版）: {len(equity_info)} 只股票")
+            return equity_info
+        except Exception as e:
+            logger.warning(f"⚠️ 加载Tushare版失败: {e}")
+        
+        # 优先级2: 完整版（AkShare）
+        try:
             with open('data/equity_info.json', 'r', encoding='utf-8') as f:
                 equity_info = json.load(f)
             logger.info(f"✅ 加载股本信息（完整版）: {len(equity_info)} 只股票")
             return equity_info
         except Exception as e:
             logger.warning(f"⚠️ 加载完整版失败: {e}")
-            
-            try:
-                # 备用：使用MVP版本
-                with open('data/equity_info_mvp.json', 'r', encoding='utf-8') as f:
-                    equity_info = json.load(f)
-                logger.info(f"✅ 加载股本信息（MVP版）: {len(equity_info)} 只股票")
-                return equity_info
-            except Exception as e2:
-                logger.warning(f"⚠️ 加载MVP版也失败: {e2}")
-                return {}
+        
+        # 优先级3: MVP版本
+        try:
+            with open('data/equity_info_mvp.json', 'r', encoding='utf-8') as f:
+                equity_info = json.load(f)
+            logger.info(f"✅ 加载股本信息（MVP版）: {len(equity_info)} 只股票")
+            return equity_info
+        except Exception as e2:
+            logger.warning(f"⚠️ 加载MVP版也失败: {e2}")
+            return {}
     
     def _default_config(self) -> dict:
         """默认配置"""
@@ -594,7 +603,9 @@ class FullMarketScanner:
                 logger.info(f"  批次 {batch_num}/{total_batches}: 获取 {len(batch)} 只股票 (命中: {hit_count} 只)")
                 
             except Exception as e:
-                logger.warning(f"⚠️  批次 {batch_num} 获取失败: {e}")
+                # 静默处理，避免刷屏
+                if batch_num == 1 or batch_num % 5 == 0:  # 只在部分批次显示
+                    logger.debug(f"批次 {batch_num} 处理异常: {e}")
                 continue
         
         return candidates
@@ -681,7 +692,9 @@ class FullMarketScanner:
                         logger.info(f"[L1样本] {sample['code']}: 涨跌幅={sample['pct_chg']:.2f}%, 成交额={sample['amount']/1e8:.2f}亿, 量比={sample['volume_ratio_str']}, 市值={sample['market_cap_str']}")
                 
             except Exception as e:
-                logger.warning(f"⚠️  批次 {batch_num} 获取失败: {e}")
+                # 静默处理，避免刷屏
+                if batch_num == 1 or batch_num % 5 == 0:  # 只在部分批次显示
+                    logger.debug(f"批次 {batch_num} 处理异常: {e}")
                 continue
         
         return candidates
@@ -714,8 +727,9 @@ class FullMarketScanner:
             
             # 数据缺失：返回None
             if not kline_data or code not in kline_data:
-                print(f"[量比DEBUG] {code}: kline_data为空={not kline_data}, code不在数据中={code not in kline_data}")
-                print(f"[量比DEBUG] {code}: 返回None, 原因=no_data_for_code")
+                # DEBUG: 已禁用，避免刷屏
+                # print(f"[量比DEBUG] {code}: kline_data为空={not kline_data}, code不在数据中={code not in kline_data}")
+                # print(f"[量比DEBUG] {code}: 返回None, 原因=no_data_for_code")
                 return None
             
             # 类型检查：支持pandas.DataFrame和dict两种类型
@@ -723,54 +737,63 @@ class FullMarketScanner:
             if isinstance(code_data, dict):
                 # 字典类型
                 if 'volume' not in code_data:
-                    print(f"[量比DEBUG] {code}: code_data keys={list(code_data.keys())}")
-                    print(f"[量比DEBUG] {code}: 缺少volume字段")
-                    print(f"[量比DEBUG] {code}: 返回None, 原因=no_volume_field")
+                    # DEBUG: 已禁用，避免刷屏
+                    # print(f"[量比DEBUG] {code}: code_data keys={list(code_data.keys())}")
+                    # print(f"[量比DEBUG] {code}: 缺少volume字段")
+                    # print(f"[量比DEBUG] {code}: 返回None, 原因=no_volume_field")
                     return None
                 volumes = code_data['volume']
             elif hasattr(code_data, '__class__') and code_data.__class__.__name__ == 'DataFrame':
                 # pandas.DataFrame类型
                 import pandas as pd
                 if not isinstance(code_data, pd.DataFrame):
-                    print(f"[量比DEBUG] {code}: 数据类型={type(code_data)}, 期望dict或DataFrame")
-                    print(f"[量比DEBUG] {code}: 返回None, 原因=invalid_data_type")
+                    # DEBUG: 已禁用，避免刷屏
+                    # print(f"[量比DEBUG] {code}: 数据类型={type(code_data)}, 期望dict或DataFrame")
+                    # print(f"[量比DEBUG] {code}: 返回None, 原因=invalid_data_type")
                     return None
                 if 'volume' not in code_data.columns:
-                    print(f"[量比DEBUG] {code}: DataFrame columns={list(code_data.columns)}")
-                    print(f"[量比DEBUG] {code}: 缺少volume列")
-                    print(f"[量比DEBUG] {code}: 返回None, 原因=no_volume_column")
+                    # DEBUG: 已禁用，避免刷屏
+                    # print(f"[量比DEBUG] {code}: DataFrame columns={list(code_data.columns)}")
+                    # print(f"[量比DEBUG] {code}: 缺少volume列")
+                    # print(f"[量比DEBUG] {code}: 返回None, 原因=no_volume_column")
                     return None
                 volumes = code_data['volume'].tolist()
             else:
-                print(f"[量比DEBUG] {code}: 数据类型={type(code_data)}, 期望dict或DataFrame")
-                print(f"[量比DEBUG] {code}: 返回None, 原因=invalid_data_type")
+                # DEBUG: 已禁用，避免刷屏
+                # print(f"[量比DEBUG] {code}: 数据类型={type(code_data)}, 期望dict或DataFrame")
+                # print(f"[量比DEBUG] {code}: 返回None, 原因=invalid_data_type")
                 return None
-            print(f"[量比DEBUG] {code}: len(volumes)={len(volumes)}, 需要5")
+            # DEBUG: 已禁用，避免刷屏
+            # print(f"[量比DEBUG] {code}: len(volumes)={len(volumes)}, 需要5")
             
             if len(volumes) < 5:
-                print(f"[量比DEBUG] {code}: 最后3根成交量={volumes[-3:] if len(volumes) >= 3 else volumes}")
-                print(f"[量比DEBUG] {code}: 返回None, 原因=not_enough_bars")
+                # DEBUG: 已禁用，避免刷屏
+                # print(f"[量比DEBUG] {code}: 最后3根成交量={volumes[-3:] if len(volumes) >= 3 else volumes}")
+                # print(f"[量比DEBUG] {code}: 返回None, 原因=not_enough_bars")
                 return None
             
             # 计算5日平均成交量
             avg_volume_5d = sum(volumes) / len(volumes)
             
             if avg_volume_5d == 0:
-                print(f"[量比DEBUG] {code}: 5日成交量={volumes}")
-                print(f"[量比DEBUG] {code}: 返回None, 原因=avg_volume_zero")
+                # DEBUG: 已禁用，避免刷屏
+                # print(f"[量比DEBUG] {code}: 5日成交量={volumes}")
+                # print(f"[量比DEBUG] {code}: 返回None, 原因=avg_volume_zero")
                 return None
             
             # 计算量比（可能小于1，表示缩量）
             volume_ratio = current_volume / avg_volume_5d
             
-            print(f"[量比DEBUG] {code}: current_volume={current_volume}, avg_5d={avg_volume_5d:.2f}, ratio={volume_ratio:.2f}")
+            # DEBUG: 已禁用，避免刷屏
+            # print(f"[量比DEBUG] {code}: current_volume={current_volume}, avg_5d={avg_volume_5d:.2f}, ratio={volume_ratio:.2f}")
             
             return volume_ratio
             
         except Exception as e:
-            print(f"[量比DEBUG] {code}: 异常={e}")
-            import traceback
-            print(f"[量比DEBUG] {code}: traceback={traceback.format_exc()}")
+            # DEBUG: 已禁用，避免刷屏
+            # print(f"[量比DEBUG] {code}: 异常={e}")
+            # import traceback
+            # print(f"[量比DEBUG] {code}: traceback={traceback.format_exc()}")
             return None
     
     def _get_market_cap(self, code: str, tick: dict) -> float:
@@ -932,27 +955,27 @@ class FullMarketScanner:
             # 检查量比（新增：市值分层阈值）
             volume_ratio = self._check_volume_ratio(code, volume, tick)
             
-            # 量比数据缺失：跳过这条过滤（不要因为技术问题淘汰强势票）
+            # 量比数据缺失：直接拒绝（避免候选池溢出）
             if volume_ratio is None:
-                logger.debug(f"[L1警告] {code}: 量比数据缺失，跳过量比过滤")
-                # 跳过量比检查，继续执行后面的逻辑
+                logger.debug(f"[L1过滤] {code}: 量比数据缺失，拒绝")
+                return False
+            
+            # 量比数据正常：按市值分层阈值判断
+            # 获取流通市值用于分层
+            market_cap = self._get_market_cap(code, tick)
+            
+            # 市值为0时，使用默认阈值（1.5）
+            if market_cap == 0:
+                volume_ratio_threshold = 1.5
+                logger.debug(f"[L1检查] {code}: 市值=0，使用默认量比阈值 1.5")
             else:
-                # 量比数据正常：按市值分层阈值判断
-                # 获取流通市值用于分层
-                market_cap = self._get_market_cap(code, tick)
-                
-                # 市值为0时，使用默认阈值（1.5）
-                if market_cap == 0:
-                    volume_ratio_threshold = 1.5
-                    logger.debug(f"[L1检查] {code}: 市值=0，使用默认量比阈值 1.5")
-                else:
-                    volume_ratio_threshold = self.get_volume_ratio_threshold(market_cap)
-                    logger.debug(f"[L1检查] {code}: 市值={market_cap/1e8:.2f}亿，阈值={volume_ratio_threshold:.2f}")
-                
-                # 检查量比是否达标
-                if volume_ratio < volume_ratio_threshold:
-                    logger.debug(f"[L1过滤] {code}: 量比={volume_ratio:.2f} < 阈值={volume_ratio_threshold:.2f}")
-                    return False
+                volume_ratio_threshold = self.get_volume_ratio_threshold(market_cap)
+                logger.debug(f"[L1检查] {code}: 市值={market_cap/1e8:.2f}亿，阈值={volume_ratio_threshold:.2f}")
+            
+            # 检查量比是否达标
+            if volume_ratio < volume_ratio_threshold:
+                logger.debug(f"[L1过滤] {code}: 量比={volume_ratio:.2f} < 阈值={volume_ratio_threshold:.2f}")
+                return False
             
             # 所有检查通过
             volume_ratio_str = f"{volume_ratio:.2f}" if volume_ratio is not None else "数据缺失"
@@ -1308,32 +1331,42 @@ class FullMarketScanner:
         # 所有检查通过
         return True, "检查通过"
     
-    def _level2_capital_analysis(self, candidates: List[str]) -> List[dict]:
+    def _level2_capital_analysis(self, candidates) -> List[dict]:
         """
         Level 2: 资金流向深度分析
-        
+
         从 300-500 只压缩到 50-100 只
-        
+
         分析内容：
         1. 主力净流入 > 0
         2. 超大单占比 > 30%
         3. 近3日资金流向趋势
-        
+
         Args:
             candidates: Level 1 筛选出的股票列表
-        
+                       - 可以是代码列表 List[str]
+                       - 也可以是字典列表 List[dict]（包含完整字段）
+
         Returns:
-            包含资金流向数据的股票列表
+            包含资金流向数据的股票列表（保留所有原始字段）
         """
         results = []
         total = len(candidates)
-        
-        for idx, code in enumerate(candidates):
-            # 进度打印
-            if idx % 10 == 0 or idx == total - 1:
+
+        for idx, candidate in enumerate(candidates):
+            # 进度打印（改为每20只打印一次，减少刷屏）
+            if idx % 20 == 0 or idx == total - 1:
                 logger.info(f"  进度: {idx+1}/{total} ({(idx+1)/total*100:.1f}%)")
 
             try:
+                # 兼容两种输入格式：代码字符串 或 字典
+                if isinstance(candidate, str):
+                    code = candidate
+                    candidate_dict = {}
+                else:
+                    code = candidate.get('code', '')
+                    candidate_dict = candidate
+
                 # 转换为6位代码（AkShare格式）
                 code_6digit = CodeConverter.to_akshare(code)
 
@@ -1345,14 +1378,16 @@ class FullMarketScanner:
 
                 # 检查资金条件
                 if self._check_level2_criteria(code, flow_data):
-                    results.append({
-                        'code': code,
-                        'flow_data': flow_data
-                    })
+                    # 构建结果，保留所有原始字段
+                    result = candidate_dict.copy() if candidate_dict else {}
+                    result['code'] = code
+                    result['flow_data'] = flow_data
+                    results.append(result)
             except Exception as e:
-                logger.warning(f"⚠️  {code} Level2 分析失败: {e}")
+                code_str = candidate if isinstance(candidate, str) else candidate.get('code', 'unknown')
+                logger.warning(f"⚠️  {code_str} Level2 分析失败: {e}")
                 continue
-        
+
         return results
     
     def _check_level2_criteria(self, code: str, flow_data: dict) -> bool:
@@ -1409,7 +1444,8 @@ class FullMarketScanner:
         for idx, item in enumerate(candidates):
             code = item['code']
             
-            if idx % 5 == 0:
+            # 进度打印（改为每10只打印一次）
+            if idx % 10 == 0:
                 logger.info(f"  进度: {idx+1}/{len(candidates)}")
             
             try:
@@ -1446,18 +1482,15 @@ class FullMarketScanner:
                 
                 # 综合风险评分
                 risk_score = self._calculate_risk_score(trap_result, capital_result)
-                
-                # 构造结果对象
-                result = {
-                    'code': code,
-                    'code_6digit': code_6digit,
-                    'risk_score': risk_score,
-                    'trap_signals': trap_result.get('signals', []),
-                    'capital_type': capital_result.get('type', 'unknown'),
-                    'flow_data': item['flow_data'],
-                    'scan_time': datetime.now().isoformat()
-                }
-                
+
+                # 构造结果对象，保留所有原始字段
+                result = item.copy()  # 保留所有原始字段（name, last_price, amount, circulating_shares 等）
+                result['code_6digit'] = code_6digit
+                result['risk_score'] = risk_score
+                result['trap_signals'] = trap_result.get('signals', [])
+                result['capital_type'] = capital_result.get('type', 'unknown')
+                result['scan_time'] = datetime.now().isoformat()
+
                 # 分类
                 if risk_score > 0.8:
                     blacklist.append(result)
