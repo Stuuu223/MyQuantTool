@@ -1,0 +1,16 @@
+{
+  "latest_update": "20260206",
+  "retention_days": 30,
+  "data": {
+    "20260206": {
+      "603607.SH": {
+        "float_mv": 4546822896.0,
+        "total_mv": 0,
+        "close": 0,
+        "turnover_rate": 0,
+        "pe": 0,
+        "pb": 0
+      }
+    }
+  }
+}
