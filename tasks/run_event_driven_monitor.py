@@ -30,7 +30,7 @@ sys.path.insert(0, str(project_root))
 
 from logic.full_market_scanner import FullMarketScanner
 from logic.market_status import MarketStatusChecker
-from tasks.sync_equity_info_tushare import get_circ_mv
+from logic.equity_data_accessor import get_circ_mv
 from logic.event_detector import EventManager, EventType
 from logic.auction_event_detector import AuctionEventDetector
 from logic.halfway_event_detector import HalfwayEventDetector
@@ -279,22 +279,33 @@ class EventDrivenMonitor:
         return ",".join(compressed_parts)[:8]  # 限制最多8个字符
 
     def _calculate_decision_tag(self, ratio: float, risk_score: float, trap_signals: list) -> str:
-        """计算决策标签"""
-        # TRAP：占比 >5%
-        if ratio and ratio > 5:
+        """
+        资金推动力决策树:
+        第1关: ratio < 0.5% → PASS❌（止损优先，资金推动力太弱）
+        第2关: ratio > 5% → TRAP❌（暴拉出货风险）
+        第3关: 诱多 + 高风险 → BLOCK❌
+        第4关: 1-3% + 低风险 + 无诱多 → FOCUS✅
+        """
+        # 第1关: 资金推动力太弱，直接 PASS（止损优先）
+        if ratio is not None and ratio < 0.5:
+            return "PASS❌"
+
+        # 第2关: 暴拉出货风险
+        if ratio is not None and ratio > 5:
             return "TRAP❌"
 
-        # BLOCK：占比 <0.5% 或（有诱多信号 AND M0.4+）
-        if ratio and ratio < 0.5:
-            return "BLOCK❌"
+        # 第3关: 诱多 + 高风险
         if trap_signals and risk_score >= 0.4:
             return "BLOCK❌"
 
-        # FOCUS：占比 1-3% AND L0.0-L0.2 AND 无诱多信号
-        if ratio and 1 <= ratio <= 3 and risk_score <= 0.2 and not trap_signals:
+        # 第4关: 标准 FOCUS
+        if (ratio is not None and
+            1 <= ratio <= 3 and
+            risk_score <= 0.2 and
+            not trap_signals):
             return "FOCUS✅"
 
-        # 其他情况：默认为 BLOCK
+        # 兜底
         return "BLOCK❌"
 
     def _print_low_risk_opportunities(self, opportunities: list):
@@ -338,7 +349,7 @@ class EventDrivenMonitor:
 
             # 计算占比（主力净入占流通市值比）
             # 优先使用 Tushare 数据，回退到现有逻辑
-            trade_date = datetime.now().strftime("%Y%m%d")
+            trade_date = item.get("trade_date")
             circ_mv_tushare = get_circ_mv(code, trade_date)
 
             if circ_mv_tushare > 0:
@@ -369,6 +380,18 @@ class EventDrivenMonitor:
 
             # 计算决策标签
             decision_tag = self._calculate_decision_tag(ratio, risk_score, trap_signals)
+
+            # DEBUG: 针对 601869.SH 的关键数据输出
+            if code == "601869.SH":
+                print(f"\n[DEBUG 601869.SH]")
+                print(f"  trade_date={trade_date}")
+                print(f"  main_net_inflow={main_net_yuan} 元 ({main_net_yi:.4f} 亿)")
+                print(f"  circ_mv_tushare={circ_mv_tushare} 元 ({float_mv_yi:.2f} 亿)")
+                print(f"  ratio={ratio} %")
+                print(f"  decision_tag={decision_tag}")
+                print(f"  risk_score={risk_score}")
+                print(f"  trap_signals={trap_signals}")
+                print()
 
             # 打印行
             print(f"{code:<8} {name:<10} {last_price:>6.2f} {pct_chg:>7.2f} {amount_yi:>9.2f} {float_mv_yi:>11.2f} {main_net_yi:>12.2f} {f'{ratio:>6.2f}' if ratio is not None else '  --  ':>6} {capital_abbr:>6} {risk_str:>5} {trap_short:<8} {decision_tag:<8}")
@@ -856,8 +879,14 @@ if __name__ == "__main__":
                 float_mv_yi = circulating_market_cap / 1e8
                 main_net_yi = main_net_yuan / 1e8
 
-                # 计算占比
-                if circulating_market_cap > 0:
+                # 计算占比（使用新的 get_circ_mv）
+                trade_date = item.get("trade_date")
+                circ_mv_tushare = get_circ_mv(code, trade_date)
+
+                if circ_mv_tushare > 0:
+                    ratio = main_net_yuan / circ_mv_tushare * 100
+                    float_mv_yi = circ_mv_tushare / 1e8
+                elif circulating_market_cap > 0:
                     ratio = main_net_yuan / circulating_market_cap * 100
                 else:
                     ratio = None
@@ -897,17 +926,29 @@ if __name__ == "__main__":
                         compressed_parts.append(short)
                 trap_short = ",".join(compressed_parts)[:8] if trap_signals else "-"
 
-                # 决策标签
-                if ratio and ratio > 5:
+                # 决策标签（使用新的决策树逻辑）
+                if ratio is not None and ratio < 0.5:
+                    decision_tag = "PASS❌"
+                elif ratio is not None and ratio > 5:
                     decision_tag = "TRAP❌"
-                elif ratio and ratio < 0.5:
-                    decision_tag = "BLOCK❌"
                 elif trap_signals and risk_score >= 0.4:
                     decision_tag = "BLOCK❌"
-                elif ratio and 1 <= ratio <= 3 and risk_score <= 0.2 and not trap_signals:
+                elif (ratio is not None and 1 <= ratio <= 3 and risk_score <= 0.2 and not trap_signals):
                     decision_tag = "FOCUS✅"
                 else:
                     decision_tag = "BLOCK❌"
+
+                # DEBUG: 针对 601869.SH 的关键数据输出
+                if code == "601869.SH":
+                    print(f"\n[DEBUG 601869.SH]")
+                    print(f"  trade_date={trade_date}")
+                    print(f"  main_net_inflow={main_net_yuan} 元 ({main_net_yi:.4f} 亿)")
+                    print(f"  circ_mv_tushare={circ_mv_tushare} 元 ({float_mv_yi:.2f} 亿)")
+                    print(f"  ratio={ratio} %")
+                    print(f"  decision_tag={decision_tag}")
+                    print(f"  risk_score={risk_score}")
+                    print(f"  trap_signals={trap_signals}")
+                    print()
 
                 # 打印行
                 print(f"{code:<8} {name:<10} {last_price:>6.2f} {pct_chg:>7.2f} {amount_yi:>9.2f} {float_mv_yi:>11.2f} {main_net_yi:>12.2f} {f'{ratio:>6.2f}' if ratio is not None else '  --  ':>6} {capital_abbr:>6} {risk_str:>5} {trap_short:<8} {decision_tag:<8}")
