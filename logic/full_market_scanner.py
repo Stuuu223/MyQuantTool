@@ -29,6 +29,8 @@ try:
 except ImportError:
     QMT_AVAILABLE = False
 
+from logic.equity_data_accessor import get_circ_mv
+
 from logic.trap_detector import TrapDetector
 from logic.capital_classifier import CapitalClassifier
 from logic.fund_flow_analyzer import FundFlowAnalyzer
@@ -1491,13 +1493,44 @@ class FullMarketScanner:
                 result['capital_type'] = capital_result.get('type', 'unknown')
                 result['scan_time'] = datetime.now().isoformat()
 
-                # 分类
-                if risk_score > 0.8:
+                # 计算资金推动力ratio
+                flow_records = item.get('flow_data', {}).get('records', [])
+                main_net_inflow = flow_records[0].get('main_net_inflow', 0) if flow_records else 0
+                
+                # 获取trade_date
+                trade_date = item.get('trade_date')
+                if not trade_date:
+                    # 如果没有trade_date，尝试从flow_records中获取
+                    if flow_records:
+                        date_value = flow_records[0].get('date', '')
+                        if hasattr(date_value, 'strftime'):
+                            trade_date = date_value.strftime('%Y%m%d')
+                        elif isinstance(date_value, str):
+                            trade_date = date_value.replace('-', '')
+                
+                # 计算ratio
+                ratio = None
+                if trade_date and main_net_inflow:
+                    try:
+                        circ_mv = get_circ_mv(code, trade_date)
+                        if circ_mv > 0:
+                            ratio = main_net_inflow / circ_mv * 100
+                    except Exception as e:
+                        logger.warning(f"⚠️  {code} 计算ratio失败: {e}")
+                
+                result['ratio'] = ratio
+
+                # 使用决策树进行分类
+                decision_tag = self._calculate_decision_tag(ratio, risk_score, trap_result.get('signals', []))
+                result['decision_tag'] = decision_tag
+
+                # 根据决策标签分类
+                if decision_tag == 'PASS❌' or decision_tag == 'TRAP❌' or decision_tag == 'BLOCK❌':
                     blacklist.append(result)
-                elif risk_score > 0.6:
-                    watchlist.append(result)
-                else:
+                elif decision_tag == 'FOCUS✅':
                     opportunities.append(result)
+                else:
+                    watchlist.append(result)
                     
             except Exception as e:
                 logger.warning(f"⚠️  {code} Level3 分析失败: {e}")
@@ -1541,6 +1574,36 @@ class FullMarketScanner:
             score -= 0.1  # 降低风险
         
         return min(max(score, 0.0), 1.0)
+    
+    def _calculate_decision_tag(self, ratio: float, risk_score: float, trap_signals: list) -> str:
+        """
+        资金推动力决策树:
+        第1关: ratio < 0.5% → PASS❌（止损优先，资金推动力太弱）
+        第2关: ratio > 5% → TRAP❌（暴拉出货风险）
+        第3关: 诱多 + 高风险 → BLOCK❌
+        第4关: 1-3% + 低风险 + 无诱多 → FOCUS✅
+        """
+        # 第1关: 资金推动力太弱，直接 PASS（止损优先）
+        if ratio is not None and ratio < 0.5:
+            return "PASS❌"
+
+        # 第2关: 暴拉出货风险
+        if ratio is not None and ratio > 5:
+            return "TRAP❌"
+
+        # 第3关: 诱多 + 高风险
+        if trap_signals and risk_score >= 0.4:
+            return "BLOCK❌"
+
+        # 第4关: 标准 FOCUS
+        if (ratio is not None and
+            1 <= ratio <= 3 and
+            risk_score <= 0.2 and
+            not trap_signals):
+            return "FOCUS✅"
+
+        # 兜底
+        return "BLOCK❌"
     
     def generate_state_signature(self, results: dict) -> str:
         """
