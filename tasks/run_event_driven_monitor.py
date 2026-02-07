@@ -30,6 +30,7 @@ sys.path.insert(0, str(project_root))
 
 from logic.full_market_scanner import FullMarketScanner
 from logic.market_status import MarketStatusChecker
+from tasks.sync_equity_info_tushare import get_circ_mv
 from logic.event_detector import EventManager, EventType
 from logic.auction_event_detector import AuctionEventDetector
 from logic.halfway_event_detector import HalfwayEventDetector
@@ -336,7 +337,15 @@ class EventDrivenMonitor:
             main_net_yi = main_net_yuan / 1e8
 
             # 计算占比（主力净入占流通市值比）
-            if circulating_market_cap > 0:
+            # 优先使用 Tushare 数据，回退到现有逻辑
+            trade_date = datetime.now().strftime("%Y%m%d")
+            circ_mv_tushare = get_circ_mv(code, trade_date)
+
+            if circ_mv_tushare > 0:
+                ratio = main_net_yuan / circ_mv_tushare * 100
+                # 更新流通市值显示为 Tushare 数据
+                float_mv_yi = circ_mv_tushare / 1e8
+            elif circulating_market_cap > 0:
                 ratio = main_net_yuan / circulating_market_cap * 100
             else:
                 ratio = None

@@ -22,16 +22,12 @@ try:
     import akshare as ak
     AKSHARE_AVAILABLE = True
     
-    # 禁用代理（强制直连）
+    # 禁用代理（强制直连）- 正确做法：清空环境变量
+    os.environ['HTTP_PROXY'] = ''
+    os.environ['HTTPS_PROXY'] = ''
+    os.environ['ALL_PROXY'] = ''
     os.environ['NO_PROXY'] = '*'
     os.environ['no_proxy'] = '*'
-    
-    # 配置 requests session 禁用代理
-    import requests
-    requests.Session.proxies = {
-        'http': None,
-        'https': None,
-    }
     
     print("✅ 已禁用代理，使用直连")
     
