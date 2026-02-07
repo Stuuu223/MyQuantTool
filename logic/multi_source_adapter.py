@@ -14,6 +14,12 @@ from functools import wraps
 
 import akshare as ak
 
+from logic.data_quality_validator import (
+    validate_kline,
+    validate_tick,
+    DataQualityError
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -537,29 +543,124 @@ class MultiSourceDataAdapter:
         if self.config.enable_cache:
             self._cache[key] = (data, time.time())
     
-    def _try_sources(self, operation: str, *args, **kwargs) -> Optional[Any]:
-        """尝试多个数据源"""
-        sources_to_try = [self.config.primary_source, self.config.fallback_source]
+    def _get_sources_priority(self) -> List[str]:
+        """获取数据源优先级列表"""
+        return [self.config.primary_source, self.config.fallback_source]
+    
+    def _estimate_min_length(self, period: str, start_date: Optional[str]) -> Optional[int]:
+        """
+        根据周期和起始日期估算最小数据长度
         
+        Args:
+            period: 周期（如 '1d', '60m'）
+            start_date: 起始日期
+        
+        Returns:
+            预期最小长度（None表示不检查）
+        """
+        if not start_date:
+            return None
+        
+        # 简单实现：根据周期估算
+        if period == '1d':
+            # 日线：假设一年约 240 个交易日
+            # 如果起始日期是 90 天前，预期约 60 条数据
+            return 60
+        elif period in ['60m', '30m', '15m', '5m', '1m']:
+            # 分钟线：暂不检查长度（交易时间复杂）
+            return None
+        else:
+            return None
+    
+    def _validate_result(self, operation: str, result: Any, *args, **kwargs) -> Any:
+        """
+        根据操作类型进行数据质量校验
+        
+        Args:
+            operation: 操作名称（如 'get_kline', 'get_tick'）
+            result: 数据源返回的结果
+            args, kwargs: 原始调用参数
+        
+        Returns:
+            校验通过的数据
+        
+        Raises:
+            DataQualityError: 数据质量不合格
+        """
+        if operation == 'get_kline':
+            # K线数据校验
+            code = args[0] if args else kwargs.get('code')
+            period = args[1] if len(args) > 1 else kwargs.get('period')
+            
+            # 根据周期估算最小长度
+            min_length = self._estimate_min_length(period, kwargs.get('start_date'))
+            
+            return validate_kline(result, code, period, min_length)
+        
+        elif operation == 'get_tick':
+            # 分时数据校验
+            code = args[0] if args else kwargs.get('code')
+            trade_date = args[1] if len(args) > 1 else kwargs.get('trade_date')
+            
+            return validate_tick(result, code, trade_date)
+        
+        else:
+            # 其他操作：基本校验（不为None）
+            if result is None:
+                raise DataQualityError(f"操作 {operation} 返回None")
+            return result
+    
+    def _try_sources(self, operation: str, *args, **kwargs) -> Optional[Any]:
+        """
+        尝试多个数据源，按优先级顺序
+        
+        Returns:
+            成功获取的数据（已通过质量校验）
+        
+        Raises:
+            DataQualityError: 所有数据源均失败或数据质量不合格
+        """
+        sources_to_try = self._get_sources_priority()
+        
+        last_error = None
         for source_name in sources_to_try:
             if source_name not in self.sources:
+                logger.warning(f"数据源 {source_name} 不可用，跳过")
                 continue
             
             try:
                 source = self.sources[source_name]
-                method = getattr(source, operation)
+                method = getattr(source, operation, None)
+                if not method:
+                    logger.warning(f"{source_name} 不支持操作 {operation}")
+                    continue
+                
+                # 获取数据
                 result = method(*args, **kwargs)
                 
-                if result is not None:
-                    logger.info(f"✓ {source_name}.{operation} succeeded")
-                    return result
-                else:
-                    logger.warning(f"✗ {source_name}.{operation} returned None")
+                # ✅ 新增：数据质量硬校验
+                result = self._validate_result(operation, result, *args, **kwargs)
+                
+                logger.info(f"✓ {source_name}.{operation} 成功并通过质量校验")
+                return result
+                
+            except DataQualityError as e:
+                # 数据质量不合格，记录后尝试下一个数据源
+                logger.warning(f"✗ {source_name}.{operation} 数据质量不合格: {e}")
+                last_error = e
+                
             except Exception as e:
-                logger.warning(f"✗ {source_name}.{operation} failed: {e}")
+                # 其他异常，记录后尝试下一个数据源
+                logger.warning(f"✗ {source_name}.{operation} 失败: {e}")
+                last_error = e
         
-        logger.error(f"All sources failed for {operation}")
-        return None
+        # ❌ 所有数据源都失败
+        error_msg = f"所有数据源均失败: {operation}({args}, {kwargs})"
+        if last_error:
+            error_msg += f", 最后一个错误: {last_error}"
+        
+        # 🔥 关键改动：不再返回 None，而是抛异常
+        raise DataQualityError(error_msg)
     
     def get_market_overview(self) -> Optional[Dict[str, Any]]:
         """获取市场概览"""
