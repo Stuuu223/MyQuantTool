@@ -30,6 +30,7 @@ except ImportError:
     QMT_AVAILABLE = False
 
 from logic.equity_data_accessor import get_circ_mv
+from logic.rolling_risk_features import compute_multi_day_risk_features
 
 from logic.trap_detector import TrapDetector
 from logic.capital_classifier import CapitalClassifier
@@ -1520,9 +1521,27 @@ class FullMarketScanner:
                 
                 result['ratio'] = ratio
 
+                # 计算多日风险特征
+                flow_data = item.get('flow_data', {})
+                flow_records = flow_data.get('records', [])
+                price_3d_change = item.get('price_3d_change')  # 可选的3日涨幅字段
+                
+                risk_features = compute_multi_day_risk_features(
+                    code=code,
+                    trade_date=trade_date,
+                    flow_records=flow_records,
+                    price_3d_change=price_3d_change,
+                )
+
                 # 使用决策树进行分类
-                decision_tag = self._calculate_decision_tag(ratio, risk_score, trap_result.get('signals', []))
+                decision_tag = self._calculate_decision_tag(
+                    ratio, 
+                    risk_score, 
+                    trap_result.get('signals', []),
+                    risk_features['is_price_up_3d_capital_not_follow']
+                )
                 result['decision_tag'] = decision_tag
+                result['risk_features'] = risk_features  # 保存特征用于调试
 
                 # 根据决策标签分类
                 if decision_tag == 'PASS❌' or decision_tag == 'TRAP❌' or decision_tag == 'BLOCK❌':
@@ -1575,34 +1594,40 @@ class FullMarketScanner:
         
         return min(max(score, 0.0), 1.0)
     
-    def _calculate_decision_tag(self, ratio: float, risk_score: float, trap_signals: list) -> str:
+    def _calculate_decision_tag(self, ratio: float, risk_score: float, trap_signals: list, is_price_up_3d_capital_not_follow: bool = False) -> str:
         """
-        资金推动力决策树:
-        第1关: ratio < 0.5% → PASS❌（止损优先，资金推动力太弱）
-        第2关: ratio > 5% → TRAP❌（暴拉出货风险）
-        第3关: 诱多 + 高风险 → BLOCK❌
-        第4关: 1-3% + 低风险 + 无诱多 → FOCUS✅
+        决策树核心逻辑
+        
+        Args:
+            ratio: 主力资金推动力比值
+            risk_score: 风险评分
+            trap_signals: 诱多陷阱信号列表
+            is_price_up_3d_capital_not_follow: 3日连涨但资金不跟特征
+        
+        Returns:
+            决策标签: PASS❌ / TRAP❌ / BLOCK❌ / FOCUS✅
         """
-        # 第1关: 资金推动力太弱，直接 PASS（止损优先）
-        if ratio is not None and ratio < 0.5:
+        # 第1关：ratio < 0.5% → PASS❌
+        if ratio is None or ratio < 0.5:
             return "PASS❌"
 
-        # 第2关: 暴拉出货风险
-        if ratio is not None and ratio > 5:
+        # 第2关：ratio > 5% → TRAP❌（暴拉出货）
+        if ratio > 5:
             return "TRAP❌"
 
-        # 第3关: 诱多 + 高风险
-        if trap_signals and risk_score >= 0.4:
+        # 第3关：诱多 + 高风险 → BLOCK❌
+        if len(trap_signals) > 0 and risk_score >= 0.4:
             return "BLOCK❌"
 
-        # 第4关: 标准 FOCUS
-        if (ratio is not None and
-            1 <= ratio <= 3 and
-            risk_score <= 0.2 and
-            not trap_signals):
+        # 第3.5关：3日连涨资金不跟 + ratio < 1% → TRAP❌
+        if is_price_up_3d_capital_not_follow and ratio < 1:
+            return "TRAP❌"
+
+        # 第4关：1-3% + 低风险 + 无诱多 → FOCUS✅
+        if 1 <= ratio <= 3 and risk_score < 0.4 and len(trap_signals) == 0:
             return "FOCUS✅"
 
-        # 兜底
+        # 兜底：BLOCK❌
         return "BLOCK❌"
     
     def generate_state_signature(self, results: dict) -> str:

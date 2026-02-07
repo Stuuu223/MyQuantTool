@@ -55,31 +55,33 @@ def get_trap_signals(snapshot, code):
     return []
 
 
-def calculate_decision_tag(ratio, risk_score, trap_signals):
+def calculate_decision_tag(ratio, risk_score, trap_signals, is_price_up_3d_capital_not_follow=False):
     """
     资金推动力决策树:
     第1关: ratio < 0.5% → PASS❌（止损优先，资金推动力太弱）
     第2关: ratio > 5% → TRAP❌（暴拉出货风险）
     第3关: 诱多 + 高风险 → BLOCK❌
+    第3.5关: 3日连涨资金不跟 + ratio < 1% → TRAP❌
     第4关: 1-3% + 低风险 + 无诱多 → FOCUS✅
     """
     # 第1关: 资金推动力太弱，直接 PASS（止损优先）
-    if ratio is not None and ratio < 0.5:
+    if ratio is None or ratio < 0.5:
         return "PASS❌"
 
     # 第2关: 暴拉出货风险
-    if ratio is not None and ratio > 5:
+    if ratio > 5:
         return "TRAP❌"
 
     # 第3关: 诱多 + 高风险
-    if trap_signals and risk_score >= 0.4:
+    if len(trap_signals) > 0 and risk_score >= 0.4:
         return "BLOCK❌"
 
+    # 第3.5关: 3日连涨资金不跟 + ratio < 1% → TRAP❌
+    if is_price_up_3d_capital_not_follow and ratio < 1:
+        return "TRAP❌"
+
     # 第4关: 标准 FOCUS
-    if (ratio is not None and
-        1 <= ratio <= 3 and
-        risk_score <= 0.2 and
-        not trap_signals):
+    if 1 <= ratio <= 3 and risk_score < 0.4 and len(trap_signals) == 0:
         return "FOCUS✅"
 
     # 兜底
@@ -393,6 +395,48 @@ class TestDecisionTreeUnit:
         # 但有trap_signals，也不满足第4关，所以走兜底 BLOCK❌
         assert decision == "BLOCK❌", \
             f"risk_score=0.39 + 诱多信号 应该是 BLOCK❌，但得到 {decision}（ratio={ratio}%, trap_signals={trap_signals}）"
+
+    def test_gate_3_5_price_up_capital_not_follow_trap(self):
+        """
+        第3.5关测试：3日连涨但资金不跟 + ratio < 1% → TRAP❌
+        """
+        ratio = 0.8  # 0.8%
+        risk_score = 0.2
+        trap_signals = []
+        is_price_up_3d_capital_not_follow = True
+
+        decision = calculate_decision_tag(ratio, risk_score, trap_signals, is_price_up_3d_capital_not_follow)
+
+        assert decision == "TRAP❌", \
+            f"3日连涨资金不跟且ratio<1%应该触发TRAP❌，但得到 {decision}"
+
+    def test_gate_3_5_price_up_capital_not_follow_pass_high_ratio(self):
+        """
+        第3.5关反例：3日连涨但资金不跟，但ratio=2.0 → 不触发第3.5关
+        """
+        ratio = 2.0  # 2.0%
+        risk_score = 0.2
+        trap_signals = []
+        is_price_up_3d_capital_not_follow = True
+
+        decision = calculate_decision_tag(ratio, risk_score, trap_signals, is_price_up_3d_capital_not_follow)
+
+        assert decision == "FOCUS✅", \
+            f"ratio在1-3%且无诱多应该是FOCUS✅，但得到 {decision}"
+
+    def test_gate_3_5_no_price_up_capital_not_follow(self):
+        """
+        第3.5关反例：不满足3日连涨资金不跟 → 不触发
+        """
+        ratio = 0.3  # 0.3%
+        risk_score = 0.2
+        trap_signals = []
+        is_price_up_3d_capital_not_follow = False
+
+        decision = calculate_decision_tag(ratio, risk_score, trap_signals, is_price_up_3d_capital_not_follow)
+
+        assert decision == "PASS❌", \
+            f"ratio < 0.5%且不满足3.5关条件应该触发第1关PASS❌，但得到 {decision}"
 
 
 if __name__ == '__main__':
