@@ -9,9 +9,11 @@ import os
 from datetime import datetime, timedelta
 import json
 
-sys.path.append('E:/MyQuantTool')
+# 添加项目根目录到路径
+sys.path.append(str(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 import tushare as ts
+from config.paths import REBUILD_SNAP_DIR
 
 
 class SnapshotRebuilder:
@@ -441,7 +443,7 @@ def main():
     """主函数"""
     # 配置
     TUSHARE_TOKEN = '1430dca9cc3419b91928e162935065bcd3531fa82976fee8355d550b'
-    OUTPUT_DIR = 'E:/MyQuantTool/data/rebuild_snapshots'
+    OUTPUT_DIR = str(REBUILD_SNAP_DIR)
 
     # 创建重建器
     rebuilder = SnapshotRebuilder(TUSHARE_TOKEN, OUTPUT_DIR)

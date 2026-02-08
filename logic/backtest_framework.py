@@ -7,8 +7,11 @@
 import json
 import os
 from datetime import datetime, timedelta
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 import pandas as pd
+
+# 导入路径配置
+from config.paths import REBUILD_SNAP_DIR, BACKTEST_RESULTS_DIR
 
 
 class BacktestPosition:
@@ -61,10 +64,27 @@ class BacktestEngine:
         self.closed_positions: List[BacktestPosition] = []
         self.trades = []
         self.daily_equity = []
-        
+
         # 添加冷却期跟踪（防止反复交易）
         self.cooldown_stocks = {}  # {code: cooldown_end_date}
         self.COOLDOWN_DAYS = 7  # 冷却7天
+
+        # 风控管理器（懒加载）
+        self.risk_mgr = None
+
+    def _convert_date_format(self, date_str: str) -> str:
+        """
+        日期格式转换：YYYYMMDD -> YYYY-MM-DD
+
+        Args:
+            date_str: 日期字符串（YYYYMMDD或YYYY-MM-DD）
+
+        Returns:
+            转换后的日期字符串（YYYY-MM-DD）
+        """
+        if len(date_str) == 8 and date_str.isdigit():
+            return f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
+        return date_str
 
     def load_snapshot(self, snapshot_path: str) -> Optional[Dict]:
         """
@@ -188,8 +208,57 @@ class BacktestEngine:
         
         # 综合评分（主力流入50% + 涨幅30% + 成交额20%）
         total_score = flow_score * 0.5 + pct_score * 0.3 + amount_score * 0.2
-        
+
         return total_score
+
+    def _check_risk_control(
+        self,
+        position: BacktestPosition,
+        stock_data: Dict,
+        trade_date: str
+    ) -> Tuple[bool, str]:
+        """
+        风控检查层 - 使用RiskControlManager检查持仓是否需要风控卖出
+
+        Args:
+            position: 持仓对象
+            stock_data: 当前股票数据（来自快照）
+            trade_date: 当前交易日期（YYYYMMDD格式）
+
+        Returns:
+            (should_exit, reason)
+            should_exit: 是否应该风控卖出
+            reason: 卖出原因（PRICE_STOP/TIME_STOP/NONE）
+        """
+        # 懒加载风控管理器
+        if self.risk_mgr is None:
+            from logic.risk_control import RiskControlManager
+            self.risk_mgr = RiskControlManager(
+                price_stop_pct=-5.0,           # 价格止损-5%
+                time_stop_min_days=3,          # 最小持仓天数3天
+                time_stop_max_days=5,          # 最大持仓天数5天
+                time_stop_min_profit=5.0,      # 最小收益要求+5%
+                max_position_per_stock=0.25,   # 单票最大仓位25%
+                max_holdings=3                 # 最大持仓数3只
+            )
+
+        # 获取当前价格
+        current_price = stock_data['price_data']['close']
+
+        # 日期格式转换
+        entry_date_std = self._convert_date_format(position.entry_date)
+        current_date_std = self._convert_date_format(trade_date)
+
+        # 调用风控检查
+        should_exit, reason = self.risk_mgr.check_exit(
+            symbol=position.code,
+            entry_price=position.entry_price,
+            current_price=current_price,
+            entry_date=entry_date_std,
+            current_date=current_date_std
+        )
+
+        return should_exit, reason
 
     def should_sell(self, position: BacktestPosition, stock_data: Dict) -> bool:
         """
@@ -284,12 +353,24 @@ class BacktestEngine:
                 if stock_data:
                     current_price = stock_data['price_data']['close']
 
-                    if self.should_sell(pos, stock_data):
+                    # 原有策略信号判断
+                    should_exit_signal = self.should_sell(pos, stock_data)
+
+                    # 风控检查
+                    should_exit_risk, risk_reason = self._check_risk_control(pos, stock_data, trade_date)
+
+                    # 任一触发就卖出
+                    if should_exit_signal or should_exit_risk:
+                        # 记录触发原因
+                        exit_reason = "SIGNAL"
+                        if should_exit_risk:
+                            exit_reason += f"_RISK_{risk_reason}"
+
                         pos.close(current_price, trade_date)
                         self.closed_positions.append(pos)
                         self.current_capital += pos.pnl
                         positions_to_close.append(pos)
-                        
+
                         # 添加冷却期
                         self.cooldown_stocks[pos.code] = trade_date
 
@@ -299,7 +380,8 @@ class BacktestEngine:
                             'date': trade_date,
                             'price': current_price,
                             'pnl': pos.pnl,
-                            'pnl_pct': pos.pnl_pct
+                            'pnl_pct': pos.pnl_pct,
+                            'exit_reason': exit_reason
                         })
                     else:
                         # 调试输出（已关闭）
@@ -509,7 +591,7 @@ def main():
     engine = BacktestEngine(initial_capital=100000.0)
 
     # 加载快照
-    snapshot_dir = 'E:/MyQuantTool/data/rebuild_snapshots'
+    snapshot_dir = str(REBUILD_SNAP_DIR)
     snapshots = engine.load_snapshots_from_dir(snapshot_dir)
 
     if len(snapshots) == 0:
@@ -523,7 +605,7 @@ def main():
     engine.print_report()
 
     # 保存结果
-    output_dir = 'E:/MyQuantTool/data/backtest_results'
+    output_dir = str(BACKTEST_RESULTS_DIR)
     os.makedirs(output_dir, exist_ok=True)
 
     engine.save_trades(f'{output_dir}/trades.csv')
