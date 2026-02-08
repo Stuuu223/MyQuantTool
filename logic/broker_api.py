@@ -12,10 +12,14 @@ import json
 import requests
 import pandas as pd
 import numpy as np
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass
 from datetime import datetime
 import logging
+
+# 导入日志系统
+from logic.logger import get_logger
+logger = get_logger(__name__)
 
 @dataclass
 class Order:
@@ -31,6 +35,11 @@ class Order:
     filled_quantity: int = 0
     filled_price: float = 0.0
     commission: float = 0.0
+    # 🛡️ 防守斧：场景检查相关字段
+    scenario_type: Optional[str] = None
+    is_tail_rally: Optional[bool] = None
+    is_potential_trap: Optional[bool] = None
+    stock_name: Optional[str] = None
 
 @dataclass
 class Position:
@@ -129,23 +138,92 @@ class MockBrokerAPI(BrokerAPI):
         return list(self.positions.values())
     
     def place_order(self, order: Order) -> str:
-        """下单"""
+        """
+        下单（带防守斧拦截）
+
+        Args:
+            order: 订单对象
+
+        Returns:
+            order_id: 订单ID
+
+        Raises:
+            RuntimeError: 如果场景检查失败，抛出异常拒绝下单
+        """
+        # 🛡️ 防守斧：场景检查（买入订单）
+        if order.side == 'buy':
+            can_open, reason = self._check_scenario_for_order(order)
+            if not can_open:
+                logger.error(f"🛡️ [防守斧拒绝下单] {order.symbol} ({order.stock_name or 'N/A'})")
+                logger.error(f"   {reason}")
+                logger.error(f"   拦截位置: 订单执行层 (broker_api.py)")
+                raise RuntimeError(f"🛡️ 防守斧拦截: {reason}")
+
         # 生成订单ID
         order_id = f"MOCK{self.order_id_counter}"
         self.order_id_counter += 1
-        
+
         # 设置订单状态
         order.order_id = order_id
         order.status = 'pending'
         order.timestamp = datetime.now()
-        
+
         # 保存订单
         self.orders[order_id] = order
-        
+
         # 模拟订单执行
         self._execute_order(order_id)
-        
+
         return order_id
+
+    def _check_scenario_for_order(self, order: Order) -> Tuple[bool, str]:
+        """
+        🛡️ 防守斧：场景检查 - 订单执行层拦截
+
+        严格禁止 TAIL_RALLY/TRAP 场景开仓
+
+        Args:
+            order: 订单对象
+
+        Returns:
+            (can_open, reason)
+            can_open: 是否允许开仓
+            reason: 拒绝原因或允许原因
+        """
+        # 导入硬编码禁止场景列表
+        from logic.risk_control import FORBIDDEN_SCENARIOS
+
+        code = order.symbol
+        name = order.stock_name or 'N/A'
+        scenario_type = order.scenario_type or ''
+        is_tail_rally = order.is_tail_rally or False
+        is_potential_trap = order.is_potential_trap or False
+
+        # 硬编码禁止规则
+        if scenario_type in FORBIDDEN_SCENARIOS:
+            reason = f"🛡️ [防守斧] 禁止场景: {scenario_type}"
+            logger.warning(f"🛡️ [防守斧拦截-订单层] {code} ({name})")
+            logger.warning(f"   场景类型: {scenario_type}")
+            logger.warning(f"   拦截位置: 订单执行层 (broker_api.py)")
+            return False, reason
+
+        # 兼容旧版：通过布尔值检查
+        if is_tail_rally:
+            reason = "🛡️ [防守斧] 补涨尾声场景，严禁开仓"
+            logger.warning(f"🛡️ [防守斧拦截-订单层] {code} ({name})")
+            logger.warning(f"   is_tail_rally: {is_tail_rally}")
+            logger.warning(f"   拦截位置: 订单执行层 (broker_api.py)")
+            return False, reason
+
+        if is_potential_trap:
+            reason = "🛡️ [防守斧] 拉高出货陷阱，严禁开仓"
+            logger.warning(f"🛡️ [防守斧拦截-订单层] {code} ({name})")
+            logger.warning(f"   is_potential_trap: {is_potential_trap}")
+            logger.warning(f"   拦截位置: 订单执行层 (broker_api.py)")
+            return False, reason
+
+        # 通过检查
+        return True, "OK"
     
     def _execute_order(self, order_id: str):
         """模拟订单执行"""

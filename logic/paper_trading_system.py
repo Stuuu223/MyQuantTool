@@ -11,7 +11,7 @@
 
 import pandas as pd
 import numpy as np
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -61,6 +61,11 @@ class Order:
     create_time: str = ""
     update_time: str = ""
     expire_time: Optional[str] = None
+    # 🛡️ 防守斧：场景检查相关字段
+    scenario_type: Optional[str] = None
+    is_tail_rally: Optional[bool] = None
+    is_potential_trap: Optional[bool] = None
+    stock_name: Optional[str] = None
 
 
 @dataclass
@@ -149,11 +154,16 @@ class PaperTradingSystem:
         quantity: int,
         price: float = 0.0,
         stop_price: Optional[float] = None,
-        expire_days: Optional[int] = None
+        expire_days: Optional[int] = None,
+        # 🛡️ 防守斧：场景检查参数
+        scenario_type: Optional[str] = None,
+        is_tail_rally: Optional[bool] = None,
+        is_potential_trap: Optional[bool] = None,
+        stock_name: Optional[str] = None
     ) -> str:
         """
-        提交订单
-        
+        提交订单（带防守斧拦截）
+
         Args:
             symbol: 股票代码
             order_type: 订单类型
@@ -162,33 +172,51 @@ class PaperTradingSystem:
             price: 价格（限价单必须）
             stop_price: 止损价格
             expire_days: 有效天数
-        
+            scenario_type: 场景类型（防守斧检查用）
+            is_tail_rally: 是否补涨尾声（防守斧检查用）
+            is_potential_trap: 是否拉高出货陷阱（防守斧检查用）
+            stock_name: 股票名称（防守斧日志用）
+
         Returns:
             订单ID
+
+        Raises:
+            RuntimeError: 如果场景检查失败，抛出异常拒绝下单
         """
         # 验证订单
         if order_type == OrderType.LIMIT and price <= 0:
             raise ValueError("限价单必须指定价格")
-        
+
         if quantity <= 0:
             raise ValueError("数量必须大于0")
-        
+
+        # 🛡️ 防守斧：场景检查（买入订单）
+        if direction == OrderDirection.BUY:
+            can_open, reason = self._check_scenario_for_order(
+                symbol, scenario_type, is_tail_rally, is_potential_trap, stock_name
+            )
+            if not can_open:
+                logger.error(f"🛡️ [防守斧拒绝下单] {symbol} ({stock_name or 'N/A'})")
+                logger.error(f"   {reason}")
+                logger.error(f"   拦截位置: 模拟交易系统 (paper_trading_system.py)")
+                raise RuntimeError(f"🛡️ 防守斧拦截: {reason}")
+
         # 风险检查
         if direction == OrderDirection.BUY:
             required_capital = quantity * 100 * price * (1 + self.commission_rate)
             if required_capital > self.cash_balance:
                 raise ValueError(f"资金不足，需要 ¥{required_capital:.2f}，可用 ¥{self.cash_balance:.2f}")
-        
+
         # 创建订单
         self.order_counter += 1
         order_id = f"ORDER_{datetime.now().strftime('%Y%m%d%H%M%S')}_{self.order_counter}"
-        
+
         create_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         expire_time = None
         if expire_days:
             expire_dt = datetime.now() + pd.Timedelta(days=expire_days)
             expire_time = expire_dt.strftime('%Y-%m-%d %H:%M:%S')
-        
+
         order = Order(
             order_id=order_id,
             symbol=symbol,
@@ -199,12 +227,77 @@ class PaperTradingSystem:
             stop_price=stop_price,
             create_time=create_time,
             update_time=create_time,
-            expire_time=expire_time
+            expire_time=expire_time,
+            # 🛡️ 防守斧：保存场景信息
+            scenario_type=scenario_type,
+            is_tail_rally=is_tail_rally,
+            is_potential_trap=is_potential_trap,
+            stock_name=stock_name
         )
-        
+
         self.orders[order_id] = order
-        
+
         return order_id
+
+    def _check_scenario_for_order(
+        self,
+        symbol: str,
+        scenario_type: Optional[str],
+        is_tail_rally: Optional[bool],
+        is_potential_trap: Optional[bool],
+        stock_name: Optional[str]
+    ) -> Tuple[bool, str]:
+        """
+        🛡️ 防守斧：场景检查 - 模拟交易系统拦截
+
+        严格禁止 TAIL_RALLY/TRAP 场景开仓
+
+        Args:
+            symbol: 股票代码
+            scenario_type: 场景类型
+            is_tail_rally: 是否补涨尾声
+            is_potential_trap: 是否拉高出货陷阱
+            stock_name: 股票名称
+
+        Returns:
+            (can_open, reason)
+            can_open: 是否允许开仓
+            reason: 拒绝原因或允许原因
+        """
+        # 导入硬编码禁止场景列表
+        from logic.risk_control import FORBIDDEN_SCENARIOS
+
+        code = symbol
+        name = stock_name or 'N/A'
+        scenario_type = scenario_type or ''
+        is_tail_rally = is_tail_rally or False
+        is_potential_trap = is_potential_trap or False
+
+        # 硬编码禁止规则
+        if scenario_type in FORBIDDEN_SCENARIOS:
+            reason = f"🛡️ [防守斧] 禁止场景: {scenario_type}"
+            logger.warning(f"🛡️ [防守斧拦截-模拟交易] {code} ({name})")
+            logger.warning(f"   场景类型: {scenario_type}")
+            logger.warning(f"   拦截位置: 模拟交易系统 (paper_trading_system.py)")
+            return False, reason
+
+        # 兼容旧版：通过布尔值检查
+        if is_tail_rally:
+            reason = "🛡️ [防守斧] 补涨尾声场景，严禁开仓"
+            logger.warning(f"🛡️ [防守斧拦截-模拟交易] {code} ({name})")
+            logger.warning(f"   is_tail_rally: {is_tail_rally}")
+            logger.warning(f"   拦截位置: 模拟交易系统 (paper_trading_system.py)")
+            return False, reason
+
+        if is_potential_trap:
+            reason = "🛡️ [防守斧] 拉高出货陷阱，严禁开仓"
+            logger.warning(f"🛡️ [防守斧拦截-模拟交易] {code} ({name})")
+            logger.warning(f"   is_potential_trap: {is_potential_trap}")
+            logger.warning(f"   拦截位置: 模拟交易系统 (paper_trading_system.py)")
+            return False, reason
+
+        # 通过检查
+        return True, "OK"
     
     def cancel_order(self, order_id: str) -> bool:
         """

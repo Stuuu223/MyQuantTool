@@ -22,7 +22,7 @@ import sys
 import json
 from datetime import datetime, time as dt_time
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Tuple
 
 # 添加项目根目录到Python路径
 project_root = Path(__file__).parent.parent
@@ -398,12 +398,82 @@ class EventDrivenMonitor:
 
         print("=" * 125)
 
+    def _check_defensive_scenario(self, item: dict) -> Tuple[bool, str]:
+        """
+        🛡️ 防守斧：场景检查 - 监控层拦截
+
+        严格禁止 TAIL_RALLY/TRAP 场景开仓
+
+        Args:
+            item: 股票数据字典（来自全市场扫描结果）
+
+        Returns:
+            (is_forbidden, reason)
+            is_forbidden: 是否禁止开仓
+            reason: 禁止原因
+        """
+        # 导入硬编码禁止场景列表
+        from logic.risk_control import FORBIDDEN_SCENARIOS
+
+        code = item.get('code', '')
+        name = item.get('name', 'N/A')
+        scenario_type = item.get('scenario_type', '')
+        is_tail_rally = item.get('is_tail_rally', False)
+        is_potential_trap = item.get('is_potential_trap', False)
+
+        # 硬编码禁止规则
+        if scenario_type in FORBIDDEN_SCENARIOS:
+            reason = f"🛡️ [防守斧] 禁止场景: {scenario_type}"
+            logger.warning(f"🛡️ [防守斧拦截-监控层] {code} ({name})")
+            logger.warning(f"   场景类型: {scenario_type}")
+            logger.warning(f"   原因: {', '.join(item.get('scenario_reasons', [])[:2])}")
+            logger.warning(f"   拦截位置: 监控层 (run_event_driven_monitor.py)")
+            return True, reason
+
+        # 兼容旧版：通过布尔值检查
+        if is_tail_rally:
+            reason = "🛡️ [防守斧] 补涨尾声场景，严禁开仓"
+            logger.warning(f"🛡️ [防守斧拦截-监控层] {code} ({name})")
+            logger.warning(f"   is_tail_rally: {is_tail_rally}")
+            logger.warning(f"   拦截位置: 监控层 (run_event_driven_monitor.py)")
+            return True, reason
+
+        if is_potential_trap:
+            reason = "🛡️ [防守斧] 拉高出货陷阱，严禁开仓"
+            logger.warning(f"🛡️ [防守斧拦截-监控层] {code} ({name})")
+            logger.warning(f"   is_potential_trap: {is_potential_trap}")
+            logger.warning(f"   拦截位置: 监控层 (run_event_driven_monitor.py)")
+            return True, reason
+
+        # 通过检查
+        return False, ""
+
     def print_summary(self, results: dict):
-        """打印扫描结果摘要"""
+        """打印扫描结果摘要（带防守斧拦截）"""
         print("\n" + "=" * 80)
         print(f"📊 扫描完成 #{self.scan_count} - {datetime.now().strftime('%H:%M:%S')}")
         print("=" * 80)
-        print(f"✅ 机会池: {len(results['opportunities'])} 只")
+
+        # 🛡️ 防守斧：过滤机会池中的禁止场景
+        opportunities_safe = []
+        opportunities_blocked = []
+        for item in results['opportunities']:
+            is_forbidden, reason = self._check_defensive_scenario(item)
+            if is_forbidden:
+                opportunities_blocked.append((item, reason))
+            else:
+                opportunities_safe.append(item)
+
+        # 打印拦截统计
+        if opportunities_blocked:
+            print(f"🛡️ [防守斧] 本次拦截 {len(opportunities_blocked)} 只禁止场景股票:")
+            for item, reason in opportunities_blocked:
+                print(f"   ❌ {item['code']} ({item.get('name', 'N/A')}) - {reason}")
+            print()
+
+        # 显示过滤后的机会池数量
+        print(f"✅ 机会池（安全）: {len(opportunities_safe)} 只")
+        print(f"🛡️ 机会池（已拦截）: {len(opportunities_blocked)} 只")
         print(f"⚠️  观察池: {len(results['watchlist'])} 只")
         print(f"❌ 黑名单: {len(results['blacklist'])} 只")
         print(f"📈 系统置信度: {results['confidence']*100:.1f}%")
@@ -411,14 +481,14 @@ class EventDrivenMonitor:
         print(f"🎯 累计保存快照: {self.save_count} 次")
         print(f"🔔 累计检测事件: {self.event_count} 次")
 
-        # 显示低风险机会池表格
-        if results['opportunities']:
-            self._print_low_risk_opportunities(results['opportunities'])
+        # 显示低风险机会池表格（只显示安全股票）
+        if opportunities_safe:
+            self._print_low_risk_opportunities(opportunities_safe)
 
-        # 显示机会池全部股票（简化版）
-        if results['opportunities']:
-            print(f"\n🔥 机会池 ({len(results['opportunities'])} 只):")
-            for item in results['opportunities']:
+        # 显示机会池全部股票（简化版，只显示安全股票）
+        if opportunities_safe:
+            print(f"\n🔥 机会池（安全） ({len(opportunities_safe)} 只):")
+            for item in opportunities_safe:
                 risk_score = item.get('risk_score', 0)
                 capital_type = item.get('capital_type', 'UNKNOWN')
                 trap_signals = item.get('trap_signals', [])

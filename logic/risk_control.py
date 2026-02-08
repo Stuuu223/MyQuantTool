@@ -2,7 +2,19 @@
 风控管理器 - 通用风控规则模块
 """
 from datetime import datetime
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Optional, List
+from logic.logger import get_logger
+
+logger = get_logger(__name__)
+
+
+# 硬编码禁止场景列表
+FORBIDDEN_SCENARIOS = [
+    "TAIL_RALLY",                    # 补涨尾声
+    "TRAP_PUMP_DUMP",                # 拉高出货
+    "FORBIDDEN_10CM_TAIL_RALLY",     # 10cm补涨尾声（禁止）
+    "FORBIDDEN_10CM_TRAP",           # 10cm拉高出货（禁止）
+]
 
 
 class RiskControlManager:
@@ -153,5 +165,108 @@ class RiskControlManager:
         max_position_value = total_equity * self.max_position_per_stock
         if new_position_value > max_position_value:
             return False, "POSITION_TOO_LARGE"
-        
+
+        return True, "OK"
+
+    def can_open_position_by_scenario(
+        self,
+        stock_code: str,
+        scenario_type: Optional[str] = None,
+        is_tail_rally: Optional[bool] = None,
+        is_potential_trap: Optional[bool] = None,
+        stock_name: Optional[str] = None,
+    ) -> Tuple[bool, str]:
+        """
+        🛡️ 防守斧：场景检查 - 严格禁止 TAIL_RALLY/TRAP 场景开仓
+
+        这是执行层的兜底检查，确保即使监控层漏掉，执行层也会拦截。
+
+        Args:
+            stock_code: 股票代码
+            scenario_type: 场景类型（从全市场扫描结果获取）
+            is_tail_rally: 是否补涨尾声
+            is_potential_trap: 是否拉高出货陷阱
+            stock_name: 股票名称（用于日志）
+
+        Returns:
+            (can_open, reason)
+            can_open: 是否允许开仓
+            reason: 拒绝原因或允许原因
+        """
+        # 硬编码禁止规则
+        if scenario_type in FORBIDDEN_SCENARIOS:
+            reason = f"🛡️ [防守斧] 禁止场景: {scenario_type}"
+            logger.warning(f"🛡️ [防守斧拦截] {stock_code} ({stock_name or 'N/A'}) - {reason}")
+            logger.warning(f"   场景类型: {scenario_type}")
+            logger.warning(f"   拦截位置: 执行层风控 (risk_control.py)")
+            return False, reason
+
+        # 兼容旧版：通过布尔值检查
+        if is_tail_rally:
+            reason = "🛡️ [防守斧] 补涨尾声场景，严禁开仓"
+            logger.warning(f"🛡️ [防守斧拦截] {stock_code} ({stock_name or 'N/A'}) - {reason}")
+            logger.warning(f"   is_tail_rally: {is_tail_rally}")
+            logger.warning(f"   拦截位置: 执行层风控 (risk_control.py)")
+            return False, reason
+
+        if is_potential_trap:
+            reason = "🛡️ [防守斧] 拉高出货陷阱，严禁开仓"
+            logger.warning(f"🛡️ [防守斧拦截] {stock_code} ({stock_name or 'N/A'}) - {reason}")
+            logger.warning(f"   is_potential_trap: {is_potential_trap}")
+            logger.warning(f"   拦截位置: 执行层风控 (risk_control.py)")
+            return False, reason
+
+        # 通过检查
+        return True, "OK"
+
+    def check_all_constraints(
+        self,
+        stock_code: str,
+        total_equity: float,
+        positions: Dict[str, float],
+        new_position_value: float,
+        scenario_type: Optional[str] = None,
+        is_tail_rally: Optional[bool] = None,
+        is_potential_trap: Optional[bool] = None,
+        stock_name: Optional[str] = None,
+    ) -> Tuple[bool, str]:
+        """
+        综合检查所有约束条件（仓位约束 + 场景约束）
+
+        Args:
+            stock_code: 股票代码
+            total_equity: 总资金
+            positions: 当前持仓字典 {symbol: position_value}
+            new_position_value: 新开仓的市值
+            scenario_type: 场景类型
+            is_tail_rally: 是否补涨尾声
+            is_potential_trap: 是否拉高出货陷阱
+            stock_name: 股票名称
+
+        Returns:
+            (can_open, reason)
+            can_open: 是否可以开仓
+            reason: 检查结果
+        """
+        # 第1关：场景检查（最高优先级）
+        can_open_by_scenario, scenario_reason = self.can_open_position_by_scenario(
+            stock_code=stock_code,
+            scenario_type=scenario_type,
+            is_tail_rally=is_tail_rally,
+            is_potential_trap=is_potential_trap,
+            stock_name=stock_name,
+        )
+        if not can_open_by_scenario:
+            return False, scenario_reason
+
+        # 第2关：仓位约束检查
+        can_open_by_position, position_reason = self.can_open_position(
+            total_equity=total_equity,
+            positions=positions,
+            new_position_value=new_position_value,
+        )
+        if not can_open_by_position:
+            return False, position_reason
+
+        # 所有检查通过
         return True, "OK"

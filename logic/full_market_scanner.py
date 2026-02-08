@@ -30,7 +30,8 @@ except ImportError:
     QMT_AVAILABLE = False
 
 from logic.equity_data_accessor import get_circ_mv
-from logic.rolling_risk_features import compute_multi_day_risk_features
+from logic.rolling_risk_features import compute_multi_day_risk_features, compute_all_scenario_features
+from logic.scenario_classifier import ScenarioClassifier
 
 from logic.trap_detector import TrapDetector
 from logic.capital_classifier import CapitalClassifier
@@ -78,6 +79,7 @@ class FullMarketScanner:
         self.fund_flow = FundFlowAnalyzer()
         self.limiter = RateLimiter(max_requests_per_minute=60, max_requests_per_hour=2000, min_request_interval=0.1)  # 东方财富 API 限速
         self.converter = CodeConverter()
+        self.scenario_classifier = ScenarioClassifier()  # 场景分类器
         
         # 加载本地股本信息（用于市值分层）
         self.equity_info = self._load_equity_info()
@@ -1576,13 +1578,35 @@ class FullMarketScanner:
                 flow_data = item.get('flow_data', {})
                 flow_records = flow_data.get('records', [])
                 price_3d_change = item.get('price_3d_change')  # 可选的3日涨幅字段
-                
+
                 risk_features = compute_multi_day_risk_features(
                     code=code,
                     trade_date=trade_date,
                     flow_records=flow_records,
                     price_3d_change=price_3d_change,
                 )
+
+                # 计算所有场景特征（包含pump+dump、补涨尾声、板块阶段等）
+                scenario_features = compute_all_scenario_features(
+                    code=code,
+                    trade_date=trade_date,
+                    flow_records=flow_records,
+                    capital_type=capital_result.get('type', ''),
+                    price_records=None,  # 暂不使用价格记录
+                    sector_20d_pct_change=None,  # 暂不使用板块数据
+                    sector_5d_trend=None,
+                )
+
+                # 使用场景分类器进行场景分类
+                scenario_input = {
+                    'code': code,
+                    'capitaltype': capital_result.get('type', ''),
+                    'flow_data': flow_data,
+                    'price_data': {},
+                    'risk_score': risk_score,
+                    'trap_signals': trap_result.get('signals', [])
+                }
+                scenario_result = self.scenario_classifier.classify(scenario_input)
 
                 # 使用决策树进行分类
                 decision_tag = self._calculate_decision_tag(
@@ -1601,6 +1625,23 @@ class FullMarketScanner:
                     opportunities.append(result)
                 else:
                     watchlist.append(result)
+
+                # 添加场景标签到result
+                result['scenario_features'] = scenario_features
+                result['is_tail_rally'] = scenario_result.is_tail_rally
+                result['is_potential_trap'] = scenario_result.is_potential_trap
+                result['is_potential_mainline'] = scenario_result.is_potential_mainline
+                result['scenario_type'] = scenario_result.scenario.value
+                result['scenario_confidence'] = scenario_result.confidence
+                result['scenario_reasons'] = scenario_result.reasons
+
+                # 记录被标记为禁止场景的股票
+                if scenario_result.is_tail_rally or scenario_result.is_potential_trap:
+                    logger.warning(f"⚠️  [{code}] 被标记为禁止场景: {scenario_result.scenario.value}")
+                    logger.warning(f"   原因: {', '.join(scenario_result.reasons[:2])}")  # 只打印前2条原因，避免刷屏
+                elif scenario_result.is_potential_mainline:
+                    logger.info(f"✅ [{code}] 被识别为主线起爆候选 (置信度: {scenario_result.confidence:.2f})")
+                    logger.info(f"   原因: {', '.join(scenario_result.reasons[:2])}")
                     
             except Exception as e:
                 logger.warning(f"⚠️  {code} Level3 分析失败: {e}")
