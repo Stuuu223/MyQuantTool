@@ -40,6 +40,7 @@ from logic.qmt_tick_monitor import get_tick_monitor
 from logic.event_recorder import get_event_recorder
 from logic.logger import get_logger
 from logic.market_phase_checker import MarketPhaseChecker
+from logic.sector_resonance import SectorResonanceCalculator
 
 logger = get_logger(__name__)
 
@@ -448,6 +449,72 @@ class EventDrivenMonitor:
         # 通过检查
         return False, ""
 
+    def _check_sector_resonance(self, item: dict, all_results: dict) -> Tuple[bool, str]:
+        """
+        🎯 时机斧：板块共振检查 - 监控层触发
+
+        只在板块满足共振条件时才允许入场：
+        - Leaders ≥ 3：板块内涨停股数量 ≥ 3
+        - Breadth ≥ 35%：板块内上涨比例 ≥ 35%
+
+        Args:
+            item: 股票数据字典（来自全市场扫描结果）
+            all_results: 完整的扫描结果（用于计算板块共振）
+
+        Returns:
+            (is_blocked, reason)
+            is_blocked: 是否阻止入场
+            reason: 阻止原因或允许原因
+        """
+        # 暂时禁用板块共振检查（因为全市场扫描结果中暂无板块信息）
+        # TODO: 后续完善板块数据获取后启用
+        return False, "⏸️ 板块共振检查暂时禁用（待完善板块数据）"
+
+        # # 以下是完整的板块共振检查逻辑（待启用）
+        # code = item.get('code', '')
+        # name = item.get('name', 'N/A')
+        # sector_name = item.get('sector_name', '')
+        # sector_code = item.get('sector_code', '')
+        #
+        # # 如果没有板块信息，跳过检查
+        # if not sector_name or not sector_code:
+        #     return False, "⏸️ 无板块信息，跳过共振检查"
+        #
+        # # 提取板块内所有股票数据
+        # sector_stocks = []
+        # for stock in all_results.get('opportunities', []) + all_results.get('watchlist', []):
+        #     if stock.get('sector_name') == sector_name:
+        #         sector_stocks.append({
+        #             'pct_chg': stock.get('pct_chg', 0),
+        #             'is_limit_up': stock.get('is_limit_up', False),
+        #         })
+        #
+        # # 如果板块内股票太少，跳过检查
+        # if len(sector_stocks) < 3:
+        #     return False, f"⏸️ 板块内股票不足（{len(sector_stocks)}只），跳过共振检查"
+        #
+        # # 计算板块共振
+        # calculator = SectorResonanceCalculator()
+        # resonance_result = calculator.calculate(sector_stocks, sector_name, sector_code)
+        #
+        # # 检查是否满足共振条件
+        # if not resonance_result.is_resonant:
+        #     reason = f"⏸️ [时机斧] 板块未共振：{resonance_result.reason}"
+        #     logger.info(f"⏸️ [时机斧拦截-监控层] {code} ({name})")
+        #     logger.info(f"   板块: {sector_name}")
+        #     logger.info(f"   Leaders: {resonance_result.leaders}（需≥3）")
+        #     logger.info(f"   Breadth: {resonance_result.breadth:.1f}%（需≥35%）")
+        #     logger.info(f"   拦截位置: 监控层 (run_event_driven_monitor.py)")
+        #     return True, reason
+        #
+        # # 通过检查
+        # reason = f"✅ [时机斧] 板块共振满足：{resonance_result.reason}"
+        # logger.info(f"✅ [时机斧通过-监控层] {code} ({name})")
+        # logger.info(f"   板块: {sector_name}")
+        # logger.info(f"   Leaders: {resonance_result.leaders}✅")
+        # logger.info(f"   Breadth: {resonance_result.breadth:.1f}%✅")
+        # return False, reason
+
     def print_summary(self, results: dict):
         """打印扫描结果摘要（带防守斧拦截）"""
         print("\n" + "=" * 80)
@@ -471,9 +538,27 @@ class EventDrivenMonitor:
                 print(f"   ❌ {item['code']} ({item.get('name', 'N/A')}) - {reason}")
             print()
 
+        # 🎯 时机斧：板块共振检查
+        opportunities_final = []
+        opportunities_timing_blocked = []
+        for item in opportunities_safe:
+            is_blocked, reason = self._check_sector_resonance(item, results)
+            if is_blocked:
+                opportunities_timing_blocked.append((item, reason))
+            else:
+                opportunities_final.append(item)
+
+        # 打印时机斧拦截统计
+        if opportunities_timing_blocked:
+            print(f"⏸️ [时机斧] 本次拦截 {len(opportunities_timing_blocked)} 只未共振股票:")
+            for item, reason in opportunities_timing_blocked:
+                print(f"   ⏸️ {item['code']} ({item.get('name', 'N/A')}) - {reason}")
+            print()
+
         # 显示过滤后的机会池数量
-        print(f"✅ 机会池（安全）: {len(opportunities_safe)} 只")
-        print(f"🛡️ 机会池（已拦截）: {len(opportunities_blocked)} 只")
+        print(f"✅ 机会池（最终）: {len(opportunities_final)} 只")
+        print(f"🛡️ 机会池（防守斧拦截）: {len(opportunities_blocked)} 只")
+        print(f"⏸️ 机会池（时机斧拦截）: {len(opportunities_timing_blocked)} 只")
         print(f"⚠️  观察池: {len(results['watchlist'])} 只")
         print(f"❌ 黑名单: {len(results['blacklist'])} 只")
         print(f"📈 系统置信度: {results['confidence']*100:.1f}%")
@@ -481,14 +566,14 @@ class EventDrivenMonitor:
         print(f"🎯 累计保存快照: {self.save_count} 次")
         print(f"🔔 累计检测事件: {self.event_count} 次")
 
-        # 显示低风险机会池表格（只显示安全股票）
-        if opportunities_safe:
-            self._print_low_risk_opportunities(opportunities_safe)
+        # 显示低风险机会池表格（只显示最终安全股票）
+        if opportunities_final:
+            self._print_low_risk_opportunities(opportunities_final)
 
-        # 显示机会池全部股票（简化版，只显示安全股票）
-        if opportunities_safe:
-            print(f"\n🔥 机会池（安全） ({len(opportunities_safe)} 只):")
-            for item in opportunities_safe:
+        # 显示机会池全部股票（简化版，只显示最终安全股票）
+        if opportunities_final:
+            print(f"\n🔥 机会池（最终） ({len(opportunities_final)} 只):")
+            for item in opportunities_final:
                 risk_score = item.get('risk_score', 0)
                 capital_type = item.get('capital_type', 'UNKNOWN')
                 trap_signals = item.get('trap_signals', [])

@@ -61,7 +61,7 @@ class ScenarioClassifier:
 
             # 拉高出货判断阈值
             "pump_dump_threshold": 0.7,           # 超大单占比>70%
-            "dump_threshold": -0.5,               # 次日净流出>-50%
+            "dump_threshold": -5000000,           # 次日净流出>-500万
         }
 
     def classify(self, stock_data: Dict) -> ScenarioResult:
