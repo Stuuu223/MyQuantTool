@@ -92,6 +92,14 @@ class EventDrivenMonitor:
         self.save_count = 0
         self.start_time = None
         
+        # 🎯 CLI监控状态（供cli_monitor.py读取）
+        self.monitor_state = {
+            "sectors": {},   # 板块共振状态
+            "signals": []    # 最终买入信号
+        }
+        self.last_state_export_time = None  # 上次状态导出时间
+        self.state_export_interval = 5  # 每5秒导出一次状态
+        
         # 真实候选池（带时间戳）
         self.hot_candidates = {}  # {code: {'timestamp': datetime, 'trigger_reason': str}}
         self.candidate_ttl_minutes = 10  # 候选池TTL：10分钟
@@ -491,6 +499,14 @@ class EventDrivenMonitor:
         # 计算板块共振
         calculator = SectorResonanceCalculator()
         resonance_result = calculator.calculate(sector_stocks, sector_name, sector_code)
+        
+        # 🎯 更新CLI监控状态：板块共振状态
+        self.monitor_state["sectors"][sector_name] = {
+            "leaders": resonance_result.leaders,
+            "breadth": resonance_result.breadth,
+            "is_resonant": resonance_result.is_resonant,
+            "reason": resonance_result.reason
+        }
 
         # 检查是否满足共振条件
         if not resonance_result.is_resonant:
@@ -509,6 +525,27 @@ class EventDrivenMonitor:
         logger.info(f"   Leaders: {resonance_result.leaders}✅")
         logger.info(f"   Breadth: {resonance_result.breadth:.1f}%✅")
         return False, reason
+
+    def _export_monitor_state(self):
+        """
+        🎯 导出监控状态到文件（供CLI监控终端读取）
+        
+        将当前的三把斧状态导出到data/monitor_state.json
+        """
+        try:
+            state_file = Path("data/monitor_state.json")
+            
+            # 确保data目录存在
+            state_file.parent.mkdir(exist_ok=True)
+            
+            # 导出状态
+            with open(state_file, 'w', encoding='utf-8') as f:
+                json.dump(self.monitor_state, f, ensure_ascii=False, indent=2)
+            
+            self.last_state_export_time = datetime.now()
+            
+        except Exception as e:
+            logger.warning(f"⚠️ 导出监控状态失败: {e}")
 
     def print_summary(self, results: dict):
         """打印扫描结果摘要（带防守斧拦截）"""
@@ -574,6 +611,20 @@ class EventDrivenMonitor:
                 trap_signals = item.get('trap_signals', [])
                 signal_str = f" 诱多信号: {', '.join(trap_signals)}" if trap_signals else ""
                 print(f"   {item['code']} - 风险: {risk_score:.2f} - 类型: {capital_type}{signal_str}")
+
+        # 🎯 更新CLI监控状态：最终买入信号
+        self.monitor_state["signals"] = []
+        for item in opportunities_final:
+            flow_records = item.get('flow_data', {}).get('records', [])
+            main_net_inflow = flow_records[0].get('main_net_inflow', 0) if flow_records else 0
+            
+            self.monitor_state["signals"].append({
+                "time": datetime.now().strftime('%H:%M:%S'),
+                "code": item.get('code', ''),
+                "name": item.get('name', ''),
+                "price": item.get('last_price', 0),
+                "flow": main_net_inflow / 10000  # 转换为万元
+            })
 
         # 显示观察池全部股票
         if results['watchlist']:
@@ -655,6 +706,9 @@ class EventDrivenMonitor:
                     
                     # 打印摘要
                     self.print_summary(results)
+                    
+                    # 🎯 导出监控状态（供CLI监控终端读取）
+                    self._export_monitor_state()
                     
                     # 保存快照（带状态指纹对比）
                     self.save_snapshot(results, mode='intraday')
