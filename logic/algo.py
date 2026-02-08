@@ -862,15 +862,15 @@ class QuantAlgo:
             
             # 获取个股资金流向数据
             fund_flow_df = ak.stock_individual_fund_flow(stock=symbol, market=market)
-            
+
             if fund_flow_df.empty:
                 return {
                     '数据状态': '无法获取数据',
                     '说明': '可能是数据源限制或股票代码错误'
                 }
-            
-            # 获取最新的数据
-            latest_data = fund_flow_df.iloc[0]
+
+            # 获取最新的数据（AkShare数据从旧到新排序，最新在最后）
+            latest_data = fund_flow_df.iloc[-1]
             
             # 计算总资金流向
             total_net_flow = (

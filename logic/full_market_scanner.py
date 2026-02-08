@@ -185,6 +185,26 @@ class FullMarketScanner:
         logger.info(f"🚀 开始全市场扫描 (模式: {mode})")
         logger.info("=" * 80)
         start_time = time.time()
+
+        # ===== QMT 状态检查（强制或软检查）=====
+        from logic.qmt_health_check import check_qmt_health, require_realtime_mode
+
+        if mode == 'intraday':
+            # 盘中模式：强制要求实时模式
+            try:
+                require_realtime_mode()
+            except RuntimeError as e:
+                logger.error(f"❌ QMT 状态不满足实时决策要求: {e}")
+                logger.error("❌ 无法进行盘中扫描，请检查 QMT 客户端状态")
+                return {'opportunities': [], 'watchlist': [], 'blacklist': []}
+        else:
+            # 盘前/盘后模式：软检查，只打印警告
+            result = check_qmt_health()
+            if result['status'] == 'ERROR':
+                logger.warning(f"⚠️  QMT 状态异常: {result['recommendations']}")
+                logger.warning("⚠️  将尝试使用本地缓存数据")
+
+        # ===== QMT 状态检查结束 =====
         
         # ===== Level 1: 技术面粗筛 =====
         logger.info("\n🔍 [Level 1] 技术面粗筛...")
@@ -256,6 +276,37 @@ class FullMarketScanner:
             logger.info(f"🚀 开始全市场扫描（带风险管理） (模式: {mode})")
         logger.info("=" * 80)
         start_time = time.time()
+
+        # ===== QMT 状态检查（强制或软检查）=====
+        from logic.qmt_health_check import check_qmt_health, require_realtime_mode
+
+        if mode == 'intraday':
+            # 盘中模式：强制要求实时模式
+            try:
+                require_realtime_mode()
+            except RuntimeError as e:
+                logger.error(f"❌ QMT 状态不满足实时决策要求: {e}")
+                logger.error("❌ 无法进行盘中扫描，请检查 QMT 客户端状态")
+                return {
+                    'mode': 'DEGRADED_LEVEL1_ONLY',
+                    'evidence_matrix': {},
+                    'position_limit': 0.0,
+                    'confidence': 0.0,
+                    'risk_reason': 'QMT 状态异常',
+                    'risk_warnings': ['⚠️ QMT 状态不满足实时决策要求'],
+                    'opportunities': [],
+                    'watchlist': [],
+                    'blacklist': [],
+                    'level1_candidates': []
+                }
+        else:
+            # 盘前/盘后模式：软检查，只打印警告
+            result = check_qmt_health()
+            if result['status'] == 'ERROR':
+                logger.warning(f"⚠️  QMT 状态异常: {result['recommendations']}")
+                logger.warning("⚠️  将尝试使用本地缓存数据")
+
+        # ===== QMT 状态检查结束 =====
         
         # ===== Level 1: 技术面粗筛 =====
         logger.info("\n🔍 [Level 1] 技术面粗筛...")
