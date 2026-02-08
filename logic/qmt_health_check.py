@@ -1,0 +1,413 @@
+"""
+QMT 状态自检模块
+
+规范：
+凡是用 QMT 数据做实时决策，必须显式检查：
+1）行情主站是否登录成功
+2）当前是否交易时间
+3）行情模式是否为订阅模式（实时），不能只依赖本地文件模式
+
+Author: MyQuantTool Team
+Date: 2026-02-08
+"""
+
+from datetime import datetime, time as dt_time
+from typing import Dict, Any
+import traceback
+
+try:
+    from xtquant import xtdata
+    QMT_AVAILABLE = True
+except ImportError:
+    QMT_AVAILABLE = False
+
+from logic.market_status import MarketStatusChecker
+from logic.logger import get_logger
+
+logger = get_logger(__name__)
+
+
+class QMTHealthChecker:
+    """QMT 状态健康检查器"""
+
+    def __init__(self):
+        """初始化检查器"""
+        self.market_checker = MarketStatusChecker()
+        self.last_check_result = None
+        self.last_check_time = None
+
+    def check_all(self) -> Dict[str, Any]:
+        """
+        执行完整的QMT状态检查
+
+        Returns:
+            {
+                'status': 'HEALTHY' | 'WARNING' | 'ERROR',
+                'qmt_client': {...},
+                'market_status': {...},
+                'trading_status': {...},
+                'recommendations': [...]
+            }
+        """
+        logger.info("=" * 80)
+        logger.info("🏥 QMT 状态自检开始")
+        logger.info("=" * 80)
+
+        result = {
+            'check_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'status': 'ERROR',
+            'details': {},
+            'recommendations': []
+        }
+
+        # 1. 检查 QMT 客户端状态
+        qmt_status = self._check_qmt_client()
+        result['details']['qmt_client'] = qmt_status
+
+        if qmt_status['status'] == 'ERROR':
+            result['status'] = 'ERROR'
+            result['recommendations'].append('❌ QMT 客户端未启动，请先启动 QMT 终端')
+            self._print_result(result)
+            return result
+
+        # 2. 检查行情主站登录状态
+        server_status = self._check_server_login()
+        result['details']['server_login'] = server_status
+
+        if server_status['status'] == 'ERROR':
+            result['status'] = 'ERROR'
+            result['recommendations'].append('❌ 行情主站未登录，请在 QMT 终端登录行情主站')
+            self._print_result(result)
+            return result
+
+        # 3. 检查当前市场状态
+        market_status = self._check_market_status()
+        result['details']['market_status'] = market_status
+
+        # 4. 检查是否交易时间
+        trading_status = self._check_trading_time()
+        result['details']['trading_status'] = trading_status
+
+        if trading_status['status'] == 'WARNING':
+            result['status'] = 'WARNING'
+            result['recommendations'].append('⚠️  当前不在交易时间，获取的是历史数据')
+
+        # 5. 检查行情数据模式
+        data_mode = self._check_data_mode()
+        result['details']['data_mode'] = data_mode
+
+        if data_mode['status'] == 'WARNING':
+            result['status'] = 'WARNING'
+            result['recommendations'].append('⚠️  当前使用本地文件模式，请检查实时订阅')
+
+        # 6. 综合判断
+        if result['status'] != 'ERROR' and result['status'] != 'WARNING':
+            result['status'] = 'HEALTHY'
+            result['recommendations'].append('✅ QMT 状态正常，可以进行实时决策')
+
+        self._print_result(result)
+
+        # 保存检查结果
+        self.last_check_result = result
+        self.last_check_time = datetime.now()
+
+        return result
+
+    def _check_qmt_client(self) -> Dict[str, Any]:
+        """检查 QMT 客户端是否启动"""
+        if not QMT_AVAILABLE:
+            return {
+                'status': 'ERROR',
+                'message': 'xtquant 模块未安装',
+                'installed': False
+            }
+
+        try:
+            # 尝试获取股票列表
+            stocks = xtdata.get_stock_list_in_sector('沪深A股')
+
+            if not stocks:
+                return {
+                    'status': 'ERROR',
+                    'message': '无法获取股票列表',
+                    'installed': True,
+                    'connected': False
+                }
+
+            return {
+                'status': 'OK',
+                'message': f'QMT 客户端已启动',
+                'installed': True,
+                'connected': True,
+                'stock_count': len(stocks)
+            }
+
+        except Exception as e:
+            return {
+                'status': 'ERROR',
+                'message': f'QMT 客户端连接失败: {str(e)}',
+                'installed': True,
+                'connected': False,
+                'error': str(e)
+            }
+
+    def _check_server_login(self) -> Dict[str, Any]:
+        """检查行情主站是否登录"""
+        try:
+            # 尝试获取实时Tick数据
+            tick = xtdata.get_full_tick(['000001.SZ'])
+
+            if not tick or '000001.SZ' not in tick:
+                return {
+                    'status': 'ERROR',
+                    'message': '无法获取 Tick 数据，行情主站可能未登录',
+                    'logged_in': False
+                }
+
+            # 检查数据时间戳
+            tick_data = tick['000001.SZ']
+            timetag = tick_data.get('timetag', '')
+            stock_status = tick_data.get('stockStatus', -1)
+
+            return {
+                'status': 'OK',
+                'message': '行情主站已连接',
+                'logged_in': True,
+                'timetag': timetag,
+                'stock_status': stock_status,
+                'stock_status_desc': self._get_stock_status_desc(stock_status)
+            }
+
+        except Exception as e:
+            return {
+                'status': 'ERROR',
+                'message': f'行情主站检查失败: {str(e)}',
+                'logged_in': False,
+                'error': str(e)
+            }
+
+    def _check_market_status(self) -> Dict[str, Any]:
+        """检查当前市场状态"""
+        is_weekday = self.market_checker.is_weekday()
+
+        return {
+            'status': 'OK',
+            'is_weekday': is_weekday,
+            'message': '工作日' if is_weekday else '周末/节假日'
+        }
+
+    def _check_trading_time(self) -> Dict[str, Any]:
+        """检查是否交易时间"""
+        is_trading_time = self.market_checker.is_trading_time()
+
+        if is_trading_time:
+            return {
+                'status': 'OK',
+                'is_trading_time': True,
+                'message': '当前在交易时间'
+            }
+        else:
+            now = datetime.now()
+            current_time = now.time()
+
+            # 判断当前时间段
+            if current_time < dt_time(9, 15):
+                phase = '盘前'
+            elif dt_time(9, 15) <= current_time < dt_time(9, 30):
+                phase = '集合竞价'
+            elif dt_time(9, 30) <= current_time < dt_time(11, 30):
+                phase = '上午交易'
+            elif dt_time(11, 30) <= current_time < dt_time(13, 0):
+                phase = '午间休市'
+            elif dt_time(13, 0) <= current_time < dt_time(15, 0):
+                phase = '下午交易'
+            else:
+                phase = '盘后'
+
+            return {
+                'status': 'WARNING',
+                'is_trading_time': False,
+                'message': f'当前不在交易时间 ({phase})',
+                'phase': phase
+            }
+
+    def _check_data_mode(self) -> Dict[str, Any]:
+        """检查行情数据模式"""
+        try:
+            # 尝试获取实时订阅数据
+            tick = xtdata.get_full_tick(['000001.SZ'])
+            tick_data = tick.get('000001.SZ', {})
+
+            # 检查数据时间
+            timetag = tick_data.get('timetag', '')
+            current_time = datetime.now()
+
+            # 如果时间戳超过1小时，可能是本地文件模式
+            if timetag:
+                try:
+                    tick_time = datetime.strptime(timetag, '%Y%m%d %H:%M:%S')
+                    time_diff = (current_time - tick_time).total_seconds()
+
+                    if time_diff > 3600:  # 超过1小时
+                        return {
+                            'status': 'WARNING',
+                            'message': f'数据时间滞后 {time_diff/60:.0f} 分钟，可能是本地文件模式',
+                            'data_mode': 'LOCAL_FILE',
+                            'time_diff_seconds': time_diff
+                        }
+                    else:
+                        return {
+                            'status': 'OK',
+                            'message': '数据实时更新',
+                            'data_mode': 'REALTIME_SUBSCRIPTION',
+                            'time_diff_seconds': time_diff
+                        }
+                except:
+                    pass
+
+            return {
+                'status': 'WARNING',
+                'message': '无法判断数据模式',
+                'data_mode': 'UNKNOWN'
+            }
+
+        except Exception as e:
+            return {
+                'status': 'ERROR',
+                'message': f'数据模式检查失败: {str(e)}',
+                'error': str(e)
+            }
+
+    def _get_stock_status_desc(self, status: int) -> str:
+        """获取股票状态描述"""
+        status_map = {
+            0: '停牌',
+            1: '交易中',
+            2: '临时停牌',
+            3: '退市',
+            4: '未上市',
+            5: '收盘'
+        }
+        return status_map.get(status, f'未知状态({status})')
+
+    def _print_result(self, result: Dict[str, Any]):
+        """打印检查结果"""
+        logger.info("")
+        logger.info("📊 QMT 状态检查结果")
+        logger.info("=" * 80)
+
+        # 打印状态
+        status = result['status']
+        status_emoji = {
+            'HEALTHY': '✅',
+            'WARNING': '⚠️ ',
+            'ERROR': '❌'
+        }.get(status, '❓')
+
+        logger.info(f"整体状态: {status_emoji} {status}")
+        logger.info(f"检查时间: {result['check_time']}")
+        logger.info("")
+
+        # 打印各项检查
+        details = result['details']
+
+        # QMT 客户端
+        qmt = details.get('qmt_client', {})
+        logger.info(f"QMT 客户端: {'✅ 已启动' if qmt.get('status') == 'OK' else '❌ 未启动'}")
+        if qmt.get('status') == 'OK':
+            logger.info(f"  - 股票数量: {qmt.get('stock_count', 0)} 只")
+        logger.info(f"  - 消息: {qmt.get('message', 'N/A')}")
+
+        # 行情主站
+        server = details.get('server_login', {})
+        logger.info(f"行情主站: {'✅ 已登录' if server.get('logged_in') else '❌ 未登录'}")
+        if server.get('logged_in'):
+            logger.info(f"  - 时间戳: {server.get('timetag', 'N/A')}")
+            logger.info(f"  - 股票状态: {server.get('stock_status_desc', 'N/A')}")
+        logger.info(f"  - 消息: {server.get('message', 'N/A')}")
+
+        # 市场状态
+        market = details.get('market_status', {})
+        logger.info(f"市场状态: {'✅ 交易日' if market.get('is_trading_day') else '⚠️  非交易日'}")
+
+        # 交易时间
+        trading = details.get('trading_status', {})
+        if trading.get('is_trading_time'):
+            logger.info(f"交易时间: ✅ 当前在交易时间")
+        else:
+            logger.info(f"交易时间: ⚠️  当前不在交易时间 ({trading.get('phase', 'N/A')})")
+
+        # 数据模式
+        mode = details.get('data_mode', {})
+        data_mode = mode.get('data_mode', 'UNKNOWN')
+        if data_mode == 'REALTIME_SUBSCRIPTION':
+            logger.info(f"数据模式: ✅ 实时订阅模式")
+        elif data_mode == 'LOCAL_FILE':
+            logger.info(f"数据模式: ⚠️  本地文件模式 (滞后 {mode.get('time_diff_seconds', 0)/60:.0f} 分钟)")
+        else:
+            logger.info(f"数据模式: ⚠️  {mode.get('message', 'N/A')}")
+
+        # 打印建议
+        logger.info("")
+        logger.info("💡 建议:")
+        for rec in result['recommendations']:
+            logger.info(f"  {rec}")
+
+        logger.info("=" * 80)
+        logger.info("")
+
+
+# 全局实例
+_qmt_health_checker = QMTHealthChecker()
+
+
+def check_qmt_health() -> Dict[str, Any]:
+    """
+    检查 QMT 状态（便捷函数）
+
+    Returns:
+        检查结果字典
+    """
+    return _qmt_health_checker.check_all()
+
+
+def require_realtime_mode():
+    """
+    强制要求实时模式
+
+    如果不满足实时模式要求，抛出异常
+
+    Raises:
+        RuntimeError: 如果 QMT 状态不满足实时决策要求
+    """
+    result = check_qmt_health()
+
+    if result['status'] == 'ERROR':
+        raise RuntimeError(
+            f"QMT 状态错误，无法进行实时决策: {result['recommendations']}"
+        )
+
+    trading = result['details'].get('trading_status', {})
+    if not trading.get('is_trading_time', False):
+        raise RuntimeError(
+            f"当前不在交易时间 ({trading.get('phase', 'N/A')})，无法进行实时决策"
+        )
+
+    mode = result['details'].get('data_mode', {})
+    data_mode = mode.get('data_mode', 'UNKNOWN')
+    if data_mode != 'REALTIME_SUBSCRIPTION':
+        raise RuntimeError(
+            f"数据模式不是实时订阅 ({data_mode})，无法进行实时决策"
+        )
+
+
+if __name__ == "__main__":
+    # 测试
+    print("QMT 状态自检")
+    print("=" * 80)
+
+    result = check_qmt_health()
+
+    print("\n" + "=" * 80)
+    print("检查完成")
+    print("=" * 80)

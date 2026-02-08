@@ -60,8 +60,8 @@ class FundFlowAnalyzer:
             if df.empty:
                 return {"error": "未获取到数据", "stock_code": stock_code}
 
-            # 只取最近 days 条数据（AkShare 返回的是从新到旧排序）
-            df = df.head(days)
+            # 只取最近 days 条数据（AkShare 返回的是从旧到新排序）
+            df = df.tail(days)
 
             # 转换为内部格式
             records = []
@@ -75,11 +75,11 @@ class FundFlowAnalyzer:
                     "small_net": row['小单净流入-净额'],  # 小单净流入
                 })
 
-            # 返回结果，latest 是最近一个交易日（第一条）
+            # 返回结果，latest 是最近一个交易日（最后一条）
             return {
                 "stock_code": stock_code,
                 "records": records,
-                "latest": records[0] if records else None
+                "latest": records[-1] if records else None
             }
 
         except Exception as e:

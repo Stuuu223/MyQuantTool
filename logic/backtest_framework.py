@@ -161,9 +161,9 @@ class BacktestEngine:
         flow = stock_data['flow_data']
         price = stock_data['price_data']
         
-        # 主力流入评分（100万=20分，400万=100分）
+        # 主力流入评分（100万=20分，500万=100分）
         main_inflow = flow.get('main_net_inflow', 0)
-        flow_score = min(main_inflow / 100 * 20, 100)
+        flow_score = min(main_inflow / 1000000 * 20, 100)
         
         # 涨幅评分（5%=0分，10%=80分，15%+=100分）
         pct_chg = price['pct_chg']
@@ -175,12 +175,13 @@ class BacktestEngine:
             pct_score = 80 + (pct_chg - 10) * 10
         
         # 成交额评分（越小越容易推动）
-        amount = price['amount'] / 1e8  # 转换为亿
-        if amount < 0.05:
+        # Tushare的amount单位是千元，需要先转成元，再转成亿
+        amount_yi = price['amount'] * 1000 / 1e8
+        if amount_yi < 0.05:
             amount_score = 100
-        elif amount < 0.1:
+        elif amount_yi < 0.1:
             amount_score = 80
-        elif amount < 0.3:
+        elif amount_yi < 0.3:
             amount_score = 50
         else:
             amount_score = 20

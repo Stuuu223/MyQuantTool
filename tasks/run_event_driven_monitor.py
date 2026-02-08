@@ -527,13 +527,23 @@ class EventDrivenMonitor:
     def run(self):
         """运行持续监控 - 统一入口，内部自动切换策略"""
         self.start_time = datetime.now()
-        
+
+        # ===== QMT 状态检查（启动时检查一次）=====
+        from logic.qmt_health_check import check_qmt_health
+        qmt_status = check_qmt_health()
+
         logger.info("=" * 80)
         logger.info("🚀 事件驱动持续监控启动 - 第二阶段框架（重构版）")
         logger.info("=" * 80)
         logger.info(f"📅 启动时间: {self.start_time.strftime('%Y-%m-%d %H:%M:%S')}")
         logger.info(f"🎯 运行模式: 自动策略切换")
         logger.info(f"🎯 支持策略: auction（竞价） / event_driven（盘中） / idle（空闲）")
+        logger.info(f"🔌 QMT 状态: {qmt_status['status']}")
+
+        if qmt_status['status'] == 'ERROR':
+            logger.warning("⚠️  QMT 状态异常，可能影响监控效果")
+        elif qmt_status['status'] == 'WARNING':
+            logger.warning("⚠️  QMT 状态警告，请注意")
         logger.info("=" * 80)
         
         print("\n🎯 事件驱动监控已启动，按 Ctrl+C 停止")
@@ -598,6 +608,17 @@ class EventDrivenMonitor:
     def _run_event_driven_strategy(self):
         """事件驱动策略 - 第二版（真实候选池 + 深扫）"""
         logger.info("📡 [EVENT_DRIVEN] 进入事件驱动模式")
+
+        # ===== QMT 状态检查（盘中模式强制要求实时）=====
+        from logic.qmt_health_check import require_realtime_mode
+        try:
+            require_realtime_mode()
+        except RuntimeError as e:
+            logger.error(f"❌ QMT 状态不满足实时决策要求: {e}")
+            logger.error("❌ 无法进行盘中监控，等待下一次循环...")
+            time.sleep(60)
+            return
+        # ===== QMT 状态检查结束 =====
         
         # 1. 清理过期候选
         self._cleanup_expired_candidates()

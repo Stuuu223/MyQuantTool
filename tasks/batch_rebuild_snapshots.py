@@ -93,7 +93,7 @@ class SnapshotRebuilder:
                     'change': row['change'],
                     'pct_chg': row['pct_chg'],
                     'volume': row['vol'],
-                    'amount': row['amount']
+                    'amount': row['amount'] * 1000  # Tushare的amount单位是千元，转换为元
                 }
 
             print(f"✅ {trade_date} 获取到 {len(daily_data)} 只股票日线数据")
@@ -125,12 +125,15 @@ class SnapshotRebuilder:
                     ts_code = row['ts_code']
 
                     # 计算主力净流入（超大单 + 大单）
-                    main_net_inflow = row['buy_elg_vol'] - row['sell_elg_vol']  # 超大单
-                    main_net_inflow += row['buy_lg_vol'] - row['sell_lg_vol']   # 大单
+                    # Tushare moneyflow的amount字段单位是千元
+                    main_net_inflow = row['buy_elg_amount'] - row['sell_elg_amount']  # 超大单
+                    main_net_inflow += row['buy_lg_amount'] - row['sell_lg_amount']   # 大单
+                    main_net_inflow *= 1000  # 转换为元
 
                     # 计算散户净流入（中单 + 小单）
-                    retail_net_inflow = row['buy_md_vol'] - row['sell_md_vol']  # 中单
-                    retail_net_inflow += row['buy_sm_vol'] - row['sell_sm_vol']  # 小单
+                    retail_net_inflow = row['buy_md_amount'] - row['sell_md_amount']  # 中单
+                    retail_net_inflow += row['buy_sm_amount'] - row['sell_sm_amount']  # 小单
+                    retail_net_inflow *= 1000  # 转换为元
 
                     flow_data[ts_code] = {
                         'main_net_inflow': main_net_inflow,
@@ -243,20 +246,62 @@ class SnapshotRebuilder:
                 # 简化版：只根据资金流入强度分类
                 flow = item.get('flow_data', {})
                 main_net_inflow = flow.get('main_net_inflow', 0)
+                price_data = item.get('price_data', {})
+                daily_amount = price_data.get('amount', 0)
 
-                # 根据资金流入强度分类
-                if main_net_inflow > 100000:  # 超过10万流入
+                # 计算主力净流入占当日成交额的比例
+                inflow_to_amount = (main_net_inflow / daily_amount) if daily_amount > 0 else 0
+                pct_chg = price_data.get('pct_chg', 0)
+
+                # 根据涨幅和资金占比的组合来分类（momentum_band策略）
+                # BAND_0: 噪声（<2%占比 或 涨幅<5%）
+                # BAND_1: 保守小肉（5-8%涨幅 + 2-5%占比）
+                # BAND_2: 半路推背（8-10%涨幅 + 2-5%占比）
+                # BAND_3: 推背加强版（8-10%涨幅 + ≥5%占比）
+
+                momentum_band = 'BAND_0'
+
+                if inflow_to_amount < 0.02 or pct_chg < 5.0:
+                    # < 2%占比 或 涨幅<5% → 噪声
+                    decision_tag = 'BLACKLIST'
+                    risk_score = 0.9
+                    category = blacklist
+                    momentum_band = 'BAND_0'
+
+                elif 5.0 <= pct_chg < 8.0 and 0.02 <= inflow_to_amount < 0.05:
+                    # 5-8%涨幅 + 2-5%占比 → 保守小肉
+                    decision_tag = 'WATCHLIST'
+                    risk_score = 0.4
+                    category = watchlist
+                    momentum_band = 'BAND_1'
+
+                elif 8.0 <= pct_chg < 10.0 and 0.02 <= inflow_to_amount < 0.05:
+                    # 8-10%涨幅 + 2-5%占比 → 半路推背（主战区）
+                    decision_tag = 'OPPORTUNITY'
+                    risk_score = 0.3
+                    category = opportunities
+                    momentum_band = 'BAND_2'
+
+                elif 8.0 <= pct_chg < 10.0 and inflow_to_amount >= 0.05:
+                    # 8-10%涨幅 + ≥5%占比 → 推背加强版
                     decision_tag = 'OPPORTUNITY'
                     risk_score = 0.2
                     category = opportunities
-                elif main_net_inflow > 50000:  # 超过5万流入
+                    momentum_band = 'BAND_3'
+
+                elif inflow_to_amount >= 0.05:
+                    # ≥5%占比但涨幅不符合上述条件 → 观察池
                     decision_tag = 'WATCHLIST'
                     risk_score = 0.5
                     category = watchlist
+                    momentum_band = 'BAND_0'
+
                 else:
+                    # 其他情况 → 黑名单
                     decision_tag = 'BLACKLIST'
                     risk_score = 0.8
                     category = blacklist
+                    momentum_band = 'BAND_0'
 
                 # 构建股票数据
                 stock_data = {
@@ -269,7 +314,8 @@ class SnapshotRebuilder:
                     'decision_tag': decision_tag,
                     'risk_score': risk_score,
                     'trap_signals': [],  # 简化版：空列表
-                    'capital_type': 'UNKNOWN'
+                    'capital_type': 'UNKNOWN',
+                    'momentum_band': momentum_band  # 推背段位标签
                 }
 
                 category.append(stock_data)
