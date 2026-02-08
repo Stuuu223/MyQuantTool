@@ -466,54 +466,49 @@ class EventDrivenMonitor:
             is_blocked: 是否阻止入场
             reason: 阻止原因或允许原因
         """
-        # 暂时禁用板块共振检查（因为全市场扫描结果中暂无板块信息）
-        # TODO: 后续完善板块数据获取后启用
-        return False, "⏸️ 板块共振检查暂时禁用（待完善板块数据）"
+        code = item.get('code', '')
+        name = item.get('name', 'N/A')
+        sector_name = item.get('sector_name', '')
+        sector_code = item.get('sector_code', '')
 
-        # # 以下是完整的板块共振检查逻辑（待启用）
-        # code = item.get('code', '')
-        # name = item.get('name', 'N/A')
-        # sector_name = item.get('sector_name', '')
-        # sector_code = item.get('sector_code', '')
-        #
-        # # 如果没有板块信息，跳过检查
-        # if not sector_name or not sector_code:
-        #     return False, "⏸️ 无板块信息，跳过共振检查"
-        #
-        # # 提取板块内所有股票数据
-        # sector_stocks = []
-        # for stock in all_results.get('opportunities', []) + all_results.get('watchlist', []):
-        #     if stock.get('sector_name') == sector_name:
-        #         sector_stocks.append({
-        #             'pct_chg': stock.get('pct_chg', 0),
-        #             'is_limit_up': stock.get('is_limit_up', False),
-        #         })
-        #
-        # # 如果板块内股票太少，跳过检查
-        # if len(sector_stocks) < 3:
-        #     return False, f"⏸️ 板块内股票不足（{len(sector_stocks)}只），跳过共振检查"
-        #
-        # # 计算板块共振
-        # calculator = SectorResonanceCalculator()
-        # resonance_result = calculator.calculate(sector_stocks, sector_name, sector_code)
-        #
-        # # 检查是否满足共振条件
-        # if not resonance_result.is_resonant:
-        #     reason = f"⏸️ [时机斧] 板块未共振：{resonance_result.reason}"
-        #     logger.info(f"⏸️ [时机斧拦截-监控层] {code} ({name})")
-        #     logger.info(f"   板块: {sector_name}")
-        #     logger.info(f"   Leaders: {resonance_result.leaders}（需≥3）")
-        #     logger.info(f"   Breadth: {resonance_result.breadth:.1f}%（需≥35%）")
-        #     logger.info(f"   拦截位置: 监控层 (run_event_driven_monitor.py)")
-        #     return True, reason
-        #
-        # # 通过检查
-        # reason = f"✅ [时机斧] 板块共振满足：{resonance_result.reason}"
-        # logger.info(f"✅ [时机斧通过-监控层] {code} ({name})")
-        # logger.info(f"   板块: {sector_name}")
-        # logger.info(f"   Leaders: {resonance_result.leaders}✅")
-        # logger.info(f"   Breadth: {resonance_result.breadth:.1f}%✅")
-        # return False, reason
+        # 如果没有板块信息或板块信息未知，跳过检查（不拦截）
+        if not sector_name or not sector_code or sector_name == '未知板块':
+            return False, "⏸️ 无板块信息，跳过共振检查"
+
+        # 提取板块内所有股票数据
+        sector_stocks = []
+        for stock in all_results.get('opportunities', []) + all_results.get('watchlist', []):
+            if stock.get('sector_name') == sector_name:
+                sector_stocks.append({
+                    'pct_chg': stock.get('pct_chg', 0),
+                    'is_limit_up': stock.get('is_limit_up', False),
+                })
+
+        # 如果板块内股票太少，跳过检查
+        if len(sector_stocks) < 3:
+            return False, f"⏸️ 板块内股票不足（{len(sector_stocks)}只），跳过共振检查"
+
+        # 计算板块共振
+        calculator = SectorResonanceCalculator()
+        resonance_result = calculator.calculate(sector_stocks, sector_name, sector_code)
+
+        # 检查是否满足共振条件
+        if not resonance_result.is_resonant:
+            reason = f"⏸️ [时机斧] 板块未共振：{resonance_result.reason}"
+            logger.info(f"⏸️ [时机斧拦截-监控层] {code} ({name})")
+            logger.info(f"   板块: {sector_name}")
+            logger.info(f"   Leaders: {resonance_result.leaders}（需≥3）")
+            logger.info(f"   Breadth: {resonance_result.breadth:.1f}%（需≥35%）")
+            logger.info(f"   拦截位置: 监控层 (run_event_driven_monitor.py)")
+            return True, reason
+
+        # 通过检查
+        reason = f"✅ [时机斧] 板块共振满足：{resonance_result.reason}"
+        logger.info(f"✅ [时机斧通过-监控层] {code} ({name})")
+        logger.info(f"   板块: {sector_name}")
+        logger.info(f"   Leaders: {resonance_result.leaders}✅")
+        logger.info(f"   Breadth: {resonance_result.breadth:.1f}%✅")
+        return False, reason
 
     def print_summary(self, results: dict):
         """打印扫描结果摘要（带防守斧拦截）"""

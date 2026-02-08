@@ -84,6 +84,9 @@ class FullMarketScanner:
         # 加载本地股本信息（用于市值分层）
         self.equity_info = self._load_equity_info()
         
+        # 🎯 加载板块映射表（用于时机斧）
+        self.sector_map = self._load_sector_map()
+        
         # 获取全市场股票列表
         self.all_stocks = self._init_qmt_stock_list()
         
@@ -136,6 +139,22 @@ class FullMarketScanner:
             return equity_info
         except Exception as e2:
             logger.warning(f"⚠️ 加载MVP版也失败: {e2}")
+            return {}
+    
+    def _load_sector_map(self) -> dict:
+        """
+        加载板块映射表（用于时机斧）
+        
+        Returns:
+            dict: 板块映射字典 {code: {industry, concepts}}
+        """
+        try:
+            with open('data/stock_sector_map.json', 'r', encoding='utf-8') as f:
+                sector_map = json.load(f)
+            logger.info(f"✅ 加载板块映射表: {len(sector_map)} 只股票")
+            return sector_map
+        except Exception as e:
+            logger.warning(f"⚠️ 加载板块映射表失败: {e}")
             return {}
     
     def _default_config(self) -> dict:
@@ -1546,6 +1565,11 @@ class FullMarketScanner:
                 result['trap_signals'] = trap_result.get('signals', [])
                 result['capital_type'] = capital_result.get('type', 'unknown')
                 result['scan_time'] = datetime.now().isoformat()
+                
+                # 🎯 添加板块信息（用于时机斧）
+                sector_info = self.sector_map.get(code_6digit, {})
+                result['sector_name'] = sector_info.get('industry', '未知板块')
+                result['sector_code'] = sector_info.get('industry', '未知板块')  # 时机斧将读取这个字段
 
                 # 计算资金推动力ratio
                 flow_records = item.get('flow_data', {}).get('records', [])
