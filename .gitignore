@@ -80,8 +80,13 @@ temp/
 *_backup.*
 config_backup_*
 
-# 测试结果文件
+# 回测结果文件
 test_*_results_*.txt
+data/backtest_results/
+data/backtest_results_*/
+data/rebuild_snapshots/
+data/rebuild_snapshots_test/
+data/qmt_download_progress.json
 
 # Coverage
 .coverage
