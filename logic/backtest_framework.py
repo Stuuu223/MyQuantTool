@@ -61,6 +61,10 @@ class BacktestEngine:
         self.closed_positions: List[BacktestPosition] = []
         self.trades = []
         self.daily_equity = []
+        
+        # 添加冷却期跟踪（防止反复交易）
+        self.cooldown_stocks = {}  # {code: cooldown_end_date}
+        self.COOLDOWN_DAYS = 7  # 冷却7天
 
     def load_snapshot(self, snapshot_path: str) -> Optional[Dict]:
         """
@@ -111,61 +115,130 @@ class BacktestEngine:
 
     def should_buy(self, stock_data: Dict) -> bool:
         """
-        买入信号判断（使用 Gate 3.5 扫描结果）
+        买入信号判断（资金猛攻版）
 
         Args:
-            stock_data: 股票数据
+            stock_data: 股票数据（来自快照，包含 decision_tag、risk_score）
 
         Returns:
             是否买入
         """
-        # 直接使用 Gate 3.5 扫描的结果
-        # 如果股票在机会池里，就买入
-
-        # 检查是否有 decision_tag（扫描系统的标记）
+        code = stock_data['code']
+        
+        # 检查冷却期
+        if code in self.cooldown_stocks:
+            cooldown_end = self.cooldown_stocks[code]
+            current_date = stock_data['trade_date']
+            if current_date <= cooldown_end:
+                return False  # 还在冷却期
+        
+        # 计算资金猛攻强度评分
+        attack_score = self._calculate_attack_intensity(stock_data)
+        
+        # 买入条件（资金猛攻版）：
+        # 1. 资金猛攻强度 > 30分
+        # 2. 风险分数 < 0.7
+        # 3. 不限制必须在机会池或观察池（从所有池子里找资金猛攻的票）
+        
         decision_tag = stock_data.get('decision_tag', None)
-
-        # 检查风险分数
         risk_score = stock_data.get('risk_score', 1.0)
-
-        # 只有在机会池里（decision_tag 不为 None）且风险分数 < 0.3 才买入
-        return decision_tag is not None and risk_score < 0.3
+        
+        # 只买资金猛攻的票
+        if attack_score < 30:
+            return False
+        
+        # 风险不能太高
+        if risk_score >= 0.7:
+            return False
+        
+        return True
+    
+    def _calculate_attack_intensity(self, stock_data: Dict) -> float:
+        """
+        资金猛攻强度评分（0-100分）
+        权重：主力流入50% + 涨幅30% + 成交额20%
+        """
+        flow = stock_data['flow_data']
+        price = stock_data['price_data']
+        
+        # 主力流入评分（100万=20分，400万=100分）
+        main_inflow = flow.get('main_net_inflow', 0)
+        flow_score = min(main_inflow / 100 * 20, 100)
+        
+        # 涨幅评分（5%=0分，10%=80分，15%+=100分）
+        pct_chg = price['pct_chg']
+        if pct_chg < 5:
+            pct_score = 0
+        elif pct_chg < 10:
+            pct_score = pct_chg * 16
+        else:
+            pct_score = 80 + (pct_chg - 10) * 10
+        
+        # 成交额评分（越小越容易推动）
+        amount = price['amount'] / 1e8  # 转换为亿
+        if amount < 0.05:
+            amount_score = 100
+        elif amount < 0.1:
+            amount_score = 80
+        elif amount < 0.3:
+            amount_score = 50
+        else:
+            amount_score = 20
+        
+        # 综合评分（主力流入50% + 涨幅30% + 成交额20%）
+        total_score = flow_score * 0.5 + pct_score * 0.3 + amount_score * 0.2
+        
+        return total_score
 
     def should_sell(self, position: BacktestPosition, stock_data: Dict) -> bool:
         """
-        卖出信号判断（平衡版）
+        卖出信号判断（短线风格）
 
         Args:
             position: 持仓
-            stock_data: 当前股票数据
+            stock_data: 当前股票数据（来自快照）
 
         Returns:
             是否卖出
         """
-        # 平衡版卖出逻辑：
-        # 1. 硬止损：亏损超过3%无条件卖出
-        # 2. 风险分数 >= 0.5
-        # 3. 主力净流出 > 0 且持有超过2天
-
+        # 计算当前盈亏
         current_price = stock_data['price_data']['close']
-        current_pnl_pct = (current_price - position.entry_price) / position.entry_price * 100
+        pnl_pct = (current_price - position.entry_price) / position.entry_price * 100
 
-        # 硬止损：亏损超过3%
-        if current_pnl_pct <= -3:
-            return True
+        # 短线卖出条件（快进快出）：
+        # 1. 硬止损：亏损超过 2%
+        # 2. 硬止盈：盈利超过 5%（短线止盈）
+        # 3. 持仓超过 3 天：不管涨跌都卖（短线不磨叽）
+        # 4. 风险翻高：风险分数 >= 0.8
+        # 5. 主力大幅流出：持有超过 1 天且主力流出
 
         risk_score = stock_data.get('risk_score', 0.0)
         trap_signals = stock_data.get('trap_signals', [])
         flow_data = stock_data.get('flow_data', {})
         main_net_inflow = flow_data.get('main_net_inflow', 0)
 
-        if risk_score >= 0.5:
+        # 硬止损（更严格）
+        if pnl_pct <= -2:
             return True
 
+        # 硬止盈（更快）
+        if pnl_pct >= 5:
+            return True
+
+        # 持仓时间限制（3天强制卖出）
+        if position.holding_days >= 3:
+            return True
+
+        # 风险翻高
+        if risk_score >= 0.8:
+            return True
+
+        # 诱多信号
         if len(trap_signals) > 0:
             return True
 
-        if main_net_inflow < 0 and position.holding_days >= 2:
+        # 主力大幅流出（1天就卖）
+        if main_net_inflow < 0 and position.holding_days >= 1:
             return True
 
         return False
@@ -215,6 +288,9 @@ class BacktestEngine:
                         self.closed_positions.append(pos)
                         self.current_capital += pos.pnl
                         positions_to_close.append(pos)
+                        
+                        # 添加冷却期
+                        self.cooldown_stocks[pos.code] = trade_date
 
                         self.trades.append({
                             'type': 'sell',
@@ -243,7 +319,12 @@ class BacktestEngine:
             if len(self.positions) < max_positions:
                 available_slots = max_positions - len(self.positions)
 
-                for stock_data in opportunities:
+                # 合并所有池子（机会池、观察池、黑名单），从中选资金猛攻的票
+                all_candidates = (snapshot['results'].get('opportunities', []) + 
+                                   snapshot['results'].get('watchlist', []) +
+                                   snapshot['results'].get('blacklist', []))
+                
+                for stock_data in all_candidates:
                     if available_slots <= 0:
                         break
 
@@ -274,12 +355,43 @@ class BacktestEngine:
 
         # 强制平仓所有持仓
         last_date = snapshots[-1]['trade_date'] if snapshots else '20260206'
+        last_snapshot = snapshots[-1] if snapshots else None
+
         for pos in self.positions:
-            pos.close(pos.entry_price, last_date)  # 假设平仓价格等于买入价格（无收益）
+            # 在所有池子里查找股票数据（机会池、观察池、黑名单）
+            stock_data = None
+            if last_snapshot:
+                # 按优先级查找：机会池 > 观察池 > 黑名单
+                for pool_name in ['opportunities', 'watchlist', 'blacklist']:
+                    pool = last_snapshot['results'].get(pool_name, [])
+                    for stock in pool:
+                        if stock['code'] == pos.code:
+                            stock_data = stock
+                            break
+                    if stock_data:
+                        break
+
+            # 获取实际价格
+            if stock_data:
+                current_price = stock_data['price_data']['close']
+            else:
+                # 如果快照里找不到，从Tushare获取当日价格
+                try:
+                    import tushare as ts
+                    api = ts.pro_api('1430dca9cc3419b91928e162935065bcd3531fa82976fee8355d550b')
+                    df = api.daily(ts_code=pos.code, trade_date=last_date)
+                    if len(df) > 0:
+                        current_price = df.iloc[0]['close']
+                    else:
+                        current_price = pos.entry_price
+                except:
+                    current_price = pos.entry_price
+
+            pos.close(current_price, last_date)
             self.closed_positions.append(pos)
 
             # 返还资金
-            self.current_capital += pos.entry_price * pos.quantity
+            self.current_capital += pos.entry_price * pos.quantity + pos.pnl
 
             self.trades.append({
                 'type': 'sell',

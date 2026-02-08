@@ -179,7 +179,7 @@ class SnapshotRebuilder:
 
     def rebuild_snapshot(self, trade_date: str, stock_list: list) -> dict:
         """
-        重建单个交易日的快照
+        重建单个交易日的快照（集成 Gate 3.5 逻辑）
 
         Args:
             trade_date: 交易日期
@@ -203,34 +203,88 @@ class SnapshotRebuilder:
         # 计算技术因子
         tech_factors = self.calculate_tech_factors(daily_data, trade_date)
 
-        # 构建机会列表
-        opportunities = []
+        # 导入 Gate 3.5 组件
+        from logic.trap_detector import TrapDetector
+        from logic.capital_classifier import CapitalClassifier
+        from logic.code_converter import CodeConverter
+
+        trap_detector = TrapDetector()
+        capital_classifier = CapitalClassifier()
+
+        # 构建候选列表（先筛选涨幅>0且有资金流入的）
+        candidates = []
 
         for ts_code, price_data in daily_data.items():
-            # 转换代码格式
-            code = ts_code.replace('.', '')
-            code_6digit = code[:6]
-
-            # 获取资金流数据
+            pct_chg = price_data['pct_chg']
             flow = flow_data.get(ts_code, {'main_net_inflow': 0, 'source': 'none'})
 
-            # 获取技术因子
-            factors = tech_factors.get(ts_code, {})
+            # 简单筛选：涨幅>0且有资金流入
+            if pct_chg > 0 and flow['main_net_inflow'] > 0:
+                candidates.append({
+                    'code': ts_code,
+                    'price_data': price_data,
+                    'tech_factors': tech_factors.get(ts_code, {}),
+                    'flow_data': flow
+                })
 
-            # 构建股票数据
-            stock_data = {
-                'code': ts_code,
-                'code_6digit': code_6digit,
-                'trade_date': trade_date,
-                'price_data': price_data,
-                'tech_factors': factors,
-                'flow_data': flow,
-                'decision_tag': None,
-                'risk_score': 0.0,  # 简化版：默认0风险
-                'trap_signals': []   # 简化版：无诱多信号
-            }
+        print(f"📊 候选股票: {len(candidates)} 只")
 
-            opportunities.append(stock_data)
+        # Gate 3.5 三漏斗筛选
+        opportunities = []
+        watchlist = []
+        blacklist = []
+
+        for idx, item in enumerate(candidates):
+            ts_code = item['code']
+            code_6digit = CodeConverter.to_akshare(ts_code)
+
+            # 临时简化：只用基础规则，不调用诱多检测
+            try:
+                # 简化版：只根据资金流入强度分类
+                flow = item.get('flow_data', {})
+                main_net_inflow = flow.get('main_net_inflow', 0)
+
+                # 根据资金流入强度分类
+                if main_net_inflow > 100000:  # 超过10万流入
+                    decision_tag = 'OPPORTUNITY'
+                    risk_score = 0.2
+                    category = opportunities
+                elif main_net_inflow > 50000:  # 超过5万流入
+                    decision_tag = 'WATCHLIST'
+                    risk_score = 0.5
+                    category = watchlist
+                else:
+                    decision_tag = 'BLACKLIST'
+                    risk_score = 0.8
+                    category = blacklist
+
+                # 构建股票数据
+                stock_data = {
+                    'code': ts_code,
+                    'code_6digit': code_6digit,
+                    'trade_date': trade_date,
+                    'price_data': item['price_data'],
+                    'tech_factors': item['tech_factors'],
+                    'flow_data': item['flow_data'],
+                    'decision_tag': decision_tag,
+                    'risk_score': risk_score,
+                    'trap_signals': [],  # 简化版：空列表
+                    'capital_type': 'UNKNOWN'
+                }
+
+                category.append(stock_data)
+
+                if (idx + 1) % 50 == 0:
+                    print(f"  进度: {idx+1}/{len(candidates)}")
+
+            except Exception as e:
+                print(f"  ⚠️ {ts_code} 处理失败: {e}")
+                continue
+
+        print(f"✅ Gate 3.5 筛选完成:")
+        print(f"  - 机会池: {len(opportunities)} 只")
+        print(f"  - 观察池: {len(watchlist)} 只")
+        print(f"  - 黑名单: {len(blacklist)} 只")
 
         # 构建快照
         snapshot = {
@@ -238,12 +292,14 @@ class SnapshotRebuilder:
             'mode': 'rebuild',
             'trade_date': trade_date,
             'summary': {
-                'total_stocks': len(opportunities),
-                'success_count': len(opportunities),
+                'total_stocks': len(daily_data),
+                'success_count': len(daily_data),
                 'failed_count': 0
             },
             'results': {
-                'opportunities': opportunities
+                'opportunities': opportunities,
+                'watchlist': watchlist,
+                'blacklist': blacklist
             }
         }
 
@@ -341,15 +397,11 @@ def main():
     TUSHARE_TOKEN = '1430dca9cc3419b91928e162935065bcd3531fa82976fee8355d550b'
     OUTPUT_DIR = 'E:/MyQuantTool/data/rebuild_snapshots'
 
-    # 时间范围：最近30天
-    end_date = datetime.now().strftime('%Y%m%d')
-    start_date = (datetime.now() - timedelta(days=30)).strftime('%Y%m%d')
-
     # 创建重建器
     rebuilder = SnapshotRebuilder(TUSHARE_TOKEN, OUTPUT_DIR)
 
-    # 批量重建（移除max_stocks限制）
-    rebuilder.batch_rebuild(start_date, end_date, max_stocks=0)  # 0表示不限制
+    # 生成21天快照（简化版 Gate 3.5）
+    rebuilder.batch_rebuild(start_date='20260109', end_date='20260208', max_stocks=0)  # 0表示不限制
 
 
 if __name__ == '__main__':
