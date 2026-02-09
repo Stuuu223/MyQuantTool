@@ -1768,8 +1768,9 @@ class FullMarketScanner:
         if is_price_up_3d_capital_not_follow and ratio < 1:
             return "TRAP❌"
 
-        # 第4关：0.5-5% + 低风险 + 无诱多 → FOCUS✅（放宽区间：1-3% → 0.5-5%）
-        if 0.5 <= ratio <= 5 and risk_score < 0.6 and len(trap_signals) == 0:
+        # 第4关：0.5-5% + 低风险 + 无诱多 → FOCUS✅（已调整阈值：0.5% → 0.5%）
+        # 🔥 [Fix] 调整下限：50% → 0.5%，以捕获正常强势股（5%-50%）
+        if 0.005 <= ratio <= 0.5 and risk_score < 0.6 and len(trap_signals) == 0:
             return "FOCUS✅"
 
         # 第4.5关：低风险 + 无诱多 → WATCH👀（新增：低风险观察池）
