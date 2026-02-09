@@ -27,9 +27,12 @@ class TechnicalAnalyzer:
             # 2. 获取日线数据 (前复权)
             # 注意：akshare 接口可能会偶尔超时，这里是耗时点
             df = ak.stock_zh_a_hist(symbol=clean_code, period="daily", start_date=self.start_date, adjust="qfq")
-            
+
             if df.empty or len(df) < config.THRESHOLD_MA_PERIOD:
                 return "⚪ 数据不足"
+
+            # 🔥 [安全修复] 强制按日期升序排序，确保tail()获取的是最近的数据
+            df.sort_values('日期', ascending=True, inplace=True)
 
             # 3. 只需要最近 60 天的数据
             df = df.tail(config.THRESHOLD_HISTORY_DAYS).reset_index(drop=True)
