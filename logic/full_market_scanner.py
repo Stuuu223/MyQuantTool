@@ -1505,29 +1505,33 @@ class FullMarketScanner:
                                     period='1d',
                                     start_time='',
                                     end_time='',
-                                    count=4,
+                                    count=10,  # ✅ [P1修复] 预取更多数据，防止仅取4根遇到停牌不足的情况
                                     dividend_type='front',  # 前复权
                                     fill_data=True
                                 )
 
-                                if code in kline_data and hasattr(kline_data[code], '__len__') and len(kline_data[code]) >= 2:
+                                if code in kline_data and hasattr(kline_data[code], '__len__'):
                                     df = kline_data[code]
-                                    # 按时间排序，确保iloc[0]是旧的
-                                    # QMT返回的数据通常是按时间升序的，但为了保险
-                                    if hasattr(df, 'sort_index'):
-                                        df.sort_index(ascending=True, inplace=True)
-                                        
-                                    # 取倒数第4个（如果够的话）或者第一个
-                                    idx_ref = -4 if len(df) >= 4 else 0
-                                    ref_close = df.iloc[idx_ref]['close']
-
-                                    if ref_close > 0:
-                                        price_3d_change = (current_price - ref_close) / ref_close
-                                        logger.debug(f"✅ {code} 使用QMT计算price_3d_change={price_3d_change:.4f}")
+                                    # ✅ [P1修复] 显式长度校验
+                                    if len(df) < 2:
+                                        logger.warning(f"⚠️  {code} QMT K线数据不足 (len={len(df)})，需要至少2条")
                                     else:
-                                        logger.warning(f"⚠️  {code} QMT ref_close=0")
+                                        # 按时间排序，确保iloc[0]是旧的
+                                        # QMT返回的数据通常是按时间升序的，但为了保险
+                                        if hasattr(df, 'sort_index'):
+                                            df.sort_index(ascending=True, inplace=True)
+
+                                        # ✅ [P1修复] 安全获取 ref_close，防止 iloc 越界
+                                        idx_ref = -4 if len(df) >= 4 else 0
+                                        ref_close = df.iloc[idx_ref]['close']
+
+                                        if ref_close > 0:
+                                            price_3d_change = (current_price - ref_close) / ref_close
+                                            logger.debug(f"✅ {code} 使用QMT计算price_3d_change={price_3d_change:.4f}")
+                                        else:
+                                            logger.warning(f"⚠️  {code} QMT ref_close=0")
                                 else:
-                                    logger.warning(f"⚠️  {code} QMT K线数据不足")
+                                    logger.warning(f"⚠️  {code} QMT 未返回有效数据结构")
                             except Exception as e:
                                 logger.warning(f"⚠️  {code} QMT获取K线失败: {e}")
                                 # QMT_AVAILABLE = False # 不要因为单次失败就禁用全局QMT
@@ -1553,17 +1557,19 @@ class FullMarketScanner:
                         # 策略3：QMT 1分钟数据合成 (兜底)
                         if price_3d_change == 0.0 and QMT_AVAILABLE:
                             try:
+                                # ✅ [P2修复] 增加 count 到 2400 (约10个交易日)，确保覆盖长假
+                                count_min = 2400
                                 # 尝试下载最近的分钟数据 (确保数据存在)
-                                xtdata.download_history_data(code, period='1m', count=1200, incrementally=True)
+                                xtdata.download_history_data(code, period='1m', count=count_min, incrementally=True)
                                 
-                                # 获取最近1200根1分钟K线 (约5个交易日)
+                                # 获取最近2400根1分钟K线 (约10个交易日)
                                 kline_1m = xtdata.get_market_data_ex(
                                     field_list=['time', 'close'],
                                     stock_list=[code],
                                     period='1m',
                                     start_time='',
                                     end_time='',
-                                    count=1200,
+                                    count=count_min,  # ✅ [P2修复] 同步增加获取数量
                                     dividend_type='front',
                                     fill_data=True
                                 )
