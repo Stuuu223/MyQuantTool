@@ -977,7 +977,7 @@ class FullMarketScanner:
     def _check_level1_criteria(self, code: str, tick: dict) -> bool:
         """
         检查 Level 1 筛选条件（增强版：添加量比过滤）
-        
+
         筛选条件：
         1. 基础风控：剔除垃圾股
         2. 涨跌幅：|涨跌幅| > 3%
@@ -985,62 +985,86 @@ class FullMarketScanner:
         4. 换手率：> 2%
         5. 量比：> 1.5（新增）
         """
+        # 🔥 [Debug] 追踪001335.SZ
+        if code == '001335.SZ' or code.endswith('001335'):
+            logger.info(f"🔍 [DEBUG 001335] Level 1检查开始: code={code}")
         """检查 Level 1 筛选条件"""
         if not tick:
+            # 🔥 [Debug] 追踪001335.SZ
+            if code == '001335.SZ' or code.endswith('001335'):
+                logger.info(f"🔍 [DEBUG 001335] Level 1失败: tick数据为空")
             return False
-        
+
         try:
             # 基础风控：剔除垃圾股
             stock_name = tick.get('stockName', '')
             if 'ST' in stock_name or '退' in stock_name:
+                # 🔥 [Debug] 追踪001335.SZ
+                if code == '001335.SZ' or code.endswith('001335'):
+                    logger.info(f"🔍 [DEBUG 001335] Level 1失败: 剔除垃圾股 (name={stock_name})")
                 return False
             if code.startswith(('688', '8', '4')):  # 科创板、北交所
+                # 🔥 [Debug] 追踪001335.SZ
+                if code == '001335.SZ' or code.endswith('001335'):
+                    logger.info(f"🔍 [DEBUG 001335] Level 1失败: 科创板/北交所 (code={code})")
                 return False
-            
+
             # 获取价格数据（仅使用 QMT Tick 实际存在的字段）
             last_close = tick.get('lastClose', 0)
             last_price = tick.get('lastPrice', 0)
             amount = tick.get('amount', 0)
-            
+
             # 获取成交量
             volume = (
-                tick.get('totalVolume') or 
-                tick.get('volume') or 
-                tick.get('total_volume') or 
-                tick.get('turnoverVolume') or 
-                tick.get('turnover_volume') or 
+                tick.get('totalVolume') or
+                tick.get('volume') or
+                tick.get('total_volume') or
+                tick.get('turnoverVolume') or
+                tick.get('turnover_volume') or
                 0
             )
-            
+
             # 如果没有成交量字段，尝试用成交额和价格估算
             if volume == 0 and amount > 0 and last_price > 0:
                 volume = amount / last_price
-            
+
             # 计算涨跌幅
             if last_close == 0:
+                # 🔥 [Debug] 追踪001335.SZ
+                if code == '001335.SZ' or code.endswith('001335'):
+                    logger.info(f"🔍 [DEBUG 001335] Level 1失败: 昨收价为0 (last_close=0)")
                 return False
             pct_chg = abs((last_price - last_close) / last_close * 100)
-            
+
             cfg = self.config['level1']
-            
+
             # 两个条件必须同时满足
             if pct_chg < cfg['pct_chg_min']:
+                # 🔥 [Debug] 追踪001335.SZ
+                if code == '001335.SZ' or code.endswith('001335'):
+                    logger.info(f"🔍 [DEBUG 001335] Level 1失败: 涨跌幅过低 (pct_chg={pct_chg:.2f}%, threshold={cfg['pct_chg_min']:.2f}%)")
                 return False
             if amount < cfg['amount_min']:
+                # 🔥 [Debug] 追踪001335.SZ
+                if code == '001335.SZ' or code.endswith('001335'):
+                    logger.info(f"🔍 [DEBUG 001335] Level 1失败: 成交额过低 (amount={amount/1e8:.2f}亿, threshold={cfg['amount_min']/1e8:.2f}亿)")
                 return False
-            
+
             # 检查量比（新增：市值分层阈值）
             volume_ratio = self._check_volume_ratio(code, volume, tick)
-            
+
             # 量比数据缺失：直接拒绝（避免候选池溢出）
             if volume_ratio is None:
                 logger.debug(f"[L1过滤] {code}: 量比数据缺失，拒绝")
+                # 🔥 [Debug] 追踪001335.SZ
+                if code == '001335.SZ' or code.endswith('001335'):
+                    logger.info(f"🔍 [DEBUG 001335] Level 1失败: 量比数据缺失")
                 return False
-            
+
             # 量比数据正常：按市值分层阈值判断
             # 获取流通市值用于分层
             market_cap = self._get_market_cap(code, tick)
-            
+
             # 市值为0时，使用默认阈值（1.5）
             if market_cap == 0:
                 volume_ratio_threshold = 1.5
@@ -1048,18 +1072,27 @@ class FullMarketScanner:
             else:
                 volume_ratio_threshold = self.get_volume_ratio_threshold(market_cap)
                 logger.debug(f"[L1检查] {code}: 市值={market_cap/1e8:.2f}亿，阈值={volume_ratio_threshold:.2f}")
-            
+
             # 检查量比是否达标
             if volume_ratio < volume_ratio_threshold:
                 logger.debug(f"[L1过滤] {code}: 量比={volume_ratio:.2f} < 阈值={volume_ratio_threshold:.2f}")
+                # 🔥 [Debug] 追踪001335.SZ
+                if code == '001335.SZ' or code.endswith('001335'):
+                    logger.info(f"🔍 [DEBUG 001335] Level 1失败: 量比过低 (volume_ratio={volume_ratio:.2f}, threshold={volume_ratio_threshold:.2f})")
                 return False
-            
+
             # 所有检查通过
             volume_ratio_str = f"{volume_ratio:.2f}" if volume_ratio is not None else "数据缺失"
             logger.debug(f"[L1通过] {code}: 涨跌幅={pct_chg:.2f}%, 成交额={amount/1e8:.2f}亿, 量比={volume_ratio_str}")
+            # 🔥 [Debug] 追踪001335.SZ
+            if code == '001335.SZ' or code.endswith('001335'):
+                logger.info(f"🔍 [DEBUG 001335] Level 1通过! 涨跌幅={pct_chg:.2f}%, 成交额={amount/1e8:.2f}亿, 量比={volume_ratio_str}")
             return True
-            
+
         except Exception as e:
+            # 🔥 [Debug] 追踪001335.SZ
+            if code == '001335.SZ' or code.endswith('001335'):
+                logger.info(f"🔍 [DEBUG 001335] Level 1失败: 异常 ({e})")
             return False
     
     def _get_stock_financial_info(self, code: str) -> Dict:
@@ -1447,6 +1480,78 @@ class FullMarketScanner:
                 # 转换为6位代码（AkShare格式）
                 code_6digit = CodeConverter.to_akshare(code)
 
+                # ================= [修复] 计算 price_3d_change =================
+                # 🔥 修复3日价格数据缺失问题，使Level 3诱多检测能够正常工作
+                try:
+                    # 获取最近4根日K线 (包含今天)
+                    # count=4 逻辑: [T-3, T-2, T-1, Today] -> Close[0] 即为3天前的收盘价
+                    current_price = candidate_dict.get('last_price', 0)
+                    
+                    price_3d_change = 0.0
+                    
+                    if current_price <= 0:
+                        logger.warning(f"⚠️  {code} current_price={current_price}，无法计算price_3d_change")
+                    elif QMT_AVAILABLE:
+                        # 🔥 优先使用QMT（速度快，本地缓存）
+                        try:
+                            kline_data = xtdata.get_market_data_ex(
+                                field_list=['close'],
+                                stock_list=[code],
+                                period='1d',
+                                start_time='',
+                                end_time='',
+                                count=4,
+                                dividend_type='front',  # 前复权
+                                fill_data=True
+                            )
+                            
+                            if code in kline_data and hasattr(kline_data[code], '__len__') and len(kline_data[code]) >= 2:
+                                df = kline_data[code]
+                                ref_close = df.iloc[0]['close']
+                                
+                                if ref_close > 0:
+                                    price_3d_change = (current_price - ref_close) / ref_close
+                                else:
+                                    logger.warning(f"⚠️  {code} ref_close=0，无法计算price_3d_change")
+                            else:
+                                logger.warning(f"⚠️  {code} QMT K线数据不足，尝试降级到AkShare")
+                        except Exception as e:
+                            logger.warning(f"⚠️  {code} QMT获取K线失败: {e}，尝试降级到AkShare")
+                            # 继续尝试AkShare
+                            QMT_AVAILABLE = False  # 标记QMT不可用，避免重复尝试
+                    
+                    # 🔥 降级使用AkShare（备用方案）
+                    if price_3d_change == 0.0 and current_price > 0:
+                        try:
+                            import akshare as ak
+                            symbol_6 = CodeConverter.to_akshare(code)
+                            # 获取最近5天数据（包含今天）
+                            df = ak.stock_zh_a_hist(symbol=symbol_6, period='daily', start_date='20250101', adjust='qfq')
+                            if df is not None and len(df) >= 2:
+                                # 使用倒数第4天的收盘价（3天前）
+                                if len(df) >= 4:
+                                    ref_close = df.iloc[-4]['收盘']
+                                else:
+                                    ref_close = df.iloc[0]['收盘']
+                                
+                                if ref_close > 0:
+                                    price_3d_change = (current_price - ref_close) / ref_close
+                                    logger.debug(f"✅ {code} 使用AkShare计算price_3d_change={price_3d_change:.4f}")
+                                else:
+                                    logger.warning(f"⚠️  {code} AkShare ref_close=0，无法计算price_3d_change")
+                            else:
+                                logger.warning(f"⚠️  {code} AkShare K线数据不足 (len={len(df) if df is not None else 0})，无法计算price_3d_change")
+                        except Exception as e:
+                            logger.warning(f"⚠️  {code} AkShare获取K线失败: {e}，无法计算price_3d_change")
+
+                except Exception as e:
+                    logger.warning(f"⚠️  {code} 计算price_3d_change异常: {e}")
+                    price_3d_change = 0.0
+
+                # 将计算结果写入 candidate_dict，传递给后续流程
+                candidate_dict['price_3d_change'] = price_3d_change
+                # ================= [修复结束] =================
+
                 # 获取资金流向（东方财富 API，获取30天数据用于Level3分析）
                 flow_data = self.fund_flow.get_fund_flow(code_6digit, days=30)
 
@@ -1748,13 +1853,14 @@ class FullMarketScanner:
         # 🔥 [Hotfix] ratio 修正因子（关键！）
         # 高 ratio 说明主力资金推动力强，应该降低风险
         # 低 ratio 说明主力资金推动力弱，应该提高风险
-        if ratio > 0.5:  # ratio > 50%，大幅降低风险
+        # 注意：ratio单位是小数（如0.56表示0.56%），不是百分比
+        if ratio > 0.5:  # ratio > 0.5%（主力资金推动力极强），大幅降低风险
             score *= 0.5
-        elif ratio > 0.3:  # ratio > 30%，适度降低风险
+        elif ratio > 0.3:  # ratio > 0.3%（主力资金推动力较强），适度降低风险
             score *= 0.7
-        elif ratio > 0.1:  # ratio > 10%，轻微降低风险
+        elif ratio > 0.1:  # ratio > 0.1%（主力资金推动力中等），轻微降低风险
             score *= 0.9
-        elif ratio < 0.01:  # ratio < 1%，大幅提高风险（主力资金推动力极弱）
+        elif ratio < 0.01:  # ratio < 0.01%（主力资金推动力极弱），大幅提高风险
             score *= 1.5
 
         return min(max(score, 0.0), 1.0)

@@ -321,7 +321,13 @@ class ScenarioClassifier:
 
         elif scenario == ScenarioType.TRAP_PUMP_DUMP:
             reasons.append("检测到拉高出货模式")
-            reasons.append(f"风险评分较高 ({risk_score:.2f})")
+            # 🔥 [Fix] 根据实际风险评分动态显示，不再硬编码"较高"
+            if risk_score > 0.7:
+                reasons.append(f"风险评分较高 ({risk_score:.2f})")
+            elif risk_score > 0.4:
+                reasons.append(f"风险评分中等 ({risk_score:.2f})")
+            else:
+                reasons.append(f"风险评分较低 ({risk_score:.2f})")
             reasons.append("超大单占比过高或次日大幅流出")
 
         elif scenario == ScenarioType.TAIL_RALLY:
