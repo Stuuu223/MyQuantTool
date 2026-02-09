@@ -230,7 +230,7 @@ class FullMarketScanner:
         # ===== QMT 状态检查结束 =====
         
         # ===== Level 1: 技术面粗筛 =====
-        logger.info("\n🔍 [Level 1] 技术面粗筛...")
+        logger.info("\\n🔍 [Level 1] 技术面粗筛...")
         candidates_l1 = self._level1_technical_filter()
         logger.info(f"✅ Level 1 完成: {len(self.all_stocks)} → {len(candidates_l1)} 只 (耗时: {time.time()-start_time:.1f}秒)")
         
@@ -239,7 +239,7 @@ class FullMarketScanner:
             return {'opportunities': [], 'watchlist': [], 'blacklist': []}
         
         # ===== Level 2: 资金流向分析 =====
-        logger.info(f"\n💰 [Level 2] 资金流向分析 ({len(candidates_l1)} 只)...")
+        logger.info(f"\\n💰 [Level 2] 资金流向分析 ({len(candidates_l1)} 只)...")
         l2_start = time.time()
         candidates_l2 = self._level2_capital_analysis(candidates_l1)
         logger.info(f"✅ Level 2 完成: {len(candidates_l1)} → {len(candidates_l2)} 只 (耗时: {time.time()-l2_start:.1f}秒)")
@@ -249,13 +249,13 @@ class FullMarketScanner:
             return {'opportunities': [], 'watchlist': [], 'blacklist': []}
         
         # ===== Level 3: 坑 vs 机会分类 =====
-        logger.info(f"\n⚠️  [Level 3] 诱多陷阱检测 ({len(candidates_l2)} 只)...")
+        logger.info(f"\\n⚠️  [Level 3] 诱多陷阱检测 ({len(candidates_l2)} 只)...")
         l3_start = time.time()
         results = self._level3_trap_classification(candidates_l2)
         logger.info(f"✅ Level 3 完成 (耗时: {time.time()-l3_start:.1f}秒)")
         
         # 输出统计
-        logger.info("\n" + "=" * 80)
+        logger.info("\\n" + "=" * 80)
         logger.info("📊 扫描结果统计")
         logger.info("=" * 80)
         logger.info(f"✅ 机会池: {len(results['opportunities'])} 只")
@@ -334,7 +334,7 @@ class FullMarketScanner:
         # ===== QMT 状态检查结束 =====
         
         # ===== Level 1: 技术面粗筛 =====
-        logger.info("\n🔍 [Level 1] 技术面粗筛...")
+        logger.info("\\n🔍 [Level 1] 技术面粗筛...")
         
         if stock_list:
             # 只扫描指定的股票列表（候选池模式）
@@ -350,7 +350,7 @@ class FullMarketScanner:
             return self._build_degraded_result([], 'level1_empty')
         
         # ===== 计算相对热门度 =====
-        logger.info(f"\n🔥 计算相对热门度...")
+        logger.info(f"\\n🔥 计算相对热门度...")
         candidates_l1 = self._calculate_relative_hotness(candidates_l1)
         
         # ===== 构建热门池（TOP 100，只使用数据有效的票）=====
@@ -398,7 +398,7 @@ class FullMarketScanner:
         }
         
         # ===== Level 2: 资金流向分析（仅对热门池）=====
-        logger.info(f"\n💰 [Level 2] 资金流向分析 (热门池 {len(hot_pool)} 只)...")
+        logger.info(f"\\n💰 [Level 2] 资金流向分析 (热门池 {len(hot_pool)} 只)...")
         l2_start = time.time()
         candidates_l2 = []
         fund_flow_error_rate = 0
@@ -449,7 +449,7 @@ class FullMarketScanner:
         
         # ===== Level 3: 风险分类 =====
         if candidates_l2:
-            logger.info(f"\n⚠️  [Level 3] 诱多陷阱检测 ({len(candidates_l2)} 只)...")
+            logger.info(f"\\n⚠️  [Level 3] 诱多陷阱检测 ({len(candidates_l2)} 只)...")
             l3_start = time.time()
             candidates_l3 = self._level3_trap_classification(candidates_l2)
             logger.info(f"✅ Level 3 完成 (耗时: {time.time()-l3_start:.1f}秒)")
@@ -501,7 +501,7 @@ class FullMarketScanner:
             result['total_candidates'] = len(candidates_l1)  # 提供总候选数
         
         # 输出统计
-        logger.info("\n" + "=" * 80)
+        logger.info("\\n" + "=" * 80)
         logger.info("📊 扫描结果统计")
         logger.info("=" * 80)
         logger.info(f"✅ 机会池: {len(result['opportunities'])} 只")
@@ -512,12 +512,12 @@ class FullMarketScanner:
         logger.info(f"🎯 风控原因: {result['risk_reason']}")
         
         if result['risk_warnings']:
-            logger.info("\n⚠️  风控警告:")
+            logger.info("\\n⚠️  风控警告:")
             for warning in result['risk_warnings']:
                 logger.info(f"   {warning}")
         
         if scan_mode == 'DEGRADED_LEVEL1_ONLY':
-            logger.info(f"\n📋 技术面候选池（TOP50）:")
+            logger.info(f"\\n📋 技术面候选池（TOP50）:")
             logger.info(f"   由于资金流数据不可用，仅提供技术面筛选结果")
         
         logger.info(f"⏱️  总耗时: {time.time() - start_time:.1f} 秒")
@@ -716,6 +716,8 @@ class FullMarketScanner:
                     continue
                 
                 # 本地过滤
+                batch_samples = []  # 初始化 batch_samples
+
                 for code in batch:
                     tick = tick_data.get(code, {})
                     
@@ -1494,8 +1496,7 @@ class FullMarketScanner:
                     if current_price <= 0:
                         logger.warning(f"⚠️  {code} current_price={current_price}，无法计算price_3d_change")
                     else:
-                        # 🔥 双数据源策略：QMT优先 + AkShare降级
-                        # 先尝试QMT（如果可用）
+                        # 策略1：QMT 日线数据 (最快)
                         if QMT_AVAILABLE:
                             try:
                                 kline_data = xtdata.get_market_data_ex(
@@ -1511,46 +1512,80 @@ class FullMarketScanner:
 
                                 if code in kline_data and hasattr(kline_data[code], '__len__') and len(kline_data[code]) >= 2:
                                     df = kline_data[code]
-                                    ref_close = df.iloc[0]['close']
+                                    # 按时间排序，确保iloc[0]是旧的
+                                    # QMT返回的数据通常是按时间升序的，但为了保险
+                                    if hasattr(df, 'sort_index'):
+                                        df.sort_index(ascending=True, inplace=True)
+                                        
+                                    # 取倒数第4个（如果够的话）或者第一个
+                                    idx_ref = -4 if len(df) >= 4 else 0
+                                    ref_close = df.iloc[idx_ref]['close']
 
                                     if ref_close > 0:
                                         price_3d_change = (current_price - ref_close) / ref_close
                                         logger.debug(f"✅ {code} 使用QMT计算price_3d_change={price_3d_change:.4f}")
                                     else:
-                                        logger.warning(f"⚠️  {code} QMT ref_close=0，尝试降级到AkShare")
+                                        logger.warning(f"⚠️  {code} QMT ref_close=0")
                                 else:
-                                    logger.warning(f"⚠️  {code} QMT K线数据不足，尝试降级到AkShare")
+                                    logger.warning(f"⚠️  {code} QMT K线数据不足")
                             except Exception as e:
-                                logger.warning(f"⚠️  {code} QMT获取K线失败: {e}，尝试降级到AkShare")
-                                QMT_AVAILABLE = False  # 标记QMT不可用，避免重复尝试
+                                logger.warning(f"⚠️  {code} QMT获取K线失败: {e}")
+                                # QMT_AVAILABLE = False # 不要因为单次失败就禁用全局QMT
 
-                        # 🔥 如果QMT失败或不可用，使用AkShare降级
+                        # 策略2：AkShare 日线数据 (降级)
                         if price_3d_change == 0.0:
                             try:
-                                                        import akshare as ak
-                                                        symbol_6 = CodeConverter.to_akshare(code)
-                                                        # 获取最近5天数据（包含今天）
-                                                        df = ak.stock_zh_a_hist(symbol=symbol_6, period='daily', start_date='20250101', adjust='qfq')
-                                                        if df is not None and len(df) >= 2:
-                                                            # 🔥 [紧急修复] 强制按日期升序排序，确保计算3日涨幅而非长期涨幅
-                                                            # Bug：AkShare返回的数据未排序，导致iloc[-4]可能取到去年的数据
-                                                            # 修复后：确保iloc[-4]总是取到3天前的数据
-                                                            df.sort_values('日期', ascending=True, inplace=True)
-                            
-                                                            # 使用倒数第4天的收盘价（3天前）
-                                                            if len(df) >= 4:
-                                                                ref_close = df.iloc[-4]['收盘']
-                                                            else:
-                                                                ref_close = df.iloc[0]['收盘']
-                            
-                                                            if ref_close > 0:
-                                                                price_3d_change = (current_price - ref_close) / ref_close
-                                                                logger.info(f"✅ {code} 使用AkShare计算price_3d_change={price_3d_change:.4f}")
-                                                            else:
-                                                                logger.warning(f"⚠️  {code} AkShare ref_close=0，无法计算price_3d_change")
-                                                        else:
-                                                            logger.warning(f"⚠️  {code} AkShare K线数据不足 (len={len(df) if df is not None else 0})，无法计算price_3d_change")                            except Exception as e:
-                                logger.warning(f"⚠️  {code} AkShare获取K线失败: {e}，无法计算price_3d_change")
+                                import akshare as ak
+                                symbol_6 = CodeConverter.to_akshare(code)
+                                df = ak.stock_zh_a_hist(symbol=symbol_6, period='daily', start_date='20250101', adjust='qfq')
+                                if df is not None and len(df) >= 2:
+                                    df.sort_values('日期', ascending=True, inplace=True)
+                                    ref_close = df.iloc[-4]['收盘'] if len(df) >= 4 else df.iloc[0]['收盘']
+                                    if ref_close > 0:
+                                        price_3d_change = (current_price - ref_close) / ref_close
+                                        logger.info(f"✅ {code} 使用AkShare计算price_3d_change={price_3d_change:.4f}")
+                            except Exception as e:
+                                logger.warning(f"⚠️  {code} AkShare获取K线失败: {e}")
+
+                        # 策略3：QMT 1分钟数据合成 (兜底)
+                        if price_3d_change == 0.0 and QMT_AVAILABLE:
+                            try:
+                                # 尝试下载最近的分钟数据 (确保数据存在)
+                                xtdata.download_history_data(code, period='1m', count=1200, incrementally=True)
+                                
+                                # 获取最近1200根1分钟K线 (约5个交易日)
+                                kline_1m = xtdata.get_market_data_ex(
+                                    field_list=['time', 'close'],
+                                    stock_list=[code],
+                                    period='1m',
+                                    start_time='',
+                                    end_time='',
+                                    count=1200,
+                                    dividend_type='front',
+                                    fill_data=True
+                                )
+                                
+                                if code in kline_1m and not kline_1m[code].empty:
+                                    df_1m = kline_1m[code]
+                                    # 确保有时间索引
+                                    import pandas as pd
+                                    if 'time' in df_1m.columns:
+                                        df_1m['time'] = pd.to_datetime(df_1m['time'], unit='ms')
+                                        df_1m.set_index('time', inplace=True)
+                                    
+                                    # 重采样为日线
+                                    daily_close = df_1m['close'].resample('D').last().dropna()
+                                    
+                                    if len(daily_close) >= 2:
+                                        # 取倒数第4个（T-3）
+                                        idx_ref = -4 if len(daily_close) >= 4 else 0
+                                        ref_close = daily_close.iloc[idx_ref]
+                                        
+                                        if ref_close > 0:
+                                            price_3d_change = (current_price - ref_close) / ref_close
+                                            logger.info(f"✅ {code} 使用QMT分钟数据合成计算price_3d_change={price_3d_change:.4f}")
+                            except Exception as e:
+                                logger.warning(f"⚠️  {code} 分钟数据合成失败: {e}")
 
                 except Exception as e:
                     logger.warning(f"⚠️  {code} 计算price_3d_change异常: {e}")
@@ -2007,17 +2042,17 @@ if __name__ == "__main__":
     scanner = FullMarketScanner()
     results = scanner.scan_market(mode='premarket')
     
-    print("\n" + "=" * 80)
+    print("\\n" + "=" * 80)
     print("📊 扫描结果摘要")
     print("=" * 80)
     print(f"✅ 机会池: {len(results['opportunities'])} 只")
     for item in results['opportunities'][:5]:
         print(f"   {item['code']} - 风险评分: {item['risk_score']:.2f} - {item['capital_type']}")
     
-    print(f"\n⚠️  观察池: {len(results['watchlist'])} 只")
+    print(f"\\n⚠️  观察池: {len(results['watchlist'])} 只")
     for item in results['watchlist'][:3]:
         print(f"   {item['code']} - 风险评分: {item['risk_score']:.2f} - {item['capital_type']}")
     
-    print(f"\n❌ 黑名单: {len(results['blacklist'])} 只")
+    print(f"\\n❌ 黑名单: {len(results['blacklist'])} 只")
     for item in results['blacklist'][:3]:
         print(f"   {item['code']} - 风险评分: {item['risk_score']:.2f} - 诱多信号: {item['trap_signals']}")
