@@ -1491,58 +1491,60 @@ class FullMarketScanner:
                     
                     if current_price <= 0:
                         logger.warning(f"⚠️  {code} current_price={current_price}，无法计算price_3d_change")
-                    elif QMT_AVAILABLE:
-                        # 🔥 优先使用QMT（速度快，本地缓存）
-                        try:
-                            kline_data = xtdata.get_market_data_ex(
-                                field_list=['close'],
-                                stock_list=[code],
-                                period='1d',
-                                start_time='',
-                                end_time='',
-                                count=4,
-                                dividend_type='front',  # 前复权
-                                fill_data=True
-                            )
-                            
-                            if code in kline_data and hasattr(kline_data[code], '__len__') and len(kline_data[code]) >= 2:
-                                df = kline_data[code]
-                                ref_close = df.iloc[0]['close']
-                                
-                                if ref_close > 0:
-                                    price_3d_change = (current_price - ref_close) / ref_close
+                    else:
+                        # 🔥 双数据源策略：QMT优先 + AkShare降级
+                        # 先尝试QMT（如果可用）
+                        if QMT_AVAILABLE:
+                            try:
+                                kline_data = xtdata.get_market_data_ex(
+                                    field_list=['close'],
+                                    stock_list=[code],
+                                    period='1d',
+                                    start_time='',
+                                    end_time='',
+                                    count=4,
+                                    dividend_type='front',  # 前复权
+                                    fill_data=True
+                                )
+
+                                if code in kline_data and hasattr(kline_data[code], '__len__') and len(kline_data[code]) >= 2:
+                                    df = kline_data[code]
+                                    ref_close = df.iloc[0]['close']
+
+                                    if ref_close > 0:
+                                        price_3d_change = (current_price - ref_close) / ref_close
+                                        logger.debug(f"✅ {code} 使用QMT计算price_3d_change={price_3d_change:.4f}")
+                                    else:
+                                        logger.warning(f"⚠️  {code} QMT ref_close=0，尝试降级到AkShare")
                                 else:
-                                    logger.warning(f"⚠️  {code} ref_close=0，无法计算price_3d_change")
-                            else:
-                                logger.warning(f"⚠️  {code} QMT K线数据不足，尝试降级到AkShare")
-                        except Exception as e:
-                            logger.warning(f"⚠️  {code} QMT获取K线失败: {e}，尝试降级到AkShare")
-                            # 继续尝试AkShare
-                            QMT_AVAILABLE = False  # 标记QMT不可用，避免重复尝试
-                    
-                    # 🔥 降级使用AkShare（备用方案）
-                    if price_3d_change == 0.0 and current_price > 0:
-                        try:
-                            import akshare as ak
-                            symbol_6 = CodeConverter.to_akshare(code)
-                            # 获取最近5天数据（包含今天）
-                            df = ak.stock_zh_a_hist(symbol=symbol_6, period='daily', start_date='20250101', adjust='qfq')
-                            if df is not None and len(df) >= 2:
-                                # 使用倒数第4天的收盘价（3天前）
-                                if len(df) >= 4:
-                                    ref_close = df.iloc[-4]['收盘']
+                                    logger.warning(f"⚠️  {code} QMT K线数据不足，尝试降级到AkShare")
+                            except Exception as e:
+                                logger.warning(f"⚠️  {code} QMT获取K线失败: {e}，尝试降级到AkShare")
+                                QMT_AVAILABLE = False  # 标记QMT不可用，避免重复尝试
+
+                        # 🔥 如果QMT失败或不可用，使用AkShare降级
+                        if price_3d_change == 0.0:
+                            try:
+                                import akshare as ak
+                                symbol_6 = CodeConverter.to_akshare(code)
+                                # 获取最近5天数据（包含今天）
+                                df = ak.stock_zh_a_hist(symbol=symbol_6, period='daily', start_date='20250101', adjust='qfq')
+                                if df is not None and len(df) >= 2:
+                                    # 使用倒数第4天的收盘价（3天前）
+                                    if len(df) >= 4:
+                                        ref_close = df.iloc[-4]['收盘']
+                                    else:
+                                        ref_close = df.iloc[0]['收盘']
+
+                                    if ref_close > 0:
+                                        price_3d_change = (current_price - ref_close) / ref_close
+                                        logger.info(f"✅ {code} 使用AkShare计算price_3d_change={price_3d_change:.4f}")
+                                    else:
+                                        logger.warning(f"⚠️  {code} AkShare ref_close=0，无法计算price_3d_change")
                                 else:
-                                    ref_close = df.iloc[0]['收盘']
-                                
-                                if ref_close > 0:
-                                    price_3d_change = (current_price - ref_close) / ref_close
-                                    logger.debug(f"✅ {code} 使用AkShare计算price_3d_change={price_3d_change:.4f}")
-                                else:
-                                    logger.warning(f"⚠️  {code} AkShare ref_close=0，无法计算price_3d_change")
-                            else:
-                                logger.warning(f"⚠️  {code} AkShare K线数据不足 (len={len(df) if df is not None else 0})，无法计算price_3d_change")
-                        except Exception as e:
-                            logger.warning(f"⚠️  {code} AkShare获取K线失败: {e}，无法计算price_3d_change")
+                                    logger.warning(f"⚠️  {code} AkShare K线数据不足 (len={len(df) if df is not None else 0})，无法计算price_3d_change")
+                            except Exception as e:
+                                logger.warning(f"⚠️  {code} AkShare获取K线失败: {e}，无法计算price_3d_change")
 
                 except Exception as e:
                     logger.warning(f"⚠️  {code} 计算price_3d_change异常: {e}")
