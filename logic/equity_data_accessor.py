@@ -43,7 +43,7 @@ def _load_equity_info() -> dict:
     加载股权信息数据（带缓存）
 
     Returns:
-        dict: 股权信息数据
+        dict: 股权信息数据，结构: {code: {date: {...}}}
 
     Raises:
         FileNotFoundError: 如果数据文件不存在
@@ -53,9 +53,20 @@ def _load_equity_info() -> dict:
         raise FileNotFoundError(f"equity_info_tushare.json 不存在: {EQUITY_INFO_PATH}")
 
     with EQUITY_INFO_PATH.open("r", encoding="utf-8") as f:
-        data = json.load(f)
+        raw_data = json.load(f)
 
-    return data
+    # 新数据结构: {latest_update, history_days, data_structure, trade_date_count, stock_count, data: {code: {date: {...}}}}
+    data_structure = raw_data.get("data_structure", "")
+
+    if "{code: {date: {...}}}" in data_structure:
+        # 新结构：{code: {date: {...}}}
+        logger.info("✅ 使用新数据结构: {code: {date: {...}}}")
+        return raw_data
+    else:
+        # 旧结构：{data: {date: {code: {...}}}}
+        logger.warning("⚠️  检测到旧数据结构，建议运行 rebuild_equity_database.py 重建")
+        # 兼容旧结构
+        return raw_data
 
 
 def get_circ_mv(ts_code: str, trade_date: str) -> float:
@@ -77,26 +88,43 @@ def get_circ_mv(ts_code: str, trade_date: str) -> float:
 
     # 第2关：加载数据
     equity_data = _load_equity_info()
-    data_by_date = equity_data.get("data", {})
 
-    # 第3关：查询日期
-    daily_data = data_by_date.get(trade_date)
-    if daily_data is None:
-        logger.error(f"[CRITICAL] circ_mv 数据缺失: trade_date={trade_date} 不在 equity_info 中")
-        logger.error(f"  可能原因: 该日期数据未同步到 equity_info_tushare.json")
-        raise ValueError(f"circ_mv 数据缺失: trade_date={trade_date}")
+    # 检测数据结构
+    data_structure = equity_data.get("data_structure", "")
+    is_new_structure = "{code: {date: {...}}}" in data_structure
 
-    # 第4关：查询股票
-    stock_data = daily_data.get(ts_code)
-    if stock_data is None:
-        logger.error(f"[CRITICAL] circ_mv 数据缺失: ts_code={ts_code} @ {trade_date} 不存在")
-        logger.error(f"  可能原因: 新股、重组、更名、停牌等")
-        raise ValueError(f"circ_mv 数据缺失: {ts_code} @ {trade_date}")
+    # 第3关：查询数据（根据结构不同，访问路径不同）
+    if is_new_structure:
+        # 新结构：data[code][date]
+        stock_by_date = equity_data.get("data", {}).get(ts_code, {})
+        stock_data = stock_by_date.get(trade_date)
 
-    # 第5关：提取并校验 float_mv
-    circ_mv = float(stock_data.get("float_mv", 0))
+        if stock_data is None:
+            logger.error(f"[CRITICAL] circ_mv 数据缺失: ts_code={ts_code} @ {trade_date} 不存在")
+            logger.error(f"  可能原因: 该日期数据未同步，或该股票在该日期未上市")
+            raise ValueError(f"circ_mv 数据缺失: {ts_code} @ {trade_date}")
+
+    else:
+        # 旧结构（兼容）：data[date][code]
+        data_by_date = equity_data.get("data", {})
+        daily_data = data_by_date.get(trade_date)
+
+        if daily_data is None:
+            logger.error(f"[CRITICAL] circ_mv 数据缺失: trade_date={trade_date} 不在 equity_info 中")
+            raise ValueError(f"circ_mv 数据缺失: trade_date={trade_date}")
+
+        stock_data = daily_data.get(ts_code)
+
+        if stock_data is None:
+            logger.error(f"[CRITICAL] circ_mv 数据缺失: ts_code={ts_code} @ {trade_date} 不存在")
+            raise ValueError(f"circ_mv 数据缺失: {ts_code} @ {trade_date}")
+
+    # 第4关：提取并校验 circ_mv
+    # 优先使用 circ_mv，如果没有则使用 float_mv（别名）
+    circ_mv = float(stock_data.get("circ_mv") or stock_data.get("float_mv", 0))
+
     if circ_mv <= 0:
-        logger.error(f"[CRITICAL] circ_mv 非法值: ts_code={ts_code} @ {trade_date}, float_mv={circ_mv}")
-        raise ValueError(f"circ_mv 非法值: {ts_code} @ {trade_date}, float_mv={circ_mv}")
+        logger.error(f"[CRITICAL] circ_mv 非法值: ts_code={ts_code} @ {trade_date}, circ_mv={circ_mv}")
+        raise ValueError(f"circ_mv 非法值: {ts_code} @ {trade_date}, circ_mv={circ_mv}")
 
     return circ_mv

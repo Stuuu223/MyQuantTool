@@ -187,48 +187,78 @@ class QMTHealthChecker:
             }
 
     def _check_market_status(self) -> Dict[str, Any]:
-        """检查当前市场状态"""
-        is_weekday = self.market_checker.is_weekday()
+        """
+        [Refactored] 使用本地系统时间判断市场状态，不再依赖 QMT
+        """
+        now = datetime.now().time()
+
+        # 定义时间段
+        is_auction = dt_time(9, 15) <= now <= dt_time(9, 25)
+        is_morning = dt_time(9, 30) <= now <= dt_time(11, 30)
+        is_afternoon = dt_time(13, 0) <= now <= dt_time(15, 0)
+
+        status = "CLOSED"
+        phase = "盘后"
+
+        if is_auction:
+            status = "AUCTION"
+            phase = "集合竞价"
+        elif is_morning:
+            status = "TRADING"
+            phase = "上午交易"
+        elif is_afternoon:
+            status = "TRADING"
+            phase = "下午交易"
+        elif dt_time(9, 25) <= now < dt_time(9, 30):
+            phase = "竞价撮合"
+        elif dt_time(11, 30) <= now < dt_time(13, 0):
+            phase = "午间休市"
 
         return {
             'status': 'OK',
-            'is_weekday': is_weekday,
-            'message': '工作日' if is_weekday else '周末/节假日'
+            'market_status': status,
+            'market_phase': phase,
+            'local_time': now.strftime("%H:%M:%S"),
+            'is_trading_time': is_auction or is_morning or is_afternoon,
+            'message': f'当前阶段: {phase}'
         }
 
     def _check_trading_time(self) -> Dict[str, Any]:
-        """检查是否交易时间"""
-        is_trading_time = self.market_checker.is_trading_time()
+        """
+        [Refactored] 使用本地系统时间检查是否交易时间
+        """
+        now = datetime.now().time()
+
+        # 判断当前时间段
+        is_auction = dt_time(9, 15) <= now <= dt_time(9, 25)
+        is_morning = dt_time(9, 30) <= now <= dt_time(11, 30)
+        is_afternoon = dt_time(13, 0) <= now <= dt_time(15, 0)
+
+        is_trading_time = is_auction or is_morning or is_afternoon
 
         if is_trading_time:
+            phase = "集合竞价" if is_auction else ("上午交易" if is_morning else "下午交易")
             return {
                 'status': 'OK',
                 'is_trading_time': True,
-                'message': '当前在交易时间'
+                'phase': phase,
+                'message': f'当前在交易时间 ({phase})'
             }
         else:
-            now = datetime.now()
-            current_time = now.time()
-
-            # 判断当前时间段
-            if current_time < dt_time(9, 15):
+            if now < dt_time(9, 15):
                 phase = '盘前'
-            elif dt_time(9, 15) <= current_time < dt_time(9, 30):
-                phase = '集合竞价'
-            elif dt_time(9, 30) <= current_time < dt_time(11, 30):
-                phase = '上午交易'
-            elif dt_time(11, 30) <= current_time < dt_time(13, 0):
+            elif dt_time(9, 25) <= now < dt_time(9, 30):
+                phase = '竞价撮合'
+            elif dt_time(11, 30) <= now < dt_time(13, 0):
                 phase = '午间休市'
-            elif dt_time(13, 0) <= current_time < dt_time(15, 0):
-                phase = '下午交易'
             else:
                 phase = '盘后'
 
             return {
                 'status': 'WARNING',
                 'is_trading_time': False,
-                'message': f'当前不在交易时间 ({phase})',
-                'phase': phase
+                'phase': phase,
+                'message': f'当前不在交易时间 ({phase})'
             }
 
     def _check_data_mode(self) -> Dict[str, Any]:

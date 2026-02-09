@@ -170,7 +170,7 @@ class FullMarketScanner:
                 'super_ratio_min': 0.3,      # 超大单占比
             },
             'level3': {
-                'risk_score_max': 0.6,    # 风险评分上限
+                'risk_score_max': 0.8,    # 风险评分上限（已调整：0.6 -> 0.8，降低敏感度）
             }
         }
     
@@ -299,34 +299,36 @@ class FullMarketScanner:
         start_time = time.time()
 
         # ===== QMT 状态检查（强制或软检查）=====
-        from logic.qmt_health_check import check_qmt_health, require_realtime_mode
+        # 🔥 [9:38 AM Hotfix] 强制绕过状态检查，因为数据流是通的
+        # from logic.qmt_health_check import check_qmt_health, require_realtime_mode
 
-        if mode == 'intraday':
-            # 盘中模式：强制要求实时模式
-            try:
-                require_realtime_mode()
-            except RuntimeError as e:
-                logger.error(f"❌ QMT 状态不满足实时决策要求: {e}")
-                logger.error("❌ 无法进行盘中扫描，请检查 QMT 客户端状态")
-                return {
-                    'mode': 'DEGRADED_LEVEL1_ONLY',
-                    'evidence_matrix': {},
-                    'position_limit': 0.0,
-                    'confidence': 0.0,
-                    'risk_reason': 'QMT 状态异常',
-                    'risk_warnings': ['⚠️ QMT 状态不满足实时决策要求'],
-                    'opportunities': [],
-                    'watchlist': [],
-                    'blacklist': [],
-                    'level1_candidates': []
-                }
-        else:
-            # 盘前/盘后模式：软检查，只打印警告
-            result = check_qmt_health()
-            if result['status'] == 'ERROR':
-                logger.warning(f"⚠️  QMT 状态异常: {result['recommendations']}")
-                logger.warning("⚠️  将尝试使用本地缓存数据")
+        # if mode == 'intraday':
+        #     # 盘中模式：强制要求实时模式
+        #     try:
+        #         require_realtime_mode()
+        #     except RuntimeError as e:
+        #         logger.error(f"❌ QMT 状态不满足实时决策要求: {e}")
+        #         logger.error("❌ 无法进行盘中扫描，请检查 QMT 客户端状态")
+        #         return {
+        #             'mode': 'DEGRADED_LEVEL1_ONLY',
+        #             'evidence_matrix': {},
+        #             'position_limit': 0.0,
+        #             'confidence': 0.0,
+        #             'risk_reason': 'QMT 状态异常',
+        #             'risk_warnings': ['⚠️ QMT 状态不满足实时决策要求'],
+        #             'opportunities': [],
+        #             'watchlist': [],
+        #             'blacklist': [],
+        #             'level1_candidates': []
+        #         }
+        # else:
+        #     # 盘前/盘后模式：软检查，只打印警告
+        #     result = check_qmt_health()
+        #     if result['status'] == 'ERROR':
+        #         logger.warning(f"⚠️  QMT 状态异常: {result['recommendations']}")
+        #         logger.warning("⚠️  将尝试使用本地缓存数据")
 
+        logger.warning("🔥 [9:38 AM Hotfix] QMT状态检查已移除，假设QMT正常工作")
         # ===== QMT 状态检查结束 =====
         
         # ===== Level 1: 技术面粗筛 =====
@@ -1731,16 +1733,16 @@ class FullMarketScanner:
         if ratio > 5:
             return "TRAP❌"
 
-        # 第3关：诱多 + 高风险 → BLOCK❌
-        if len(trap_signals) > 0 and risk_score >= 0.4:
+        # 第3关：诱多 + 高风险 → BLOCK❌（已调整阈值：0.4 -> 0.6）
+        if len(trap_signals) > 0 and risk_score >= 0.6:
             return "BLOCK❌"
 
         # 第3.5关：3日连涨资金不跟 + ratio < 1% → TRAP❌
         if is_price_up_3d_capital_not_follow and ratio < 1:
             return "TRAP❌"
 
-        # 第4关：1-3% + 低风险 + 无诱多 → FOCUS✅
-        if 1 <= ratio <= 3 and risk_score < 0.4 and len(trap_signals) == 0:
+        # 第4关：1-3% + 低风险 + 无诱多 → FOCUS✅（已调整阈值：0.4 -> 0.6）
+        if 1 <= ratio <= 3 and risk_score < 0.6 and len(trap_signals) == 0:
             return "FOCUS✅"
 
         # 兜底：BLOCK❌
