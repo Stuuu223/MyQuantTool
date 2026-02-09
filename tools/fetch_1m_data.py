@@ -20,6 +20,7 @@ Date: 2026-02-09
 
 import time
 import sys
+import os
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import List, Dict
@@ -29,14 +30,46 @@ import pandas as pd
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
+# 🔥 添加DLL路径配置（解决DLL load failed问题）
+# 优先使用系统 QMT 安装目录（包含必要的 DLL 文件）
+# 如果你的 QMT 安装在其他位置，请修改下面的路径
+POSSIBLE_QMT_PATHS = [
+    r"D:\国金QMT交易端\bin.x64",  # 最常见的安装路径
+    r"C:\国金QMT交易端\bin.x64",
+    r"D:\国金QMT交易端\userdata_mini",
+    r"C:\国金QMT交易端\userdata_mini",
+    project_root / 'xtquant',  # 回退到项目目录
+]
+
+QMT_PATH = None
+for path in POSSIBLE_QMT_PATHS:
+    if isinstance(path, Path):
+        path_str = str(path)
+    else:
+        path_str = path
+    
+    if os.path.exists(path_str):
+        QMT_PATH = path_str
+        sys.path.append(QMT_PATH)
+        os.add_dll_directory(QMT_PATH)  # Python 3.8+ 必须加这句才能加载 DLL
+        print(f"✅ 添加QMT DLL路径: {QMT_PATH}")
+        break
+
+if QMT_PATH is None:
+    print("❌ 未找到 QMT 安装目录")
+    print("   请手动设置 QMT_PATH 为你的 QMT 安装路径（bin.x64 目录）")
+
+# 🔥 导入本地xtquant（项目目录中的QMT库）
 try:
     from xtquant import xtdata
     QMT_AVAILABLE = True
-except ImportError:
-    print("❌ xtquant 未安装，无法使用 QMT 数据源")
-    print("   请安装：pip install xtquant")
+    print("✅ 本地xtquant导入成功")
+except ImportError as e:
+    print(f"❌ 本地xtquant导入失败: {e}")
+    print(f"   Python版本: {sys.version}")
+    print(f"   QMT路径: {QMT_PATH}")
+    print(f"   系统架构: 64位")
     QMT_AVAILABLE = False
-    sys.exit(1)
 
 
 def fetch_minute_data(
@@ -77,9 +110,10 @@ def fetch_minute_data(
     # 第1步：强制下载数据到本地缓存
     if verbose:
         print("📥 第1步：从QMT服务器下载数据到本地缓存...")
-    
+
     try:
-        xtdata.download_history_data(
+        # 使用 download_history_data2 批量下载
+        xtdata.download_history_data2(
             stock_list=code_list,
             period='1m',
             start_time=start_date,
@@ -95,8 +129,10 @@ def fetch_minute_data(
     if verbose:
         print()
         print("📖 第2步：从本地缓存读取数据...")
-    
+
     try:
+        # get_market_data 对于K线数据返回格式：{field1: DataFrame1, field2: DataFrame2, ...}
+        # DataFrame 的 index 是股票代码，columns 是时间戳
         data = xtdata.get_market_data(
             field_list=['time', 'open', 'high', 'low', 'close', 'volume', 'amount'],
             stock_list=code_list,
@@ -110,27 +146,42 @@ def fetch_minute_data(
     except Exception as e:
         print(f"❌ 读取失败: {e}")
         return {}
-    
+
     # 第3步：转换和验证数据
     result = {}
-    
+
+    if not data or 'time' not in data:
+        print("❌ 数据为空或格式错误")
+        return {}
+
+    # 遍历每个股票代码
     for code in code_list:
-        if code in data and data[code] is not None:
-            df = data[code]
-            
-            if not df.empty:
-                # 转换时间戳为可读时间
-                df['time_str'] = pd.to_datetime(df['time'], unit='ms') + pd.Timedelta(hours=8)
-                result[code] = df
-                
-                if verbose:
-                    print(f"✅ {code}: 获取到 {len(df)} 根分钟K线")
+        try:
+            # 为每只股票构建 DataFrame
+            df_dict = {}
+            for field in ['time', 'open', 'high', 'low', 'close', 'volume', 'amount']:
+                if field in data and code in data[field].index:
+                    df_dict[field] = data[field].loc[code]
+                else:
+                    print(f"⚠️  {code}: 字段 '{field}' 缺失")
+                    break
             else:
-                if verbose:
-                    print(f"⚠️  {code}: 数据为空")
-        else:
+                # 所有字段都存在，构建 DataFrame
+                df = pd.DataFrame(df_dict)
+                
+                if not df.empty:
+                    # 转换时间戳为可读时间
+                    df['time_str'] = pd.to_datetime(df['time'], unit='ms') + pd.Timedelta(hours=8)
+                    result[code] = df
+
+                    if verbose:
+                        print(f"✅ {code}: 获取到 {len(df)} 根分钟K线")
+                else:
+                    if verbose:
+                        print(f"⚠️  {code}: 数据为空")
+        except Exception as e:
             if verbose:
-                print(f"❌ {code}: 数据获取失败")
+                print(f"❌ {code}: 数据处理失败 - {e}")
     
     if verbose:
         print()
@@ -327,6 +378,16 @@ def main():
     print("✅ 数据量小（5000只股票/天约20MB）")
     print()
     
+    # 🔥 动态日期：过去30天
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=30)
+    
+    start_date_str = start_date.strftime('%Y%m%d')
+    end_date_str = end_date.strftime('%Y%m%d')
+    
+    print(f"📅 时间范围: {start_date_str} ~ {end_date_str} (过去30天)")
+    print()
+    
     # 测试股票列表（可替换为你的股票池）
     test_stocks = [
         '600519.SH',  # 贵州茅台
@@ -339,8 +400,8 @@ def main():
     # 拉取数据
     data = fetch_minute_data(
         code_list=test_stocks,
-        start_date='20260201',  # 2月1日
-        end_date='20260209',    # 2月9日
+        start_date=start_date_str,
+        end_date=end_date_str,
         verbose=True
     )
     
@@ -348,8 +409,8 @@ def main():
         print("❌ 没有获取到数据，请检查QMT连接")
         return
     
-    # 验证数据完整性
-    verify_data_integrity(data, expected_days=7)
+    # 验证数据完整性（30天）
+    verify_data_integrity(data, expected_days=30)
     
     # 分析第一只股票
     analyze_first_stock(data)
