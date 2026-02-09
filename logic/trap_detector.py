@@ -23,6 +23,38 @@ class TrapDetector:
         """初始化检测器"""
         self.detected_traps = []
 
+    def _is_cross_non_trading_day(self, date1: str, date2: str) -> bool:
+        """
+        检查两个日期之间是否跨越了非交易日（周末或假期）
+
+        Args:
+            date1: 日期字符串，格式 'YYYY-MM-DD'
+            date2: 日期字符串，格式 'YYYY-MM-DD'
+
+        Returns:
+            True 如果跨越了非交易日，False 否则
+        """
+        from datetime import datetime
+
+        try:
+            dt1 = datetime.strptime(date1, '%Y-%m-%d')
+            dt2 = datetime.strptime(date2, '%Y-%m-%d')
+
+            # 确保日期顺序
+            if dt1 > dt2:
+                dt1, dt2 = dt2, dt1
+
+            # 计算自然日间隔
+            day_diff = (dt2 - dt1).days
+
+            # 如果间隔 > 1，说明跨越了周末或假期
+            # 例如：周五到周一间隔3天，跨越了周末
+            return day_diff > 1
+
+        except Exception as e:
+            # 如果日期解析失败，保守处理，假设没有跨越
+            return False
+
     def detect(self, stock_code: str, days: int = 30) -> Dict[str, Any]:
         """
         统一入口：检测股票的诱多陷阱
@@ -218,6 +250,11 @@ class TrapDetector:
                 # 因为"隔日"还没发生，不能判定是否反手
                 if curr_day['date'] == today_date:
                     continue  # 今天的数据，不能判定"隔日反手"
+
+                # 🔥 [Hotfix] 检查：如果跨越了非交易日（周末/假期），跳过"隔日反手"判定
+                # 跨越周末/假期的资金流动不是"隔日反手"，是正常调仓
+                if self._is_cross_non_trading_day(prev_day['date'], curr_day['date']):
+                    continue  # 跨越非交易日，不能判定为"隔日反手"
 
                 # 严格条件 1: 吸筹金额 >= 1000万
                 if inflow_amount < 1000:

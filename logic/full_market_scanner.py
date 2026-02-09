@@ -1556,27 +1556,11 @@ class FullMarketScanner:
                         'small': record.get('small_net', 0)
                     })
                 capital_result = self.capital_classifier.classify(daily_data)
-                
-                # 综合风险评分
-                risk_score = self._calculate_risk_score(trap_result, capital_result)
 
-                # 构造结果对象，保留所有原始字段
-                result = item.copy()  # 保留所有原始字段（name, last_price, amount, circulating_shares 等）
-                result['code_6digit'] = code_6digit
-                result['risk_score'] = risk_score
-                result['trap_signals'] = trap_result.get('signals', [])
-                result['capital_type'] = capital_result.get('type', 'unknown')
-                result['scan_time'] = datetime.now().isoformat()
-                
-                # 🎯 添加板块信息（用于时机斧）
-                sector_info = self.sector_map.get(code_6digit, {})
-                result['sector_name'] = sector_info.get('industry', '未知板块')
-                result['sector_code'] = sector_info.get('industry', '未知板块')  # 时机斧将读取这个字段
-
-                # 计算资金推动力ratio
+                # 🔥 [Hotfix] 先计算 ratio（需要在风险评分计算之前）
                 flow_records = item.get('flow_data', {}).get('records', [])
                 main_net_inflow = flow_records[0].get('main_net_inflow', 0) if flow_records else 0
-                
+
                 # 获取trade_date
                 trade_date = item.get('trade_date')
                 if not trade_date:
@@ -1587,7 +1571,10 @@ class FullMarketScanner:
                             trade_date = date_value.strftime('%Y%m%d')
                         elif isinstance(date_value, str):
                             trade_date = date_value.replace('-', '')
-                
+
+                # 获取场景特征（用于 ratio 计算）
+                scenario_features = item.get('scenario_features', {})
+
                 # 计算ratio（多维度计算）
                 ratio = None
                 if trade_date and main_net_inflow:
@@ -1597,7 +1584,7 @@ class FullMarketScanner:
                             # 🔥 [Hotfix] 改进 ratio 计算逻辑：基于流通市值 + 30日累计
                             # 基础 ratio：今日净流入 / 流通市值
                             ratio_base = main_net_inflow / circ_mv * 100
-                            
+
                             # 如果有 30 日累计数据，进行加权计算
                             net_30d = scenario_features.get('net_main_30d', 0)
                             if net_30d != 0:
@@ -1612,20 +1599,35 @@ class FullMarketScanner:
                                 else:
                                     # 30 日累计为正数，正常计算
                                     ratio_30d = main_net_inflow / net_30d
-                                
+
                                 # 综合计算：基础 ratio + 30 日趋势 ratio 的加权平均
                                 ratio = (ratio_base + ratio_30d) / 2
                             else:
                                 # 没有 30 日数据，只使用基础 ratio
                                 ratio = ratio_base
-                            
+
                             # 确保 ratio 不为 None
                             if ratio is None:
                                 ratio = 0
                     except Exception as e:
                         logger.warning(f"⚠️  {code} 计算ratio失败: {e}")
-                
+
+                # 综合风险评分（传入 ratio 参数）
+                risk_score = self._calculate_risk_score(trap_result, capital_result, ratio or 0)
+
+                # 构造结果对象，保留所有原始字段
+                result = item.copy()  # 保留所有原始字段（name, last_price, amount, circulating_shares 等）
+                result['code_6digit'] = code_6digit
+                result['risk_score'] = risk_score
                 result['ratio'] = ratio
+                result['trap_signals'] = trap_result.get('signals', [])
+                result['capital_type'] = capital_result.get('type', 'unknown')
+                result['scan_time'] = datetime.now().isoformat()
+
+                # 🎯 添加板块信息（用于时机斧）
+                sector_info = self.sector_map.get(code_6digit, {})
+                result['sector_name'] = sector_info.get('industry', '未知板块')
+                result['sector_code'] = sector_info.get('industry', '未知板块')  # 时机斧将读取这个字段
 
                 # 计算多日风险特征
                 flow_data = item.get('flow_data', {})
@@ -1706,19 +1708,25 @@ class FullMarketScanner:
             'blacklist': sorted(blacklist, key=lambda x: x['risk_score'], reverse=True)
         }
     
-    def _calculate_risk_score(self, trap_result: dict, capital_result: dict) -> float:
+    def _calculate_risk_score(self, trap_result: dict, capital_result: dict, ratio: float = 0.0) -> float:
         """
         计算综合风险评分
-        
+
         权重分配：
         - 诱多信号: 最高 0.7
         - 资金性质: 最高 0.3
-        
+        - ratio 修正因子: 根据主力资金推动力调整风险
+
+        Args:
+            trap_result: 诱多检测结果
+            capital_result: 资金分类结果
+            ratio: 主力资金推动力比值
+
         Returns:
             0.0 - 1.0，越高风险越大
         """
         score = 0.0
-        
+
         # 诱多信号权重
         trap_signals = trap_result.get('signals', [])
         if '单日暴量+隔日反手' in trap_signals:
@@ -1727,7 +1735,7 @@ class FullMarketScanner:
             score += 0.3
         if '长期流出+单日巨量' in trap_signals:
             score += 0.2
-        
+
         # 资金性质权重
         capital_type = capital_result.get('type', '')
         if capital_type == '散户接盘':
@@ -1736,7 +1744,19 @@ class FullMarketScanner:
             score += 0.2
         elif capital_type == '机构长线':
             score -= 0.1  # 降低风险
-        
+
+        # 🔥 [Hotfix] ratio 修正因子（关键！）
+        # 高 ratio 说明主力资金推动力强，应该降低风险
+        # 低 ratio 说明主力资金推动力弱，应该提高风险
+        if ratio > 0.5:  # ratio > 50%，大幅降低风险
+            score *= 0.5
+        elif ratio > 0.3:  # ratio > 30%，适度降低风险
+            score *= 0.7
+        elif ratio > 0.1:  # ratio > 10%，轻微降低风险
+            score *= 0.9
+        elif ratio < 0.01:  # ratio < 1%，大幅提高风险（主力资金推动力极弱）
+            score *= 1.5
+
         return min(max(score, 0.0), 1.0)
     
     def _calculate_decision_tag(self, ratio: float, risk_score: float, trap_signals: list, is_price_up_3d_capital_not_follow: bool = False) -> str:
