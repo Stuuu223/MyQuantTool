@@ -1772,8 +1772,10 @@ class FullMarketScanner:
         Returns:
             决策标签: PASS❌ / TRAP❌ / BLOCK❌ / FOCUS✅
         """
-        # 第1关：ratio < 0.5% → PASS❌
-        if ratio is None or ratio < 0.5:
+        # 🔥 [Fix] 第1关：ratio < 0.5% → PASS❌
+        # 修正：负ratio表示主力资金推动力强（30日累计流入多，今日仍在流入），不应该被拒绝
+        # 只有 ratio 是 None 或 ratio 在 0-0.5% 之间（真正推动力弱）时才PASS
+        if ratio is None or (ratio >= 0 and ratio < 0.5):
             return "PASS❌"
 
         # 第2关：ratio > 500% → TRAP❌（极端暴拉，绝对异常）
