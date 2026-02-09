@@ -5,23 +5,24 @@
 
 功能：
 1. 批量下载指定类别的股票分钟数据
-2. 支持 AkShare 动态筛选活跃股（剔除冷门股）
+2. 支持 Tushare Pro 动态筛选活跃股（替代 AkShare）
 3. 自动管理分类目录
 4. 支持增量更新
 
 Author: MyQuantTool Team
 Date: 2026-02-09
+Update: 2026-02-09 - 升级到 Tushare Pro，避免 AkShare IP 封禁
 """
 
 import sys
 import time
 import argparse
+import os
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import List, Dict
 import pandas as pd
 from xtquant import xtdata
-import akshare as ak
 
 # 添加项目根目录到Python路径
 project_root = Path(__file__).parent.parent
@@ -31,15 +32,23 @@ sys.path.insert(0, str(project_root))
 try:
     from logic.rate_limiter import RateLimiter
     RATE_LIMITER = RateLimiter(
-        max_requests_per_minute=10,  # 每分钟最多10次请求（更保守）
-        max_requests_per_hour=100,   # 每小时最多100次请求
-        min_request_interval=5,       # 最小请求间隔5秒
+        max_requests_per_minute=10,
+        max_requests_per_hour=100,
+        min_request_interval=5,
         enable_logging=True
     )
 except ImportError:
     RATE_LIMITER = None
 
-# 预定义静态股票池 (500只代表性股票)
+# Tushare Pro 配置
+TUSHARE_TOKEN = os.getenv('TUSHARE_TOKEN', '')  # 从环境变量读取
+if not TUSHARE_TOKEN:
+    # 如果环境变量未设置，尝试从配置文件读取
+    config_file = project_root / 'config' / 'tushare_token.txt'
+    if config_file.exists():
+        TUSHARE_TOKEN = config_file.read_text().strip()
+
+# 预定义静态股票池 (作为备选)
 STATIC_POOLS = {
     'static_pool_500': [
         # 大盘蓝筹（上证50成分股，共50只）
@@ -53,7 +62,7 @@ STATIC_POOLS = {
         '601169.SH', '601211.SH', '601225.SH', '601229.SH', '601288.SH',
         '601318.SH', '601328.SH', '601336.SH', '601360.SH', '601398.SH',
         '601601.SH', '601628.SH', '601668.SH', '601688.SH', '601766.SH',
-        # 中盘成长（沪深300成分股，共150只）
+        # 中盘成长（150只）
         '000001.SZ', '000002.SZ', '000063.SZ', '000069.SZ', '000100.SZ',
         '000157.SZ', '000166.SZ', '000338.SZ', '000333.SZ', '000400.SZ',
         '000401.SZ', '000402.SZ', '000415.SZ', '000423.SZ', '000488.SZ',
@@ -105,7 +114,7 @@ STATIC_POOLS = {
         '002219.SZ', '002220.SZ', '002221.SZ', '002222.SZ', '002223.SZ',
         '002224.SZ', '002225.SZ', '002226.SZ', '002227.SZ', '002228.SZ',
         '002229.SZ', '002230.SZ', '002231.SZ', '002232.SZ', '002233.SZ',
-        # 创业板高成长（创业板指成分股，共100只）
+        # 创业板（100只）
         '300001.SZ', '300002.SZ', '300003.SZ', '300004.SZ', '300005.SZ',
         '300006.SZ', '300007.SZ', '300008.SZ', '300009.SZ', '300010.SZ',
         '300011.SZ', '300012.SZ', '300013.SZ', '300014.SZ', '300015.SZ',
@@ -126,7 +135,7 @@ STATIC_POOLS = {
         '300086.SZ', '300087.SZ', '300088.SZ', '300089.SZ', '300090.SZ',
         '300091.SZ', '300092.SZ', '300093.SZ', '300094.SZ', '300095.SZ',
         '300096.SZ', '300097.SZ', '300098.SZ', '300099.SZ', '300100.SZ',
-        # 热门股（近期活跃股，共100只）
+        # 热门股（100只）
         '300750.SZ', '300760.SZ', '603259.SH', '600309.SH', '601888.SH',
         '600887.SH', '600028.SH', '600048.SH', '601668.SH', '002594.SZ',
         '002714.SZ', '300059.SZ', '002475.SZ', '601166.SH', '603697.SH',
@@ -147,64 +156,101 @@ STATIC_POOLS = {
         '601318.SH', '601336.SH', '601688.SH', '002594.SZ', '601668.SH',
         '603259.SH', '601888.SH', '000333.SZ', '600887.SH', '601012.SH',
         '603288.SH', '002352.SZ', '600570.SH', '600436.SH', '002304.SZ',
-        '600519.SH', '300750.SZ', '002594.SZ', '002475.SZ', '601888.SH',
-        '000858.SZ', '603259.SH', '300059.SZ', '600276.SH', '600036.SH',
-        '603697.SH', '300997.SZ', '002493.SZ', '002460.SZ', '002466.SZ'
+        '600519.SH', '300750.SZ', '002594.SZ', '002475.SZ', '601888.SH'
     ]
 }
 
 
-def get_active_stock_pool(top_n: int = 500) -> List[str]:
+def get_active_stock_pool_tushare(top_n: int = 500) -> List[str]:
     """
-    使用 AkShare 获取全市场活跃股名单
+    使用 Tushare Pro 获取全市场活跃股名单
     筛选标准：
     1. 剔除 ST/ST*
     2. 剔除北交所 (8/4开头)
     3. 按成交额倒序排列，取前 top_n
+    
+    需要 Tushare Pro 权限：daily_basic 接口
     """
-    print(f"\n🔍 正在通过 AkShare 筛选全市场活跃股 (Top {top_n})...")
-
+    print(f"\n🔍 正在通过 Tushare Pro 筛选全市场活跃股 (Top {top_n})...")
+    
+    if not TUSHARE_TOKEN:
+        print("❌ Tushare Token 未配置！")
+        print("   请设置环境变量: export TUSHARE_TOKEN='your_token'")
+        print("   或创建文件: config/tushare_token.txt")
+        return []
+    
     # 应用速率限制
     if RATE_LIMITER:
         RATE_LIMITER.wait_if_needed()
-        print("⏳ 速率限制器已就绪，避免被封IP")
-
+        print("⏳ 速率限制器已就绪")
+    
     try:
-        # 获取实时行情
-        df = ak.stock_zh_a_spot_em()
-
-        # 记录请求
+        import tushare as ts
+        ts.set_token(TUSHARE_TOKEN)
+        pro = ts.pro_api()
+        
+        # 获取最近交易日
+        today = datetime.now()
+        trade_date = today.strftime('%Y%m%d')
+        
+        # 如果今天非交易日，往前推
+        for i in range(5):
+            try:
+                # 获取基础行情数据（包含成交额）
+                df = pro.daily_basic(
+                    trade_date=trade_date,
+                    fields='ts_code,turnover_rate,volume_ratio,pe,total_mv'
+                )
+                if len(df) > 0:
+                    break
+                trade_date = (today - timedelta(days=i+1)).strftime('%Y%m%d')
+            except:
+                trade_date = (today - timedelta(days=i+1)).strftime('%Y%m%d')
+        
+        # 获取日线行情（获取成交额）
+        df_daily = pro.daily(
+            trade_date=trade_date,
+            fields='ts_code,amount'
+        )
+        
         if RATE_LIMITER:
             RATE_LIMITER.record_request()
-
-        # 1. 剔除 ST
-        df = df[~df['名称'].str.contains('ST')]
-
-        # 2. 剔除北交所 (代码 8xxxx, 4xxxx, 9xxxx)
-        df = df[~df['代码'].str.match(r'^(8|4|9)')]
-
-        # 3. 按成交额排序 (倒序)
-        df['成交额'] = pd.to_numeric(df['成交额'], errors='coerce')
-        df.sort_values('成交额', ascending=False, inplace=True)
-
-        # 4. 取前 N 名
+        
+        # 合并数据
+        df = df.merge(df_daily, on='ts_code', how='left')
+        
+        # 1. 剔除缺失数据
+        df = df.dropna(subset=['amount'])
+        
+        # 2. 获取股票名称（用于剔除ST）
+        df_name = pro.stock_basic(fields='ts_code,name')
+        df = df.merge(df_name, on='ts_code', how='left')
+        
+        # 3. 剔除 ST
+        df = df[~df['name'].str.contains('ST', na=False)]
+        
+        # 4. 剔除北交所
+        df = df[~df['ts_code'].str.match(r'^(8|4|9)')]
+        
+        # 5. 按成交额排序
+        df.sort_values('amount', ascending=False, inplace=True)
+        
+        # 6. 取前 N 名
         top_df = df.head(top_n)
-
-        # 转换为 QMT 代码格式 (600xxx -> 600xxx.SH, 00xxxx -> 00xxxx.SZ)
+        
+        # 7. 转换为 QMT 格式 (000001.SZ, 600000.SH)
         qmt_codes = []
-        for _, row in top_df.iterrows():
-            code = str(row['代码'])
-            if code.startswith('6'):
-                qmt_codes.append(f"{code}.SH")
-            else:
-                qmt_codes.append(f"{code}.SZ")
-
-        print(f"✅ 筛选完成！最小成交额: {top_df.iloc[-1]['成交额']/1e8:.2f} 亿")
+        for code in top_df['ts_code'].tolist():
+            # Tushare 格式: 000001.SZ, 600000.SH (已是QMT格式)
+            qmt_codes.append(code)
+        
+        print(f"✅ 筛选完成！获取 {len(qmt_codes)} 只股票")
+        print(f"   最小成交额: {top_df.iloc[-1]['amount']:.2f} 万元")
         print(f"   示例: {qmt_codes[:5]}")
         return qmt_codes
-
+        
     except Exception as e:
-        print(f"❌ AkShare 获取失败: {e}")
+        print(f"❌ Tushare Pro 获取失败: {e}")
         print("⚠️  将回退到静态股票池")
         return []
 
@@ -216,28 +262,27 @@ def download_category(
     output_base_dir: str = 'data/minute_data_real'
 ):
     """下载特定分类的股票数据"""
-
+    
     # 准备目录
     category_dir = Path(output_base_dir) / category
     category_dir.mkdir(parents=True, exist_ok=True)
-
+    
     print(f"\n📂 开始处理分类: {category} ({len(codes)} 只)")
-
+    
     # 计算时间范围
-    # 注意：download_history_data 需要时间范围字符串 'YYYYMMDD'
     end_date = datetime.now()
     start_date = end_date - timedelta(days=days)
-
+    
     start_time_str = start_date.strftime('%Y%m%d') + "000000"
     end_time_str = end_date.strftime('%Y%m%d') + "235959"
-
+    
     success_count = 0
-
+    
     for idx, code in enumerate(codes):
         # 进度条显示
         sys.stdout.write(f"\r   🚀 [{idx+1}/{len(codes)}] 下载 {code}...")
         sys.stdout.flush()
-
+        
         try:
             # 1. 触发下载
             xtdata.download_history_data(
@@ -247,10 +292,10 @@ def download_category(
                 end_time=end_time_str,
                 incrementally=True
             )
-
+            
             # 2. 读取数据
             count_bars = days * 240
-
+            
             data = xtdata.get_market_data_ex(
                 field_list=['time', 'open', 'high', 'low', 'close', 'volume', 'amount'],
                 stock_list=[code],
@@ -258,10 +303,10 @@ def download_category(
                 count=count_bars,
                 fill_data=False
             )
-
+            
             if code in data and len(data[code]) > 0:
                 df = data[code]
-
+                
                 # 转换时间
                 if 'time' in df.columns:
                     df['time_str'] = pd.to_datetime(df['time'], unit='ms') + pd.Timedelta(hours=8)
@@ -273,24 +318,26 @@ def download_category(
                 file_path = category_dir / f"{code}_1m.csv"
                 df.to_csv(file_path, index=False, encoding='utf-8-sig')
                 success_count += 1
-
+                
         except Exception as e:
-            pass  # 忽略单个失败，保持批量进行
-
+            pass  # 忽略单个失败
+            
     print(f"\n🏁 分类 {category} 完成: {success_count}/{len(codes)} 成功")
 
 
 def main():
     parser = argparse.ArgumentParser(description='QMT 分钟数据批量下载器')
-    parser.add_argument('--mode', type=str, default='active', choices=['active', 'static'], help='下载模式: active(活跃股) | static(静态池)')
-    parser.add_argument('--top', type=int, default=100, help='活跃股数量 (默认100)')
-    parser.add_argument('--days', type=int, default=20, help='下载天数')
+    parser.add_argument('--mode', type=str, default='tushare', 
+                        choices=['tushare', 'static'], 
+                        help='下载模式: tushare(Tushare Pro) | static(静态池)')
+    parser.add_argument('--top', type=int, default=500, help='活跃股数量 (默认500)')
+    parser.add_argument('--days', type=int, default=30, help='下载天数')
     args = parser.parse_args()
 
     print("=" * 60)
-    print("🚀 真实分钟数据批量下载器 (QMT)")
+    print("🚀 真实分钟数据批量下载器 (QMT + Tushare Pro)")
     print("=" * 60)
-
+    
     # 检查 QMT 连接
     try:
         xtdata.get_market_data(field_list=['close'], stock_list=['600000.SH'], period='1d', count=1)
@@ -301,22 +348,22 @@ def main():
         return
 
     target_pool = {}
-
-    if args.mode == 'active':
-        active_codes = get_active_stock_pool(top_n=args.top)
-        if active_codes:
-            target_pool['active_top_' + str(args.top)] = active_codes
+    
+    if args.mode == 'tushare':
+        tushare_codes = get_active_stock_pool_tushare(top_n=args.top)
+        if tushare_codes:
+            target_pool['tushare_top_' + str(args.top)] = tushare_codes
         else:
-            print("⚠️  AkShare 获取失败，自动回退到静态股票池")
+            print("⚠️  Tushare 获取失败，自动回退到静态股票池")
             target_pool = STATIC_POOLS
     else:
         target_pool = STATIC_POOLS
-
+    
     total_start = time.time()
-
+    
     for category, codes in target_pool.items():
         download_category(category, codes, days=args.days)
-
+        
     total_time = time.time() - total_start
     print("\n" + "=" * 60)
     print(f"🎉 所有任务完成! 耗时: {total_time:.1f}s")
