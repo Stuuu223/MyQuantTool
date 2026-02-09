@@ -100,3 +100,4 @@ htmlcov/
 
 # Sensitive configuration files
 config/qmt_config.json
+config/tushare_token.txt
