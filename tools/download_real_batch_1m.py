@@ -27,6 +27,18 @@ import akshare as ak
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
+# 导入速率限制器
+try:
+    from logic.rate_limiter import RateLimiter
+    RATE_LIMITER = RateLimiter(
+        max_requests_per_minute=10,  # 每分钟最多10次请求（更保守）
+        max_requests_per_hour=100,   # 每小时最多100次请求
+        min_request_interval=5,       # 最小请求间隔5秒
+        enable_logging=True
+    )
+except ImportError:
+    RATE_LIMITER = None
+
 # 预定义静态股票池 (作为备选)
 STATIC_POOLS = {
     'large_cap': [
@@ -69,9 +81,19 @@ def get_active_stock_pool(top_n: int = 500) -> List[str]:
     3. 按成交额倒序排列，取前 top_n
     """
     print(f"\n🔍 正在通过 AkShare 筛选全市场活跃股 (Top {top_n})...")
+
+    # 应用速率限制
+    if RATE_LIMITER:
+        RATE_LIMITER.wait_if_needed()
+        print("⏳ 速率限制器已就绪，避免被封IP")
+
     try:
         # 获取实时行情
         df = ak.stock_zh_a_spot_em()
+
+        # 记录请求
+        if RATE_LIMITER:
+            RATE_LIMITER.record_request()
 
         # 1. 剔除 ST
         df = df[~df['名称'].str.contains('ST')]
