@@ -1588,13 +1588,40 @@ class FullMarketScanner:
                         elif isinstance(date_value, str):
                             trade_date = date_value.replace('-', '')
                 
-                # 计算ratio
+                # 计算ratio（多维度计算）
                 ratio = None
                 if trade_date and main_net_inflow:
                     try:
                         circ_mv = get_circ_mv(code, trade_date)
                         if circ_mv > 0:
-                            ratio = main_net_inflow / circ_mv * 100
+                            # 🔥 [Hotfix] 改进 ratio 计算逻辑：基于流通市值 + 30日累计
+                            # 基础 ratio：今日净流入 / 流通市值
+                            ratio_base = main_net_inflow / circ_mv * 100
+                            
+                            # 如果有 30 日累计数据，进行加权计算
+                            net_30d = scenario_features.get('net_main_30d', 0)
+                            if net_30d != 0:
+                                # 如果 30 日累计为负数（长期流出），使用绝对值
+                                if net_30d < 0:
+                                    ratio_30d = main_net_inflow / abs(net_30d)
+                                    # 如果今日流入为正（开始回流），视为机会
+                                    if main_net_inflow > 0:
+                                        ratio_30d = abs(ratio_30d)
+                                    else:
+                                        ratio_30d = main_net_inflow / net_30d
+                                else:
+                                    # 30 日累计为正数，正常计算
+                                    ratio_30d = main_net_inflow / net_30d
+                                
+                                # 综合计算：基础 ratio + 30 日趋势 ratio 的加权平均
+                                ratio = (ratio_base + ratio_30d) / 2
+                            else:
+                                # 没有 30 日数据，只使用基础 ratio
+                                ratio = ratio_base
+                            
+                            # 确保 ratio 不为 None
+                            if ratio is None:
+                                ratio = 0
                     except Exception as e:
                         logger.warning(f"⚠️  {code} 计算ratio失败: {e}")
                 
@@ -1729,8 +1756,8 @@ class FullMarketScanner:
         if ratio is None or ratio < 0.5:
             return "PASS❌"
 
-        # 第2关：ratio > 5% → TRAP❌（暴拉出货）
-        if ratio > 5:
+        # 第2关：ratio > 500% → TRAP❌（极端暴拉，绝对异常）
+        if ratio > 500:
             return "TRAP❌"
 
         # 第3关：诱多 + 高风险 → BLOCK❌（已调整阈值：0.4 -> 0.6）
@@ -1741,12 +1768,16 @@ class FullMarketScanner:
         if is_price_up_3d_capital_not_follow and ratio < 1:
             return "TRAP❌"
 
-        # 第4关：1-3% + 低风险 + 无诱多 → FOCUS✅（已调整阈值：0.4 -> 0.6）
-        if 1 <= ratio <= 3 and risk_score < 0.6 and len(trap_signals) == 0:
+        # 第4关：0.5-5% + 低风险 + 无诱多 → FOCUS✅（放宽区间：1-3% → 0.5-5%）
+        if 0.5 <= ratio <= 5 and risk_score < 0.6 and len(trap_signals) == 0:
             return "FOCUS✅"
 
-        # 兜底：BLOCK❌
-        return "BLOCK❌"
+        # 第4.5关：低风险 + 无诱多 → WATCH👀（新增：低风险观察池）
+        if risk_score < 0.4 and len(trap_signals) == 0:
+            return "WATCH👀"
+
+        # 兜底：PASS❌
+        return "PASS❌"
     
     def generate_state_signature(self, results: dict) -> str:
         """
