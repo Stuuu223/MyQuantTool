@@ -68,10 +68,12 @@ class FullMarketScanner:
         # 加载配置
         self.config = self._load_config(config_path)
         
-        # 检查 QMT 可用性
+        # 检查 QMT 可用性（警告但不阻止初始化）
         if not QMT_AVAILABLE:
-            logger.error("❌ xtquant 未安装，无法使用 QMT 数据源")
-            raise ImportError("请先安装 xtquant 库")
+            logger.warning("⚠️  xtquant 未安装，QMT 数据源不可用")
+            logger.warning("⚠️  系统将使用 AkShare 降级数据源，扫描速度会变慢")
+        else:
+            logger.info("✅ QMT 数据源可用，将使用 QMT 进行高速扫描")
         
         # 初始化核心模块
         self.trap_detector = TrapDetector()
