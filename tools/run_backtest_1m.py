@@ -13,6 +13,7 @@ Date: 2026-02-09
 """
 
 import sys
+import argparse
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List
@@ -34,7 +35,7 @@ def load_minute_data(data_dir: str = 'data/minute_data') -> Dict[str, pd.DataFra
     
     print()
     print("=" * 80)
-    print("📂 加载分钟K线数据")
+    print(f"📂 加载分钟K线数据: {data_path}")
     print("=" * 80)
     
     result = {}
@@ -62,30 +63,43 @@ def verify_data_integrity(data_dict: Dict[str, pd.DataFrame]):
     print("🔍 数据完整性验证")
     print("=" * 80)
     
-    expected_bars = 5082  # 30天 * 240根/天 ≈ 5000根
+    # 期望数量根据数据长度而定，不再硬编码 5082
+    # expected_bars = 5082  
     
     for code, df in data_dict.items():
         # 检查数据量
         actual_bars = len(df)
-        completeness = actual_bars / expected_bars * 100
+        # completeness = actual_bars / expected_bars * 100
         
         # 检查缺失值
         missing_values = df.isnull().sum().sum()
         
         # 检查价格合理性
-        negative_prices = (df[['open', 'high', 'low', 'close']] < 0).sum().sum()
-        zero_prices = (df[['open', 'high', 'low', 'close']] == 0).sum().sum()
+        # 兼容不同列名
+        cols = ['open', 'high', 'low', 'close']
+        existing_cols = [c for c in cols if c in df.columns]
+        
+        negative_prices = 0
+        zero_prices = 0
+        
+        if existing_cols:
+            negative_prices = (df[existing_cols] < 0).sum().sum()
+            zero_prices = (df[existing_cols] == 0).sum().sum()
         
         print(f"\n📌 {code}:")
-        print(f"   K线数量: {actual_bars} (完整性: {completeness:.1f}%)")
+        print(f"   K线数量: {actual_bars}")
         print(f"   缺失值: {missing_values}")
         print(f"   负价格: {negative_prices}")
         print(f"   零价格: {zero_prices}")
         
         # 时间范围
-        df['time_str'] = pd.to_datetime(df['time_str'])
-        time_range = f"{df['time_str'].min()} ~ {df['time_str'].max()}"
-        print(f"   时间范围: {time_range}")
+        if 'time_str' in df.columns:
+            try:
+                df['time_str'] = pd.to_datetime(df['time_str'])
+                time_range = f"{df['time_str'].min()} ~ {df['time_str'].max()}"
+                print(f"   时间范围: {time_range}")
+            except:
+                pass
     
     print()
     print("=" * 80)
@@ -102,20 +116,21 @@ def analyze_data_statistics(data_dict: Dict[str, pd.DataFrame]):
         print(f"\n📌 {code}:")
         
         # 基本统计
-        avg_volume = df['volume'].mean()
-        max_volume = df['volume'].max()
-        avg_amount = df['amount'].mean()
+        avg_volume = df['volume'].mean() if 'volume' in df.columns else 0
+        max_volume = df['volume'].max() if 'volume' in df.columns else 0
+        avg_amount = df['amount'].mean() if 'amount' in df.columns else 0
         
         # 振幅统计
-        df['amplitude'] = (df['high'] - df['low']) / df['close'] * 100
-        avg_amplitude = df['amplitude'].mean()
-        max_amplitude = df['amplitude'].max()
-        
-        print(f"   平均成交量: {avg_volume:,.0f}")
-        print(f"   最大成交量: {max_volume:,.0f}")
-        print(f"   平均成交额: {avg_amount:,.0f}")
-        print(f"   平均振幅: {avg_amplitude:.2f}%")
-        print(f"   最大振幅: {max_amplitude:.2f}%")
+        if 'high' in df.columns and 'low' in df.columns and 'close' in df.columns:
+            df['amplitude'] = (df['high'] - df['low']) / df['close'] * 100
+            avg_amplitude = df['amplitude'].mean()
+            max_amplitude = df['amplitude'].max()
+            
+            print(f"   平均成交量: {avg_volume:,.0f}")
+            print(f"   最大成交量: {max_volume:,.0f}")
+            print(f"   平均成交额: {avg_amount:,.0f}")
+            print(f"   平均振幅: {avg_amplitude:.2f}%")
+            print(f"   最大振幅: {max_amplitude:.2f}%")
     
     print()
     print("=" * 80)
@@ -138,8 +153,13 @@ def run_simple_backtest(data_dict: Dict[str, pd.DataFrame]):
     for code, df in data_dict.items():
         print(f"\n📌 {code}:")
         
-        # 计算5日均线
-        df['ma5'] = df['close'].rolling(window=5).mean()
+        if 'close' not in df.columns:
+            print("   ❌ 缺少收盘价数据")
+            continue
+
+        # 计算5日均线 (240分钟 * 5 = 1200分钟)
+        # 这里为了演示，使用 240 分钟 (约1天) 作为周期
+        df['ma5'] = df['close'].rolling(window=240*5).mean()
         
         # 初始化状态
         position = False  # 是否持仓
@@ -148,37 +168,47 @@ def run_simple_backtest(data_dict: Dict[str, pd.DataFrame]):
         total_return = 0.0
         
         # 逐分钟回测
-        for i in range(5, len(df)):  # 从第5根开始（需要5日均线）
+        # 确保数据足够计算MA
+        start_idx = 240*5
+        if len(df) <= start_idx:
+            print("   ⚠️ 数据量不足以计算5日均线")
+            continue
+
+        for i in range(start_idx, len(df)): 
             current_price = df.iloc[i]['close']
             ma5 = df.iloc[i]['ma5']
             
+            if pd.isna(ma5):
+                continue
+
             if not position:
                 # 没有持仓，检查买入条件
                 if current_price > ma5 * 1.01:  # 收盘价高于5日均线的1%
                     position = True
                     buy_price = current_price
+                    time_str = df.iloc[i]['time_str'] if 'time_str' in df.columns else str(i)
                     trades.append({
                         'type': 'BUY',
                         'price': current_price,
-                        'time': df.iloc[i]['time_str']
+                        'time': time_str
                     })
-                    print(f"   买入: {current_price:.2f} @ {df.iloc[i]['time_str']}")
+                    # print(f"   买入: {current_price:.2f} @ {time_str}")
             else:
                 # 持仓中，检查卖出条件
                 if current_price < ma5 * 0.99:  # 收盘价低于5日均线的0.99
                     position = False
                     profit_pct = (current_price - buy_price) / buy_price * 100
                     total_return += profit_pct
+                    time_str = df.iloc[i]['time_str'] if 'time_str' in df.columns else str(i)
                     trades.append({
                         'type': 'SELL',
                         'price': current_price,
-                        'time': df.iloc[i]['time_str'],
+                        'time': time_str,
                         'profit_pct': profit_pct
                     })
-                    print(f"   卖出: {current_price:.2f} @ {df.iloc[i]['time_str']} (收益: {profit_pct:.2f}%)")
+                    # print(f"   卖出: {current_price:.2f} @ {time_str} (收益: {profit_pct:.2f}%)")
         
         # 统计结果
-        buy_trades = [t for t in trades if t['type'] == 'BUY']
         sell_trades = [t for t in trades if t['type'] == 'SELL']
         win_trades = [t for t in sell_trades if t['profit_pct'] > 0]
         
@@ -209,29 +239,8 @@ def generate_backtest_report(data_dict: Dict[str, pd.DataFrame], backtest_result
     report.append("# 分钟K线回测报告")
     report.append("")
     report.append(f"**报告时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    report.append(f"**数据来源**: QMT 真实数据（1分钟K线）")
-    report.append(f"**数据时间范围**: 2026-01-12 ~ 2026-02-09（约21个交易日）")
+    report.append(f"**数据来源**: 模拟/QMT数据")
     report.append("")
-    
-    report.append("## 1. 数据完整性验证")
-    report.append("")
-    
-    for code, df in data_dict.items():
-        report.append(f"### {code}")
-        report.append(f"- K线数量: {len(df)}")
-        report.append(f"- 时间范围: {df['time_str'].min()} ~ {df['time_str'].max()}")
-        report.append(f"- 缺失值: {df.isnull().sum().sum()}")
-        report.append("")
-    
-    report.append("## 2. 数据统计分析")
-    report.append("")
-    
-    for code, df in data_dict.items():
-        df['amplitude'] = (df['high'] - df['low']) / df['close'] * 100
-        report.append(f"### {code}")
-        report.append(f"- 平均成交量: {df['volume'].mean():,.0f}")
-        report.append(f"- 平均振幅: {df['amplitude'].mean():.2f}%")
-        report.append("")
     
     report.append("## 3. 回测策略结果")
     report.append("")
@@ -248,40 +257,6 @@ def generate_backtest_report(data_dict: Dict[str, pd.DataFrame], backtest_result
         report.append(f"- 平均收益率: {result['avg_return']:.2f}%")
         report.append("")
     
-    report.append("## 4. 分钟K线 vs Tick数据对比")
-    report.append("")
-    report.append("| 特性 | Tick数据 | 1分钟K线 |")
-    report.append("|------|---------|----------|")
-    report.append("| 权限要求 | 需要L2（付费） | 免费 |")
-    report.append("| 数据量 | ~2GB/天 | ~20MB/天 |")
-    report.append("| 样本丢失风险 | 高（流式数据） | 低（可补全）|")
-    report.append("| 回测友好度 | 差 | 优 |")
-    report.append("| 适用场景 | 盘口分析 | 趋势分析 |")
-    report.append("")
-    
-    report.append("## 5. 结论")
-    report.append("")
-    report.append("✅ **数据完整性**: 模拟数据结构正确，可用于回测测试")
-    report.append("✅ **回测流程**: 策略逻辑正常，数据读取和处理无误")
-    report.append("✅ **分钟K线优势**: 数据量小、可补全、适合回测")
-    report.append("")
-    report.append("⚠️  **QMT问题**:")
-    report.append("- Python版本不兼容：当前Python 3.14.1，QMT需要Python 3.10")
-    report.append("- 解决方案：安装Python 3.10或使用模拟数据进行测试")
-    report.append("")
-    
-    report.append("## 6. 下一步行动")
-    report.append("")
-    report.append("1. 安装Python 3.10（如果需要真实QMT数据）")
-    report.append("2. 使用模拟数据完成策略回测")
-    report.append("3. 根据回测结果优化策略参数")
-    report.append("4. 建立自动化回测流程")
-    report.append("")
-    
-    report.append("---")
-    report.append("**报告生成时间**: " + datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-    report.append("**项目**: MyQuantTool - 分钟K线回测系统")
-    
     # 保存报告
     report_path = Path('data/backtest_1m_report.md')
     with open(report_path, 'w', encoding='utf-8') as f:
@@ -290,13 +265,16 @@ def generate_backtest_report(data_dict: Dict[str, pd.DataFrame], backtest_result
     print()
     print("=" * 80)
     print("📝 回测报告已生成")
-    print("=" * 80)
     print(f"📄 报告路径: {report_path}")
     print("=" * 80)
 
 
 def main():
     """主函数"""
+    parser = argparse.ArgumentParser(description='分钟K线回测工具')
+    parser.add_argument('--data-dir', type=str, default='data/minute_data_mock', help='数据目录路径')
+    args = parser.parse_args()
+
     print()
     print("=" * 80)
     print("🧪 MyQuantTool - 分钟K线回测测试")
@@ -304,7 +282,7 @@ def main():
     print()
     
     # 加载数据
-    data = load_minute_data('data/minute_data_mock')
+    data = load_minute_data(args.data_dir)
     
     if not data:
         print("❌ 没有数据可回测")
@@ -324,20 +302,6 @@ def main():
     
     print()
     print("✅ 回测测试完成！")
-    print()
-    print("📝 总结:")
-    print("   ✅ 数据完整性验证通过")
-    print("   ✅ 回测流程正常")
-    print("   ✅ 分钟K线数据适合回测")
-    print()
-    print("⚠️  QMT问题:")
-    print("   ❌ Python版本不兼容（3.14.1 vs 3.10）")
-    print("   ✅ 已使用模拟数据完成回测")
-    print()
-    print("🚀 建议:")
-    print("   1. 如果需要真实数据：安装Python 3.10")
-    print("   2. 当前模拟数据：可用于策略验证")
-    print("   3. 根据回测结果优化策略参数")
 
 
 if __name__ == "__main__":
