@@ -142,7 +142,12 @@ def main():
     if trap['trap_count'] > 0:
         print("  前5个诱多陷阱（按吸筹金额排序）:")
         for i, t in enumerate(trap['detected_traps'][:5], 1):
-            print(f"    {i}. {t['inflow_day']}: {t['inflow_amount']:.2f}万 → {t['dump_day']}: {t['dump_amount']:.2f}万 ({t.get('severity', 'N/A')})")
+            inflow_day = t.get('inflow_day', 'N/A')
+            inflow_amount = t.get('inflow_amount', 0)
+            dump_day = t.get('dump_day', 'N/A')
+            dump_amount = t.get('dump_amount', 0)
+            severity = t.get('severity', 'N/A')
+            print(f"    {i}. {inflow_day}: {inflow_amount:.2f}万 → {dump_day}: {dump_amount:.2f}万 ({severity})")
         print()
 
     print("=" * 60)

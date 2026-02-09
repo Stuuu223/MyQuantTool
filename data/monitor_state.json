@@ -1,0 +1,20 @@
+{
+  "update_time": "2026-02-09T09:08:43.123156",
+  "sectors": {
+    "板块A": {
+      "leaders": 12,
+      "breadth": 0.43999999999999995,
+      "status": "hot"
+    }
+  },
+  "signals": [
+    {
+      "time": "09:30:09",
+      "code": "000009.SZ",
+      "name": "测试股9",
+      "price": 19.0,
+      "flow": 1900
+    }
+  ],
+  "scan_count": 49
+}

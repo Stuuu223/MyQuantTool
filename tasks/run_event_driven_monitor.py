@@ -201,6 +201,28 @@ class EventDrivenMonitor:
     
     def is_trading_time(self) -> bool:
         """判断当前是否在交易时间内"""
+        # 🚨 紧急补丁：强制基于本地系统时间判断交易阶段
+        # 因为QMT时间戳异常（停留在午夜），绕过QMT的时间判断
+        from datetime import time as dt_time
+        
+        current_time = datetime.now().time()
+        
+        # 竞价阶段：9:15-9:25
+        if dt_time(9, 15) <= current_time <= dt_time(9, 25):
+            logger.warning("🚨 紧急模式：强制进入竞价阶段（基于本地时间）")
+            return True
+        
+        # 上午交易：9:30-11:30
+        elif dt_time(9, 30) <= current_time <= dt_time(11, 30):
+            logger.warning("🚨 紧急模式：强制进入上午交易（基于本地时间）")
+            return True
+        
+        # 下午交易：13:00-15:00
+        elif dt_time(13, 0) <= current_time <= dt_time(15, 0):
+            logger.warning("🚨 紧急模式：强制进入下午交易（基于本地时间）")
+            return True
+        
+        # 否则使用原逻辑
         return self.market_checker.is_trading_time()
     
     def save_snapshot(self, results: dict, mode: str):
@@ -756,8 +778,30 @@ class EventDrivenMonitor:
         try:
             # 调度循环
             while True:
-                # 1. 确定当前策略
-                strategy = self.phase_checker.determine_strategy()
+                # 🚨 紧急补丁：强制基于本地系统时间确定当前策略
+                # 因为QMT时间戳异常（停留在午夜），绕过QMT的策略判断
+                from datetime import time as dt_time
+                
+                current_time = datetime.now().time()
+                
+                # 竞价阶段：9:15-9:25
+                if dt_time(9, 15) <= current_time <= dt_time(9, 25):
+                    strategy = 'auction'
+                    logger.warning(f"🚨 紧急模式：强制进入竞价策略（基于本地时间 {current_time.strftime('%H:%M:%S')}）")
+                
+                # 上午交易：9:30-11:30
+                elif dt_time(9, 30) <= current_time <= dt_time(11, 30):
+                    strategy = 'event_driven'
+                    logger.warning(f"🚨 紧急模式：强制进入事件驱动策略（基于本地时间 {current_time.strftime('%H:%M:%S')}）")
+                
+                # 下午交易：13:00-15:00
+                elif dt_time(13, 0) <= current_time <= dt_time(15, 0):
+                    strategy = 'event_driven'
+                    logger.warning(f"🚨 紧急模式：强制进入事件驱动策略（基于本地时间 {current_time.strftime('%H:%M:%S')}）")
+                
+                # 否则使用原逻辑
+                else:
+                    strategy = self.phase_checker.determine_strategy()
                 
                 # 2. 打印策略
                 logger.info(f"🎯 当前策略: {strategy}")
