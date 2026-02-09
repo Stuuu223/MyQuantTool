@@ -33,6 +33,9 @@ def calculate_price_3d_change(code, current_price):
         # 获取最近5天数据（包含今天）
         df = ak.stock_zh_a_hist(symbol=symbol_6, period='daily', start_date='20250101', adjust='qfq')
         if df is not None and len(df) >= 2:
+            # 🔥 [紧急修复] 强制按日期升序排序
+            df.sort_values('日期', ascending=True, inplace=True)
+
             # 使用倒数第4天的收盘价（3天前）
             if len(df) >= 4:
                 ref_close = df.iloc[-4]['收盘']

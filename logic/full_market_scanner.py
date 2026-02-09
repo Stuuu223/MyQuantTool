@@ -1527,25 +1527,29 @@ class FullMarketScanner:
                         # 🔥 如果QMT失败或不可用，使用AkShare降级
                         if price_3d_change == 0.0:
                             try:
-                                import akshare as ak
-                                symbol_6 = CodeConverter.to_akshare(code)
-                                # 获取最近5天数据（包含今天）
-                                df = ak.stock_zh_a_hist(symbol=symbol_6, period='daily', start_date='20250101', adjust='qfq')
-                                if df is not None and len(df) >= 2:
-                                    # 使用倒数第4天的收盘价（3天前）
-                                    if len(df) >= 4:
-                                        ref_close = df.iloc[-4]['收盘']
-                                    else:
-                                        ref_close = df.iloc[0]['收盘']
-
-                                    if ref_close > 0:
-                                        price_3d_change = (current_price - ref_close) / ref_close
-                                        logger.info(f"✅ {code} 使用AkShare计算price_3d_change={price_3d_change:.4f}")
-                                    else:
-                                        logger.warning(f"⚠️  {code} AkShare ref_close=0，无法计算price_3d_change")
-                                else:
-                                    logger.warning(f"⚠️  {code} AkShare K线数据不足 (len={len(df) if df is not None else 0})，无法计算price_3d_change")
-                            except Exception as e:
+                                                        import akshare as ak
+                                                        symbol_6 = CodeConverter.to_akshare(code)
+                                                        # 获取最近5天数据（包含今天）
+                                                        df = ak.stock_zh_a_hist(symbol=symbol_6, period='daily', start_date='20250101', adjust='qfq')
+                                                        if df is not None and len(df) >= 2:
+                                                            # 🔥 [紧急修复] 强制按日期升序排序，确保计算3日涨幅而非长期涨幅
+                                                            # Bug：AkShare返回的数据未排序，导致iloc[-4]可能取到去年的数据
+                                                            # 修复后：确保iloc[-4]总是取到3天前的数据
+                                                            df.sort_values('日期', ascending=True, inplace=True)
+                            
+                                                            # 使用倒数第4天的收盘价（3天前）
+                                                            if len(df) >= 4:
+                                                                ref_close = df.iloc[-4]['收盘']
+                                                            else:
+                                                                ref_close = df.iloc[0]['收盘']
+                            
+                                                            if ref_close > 0:
+                                                                price_3d_change = (current_price - ref_close) / ref_close
+                                                                logger.info(f"✅ {code} 使用AkShare计算price_3d_change={price_3d_change:.4f}")
+                                                            else:
+                                                                logger.warning(f"⚠️  {code} AkShare ref_close=0，无法计算price_3d_change")
+                                                        else:
+                                                            logger.warning(f"⚠️  {code} AkShare K线数据不足 (len={len(df) if df is not None else 0})，无法计算price_3d_change")                            except Exception as e:
                                 logger.warning(f"⚠️  {code} AkShare获取K线失败: {e}，无法计算price_3d_change")
 
                 except Exception as e:
