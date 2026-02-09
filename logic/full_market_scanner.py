@@ -19,7 +19,7 @@ Date: 2026-02-05
 import time
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, List, Tuple, Optional
 from collections import defaultdict
 
@@ -1537,7 +1537,10 @@ class FullMarketScanner:
                             try:
                                 import akshare as ak
                                 symbol_6 = CodeConverter.to_akshare(code)
-                                df = ak.stock_zh_a_hist(symbol=symbol_6, period='daily', start_date='20250101', adjust='qfq')
+                                # ✅ [P0修复] 动态计算 start_date，避免年度切换时失效
+                                # 获取过去90天的数据，确保有足够的数据计算3日涨幅
+                                start_date = (datetime.now() - timedelta(days=90)).strftime('%Y%m%d')
+                                df = ak.stock_zh_a_hist(symbol=symbol_6, period='daily', start_date=start_date, adjust='qfq')
                                 if df is not None and len(df) >= 2:
                                     df.sort_values('日期', ascending=True, inplace=True)
                                     ref_close = df.iloc[-4]['收盘'] if len(df) >= 4 else df.iloc[0]['收盘']
