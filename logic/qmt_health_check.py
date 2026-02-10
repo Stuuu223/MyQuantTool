@@ -282,12 +282,29 @@ class QMTHealthChecker:
     def _check_data_mode(self) -> Dict[str, Any]:
         """检查行情数据模式"""
         try:
-            # 尝试获取实时订阅数据
-            tick = xtdata.get_full_tick(['000001.SZ'])
-            tick_data = tick.get('000001.SZ', {})
+            # 🔥 [修复] 与 server_login 保持一致，使用多标的探测
+            # 平安银行 + 贵州茅台 + 平安银行（深市），覆盖沪深两市
+            test_codes = ['000001.SH', '600519.SH', '000001.SZ']
+            tick = xtdata.get_full_tick(test_codes)
+
+            # 检查至少有一个探测标的能获取到数据
+            valid_tick = None
+            valid_code = None
+            for code in test_codes:
+                if code in tick and tick[code]:
+                    valid_tick = tick[code]
+                    valid_code = code
+                    break
+
+            if not valid_tick:
+                return {
+                    'status': 'WARNING',
+                    'message': f'所有探测标的 {test_codes} 均无数据',
+                    'data_mode': 'UNKNOWN'
+                }
 
             # 检查数据时间
-            timetag = tick_data.get('timetag', '')
+            timetag = valid_tick.get('timetag', '')
             current_time = datetime.now()
 
             # 如果时间戳超过1小时，可能是本地文件模式
@@ -299,24 +316,27 @@ class QMTHealthChecker:
                     if time_diff > 3600:  # 超过1小时
                         return {
                             'status': 'WARNING',
-                            'message': f'数据时间滞后 {time_diff/60:.0f} 分钟，可能是本地文件模式',
+                            'message': f'数据时间滞后 {time_diff/60:.0f} 分钟，可能是本地文件模式（探测标的: {valid_code}）',
                             'data_mode': 'LOCAL_FILE',
-                            'time_diff_seconds': time_diff
+                            'time_diff_seconds': time_diff,
+                            'test_code': valid_code
                         }
                     else:
                         return {
                             'status': 'OK',
-                            'message': '数据实时更新',
+                            'message': f'数据实时更新（探测标的: {valid_code}）',
                             'data_mode': 'REALTIME_SUBSCRIPTION',
-                            'time_diff_seconds': time_diff
+                            'time_diff_seconds': time_diff,
+                            'test_code': valid_code
                         }
                 except:
                     pass
 
             return {
                 'status': 'WARNING',
-                'message': '无法判断数据模式',
-                'data_mode': 'UNKNOWN'
+                'message': f'无法判断数据模式（探测标的: {valid_code}）',
+                'data_mode': 'UNKNOWN',
+                'test_code': valid_code
             }
 
         except Exception as e:

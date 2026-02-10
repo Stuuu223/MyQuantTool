@@ -1927,13 +1927,18 @@ class FullMarketScanner:
                 }
                 scenario_result = self.scenario_classifier.classify(scenario_input)
 
-                # 使用决策树进行分类
-                decision_tag = self._calculate_decision_tag(
-                    ratio, 
-                    risk_score, 
-                    trap_result.get('signals', []),
-                    risk_features['is_price_up_3d_capital_not_follow']
-                )
+                # 🔥 [白名单短路] 如果是主线起爆候选，直接强制通过，跳过风险判定
+                if scenario_result.is_potential_mainline:
+                    decision_tag = 'FOCUS✅'  # 强制进入机会池
+                    logger.info(f"🚀 [白名单短路] {code} 命中主线起爆，跳过风险判定 (原Risk: {risk_score:.2f})")
+                else:
+                    # 正常的决策树逻辑
+                    decision_tag = self._calculate_decision_tag(
+                        ratio,
+                        risk_score,
+                        trap_result.get('signals', []),
+                        risk_features['is_price_up_3d_capital_not_follow']
+                    )
                 result['decision_tag'] = decision_tag
                 result['risk_features'] = risk_features  # 保存特征用于调试
 
@@ -1954,7 +1959,7 @@ class FullMarketScanner:
                 result['scenario_confidence'] = scenario_result.confidence
                 result['scenario_reasons'] = scenario_result.reasons
 
-                # 记录被标记为禁止场景的股票
+                # 记录被标记为禁止场景的股票（白名单短路后，主线起爆候选不会进入这里）
                 if scenario_result.is_tail_rally or scenario_result.is_potential_trap:
                     logger.warning(f"⚠️  [{code}] 被标记为禁止场景: {scenario_result.scenario.value}")
                     logger.warning(f"   原因: {', '.join(scenario_result.reasons[:2])}")  # 只打印前2条原因，避免刷屏

@@ -82,10 +82,29 @@ class EventDrivenMonitor:
         self.market_checker = MarketStatusChecker()
         self.event_manager = EventManager()
         self.event_recorder = get_event_recorder()  # 初始化事件记录器
-        
+
         # 初始化市场阶段检查器
         self.phase_checker = MarketPhaseChecker(self.market_checker)
-        
+
+        # 🔥 [修复] 加载紧急模式配置
+        import json
+        config_path = 'config/market_scan_config.json'
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+                self.emergency_config = config.get('system', {}).get('emergency_mode', {
+                    'enabled': False,
+                    'allow_bypass_qmt_check': False,
+                    'bypass_reason': ''
+                })
+        except Exception as e:
+            logger.warning(f"⚠️  加载紧急模式配置失败: {e}，使用默认配置（紧急模式关闭）")
+            self.emergency_config = {
+                'enabled': False,
+                'allow_bypass_qmt_check': False,
+                'bypass_reason': ''
+            }
+
         # 状态管理
         self.last_signature = None
         self.scan_count = 0
@@ -783,29 +802,34 @@ class EventDrivenMonitor:
         try:
             # 调度循环
             while True:
-                # 🚨 紧急补丁：强制基于本地系统时间确定当前策略
-                # 因为QMT时间戳异常（停留在午夜），绕过QMT的策略判断
-                from datetime import time as dt_time
-                
-                current_time = datetime.now().time()
-                
-                # 竞价阶段：9:15-9:25
-                if dt_time(9, 15) <= current_time <= dt_time(9, 25):
-                    strategy = 'auction'
-                    logger.warning(f"🚨 紧急模式：强制进入竞价策略（基于本地时间 {current_time.strftime('%H:%M:%S')}）")
-                
-                # 上午交易：9:30-11:30
-                elif dt_time(9, 30) <= current_time <= dt_time(11, 30):
-                    strategy = 'event_driven'
-                    logger.warning(f"🚨 紧急模式：强制进入事件驱动策略（基于本地时间 {current_time.strftime('%H:%M:%S')}）")
-                
-                # 下午交易：13:00-15:00
-                elif dt_time(13, 0) <= current_time <= dt_time(15, 0):
-                    strategy = 'event_driven'
-                    logger.warning(f"🚨 紧急模式：强制进入事件驱动策略（基于本地时间 {current_time.strftime('%H:%M:%S')}）")
-                
-                # 否则使用原逻辑
+                # 🔥 [修复] 仅在配置开启时进入紧急模式
+                if self.emergency_config.get('enabled', False):
+                    # 🚨 [配置启用] 紧急模式：强制基于本地系统时间确定当前策略
+                    # 因为QMT时间戳异常（停留在午夜），绕过QMT的策略判断
+                    from datetime import time as dt_time
+
+                    current_time = datetime.now().time()
+
+                    # 竞价阶段：9:15-9:25
+                    if dt_time(9, 15) <= current_time <= dt_time(9, 25):
+                        strategy = 'auction'
+                        logger.warning(f"🚨 [配置启用] 紧急模式：强制进入竞价策略（基于本地时间 {current_time.strftime('%H:%M:%S')}）")
+
+                    # 上午交易：9:30-11:30
+                    elif dt_time(9, 30) <= current_time <= dt_time(11, 30):
+                        strategy = 'event_driven'
+                        logger.warning(f"🚨 [配置启用] 紧急模式：强制进入事件驱动策略（基于本地时间 {current_time.strftime('%H:%M:%S')}）")
+
+                    # 下午交易：13:00-15:00
+                    elif dt_time(13, 0) <= current_time <= dt_time(15, 0):
+                        strategy = 'event_driven'
+                        logger.warning(f"🚨 [配置启用] 紧急模式：强制进入事件驱动策略（基于本地时间 {current_time.strftime('%H:%M:%S')}）")
+
+                    # 否则使用原逻辑
+                    else:
+                        strategy = self.phase_checker.determine_strategy()
                 else:
+                    # 🔥 [修复] 正常模式：使用QMT时间判断
                     strategy = self.phase_checker.determine_strategy()
                 
                 # 2. 打印策略
@@ -852,22 +876,20 @@ class EventDrivenMonitor:
         logger.info("📡 [EVENT_DRIVEN] 进入事件驱动模式")
 
         # ===== QMT 状态检查（盘中模式强制要求实时）=====
-        # 🔥 紧急绕过：假设 QMT 是好的（9:32 生死时速）
-        # from logic.qmt_health_check import require_realtime_mode
-        # try:
-        #     require_realtime_mode()
-        # except RuntimeError as e:
-        #     # 🚨 紧急补丁：基于本地时间判断，绕过QMT状态检查
-        #     current_time = datetime.now().time()
-        #     if dt_time(9, 30) <= current_time <= dt_time(11, 30) or dt_time(13, 0) <= current_time <= dt_time(15, 0):
-        #         logger.warning(f"🚨 紧急模式：QMT状态检查失败，但本地时间 {current_time.strftime('%H:%M:%S')} 在交易时间内，继续监控")
-        #         logger.warning(f"   QMT错误: {e}")
-        #     else:
-        #         logger.error(f"❌ QMT 状态不满足实时决策要求: {e}")
-        #         logger.error("❌ 无法进行盘中监控，等待下一次循环...")
-        #         time.sleep(60)
-        #         return
-        logger.warning("🔥 紧急绕过：QMT状态检查已移除，假设QMT正常工作")
+        # 🔥 [修复] 仅在配置开启时允许绕过QMT检查
+        if self.emergency_config.get('allow_bypass_qmt_check', False):
+            bypass_reason = self.emergency_config.get('bypass_reason', 'No reason')
+            logger.warning(f"🔥 [配置启用] 紧急绕过 QMT 检查: {bypass_reason}")
+        else:
+            # 🔥 [修复] 恢复正常的检查逻辑
+            from logic.qmt_health_check import require_realtime_mode
+            try:
+                require_realtime_mode()
+            except RuntimeError as e:
+                logger.error(f"❌ QMT 状态不满足要求且紧急绕过未开启: {e}")
+                logger.error("❌ 无法进行盘中监控，等待下一次循环...")
+                time.sleep(60)
+                return
         # ===== QMT 状态检查结束 =====
         
         # 1. 清理过期候选

@@ -1,1 +1,1 @@
-{"level1": {"pct_chg_min": 2.0, "amount_min": 20000000, "turnover_min": 1.5}, "level2": {"main_inflow_min": 5000000, "super_ratio_min": 0.3}, "level3": {"risk_score_max": 0.75}}
+{"system": {"emergency_mode": {"enabled": false, "allow_bypass_qmt_check": false, "bypass_reason": "Manual override for data lag", "description": "紧急模式配置：默认关闭。仅在QMT数据严重异常且人工确认后才可启用。"}}, "level1": {"pct_chg_min": 2.0, "amount_min": 20000000, "turnover_min": 1.5}, "level2": {"main_inflow_min": 5000000, "super_ratio_min": 0.3}, "level3": {"risk_score_max": 0.75}}
