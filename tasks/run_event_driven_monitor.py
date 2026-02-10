@@ -20,9 +20,11 @@ import time
 import os
 import sys
 import json
+import heapq
 from datetime import datetime, time as dt_time
 from pathlib import Path
 from typing import Dict, List, Any, Tuple
+from dataclasses import dataclass
 
 # 添加项目根目录到Python路径
 project_root = Path(__file__).parent.parent
@@ -44,6 +46,19 @@ from logic.market_phase_checker import MarketPhaseChecker
 from logic.sector_resonance import SectorResonanceCalculator
 
 logger = get_logger(__name__)
+
+
+@dataclass
+class Candidate:
+    """候选股票（带优先级）"""
+    code: str
+    timestamp: datetime
+    trigger_reason: str
+    priority: int  # 优先级（越高越重要）
+    
+    def __lt__(self, other):
+        # heapq是最小堆，所以priority越小越优先（反转）
+        return self.priority < other.priority
 
 
 class EventDrivenMonitor:
@@ -128,8 +143,10 @@ class EventDrivenMonitor:
         self.last_state_export_time = None  # 上次状态导出时间
         self.state_export_interval = 5  # 每5秒导出一次状态
         
-        # 真实候选池（带时间戳）
-        self.hot_candidates = {}  # {code: {'timestamp': datetime, 'trigger_reason': str}}
+        # 真实候选池（带优先级队列）
+        self.hot_candidates_heap: List[Candidate] = []  # 优先级队列
+        self.hot_candidates_set = set()  # 用于快速查重
+        self.max_candidates = 100  # 候选池上限
         self.candidate_ttl_minutes = 10  # 候选池TTL：10分钟
         self.last_deep_scan_time = None  # 上次深扫时间
         
@@ -441,6 +458,82 @@ class EventDrivenMonitor:
         # 兜底
         return "BLOCK❌"
 
+    def _validate_flow_data_freshness(self, flow_data: dict, tolerance_minutes: int = 30) -> bool:
+        """
+        🔥 [P0修复] 验证资金流数据时效性（小时级精度）
+        
+        Args:
+            flow_data: 资金流数据字典
+            tolerance_minutes: 允许的数据延迟（分钟），默认30分钟
+        
+        Returns:
+            bool: 数据是否新鲜
+        """
+        if not flow_data or 'latest' not in flow_data:
+            logger.warning("❌ 资金流数据缺少时间戳")
+            return False
+        
+        latest = flow_data.get('latest', {})
+        fetch_time_str = latest.get('date', '')
+        
+        if not fetch_time_str:
+            logger.warning("❌ 资金流数据缺少日期时间戳")
+            return False
+        
+        try:
+            # 解析日期时间（格式：YYYY-MM-DD）
+            fetch_time = datetime.strptime(fetch_time_str, '%Y-%m-%d').replace(hour=15, minute=0)
+        except Exception as e:
+            logger.error(f"❌ 时间戳解析失败: {e}")
+            return False
+        
+        # 计算数据年龄（分钟）
+        age_minutes = (datetime.now() - fetch_time).total_seconds() / 60
+        
+        if age_minutes > tolerance_minutes:
+            logger.warning(f"⚠️ 资金流数据已过期: {age_minutes:.1f} 分钟前（容忍 {tolerance_minutes} 分钟）")
+            return False
+        
+        return True
+
+    def _calculate_priority(self, trigger_reason: str, stock_data: dict = None) -> int:
+        """
+        🔥 [P1修复] 计算候选优先级
+        
+        优先级规则：
+        - 涨停板: 100
+        - 巨量流入（>1亿）: 80
+        - 板块共振: 60
+        - Level1初筛: 40
+        - 默认: 20
+        
+        Args:
+            trigger_reason: 触发原因
+            stock_data: 股票数据（可选，用于动态调整）
+        
+        Returns:
+            int: 优先级（越高越重要）
+        """
+        priority_map = {
+            'limit_up': 100,
+            'huge_inflow': 80,
+            'sector_resonance': 60,
+            'level1_screening': 40,
+            'default': 20
+        }
+        
+        base_priority = priority_map.get(trigger_reason, priority_map['default'])
+        
+        # 根据stock_data动态调整
+        if stock_data:
+            main_net_inflow = stock_data.get('main_net_inflow', 0) or stock_data.get('flow_data', {}).get('latest', {}).get('main_net_inflow', 0)
+            if main_net_inflow and main_net_inflow > 100_000_000:  # 超过1亿
+                base_priority += 20
+            elif main_net_inflow and main_net_inflow > 50_000_000:  # 超过5000万
+                base_priority += 10
+        
+        return base_priority
+
     def _print_low_risk_opportunities(self, opportunities: list):
         """打印低风险机会池表格（风险≤0.2）"""
         # 过滤低风险股票
@@ -461,6 +554,14 @@ class EventDrivenMonitor:
             last_price = item.get('last_price', 0)
             pct_chg = item.get('pct_chg', 0)
 
+            # 获取资金流数据
+            flow_data = item.get('flow_data', {})
+            
+            # 🔥 [P0修复] 验证资金流数据时效性
+            if not self._validate_flow_data_freshness(flow_data):
+                logger.warning(f"⚠️ {code} 资金流数据过期，跳过显示")
+                continue
+
             # 计算流通市值（优先使用 circulating_market_cap，否则用 circulating_shares * last_price）
             circulating_market_cap = item.get('circulating_market_cap', 0)
             if circulating_market_cap == 0:
@@ -471,7 +572,6 @@ class EventDrivenMonitor:
             amount_yuan = item.get('amount', 0)
 
             # 获取主力净流入
-            flow_data = item.get('flow_data', {})
             latest = flow_data.get('latest', {})
             main_net_yuan = latest.get('main_net_inflow', 0)
 
@@ -611,7 +711,8 @@ class EventDrivenMonitor:
         cache_ttl = 300  # 5分钟
         if sector_name in self.sector_resonance_cache:
             result, timestamp = self.sector_resonance_cache[sector_name]
-            if (datetime.now() - timestamp).seconds < cache_ttl:
+            # 🔥 [P0修复] 使用total_seconds()而不是seconds，避免跨天场景错误
+            if (datetime.now() - timestamp).total_seconds() < cache_ttl:
                 # 缓存有效，使用缓存结果
                 if not result.is_resonant:
                     reason = f"⏸️ [时机斧] 板块未共振（缓存）：{result.reason}"
@@ -1023,12 +1124,14 @@ class EventDrivenMonitor:
         self._update_candidates_from_market_scan()
         
         # 3. 打印候选池状态
-        logger.info(f"   候选池: {len(self.hot_candidates)} 只")
-        if self.hot_candidates:
-            logger.info(f"   候选池: {list(self.hot_candidates.keys())[:3]}...")
+        logger.info(f"   候选池: {len(self.hot_candidates_heap)} 只")
+        if self.hot_candidates_heap:
+            # 显示优先级最高的3个候选
+            top_candidates = sorted(self.hot_candidates_heap, key=lambda x: x.priority, reverse=True)[:3]
+            logger.info(f"   候选池: {[c.code for c in top_candidates]}...")
         
         # 4. 如果有候选，执行深扫
-        if self.hot_candidates:
+        if self.hot_candidates_heap:
             self._deep_scan_candidates()
         else:
             logger.info("   候选池为空，跳过深扫")
@@ -1055,59 +1158,76 @@ class EventDrivenMonitor:
         except Exception as e:
             logger.warning(f"   全市场初筛失败: {e}")
     
-    def _add_candidate(self, code: str, trigger_reason: str = 'unknown') -> bool:
+    def _add_candidate(self, code: str, trigger_reason: str = 'unknown', stock_data: dict = None) -> bool:
         """
-        添加股票到候选池
+        🔥 [P1修复] 添加候选（带优先级淘汰）
         
         Args:
             code: 股票代码
             trigger_reason: 触发原因
+            stock_data: 股票数据（用于动态调整优先级）
         
         Returns:
-            bool: 是否成功添加（如果已存在且未过期，返回False）
+            bool: 是否成功添加
         """
-        if code in self.hot_candidates:
-            # 已存在，更新时间戳
-            self.hot_candidates[code]['timestamp'] = datetime.now()
-            self.hot_candidates[code]['trigger_reason'] = trigger_reason
+        if code in self.hot_candidates_set:
+            # 已存在，更新优先级和时间戳
+            # 需要先从堆中删除，再重新添加（因为优先级可能变化）
+            self.hot_candidates_heap = [c for c in self.hot_candidates_heap if c.code != code]
+            heapq.heapify(self.hot_candidates_heap)
+            
+            priority = self._calculate_priority(trigger_reason, stock_data)
+            candidate = Candidate(code, datetime.now(), trigger_reason, priority)
+            heapq.heappush(self.hot_candidates_heap, candidate)
             return False
         
-        # 检查候选池大小限制
-        if len(self.hot_candidates) >= 100:
-            # 静默处理，不重复输出警告
-            return False
+        priority = self._calculate_priority(trigger_reason, stock_data)
+        candidate = Candidate(code, datetime.now(), trigger_reason, priority)
         
-        # 添加新候选
-        self.hot_candidates[code] = {
-            'timestamp': datetime.now(),
-            'trigger_reason': trigger_reason
-        }
+        if len(self.hot_candidates_heap) >= self.max_candidates:
+            # 队列满，比较优先级
+            lowest = self.hot_candidates_heap[0]
+            if priority > lowest.priority:
+                # 淘汰最低优先级
+                heapq.heappop(self.hot_candidates_heap)
+                self.hot_candidates_set.remove(lowest.code)
+                logger.info(f"   淘汰低优先级候选: {lowest.code} (P{lowest.priority})")
+            else:
+                logger.warning(f"   候选池满且优先级不足: {code} (P{priority})")
+                return False
+        
+        # 加入优先级队列
+        heapq.heappush(self.hot_candidates_heap, candidate)
+        self.hot_candidates_set.add(code)
+        logger.info(f"   新增候选: {code} (P{priority}, {trigger_reason})")
         return True
     
     def _cleanup_expired_candidates(self):
         """清理过期的候选（TTL）"""
-        if not self.hot_candidates:
+        if not self.hot_candidates_heap:
             return
         
-        expired_codes = []
         now = datetime.now()
+        expired_codes = []
         
-        for code, data in self.hot_candidates.items():
-            age_minutes = (now - data['timestamp']).total_seconds() / 60
+        for candidate in self.hot_candidates_heap:
+            age_minutes = (now - candidate.timestamp).total_seconds() / 60
             if age_minutes > self.candidate_ttl_minutes:
-                expired_codes.append(code)
-        
-        for code in expired_codes:
-            del self.hot_candidates[code]
-        
+                expired_codes.append(candidate.code)
+
+        # 移除过期候选
         if expired_codes:
+            self.hot_candidates_heap = [c for c in self.hot_candidates_heap if c.code not in expired_codes]
+            heapq.heapify(self.hot_candidates_heap)
+            for code in expired_codes:
+                self.hot_candidates_set.discard(code)
             logger.info(f"   清理过期候选: {len(expired_codes)} 只")
     
     def _deep_scan_candidates(self):
         """对候选池执行深度扫描"""
         try:
             # 提取候选股票代码列表
-            candidate_codes = list(self.hot_candidates.keys())
+            candidate_codes = [c.code for c in self.hot_candidates_heap]
             
             logger.info(f"   开始深度扫描: {len(candidate_codes)} 只候选")
             
