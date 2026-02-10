@@ -1489,11 +1489,12 @@ class FullMarketScanner:
                 try:
                     # 获取最近4根日K线 (包含今天)
                     # count=4 逻辑: [T-3, T-2, T-1, Today] -> Close[0] 即为3天前的收盘价
-                    current_price = candidate_dict.get('last_price', 0)
+                    current_price = candidate_dict.get('last_price', 0) or 0
                     
                     price_3d_change = 0.0
                     
-                    if current_price <= 0:
+                    # 🔥 修复：类型安全检查，避免 None > 0 错误
+                    if not isinstance(current_price, (int, float)) or current_price <= 0:
                         logger.warning(f"⚠️  {code} current_price={current_price}，无法计算price_3d_change")
                     else:
                         # 策略1：QMT 日线数据 (最快)
@@ -1737,7 +1738,8 @@ class FullMarketScanner:
                 if trade_date and main_net_inflow:
                     try:
                         circ_mv = get_circ_mv(code, trade_date)
-                        if circ_mv > 0:
+                        # 🔥 修复：类型安全检查，避免 None > int 错误
+                        if isinstance(circ_mv, (int, float)) and circ_mv > 0:
                             # 🔥 [Hotfix] 改进 ratio 计算逻辑：基于流通市值 + 30日累计
                             # 基础 ratio：今日净流入 / 流通市值
                             ratio_base = main_net_inflow / circ_mv * 100
@@ -1763,11 +1765,17 @@ class FullMarketScanner:
                                 # 没有 30 日数据，只使用基础 ratio
                                 ratio = ratio_base
 
-                            # 确保 ratio 不为 None
-                            if ratio is None:
-                                ratio = 0
+                        else:
+                            # 🔥 修复：circ_mv 为 None 或 ≤ 0 时，ratio 设为 0.0
+                            ratio = 0.0
+                            logger.debug(f"⚠️  {code} circ_mv 无效（{circ_mv}），使用 ratio=0.0")
+
+                        # 确保 ratio 不为 None
+                        if ratio is None:
+                            ratio = 0.0
                     except Exception as e:
                         logger.warning(f"⚠️  {code} 计算ratio失败: {e}")
+                        ratio = 0.0  # 🔥 修复：失败时使用兜底值
 
                 # 综合风险评分（传入 ratio 参数）
                 risk_score = self._calculate_risk_score(trap_result, capital_result, ratio or 0)

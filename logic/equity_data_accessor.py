@@ -95,37 +95,42 @@ def get_circ_mv(ts_code: str, trade_date: str) -> Optional[float]:
     is_new_structure = "{code: {date: {...}}}" in data_structure
 
     # 第3关：查询数据（根据结构不同，访问路径不同）
+    stock_data = None
+
     if is_new_structure:
         # 新结构：data[code][date]
         stock_by_date = equity_data.get("data", {}).get(ts_code, {})
         stock_data = stock_by_date.get(trade_date)
 
         if stock_data is None:
-            logger.warning(f"[CRITICAL] circ_mv 数据缺失: ts_code={ts_code} @ {trade_date} 不存在")
-            logger.warning(f"  可能原因: 该日期数据未同步，或该股票在该日期未上市")
-            return None  # 🔧 修复：返回 None 而非抛异常
+            logger.debug(f"circ_mv 数据缺失: ts_code={ts_code} @ {trade_date} (新结构)")
 
     else:
-        # 旧结构（兼容）：data[date][code]
+        # 🔥 修复：支持多种旧结构
+        # 旧结构1：data[date][code]
         data_by_date = equity_data.get("data", {})
-        daily_data = data_by_date.get(trade_date)
+        if data_by_date and trade_date in data_by_date:
+            stock_data = data_by_date[trade_date].get(ts_code)
 
-        if daily_data is None:
-            logger.warning(f"[CRITICAL] circ_mv 数据缺失: trade_date={trade_date} 不在 equity_info 中")
-            return None  # 🔧 修复：返回 None 而非抛异常
-
-        stock_data = daily_data.get(ts_code)
+        # 旧结构2：直接 code 键（equity_info_mvp.json 格式）
+        if stock_data is None and ts_code in equity_data:
+            stock_data = equity_data[ts_code]
 
         if stock_data is None:
-            logger.warning(f"[CRITICAL] circ_mv 数据缺失: ts_code={ts_code} @ {trade_date} 不存在")
-            return None  # 🔧 修复：返回 None 而非抛异常
+            logger.debug(f"circ_mv 数据缺失: ts_code={ts_code} @ {trade_date} (旧结构)")
+
+    if stock_data is None:
+        return None
 
     # 第4关：提取并校验 circ_mv
-    # 🔥 修复：支持多种字段名映射（float_mv, circ_mv, circulating_market_cap）
-    circ_mv = stock_data.get("circ_mv") or stock_data.get("float_mv") or stock_data.get("circulating_market_cap", 0)
+    # 🔥 修复：支持多种字段名映射（float_mv, circ_mv, circulating_market_cap, float_market_cap）
+    circ_mv = (stock_data.get("circ_mv") or
+               stock_data.get("float_mv") or
+               stock_data.get("circulating_market_cap") or
+               stock_data.get("float_market_cap") or 0)
 
-    if circ_mv <= 0:
-        logger.warning(f"[CRITICAL] circ_mv 数据缺失或非法值: ts_code={ts_code} @ {trade_date}, circ_mv={circ_mv}")
-        return None  # 🔧 修复：返回 None 而非抛异常
+    if not isinstance(circ_mv, (int, float)) or circ_mv <= 0:
+        logger.debug(f"circ_mv 数据缺失或非法值: ts_code={ts_code} @ {trade_date}, circ_mv={circ_mv}")
+        return None
 
     return float(circ_mv)
