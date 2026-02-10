@@ -27,7 +27,7 @@ sys.path.insert(0, str(project_root))
 
 from logic.full_market_scanner import FullMarketScanner
 from logic.logger import get_logger
-import xtdata
+from xtquant import xtdata
 
 logger = get_logger(__name__)
 
