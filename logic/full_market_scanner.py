@@ -1912,8 +1912,11 @@ class FullMarketScanner:
             score *= 0.7
         elif ratio > 0.1:  # ratio > 0.1%（主力资金推动力中等），轻微降低风险
             score *= 0.9
-        elif ratio < 0.01:  # ratio < 0.01%（主力资金推动力极弱），大幅提高风险
+        elif ratio < 0.01 and ratio > 0:  # 🔥 修复：ratio 在 0-0.01% 之间（真正推动力弱），才放大风险
             score *= 1.5
+        # 🔥 修复：ratio=0（数据缺失）时不放大风险，保持原分数
+        elif ratio == 0:
+            score = score  # 不做调整
 
         return min(max(score, 0.0), 1.0)
     

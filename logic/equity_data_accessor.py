@@ -121,11 +121,11 @@ def get_circ_mv(ts_code: str, trade_date: str) -> Optional[float]:
             return None  # 🔧 修复：返回 None 而非抛异常
 
     # 第4关：提取并校验 circ_mv
-    # 优先使用 circ_mv，如果没有则使用 float_mv（别名）
-    circ_mv = float(stock_data.get("circ_mv") or stock_data.get("float_mv", 0))
+    # 🔥 修复：支持多种字段名映射（float_mv, circ_mv, circulating_market_cap）
+    circ_mv = stock_data.get("circ_mv") or stock_data.get("float_mv") or stock_data.get("circulating_market_cap", 0)
 
     if circ_mv <= 0:
-        logger.warning(f"[CRITICAL] circ_mv 非法值: ts_code={ts_code} @ {trade_date}, circ_mv={circ_mv}")
+        logger.warning(f"[CRITICAL] circ_mv 数据缺失或非法值: ts_code={ts_code} @ {trade_date}, circ_mv={circ_mv}")
         return None  # 🔧 修复：返回 None 而非抛异常
 
-    return circ_mv
+    return float(circ_mv)
