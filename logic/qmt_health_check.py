@@ -101,7 +101,25 @@ class QMTHealthChecker:
             result['recommendations'].append('⚠️  当前使用本地文件模式，请检查实时订阅')
 
         # 6. 综合判断
-        if result['status'] != 'ERROR' and result['status'] != 'WARNING':
+        # 6. 综合判断（三态判定）
+        errors = []
+        warnings = []
+
+        # 收集所有错误和警告
+        for check_name, check_result in result['details'].items():
+            if check_result.get('status') == 'ERROR':
+                errors.append(f'{check_name}: {check_result.get("message", "未知错误")}')
+            elif check_result.get('status') == 'WARNING':
+                warnings.append(f'{check_name}: {check_result.get("message", "未知警告")}')
+
+        # 根据 errors/warnings 确定状态
+        if errors:
+            result['status'] = 'ERROR'
+            result['recommendations'] = [f'❌ {err}' for err in errors]
+        elif warnings:
+            result['status'] = 'WARNING'
+            result['recommendations'] = [f'⚠️  {warn}' for warn in warnings]
+        else:
             result['status'] = 'HEALTHY'
             result['recommendations'].append('✅ QMT 状态正常，可以进行实时决策')
 
