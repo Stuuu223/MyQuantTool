@@ -11,7 +11,7 @@ Author: MyQuantTool Team
 Date: 2026-02-08
 """
 
-from datetime import datetime, time as dt_time
+from datetime import datetime, time as dt_time, timezone, timedelta
 from typing import Dict, Any
 import traceback
 
@@ -305,18 +305,24 @@ class QMTHealthChecker:
 
             # 检查数据时间
             timetag = valid_tick.get('timetag', '')
-            current_time = datetime.now()
+            # 🔥 [修复] 使用北京时间（UTC+8）与 tick 时间戳比较，避免时区误判
+            beijing_tz = timezone(timedelta(hours=8))
+            current_time = datetime.now(beijing_tz)
 
             # 如果时间戳超过1小时，可能是本地文件模式
             if timetag:
                 try:
+                    # tick 时间戳是无时区信息，但 QMT 返回的是北京时间
                     tick_time = datetime.strptime(timetag, '%Y%m%d %H:%M:%S')
+                    # 为 tick_time 添加北京时间时区，使其与 current_time 具有时区信息
+                    tick_time = tick_time.replace(tzinfo=beijing_tz)
+
                     time_diff = (current_time - tick_time).total_seconds()
 
                     if time_diff > 3600:  # 超过1小时
                         return {
                             'status': 'WARNING',
-                            'message': f'数据时间滞后 {time_diff/60:.0f} 分钟，可能是本地文件模式（探测标的: {valid_code}）',
+                            'message': f'数据时间滞后 {time_diff/60:.0f} 分钟，可能是本地文件模式（探测标的: {valid_code}）",
                             'data_mode': 'LOCAL_FILE',
                             'time_diff_seconds': time_diff,
                             'test_code': valid_code
@@ -329,8 +335,8 @@ class QMTHealthChecker:
                             'time_diff_seconds': time_diff,
                             'test_code': valid_code
                         }
-                except:
-                    pass
+                except Exception as e:
+                    logger.debug(f"时间戳解析失败: {e}")
 
             return {
                 'status': 'WARNING',

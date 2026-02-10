@@ -86,9 +86,13 @@ class EventDrivenMonitor:
         # 初始化市场阶段检查器
         self.phase_checker = MarketPhaseChecker(self.market_checker)
 
-        # 🔥 [修复] 加载紧急模式配置
+        # 🔥 [修复] 加载紧急模式配置（使用绝对路径，避免依赖启动目录）
         import json
-        config_path = 'config/market_scan_config.json'
+        from pathlib import Path
+        # 定位项目根目录：从当前文件路径向上两级（tasks -> 项目根）
+        project_root = Path(__file__).resolve().parent.parent
+        config_path = project_root / 'config' / 'market_scan_config.json'
+
         try:
             with open(config_path, 'r', encoding='utf-8') as f:
                 config = json.load(f)
@@ -97,8 +101,10 @@ class EventDrivenMonitor:
                     'allow_bypass_qmt_check': False,
                     'bypass_reason': ''
                 })
+            logger.info(f"✅ 加载紧急模式配置: {config_path}")
         except Exception as e:
             logger.warning(f"⚠️  加载紧急模式配置失败: {e}，使用默认配置（紧急模式关闭）")
+            logger.warning(f"   配置路径: {config_path}")
             self.emergency_config = {
                 'enabled': False,
                 'allow_bypass_qmt_check': False,
