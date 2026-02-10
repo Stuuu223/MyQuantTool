@@ -1491,6 +1491,18 @@ class FullMarketScanner:
                     # count=4 逻辑: [T-3, T-2, T-1, Today] -> Close[0] 即为3天前的收盘价
                     current_price = candidate_dict.get('last_price', 0) or 0
                     
+                    # 🔥 [终极修复] QMT 实时价格兜底（AkShare current_price=None 时）
+                    if not isinstance(current_price, (int, float)) or current_price <= 0:
+                        if QMT_AVAILABLE:
+                            try:
+                                tick = xtdata.get_full_tick([code])
+                                if code in tick and tick[code]:
+                                    current_price = tick[code].get('lastPrice', 0) or tick[code].get('last_price', 0)
+                                    if current_price > 0:
+                                        logger.debug(f"✅ {code} 使用 QMT 实时价格兜底: {current_price}")
+                            except Exception as e:
+                                logger.debug(f"⚠️ {code} QMT 获取实时价格失败: {e}")
+                    
                     price_3d_change = 0.0
                     
                     # 🔥 修复：类型安全检查，避免 None > 0 错误
