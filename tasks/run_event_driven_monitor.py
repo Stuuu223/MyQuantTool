@@ -622,28 +622,34 @@ class EventDrivenMonitor:
                 print(f"   ❌ {item['code']} ({item.get('name', 'N/A')}) - {reason}")
             print()
 
-        # 🎯 时机斧：板块共振检查
+        # 🎯 P1-2 修复：时机斧改为降级策略（未共振→观察池）
         opportunities_final = []
-        opportunities_timing_blocked = []
+        timing_downgraded = []  # ✅ 降级的股票（加入观察池）
         for item in opportunities_safe:
             is_blocked, reason = self._check_sector_resonance(item, results)
             if is_blocked:
-                opportunities_timing_blocked.append((item, reason))
+                # 🔥 修复：降级到观察池，而非直接拒绝
+                timing_downgraded.append((item, reason))  # ✅ 降级
             else:
                 opportunities_final.append(item)
 
-        # 打印时机斧拦截统计
-        if opportunities_timing_blocked:
-            print(f"⏸️ [时机斧] 本次拦截 {len(opportunities_timing_blocked)} 只未共振股票:")
-            for item, reason in opportunities_timing_blocked:
+        # 打印时机斧降级统计
+        if timing_downgraded:
+            print(f"⏸️ [时机斧] 本次降级 {len(timing_downgraded)} 只未共振股票 → 观察池:")
+            for item, reason in timing_downgraded[:5]:
                 print(f"   ⏸️ {item['code']} ({item.get('name', 'N/A')}) - {reason}")
+            if len(timing_downgraded) > 5:
+                print(f"   ... 还有 {len(timing_downgraded) - 5} 只")
             print()
+
+        # 🔥 P1-1 修复：合并观察池（原观察池 + 时机斧降级）
+        watchlist_merged = results['watchlist'] + [item for item, _ in timing_downgraded]  # ✅ 合并
 
         # 显示过滤后的机会池数量
         print(f"✅ 机会池（最终）: {len(opportunities_final)} 只")
         print(f"🛡️ 机会池（防守斧拦截）: {len(opportunities_blocked)} 只")
-        print(f"⏸️ 机会池（时机斧拦截）: {len(opportunities_timing_blocked)} 只")
-        print(f"⚠️  观察池: {len(results['watchlist'])} 只")
+        print(f"⏸️ 机会池（时机斧降级→观察池）: {len(timing_downgraded)} 只")
+        print(f"⚠️  观察池（含降级）: {len(watchlist_merged)} 只")
         print(f"❌ 黑名单: {len(results['blacklist'])} 只")
         print(f"📈 系统置信度: {results['confidence']*100:.1f}%")
         print(f"💰 今日建议最大总仓位: {results['position_limit']*100:.1f}%")
@@ -678,15 +684,27 @@ class EventDrivenMonitor:
                 "flow": main_net_inflow / 10000  # 转换为万元
             })
 
-        # 显示观察池全部股票
-        if results['watchlist']:
-            print(f"\n⚠️  观察池 ({len(results['watchlist'])} 只):")
-            for item in results['watchlist']:
+        # 🔥 P1-1 修复：显示观察池（包含降级股票）
+        if watchlist_merged:
+            print(f"\n⚠️  观察池（含降级） ({len(watchlist_merged)} 只):")
+            
+            # 创建降级股票代码集合，用于快速查找
+            downgraded_codes = {item['code'] for item, _ in timing_downgraded}
+            # 创建降级股票原因映射
+            downgraded_reasons = {item['code']: reason for item, reason in timing_downgraded}
+            
+            for item in watchlist_merged:
+                code = item['code']
                 risk_score = item.get('risk_score', 0)
                 capital_type = item.get('capital_type', 'UNKNOWN')
                 trap_signals = item.get('trap_signals', [])
                 signal_str = f" 诱多信号: {', '.join(trap_signals)}" if trap_signals else ""
-                print(f"   {item['code']} - 风险: {risk_score:.2f} - 类型: {capital_type}{signal_str}")
+                
+                # 🔥 P1-1 修复：标注降级股票
+                if code in downgraded_codes:
+                    print(f"   {code} - 风险: {risk_score:.2f} - 类型: {capital_type}{signal_str} [时机斧降级]")
+                else:
+                    print(f"   {code} - 风险: {risk_score:.2f} - 类型: {capital_type}{signal_str}")
 
         print("=" * 80 + "\n")
     
