@@ -101,15 +101,17 @@ class EventDrivenMonitor:
                     'allow_bypass_qmt_check': False,
                     'bypass_reason': ''
                 })
+            
+            # 🔥 [P0修复] 验证配置完整性
+            if not self._validate_emergency_config(self.emergency_config):
+                raise RuntimeError("❌ 紧急模式配置不完整，拒绝启动")
+            
             logger.info(f"✅ 加载紧急模式配置: {config_path}")
         except Exception as e:
-            logger.warning(f"⚠️  加载紧急模式配置失败: {e}，使用默认配置（紧急模式关闭）")
-            logger.warning(f"   配置路径: {config_path}")
-            self.emergency_config = {
-                'enabled': False,
-                'allow_bypass_qmt_check': False,
-                'bypass_reason': ''
-            }
+            logger.error(f"❌ 加载紧急模式配置失败: {e}")
+            logger.error(f"   配置路径: {config_path}")
+            logger.error(f"   系统无法启动，请检查配置文件")
+            raise RuntimeError(f"紧急模式配置加载失败: {e}")
 
         # 状态管理
         self.last_signature = None
@@ -138,6 +140,9 @@ class EventDrivenMonitor:
         self.tick_monitor = None
         if self.mode == "event_driven":
             self._init_tick_monitor()
+        
+        # 🔥 [P0修复] 板块共振缓存（5分钟TTL）
+        self.sector_resonance_cache = {}  # {sector_name: (result, timestamp)}
     
     def _init_event_detectors(self):
         """初始化所有事件检测器"""
@@ -175,6 +180,73 @@ class EventDrivenMonitor:
         except Exception as e:
             logger.error(f"❌ QMT Tick监控器初始化失败: {e}")
             self.tick_monitor = None
+    
+    def _verify_qmt_status(self) -> bool:
+        """
+        🔥 [P0修复] 验证QMT状态（双重校验）
+        
+        在每次扫描前检查QMT连接状态，防止盘中断线导致使用过期数据
+        
+        Returns:
+            bool: QMT状态是否正常
+        """
+        from logic.qmt_health_check import check_qmt_health
+        
+        try:
+            qmt_status = check_qmt_health()
+            
+            if qmt_status['status'] == 'ERROR':
+                logger.error(f"❌ QMT状态异常: {qmt_status.get('recommendations', ['未知错误'])}")
+                logger.error(f"   跳过本次扫描以防止使用过期数据")
+                return False
+            elif qmt_status['status'] == 'WARNING':
+                logger.warning(f"⚠️ QMT状态警告: {qmt_status.get('recommendations', ['未知警告'])}")
+                # WARNING状态继续扫描，但记录日志
+                return True
+            else:
+                # HEALTHY状态
+                return True
+                
+        except Exception as e:
+            logger.error(f"❌ QMT状态检查失败: {e}")
+            logger.error(f"   跳过本次扫描")
+            return False
+    
+    def _validate_emergency_config(self, config: dict) -> bool:
+        """
+        🔥 [P0修复] 验证紧急模式配置完整性
+        
+        Args:
+            config: 紧急模式配置字典
+            
+        Returns:
+            bool: 配置是否完整有效
+        """
+        required_keys = ['enabled', 'allow_bypass_qmt_check', 'bypass_reason']
+        
+        # 检查必需键是否存在
+        for key in required_keys:
+            if key not in config:
+                logger.error(f"❌ 紧急模式配置缺少必需键: {key}")
+                return False
+        
+        # 检查enabled类型
+        if not isinstance(config['enabled'], bool):
+            logger.error(f"❌ 紧急模式配置 'enabled' 必须是布尔值")
+            return False
+        
+        # 检查allow_bypass_qmt_check类型
+        if not isinstance(config['allow_bypass_qmt_check'], bool):
+            logger.error(f"❌ 紧急模式配置 'allow_bypass_qmt_check' 必须是布尔值")
+            return False
+        
+        # 检查bypass_reason类型
+        if not isinstance(config['bypass_reason'], str):
+            logger.error(f"❌ 紧急模式配置 'bypass_reason' 必须是字符串")
+            return False
+        
+        # 配置完整性校验通过
+        return True
     
     def _on_tick_update(self, stock_code: str, tick_data: Dict[str, Any]):
         """
@@ -534,7 +606,19 @@ class EventDrivenMonitor:
         # 如果没有板块信息或板块信息未知，跳过检查（不拦截）
         if not sector_name or not sector_code or sector_name == '未知板块':
             return False, "⏸️ 无板块信息，跳过共振检查"
-
+        
+        # 🔥 [P1修复] 检查板块共振缓存（5分钟TTL）
+        cache_ttl = 300  # 5分钟
+        if sector_name in self.sector_resonance_cache:
+            result, timestamp = self.sector_resonance_cache[sector_name]
+            if (datetime.now() - timestamp).seconds < cache_ttl:
+                # 缓存有效，使用缓存结果
+                if not result.is_resonant:
+                    reason = f"⏸️ [时机斧] 板块未共振（缓存）：{result.reason}"
+                    return True, reason
+                else:
+                    return False, f"✅ [时机斧] 板块共振满足（缓存）：{result.reason}"
+        
         # 提取板块内所有股票数据
         sector_stocks = []
         for stock in all_results.get('opportunities', []) + all_results.get('watchlist', []):
@@ -551,6 +635,9 @@ class EventDrivenMonitor:
         # 计算板块共振
         calculator = SectorResonanceCalculator()
         resonance_result = calculator.calculate(sector_stocks, sector_name, sector_code)
+        
+        # 🔥 [P1修复] 更新缓存
+        self.sector_resonance_cache[sector_name] = (resonance_result, datetime.now())
         
         # 🎯 更新CLI监控状态：板块共振状态
         self.monitor_state["sectors"][sector_name] = {
@@ -724,6 +811,12 @@ class EventDrivenMonitor:
             logger.info("-" * 80)
             
             try:
+                # 🔥 [P0修复] 双重校验：每次扫描前检查QMT状态
+                if not self._verify_qmt_status():
+                    logger.warning(f"⏸️ 跳过本次扫描（QMT状态异常）")
+                    time.sleep(60)
+                    continue
+                
                 results = self.scanner.scan_with_risk_management(mode='intraday')
                 self.scan_count += 1
                 
@@ -771,6 +864,13 @@ class EventDrivenMonitor:
                 logger.info("-" * 80)
                 
                 try:
+                    # 🔥 [P0修复] 双重校验：每次扫描前检查QMT状态
+                    if not self._verify_qmt_status():
+                        logger.warning(f"⏸️ 跳过本次扫描（QMT状态异常）")
+                        self.event_manager.mark_scan_complete()
+                        time.sleep(10)
+                        continue
+                    
                     results = self.scanner.scan_with_risk_management(mode='intraday')
                     self.scan_count += 1
                     
@@ -1010,6 +1110,11 @@ class EventDrivenMonitor:
             candidate_codes = list(self.hot_candidates.keys())
             
             logger.info(f"   开始深度扫描: {len(candidate_codes)} 只候选")
+            
+            # 🔥 [P0修复] 双重校验：深度扫描前检查QMT状态
+            if not self._verify_qmt_status():
+                logger.warning(f"   ⏸️ 跳过本次深度扫描（QMT状态异常）")
+                return
             
             # 执行深度扫描（只扫描候选集）
             results = self.scanner.scan_with_risk_management(
