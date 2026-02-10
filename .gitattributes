@@ -1,0 +1,41 @@
+# 统一换行策略（Windows 兼容）
+
+# 文本文件使用 LF 换行
+*.py text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.toml text eol=lf
+*.cfg text eol=lf
+*.ini text eol=lf
+*.sh text eol=lf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# Git 配置文件
+.gitattributes text eol=lf
+.gitignore text eol=lf
+
+# 配置文件
+config/*.json text eol=lf
+config/*.toml text eol=lf
+
+# Python 项目文件
+requirements.txt text eol=lf
+setup.py text eol=lf
+pyproject.toml text eol=lf
+
+# 文档文件
+docs/*.md text eol=lf
+*.rst text eol=lf
+
+# 测试文件
+tests/*.py text eol=lf
+test_*.py text eol=lf
+
+# 脚本文件
+scripts/*.py text eol=lf
+scripts/*.sh text eol=lf
+scripts/*.bat text eol=crlf

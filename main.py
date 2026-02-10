@@ -2,11 +2,27 @@
 import os
 import sys
 
+# 🔥 [P0] Python 版本检查：必须使用 Python 3.10
+if sys.version_info < (3, 10):
+    print("❌ [System] Python 版本不满足要求！")
+    print(f"   当前版本: {sys.version}")
+    print(f"   要求版本: Python 3.10+")
+    print("   请使用 venv_qmt 虚拟环境中的 Python 3.10")
+    sys.exit(1)
+elif sys.version_info >= (3, 11):
+    print(f"⚠️  [System] 警告：检测到 Python {sys.version_info.major}.{sys.version_info.minor}")
+    print("   推荐使用 Python 3.10 以确保 xtquant 兼容性")
+    print("   当前版本可能导致 xtquant 模块异常")
+
+print(f"✅ [System] Python 版本检查通过: {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")
+print()
+
 # 🚀 [最高优先级] 强杀代理：必须在 import 其他库之前执行！
 for key in ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy']:
     os.environ.pop(key, None)
 os.environ['NO_PROXY'] = '*'
 print("🛡️ [System] 代理已强制清除，启动直连模式...")
+print()
 # ==========================================================
 
 import streamlit as st

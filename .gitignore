@@ -101,3 +101,5 @@ htmlcov/
 # Sensitive configuration files
 config/qmt_config.json
 config/tushare_token.txt
+config/config.json  # 🔥 [P0] 包含 API Key，必须忽略
+config/config.local.json  # 本地配置模板
