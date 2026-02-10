@@ -1499,6 +1499,8 @@ class FullMarketScanner:
                                 if code in tick and tick[code]:
                                     current_price = tick[code].get('lastPrice', 0) or tick[code].get('last_price', 0)
                                     if current_price > 0:
+                                        # 🔥 [关键修复] 更新 candidate_dict，确保后续代码能使用
+                                        candidate_dict['last_price'] = current_price
                                         logger.debug(f"✅ {code} 使用 QMT 实时价格兜底: {current_price}")
                             except Exception as e:
                                 logger.debug(f"⚠️ {code} QMT 获取实时价格失败: {e}")
