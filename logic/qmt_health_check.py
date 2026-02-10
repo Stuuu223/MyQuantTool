@@ -322,7 +322,7 @@ class QMTHealthChecker:
                     if time_diff > 3600:  # 超过1小时
                         return {
                             'status': 'WARNING',
-                            'message': f'数据时间滞后 {time_diff/60:.0f} 分钟，可能是本地文件模式（探测标的: {valid_code}）",
+                            "message": f"数据时间滞后 {time_diff/60:.0f} 分钟，可能是本地文件模式（探测标的: {valid_code}）",
                             'data_mode': 'LOCAL_FILE',
                             'time_diff_seconds': time_diff,
                             'test_code': valid_code
