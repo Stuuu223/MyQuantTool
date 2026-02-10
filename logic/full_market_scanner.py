@@ -1706,8 +1706,10 @@ class FullMarketScanner:
                 logger.info(f"🚀 白名单直通: {code} (主线起爆)")
                 continue
             
-            # 🔥 黑名单：仅极端风险
-            if risk_score > 0.85:
+            # 🔥 黑名单：仅极端风险（从配置读取阈值）
+            # 🔥 修复：从配置读取极端风险阈值
+            extreme_risk_threshold = self.config.get('level3', {}).get('risk_score_max', 0.75) + 0.1
+            if risk_score > extreme_risk_threshold:
                 final_blacklist.append(stock)
                 logger.info(f"⛔ 极端风险黑名单: {code} risk={risk_score:.2f}")
                 continue
@@ -2021,8 +2023,10 @@ class FullMarketScanner:
         if ratio > 500:
             return "TRAP❌"
 
-        # 第3关：诱多 + 高风险 → BLOCK❌（已调整阈值：0.4 -> 0.6）
-        if len(trap_signals) > 0 and risk_score >= 0.6:
+        # 第3关：诱多 + 高风险 → BLOCK❌（从配置读取阈值）
+        # 🔥 修复：从配置读取，避免硬编码
+        risk_threshold = self.config.get('level3', {}).get('risk_score_max', 0.75)
+        if len(trap_signals) > 0 and risk_score >= risk_threshold:
             return "BLOCK❌"
 
         # 第3.5关：3日连涨资金不跟 + ratio < 1% → TRAP❌
@@ -2031,11 +2035,13 @@ class FullMarketScanner:
 
         # 第4关：0.5-5% + 低风险 + 无诱多 → FOCUS✅（已调整阈值：0.5% → 0.5%）
         # 🔥 [Fix] 调整下限：50% → 0.5%，以捕获正常强势股（5%-50%）
-        if 0.005 <= ratio <= 0.5 and risk_score < 0.6 and len(trap_signals) == 0:
+        risk_threshold = self.config.get('level3', {}).get('risk_score_max', 0.75)
+        if 0.005 <= ratio <= 0.5 and risk_score < risk_threshold and len(trap_signals) == 0:
             return "FOCUS✅"
 
         # 第4.5关：低风险 + 无诱多 → WATCH👀（新增：低风险观察池）
-        if risk_score < 0.4 and len(trap_signals) == 0:
+        low_risk_threshold = risk_threshold * 0.6  # 低风险阈值为风险阈值的60%
+        if risk_score < low_risk_threshold and len(trap_signals) == 0:
             return "WATCH👀"
 
         # 兜底：PASS❌
