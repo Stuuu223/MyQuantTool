@@ -1509,7 +1509,13 @@ class FullMarketScanner:
                     
                     # 🔥 修复：类型安全检查，避免 None > 0 错误
                     if not isinstance(current_price, (int, float)) or current_price <= 0:
-                        logger.warning(f"⚠️  {code} current_price={current_price}，无法计算price_3d_change")
+                        # 🔥 日志优化：每20次报一次统计，减少刷屏
+                        if not hasattr(self, '_current_price_fallback_count'):
+                            self._current_price_fallback_count = 0
+                        
+                        self._current_price_fallback_count += 1
+                        if self._current_price_fallback_count % 20 == 0:
+                            logger.info(f"Level 2 价格兜底: {self._current_price_fallback_count} 次")
                     else:
                         # 策略1：QMT 日线数据 (最快)
                         if QMT_AVAILABLE:
@@ -1668,6 +1674,53 @@ class FullMarketScanner:
         except Exception as e:
             logger.warning(f"⚠️  {code} Level2 条件检查失败: {e}")
             return False
+    
+    def apply_final_filters(self, level3_result: Dict[str, List[dict]]) -> Dict[str, List[dict]]:
+        """🔥 终极过滤：时机斧 + 白名单
+        
+        解决时机斧过度截杀主线起爆候选的问题
+        
+        Args:
+            level3_result: Level 3 分类结果
+            
+        Returns:
+            最终分类结果
+        """
+        opportunities = level3_result['opportunities']
+        watchlist = level3_result['watchlist']
+        blacklist = level3_result['blacklist']
+        
+        final_opportunities = []
+        final_watchlist = []
+        final_blacklist = blacklist.copy()
+        
+        # 合并机会池和观察池进行最终过滤
+        for stock in opportunities + watchlist:
+            code = stock['code']
+            risk_score = stock.get('risk_score', 1.0)
+            reasons = stock.get('scenario_reasons', [])
+            
+            # 🔥 白名单1：主线起爆直通
+            if '主线起爆候选' in reasons:
+                final_opportunities.append(stock)
+                logger.info(f"🚀 白名单直通: {code} (主线起爆)")
+                continue
+            
+            # 🔥 黑名单：仅极端风险
+            if risk_score > 0.85:
+                final_blacklist.append(stock)
+                logger.info(f"⛔ 极端风险黑名单: {code} risk={risk_score:.2f}")
+                continue
+            
+            # 🔥 时机斧：仅降级观察池（不进黑名单）
+            # 正常逻辑：低风险但时机差 → 观察池
+            final_opportunities.append(stock)
+        
+        return {
+            'opportunities': sorted(final_opportunities, key=lambda x: x['risk_score']),
+            'watchlist': sorted(final_watchlist, key=lambda x: x['risk_score']),
+            'blacklist': sorted(final_blacklist, key=lambda x: x['risk_score'], reverse=True)
+        }
     
     def _level3_trap_classification(self, candidates: List[dict]) -> Dict[str, List[dict]]:
         """
@@ -1881,11 +1934,14 @@ class FullMarketScanner:
                 logger.warning(f"⚠️  {code} Level3 分析失败: {e}")
                 continue
         
-        return {
+        # 🔥 终极过滤：时机斧 + 白名单
+        level3_result = {
             'opportunities': sorted(opportunities, key=lambda x: x['risk_score']),
             'watchlist': sorted(watchlist, key=lambda x: x['risk_score']),
             'blacklist': sorted(blacklist, key=lambda x: x['risk_score'], reverse=True)
         }
+        
+        return self.apply_final_filters(level3_result)
     
     def _calculate_risk_score(self, trap_result: dict, capital_result: dict, ratio: float = 0.0) -> float:
         """
