@@ -145,7 +145,8 @@ class AuctionSnapshotManager:
             # Key 格式: auction:20260115:600058
             key = f"auction:{today}:{stock_code}"
             
-            raw_data = self.db_manager.redis_get(key)
+            # 🔧 修复：直接从Redis获取原始字符串（避免json.loads()被调用两次）
+            raw_data = self.db_manager._redis_client.get(key)
             
             if raw_data:
                 auction_data = json.loads(raw_data)

@@ -164,47 +164,80 @@ class AuctionSnapshotDaemon:
     
     def run(self):
         """
-        运行守护进程
+        运行守护进程（优化版）
         
-        逻辑：
-        1. 检查当前时间是否在竞价时间（9:15-9:25）
-        2. 如果是，每分钟保存一次全市场竞价数据
-        3. 如果不是，等待到下一个竞价时间
+        策略：
+        1. 9:15-9:24: 每分钟保存一次（监控用）
+        2. 9:25-9:29: 最终保存（高优先级）✅
+        3. 9:30 后: 退出
         """
         logger.info("=" * 80)
         logger.info("🚀 竞价快照守护进程启动")
         logger.info("=" * 80)
+        
+        # 标记是否已完成最终保存
+        final_snapshot_saved = False
         
         while True:
             try:
                 now = datetime.now()
                 current_time = now.time()
                 
-                if self.is_auction_time():
-                    logger.info(f"\n⏰ 当前时间: {now.strftime('%H:%M:%S')} (竞价时间)")
+                # 🔥 关键窗口：9:25-9:30（竞价结束，数据仍可用）
+                if dt_time(9, 25, 0) <= current_time < dt_time(9, 30, 0):
+                    if not final_snapshot_saved:
+                        logger.info(f"\n⏰ 当前时间: {now.strftime('%H:%M:%S')} (竞价已结束，开始最终保存)")
+                        logger.info("=" * 80)
+                        logger.info("🎯 执行最终竞价快照保存（高优先级）")
+                        logger.info("=" * 80)
+                        
+                        # 保存全市场竞价快照
+                        result = self.save_market_auction_snapshot()
+                        
+                        # 标记已完成
+                        final_snapshot_saved = True
+                        
+                        logger.info("=" * 80)
+                        logger.info("✅ 最终竞价快照保存完成，等待连续竞价开始...")
+                        logger.info("=" * 80)
+                        
+                        # 等待到 9:30
+                        wait_seconds = (
+                            datetime.combine(now.date(), dt_time(9, 30, 0)) - now
+                        ).total_seconds()
+                        logger.info(f"⏳ 距离连续竞价开始还有 {wait_seconds:.0f} 秒")
+                        time.sleep(wait_seconds + 5)  # 等到 9:30:05
+                        
+                        logger.info("✅ 今日竞价快照任务已完成，程序退出")
+                        break
+                    else:
+                        # 已保存，等待退出
+                        time.sleep(30)
+                
+                # 9:15-9:24: 监控保存（每分钟一次）
+                elif dt_time(9, 15, 0) <= current_time < dt_time(9, 25, 0):
+                    logger.info(f"\n⏰ 当前时间: {now.strftime('%H:%M:%S')} (竞价进行中)")
                     
-                    # 保存全市场竞价快照
+                    # 保存一次（监控用）
                     result = self.save_market_auction_snapshot()
                     
-                    # 等待 60 秒（下一次保存）
+                    # 等待 60 秒
                     logger.info(f"⏳ 等待 60 秒...")
                     time.sleep(60)
+                
+                # 9:30 后：退出
+                elif current_time >= dt_time(9, 30, 0):
+                    logger.info(f"⏰ 当前时间: {now.strftime('%H:%M:%S')} (连续竞价已开始)")
+                    logger.info("✅ 今日竞价快照任务已完成，程序退出")
+                    break
+                
+                # 9:15 前：等待
                 else:
-                    # 计算距离下一次竞价的时间
-                    if current_time < dt_time(9, 15, 0):
-                        # 还未到竞价时间
-                        wait_seconds = (
-                            datetime.combine(now.date(), dt_time(9, 15, 0)) - now
-                        ).total_seconds()
-                        logger.info(f"⏰ 当前时间: {now.strftime('%H:%M:%S')} (等待竞价开始)")
-                        logger.info(f"⏳ 距离竞价开始还有 {wait_seconds/60:.1f} 分钟")
-                    elif current_time > dt_time(9, 25, 0):
-                        # 竞价已结束
-                        logger.info(f"⏰ 当前时间: {now.strftime('%H:%M:%S')} (竞价已结束)")
-                        logger.info(f"✅ 今日竞价快照任务已完成，程序退出")
-                        break
-                    
-                    # 等待 60 秒后再次检查
+                    wait_seconds = (
+                        datetime.combine(now.date(), dt_time(9, 15, 0)) - now
+                    ).total_seconds()
+                    logger.info(f"⏰ 当前时间: {now.strftime('%H:%M:%S')} (等待竞价开始)")
+                    logger.info(f"⏳ 距离竞价开始还有 {wait_seconds/60:.1f} 分钟")
                     time.sleep(60)
             
             except KeyboardInterrupt:

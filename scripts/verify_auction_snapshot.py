@@ -15,6 +15,7 @@ from logic.auction_snapshot_manager import AuctionSnapshotManager
 from logic.database_manager import DatabaseManager
 
 db_manager = DatabaseManager()
+db_manager._init_redis()  # 🔧 强制初始化Redis
 snapshot_manager = AuctionSnapshotManager(db_manager)
 
 # 检查几只热门股票
