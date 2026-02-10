@@ -29,6 +29,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from logic.full_market_scanner import FullMarketScanner
+from logic.output_formatter import format_scan_result
 from logic.market_status import MarketStatusChecker
 from logic.equity_data_accessor import get_circ_mv
 from logic.event_detector import EventManager, EventType
@@ -1113,9 +1114,9 @@ if __name__ == "__main__":
         watchlist = results.get('watchlist', [])
         blacklist = results.get('blacklist', [])
 
-        print(f"\n✅ 机会池: {len(opportunities)} 只")
-        print(f"⚠️  观察池: {len(watchlist)} 只")
-        print(f"❌ 黑名单: {len(blacklist)} 只")
+        # 🔥 修复：使用统一格式化输出，避免硬编码
+        scan_time = results.get('scan_time', 0.0)
+        print(format_scan_result(results, scan_time))
 
         # 打印机会池表格（全部）
         if opportunities:

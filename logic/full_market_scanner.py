@@ -39,6 +39,7 @@ from logic.fund_flow_analyzer import FundFlowAnalyzer
 from logic.rate_limiter import RateLimiter
 from logic.code_converter import CodeConverter
 from logic.logger import get_logger
+from logic.output_formatter import format_scan_result, format_level_stats
 
 logger = get_logger(__name__)
 
@@ -504,11 +505,17 @@ class FullMarketScanner:
         logger.info("\\n" + "=" * 80)
         logger.info("📊 扫描结果统计")
         logger.info("=" * 80)
-        logger.info(f"✅ 机会池: {len(result['opportunities'])} 只")
-        logger.info(f"⚠️  观察池: {len(result['watchlist'])} 只")
-        logger.info(f"❌ 黑名单: {len(result['blacklist'])} 只")
-        logger.info(f"📈 系统置信度: {result['confidence']*100:.1f}%")
-        logger.info(f"💰 今日建议最大总仓位: {result['position_limit']*100:.1f}%")
+        # 🔥 修复：使用统一格式化输出，避免硬编码
+        scan_time = time.time() - start_time
+        formatted_result = {
+            'opportunities': result['opportunities'],
+            'watchlist': result['watchlist'],
+            'blacklist': result['blacklist'],
+            'confidence': result['confidence'],
+            'position_limit': result['position_limit'],
+            'scan_time': scan_time
+        }
+        logger.info(format_scan_result(formatted_result, scan_time))
         logger.info(f"🎯 风控原因: {result['risk_reason']}")
         
         if result['risk_warnings']:
