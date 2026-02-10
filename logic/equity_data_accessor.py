@@ -6,16 +6,17 @@
 核心功能：
 - 从 data/equity_info_tushare.json 查询流通市值
 - 支持按交易日期查询历史数据
-- 硬校验：数据缺失时直接抛异常，不允许静默降级
+- 温和降级：数据缺失时返回 None，允许上层做温和惩罚处理
 
 Author: iFlow CLI
-Version: V1.0
+Version: V1.1
 """
 
 import json
 import logging
 from pathlib import Path
 from functools import lru_cache
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +70,7 @@ def _load_equity_info() -> dict:
         return raw_data
 
 
-def get_circ_mv(ts_code: str, trade_date: str) -> float:
+def get_circ_mv(ts_code: str, trade_date: str) -> Optional[float]:
     """
     查询指定股票在指定日期的流通市值（单位：元）
 
@@ -78,10 +79,10 @@ def get_circ_mv(ts_code: str, trade_date: str) -> float:
         trade_date: 交易日期，格式 YYYYMMDD
 
     Returns:
-        float: 流通市值（元）
+        Optional[float]: 流通市值（元），如果数据缺失则返回 None
 
     Raises:
-        ValueError: 如果 trade_date 格式非法、数据缺失或 circ_mv 非法
+        ValueError: 如果 trade_date 格式非法
     """
     # 第1关：校验 trade_date 格式
     _validate_trade_date(trade_date)
@@ -100,9 +101,9 @@ def get_circ_mv(ts_code: str, trade_date: str) -> float:
         stock_data = stock_by_date.get(trade_date)
 
         if stock_data is None:
-            logger.error(f"[CRITICAL] circ_mv 数据缺失: ts_code={ts_code} @ {trade_date} 不存在")
-            logger.error(f"  可能原因: 该日期数据未同步，或该股票在该日期未上市")
-            raise ValueError(f"circ_mv 数据缺失: {ts_code} @ {trade_date}")
+            logger.warning(f"[CRITICAL] circ_mv 数据缺失: ts_code={ts_code} @ {trade_date} 不存在")
+            logger.warning(f"  可能原因: 该日期数据未同步，或该股票在该日期未上市")
+            return None  # 🔧 修复：返回 None 而非抛异常
 
     else:
         # 旧结构（兼容）：data[date][code]
@@ -110,21 +111,21 @@ def get_circ_mv(ts_code: str, trade_date: str) -> float:
         daily_data = data_by_date.get(trade_date)
 
         if daily_data is None:
-            logger.error(f"[CRITICAL] circ_mv 数据缺失: trade_date={trade_date} 不在 equity_info 中")
-            raise ValueError(f"circ_mv 数据缺失: trade_date={trade_date}")
+            logger.warning(f"[CRITICAL] circ_mv 数据缺失: trade_date={trade_date} 不在 equity_info 中")
+            return None  # 🔧 修复：返回 None 而非抛异常
 
         stock_data = daily_data.get(ts_code)
 
         if stock_data is None:
-            logger.error(f"[CRITICAL] circ_mv 数据缺失: ts_code={ts_code} @ {trade_date} 不存在")
-            raise ValueError(f"circ_mv 数据缺失: {ts_code} @ {trade_date}")
+            logger.warning(f"[CRITICAL] circ_mv 数据缺失: ts_code={ts_code} @ {trade_date} 不存在")
+            return None  # 🔧 修复：返回 None 而非抛异常
 
     # 第4关：提取并校验 circ_mv
     # 优先使用 circ_mv，如果没有则使用 float_mv（别名）
     circ_mv = float(stock_data.get("circ_mv") or stock_data.get("float_mv", 0))
 
     if circ_mv <= 0:
-        logger.error(f"[CRITICAL] circ_mv 非法值: ts_code={ts_code} @ {trade_date}, circ_mv={circ_mv}")
-        raise ValueError(f"circ_mv 非法值: {ts_code} @ {trade_date}, circ_mv={circ_mv}")
+        logger.warning(f"[CRITICAL] circ_mv 非法值: ts_code={ts_code} @ {trade_date}, circ_mv={circ_mv}")
+        return None  # 🔧 修复：返回 None 而非抛异常
 
     return circ_mv

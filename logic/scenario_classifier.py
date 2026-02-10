@@ -62,6 +62,7 @@ class ScenarioClassifier:
             # 拉高出货判断阈值
             "pump_dump_threshold": 0.7,           # 超大单占比>70%
             "dump_threshold": -5000000,           # 次日净流出>-500万
+            "risk_score_threshold": 0.75,         # 🔥 修复：风险评分阈值（0.6→0.75），减少误判
         }
 
     def classify(self, stock_data: Dict) -> ScenarioResult:
@@ -263,8 +264,8 @@ class ScenarioClassifier:
         if len(trap_signals) > 0:
             return True
 
-        # 条件3：风险评分较高
-        if risk_score > 0.6:
+        # 条件3：风险评分较高（使用配置项而非硬编码）
+        if risk_score > self.config['risk_score_threshold']:
             return True
 
         # 条件1：超大单占比过高
