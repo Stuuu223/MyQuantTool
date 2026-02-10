@@ -1699,22 +1699,45 @@ class FullMarketScanner:
         
         final_opportunities = []
         final_watchlist = []
-        final_blacklist = blacklist.copy()
+        final_blacklist = []
         
-        # 合并机会池和观察池进行最终过滤
+        # 🔥 [P0修复] 先遍历黑名单，拯救主线起爆候选
+        for stock in blacklist:
+            code = stock['code']
+            reasons = stock.get('scenario_reasons', [])
+            is_potential_mainline = stock.get('is_potential_mainline', False)
+            
+            # 🔥 白名单1：主线起爆候选直通（即使被误判为TRAP_PUMP_DUMP）
+            if '主线起爆候选' in reasons or is_potential_mainline:
+                final_opportunities.append(stock)
+                logger.info(f"🚀 [白名单拯救] {code} 从黑名单拯救到机会池 (主线起爆)")
+                continue
+            
+            # 🔥 黑名单：仅保留极端风险（从配置读取阈值）
+            risk_score = stock.get('risk_score', 1.0)
+            extreme_risk_threshold = self.config.get('level3', {}).get('risk_score_max', 0.75) + 0.1
+            if risk_score > extreme_risk_threshold:
+                final_blacklist.append(stock)
+                logger.info(f"⛔ 极端风险黑名单: {code} risk={risk_score:.2f}")
+                continue
+            
+            # 风险未达极端阈值，降级到观察池
+            final_watchlist.append(stock)
+            logger.info(f"⏸️ 降级观察池: {code} risk={risk_score:.2f}")
+        
+        # 🔥 遍历机会池和观察池
         for stock in opportunities + watchlist:
             code = stock['code']
             risk_score = stock.get('risk_score', 1.0)
             reasons = stock.get('scenario_reasons', [])
             
-            # 🔥 白名单1：主线起爆直通
+            # 🔥 白名单2：主线起爆直通
             if '主线起爆候选' in reasons:
                 final_opportunities.append(stock)
                 logger.info(f"🚀 白名单直通: {code} (主线起爆)")
                 continue
             
             # 🔥 黑名单：仅极端风险（从配置读取阈值）
-            # 🔥 修复：从配置读取极端风险阈值
             extreme_risk_threshold = self.config.get('level3', {}).get('risk_score_max', 0.75) + 0.1
             if risk_score > extreme_risk_threshold:
                 final_blacklist.append(stock)

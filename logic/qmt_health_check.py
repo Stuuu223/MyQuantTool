@@ -154,28 +154,46 @@ class QMTHealthChecker:
     def _check_server_login(self) -> Dict[str, Any]:
         """检查行情主站是否登录"""
         try:
-            # 尝试获取实时Tick数据
-            tick = xtdata.get_full_tick(['000001.SZ'])
+            # 🔥 [P0修复] 使用多个探测标的，避免单一股票异常导致误判
+            # 000001.SH 平安银行（沪市权重股）+ 600519.SH 贵州茅台（沪市龙头）
+            test_codes = ['000001.SH', '600519.SH']
+            tick = xtdata.get_full_tick(test_codes)
 
-            if not tick or '000001.SZ' not in tick:
+            if not tick:
                 return {
                     'status': 'ERROR',
                     'message': '无法获取 Tick 数据，行情主站可能未登录',
                     'logged_in': False
                 }
 
+            # 检查至少有一个探测标的能获取到数据
+            valid_tick = None
+            valid_code = None
+            for code in test_codes:
+                if code in tick and tick[code]:
+                    valid_tick = tick[code]
+                    valid_code = code
+                    break
+
+            if not valid_tick:
+                return {
+                    'status': 'ERROR',
+                    'message': f'探测标的 {test_codes} 均无数据，行情主站可能未登录',
+                    'logged_in': False
+                }
+
             # 检查数据时间戳
-            tick_data = tick['000001.SZ']
-            timetag = tick_data.get('timetag', '')
-            stock_status = tick_data.get('stockStatus', -1)
+            timetag = valid_tick.get('timetag', '')
+            stock_status = valid_tick.get('stockStatus', -1)
 
             return {
                 'status': 'OK',
-                'message': '行情主站已连接',
+                'message': f'行情主站已连接（探测标的: {valid_code}）',
                 'logged_in': True,
                 'timetag': timetag,
                 'stock_status': stock_status,
-                'stock_status_desc': self._get_stock_status_desc(stock_status)
+                'stock_status_desc': self._get_stock_status_desc(stock_status),
+                'test_code': valid_code
             }
 
         except Exception as e:
@@ -358,7 +376,9 @@ class QMTHealthChecker:
 
         # 市场状态
         market = details.get('market_status', {})
-        logger.info(f"市场状态: {'✅ 交易日' if market.get('is_trading_day') else '⚠️  非交易日'}")
+        is_trading_time = market.get('is_trading_time', False)
+        market_phase = market.get('market_phase', '未知')
+        logger.info(f"市场状态: {'✅ 交易时间' if is_trading_time else '⚠️  非交易时间'} ({market_phase})")
 
         # 交易时间
         trading = details.get('trading_status', {})
