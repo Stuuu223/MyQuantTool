@@ -16,6 +16,9 @@ from typing import Dict, Optional, List, Tuple
 from dataclasses import dataclass
 from enum import Enum
 import numpy as np
+from logic.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class ScenarioType(Enum):
@@ -116,7 +119,7 @@ class ScenarioClassifier:
 
         # 生成判断原因
         reasons = self._generate_reasons(
-            scenario, is_potential_mainline, is_tail_rally, is_potential_trap,
+            code, scenario, is_potential_mainline, is_tail_rally, is_potential_trap,
             net_main_5d, net_main_20d, risk_score, capital_type
         )
 
@@ -301,6 +304,7 @@ class ScenarioClassifier:
 
     def _generate_reasons(
         self,
+        code: str,
         scenario: ScenarioType,
         is_potential_mainline: bool,
         is_tail_rally: bool,
@@ -310,11 +314,29 @@ class ScenarioClassifier:
         risk_score: float,
         capital_type: str
     ) -> List[str]:
-        """生成判断原因"""
+        """
+        生成判断原因
+        
+        🔥 [P0修复] 添加符号检查和数据一致性校验
+        """
         reasons = []
 
         if scenario == ScenarioType.MAINLINE_RALLY:
-            reasons.append(f"多日资金流健康 (5日: {net_main_5d/10000:.1f}万, 20日: {net_main_20d/10000:.1f}万)")
+            # 🔥 修复：明确显示流入/流出状态
+            flow_5d_direction = "流入" if net_main_5d > 0 else "流出"
+            flow_20d_direction = "流入" if net_main_20d > 0 else "流出"
+            flow_5d_str = f"{abs(net_main_5d)/10000:.1f}万（{flow_5d_direction}）"
+            flow_20d_str = f"{abs(net_main_20d)/10000:.1f}万（{flow_20d_direction}）"
+            
+            reasons.append(f"多日资金流健康 (5日: {flow_5d_str}, 20日: {flow_20d_str})")
+            
+            # 🔥 数据一致性校验：检测异常情况
+            if net_main_5d < 0 or net_main_20d < 0:
+                logger.warning(
+                    f"⚠️ [{code}] 数据一致性警告: 主线起爆场景但资金流为负 "
+                    f"(5日={net_main_5d:.0f}, 20日={net_main_20d:.0f})"
+                )
+            
             reasons.append(f"风险评分较低 ({risk_score:.2f})")
             reasons.append("无明显陷阱信号")
             if capital_type == 'INSTITUTIONAL':
@@ -333,7 +355,9 @@ class ScenarioClassifier:
 
         elif scenario == ScenarioType.TAIL_RALLY:
             reasons.append("补涨尾声模式")
-            reasons.append(f"长期流出后突然流入 (20日: {net_main_20d/10000:.1f}万)")
+            # 🔥 修复：明确显示流入/流出状态
+            flow_20d_str = f"{abs(net_main_20d)/10000:.1f}万（流出）" if net_main_20d < 0 else f"{abs(net_main_20d)/10000:.1f}万（流入）"
+            reasons.append(f"长期流出后突然流入 (20日: {flow_20d_str})")
             reasons.append("HOTMONEY资金主导")
 
         else:
@@ -416,5 +440,24 @@ if __name__ == "__main__":
     print(f"\n补涨尾声测试: {result.scenario.value}")
     print(f"置信度: {result.confidence:.2f}")
     print(f"原因: {result.reasons}")
+    
+    # 🔥 测试用例3：负数情况（验证修复）
+    test_data_negative = {
+        'code': '605088',
+        'capitaltype': 'MIXED',
+        'flow_data': {
+            'main_net_inflow_history': [-1000, -2000, -1500, -3000, -2500],  # 5日累计流出
+            'records': []
+        },
+        'price_data': {},
+        'risk_score': 0.4,
+        'trap_signals': []
+    }
+    
+    result = classifier.classify(test_data_negative)
+    print(f"\n负数测试: {result.scenario.value}")
+    print(f"置信度: {result.confidence:.2f}")
+    print(f"原因: {result.reasons}")
+    print(f"指标: net_main_5d={result.metrics['net_main_5d']:.0f}, net_main_20d={result.metrics['net_main_20d']:.0f}")
 
     print("\n✅ 场景分类器测试完成")
