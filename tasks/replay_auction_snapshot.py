@@ -1,19 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-纾价快照回放器 (Phase3 第1周)
+纾价快照回放�?(Phase3 �?�?
 
-功能：
-1. 回放任意日期的纾价快照
-2. 结合开盘后分钟K数据
-3. 验证纾价异动有效性
-
-使用方法：
-    # 回放指定日期的纾价快照
-    python tasks/replay_auction_snapshot.py --date 2026-02-10
+功能�?1. 回放任意日期的纾价快�?2. 结合开盘后分钟K数据
+3. 验证纾价异动有效�?
+使用方法�?    # 回放指定日期的纾价快�?    python tasks/replay_auction_snapshot.py --date 2026-02-10
     
-    # 回放并检测诡多
-    python tasks/replay_auction_snapshot.py --date 2026-02-10 --detect
+    # 回放并检测诱�?    python tasks/replay_auction_snapshot.py --date 2026-02-10 --detect
     
     # 筛选特定条件的股票
     python tasks/replay_auction_snapshot.py --date 2026-02-10 --filter high_open
@@ -22,8 +16,7 @@
 - high_open: 纾价高开 > 3%
 - low_open: 纾价低开 < -3%
 - high_volume: 量比 > 2.0
-- all: 所有股票
-"""
+- all: 所有股�?"""
 
 import sys
 import os
@@ -47,20 +40,16 @@ logger = get_logger(__name__)
 
 class AuctionSnapshotReplayer:
     """
-    纾价快照回放器
-    
-    回放历史纾价快照，验证纾价异动有效性
-    """
+    纾价快照回放�?    
+    回放历史纾价快照，验证纾价异动有效�?    """
     
     def __init__(self, db_path: str = None):
         """
         初始化回放器
         
         Args:
-            db_path: SQLite数据库路径
-        """
-        # 数据库路径
-        if db_path is None:
+            db_path: SQLite数据库路�?        """
+        # 数据库路�?        if db_path is None:
             db_path = project_root / "data" / "auction_snapshots.db"
         else:
             db_path = Path(db_path)
@@ -71,17 +60,15 @@ class AuctionSnapshotReplayer:
         self.db_path = str(db_path)
         self.detector = AuctionTrapDetector()
         
-        logger.info(f"✅ 纾价快照回放器初始化成功")
-        logger.info(f"📁 数据库路径: {self.db_path}")
+        logger.info(f"�?纾价快照回放器初始化成功")
+        logger.info(f"📁 数据库路�? {self.db_path}")
     
     def load_auction_snapshots(self, date: str, filter_condition: str = 'all') -> List[Dict[str, Any]]:
         """
         加载纾价快照数据
         
         Args:
-            date: 日期（格式：YYYY-MM-DD）
-            filter_condition: 筛选条件（all, high_open, low_open, high_volume）
-        
+            date: 日期（格式：YYYY-MM-DD�?            filter_condition: 筛选条件（all, high_open, low_open, high_volume�?        
         Returns:
             纾价快照列表
         """
@@ -112,8 +99,7 @@ class AuctionSnapshotReplayer:
             rows = cursor.fetchall()
             conn.close()
             
-            # 转换为字典列表
-            snapshots = []
+            # 转换为字典列�?            snapshots = []
             for row in rows:
                 snapshots.append({
                     'code': row['code'],
@@ -129,94 +115,88 @@ class AuctionSnapshotReplayer:
                     'timestamp': row['auction_time']
                 })
             
-            logger.info(f"✅ 加载了 {len(snapshots)} 个纾价快照 (筛选条件: {filter_condition})")
+            logger.info(f"�?加载�?{len(snapshots)} 个纾价快�?(筛选条�? {filter_condition})")
             return snapshots
         
         except Exception as e:
-            logger.error(f"❌ 加载纾价快照失败: {e}")
+            logger.error(f"�?加载纾价快照失败: {e}")
             return []
     
     def get_open_5min_data(self, code: str, date: str) -> Optional[Dict[str, Any]]:
         """
-        获取开盘5分钟数据（从QMT或AkShare）
-        
+        获取开�?分钟数据（从QMT或AkShare�?        
         Args:
             code: 股票代码
             date: 日期
         
         Returns:
-            开盘5分钟数据
+            开�?分钟数据
         """
         try:
             # 尝试从QMT获取
             try:
                 import xtquant.xtdata as xtdata
-                
-                # 获取开盘后5分钟的分钟K线
-                start_time = f"{date} 09:30:00"
-                end_time = f"{date} 09:35:00"
-                
-                kline = xtdata.get_market_data(
+
+                # 获取当天的所有分钟K线数据（不指定时间范围，避免API bug�?                date_num = date.replace('-', '')
+                kline = xtdata.get_local_data(
                     field_list=['open', 'high', 'low', 'close', 'volume'],
                     stock_list=[code],
                     period='1m',
-                    start_time=start_time,
-                    end_time=end_time
+                    start_time=date_num,
+                    end_time=date_num,
+                    count=-1
                 )
-                
+
                 if kline and code in kline:
                     data = kline[code]
-                    
-                    # 取最后5根K线
-                    open_price = data['open'].iloc[0]
-                    high_5min = data['high'].max()
-                    low_5min = data['low'].min()
-                    close_5min = data['close'].iloc[-1]
-                    volume_5min = data['volume'].sum()
-                    
-                    # 计算尾盘回落
-                    tail_drop = (high_5min - close_5min) / high_5min
-                    
-                    return {
-                        'code': code,
-                        'open_price': open_price,
-                        'high_5min': high_5min,
-                        'low_5min': low_5min,
-                        'close_5min': close_5min,
-                        'volume_5min': volume_5min,
-                        'tail_drop': tail_drop,
-                        'timestamp': end_time
-                    }
+                    # 筛选开盘前5分钟的数据（09:30-09:35，即�?根K线）
+                    if len(data) >= 5:
+                        data_5min = data.head(5)
+
+                        open_price = data_5min['open'].iloc[0]
+                        high_5min = data_5min['high'].max()
+                        low_5min = data_5min['low'].min()
+                        close_5min = data_5min['close'].iloc[-1]
+                        volume_5min = data_5min['volume'].sum()
+
+                        # 计算尾盘回落
+                        tail_drop = (high_5min - close_5min) / high_5min if high_5min > 0 else 0
+
+                        return {
+                            'code': code,
+                            'open_price': open_price,
+                            'high_5min': high_5min,
+                            'low_5min': low_5min,
+                            'close_5min': close_5min,
+                            'volume_5min': volume_5min,
+                            'tail_drop': tail_drop,
+                            'timestamp': f"{date_num} 09:35:00"
+                        }
             
             except Exception as e:
-                logger.debug(f"QMT获取失败: {e}，尝试使用模拟数据")
+                logger.debug(f"QMT获取失败: {e}，尝试使用模拟数�?)
                 
-                # 备用方案：使用模拟数据（用于测试）
-                return self._generate_mock_open_data(code, date)
+                # 备用方案：使用模拟数据（用于测试�?                return self._generate_mock_open_data(code, date)
         
         except Exception as e:
-            logger.error(f"❌ 获取开盘数据失败 {code}: {e}")
+            logger.error(f"�?获取开盘数据失�?{code}: {e}")
             return None
     
     def _generate_mock_open_data(self, code: str, date: str) -> Dict[str, Any]:
         """
-        生成模拟开盘数据（用于测试）
-        
+        生成模拟开盘数据（用于测试�?        
         Args:
             code: 股票代码
             date: 日期
         
         Returns:
-            模拟开盘数据
-        """
+            模拟开盘数�?        """
         import random
         
-        # 随机生成开盘数据
-        base_price = 15.0 + random.uniform(-2, 2)
+        # 随机生成开盘数�?        base_price = 15.0 + random.uniform(-2, 2)
         open_price = base_price
         
-        # 模拟3种情况
-        scenario = random.choice(['dump', 'pump', 'normal'])
+        # 模拟3种情�?        scenario = random.choice(['dump', 'pump', 'normal'])
         
         if scenario == 'dump':  # 砸盘
             high_5min = open_price * (1 + random.uniform(0.005, 0.01))
@@ -245,41 +225,35 @@ class AuctionSnapshotReplayer:
     def replay_with_detection(self, date: str, filter_condition: str = 'all', 
                             top_n: int = None) -> List[Dict[str, Any]]:
         """
-        回放纾价快照并检测诡多
-        
+        回放纾价快照并检测诱�?        
         Args:
             date: 日期
-            filter_condition: 筛选条件
-            top_n: 只处理前n个（默认全部）
-        
+            filter_condition: 筛选条�?            top_n: 只处理前n个（默认全部�?        
         Returns:
-            检测结果列表
-        """
+            检测结果列�?        """
         # 加载纾价快照
         auction_snapshots = self.load_auction_snapshots(date, filter_condition)
         
         if not auction_snapshots:
-            logger.warning(f"⚠️ 未找到 {date} 的纾价快照")
+            logger.warning(f"⚠️ 未找�?{date} 的纾价快�?)
             return []
         
         # 限制数量
         if top_n:
             auction_snapshots = auction_snapshots[:top_n]
         
-        logger.info(f"🚀 开始回放 {len(auction_snapshots)} 个纾价快照...")
+        logger.info(f"🚀 开始回�?{len(auction_snapshots)} 个纾价快�?..")
         
-        # 检测结果
-        results = []
+        # 检测结�?        results = []
         
         for i, auction_data in enumerate(auction_snapshots, 1):
             code = auction_data['code']
             
-            # 获取开盘5分钟数据
+            # 获取开�?分钟数据
             open_data = self.get_open_5min_data(code, date)
             
             if open_data:
-                # 检测诡多
-                detection_result = self.detector.detect(auction_data, open_data)
+                # 检测诱�?                detection_result = self.detector.detect(auction_data, open_data)
                 
                 results.append({
                     'code': code,
@@ -298,30 +272,28 @@ class AuctionSnapshotReplayer:
             if i % 10 == 0 or i == len(auction_snapshots):
                 logger.info(f"📈 进度: {i}/{len(auction_snapshots)} ({i/len(auction_snapshots)*100:.1f}%)")
         
-        logger.info(f"✅ 回放完成，共检测到 {len(results)} 个结果")
+        logger.info(f"�?回放完成，共检测到 {len(results)} 个结�?)
         
         return results
     
     def print_results(self, results: List[Dict[str, Any]]):
         """
-        打印检测结果
-        
+        打印检测结�?        
         Args:
-            results: 检测结果列表
-        """
+            results: 检测结果列�?        """
         if not results:
-            logger.info("✅ 没有检测到诡多模式")
+            logger.info("�?没有检测到诡多模式")
             return
         
-        # 筛选出诡多股票
+        # 筛选出诱多股票
         trap_results = [r for r in results if r['trap_type'] != 'NORMAL']
         
         if not trap_results:
-            logger.info("✅ 没有检测到诡多模式")
+            logger.info("�?没有检测到诡多模式")
             return
         
         logger.info(f"\n{'='*80}")
-        logger.info(f"🚨 纾价诡多检测结果")
+        logger.info(f"🚨 纾价诱多检测结�?)
         logger.info(f"{'='*80}\n")
         
         # 按置信度排序
@@ -340,13 +312,12 @@ class AuctionSnapshotReplayer:
                 r['trap_type'],
                 r['risk_level'],
                 f"{r['confidence']*100:.0f}%",
-                ', '.join(r['signals'][:2])  # 只显示前2个信号
-            ])
+                ', '.join(r['signals'][:2])  # 只显示前2个信�?            ])
         
         # 输出表格
         headers = [
-            '代码', '名称', '纾价涨幅', '开盘涨幅', '量比',
-            '尾盘回落', '诡多类型', '风险级别', '置信度', '信号'
+            '代码', '名称', '纾价涨幅', '开盘涨�?, '量比',
+            '尾盘回落', '诡多类型', '风险级别', '置信�?, '信号'
         ]
         
         print("\n" + tabulate(table_data, headers=headers, tablefmt='grid'))
@@ -361,24 +332,23 @@ class AuctionSnapshotReplayer:
         logger.info(f"📊 统计信息")
         logger.info(f"{'='*80}")
         logger.info(f"总数: {len(results)}")
-        logger.info(f"诡多数: {len(trap_results)}")
-        logger.info(f"诡多率: {len(trap_results)/len(results)*100:.1f}%")
-        logger.info(f"\n诡多类型分布：")
+        logger.info(f"诡多�? {len(trap_results)}")
+        logger.info(f"诡多�? {len(trap_results)/len(results)*100:.1f}%")
+        logger.info(f"\n诡多类型分布�?)
         for trap_type, count in trap_counts.items():
             logger.info(f"  {trap_type}: {count}")
 
 
 def main():
     """
-    主函数
-    """
-    parser = argparse.ArgumentParser(description='纾价快照回放器')
-    parser.add_argument('--date', type=str, required=True, help='日期（格式：YYYY-MM-DD）')
+    主函�?    """
+    parser = argparse.ArgumentParser(description='纾价快照回放�?)
+    parser.add_argument('--date', type=str, required=True, help='日期（格式：YYYY-MM-DD�?)
     parser.add_argument('--filter', type=str, default='all', 
                        choices=['all', 'high_open', 'low_open', 'high_volume'],
-                       help='筛选条件')
-    parser.add_argument('--detect', action='store_true', help='检测诡多')
-    parser.add_argument('--top', type=int, help='只处理TOP N个股票')
+                       help='筛选条�?)
+    parser.add_argument('--detect', action='store_true', help='检测诡�?)
+    parser.add_argument('--top', type=int, help='只处理TOP N个股�?)
     
     args = parser.parse_args()
     
@@ -387,29 +357,26 @@ def main():
     
     logger.info(f"\n{'='*80}")
     logger.info(f"🔄 回放日期: {args.date}")
-    logger.info(f"🔍 筛选条件: {args.filter}")
+    logger.info(f"🔍 筛选条�? {args.filter}")
     if args.top:
         logger.info(f"🔢 限制数量: TOP {args.top}")
     logger.info(f"{'='*80}\n")
     
     if args.detect:
-        # 回放并检测
-        results = replayer.replay_with_detection(args.date, args.filter, args.top)
+        # 回放并检�?        results = replayer.replay_with_detection(args.date, args.filter, args.top)
         
         # 打印结果
         replayer.print_results(results)
     
     else:
-        # 只回放，不检测
-        auction_snapshots = replayer.load_auction_snapshots(args.date, args.filter)
+        # 只回放，不检�?        auction_snapshots = replayer.load_auction_snapshots(args.date, args.filter)
         
         if args.top:
             auction_snapshots = auction_snapshots[:args.top]
         
-        logger.info(f"\n✅ 共加载 {len(auction_snapshots)} 个纾价快照\n")
+        logger.info(f"\n�?共加�?{len(auction_snapshots)} 个纾价快照\n")
         
-        # 打印前10个
-        for i, snapshot in enumerate(auction_snapshots[:10], 1):
+        # 打印�?0�?        for i, snapshot in enumerate(auction_snapshots[:10], 1):
             logger.info(f"{i}. {snapshot['name']}({snapshot['code']}) - "
                        f"纾价涨幅: {snapshot['auction_change']*100:+.2f}%, "
                        f"量比: {snapshot['volume_ratio']:.1f}x")
