@@ -48,6 +48,9 @@ requests-cache>=1.1.0
 easyquotation>=0.7.0
 efinance>=0.5.5
 
+# QMT 量化交易（迅投）
+xtquant>=1.0.0
+
 # 🆕 V9.11.1: 自动刷新
 streamlit-autorefresh>=1.0.1
 
