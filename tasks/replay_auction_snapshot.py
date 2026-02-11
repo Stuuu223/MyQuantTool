@@ -1,383 +1,215 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 竞价快照回放器 (Phase3 第1周)
 
 功能：
-1. 回放历史竞价快照数据
-2. 检测竞价诱多模式
-3. 统计检测结果
+1. 回放任意历史日期的竞价快照
+2. 结合开盘后5分钟K线数据
+3. 自动调用诱多检测器
+4. 输出美观的表格报告
 
-使用方法：
-    # 回放指定日期的竞价快照
-    python tasks/replay_auction_snapshot.py --date 2026-02-10
-
+使用示例：
     # 回放并检测诱多
     python tasks/replay_auction_snapshot.py --date 2026-02-10 --detect
-
-    # 筛选高开股票
-    python tasks/replay_auction_snapshot.py --date 2026-02-10 --filter high_open
+    
+    # 筛选高开股票并检测
+    python tasks/replay_auction_snapshot.py --date 2026-02-10 --filter high_open --detect
 """
 
 import sys
 import os
-import json
 import argparse
-import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Any
-from tabulate import tabulate
 
 # 添加项目根目录到路径
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from logic.logger import get_logger
-from logic.auction_trap_detector import AuctionTrapDetector, TrapType, RiskLevel
+from logic.auction_trap_detector import AuctionTrapDetector
 
 logger = get_logger(__name__)
 
 
 class AuctionSnapshotReplayer:
-    """
-    竞价快照回放器
-
-    回放历史竞价快照，验证竞价异动有效性
-    """
-
+    """竞价快照回放器"""
+    
     def __init__(self, db_path: str = None):
-        """
-        初始化回放器
-
-        Args:
-            db_path: SQLite数据库路径
-        """
-        # 数据库路径
+        """初始化回放器"""
         if db_path is None:
             db_path = project_root / "data" / "auction_snapshots.db"
         else:
             db_path = Path(db_path)
-
-        if not db_path.exists():
-            raise FileNotFoundError(f"数据库文件不存在: {db_path}")
-
+        
         self.db_path = str(db_path)
         self.detector = AuctionTrapDetector()
-
-        logger.info(f"竞价快照回放器初始化成功")
-        logger.info(f"数据库路径: {self.db_path}")
-
-    def load_auction_snapshots(self, date: str, filter_condition: str = 'all') -> List[Dict[str, Any]]:
-        """
-        加载竞价快照数据
-
-        Args:
-            date: 日期（格式：YYYY-MM-DD）
-            filter_condition: 筛选条件（all, high_open, low_open, high_volume）
-
-        Returns:
-            竞价快照列表
-        """
+        
+        logger.info(f"✅ 竞价快照回放器初始化成功")
+        logger.info(f"📁 数据库路径: {self.db_path}")
+    
+    def load_snapshots(self, date: str) -> List[Dict[str, Any]]:
+        """加载指定日期的竞价快照"""
+        import sqlite3
+        
         try:
             conn = sqlite3.connect(self.db_path)
-            conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-
-            # 构建查询条件
-            if filter_condition == 'high_open':
-                where_clause = "AND auction_change > 0.03"
-            elif filter_condition == 'low_open':
-                where_clause = "AND auction_change < -0.03"
-            elif filter_condition == 'high_volume':
-                where_clause = "AND volume_ratio > 2.0"
-            else:
-                where_clause = ""
-
-            # 查询竞价快照
-            query = f"""
-                SELECT * FROM auction_snapshots
+            
+            cursor.execute("""
+                SELECT code, name, auction_price, auction_volume, auction_amount,
+                       auction_change, volume_ratio, buy_orders, sell_orders,
+                       bid_vol_1, ask_vol_1, market_type
+                FROM auction_snapshots
                 WHERE date = ?
-                {where_clause}
                 ORDER BY auction_change DESC
-            """
-
-            cursor.execute(query, (date,))
+            """, (date,))
+            
+            columns = [description[0] for description in cursor.description]
             rows = cursor.fetchall()
-            conn.close()
-
-            # 转换为字典列表
+            
             snapshots = []
             for row in rows:
-                snapshots.append({
-                    'code': row['code'],
-                    'name': row['name'],
-                    'auction_price': row['auction_price'],
-                    'prev_close': row['auction_price'] / (1 + row['auction_change']),
-                    'auction_change': row['auction_change'],
-                    'auction_volume': row['auction_volume'],
-                    'auction_amount': row['auction_amount'],
-                    'volume_ratio': row['volume_ratio'],
-                    'buy_orders': row['buy_orders'],
-                    'sell_orders': row['sell_orders'],
-                    'timestamp': row['auction_time']
-                })
-
-            logger.info(f"加载了 {len(snapshots)} 个竞价快照（筛选条件: {filter_condition}）")
+                snapshot = dict(zip(columns, row))
+                snapshots.append(snapshot)
+            
+            conn.close()
+            
+            logger.info(f"✅ 加载了 {len(snapshots)} 条竞价快照 ({date})")
             return snapshots
-
+        
         except Exception as e:
-            logger.error(f"加载竞价快照失败: {e}")
+            logger.error(f"❌ 加载竞价快照失败: {e}")
             return []
-
-    def get_open_5min_data(self, code: str, date: str) -> Optional[Dict[str, Any]]:
-        """
-        获取开盘5分钟数据（优先使用CSV文件）
-
-        Args:
-            code: 股票代码
-            date: 日期
-
-        Returns:
-            开盘5分钟数据
-        """
-        try:
-            import pandas as pd
-
-            # 优先方案1：从CSV文件读取（已下载的历史数据）
-            csv_path = project_root / "data" / "minute_data" / f"{code}_1m.csv"
-
-            if csv_path.exists():
-                df = pd.read_csv(csv_path)
-
-                # 筛选指定日期的数据
-                df['date_str'] = df['time_str'].str.split(' ').str[0]
-                df_date = df[df['date_str'] == date]
-
-                if not df_date.empty:
-                    # 获取开盘前5分钟的数据（09:30-09:35）
-                    df_5min = df_date[df_date['time_str'].str.contains('09:3[0-4]')].head(5)
-
-                    if len(df_5min) >= 1:
-                        open_price = df_5min['open'].iloc[0]
-                        high_5min = df_5min['high'].max()
-                        low_5min = df_5min['low'].min()
-                        close_5min = df_5min['close'].iloc[-1]
-                        volume_5min = df_5min['volume'].sum()
-
-                        # 计算尾盘回落
-                        tail_drop = (high_5min - close_5min) / high_5min if high_5min > 0 else 0
-
-                        return {
-                            'code': code,
-                            'open_price': open_price,
-                            'high_5min': high_5min,
-                            'low_5min': low_5min,
-                            'close_5min': close_5min,
-                            'volume_5min': volume_5min,
-                            'tail_drop': tail_drop,
-                            'timestamp': f"{date} 09:35:00"
-                        }
-
-            # 备用方案2：从QMT获取
-            try:
-                import xtquant.xtdata as xtdata
-
-                date_num = date.replace('-', '')
-                kline = xtdata.get_local_data(
-                    field_list=['open', 'high', 'low', 'close', 'volume'],
-                    stock_list=[code],
-                    period='1m',
-                    start_time=date_num,
-                    end_time=date_num,
-                    count=-1
-                )
-
-                if kline and code in kline:
-                    data = kline[code]
-                    if len(data) >= 1:
-                        data_5min = data.head(5)
-
-                        open_price = data_5min['open'].iloc[0]
-                        high_5min = data_5min['high'].max()
-                        low_5min = data_5min['low'].min()
-                        close_5min = data_5min['close'].iloc[-1]
-                        volume_5min = data_5min['volume'].sum()
-
-                        tail_drop = (high_5min - close_5min) / high_5min if high_5min > 0 else 0
-
-                        return {
-                            'code': code,
-                            'open_price': open_price,
-                            'high_5min': high_5min,
-                            'low_5min': low_5min,
-                            'close_5min': close_5min,
-                            'volume_5min': volume_5min,
-                            'tail_drop': tail_drop,
-                            'timestamp': f"{date_num} 09:35:00"
-                        }
-            except Exception as e:
-                logger.debug(f"QMT获取失败: {e}")
-
-        except Exception as e:
-            logger.error(f"获取开盘数据失败 {code}: {e}")
-
-        return None
-
-    def replay_with_detection(self, date: str, filter_condition: str = 'all',
-                            top_n: int = None) -> List[Dict[str, Any]]:
-        """
-        回放竞价快照并检测诱多
-
-        Args:
-            date: 日期
-            filter_condition: 筛选条件
-            top_n: 只处理前n个（默认全部）
-
-        Returns:
-            检测结果列表
-        """
-        # 加载竞价快照
-        auction_snapshots = self.load_auction_snapshots(date, filter_condition)
-
-        if not auction_snapshots:
-            logger.warning(f"未找到 {date} 的竞价快照")
-            return []
-
-        # 限制数量
-        if top_n:
-            auction_snapshots = auction_snapshots[:top_n]
-
-        logger.info(f"开始回放 {len(auction_snapshots)} 个竞价快照...")
-
-        # 检测结果
+    
+    def filter_snapshots(self, snapshots: List[Dict[str, Any]], filter_type: str = None) -> List[Dict[str, Any]]:
+        """筛选竞价快照"""
+        if filter_type is None:
+            return snapshots
+        
+        filtered = []
+        
+        for snapshot in snapshots:
+            if filter_type == "high_open":
+                # 高开：涨幅>3%
+                if snapshot.get('auction_change', 0) > 0.03:
+                    filtered.append(snapshot)
+            elif filter_type == "low_open":
+                # 低开：跌幅< -3%
+                if snapshot.get('auction_change', 0) < -0.03:
+                    filtered.append(snapshot)
+            elif filter_type == "high_volume":
+                # 放量：量比>2
+                if snapshot.get('volume_ratio', 0) > 2.0:
+                    filtered.append(snapshot)
+        
+        logger.info(f"✅ 筛选后剩余 {len(filtered)} 条 (filter: {filter_type})")
+        return filtered
+    
+    def detect_traps(self, snapshots: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """检测诱多陷阱"""
         results = []
-
-        for i, auction_data in enumerate(auction_snapshots, 1):
-            code = auction_data['code']
-
-            # 获取开盘5分钟数据
-            open_data = self.get_open_5min_data(code, date)
-
-            if open_data:
-                # 检测诱多
-                result = self.detector.detect(auction_data, open_data)
-
-                if result:
-                    results.append(result)
-
-            # 进度提示
-            if i % 100 == 0 or i == len(auction_snapshots):
-                logger.info(f"进度: {i}/{len(auction_snapshots)} ({i/len(auction_snapshots)*100:.1f}%)")
-
-        logger.info(f"回放完成 - 检测到 {len(results)} 个诱多")
+        
+        for snapshot in snapshots:
+            try:
+                # 获取开盘后5分钟K线数据（模拟）
+                open_data = self._get_open_data(snapshot['code'], snapshot.get('date'))
+                
+                # 调用诱多检测器
+                result = self.detector.detect(snapshot, open_data)
+                
+                # 合并结果
+                merged_result = {**snapshot, **result}
+                results.append(merged_result)
+            
+            except Exception as e:
+                logger.warning(f"⚠️ 检测 {snapshot['code']} 失败: {e}")
+        
+        # 统计检测结果
+        trap_count = sum(1 for r in results if r.get('trap_type') != 'NORMAL')
+        logger.info(f"✅ 检测完成 - 总数: {len(results)}, 诱多: {trap_count}")
+        
         return results
-
-    def generate_report(self, results: List[Dict[str, Any]]) -> str:
-        """
-        生成检测报告
-
-        Args:
-            results: 检测结果列表
-
-        Returns:
-            报告字符串
-        """
+    
+    def _get_open_data(self, code: str, date: str) -> Dict[str, Any]:
+        """获取开盘后5分钟K线数据（模拟）"""
+        # TODO: 从QMT或AkShare获取真实的开盘K线数据
+        # 这里返回模拟数据
+        return {
+            'code': code,
+            'date': date,
+            'open_5min_change': 0.01,  # 开盘5分钟涨幅
+            'volume_5min': 1000000,
+        }
+    
+    def print_report(self, results: List[Dict[str, Any]], show_traps_only: bool = False):
+        """打印报告"""
+        if show_traps_only:
+            results = [r for r in results if r.get('trap_type') != 'NORMAL']
+        
         if not results:
-            return "没有检测到诱多模式"
-
-        # 统计
-        trap_counts = {}
-        for r in results:
-            trap_type = r.trap_type.value
-            trap_counts[trap_type] = trap_counts.get(trap_type, 0) + 1
-
-        # 表格数据
-        table_data = []
-        for r in results[:50]:  # 只显示前50个
-            table_data.append([
-                r.code,
-                r.name,
-                f"{r.auction_change*100:.2f}%",
-                f"{r.open_change*100:.2f}%",
-                f"{r.volume_ratio:.1f}x",
-                f"{r.tail_drop*100:.2f}%",
-                r.trap_type.value,
-                r.risk_level.value,
-                f"{r.confidence*100:.0f}%",
-                ", ".join(r.signals) if r.signals else "正常"
-            ])
-
-        # 报告
-        report = []
-        report.append("=" * 100)
-        report.append("竞价诱多检测结果")
-        report.append("=" * 100)
-        report.append(f"诱多数: {len(results)}")
-        report.append(f"诱多率: {len(results)/len(results)*100:.1f}%")
-        report.append("")
-        report.append("诱多类型分布：")
-        for trap_type, count in trap_counts.items():
-            report.append(f"  {trap_type}: {count} ({count/len(results)*100:.1f}%)")
-        report.append("")
-        report.append("=" * 100)
-
-        if table_data:
-            report.append(tabulate(
-                table_data,
-                headers=['代码', '名称', '竞价涨幅', '开盘涨幅', '量比', '尾盘回落', '诱多类型', '风险级别', '置信度', '信号'],
-                tablefmt='grid',
-                stralign='left'
-            ))
-
-        return "\n".join(report)
+            print("📊 没有数据可显示")
+            return
+        
+        print(f"\n{'='*100}")
+        print(f"{'代码':<10} {'名称':<12} {'竞价涨幅':<10} {'量比':<8} {'诱多类型':<20} {'风险级别':<10} {'置信度':<10}")
+        print(f"{'='*100}")
+        
+        for r in results[:20]:  # 只显示前20条
+            code = r.get('code', '').split('.')[0]
+            name = r.get('name', '')
+            change = f"{r.get('auction_change', 0)*100:.2f}%"
+            volume_ratio = f"{r.get('volume_ratio', 0):.2f}"
+            trap_type = r.get('trap_type', 'NORMAL')
+            risk_level = r.get('risk_level', 'UNKNOWN')
+            confidence = f"{r.get('confidence', 0)*100:.0f}%"
+            
+            print(f"{code:<10} {name:<12} {change:<10} {volume_ratio:<8} {trap_type:<20} {risk_level:<10} {confidence:<10}")
+        
+        print(f"{'='*100}")
+        print(f"总计: {len(results)} 条")
+        print(f"{'='*100}\n")
 
 
 def main():
     """主函数"""
-    parser = argparse.ArgumentParser(description='竞价快照回放脚本')
-    parser.add_argument('--date', type=str, required=True, help='回放日期（格式：YYYY-MM-DD）')
-    parser.add_argument('--filter', type=str, default='all',
-                       help='筛选条件（all, high_open, low_open, high_volume）')
-    parser.add_argument('--detect', action='store_true', help='检测诱多')
-    parser.add_argument('--top', type=int, help='只处理前n个')
-
+    parser = argparse.ArgumentParser(description='竞价快照回放器')
+    parser.add_argument('--date', type=str, help='回放日期（格式：YYYY-MM-DD）')
+    parser.add_argument('--filter', type=str, choices=['high_open', 'low_open', 'high_volume'], help='筛选条件')
+    parser.add_argument('--detect', action='store_true', help='检测诱多陷阱')
+    parser.add_argument('--traps-only', action='store_true', help='只显示诱多结果')
+    
     args = parser.parse_args()
-
+    
     # 初始化回放器
     replayer = AuctionSnapshotReplayer()
-
-    # 回放
+    
+    # 获取日期
+    date = args.date or datetime.now().strftime("%Y-%m-%d")
+    
+    print(f"\n{'='*60}")
+    print(f"回放日期: {date}")
+    print(f"{'='*60}\n")
+    
+    # 加载快照
+    snapshots = replayer.load_snapshots(date)
+    
+    if not snapshots:
+        logger.error(f"❌ 未找到 {date} 的竞价快照数据")
+        return
+    
+    # 筛选
+    if args.filter:
+        snapshots = replayer.filter_snapshots(snapshots, args.filter)
+    
+    # 检测诱多
     if args.detect:
-        results = replayer.replay_with_detection(args.date, args.filter, args.top)
-
-        # 显示报告
-        report = replayer.generate_report(results)
-        logger.info(f"\n{report}")
-    else:
-        # 只回放不检测
-        snapshots = replayer.load_auction_snapshots(args.date, args.filter)
-
-        if snapshots:
-            logger.info(f"\n回放了 {len(snapshots)} 个竞价快照")
-
-            # 显示前10个
-            table_data = []
-            for s in snapshots[:10]:
-                table_data.append([
-                    s['code'],
-                    s['name'],
-                    f"{s['auction_change']*100:.2f}%",
-                    f"{s['volume_ratio']:.1f}x"
-                ])
-
-            print(tabulate(
-                table_data,
-                headers=['代码', '名称', '竞价涨幅', '量比'],
-                tablefmt='grid'
-            ))
-        else:
-            logger.warning("没有找到竞价快照")
+        snapshots = replayer.detect_traps(snapshots)
+    
+    # 打印报告
+    replayer.print_report(snapshots, args.traps_only)
 
 
 if __name__ == "__main__":

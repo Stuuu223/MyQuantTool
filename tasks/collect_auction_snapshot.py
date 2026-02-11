@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-竞价快照采集脚本 (Phase3 第1周)
+竞价快照采集脚本 (Phase3 第1周) - 批量优化版
 
 功能：
-1. 每个交易日09:25采集全市场竞价快照
+1. 每个交易日09:25采集全市场竞价快照（批量API）
 2. 保存竞价数据到SQLite和Redis
 3. 支持批量采集和实时更新
 
@@ -21,6 +21,10 @@
 数据保存：
 - SQLite: data/auction_snapshots.db
 - Redis: auction:YYYYMMDD:CODE (24小时过期)
+
+性能：
+- 批量采集：500只/批
+- 预期速度：5190只股票 < 30秒
 """
 
 import sys
@@ -179,107 +183,56 @@ class AuctionSnapshotCollector:
             logger.error(f"❌ 获取股票列表失败: {e}")
             return []
     
-    def collect_single_snapshot(self, code: str, date: str = None) -> Optional[Dict[str, Any]]:
+    def save_snapshots_batch(self, snapshots: List[Dict[str, Any]]) -> int:
         """
-        采集单只股票的竞价快照
+        批量保存快照到SQLite（使用事务提升性能）
         
         Args:
-            code: 股票代码（如"600058.SH"）
-            date: 日期（格式：YYYY-MM-DD，默认为今天）
+            snapshots: 快照列表
         
         Returns:
-            竞价数据字典，失败返回None
+            成功保存的数量
         """
-        try:
-            import xtquant.xtdata as xtdata
-            
-            if date is None:
-                date = datetime.now().strftime("%Y-%m-%d")
-            
-            # 获取竞价数据（09:25:00的快照）
-            auction_time = f"{date} 09:25:00"
-            
-            # 获取分时数据
-            tick_data = xtdata.get_full_tick([code])
-            
-            if not tick_data or code not in tick_data:
-                logger.warning(f"⚠️ 未获取到 {code} 的数据")
-                return None
-            
-            data = tick_data[code]
-            
-            # 提取竞价数据
-            auction_data = {
-                'date': date,
-                'code': code,
-                'name': data.get('stockName', ''),
-                'auction_time': auction_time,
-                'auction_price': data.get('lastPrice', 0),
-                'auction_volume': data.get('volume', 0),
-                'auction_amount': data.get('amount', 0),
-                'auction_change': data.get('pctChg', 0),
-                'volume_ratio': data.get('volumeRatio', 0),
-                'buy_orders': data.get('buyOrdersVolume', 0),
-                'sell_orders': data.get('sellOrdersVolume', 0),
-                'bid_vol_1': data.get('bidVol', [0])[0] if data.get('bidVol') else 0,
-                'ask_vol_1': data.get('askVol', [0])[0] if data.get('askVol') else 0,
-                'market_type': 'SH' if code.endswith('.SH') else 'SZ',
-            }
-            
-            return auction_data
+        if not snapshots:
+            return 0
         
-        except Exception as e:
-            logger.error(f"❌ 采集 {code} 失败: {e}")
-            return None
-    
-    def save_snapshot_to_db(self, snapshot: Dict[str, Any]) -> bool:
-        """
-        保存竞价快照到SQLite数据库
-        
-        Args:
-            snapshot: 竞价数据字典
-        
-        Returns:
-            是否保存成功
-        """
         try:
             import sqlite3
             
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
-            # 插入或更新数据
-            cursor.execute("""
+            # 批量插入（使用executemany）
+            cursor.executemany("""
                 INSERT OR REPLACE INTO auction_snapshots (
                     date, code, name, auction_time, auction_price, auction_volume,
                     auction_amount, auction_change, volume_ratio, buy_orders,
                     sell_orders, bid_vol_1, ask_vol_1, market_type
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                snapshot['date'], snapshot['code'], snapshot['name'],
-                snapshot['auction_time'], snapshot['auction_price'],
-                snapshot['auction_volume'], snapshot['auction_amount'],
-                snapshot['auction_change'], snapshot['volume_ratio'],
-                snapshot['buy_orders'], snapshot['sell_orders'],
-                snapshot['bid_vol_1'], snapshot['ask_vol_1'],
-                snapshot['market_type']
-            ))
+            """, [
+                (s['date'], s['code'], s['name'], s['auction_time'],
+                 s['auction_price'], s['auction_volume'], s['auction_amount'],
+                 s['auction_change'], s['volume_ratio'], s['buy_orders'],
+                 s['sell_orders'], s['bid_vol_1'], s['ask_vol_1'], s['market_type'])
+                for s in snapshots
+            ])
             
             conn.commit()
             conn.close()
             
-            return True
+            return len(snapshots)
         
         except Exception as e:
-            logger.error(f"❌ 保存快照失败: {e}")
-            return False
+            logger.error(f"❌ 批量保存失败: {e}")
+            return 0
     
-    def collect_all_snapshots(self, date: str = None) -> Dict[str, int]:
+    def collect_all_snapshots_batch(self, date: str = None, batch_size: int = 500) -> Dict[str, int]:
         """
-        采集全市场竞价快照
+        批量采集全市场竞价快照（使用QMT批量API）
         
         Args:
             date: 日期（格式：YYYY-MM-DD，默认为今天）
+            batch_size: 每批次处理的股票数量（默认500）
         
         Returns:
             采集统计信息 {"total": 总数, "success": 成功数, "failed": 失败数}
@@ -287,7 +240,7 @@ class AuctionSnapshotCollector:
         if date is None:
             date = datetime.now().strftime("%Y-%m-%d")
         
-        logger.info(f"🚀 开始采集 {date} 的竞价快照")
+        logger.info(f"🚀 开始批量采集 {date} 的竞价快照")
         
         # 获取股票列表
         stock_codes = self.get_all_stock_codes()
@@ -297,43 +250,115 @@ class AuctionSnapshotCollector:
             logger.error("❌ 未获取到股票列表")
             return {'total': 0, 'success': 0, 'failed': 0}
         
-        logger.info(f"📊 共需采集 {total} 只股票")
+        total_batches = (total + batch_size - 1) // batch_size
+        logger.info(f"📊 共需采集 {total} 只股票，分 {total_batches} 批次，每批 {batch_size} 只")
         
-        # 采集数据
+        # 批量采集
+        import xtquant.xtdata as xtdata
+        
         success_count = 0
         failed_count = 0
+        processed = 0
         
-        for i, code in enumerate(stock_codes, 1):
-            # 采集单只股票快照
-            snapshot = self.collect_single_snapshot(code, date)
-            
-            if snapshot:
-                # 保存到SQLite
-                if self.save_snapshot_to_db(snapshot):
-                    # 保存到Redis（用于快速查询）
-                    self.snapshot_manager.save_auction_snapshot(
-                        code.split('.')[0],  # 去掉市场后缀
-                        snapshot
-                    )
-                    success_count += 1
-                else:
-                    failed_count += 1
-            else:
-                failed_count += 1
-            
-            # 进度提示
-            if i % 100 == 0 or i == total:
-                logger.info(f"📈 进度: {i}/{total} ({i/total*100:.1f}%) - 成功: {success_count}, 失败: {failed_count}")
-            
-            # 避免频繁请求
-            time.sleep(0.01)
+        start_time = time.time()
         
-        logger.info(f"✅ 采集完成 - 总数: {total}, 成功: {success_count}, 失败: {failed_count}")
+        # 分批处理
+        for i in range(0, total, batch_size):
+            batch_codes = stock_codes[i:i + batch_size]
+            batch_num = i // batch_size + 1
+            
+            batch_start = time.time()
+            logger.info(f"🔄 处理第 {batch_num}/{total_batches} 批次（{len(batch_codes)} 只股票）")
+            
+            try:
+                # 🔥 关键：批量获取tick数据
+                tick_data = xtdata.get_full_tick(batch_codes)
+                
+                if not tick_data:
+                    logger.warning(f"⚠️ 第 {batch_num} 批次未获取到数据")
+                    failed_count += len(batch_codes)
+                    continue
+                
+                # 准备批量保存的数据
+                batch_snapshots = []
+                
+                # 处理每只股票的数据
+                for code in batch_codes:
+                    processed += 1
+                    
+                    if code not in tick_data:
+                        failed_count += 1
+                        continue
+                    
+                    try:
+                        data = tick_data[code]
+                        
+                        # 提取竞价数据
+                        auction_data = {
+                            'date': date,
+                            'code': code,
+                            'name': data.get('stockName', ''),
+                            'auction_time': f"{date} 09:25:00",
+                            'auction_price': data.get('lastPrice', 0),
+                            'auction_volume': data.get('volume', 0),
+                            'auction_amount': data.get('amount', 0),
+                            'auction_change': data.get('pctChg', 0),
+                            'volume_ratio': data.get('volumeRatio', 0),
+                            'buy_orders': data.get('buyOrdersVolume', 0),
+                            'sell_orders': data.get('sellOrdersVolume', 0),
+                            'bid_vol_1': data.get('bidVol', [0])[0] if data.get('bidVol') else 0,
+                            'ask_vol_1': data.get('askVol', [0])[0] if data.get('askVol') else 0,
+                            'market_type': 'SH' if code.endswith('.SH') else 'SZ',
+                        }
+                        
+                        batch_snapshots.append(auction_data)
+                        
+                        # 同时保存到Redis（用于快速查询）
+                        if self.snapshot_manager.is_available:
+                            self.snapshot_manager.save_auction_snapshot(
+                                code.split('.')[0],
+                                auction_data
+                            )
+                    
+                    except Exception as e:
+                        logger.warning(f"⚠️ 处理 {code} 失败: {e}")
+                        failed_count += 1
+                
+                # 批量保存到SQLite
+                saved_count = self.save_snapshots_batch(batch_snapshots)
+                success_count += saved_count
+                failed_count += len(batch_codes) - saved_count
+                
+                # 批次统计
+                batch_time = time.time() - batch_start
+                elapsed = time.time() - start_time
+                avg_time_per_stock = elapsed / processed if processed > 0 else 0
+                eta_seconds = avg_time_per_stock * (total - processed)
+                
+                logger.info(
+                    f"📈 进度: {processed}/{total} ({processed/total*100:.1f}%) | "
+                    f"成功: {success_count} | 失败: {failed_count} | "
+                    f"批次耗时: {batch_time:.1f}s | 预计剩余: {eta_seconds:.0f}s"
+                )
+                
+                # 批次间短暂延迟（避免请求过快）
+                time.sleep(0.05)
+            
+            except Exception as e:
+                logger.error(f"❌ 第 {batch_num} 批次失败: {e}")
+                failed_count += len(batch_codes)
+        
+        total_time = time.time() - start_time
+        logger.info(
+            f"✅ 批量采集完成 - 总数: {total}, 成功: {success_count}, 失败: {failed_count}, "
+            f"总耗时: {total_time:.1f}s, 平均: {total_time/total*1000:.1f}ms/股"
+        )
         
         return {
             'total': total,
             'success': success_count,
-            'failed': failed_count
+            'failed': failed_count,
+            'time_seconds': total_time
         }
     
     def get_snapshot_stats(self, date: str = None) -> Dict[str, Any]:
@@ -350,7 +375,8 @@ class AuctionSnapshotCollector:
             import sqlite3
             
             if date is None:
-                date = datetime.now().strftime("%Y-%m-d")            
+                date = datetime.now().strftime("%Y-%m-%d")
+            
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
@@ -392,10 +418,11 @@ def main():
     """
     主函数
     """
-    parser = argparse.ArgumentParser(description='竞价快照采集脚本')
+    parser = argparse.ArgumentParser(description='竞价快照采集脚本（批量优化版）')
     parser.add_argument('--date', type=str, help='采集日期（格式：YYYY-MM-DD）')
     parser.add_argument('--start-date', type=str, help='开始日期（用于批量采集）')
     parser.add_argument('--end-date', type=str, help='结束日期（用于批量采集）')
+    parser.add_argument('--batch-size', type=int, default=500, help='每批次股票数量（默认500）')
     parser.add_argument('--stats', action='store_true', help='显示统计信息')
     
     args = parser.parse_args()
@@ -431,9 +458,12 @@ def main():
                 logger.info(f"采集日期: {date_str}")
                 logger.info(f"{'='*60}")
                 
-                result = collector.collect_all_snapshots(date_str)
+                result = collector.collect_all_snapshots_batch(date_str, args.batch_size)
                 
-                logger.info(f"\n结果: 总数={result['total']}, 成功={result['success']}, 失败={result['failed']}")
+                logger.info(
+                    f"\n结果: 总数={result['total']}, 成功={result['success']}, "
+                    f"失败={result['failed']}, 耗时={result.get('time_seconds', 0):.1f}s"
+                )
             else:
                 logger.info(f"⏭️  跳过周末: {date_str}")
             
@@ -448,13 +478,14 @@ def main():
         logger.info(f"采集日期: {date}")
         logger.info(f"{'='*60}\n")
         
-        result = collector.collect_all_snapshots(date)
+        result = collector.collect_all_snapshots_batch(date, args.batch_size)
         
         logger.info(f"\n{'='*60}")
         logger.info(f"✅ 采集完成")
         logger.info(f"总数: {result['total']}")
         logger.info(f"成功: {result['success']}")
         logger.info(f"失败: {result['failed']}")
+        logger.info(f"总耗时: {result.get('time_seconds', 0):.1f}s")
         logger.info(f"{'='*60}\n")
         
         # 显示统计信息
