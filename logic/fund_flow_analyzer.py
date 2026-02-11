@@ -87,9 +87,12 @@ class FundFlowAnalyzer:
     
     def get_fund_flow_cached(self, stock_code: str, days: int = 5) -> Dict:
         """
-        获取资金流向数据（显式缓存版本）
+        获取资金流向数据（智能缓存版本）
 
-        优先使用 SQLite 缓存，未命中则调用 AkShare 接口并回写缓存。
+        🔥 [P0 FIX] 修复缓存键不匹配问题
+        - 盘中时段（9:30-16:30）：查询 T-1 数据
+        - 盘后时段（16:30-次日9:30）：查询 T 数据
+        - 自动双层查询：T 未命中时回退到 T-1
 
         Args:
             stock_code: 股票代码
@@ -101,30 +104,67 @@ class FundFlowAnalyzer:
         # 确保是6位代码
         stock_code_6 = stock_code.replace('.SZ', '').replace('.SH', '').replace('.sz', '').replace('.sh', '')
 
-        # 1) 先查 SQLite 缓存
+        # 1) 智能查询 SQLite 缓存
         if self.enable_cache and self.db_cache:
-            today = datetime.now().strftime('%Y-%m-%d')
-            cached_data = self.db_cache.get(stock_code_6, today)
+            from datetime import timedelta
+
+            now = datetime.now()
+
+            # 🔥 判断是否在交易时段（9:30-16:30）
+            trading_start = now.replace(hour=9, minute=30, second=0, microsecond=0)
+            trading_end = now.replace(hour=16, minute=30, second=0, microsecond=0)
+            is_trading_hours = trading_start <= now < trading_end
+
+            if is_trading_hours:
+                # 盘中：只能获取 T-1 数据
+                query_date = (now - timedelta(days=1)).strftime('%Y-%m-%d')
+                logger.debug(f"🕐 盘中模式: 查询 T-1 数据 ({query_date})")
+            else:
+                # 盘后：优先尝试 T 数据
+                query_date = now.strftime('%Y-%m-%d')
+                logger.debug(f"🌙 盘后模式: 查询 T 数据 ({query_date})")
+
+            # 第一次查询：尝试目标日期
+            cached_data = self.db_cache.get(stock_code_6, query_date)
 
             if cached_data:
-                # 缓存命中，返回数据（转换为原始格式）
-                logger.debug(f"✅ 缓存命中: {stock_code_6}")
+                logger.debug(f"✅ 缓存命中: {stock_code_6} {query_date}")
                 return {
                     "stock_code": stock_code,
                     "records": [cached_data],
                     "latest": cached_data,
-                    "from_cache": True
+                    "from_cache": True,
+                    "cache_date": query_date
                 }
 
-        # 2) 调用 AkShare 接口
+            # 🔥 盘后时段：如果 T 数据未命中，回退到 T-1
+            if not is_trading_hours:
+                query_date_t1 = (now - timedelta(days=1)).strftime('%Y-%m-%d')
+                cached_data = self.db_cache.get(stock_code_6, query_date_t1)
+
+                if cached_data:
+                    logger.debug(f"✅ 缓存命中 (T-1 回退): {stock_code_6} {query_date_t1}")
+                    return {
+                        "stock_code": stock_code,
+                        "records": [cached_data],
+                        "latest": cached_data,
+                        "from_cache": True,
+                        "cache_date": query_date_t1
+                    }
+
+            logger.debug(f"❌ 缓存未命中: {stock_code_6}，调用 AkShare API")
+
+        # 2) 缓存未命中，调用 AkShare 接口
         data = self._get_fund_flow_from_akshare(stock_code, days)
 
-        # 3) 写回 SQLite 缓存
+        # 3) 写回 SQLite 缓存（使用实际数据日期作为键）
         if self.enable_cache and self.db_cache and "error" not in data:
             latest = data.get('latest')
             if latest:
-                self.db_cache.save(stock_code_6, latest.get('date', ''), data)
-                logger.debug(f"✅ 缓存写入: {stock_code_6}")
+                actual_date = latest.get('date', '')
+                if actual_date:
+                    self.db_cache.save(stock_code_6, actual_date, data)
+                    logger.debug(f"💾 缓存写入: {stock_code_6} {actual_date}")
 
         return data
     
