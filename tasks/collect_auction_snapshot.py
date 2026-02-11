@@ -183,96 +183,147 @@ class AuctionSnapshotCollector:
             logger.error(f"❌ 获取股票列表失败: {e}")
             return []
     
-    def get_historical_avg_volume(self, codes: List[str], date: str) -> Dict[str, float]:
+    def get_historical_avg_volume(self, codes: List[str], date: str) -> Dict[str, Optional[float]]:
         """
         获取历史5日平均成交量（用于计算量比）
-        
+
         Args:
             codes: 股票代码列表
             date: 当前日期
-        
+
         Returns:
-            {code: avg_volume_per_minute}
+            {code: avg_volume_per_minute}  # None表示无效数据
+
+        数据质量保证：
+            - 返回None明确标记无效数据
+            - 超过10%数据失败时告警
+            - 区分模拟环境和生产环境
         """
         try:
             import xtquant.xtdata as xtdata
-            
-            # 计算前一交易日
-            current = datetime.strptime(date, "%Y-%m-%d")
-            prev_date = (current - timedelta(days=1)).strftime("%Y-%m-%d")
-            
+            import pandas as pd
+
             # 获取前5日K线数据
             hist_data = xtdata.get_market_data(
                 stock_list=codes,
                 period='1d',
-                start_time='',
-                end_time=prev_date,
                 count=5,
                 dividend_type='none',
                 fill_data=True
             )
-            
+
             result = {}
-            for code in codes:
-                if code in hist_data and 'volume' in hist_data[code]:
-                    volumes = hist_data[code]['volume']
-                    if len(volumes) > 0:
-                        avg_volume_per_day = volumes.mean()
-                        # 平均到每分钟（一天240分钟）
-                        avg_volume_per_minute = avg_volume_per_day / 240.0
-                        result[code] = avg_volume_per_minute
-                    else:
-                        result[code] = 1.0  # 默认值
+            invalid_count = 0
+
+            # QMT返回：{'volume': DataFrame, 'time': DataFrame, ...}
+            # DataFrame索引是股票代码
+            if hist_data and 'volume' in hist_data:
+                volume_df = hist_data['volume']
+
+                for code in codes:
+                    try:
+                        if code in volume_df.index:
+                            volumes = volume_df.loc[code]
+
+                            # 严格验证：必须是Series且有有效数据
+                            if isinstance(volumes, pd.Series) and len(volumes) > 0:
+                                valid_vols = volumes.dropna()
+                                if len(valid_vols) > 0:
+                                    avg_volume_per_day = float(valid_vols.mean())
+                                    avg_volume_per_minute = avg_volume_per_day / 240.0
+                                    result[code] = avg_volume_per_minute
+                                else:
+                                    # 全为NaN
+                                    result[code] = None
+                                    invalid_count += 1
+                            else:
+                                # 不是Series或为空
+                                result[code] = None
+                                invalid_count += 1
+                        else:
+                            # 股票不在索引中
+                            result[code] = None
+                            invalid_count += 1
+                    except Exception as e:
+                        logger.warning(f"⚠️ 处理{code}历史数据失败: {e}")
+                        result[code] = None
+                        invalid_count += 1
+            else:
+                # 无volume字段，全部无效
+                result = {code: None for code in codes}
+                invalid_count = len(codes)
+
+            # 数据质量告警
+            if len(codes) > 0:
+                invalid_rate = invalid_count / len(codes)
+                if invalid_rate > 0.5:
+                    logger.error(f"❌ 历史数据获取失败率{invalid_rate*100:.1f}% ({invalid_count}/{len(codes)})，可能为QMT模拟环境")
+                elif invalid_rate > 0.1:
+                    logger.warning(f"⚠️ 历史数据获取失败率{invalid_rate*100:.1f}% ({invalid_count}/{len(codes)})")
                 else:
-                    result[code] = 1.0
-            
+                    logger.debug(f"✅ 历史数据获取成功，失败率{invalid_rate*100:.1f}%")
+
             return result
-        
+
         except Exception as e:
-            logger.warning(f"⚠️ 获取历史成交量失败: {e}")
-            return {code: 1.0 for code in codes}
+            logger.error(f"❌ 获取历史成交量异常: {e}", exc_info=True)
+            return {code: None for code in codes}
     
     def save_snapshots_batch(self, snapshots: List[Dict[str, Any]]) -> int:
         """
         批量保存快照到SQLite（使用事务提升性能）
-        
+
         Args:
             snapshots: 快照列表
-        
+
         Returns:
             成功保存的数量
         """
         if not snapshots:
             return 0
-        
+
         try:
             import sqlite3
-            
+
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            
+
+            # 确保表包含数据质量字段（兼容旧数据）
+            try:
+                cursor.execute("ALTER TABLE auction_snapshots ADD COLUMN volume_ratio_valid INTEGER DEFAULT 0")
+                cursor.execute("ALTER TABLE auction_snapshots ADD COLUMN data_source TEXT DEFAULT 'unknown'")
+                conn.commit()
+            except sqlite3.OperationalError:
+                # 字段已存在，忽略
+                pass
+
             # 批量插入（使用executemany）
             cursor.executemany("""
                 INSERT OR REPLACE INTO auction_snapshots (
                     date, code, name, auction_time, auction_price, auction_volume,
                     auction_amount, auction_change, volume_ratio, buy_orders,
-                    sell_orders, bid_vol_1, ask_vol_1, market_type
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    sell_orders, bid_vol_1, ask_vol_1, market_type,
+                    volume_ratio_valid, data_source
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, [
                 (s['date'], s['code'], s['name'], s['auction_time'],
                  s['auction_price'], s['auction_volume'], s['auction_amount'],
                  s['auction_change'], s['volume_ratio'], s['buy_orders'],
-                 s['sell_orders'], s['bid_vol_1'], s['ask_vol_1'], s['market_type'])
+                 s['sell_orders'], s['bid_vol_1'], s['ask_vol_1'], s['market_type'],
+                 s.get('volume_ratio_valid', 0), s.get('data_source', 'unknown'))
                 for s in snapshots
             ])
-            
+
             conn.commit()
             conn.close()
-            
+
             return len(snapshots)
-        
+
+        except sqlite3.DatabaseError as e:
+            logger.error(f"❌ 数据库错误: {e}")
+            return 0
         except Exception as e:
-            logger.error(f"❌ 批量保存失败: {e}")
+            logger.error(f"❌ 批量保存失败: {e}", exc_info=True)
             return 0
     
     def collect_all_snapshots_batch(self, date: str = None, batch_size: int = 500) -> Dict[str, int]:
@@ -318,18 +369,32 @@ class AuctionSnapshotCollector:
             
             batch_start = time.time()
             logger.info(f"🔄 处理第 {batch_num}/{total_batches} 批次（{len(batch_codes)} 只股票）")
-            
+
             try:
                 # 🔥 关键1：批量获取tick数据
                 tick_data = xtdata.get_full_tick(batch_codes)
-                
+
                 if not tick_data:
                     logger.warning(f"⚠️ 第 {batch_num} 批次未获取到数据")
                     failed_count += len(batch_codes)
                     continue
-                
+
                 # 🔥 关键2：批量获取历史成交量（用于计算量比）
                 avg_volumes = self.get_historical_avg_volume(batch_codes, date)
+
+                # 🔥 三级验证：检查历史数据质量
+                if avg_volumes:
+                    valid_avg_count = sum(1 for v in avg_volumes.values() if v is not None and v > 0)
+                    total_avg_count = len(avg_volumes)
+                    invalid_rate = 1 - (valid_avg_count / total_avg_count) if total_avg_count > 0 else 1
+
+                    # 告警阈值：超过50%数据无效，模拟环境
+                    if invalid_rate > 0.5:
+                        logger.warning(f"⚠️ 批次{batch_num}历史数据无效率{invalid_rate*100:.1f}%，量比计算可能不准确")
+
+                    # 拦截阈值：超过90%数据无效，记录严重告警
+                    if invalid_rate > 0.9:
+                        logger.error(f"❌ 批次{batch_num}历史数据严重缺失（{invalid_rate*100:.1f}%），建议检查QMT环境")
                 
                 # 准备批量保存的数据
                 batch_snapshots = []
@@ -354,16 +419,26 @@ class AuctionSnapshotCollector:
                         else:
                             auction_change = 0.0
                         
-                        # 🔥 关键4：手动计算量比
+                        # 🔥 关键4：手动计算量比（带质量标记）
                         auction_volume = data.get('volume', 0)
-                        avg_volume_per_minute = avg_volumes.get(code, 1.0)
-                        
-                        if avg_volume_per_minute > 0:
+                        avg_volume_per_minute = avg_volumes.get(code)
+
+                        # 判断历史数据是否有效
+                        volume_ratio_valid = avg_volume_per_minute is not None and avg_volume_per_minute > 0
+
+                        if volume_ratio_valid:
                             volume_ratio = auction_volume / avg_volume_per_minute
+                            # 合理性验证：量比应在0.01-1000范围内
+                            if volume_ratio < 0.01 or volume_ratio > 1000:
+                                logger.warning(f"⚠️ {code}量比异常({volume_ratio:.2f})，请人工审核")
                         else:
-                            volume_ratio = 0.0
-                        
-                        # 提取竞价数据
+                            volume_ratio = None  # 标记为无效
+                            volume_ratio_valid = False
+
+                        # 环境标记
+                        is_simulated = (avg_volume_per_minute is None)
+
+                        # 提取竞价数据（含质量标记）
                         auction_data = {
                             'date': date,
                             'code': code,
@@ -372,13 +447,16 @@ class AuctionSnapshotCollector:
                             'auction_price': last_price,
                             'auction_volume': auction_volume,
                             'auction_amount': data.get('amount', 0),
-                            'auction_change': auction_change,      # ✅ 手动计算
-                            'volume_ratio': volume_ratio,          # ✅ 手动计算
-                            'buy_orders': 0,                       # ⚠️ QMT不提供
-                            'sell_orders': 0,                      # ⚠️ QMT不提供
+                            'auction_change': auction_change,           # ✅ 手动计算
+                            'volume_ratio': volume_ratio or 0.0,       # ✅ 手动计算（无效为0）
+                            'buy_orders': 0,                            # ⚠️ QMT不提供
+                            'sell_orders': 0,                           # ⚠️ QMT不提供
                             'bid_vol_1': data.get('bidVol', [0])[0] if data.get('bidVol') else 0,
                             'ask_vol_1': data.get('askVol', [0])[0] if data.get('askVol') else 0,
                             'market_type': 'SH' if code.endswith('.SH') else 'SZ',
+                            # 新增：数据质量字段
+                            'volume_ratio_valid': int(volume_ratio_valid),  # 1=有效, 0=无效
+                            'data_source': 'simulated' if is_simulated else 'production',  # 数据来源
                         }
                         
                         batch_snapshots.append(auction_data)
