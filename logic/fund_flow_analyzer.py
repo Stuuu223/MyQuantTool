@@ -87,12 +87,12 @@ class FundFlowAnalyzer:
     
     def get_fund_flow_cached(self, stock_code: str, days: int = 5) -> Dict:
         """
-        获取资金流向数据（智能缓存版本）
+        获取资金流向数据（智能缓存版本 - 多层回退）
 
-        🔥 [P0 FIX] 修复缓存键不匹配问题
-        - 盘中时段（9:30-16:30）：查询 T-1 数据
-        - 盘后时段（16:30-次日9:30）：查询 T 数据
-        - 自动双层查询：T 未命中时回退到 T-1
+        🔥 [P0 FIX v2] 修复缓存键不匹配问题 + 增强回退逻辑
+        - 盘中时段（9:30-16:30）：T-1 → T-2 → T-3 → T-4 → T-5（处理周末/节假日）
+        - 盘后时段（16:30-次日9:30）：T → T-1 → T-2 → T-3 → T-4
+        - 自动多层回退：处理数据延迟和节假日问题
 
         Args:
             stock_code: 股票代码
@@ -104,7 +104,7 @@ class FundFlowAnalyzer:
         # 确保是6位代码
         stock_code_6 = stock_code.replace('.SZ', '').replace('.SH', '').replace('.sz', '').replace('.sh', '')
 
-        # 1) 智能查询 SQLite 缓存
+        # 1) 智能查询 SQLite 缓存（多层回退）
         if self.enable_cache and self.db_cache:
             from datetime import timedelta
 
@@ -115,44 +115,39 @@ class FundFlowAnalyzer:
             trading_end = now.replace(hour=16, minute=30, second=0, microsecond=0)
             is_trading_hours = trading_start <= now < trading_end
 
+            # 🔥 多层回退逻辑
             if is_trading_hours:
-                # 盘中：只能获取 T-1 数据
-                query_date = (now - timedelta(days=1)).strftime('%Y-%m-%d')
-                logger.debug(f"🕐 盘中模式: 查询 T-1 数据 ({query_date})")
+                # 盘中：尝试 T-1 → T-2 → T-3 → T-4 → T-5（处理周末/节假日）
+                for i in range(1, 6):  # T-1 到 T-5
+                    query_date = (now - timedelta(days=i)).strftime('%Y-%m-%d')
+                    cached_data = self.db_cache.get(stock_code_6, query_date)
+
+                    if cached_data:
+                        logger.debug(f"✅ 缓存命中: {stock_code_6} (T-{i}数据, {query_date})")
+                        return {
+                            "stock_code": stock_code,
+                            "records": [cached_data],
+                            "latest": cached_data,
+                            "from_cache": True,
+                            "cache_date": query_date
+                        }
             else:
-                # 盘后：优先尝试 T 数据
-                query_date = now.strftime('%Y-%m-%d')
-                logger.debug(f"🌙 盘后模式: 查询 T 数据 ({query_date})")
+                # 盘后：尝试 T → T-1 → T-2 → T-3 → T-4
+                for i in range(0, 5):  # T 到 T-4
+                    query_date = (now - timedelta(days=i)).strftime('%Y-%m-%d')
+                    cached_data = self.db_cache.get(stock_code_6, query_date)
 
-            # 第一次查询：尝试目标日期
-            cached_data = self.db_cache.get(stock_code_6, query_date)
+                    if cached_data:
+                        logger.debug(f"✅ 缓存命中: {stock_code_6} (T-{i}数据, {query_date})")
+                        return {
+                            "stock_code": stock_code,
+                            "records": [cached_data],
+                            "latest": cached_data,
+                            "from_cache": True,
+                            "cache_date": query_date
+                        }
 
-            if cached_data:
-                logger.debug(f"✅ 缓存命中: {stock_code_6} {query_date}")
-                return {
-                    "stock_code": stock_code,
-                    "records": [cached_data],
-                    "latest": cached_data,
-                    "from_cache": True,
-                    "cache_date": query_date
-                }
-
-            # 🔥 盘后时段：如果 T 数据未命中，回退到 T-1
-            if not is_trading_hours:
-                query_date_t1 = (now - timedelta(days=1)).strftime('%Y-%m-%d')
-                cached_data = self.db_cache.get(stock_code_6, query_date_t1)
-
-                if cached_data:
-                    logger.debug(f"✅ 缓存命中 (T-1 回退): {stock_code_6} {query_date_t1}")
-                    return {
-                        "stock_code": stock_code,
-                        "records": [cached_data],
-                        "latest": cached_data,
-                        "from_cache": True,
-                        "cache_date": query_date_t1
-                    }
-
-            logger.debug(f"❌ 缓存未命中: {stock_code_6}，调用 AkShare API")
+            logger.warning(f"❌ 缓存未命中: {stock_code_6}，调用 AkShare API")
 
         # 2) 缓存未命中，调用 AkShare 接口
         data = self._get_fund_flow_from_akshare(stock_code, days)
@@ -164,9 +159,10 @@ class FundFlowAnalyzer:
                 actual_date = latest.get('date', '')
                 if actual_date:
                     self.db_cache.save(stock_code_6, actual_date, data)
-                    logger.debug(f"💾 缓存写入: {stock_code_6} {actual_date}")
+                    logger.debug(f"💾 缓存写入: {stock_code_6} → {actual_date}")
 
         return data
+
     
     def get_fund_flow(self, stock_code: str, days: int = 5) -> Dict:
         """

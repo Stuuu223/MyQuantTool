@@ -1961,11 +1961,9 @@ class FullMarketScanner:
 
                 # 记录被标记为禁止场景的股票（白名单短路后，主线起爆候选不会进入这里）
                 if scenario_result.is_tail_rally or scenario_result.is_potential_trap:
-                    logger.warning(f"⚠️  [{code}] 被标记为禁止场景: {scenario_result.scenario.value}")
-                    logger.warning(f"   原因: {', '.join(scenario_result.reasons[:2])}")  # 只打印前2条原因，避免刷屏
+                    logger.debug(f"⚠️  [{code}] {scenario_result.scenario.value}: {scenario_result.reasons[0] if scenario_result.reasons else ''}")
                 elif scenario_result.is_potential_mainline:
-                    logger.info(f"✅ [{code}] 被识别为主线起爆候选 (置信度: {scenario_result.confidence:.2f})")
-                    logger.info(f"   原因: {', '.join(scenario_result.reasons[:2])}")
+                    logger.debug(f"✅ [{code}] 主线起爆候选 (置信度: {scenario_result.confidence:.2f}): {scenario_result.reasons[0] if scenario_result.reasons else ''}")
                     
             except Exception as e:
                 logger.warning(f"⚠️  {code} Level3 分析失败: {e}")
