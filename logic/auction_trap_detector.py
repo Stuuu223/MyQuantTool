@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-竞价诡多检测器 (Phase3 �?�?
+竞价诡多检测器 (Phase3 第1周)
 
-功能�?1. 检测“竞价高开+开盘砸盘”诡多模�?2. 检测“纾价爆�?尾盘回落”诡多模�?3. 检测“竞价平开+开盘拉升”正常模�?
+功能：
+1. 检测“竞价高开+开盘砸盘”诡多模式
+2. 检测“纾价爆量+尾盘回落”诡多模式
+3. 检测“竞价平开+开盘拉升”正常模式
+
 检测规则：
-- 竞价高开+开盘砸�? 竞价涨幅>3% + 开�?分钟内跌�?2%
+- 竞价高开+开盘砸盘: 竞价涨幅>3% + 开盘5分钟内跌幅>2%
 - 纾价爆量+尾盘回落: 纾价量比>2 + 尾盘回落>1%
-- 纾价平开+开盘拉�? 纾价涨幅<1% + 开�?分钟涨幅>3%
+- 纾价平开+开盘拉升: 纾价涨幅<1% + 开盘5分钟涨幅>3%
 
-使用方法�?    from logic.auction_trap_detector import AuctionTrapDetector
+使用方法：
+    from logic.auction_trap_detector import AuctionTrapDetector
     
     detector = AuctionTrapDetector()
     result = detector.detect(auction_data, open_data)
@@ -17,7 +22,7 @@
     if result['trap_type'] != 'NORMAL':
         print(f"发现诡多: {result['trap_type']}")
         print(f"风险级别: {result['risk_level']}")
-        print(f"置信�? {result['confidence']*100:.0f}%")
+        print(f"置信度: {result['confidence']*100:.0f}%")
 """
 
 import sys
@@ -38,33 +43,46 @@ logger = get_logger(__name__)
 class TrapType(Enum):
     """诡多类型枚举"""
     NORMAL = "NORMAL"  # 正常
-    AUC_HIGH_OPEN_DUMP = "AUC_HIGH_OPEN_DUMP"  # 纾价高开+开盘砸�?    AUC_BOOM_TAIL_DROP = "AUC_BOOM_TAIL_DROP"  # 纾价爆量+尾盘回落
-    AUC_FLAT_OPEN_PUMP = "AUC_FLAT_OPEN_PUMP"  # 纾价平开+开盘拉�?
+    AUC_HIGH_OPEN_DUMP = "AUC_HIGH_OPEN_DUMP"  # 纾价高开+开盘砸盘
+    AUC_BOOM_TAIL_DROP = "AUC_BOOM_TAIL_DROP"  # 纾价爆量+尾盘回落
+    AUC_FLAT_OPEN_PUMP = "AUC_FLAT_OPEN_PUMP"  # 纾价平开+开盘拉升
+
 
 class RiskLevel(Enum):
     """风险级别枚举"""
-    LOW = "🟢 �?  # 低风�?    MEDIUM = "🟡 �?  # 中风�?    HIGH = "🔴 �?  # 高风�?
+    LOW = "🟢 低"  # 低风险
+    MEDIUM = "🟡 中"  # 中风险
+    HIGH = "🔴 高"  # 高风险
+
 
 @dataclass
 class AuctionData:
-    """纾价数据�?""
+    """纾价数据类"""
     code: str
     name: str
     auction_price: float  # 纾价价格
     prev_close: float  # 昨收
     auction_change: float  # 纾价涨幅
     auction_volume: int  # 纾价量（手）
-    auction_amount: float  # 纾价金额（元�?    volume_ratio: float  # 量比
-    buy_orders: int  # 买单�?    sell_orders: int  # 卖单�?    timestamp: str  # 时间�?
+    auction_amount: float  # 纾价金额（元）
+    volume_ratio: float  # 量比
+    buy_orders: int  # 买单量
+    sell_orders: int  # 卖单量
+    timestamp: str  # 时间戳
+
 
 @dataclass
 class OpenData:
     """开盘数据类"""
     code: str
     open_price: float  # 开盘价
-    high_5min: float  # 开�?分钟最高价
-    low_5min: float  # 开�?分钟最低价
-    close_5min: float  # 开�?分钟收盘�?    volume_5min: int  # 开�?分钟成交�?    tail_drop: float  # 尾盘回落幅度（最�?收盘�?    timestamp: str  # 时间�?
+    high_5min: float  # 开盘5分钟最高价
+    low_5min: float  # 开盘5分钟最低价
+    close_5min: float  # 开盘5分钟收盘价
+    volume_5min: int  # 开盘5分钟成交量
+    tail_drop: float  # 尾盘回落幅度（最高-收盘）
+    timestamp: str  # 时间戳
+
 
 @dataclass
 class DetectionResult:
@@ -73,29 +91,35 @@ class DetectionResult:
     name: str
     trap_type: TrapType  # 诡多类型
     risk_level: RiskLevel  # 风险级别
-    confidence: float  # 置信�?(0-1)
+    confidence: float  # 置信度 (0-1)
     auction_change: float  # 纾价涨幅
-    open_change: float  # 开盘涨�?    volume_ratio: float  # 量比
+    open_change: float  # 开盘涨幅
+    volume_ratio: float  # 量比
     tail_drop: float  # 尾盘回落
     signals: List[str]  # 信号列表
-    timestamp: str  # 检测时�?
+    timestamp: str  # 检测时间
+
 
 class AuctionTrapDetector:
     """
     纾价诡多检测器
     
-    检测纾价阶段的异常模式，识别诡多陷�?    """
+    检测纾价阶段的异常模式，识别诡多陷阱
+    """
     
-    # 检测阈值配�?    THRESHOLDS = {
-        # 纾价高开+开盘砸�?        'auc_high_open': 0.03,  # 纾价涨幅 > 3%
-        'open_dump': -0.02,  # 开�?分钟跌幅 > 2%
+    # 检测阈值配置
+    THRESHOLDS = {
+        # 纾价高开+开盘砸盘
+        'auc_high_open': 0.03,  # 纾价涨幅 > 3%
+        'open_dump': -0.02,  # 开盘5分钟跌幅 > 2%
         
         # 纾价爆量+尾盘回落
         'auc_volume_ratio': 2.0,  # 量比 > 2.0
         'tail_drop': 0.01,  # 尾盘回落 > 1%
         
-        # 纾价平开+开盘拉�?        'auc_flat_open': 0.01,  # 纾价涨幅 < 1%
-        'open_pump': 0.03,  # 开�?分钟涨幅 > 3%
+        # 纾价平开+开盘拉升
+        'auc_flat_open': 0.01,  # 纾价涨幅 < 1%
+        'open_pump': 0.03,  # 开盘5分钟涨幅 > 3%
     }
     
     def __init__(self, config: Dict[str, Any] = None):
@@ -108,25 +132,31 @@ class AuctionTrapDetector:
         if config:
             self.THRESHOLDS.update(config)
         
-        logger.info("�?纾价诡多检测器初始化成�?)
+        logger.info("✅ 纾价诡多检测器初始化成功")
     
     def _detect_high_open_dump(self, auction_data: AuctionData, open_data: OpenData) -> Optional[DetectionResult]:
         """
-        检测“纾价高开+开盘砸盘”模�?        
-        特征�?        - 纾价高开 > 3%
-        - 开�?分钟内砸�?> 2%
-        - 纾价放量（量�?> 1.5�?        
+        检测“纾价高开+开盘砸盘”模式
+        
+        特征：
+        - 纾价高开 > 3%
+        - 开盘5分钟内砸盘 > 2%
+        - 纾价放量（量比 > 1.5）
+        
         Returns:
             检测结果，未检测到返回None
         """
-        # 计算开盘变�?        open_change = (open_data.close_5min - open_data.open_price) / open_data.open_price
+        # 计算开盘变化
+        open_change = (open_data.close_5min - open_data.open_price) / open_data.open_price
         
-        # 检测条�?        is_high_open = auction_data.auction_change > self.THRESHOLDS['auc_high_open']
+        # 检测条件
+        is_high_open = auction_data.auction_change > self.THRESHOLDS['auc_high_open']
         is_dump = open_change < self.THRESHOLDS['open_dump']
         has_volume = auction_data.volume_ratio > 1.5
         
         if is_high_open and is_dump:
-            # 计算置信度（80-95%�?            confidence = 0.8
+            # 计算置信度（80-95%）
+            confidence = 0.8
             if has_volume:
                 confidence += 0.1  # 放量确认 +10%
             if open_change < -0.03:
@@ -141,9 +171,9 @@ class AuctionTrapDetector:
             # 生成信号
             signals = []
             signals.append(f"纾价高开 {auction_data.auction_change*100:.2f}%")
-            signals.append(f"开�?分钟砸盘 {-open_change*100:.2f}%")
+            signals.append(f"开盘5分钟砸盘 {-open_change*100:.2f}%")
             if has_volume:
-                signals.append(f"纾价放量 {auction_data.volume_ratio:.1f}�?)
+                signals.append(f"纾价放量 {auction_data.volume_ratio:.1f}倍")
             
             return DetectionResult(
                 code=auction_data.code,
@@ -163,19 +193,24 @@ class AuctionTrapDetector:
     
     def _detect_boom_tail_drop(self, auction_data: AuctionData, open_data: OpenData) -> Optional[DetectionResult]:
         """
-        检测“纾价爆�?尾盘回落”模�?        
-        特征�?        - 纾价量比 > 2.0
+        检测“纾价爆量+尾盘回落”模式
+        
+        特征：
+        - 纾价量比 > 2.0
         - 尾盘回落 > 1%
-        - 纾价涨幅适中�?-5%�?        
+        - 纾价涨幅适中（1-5%）
+        
         Returns:
             检测结果，未检测到返回None
         """
-        # 检测条�?        is_boom = auction_data.volume_ratio > self.THRESHOLDS['auc_volume_ratio']
+        # 检测条件
+        is_boom = auction_data.volume_ratio > self.THRESHOLDS['auc_volume_ratio']
         is_drop = open_data.tail_drop > self.THRESHOLDS['tail_drop']
         is_moderate_change = 0.01 < auction_data.auction_change < 0.05
         
         if is_boom and is_drop:
-            # 计算置信度（70-85%�?            confidence = 0.7
+            # 计算置信度（70-85%）
+            confidence = 0.7
             if is_moderate_change:
                 confidence += 0.05  # 适中涨幅 +5%
             if auction_data.volume_ratio > 3.0:
@@ -191,7 +226,7 @@ class AuctionTrapDetector:
             
             # 生成信号
             signals = []
-            signals.append(f"纾价爆量 {auction_data.volume_ratio:.1f}�?)
+            signals.append(f"纾价爆量 {auction_data.volume_ratio:.1f}倍")
             signals.append(f"尾盘回落 {open_data.tail_drop*100:.2f}%")
             if is_moderate_change:
                 signals.append(f"纾价涨幅适中 {auction_data.auction_change*100:.2f}%")
@@ -214,21 +249,27 @@ class AuctionTrapDetector:
     
     def _detect_flat_open_pump(self, auction_data: AuctionData, open_data: OpenData) -> Optional[DetectionResult]:
         """
-        检测“纾价平开+开盘拉升”模式（正常模式�?        
-        特征�?        - 纾价涨幅 < 1%
-        - 开�?分钟涨幅 > 3%
-        - 纾价放量适中�?.5-2.5�?        
+        检测“纾价平开+开盘拉升”模式（正常模式）
+        
+        特征：
+        - 纾价涨幅 < 1%
+        - 开盘5分钟涨幅 > 3%
+        - 纾价放量适中（1.5-2.5）
+        
         Returns:
             检测结果，未检测到返回None
         """
-        # 计算开盘变�?        open_change = (open_data.close_5min - open_data.open_price) / open_data.open_price
+        # 计算开盘变化
+        open_change = (open_data.close_5min - open_data.open_price) / open_data.open_price
         
-        # 检测条�?        is_flat_open = abs(auction_data.auction_change) < self.THRESHOLDS['auc_flat_open']
+        # 检测条件
+        is_flat_open = abs(auction_data.auction_change) < self.THRESHOLDS['auc_flat_open']
         is_pump = open_change > self.THRESHOLDS['open_pump']
         has_moderate_volume = 1.5 < auction_data.volume_ratio < 2.5
         
         if is_flat_open and is_pump:
-            # 计算置信度（60-75%�?            confidence = 0.6
+            # 计算置信度（60-75%）
+            confidence = 0.6
             if has_moderate_volume:
                 confidence += 0.05  # 适中放量 +5%
             if open_change > 0.05:
@@ -242,9 +283,9 @@ class AuctionTrapDetector:
             # 生成信号
             signals = []
             signals.append(f"纾价平开 {auction_data.auction_change*100:.2f}%")
-            signals.append(f"开�?分钟拉升 {open_change*100:.2f}%")
+            signals.append(f"开盘5分钟拉升 {open_change*100:.2f}%")
             if has_moderate_volume:
-                signals.append(f"纾价放量适中 {auction_data.volume_ratio:.1f}�?)
+                signals.append(f"纾价放量适中 {auction_data.volume_ratio:.1f}倍")
             
             return DetectionResult(
                 code=auction_data.code,
@@ -264,12 +305,15 @@ class AuctionTrapDetector:
     
     def detect(self, auction_data: Dict[str, Any], open_data: Dict[str, Any]) -> DetectionResult:
         """
-        检测纾价诡多模�?        
+        检测纾价诡多模式
+        
         Args:
             auction_data: 纾价数据字典
-            open_data: 开盘数据字�?        
+            open_data: 开盘数据字典
+        
         Returns:
-            检测结�?        """
+            检测结果
+        """
         # 转换为数据类
         auction = AuctionData(
             code=auction_data.get('code', ''),
@@ -296,7 +340,9 @@ class AuctionTrapDetector:
             timestamp=open_data.get('timestamp', '')
         )
         
-        # 按优先级顺序检�?        # 1. 纾价高开+开盘砸盘（最高优先级�?        result = self._detect_high_open_dump(auction, open_d)
+        # 按优先级顺序检测
+        # 1. 纾价高开+开盘砸盘（最高优先级）
+        result = self._detect_high_open_dump(auction, open_d)
         if result:
             logger.info(f"⚠️ [诡多检测] {result.name}({result.code}) - {result.trap_type.value} - {result.risk_level.value}")
             return result
@@ -307,9 +353,10 @@ class AuctionTrapDetector:
             logger.info(f"⚠️ [诡多检测] {result.name}({result.code}) - {result.trap_type.value} - {result.risk_level.value}")
             return result
         
-        # 3. 纾价平开+开盘拉升（正常模式�?        result = self._detect_flat_open_pump(auction, open_d)
+        # 3. 纾价平开+开盘拉升（正常模式）
+        result = self._detect_flat_open_pump(auction, open_d)
         if result:
-            logger.debug(f"�?[正常模式] {result.name}({result.code}) - {result.trap_type.value}")
+            logger.debug(f"✅ [正常模式] {result.name}({result.code}) - {result.trap_type.value}")
             return result
         
         # 没有检测到任何模式
@@ -332,15 +379,19 @@ class AuctionTrapDetector:
     def batch_detect(self, auction_data_list: List[Dict[str, Any]], 
                      open_data_list: List[Dict[str, Any]]) -> List[DetectionResult]:
         """
-        批量检测纾价诡多模�?        
+        批量检测纾价诡多模式
+        
         Args:
             auction_data_list: 纾价数据列表
-            open_data_list: 开盘数据列�?        
+            open_data_list: 开盘数据列表
+        
         Returns:
-            检测结果列�?        """
+            检测结果列表
+        """
         results = []
         
-        # 构建 code �?open_data 的映�?        open_data_map = {data['code']: data for data in open_data_list}
+        # 构建 code 到 open_data 的映射
+        open_data_map = {data['code']: data for data in open_data_list}
         
         for auction_data in auction_data_list:
             code = auction_data.get('code')
@@ -349,17 +400,20 @@ class AuctionTrapDetector:
                 result = self.detect(auction_data, open_data_map[code])
                 results.append(result)
             else:
-                logger.warning(f"⚠️ {code} 未找到开盘数据，跳过检�?)
+                logger.warning(f"⚠️ {code} 未找到开盘数据，跳过检测")
         
         return results
     
     def get_trap_summary(self, results: List[DetectionResult]) -> Dict[str, Any]:
         """
-        生成诡多检测汇总报�?        
+        生成诡多检测汇总报告
+        
         Args:
-            results: 检测结果列�?        
+            results: 检测结果列表
+        
         Returns:
-            汇总报告字�?        """
+            汇总报告字典
+        """
         total = len(results)
         trap_counts = {}
         risk_counts = {}
@@ -386,9 +440,10 @@ if __name__ == "__main__":
     # 测试代码
     detector = AuctionTrapDetector()
     
-    # 测试案例1: 纾价高开+开盘砸�?    auction_data_1 = {
+    # 测试案例1: 纾价高开+开盘砸盘
+    auction_data_1 = {
         'code': '300997.SZ',
-        'name': '欢乐�?,
+        'name': '欢乐家',
         'auction_price': 15.50,
         'prev_close': 15.00,
         'auction_change': 0.0333,  # 3.33%
@@ -415,5 +470,5 @@ if __name__ == "__main__":
     print(f"\n测试案例1: {result_1.name}({result_1.code})")
     print(f"诡多类型: {result_1.trap_type.value}")
     print(f"风险级别: {result_1.risk_level.value}")
-    print(f"置信�? {result_1.confidence*100:.0f}%")
+    print(f"置信度: {result_1.confidence*100:.0f}%")
     print(f"信号: {', '.join(result_1.signals)}")
