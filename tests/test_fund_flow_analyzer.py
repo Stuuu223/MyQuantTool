@@ -92,11 +92,238 @@ class TestFallbackEdgeCases:
         # 应返回 None 或空字典，而非抛出异常
         assert result is None or result == {}
 
-    def test_holiday_fallback(self, analyzer):
-        """测试：节假日回退（模拟连续3天无数据）"""
-        # 注意：此测试需要 mock 数据源
-        # 实际实现时需要配合 monkeypatch 或 unittest.mock
-        pass
+    def test_holiday_fallback_intraday(self, analyzer, monkeypatch):
+        """
+        测试：节假日回退（盘中模式）
+
+        场景：
+        - T-1, T-2 无数据（节假日）
+        - T-3 有数据（回退成功）
+
+        验证：
+        - 回退次数 = 3
+        - 最终返回 T-3 数据
+        """
+        call_count = 0
+        call_dates = []
+
+        def mock_fetch_from_cache(code: str, target_date):
+            """Mock 缓存查询"""
+            nonlocal call_count
+            call_count += 1
+            call_dates.append(target_date)
+
+            # 前2次返回 None（模拟节假日）
+            if call_count < 3:
+                return None
+
+            # 第3次返回有效数据（T-3）
+            return {
+                'trade_date': target_date.strftime('%Y%m%d'),
+                'main_net_inflow': 5000000,  # 500万
+                'super_net_inflow': 3000000,
+                'big_net_inflow': 2000000
+            }
+
+        # 🔥 [关键] 使用 monkeypatch 替换内部方法
+        monkeypatch.setattr(
+            'logic.fund_flow_analyzer.FundFlowAnalyzer._fetch_from_cache',
+            mock_fetch_from_cache
+        )
+
+        # 执行测试
+        result = analyzer.get_fund_flow('000001.SZ', mode='intraday')
+
+        # 验证回退次数
+        assert call_count == 3, f"预期回退3次，实际回退{call_count}次"
+
+        # 验证最终数据
+        assert result is not None, "回退后应返回有效数据"
+        if result and 'latest' in result:
+            assert result['latest']['main_net_inflow'] == 5000000, \
+                f"预期 main_net_inflow=5000000，实际={result['latest']['main_net_inflow']}"
+
+    def test_holiday_fallback_afterhours(self, analyzer, monkeypatch):
+        """
+        测试：节假日回退（盘后模式）
+
+        场景：
+        - T 无数据（当日数据未生成）
+        - T-1, T-2 无数据（节假日）
+        - T-3 有数据（回退成功）
+
+        验证：
+        - 回退次数 = 4
+        - 最终返回 T-3 数据
+        """
+        call_count = 0
+
+        def mock_fetch_from_cache(code: str, target_date):
+            nonlocal call_count
+            call_count += 1
+
+            # 前3次返回 None（T, T-1, T-2）
+            if call_count < 4:
+                return None
+
+            # 第4次返回有效数据（T-3）
+            return {
+                'trade_date': target_date.strftime('%Y%m%d'),
+                'main_net_inflow': 8000000,  # 800万
+                'super_net_inflow': 5000000,
+                'big_net_inflow': 3000000
+            }
+
+        monkeypatch.setattr(
+            'logic.fund_flow_analyzer.FundFlowAnalyzer._fetch_from_cache',
+            mock_fetch_from_cache
+        )
+
+        result = analyzer.get_fund_flow('000001.SZ', mode='afterhours')
+
+        # 验证回退次数
+        assert call_count == 4, f"预期回退4次，实际回退{call_count}次"
+
+        # 验证数据正确性
+        assert result is not None
+        if result and 'latest' in result:
+            assert result['latest']['main_net_inflow'] == 8000000
+
+    def test_max_fallback_depth_exceeded(self, analyzer, monkeypatch):
+        """
+        测试：超过最大回退深度（5天）
+
+        场景：
+        - T-1 ~ T-5 全部无数据
+
+        预期：
+        - 回退5次后返回 None 或空字典
+        """
+        call_count = 0
+
+        def mock_fetch_always_none(code: str, target_date):
+            nonlocal call_count
+            call_count += 1
+            return None  # 所有日期都无数据
+
+        monkeypatch.setattr(
+            'logic.fund_flow_analyzer.FundFlowAnalyzer._fetch_from_cache',
+            mock_fetch_always_none
+        )
+
+        result = analyzer.get_fund_flow('000001.SZ', mode='intraday')
+
+        # 验证回退次数不超过5次
+        assert call_count <= 5, f"回退次数超限: {call_count}次（最大5次）"
+
+        # 验证返回值为空
+        assert result is None or result == {} or result.get('latest') is None, \
+            f"超过最大回退深度应返回空，实际={result}"
+
+    def test_data_structure_consistency(self, analyzer, monkeypatch):
+        """
+        测试：回退数据结构一致性
+
+        验证：
+        - 回退获取的数据与直接获取的数据结构相同
+        """
+        mock_data = {
+            'trade_date': '20260210',
+            'main_net_inflow': 10000000,
+            'super_net_inflow': 6000000,
+            'big_net_inflow': 4000000,
+            'medium_net_inflow': 2000000,
+            'small_net_inflow': -2000000
+        }
+
+        def mock_fetch_consistent(code: str, target_date):
+            return mock_data
+
+        monkeypatch.setattr(
+            'logic.fund_flow_analyzer.FundFlowAnalyzer._fetch_from_cache',
+            mock_fetch_consistent
+        )
+
+        result = analyzer.get_fund_flow('000001.SZ', mode='intraday')
+
+        # 验证数据结构完整性
+        assert result is not None
+        assert 'latest' in result
+
+        expected_fields = ['main_net_inflow', 'super_net_inflow', 'big_net_inflow']
+        for field in expected_fields:
+            assert field in result['latest'], f"缺少字段: {field}"
+
+
+class TestPerformance:
+    """性能测试套件"""
+
+    @pytest.fixture
+    def analyzer(self):
+        return FundFlowAnalyzer()
+
+    def test_cache_performance(self, analyzer):
+        """
+        测试：缓存性能
+
+        验证：
+        - 首次查询耗时 < 1000ms
+        - 缓存查询耗时 < 10ms
+        """
+        import time
+
+        code = '000001.SZ'
+
+        # 首次查询（可能从数据源获取）
+        start = time.perf_counter()
+        result1 = analyzer.get_fund_flow(code)
+        first_elapsed = (time.perf_counter() - start) * 1000
+
+        # 缓存查询
+        start = time.perf_counter()
+        result2 = analyzer.get_fund_flow(code)
+        cache_elapsed = (time.perf_counter() - start) * 1000
+
+        # 性能断言
+        assert first_elapsed < 1000, f"首次查询耗时过长: {first_elapsed:.2f}ms"
+        assert cache_elapsed < 10, f"缓存查询耗时过长: {cache_elapsed:.2f}ms"
+
+        # 记录性能指标
+        print(f"\n⏱️  性能测试结果:")
+        print(f"   首次查询: {first_elapsed:.2f}ms")
+        print(f"   缓存查询: {cache_elapsed:.2f}ms")
+        print(f"   性能提升: {first_elapsed/cache_elapsed:.0f}x")
+
+    def test_fallback_performance(self, analyzer, monkeypatch):
+        """
+        测试：回退性能
+
+        验证：
+        - 5次回退总耗时 < 100ms
+        """
+        import time
+
+        call_count = 0
+
+        def mock_fetch_slow(code: str, target_date):
+            nonlocal call_count
+            call_count += 1
+            time.sleep(0.01)  # 模拟10ms延迟
+            return None if call_count < 5 else {'main_net_inflow': 1000000}
+
+        monkeypatch.setattr(
+            'logic.fund_flow_analyzer.FundFlowAnalyzer._fetch_from_cache',
+            mock_fetch_slow
+        )
+
+        start = time.perf_counter()
+        result = analyzer.get_fund_flow('000001.SZ', mode='intraday')
+        elapsed = (time.perf_counter() - start) * 1000
+
+        # 性能断言
+        assert elapsed < 100, f"回退耗时过长: {elapsed:.2f}ms（预期 <100ms）"
+
+        print(f"\n⏱️  回退性能: {elapsed:.2f}ms（{call_count}次回退）")
 
 
 # ===== 运行测试 =====
