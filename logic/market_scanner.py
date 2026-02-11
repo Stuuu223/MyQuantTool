@@ -47,28 +47,31 @@ class MarketScanner:
     3. 精筛：完整QPST分析+反诱多检测
     """
     
-    def __init__(self, equity_info: dict, use_multiprocess: bool = True):
+    def __init__(self, equity_info: dict, use_multiprocess: bool = True, batch_size: int = 500):
         """
         初始化扫描器
         
         Args:
             equity_info: 股本信息字典
             use_multiprocess: 是否使用多进程加速
+            batch_size: 预筛选分批大小（默认500只/批）
         """
         if not QMT_AVAILABLE:
             raise RuntimeError("⚠️ xtquant 未安装，MarketScanner 不可用")
         
         self.equity_info = equity_info
         self.use_multiprocess = use_multiprocess
+        self.batch_size = batch_size  # 🔥 [P1 FIX] 分批大小配置
         
         # 初始化分析器
-        self.qpst_analyzer = BatchQPSTAnalyzer(equity_info)
+        self.qpst_analyzer = BatchQPSTAnalyzer(equity_info, config_path="config/phase2_config.yaml")
         self.trap_detector = TrapDetectorBatch()
         
         logger.info("="*80)
         logger.info("✅ MarketScanner 初始化完成")
         logger.info(f"   - 股本信息: {len(equity_info)} 只股票")
         logger.info(f"   - 多进程: {'启用' if use_multiprocess else '禁用'}")
+        logger.info(f"   - 分批大小: {batch_size} 只/批")  # 🔥 [P1 FIX]
         logger.info("="*80)
     
     def scan(self, stock_list: List[str], scan_time: str = '09:35') -> List[Dict]:
@@ -142,8 +145,12 @@ class MarketScanner:
         1. 涨幅 > 2%
         2. 换手率 > 3%（基于10分钟累计成交量）
         3. 放量 > 1.3倍
+        
+        🔥 [P1 FIX] 分批获取K线数据，避免内存溢出
         """
         logger.info("\n⏳ 阶段1: 预筛选（硬性条件）...")
+        logger.info(f"   分批大小: {self.batch_size} 只/批")
+        logger.info(f"   预计批次数: {(len(stock_list) + self.batch_size - 1) // self.batch_size}")
         
         candidates = []
         
@@ -151,41 +158,48 @@ class MarketScanner:
         kline_count = self._get_kline_count(scan_time)
         
         try:
-            # 批量获取分钟K数据（一次性获取所有股票）
-            kline_data = xtdata.get_market_data_ex(
-                field_list=['close', 'volume'],
-                stock_list=stock_list,
-                period='1m',
-                count=kline_count
-            )
-            
-            for code in stock_list:
-                if code not in kline_data:
-                    continue
+            # 🔥 [P1 FIX] 分批获取K线数据
+            for batch_idx in range(0, len(stock_list), self.batch_size):
+                batch = stock_list[batch_idx:batch_idx + self.batch_size]
                 
-                df = kline_data[code]
+                logger.debug(f"   处理批次 {batch_idx // self.batch_size + 1}/{(len(stock_list) + self.batch_size - 1) // self.batch_size}: {len(batch)} 只股票")
                 
-                if len(df) < 10:
-                    continue
+                # 批量获取分钟K数据
+                kline_data = xtdata.get_market_data_ex(
+                    field_list=['close', 'volume'],
+                    stock_list=batch,
+                    period='1m',
+                    count=kline_count
+                )
                 
-                # 计算涨幅
-                price_change = (df['close'].iloc[-1] - df['close'].iloc[0]) / df['close'].iloc[0]
-                
-                # 计算量比
-                recent_vol = df['volume'].iloc[-3:].mean()
-                earlier_vol = df['volume'].iloc[:-3].mean()
-                volume_ratio = recent_vol / earlier_vol if earlier_vol > 0 else 0
-                
-                # 计算换手率
-                float_shares = self.equity_info.get(code, {}).get('float_shares', 0)
-                if float_shares > 0:
-                    turnover = df['volume'].sum() / float_shares
-                else:
-                    turnover = 0
-                
-                # 硬性筛选条件
-                if price_change > 0.02 and turnover > 0.03 and volume_ratio > 1.3:
-                    candidates.append(code)
+                # 处理批次数据
+                for code in batch:
+                    if code not in kline_data:
+                        continue
+                    
+                    df = kline_data[code]
+                    
+                    if len(df) < 10:
+                        continue
+                    
+                    # 计算涨幅
+                    price_change = (df['close'].iloc[-1] - df['close'].iloc[0]) / df['close'].iloc[0]
+                    
+                    # 计算量比
+                    recent_vol = df['volume'].iloc[-3:].mean()
+                    earlier_vol = df['volume'].iloc[:-3].mean()
+                    volume_ratio = recent_vol / earlier_vol if earlier_vol > 0 else 0
+                    
+                    # 计算换手率
+                    float_shares = self.equity_info.get(code, {}).get('float_shares', 0)
+                    if float_shares > 0:
+                        turnover = df['volume'].sum() / float_shares
+                    else:
+                        turnover = 0
+                    
+                    # 硬性筛选条件
+                    if price_change > 0.02 and turnover > 0.03 and volume_ratio > 1.3:
+                        candidates.append(code)
         
         except Exception as e:
             logger.error(f"❌ 阶段1预筛选失败: {e}")
