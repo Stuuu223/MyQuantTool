@@ -114,11 +114,11 @@ class AuctionSnapshotDaemon:
                 # 保存每只股票的竞价数据
                 for code in batch:
                     tick = tick_data.get(code, {})
-                    
+
                     if not isinstance(tick, dict) or not tick:
                         failed += 1
                         continue
-                    
+
                     # 提取竞价数据
                     volume = (
                         tick.get('totalVolume') or
@@ -127,17 +127,24 @@ class AuctionSnapshotDaemon:
                         0
                     )
                     amount = tick.get('amount', 0)
-                    
-                    # 只保存有数据的股票
-                    if volume > 0 or amount > 0:
+                    last_price = tick.get('lastPrice', 0)
+                    last_close = tick.get('lastClose', 0)
+
+                    # 🔥 紧急修复：竞价期间volume和amount都是0，改为只要有lastPrice就保存
+                    # 集合竞价期间（9:15-9:25），QMT的volume和amount都是0，但lastPrice有值
+                    if last_price > 0:
                         auction_data = {
                             'auction_volume': volume,
                             'auction_amount': amount,
-                            'last_price': tick.get('lastPrice', 0),
-                            'last_close': tick.get('lastClose', 0),
-                            'timestamp': datetime.now().timestamp()
+                            'last_price': last_price,
+                            'last_close': last_close,
+                            'timestamp': datetime.now().timestamp(),
+                            # 额外保存买盘和卖盘信息
+                            'bid_vol': tick.get('bidVol', []),
+                            'ask_vol': tick.get('askVol', []),
+                            'stock_status': tick.get('stockStatus', 0)
                         }
-                        
+
                         # 保存到 Redis
                         self.snapshot_manager.save_auction_snapshot(code, auction_data)
                         saved += 1
