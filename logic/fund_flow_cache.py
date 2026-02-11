@@ -68,6 +68,9 @@ class FundFlowCache:
                     stock_code TEXT NOT NULL,
                     date TEXT NOT NULL,
                     
+                    -- 🔥 [P0 FIX v2] 主力净流入（超大单+大单）
+                    main_net_inflow REAL,
+                    
                     -- 东方财富原始字段（单位：元）
                     super_large_net REAL,
                     large_net REAL,
@@ -116,7 +119,7 @@ class FundFlowCache:
                 cursor = conn.cursor()
                 
                 cursor.execute('''
-                    SELECT stock_code, date, super_large_net, large_net, medium_net, small_net,
+                    SELECT stock_code, date, main_net_inflow, super_large_net, large_net, medium_net, small_net,
                            institution_net, retail_net, super_ratio, updated_at
                     FROM fund_flow_daily
                     WHERE stock_code = ? AND date = ?
@@ -167,6 +170,9 @@ class FundFlowCache:
             else:
                 super_ratio = 0.0
             
+            # 🔥 [P0 FIX v2] 添加main_net_inflow字段
+            main_net_inflow = latest.get('main_net_inflow', 0)
+            
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 
@@ -174,12 +180,14 @@ class FundFlowCache:
                 cursor.execute('''
                     INSERT OR REPLACE INTO fund_flow_daily (
                         stock_code, date,
+                        main_net_inflow,
                         super_large_net, large_net, medium_net, small_net,
                         institution_net, retail_net, super_ratio,
                         updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'))
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'))
                 ''', (
                     stock_code, date,
+                    main_net_inflow,
                     super_large_net, large_net, medium_net, small_net,
                     institution_net, retail_net, super_ratio
                 ))
