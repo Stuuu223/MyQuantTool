@@ -1,0 +1,114 @@
+# Phase 2 配置文件
+# 全市场扫描系统配置
+
+# 扫描设置
+scan_settings:
+  # 默认扫描时间点（HH:MM）
+  default_times:
+    - "09:35"  # 早盘
+    - "10:00"  # 开盘半小时
+    - "14:00"  # 午后
+  
+  # 输出目录
+  output_dir: "data/scan_results/"
+  
+  # 是否启用多进程
+  use_multiprocess: true
+  
+  # 进程数（4-8推荐）
+  num_processes: 4
+
+# 三阶段筛选参数
+filter_params:
+  # 阶段1: 预筛选
+  phase1:
+    min_price_change: 0.02  # 最小涨幅 2%
+    min_turnover: 0.03      # 最小换手率 3%
+    min_volume_ratio: 1.3   # 最小放量 1.3倍
+  
+  # 阶段2: 初筛（简化QPST）
+  phase2:
+    min_abnormal_dims: 2    # 至少 2个维度异常
+  
+  # 阶段3: 精筛（完整QPST）
+  phase3:
+    min_confidence: 65      # 最低置信度 65%
+    top_n: 50               # TOP N 榜单
+
+# QPST四维分析参数（分钟K版本）
+qpst_params:
+  # 分钟K窗口（根）
+  kline_window: 10
+  
+  # 量维度阈值
+  quantity:
+    volume_ratio_strong: 2.0        # 持续放量阈值
+    volume_ratio_abnormal: 3.0      # 单次异常阈值
+    volume_volatility_low: 0.8      # 低波动率
+    volume_volatility_high: 1.5     # 高波动率
+  
+  # 价维度阈值
+  price:
+    price_change_min: 0.02          # 最小涨幅 2%
+    amplitude_steady: 0.015         # 稳定振幅
+    amplitude_violent: 0.03         # 暴力振幅
+  
+  # 空维度阈值
+  space:
+    turnover_moderate_min: 0.005    # 中等换手下限 0.5%
+    turnover_moderate_max: 0.015    # 中等换手上限 1.5%
+    turnover_high: 0.02             # 高换手 2%
+  
+  # 时维度阈值
+  time:
+    tail_surge_time: "14:30"        # 尾盘时间
+    sustained_ratio: 0.6            # 持续放量比例
+
+# 反诱多检测参数
+trap_detection:
+  # 对倒检测
+  fake_order:
+    volume_threshold: 1.5           # 成交量异常阈值
+    order_change_threshold: 0.1     # 挂单变化阈值
+  
+  # 尾盘拉升
+  tail_surge:
+    start_time: "14:30"
+    volume_ratio: 2.0
+  
+  # 连板开板
+  limit_break:
+    min_limit_days: 2               # 最少连板天数
+
+# 日报/周报配置
+report_settings:
+  # 报告输出目录
+  daily_report_dir: "data/reports/daily/"
+  weekly_report_dir: "data/reports/weekly/"
+  
+  # 邮件配置（可选）
+  email:
+    enabled: false
+    smtp_server: "smtp.qq.com"
+    smtp_port: 465
+    sender: "your_email@qq.com"
+    password: "your_password"
+    receivers:
+      - "receiver@example.com"
+
+# 数据路径
+data_paths:
+  equity_info: "data/equity_info.json"
+  scan_results: "data/scan_results/"
+  kline_cache: "data/kline_cache/"
+
+# 验证标准
+validation:
+  # 性能目标
+  max_scan_time_seconds: 600      # 最大扫描时间 10分钟
+  max_memory_mb: 4096             # 最大内存占用 4GB
+  
+  # 准确率目标
+  target_accuracy: 0.7            # 目标准确率 70%
+  max_false_positive_rate: 0.2    # 最大误报率 20%
+  max_false_negative_rate: 0.3    # 最大漏报率 30%
