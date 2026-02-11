@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-竞价快照采集脚本 (Phase3 第1周) - 批量优化版
+竞价快照采集脚本 (Phase3 第1周) - 数据修复版
 
 功能：
 1. 每个交易日09:25采集全市场竞价快照（批量API）
-2. 保存竞价数据到SQLite和Redis
-3. 支持批量采集和实时更新
+2. 手动计算涨跌幅和量比（QMT API不返回这些字段）
+3. 保存竞价数据到SQLite和Redis
 
 使用方法：
     # 采集今日竞价快照
@@ -183,6 +183,55 @@ class AuctionSnapshotCollector:
             logger.error(f"❌ 获取股票列表失败: {e}")
             return []
     
+    def get_historical_avg_volume(self, codes: List[str], date: str) -> Dict[str, float]:
+        """
+        获取历史5日平均成交量（用于计算量比）
+        
+        Args:
+            codes: 股票代码列表
+            date: 当前日期
+        
+        Returns:
+            {code: avg_volume_per_minute}
+        """
+        try:
+            import xtquant.xtdata as xtdata
+            
+            # 计算前一交易日
+            current = datetime.strptime(date, "%Y-%m-%d")
+            prev_date = (current - timedelta(days=1)).strftime("%Y-%m-%d")
+            
+            # 获取前5日K线数据
+            hist_data = xtdata.get_market_data(
+                stock_list=codes,
+                period='1d',
+                start_time='',
+                end_time=prev_date,
+                count=5,
+                dividend_type='none',
+                fill_data=True
+            )
+            
+            result = {}
+            for code in codes:
+                if code in hist_data and 'volume' in hist_data[code]:
+                    volumes = hist_data[code]['volume']
+                    if len(volumes) > 0:
+                        avg_volume_per_day = volumes.mean()
+                        # 平均到每分钟（一天240分钟）
+                        avg_volume_per_minute = avg_volume_per_day / 240.0
+                        result[code] = avg_volume_per_minute
+                    else:
+                        result[code] = 1.0  # 默认值
+                else:
+                    result[code] = 1.0
+            
+            return result
+        
+        except Exception as e:
+            logger.warning(f"⚠️ 获取历史成交量失败: {e}")
+            return {code: 1.0 for code in codes}
+    
     def save_snapshots_batch(self, snapshots: List[Dict[str, Any]]) -> int:
         """
         批量保存快照到SQLite（使用事务提升性能）
@@ -228,7 +277,7 @@ class AuctionSnapshotCollector:
     
     def collect_all_snapshots_batch(self, date: str = None, batch_size: int = 500) -> Dict[str, int]:
         """
-        批量采集全市场竞价快照（使用QMT批量API）
+        批量采集全市场竞价快照（使用QMT批量API + 手动计算）
         
         Args:
             date: 日期（格式：YYYY-MM-DD，默认为今天）
@@ -271,13 +320,16 @@ class AuctionSnapshotCollector:
             logger.info(f"🔄 处理第 {batch_num}/{total_batches} 批次（{len(batch_codes)} 只股票）")
             
             try:
-                # 🔥 关键：批量获取tick数据
+                # 🔥 关键1：批量获取tick数据
                 tick_data = xtdata.get_full_tick(batch_codes)
                 
                 if not tick_data:
                     logger.warning(f"⚠️ 第 {batch_num} 批次未获取到数据")
                     failed_count += len(batch_codes)
                     continue
+                
+                # 🔥 关键2：批量获取历史成交量（用于计算量比）
+                avg_volumes = self.get_historical_avg_volume(batch_codes, date)
                 
                 # 准备批量保存的数据
                 batch_snapshots = []
@@ -293,19 +345,37 @@ class AuctionSnapshotCollector:
                     try:
                         data = tick_data[code]
                         
+                        # 🔥 关键3：手动计算涨跌幅
+                        last_price = data.get('lastPrice', 0)
+                        last_close = data.get('lastClose', 0)
+                        
+                        if last_close > 0:
+                            auction_change = (last_price - last_close) / last_close
+                        else:
+                            auction_change = 0.0
+                        
+                        # 🔥 关键4：手动计算量比
+                        auction_volume = data.get('volume', 0)
+                        avg_volume_per_minute = avg_volumes.get(code, 1.0)
+                        
+                        if avg_volume_per_minute > 0:
+                            volume_ratio = auction_volume / avg_volume_per_minute
+                        else:
+                            volume_ratio = 0.0
+                        
                         # 提取竞价数据
                         auction_data = {
                             'date': date,
                             'code': code,
                             'name': data.get('stockName', ''),
                             'auction_time': f"{date} 09:25:00",
-                            'auction_price': data.get('lastPrice', 0),
-                            'auction_volume': data.get('volume', 0),
+                            'auction_price': last_price,
+                            'auction_volume': auction_volume,
                             'auction_amount': data.get('amount', 0),
-                            'auction_change': data.get('pctChg', 0),
-                            'volume_ratio': data.get('volumeRatio', 0),
-                            'buy_orders': data.get('buyOrdersVolume', 0),
-                            'sell_orders': data.get('sellOrdersVolume', 0),
+                            'auction_change': auction_change,      # ✅ 手动计算
+                            'volume_ratio': volume_ratio,          # ✅ 手动计算
+                            'buy_orders': 0,                       # ⚠️ QMT不提供
+                            'sell_orders': 0,                      # ⚠️ QMT不提供
                             'bid_vol_1': data.get('bidVol', [0])[0] if data.get('bidVol') else 0,
                             'ask_vol_1': data.get('askVol', [0])[0] if data.get('askVol') else 0,
                             'market_type': 'SH' if code.endswith('.SH') else 'SZ',
@@ -418,7 +488,7 @@ def main():
     """
     主函数
     """
-    parser = argparse.ArgumentParser(description='竞价快照采集脚本（批量优化版）')
+    parser = argparse.ArgumentParser(description='竞价快照采集脚本（数据修复版）')
     parser.add_argument('--date', type=str, help='采集日期（格式：YYYY-MM-DD）')
     parser.add_argument('--start-date', type=str, help='开始日期（用于批量采集）')
     parser.add_argument('--end-date', type=str, help='结束日期（用于批量采集）')
