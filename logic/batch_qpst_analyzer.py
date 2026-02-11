@@ -17,6 +17,7 @@ import pandas as pd
 import numpy as np
 from typing import Dict, Optional
 from datetime import datetime
+import yaml
 
 from logic.logger import get_logger
 
@@ -34,15 +35,45 @@ class BatchQPSTAnalyzer:
     - Time (时): 持续时间验证
     """
     
-    def __init__(self, equity_info: dict):
+    def __init__(self, equity_info: dict, config_path: str = None):
         """
         初始化批量分析器
         
         Args:
             equity_info: 股本信息字典 {code: {float_shares: xxx}}
+            config_path: 配置文件路径（可选）
         """
         self.equity_info = equity_info
+        
+        # 🔥 [P2 FIX] 加载配置文件
+        self.config = self._load_config(config_path)
+        
+        # 🔥 [P2 FIX] 从配置加载阈值
+        self.thresholds = self.config.get('qpst_params', {})
+        
         logger.info("✅ BatchQPSTAnalyzer 初始化完成")
+        if config_path:
+            logger.info(f"   配置文件: {config_path}")
+    
+    def _load_config(self, config_path: str = None) -> dict:
+        """加载配置文件"""
+        import yaml
+        from pathlib import Path
+        
+        if config_path is None:
+            config_path = "config/phase2_config.yaml"
+        
+        config_file = Path(config_path)
+        if not config_file.exists():
+            logger.warning(f"⚠️ 配置文件不存在: {config_path}，使用默认值")
+            return {}
+        
+        try:
+            with open(config_file, 'r', encoding='utf-8') as f:
+                return yaml.safe_load(f)
+        except Exception as e:
+            logger.warning(f"⚠️ 加载配置文件失败: {e}，使用默认值")
+            return {}
     
     def analyze(self, code: str, kline_df: pd.DataFrame) -> Dict:
         """
@@ -123,10 +154,17 @@ class BatchQPSTAnalyzer:
         current_volume = volumes[-1]
         volume_surge = current_volume / avg_volume if avg_volume > 0 else 1.0
         
+        # 🔥 [P2 FIX] 从配置文件读取阈值
+        qty_config = self.thresholds.get('quantity', {})
+        volume_ratio_strong = qty_config.get('volume_ratio_strong', 2.0)
+        volume_ratio_abnormal = qty_config.get('volume_ratio_abnormal', 3.0)
+        volume_volatility_low = qty_config.get('volume_volatility_low', 0.8)
+        volume_volatility_high = qty_config.get('volume_volatility_high', 1.5)
+        
         # 判断逻辑
-        if volume_ratio > 2.0 and volume_volatility < 0.8:
+        if volume_ratio > volume_ratio_strong and volume_volatility < volume_volatility_low:
             signal = 'STRONG_VOLUME'  # 持续放量
-        elif volume_ratio > 3.0 and volume_volatility > 1.5:
+        elif volume_ratio > volume_ratio_abnormal and volume_volatility > volume_volatility_high:
             signal = 'ABNORMAL_SPIKE'  # 单次异常（可能对倒）
         elif volume_ratio > 1.5:
             signal = 'MODERATE_VOLUME'  # 温和放量
@@ -163,10 +201,16 @@ class BatchQPSTAnalyzer:
         price_std = df['close'].std()
         price_stability = price_std / df['close'].mean() if df['close'].mean() > 0 else 0
         
+        # 🔥 [P2 FIX] 从配置文件读取阈值
+        price_config = self.thresholds.get('price', {})
+        price_change_min = price_config.get('price_change_min', 0.02)
+        amplitude_steady = price_config.get('amplitude_steady', 0.015)
+        amplitude_violent = price_config.get('amplitude_violent', 0.03)
+        
         # 判断逻辑
-        if price_change > 0.02 and amplitude < 0.015 and price_stability < 0.01:
+        if price_change > price_change_min and amplitude < amplitude_steady and price_stability < 0.01:
             signal = 'STEADY_RISE'  # 稳步上涨（机构特征）
-        elif price_change > 0.03 and amplitude > 0.03:
+        elif price_change > 0.03 and amplitude > amplitude_violent:
             signal = 'VIOLENT_RISE'  # 暴力拉升（散户追涨）
         elif abs(price_change) < 0.005 and amplitude < 0.01:
             signal = 'SIDEWAYS'  # 横盘
@@ -211,9 +255,15 @@ class BatchQPSTAnalyzer:
             turnover_trend = 0
         
         # 判断逻辑（10分钟累计换手率）
-        if 0.005 < turnover < 0.015 and abs(turnover_trend) < 0.2:
+        # 🔥 [P2 FIX] 从配置文件读取阈值
+        space_config = self.thresholds.get('space', {})
+        turnover_moderate_min = space_config.get('turnover_moderate_min', 0.005)
+        turnover_moderate_max = space_config.get('turnover_moderate_max', 0.015)
+        turnover_high = space_config.get('turnover_high', 0.02)
+        
+        if turnover_moderate_min < turnover < turnover_moderate_max and abs(turnover_trend) < 0.2:
             signal = 'MODERATE_TURNOVER_STABLE'  # 中等稳定（正常）
-        elif turnover > 0.02 and turnover_trend > 0.2:
+        elif turnover > turnover_high and turnover_trend > 0.2:
             signal = 'HIGH_TURNOVER_RISING'  # 高换手且上升（活跃）
         elif turnover > 0.03:
             signal = 'EXTREMELY_HIGH_TURNOVER'  # 极高换手（警惕）
@@ -261,7 +311,11 @@ class BatchQPSTAnalyzer:
             time_period = 'UNKNOWN'
         
         # 判断逻辑
-        if surge_ratio > 0.6 and time_period == 'NORMAL_TRADING':
+        # 🔥 [P2 FIX] 从配置文件读取阈值
+        time_config = self.thresholds.get('time', {})
+        sustained_ratio = time_config.get('sustained_ratio', 0.6)
+        
+        if surge_ratio > sustained_ratio and time_period == 'NORMAL_TRADING':
             signal = 'SUSTAINED_ACTIVITY'  # 持续异动（真实）
         elif surge_ratio < 0.3 and time_period == 'AFTERNOON_CLOSE':
             signal = 'TAIL_SURGE'  # 尾盘拉升（警惕诱多）

@@ -84,17 +84,18 @@ def load_stock_list() -> List[str]:
             sys.exit(1)
 
 
-def run_scan(scan_time: str, stock_list: List[str], use_multiprocess: bool = True) -> List[Dict]:
+def run_scan(scan_time: str, stock_list: List[str], use_multiprocess: bool = True, batch_size: int = 500) -> List[Dict]:
     """执行全市场扫描"""
     
     console.print(f"\n🔍 扫描时间点: [bold cyan]{scan_time}[/bold cyan]")
     console.print(f"📊 扫描股票数: [bold cyan]{len(stock_list)}[/bold cyan]")
-    console.print(f"⚙️  多进程: [bold cyan]{'\u5f00\u542f' if use_multiprocess else '\u5173\u95ed'}[/bold cyan]\n")
+    console.print(f"⚙️  多进程: [bold cyan]{'启用' if use_multiprocess else '关闭'}[/bold cyan]")
+    console.print(f"📦 分批大小: [bold cyan]{batch_size}只/批[/bold cyan]\n")
     
     # 初始化扫描器
     scanner = MarketScanner(
         use_multiprocess=use_multiprocess,
-        num_processes=4 if use_multiprocess else 1
+        batch_size=batch_size  # 🔥 [P1 FIX] 传递分批大小参数
     )
     
     start_time = time.time()
@@ -210,6 +211,13 @@ def main():
         help="禁用多进程加速"
     )
     
+    parser.add_argument(
+        '--batch-size',
+        type=int,
+        default=500,
+        help="预筛选分批大小 (默认: 500只/批，防止内存溢出)"
+    )
+    
     args = parser.parse_args()
     
     # 打印启动横幅
@@ -222,7 +230,8 @@ def main():
     trap_list = run_scan(
         scan_time=args.time,
         stock_list=stock_list,
-        use_multiprocess=not args.no_multiprocess
+        use_multiprocess=not args.no_multiprocess,
+        batch_size=args.batch_size  # 🔥 [P1 FIX] 传递分批大小参数
     )
     
     # 展示结果
