@@ -43,12 +43,12 @@ class TestMarketScanner:
     def mock_kline_data(self):
         """Mock K线数据"""
         return pd.DataFrame({
-            'time': pd.date_range('2026-02-11 09:30', periods=10, freq='1T'),
-            'open': [10.0, 10.1, 10.2, 10.3, 10.4, 10.5, 10.6, 10.7, 10.8, 10.9],
-            'high': [10.1, 10.2, 10.3, 10.4, 10.5, 10.6, 10.7, 10.8, 10.9, 11.0],
-            'low': [9.9, 10.0, 10.1, 10.2, 10.3, 10.4, 10.5, 10.6, 10.7, 10.8],
-            'close': [10.0, 10.1, 10.2, 10.3, 10.4, 10.5, 10.6, 10.7, 10.8, 10.9],
-            'volume': [1000000, 1200000, 1500000, 2000000, 2500000, 3000000, 3500000, 4000000, 4500000, 5000000],
+            'time': pd.date_range('2026-02-11 09:30', periods=30, freq='1T'),
+            'open': [10.0 + i * 0.1 for i in range(30)],
+            'high': [10.1 + i * 0.1 for i in range(30)],
+            'low': [9.9 + i * 0.1 for i in range(30)],
+            'close': [10.0 + i * 0.1 for i in range(30)],
+            'volume': [1000000 + i * 100000 for i in range(30)],
         })
     
     def test_init_with_batch_size(self, mock_equity_info):
