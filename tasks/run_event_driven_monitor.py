@@ -110,9 +110,14 @@ class EventDrivenMonitor:
         # 初始化市场阶段检查器
         self.phase_checker = MarketPhaseChecker(self.market_checker)
 
-        # 🔥 [重构] 加载配置（紧急模式 + 监控参数）
+        # 🔥 [重构] 加载配置（紧急模式 + 监控参数）+ 性能监控
         import json
+        import time
         from pathlib import Path
+
+        # ⏱️ [性能监控] 配置加载计时开始
+        config_load_start = time.perf_counter()
+
         # 定位项目根目录：从当前文件路径向上两级（tasks -> 项目根）
         project_root = Path(__file__).resolve().parent.parent
         config_path = project_root / 'config' / 'market_scan_config.json'
@@ -148,13 +153,22 @@ class EventDrivenMonitor:
             # 🔥 [P0修复] 验证配置完整性
             if not self._validate_emergency_config(self.emergency_config):
                 raise RuntimeError("❌ 紧急模式配置不完整，拒绝启动")
-            
+
+            # ⏱️ [性能监控] 配置加载计时结束
+            config_load_elapsed = (time.perf_counter() - config_load_start) * 1000  # 转换为毫秒
+
             logger.info(f"✅ 加载监控配置: {config_path}")
             logger.info(f"   板块共振缓存TTL: {self.sector_resonance_cache_ttl}秒")
             logger.info(f"   数据容忍延迟: {self.data_tolerance_minutes}分钟")
             logger.info(f"   候选池TTL: {self.candidate_ttl_minutes}分钟")
             logger.info(f"   候选池上限: {self.max_candidates}只")
             logger.info(f"   状态导出间隔: {self.state_export_interval}秒")
+            logger.info(f"⏱️  配置加载耗时: {config_load_elapsed:.2f}ms")
+
+            # 🔥 [性能告警] 配置加载耗时超过100ms时警告
+            if config_load_elapsed > 100:
+                logger.warning(f"⚠️  配置加载耗时过长: {config_load_elapsed:.2f}ms（正常应 <50ms）")
+                logger.warning(f"   可能原因: 磁盘IO延迟、JSON文件过大、网络磁盘")
             
         except Exception as e:
             logger.error(f"❌ 加载配置失败: {e}")
@@ -167,7 +181,7 @@ class EventDrivenMonitor:
         self.scan_count = 0
         self.event_count = 0
         self.save_count = 0
-        self.start_time = None
+        self.start_time = time.time()  # ⏱️ [性能监控] 记录启动时间
         
         # 🎯 CLI监控状态（供cli_monitor.py读取）
         self.monitor_state = {
@@ -1532,6 +1546,66 @@ if __name__ == "__main__":
 
             print("=" * 125)
 
+        print("=" * 80 + "\n")
+
+    def get_performance_stats(self) -> dict:
+        """
+        🔥 [性能监控] 获取系统性能统计
+
+        Returns:
+            dict: 性能指标字典
+
+        Example:
+            >>> monitor = EventDrivenMonitor()
+            >>> stats = monitor.get_performance_stats()
+            >>> print(stats)
+            {
+                'uptime_hours': 2.5,
+                'scan_count': 10,
+                'config': {...}
+            }
+        """
+        import time
+
+        stats = {
+            'uptime_hours': (time.time() - self.start_time) / 3600 if hasattr(self, 'start_time') and self.start_time else 0,
+            'scan_count': self.scan_count,
+            'event_count': self.event_count,
+            'save_count': self.save_count,
+            'config': {
+                'sector_resonance_ttl': self.sector_resonance_cache_ttl,
+                'data_tolerance_minutes': self.data_tolerance_minutes,
+                'candidate_ttl_minutes': self.candidate_ttl_minutes,
+                'max_candidates': self.max_candidates,
+                'state_export_interval': self.state_export_interval,
+            }
+        }
+
+        return stats
+
+
+# ===== 主程序入口 =====
+if __name__ == "__main__":
+    import argparse
+    import sys
+
+    parser = argparse.ArgumentParser(description='事件驱动持续监控器')
+    parser.add_argument('--mode', choices=['event_driven', 'fixed_interval', 'replay'],
+                        default='event_driven', help='运行模式')
+    parser.add_argument('--interval', type=int, default=300,
+                        help='扫描间隔（秒），默认300秒（5分钟）')
+    parser.add_argument('--stocks', nargs='*', help='监控的股票列表')
+    parser.add_argument('--replay-date', type=str, help='复盘模式：指定日期（YYYY-MM-DD）')
+
+    args = parser.parse_args()
+
+    # 复盘模式逻辑
+    if args.mode == 'replay':
+        if not args.replay_date:
+            print("❌ 复盘模式需要指定日期: --replay-date YYYY-MM-DD")
+            sys.exit(1)
+
+        # ...（复盘点码省略）...
         print("=" * 80 + "\n")
         sys.exit(0)
 
