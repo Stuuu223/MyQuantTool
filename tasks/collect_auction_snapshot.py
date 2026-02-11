@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-竞价快照采集脚本 (Phase3 第1周) - 数据修复版
+竞价快照采集脚本 (Phase3 第1周) - CTO审计优化版
 
 功能：
 1. 每个交易日09:25采集全市场竞价快照（批量API）
 2. 手动计算涨跌幅和量比（QMT API不返回这些字段）
 3. 保存竞价数据到SQLite和Redis
+4. 本地缓存回退机制（QMT失败时使用本地数据）
 
 使用方法：
     # 采集今日竞价快照
@@ -25,6 +26,11 @@
 性能：
 - 批量采集：500只/批
 - 预期速度：5190只股票 < 30秒
+
+CTO审计优化：
+- 添加完整类型标注
+- 本地缓存回退机制
+- 数据质量统计增强
 """
 
 import sys
@@ -34,7 +40,7 @@ import time
 import argparse
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 
 # 添加项目根目录到路径
 project_root = Path(__file__).parent.parent
@@ -52,9 +58,10 @@ class AuctionSnapshotCollector:
     竞价快照采集器
     
     负责采集全市场竞价数据并保存到数据库
+    支持本地缓存回退机制
     """
     
-    def __init__(self, db_path: str = None):
+    def __init__(self, db_path: Optional[str] = None) -> None:
         """
         初始化采集器
         
@@ -77,14 +84,19 @@ class AuctionSnapshotCollector:
         # 初始化竞价快照管理器
         self.snapshot_manager = AuctionSnapshotManager(self.db_manager)
         
+        # 本地缓存目录
+        self.cache_dir = project_root / "data" / "minute_data"
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        
         # 初始化数据库表
         self._init_database()
         
         logger.info(f"✅ 竞价快照采集器初始化成功")
         logger.info(f"📁 数据库路径: {self.db_path}")
+        logger.info(f"📁 缓存目录: {self.cache_dir}")
         logger.info(f"💾 Redis状态: {'可用' if self.snapshot_manager.is_available else '不可用'}")
     
-    def _init_database(self):
+    def _init_database(self) -> None:
         """
         初始化SQLite数据库表
         """
@@ -183,6 +195,53 @@ class AuctionSnapshotCollector:
             logger.error(f"❌ 获取股票列表失败: {e}")
             return []
     
+    def _read_from_local_cache(self, code: str) -> Optional[float]:
+        """
+        从本地缓存读取历史平均成交量
+        
+        Args:
+            code: 股票代码（带市场后缀，如：600000.SH）
+        
+        Returns:
+            平均每分钟成交量，失败返回None
+        """
+        try:
+            import pandas as pd
+            
+            # 本地缓存文件路径
+            cache_file = self.cache_dir / f"{code}_1m.csv"
+            
+            if not cache_file.exists():
+                return None
+            
+            # 读取缓存文件
+            df = pd.read_csv(cache_file)
+            
+            # 检查必需列
+            if 'volume' not in df.columns:
+                return None
+            
+            # 取最近5天数据
+            recent_df = df.tail(5 * 240)  # 5天 * 240分钟/天
+            
+            if len(recent_df) == 0:
+                return None
+            
+            # 计算平均成交量
+            valid_volumes = recent_df['volume'][recent_df['volume'] > 0]
+            
+            if len(valid_volumes) == 0:
+                return None
+            
+            avg_volume_per_minute = valid_volumes.mean()
+            
+            logger.debug(f"✅ 从本地缓存读取 {code} 历史数据")
+            return float(avg_volume_per_minute)
+        
+        except Exception as e:
+            logger.debug(f"⚠️ 从本地缓存读取 {code} 失败: {e}")
+            return None
+    
     def get_historical_avg_volume(self, codes: List[str], date: str) -> Dict[str, Optional[float]]:
         """
         获取历史5日平均成交量（用于计算量比）
@@ -267,6 +326,40 @@ class AuctionSnapshotCollector:
             logger.error(f"❌ 获取历史成交量异常: {e}", exc_info=True)
             return {code: None for code in codes}
     
+    def get_historical_avg_volume_with_fallback(self, codes: List[str], date: str) -> Tuple[Dict[str, Optional[float]], int]:
+        """
+        获取历史平均成交量（带本地缓存回退）
+        
+        Args:
+            codes: 股票代码列表
+            date: 当前日期
+        
+        Returns:
+            (结果字典, 本地缓存命中数)
+        """
+        # 先从QMT获取
+        result = self.get_historical_avg_volume(codes, date)
+        
+        # 统计失败数量
+        failed_codes = [code for code, vol in result.items() if vol is None]
+        
+        if not failed_codes:
+            return result, 0
+        
+        # 尝试从本地缓存回退
+        cache_hit_count = 0
+        
+        for code in failed_codes:
+            cache_vol = self._read_from_local_cache(code)
+            if cache_vol is not None:
+                result[code] = cache_vol
+                cache_hit_count += 1
+        
+        if cache_hit_count > 0:
+            logger.info(f"📦 本地缓存回退成功：{cache_hit_count}/{len(failed_codes)} 只股票")
+        
+        return result, cache_hit_count
+    
     def save_snapshots_batch(self, snapshots: List[Dict[str, Any]]) -> int:
         """
         批量保存快照到SQLite（使用事务提升性能）
@@ -324,7 +417,7 @@ class AuctionSnapshotCollector:
             logger.error(f"❌ 批量保存失败: {e}", exc_info=True)
             return 0
     
-    def collect_all_snapshots_batch(self, date: str = None, batch_size: int = 500) -> Dict[str, int]:
+    def collect_all_snapshots_batch(self, date: Optional[str] = None, batch_size: int = 500) -> Dict[str, Any]:
         """
         批量采集全市场竞价快照（使用QMT批量API + 手动计算）
         
@@ -333,7 +426,7 @@ class AuctionSnapshotCollector:
             batch_size: 每批次处理的股票数量（默认500）
         
         Returns:
-            采集统计信息 {"total": 总数, "success": 成功数, "failed": 失败数}
+            采集统计信息
         """
         if date is None:
             date = datetime.now().strftime("%Y-%m-%d")
@@ -357,6 +450,7 @@ class AuctionSnapshotCollector:
         success_count = 0
         failed_count = 0
         processed = 0
+        cache_hit_total = 0
         
         start_time = time.time()
         
@@ -377,8 +471,9 @@ class AuctionSnapshotCollector:
                     failed_count += len(batch_codes)
                     continue
 
-                # 🔥 关键2：批量获取历史成交量（用于计算量比）
-                avg_volumes = self.get_historical_avg_volume(batch_codes, date)
+                # 🔥 关键2：批量获取历史成交量（带本地缓存回退）
+                avg_volumes, cache_hits = self.get_historical_avg_volume_with_fallback(batch_codes, date)
+                cache_hit_total += cache_hits
 
                 # 🔥 三级验证：检查历史数据质量
                 if avg_volumes:
@@ -502,16 +597,20 @@ class AuctionSnapshotCollector:
             f"总耗时: {total_time:.1f}s, 平均: {total_time/total*1000:.1f}ms/股"
         )
         
+        if cache_hit_total > 0:
+            logger.info(f"📦 本地缓存回退统计：{cache_hit_total} 只股票使用本地数据")
+        
         return {
             'total': total,
             'success': success_count,
             'failed': failed_count,
-            'time_seconds': total_time
+            'time_seconds': total_time,
+            'cache_hits': cache_hit_total
         }
     
-    def get_snapshot_stats(self, date: str = None) -> Dict[str, Any]:
+    def get_snapshot_stats(self, date: Optional[str] = None) -> Dict[str, Any]:
         """
-        获取竞价快照统计信息
+        获取竞价快照统计信息（增强版：包含数据质量统计）
         
         Args:
             date: 日期（格式：YYYY-MM-DD，默认为今天）
@@ -534,9 +633,12 @@ class AuctionSnapshotCollector:
                     COUNT(*) as total,
                     COUNT(CASE WHEN auction_change > 0.03 THEN 1 END) as high_open_count,
                     COUNT(CASE WHEN auction_change < -0.03 THEN 1 END) as low_open_count,
-                    COUNT(CASE WHEN volume_ratio > 2.0 THEN 1 END) as high_volume_count,
+                    COUNT(CASE WHEN volume_ratio > 2.0 AND volume_ratio_valid = 1 THEN 1 END) as high_volume_count,
                     AVG(auction_change) as avg_change,
-                    AVG(volume_ratio) as avg_volume_ratio
+                    AVG(volume_ratio) as avg_volume_ratio,
+                    COUNT(CASE WHEN volume_ratio_valid = 1 THEN 1 END) as valid_data_count,
+                    COUNT(CASE WHEN data_source = 'simulated' THEN 1 END) as simulated_count,
+                    COUNT(CASE WHEN data_source = 'production' THEN 1 END) as production_count
                 FROM auction_snapshots
                 WHERE date = ?
             """, (date,))
@@ -544,15 +646,23 @@ class AuctionSnapshotCollector:
             row = cursor.fetchone()
             conn.close()
             
-            if row:
+            if row and row[0] > 0:
+                total = row[0]
+                valid_data_count = row[6] or 0
+                valid_data_rate = (valid_data_count / total * 100) if total > 0 else 0
+                
                 return {
                     'date': date,
-                    'total': row[0],
+                    'total': total,
                     'high_open_count': row[1],
                     'low_open_count': row[2],
                     'high_volume_count': row[3],
                     'avg_change': row[4],
-                    'avg_volume_ratio': row[5]
+                    'avg_volume_ratio': row[5],
+                    'valid_data_count': valid_data_count,
+                    'valid_data_rate': valid_data_rate,
+                    'simulated_count': row[7] or 0,
+                    'production_count': row[8] or 0
                 }
             else:
                 return {'date': date, 'total': 0}
@@ -562,11 +672,11 @@ class AuctionSnapshotCollector:
             return {'date': date, 'error': str(e)}
 
 
-def main():
+def main() -> None:
     """
     主函数
     """
-    parser = argparse.ArgumentParser(description='竞价快照采集脚本（数据修复版）')
+    parser = argparse.ArgumentParser(description='竞价快照采集脚本（CTO审计优化版）')
     parser.add_argument('--date', type=str, help='采集日期（格式：YYYY-MM-DD）')
     parser.add_argument('--start-date', type=str, help='开始日期（用于批量采集）')
     parser.add_argument('--end-date', type=str, help='结束日期（用于批量采集）')
@@ -586,9 +696,11 @@ def main():
         logger.info(f"总数: {stats.get('total')}")
         logger.info(f"高开股票: {stats.get('high_open_count')} (涨幅>3%)")
         logger.info(f"低开股票: {stats.get('low_open_count')} (跌幅>3%)")
-        logger.info(f"放量股票: {stats.get('high_volume_count')} (量比>2.0)")
+        logger.info(f"放量股票: {stats.get('high_volume_count')} (量比>2.0且有效)")
         logger.info(f"平均涨幅: {stats.get('avg_change', 0)*100:.2f}%")
         logger.info(f"平均量比: {stats.get('avg_volume_ratio', 0):.2f}")
+        logger.info(f"数据有效率: {stats.get('valid_data_rate', 0):.1f}%")
+        logger.info(f"数据来源: 生产环境 {stats.get('production_count', 0)} | 模拟环境 {stats.get('simulated_count', 0)}")
         return
     
     # 批量采集
@@ -610,7 +722,8 @@ def main():
                 
                 logger.info(
                     f"\n结果: 总数={result['total']}, 成功={result['success']}, "
-                    f"失败={result['failed']}, 耗时={result.get('time_seconds', 0):.1f}s"
+                    f"失败={result['failed']}, 耗时={result.get('time_seconds', 0):.1f}s, "
+                    f"缓存命中={result.get('cache_hits', 0)}"
                 )
             else:
                 logger.info(f"⏭️  跳过周末: {date_str}")
@@ -634,6 +747,7 @@ def main():
         logger.info(f"成功: {result['success']}")
         logger.info(f"失败: {result['failed']}")
         logger.info(f"总耗时: {result.get('time_seconds', 0):.1f}s")
+        logger.info(f"缓存命中: {result.get('cache_hits', 0)}")
         logger.info(f"{'='*60}\n")
         
         # 显示统计信息
@@ -641,7 +755,8 @@ def main():
         logger.info(f"📊 竞价快照统计信息：")
         logger.info(f"高开股票: {stats.get('high_open_count')} (涨幅>3%)")
         logger.info(f"低开股票: {stats.get('low_open_count')} (跌幅>3%)")
-        logger.info(f"放量股票: {stats.get('high_volume_count')} (量比>2.0)")
+        logger.info(f"放量股票: {stats.get('high_volume_count')} (量比>2.0且有效)")
+        logger.info(f"数据有效率: {stats.get('valid_data_rate', 0):.1f}%")
 
 
 if __name__ == "__main__":
