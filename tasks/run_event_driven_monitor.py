@@ -46,7 +46,7 @@ from logic.market_phase_checker import MarketPhaseChecker
 from logic.sector_resonance import SectorResonanceCalculator
 
 # 🔥 [日志精简] 导入日志配置模块
-from logic.log_config import use_normal_mode, use_quiet_mode, use_debug_mode
+from logic.log_config import use_normal_mode, use_quiet_mode, use_debug_mode, is_debug_target
 
 # ===== 日志精简配置 =====
 # use_debug_mode()   # 调试时用
@@ -110,7 +110,7 @@ class EventDrivenMonitor:
         # 初始化市场阶段检查器
         self.phase_checker = MarketPhaseChecker(self.market_checker)
 
-        # 🔥 [修复] 加载紧急模式配置（使用绝对路径，避免依赖启动目录）
+        # 🔥 [重构] 加载配置（紧急模式 + 监控参数）
         import json
         from pathlib import Path
         # 定位项目根目录：从当前文件路径向上两级（tasks -> 项目根）
@@ -120,22 +120,47 @@ class EventDrivenMonitor:
         try:
             with open(config_path, 'r', encoding='utf-8') as f:
                 config = json.load(f)
+                
+                # 加载紧急模式配置
                 self.emergency_config = config.get('system', {}).get('emergency_mode', {
                     'enabled': False,
                     'allow_bypass_qmt_check': False,
                     'bypass_reason': ''
                 })
+                
+                # 🔥 [新增] 加载监控配置
+                monitor_config = config.get('monitor', {})
+                
+                # 板块共振缓存TTL
+                self.sector_resonance_cache_ttl = monitor_config.get('cache', {}).get('sector_resonance_ttl', 300)
+                
+                # 数据时效性容忍度
+                self.data_tolerance_minutes = monitor_config.get('data_freshness', {}).get('tolerance_minutes', 30)
+                
+                # 候选池配置
+                candidate_config = monitor_config.get('candidate_pool', {})
+                self.candidate_ttl_minutes = candidate_config.get('ttl_minutes', 10)
+                self.max_candidates = candidate_config.get('max_size', 100)
+                
+                # 状态导出间隔
+                self.state_export_interval = monitor_config.get('state_export', {}).get('interval_seconds', 5)
             
             # 🔥 [P0修复] 验证配置完整性
             if not self._validate_emergency_config(self.emergency_config):
                 raise RuntimeError("❌ 紧急模式配置不完整，拒绝启动")
             
-            logger.info(f"✅ 加载紧急模式配置: {config_path}")
+            logger.info(f"✅ 加载监控配置: {config_path}")
+            logger.info(f"   板块共振缓存TTL: {self.sector_resonance_cache_ttl}秒")
+            logger.info(f"   数据容忍延迟: {self.data_tolerance_minutes}分钟")
+            logger.info(f"   候选池TTL: {self.candidate_ttl_minutes}分钟")
+            logger.info(f"   候选池上限: {self.max_candidates}只")
+            logger.info(f"   状态导出间隔: {self.state_export_interval}秒")
+            
         except Exception as e:
-            logger.error(f"❌ 加载紧急模式配置失败: {e}")
+            logger.error(f"❌ 加载配置失败: {e}")
             logger.error(f"   配置路径: {config_path}")
             logger.error(f"   系统无法启动，请检查配置文件")
-            raise RuntimeError(f"紧急模式配置加载失败: {e}")
+            raise RuntimeError(f"配置加载失败: {e}")
 
         # 状态管理
         self.last_signature = None
@@ -150,13 +175,12 @@ class EventDrivenMonitor:
             "signals": []    # 最终买入信号
         }
         self.last_state_export_time = None  # 上次状态导出时间
-        self.state_export_interval = 5  # 每5秒导出一次状态
+        # 🔥 [已配置] state_export_interval 从配置文件加载
         
         # 真实候选池（带优先级队列）
         self.hot_candidates_heap: List[Candidate] = []  # 优先级队列
         self.hot_candidates_set = set()  # 用于快速查重
-        self.max_candidates = 100  # 候选池上限
-        self.candidate_ttl_minutes = 10  # 候选池TTL：10分钟
+        # 🔥 [已配置] max_candidates 和 candidate_ttl_minutes 从配置文件加载
         self.last_deep_scan_time = None  # 上次深扫时间
         
         # 初始化事件检测器
@@ -467,42 +491,46 @@ class EventDrivenMonitor:
         # 兜底
         return "BLOCK❌"
 
-    def _validate_flow_data_freshness(self, flow_data: dict, tolerance_minutes: int = 30) -> bool:
+    def _validate_flow_data_freshness(self, flow_data: dict, tolerance_minutes: int = None) -> bool:
         """
         🔥 [P0修复] 验证资金流数据时效性（小时级精度）
-        
+
         Args:
             flow_data: 资金流数据字典
-            tolerance_minutes: 允许的数据延迟（分钟），默认30分钟
-        
+            tolerance_minutes: 允许的数据延迟（分钟），默认使用配置值
+
         Returns:
             bool: 数据是否新鲜
         """
+        # 🔥 [重构] 使用配置值作为默认值
+        if tolerance_minutes is None:
+            tolerance_minutes = self.data_tolerance_minutes
+
         if not flow_data or 'latest' not in flow_data:
             logger.warning("❌ 资金流数据缺少时间戳")
             return False
-        
+
         latest = flow_data.get('latest', {})
         fetch_time_str = latest.get('date', '')
-        
+
         if not fetch_time_str:
             logger.warning("❌ 资金流数据缺少日期时间戳")
             return False
-        
+
         try:
             # 解析日期时间（格式：YYYY-MM-DD）
             fetch_time = datetime.strptime(fetch_time_str, '%Y-%m-%d').replace(hour=15, minute=0)
         except Exception as e:
             logger.error(f"❌ 时间戳解析失败: {e}")
             return False
-        
+
         # 计算数据年龄（分钟）
         age_minutes = (datetime.now() - fetch_time).total_seconds() / 60
-        
+
         if age_minutes > tolerance_minutes:
             logger.warning(f"⚠️ 资金流数据已过期: {age_minutes:.1f} 分钟前（容忍 {tolerance_minutes} 分钟）")
             return False
-        
+
         return True
 
     def _calculate_priority(self, trigger_reason: str, stock_data: dict = None) -> int:
@@ -623,17 +651,16 @@ class EventDrivenMonitor:
             # 计算决策标签
             decision_tag = self._calculate_decision_tag(ratio, risk_score, trap_signals)
 
-            # DEBUG: 针对 601869.SH 的关键数据输出
-            if code == "601869.SH":
-                print(f"\n[DEBUG 601869.SH]")
-                print(f"  trade_date={trade_date}")
-                print(f"  main_net_inflow={main_net_yuan} 元 ({main_net_yi:.4f} 亿)")
-                print(f"  circ_mv_tushare={circ_mv_tushare} 元 ({float_mv_yi:.2f} 亿)")
-                print(f"  ratio={ratio} %")
-                print(f"  decision_tag={decision_tag}")
-                print(f"  risk_score={risk_score}")
-                print(f"  trap_signals={trap_signals}")
-                print()
+            # 🔥 [重构] 条件编译调试日志
+            if is_debug_target(code):
+                logger.debug(f"\n[DEBUG {code}]")
+                logger.debug(f"  trade_date={trade_date}")
+                logger.debug(f"  main_net_inflow={main_net_yuan} 元 ({main_net_yi:.4f} 亿)")
+                logger.debug(f"  circ_mv_tushare={circ_mv_tushare} 元 ({float_mv_yi:.2f} 亿)")
+                logger.debug(f"  ratio={ratio} %")
+                logger.debug(f"  decision_tag={decision_tag}")
+                logger.debug(f"  risk_score={risk_score}")
+                logger.debug(f"  trap_signals={trap_signals}")
 
             # 打印行
             print(f"{code:<8} {name:<10} {last_price:>6.2f} {pct_chg:>7.2f} {amount_yi:>9.2f} {float_mv_yi:>11.2f} {main_net_yi:>12.2f} {f'{ratio:>6.2f}' if ratio is not None else '  --  ':>6} {capital_abbr:>6} {risk_str:>5} {trap_short:<8} {decision_tag:<8}")
@@ -715,9 +742,9 @@ class EventDrivenMonitor:
         # 如果没有板块信息或板块信息未知，跳过检查（不拦截）
         if not sector_name or not sector_code or sector_name == '未知板块':
             return False, "⏸️ 无板块信息，跳过共振检查"
-        
-        # 🔥 [P1修复] 检查板块共振缓存（5分钟TTL）
-        cache_ttl = 300  # 5分钟
+
+        # 🔥 [重构] 检查板块共振缓存（使用配置值）
+        cache_ttl = self.sector_resonance_cache_ttl
         if sector_name in self.sector_resonance_cache:
             result, timestamp = self.sector_resonance_cache[sector_name]
             # 🔥 [P0修复] 使用total_seconds()而不是seconds，避免跨天场景错误
@@ -1489,17 +1516,16 @@ if __name__ == "__main__":
                 else:
                     decision_tag = "BLOCK❌"
 
-                # DEBUG: 针对 601869.SH 的关键数据输出
-                if code == "601869.SH":
-                    print(f"\n[DEBUG 601869.SH]")
-                    print(f"  trade_date={trade_date}")
-                    print(f"  main_net_inflow={main_net_yuan} 元 ({main_net_yi:.4f} 亿)")
-                    print(f"  circ_mv_tushare={circ_mv_tushare} 元 ({float_mv_yi:.2f} 亿)")
-                    print(f"  ratio={ratio} %")
-                    print(f"  decision_tag={decision_tag}")
-                    print(f"  risk_score={risk_score}")
-                    print(f"  trap_signals={trap_signals}")
-                    print()
+                # 🔥 [重构] 条件编译调试日志
+                if is_debug_target(code):
+                    logger.debug(f"\n[DEBUG {code}]")
+                    logger.debug(f"  trade_date={trade_date}")
+                    logger.debug(f"  main_net_inflow={main_net_yuan} 元 ({main_net_yi:.4f} 亿)")
+                    logger.debug(f"  circ_mv_tushare={circ_mv_tushare} 元 ({float_mv_yi:.2f} 亿)")
+                    logger.debug(f"  ratio={ratio} %")
+                    logger.debug(f"  decision_tag={decision_tag}")
+                    logger.debug(f"  risk_score={risk_score}")
+                    logger.debug(f"  trap_signals={trap_signals}")
 
                 # 打印行
                 print(f"{code:<8} {name:<10} {last_price:>6.2f} {pct_chg:>7.2f} {amount_yi:>9.2f} {float_mv_yi:>11.2f} {main_net_yi:>12.2f} {f'{ratio:>6.2f}' if ratio is not None else '  --  ':>6} {capital_abbr:>6} {risk_str:>5} {trap_short:<8} {decision_tag:<8}")
