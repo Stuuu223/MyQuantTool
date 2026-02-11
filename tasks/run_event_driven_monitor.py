@@ -45,6 +45,15 @@ from logic.logger import get_logger
 from logic.market_phase_checker import MarketPhaseChecker
 from logic.sector_resonance import SectorResonanceCalculator
 
+# 🔥 [日志精简] 导入日志配置模块
+from logic.log_config import use_normal_mode, use_quiet_mode, use_debug_mode
+
+# ===== 日志精简配置 =====
+# use_debug_mode()   # 调试时用
+use_normal_mode()    # ✅ 正常运行（推荐）
+# use_quiet_mode()   # 极简模式
+# ===== 日志精简配置结束 =====
+
 logger = get_logger(__name__)
 
 
