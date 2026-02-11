@@ -1,0 +1,650 @@
+2026-02-11 11:08:51,994 - logic.full_market_scanner - INFO - [full_market_scanner.py:1783] -   进度: 31/53
+2026-02-11 11:08:51,996 - logic.full_market_scanner - INFO - [full_market_scanner.py:1933] - 🚀 [白名单短路] 600545.SH 命中主线起爆，跳过风险判定 (原Risk: 0.00)
+2026-02-11 11:08:51,996 - logic.full_market_scanner - INFO - [full_market_scanner.py:1933] - 🚀 [白名单短路] 600299.SH 命中主线起爆，跳过风险判定 (原Risk: 0.00)
+2026-02-11 11:08:51,998 - logic.full_market_scanner - INFO - [full_market_scanner.py:1933] - 🚀 [白名单短路] 601921.SH 命中主线起爆，跳过风险判定 (原Risk: 0.00)
+2026-02-11 11:08:51,998 - logic.full_market_scanner - INFO - [full_market_scanner.py:1783] -   进度: 41/53
+2026-02-11 11:08:51,999 - logic.full_market_scanner - INFO - [full_market_scanner.py:1933] - 🚀 [白名单短路] 300284.SZ 命中主线起爆，跳过风险判定 (原Risk: 0.00)
+2026-02-11 11:08:51,999 - logic.full_market_scanner - INFO - [full_market_scanner.py:1933] - 🚀 [白名单短路] 600149.SH 命中主线起爆，跳过风险判定 (原Risk: 0.00)
+2026-02-11 11:08:52,001 - logic.full_market_scanner - INFO - [full_market_scanner.py:1933] - 🚀 [白名单短路] 300849.SZ 命中主线起爆，跳过风险判定 (原Risk: 0.00)
+2026-02-11 11:08:52,001 - logic.full_market_scanner - INFO - [full_market_scanner.py:1933] - 🚀 [白名单短路] 301203.SZ 命中主线起爆，跳过风险判定 (原Risk: 0.00)
+2026-02-11 11:08:52,002 - logic.full_market_scanner - INFO - [full_market_scanner.py:1783] -   进度: 51/53
+2026-02-11 11:08:52,002 - logic.full_market_scanner - INFO - [full_market_scanner.py:1933] - 🚀 [白名单短路] 605577.SH 命中主线起爆，跳过风险判定 (原Risk: 0.00)
+2026-02-11 11:08:52,002 - logic.full_market_scanner - INFO - [full_market_scanner.py:1933] - 🚀 [白名单短路] 603096.SH 命中主线起爆，跳过风险判定 (原Risk: 0.00)
+2026-02-11 11:08:52,002 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 300364.SZ risk=0.20
+2026-02-11 11:08:52,002 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 600418.SH risk=0.20
+2026-02-11 11:08:52,002 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 001330.SZ risk=0.20
+2026-02-11 11:08:52,002 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 300133.SZ risk=0.20
+2026-02-11 11:08:52,002 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 600977.SH risk=0.20
+2026-02-11 11:08:52,002 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 002739.SZ risk=0.20
+2026-02-11 11:08:52,002 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 000892.SZ risk=0.20
+2026-02-11 11:08:52,002 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 603466.SH risk=0.20
+2026-02-11 11:08:52,002 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 301231.SZ risk=0.20
+2026-02-11 11:08:52,004 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 605287.SH risk=0.20
+2026-02-11 11:08:52,004 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 601595.SH risk=0.20
+2026-02-11 11:08:52,004 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 300528.SZ risk=0.20
+2026-02-11 11:08:52,004 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 601599.SH risk=0.20
+2026-02-11 11:08:52,004 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 601929.SH risk=0.20
+2026-02-11 11:08:52,004 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 301085.SZ risk=0.20
+2026-02-11 11:08:52,004 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 300188.SZ risk=0.20
+2026-02-11 11:08:52,004 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 003018.SZ risk=0.20
+2026-02-11 11:08:52,004 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 605060.SH risk=0.20
+2026-02-11 11:08:52,004 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 301362.SZ risk=0.20
+2026-02-11 11:08:52,004 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 603301.SH risk=0.20
+2026-02-11 11:08:52,004 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 000801.SZ risk=0.20
+2026-02-11 11:08:52,004 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 600715.SH risk=0.20
+2026-02-11 11:08:52,004 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 600373.SH risk=0.20
+2026-02-11 11:08:52,004 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 603999.SH risk=0.20
+2026-02-11 11:08:52,004 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 600088.SH risk=0.20
+2026-02-11 11:08:52,004 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 002302.SZ risk=0.20
+2026-02-11 11:08:52,004 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 603150.SH risk=0.20
+2026-02-11 11:08:52,004 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 000056.SZ risk=0.20
+2026-02-11 11:08:52,004 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 003015.SZ risk=0.20
+2026-02-11 11:08:52,005 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 600575.SH risk=0.20
+2026-02-11 11:08:52,005 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 301281.SZ risk=0.20
+2026-02-11 11:08:52,005 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 300788.SZ risk=0.20
+2026-02-11 11:08:52,005 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 600207.SH risk=0.20
+2026-02-11 11:08:52,005 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 000802.SZ risk=0.20
+2026-02-11 11:08:52,005 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 000779.SZ risk=0.20
+2026-02-11 11:08:52,005 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 300804.SZ risk=0.20
+2026-02-11 11:08:52,005 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 001209.SZ risk=0.20
+2026-02-11 11:08:52,005 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 600381.SH risk=0.20
+2026-02-11 11:08:52,005 - logic.full_market_scanner - INFO - [full_market_scanner.py:456] - ✅ Level 3 完成 (耗时: 0.0秒)
+2026-02-11 11:08:52,005 - logic.risk_manager - INFO - [risk_manager.py:38] - ✅ RiskManager 初始化成功
+2026-02-11 11:08:52,005 - logic.full_market_scanner - INFO - [full_market_scanner.py:505] - \n================================================================================
+2026-02-11 11:08:52,005 - logic.full_market_scanner - INFO - [full_market_scanner.py:506] - 📊 扫描结果统计
+2026-02-11 11:08:52,005 - logic.full_market_scanner - INFO - [full_market_scanner.py:507] - ================================================================================
+2026-02-11 11:08:52,005 - logic.full_market_scanner - INFO - [full_market_scanner.py:518] - ✅ 机会池: 15 | 观察池: 38 | 黑名单:  0
+📈 系统置信度: 92.5% | 💰 今日建议最大总仓位: 74.0%
+⏰ 扫描耗时: 1.6s
+2026-02-11 11:08:52,005 - logic.full_market_scanner - INFO - [full_market_scanner.py:519] - 🎯 风控原因: 系统置信度高（≥ 70%），允许高仓位
+2026-02-11 11:08:52,005 - logic.full_market_scanner - INFO - [full_market_scanner.py:530] - ⏱️  总耗时: 1.6 秒
+2026-02-11 11:08:52,005 - logic.full_market_scanner - INFO - [full_market_scanner.py:531] - ================================================================================
+2026-02-11 11:08:52,011 - logic.full_market_scanner - INFO - [full_market_scanner.py:2166] - 💾 结果已保存: data/scan_results/2026-02-11_intraday.json
+
+================================================================================
+📊 扫描完成 #0 - 11:08:52
+================================================================================
+2026-02-11 11:08:52,011 - logic.sector_resonance - INFO - [sector_resonance.py:116] - 📊 [文化传媒] 板块共振分析:
+2026-02-11 11:08:52,011 - logic.sector_resonance - INFO - [sector_resonance.py:117] -    Leaders: 0/3
+2026-02-11 11:08:52,011 - logic.sector_resonance - INFO - [sector_resonance.py:118] -    Breadth: 0.0%/35.0%
+2026-02-11 11:08:52,012 - logic.sector_resonance - INFO - [sector_resonance.py:119] -    结果: ⏸️ 未共振
+2026-02-11 11:08:52,012 - __main__ - INFO - [run_event_driven_monitor.py:754] - ⏸️ [时机斧拦截-监控层] 601921.SH (N/A)
+2026-02-11 11:08:52,012 - __main__ - INFO - [run_event_driven_monitor.py:755] -    板块: 文化传媒
+2026-02-11 11:08:52,012 - __main__ - INFO - [run_event_driven_monitor.py:756] -    Leaders: 0（需≥3）
+2026-02-11 11:08:52,012 - __main__ - INFO - [run_event_driven_monitor.py:757] -    Breadth: 0.0%（需≥35%）
+2026-02-11 11:08:52,012 - __main__ - INFO - [run_event_driven_monitor.py:758] -    拦截位置: 监控层 (run_event_driven_monitor.py)
+⏸️ [时机斧] 本次降级 3 只未共振股票 → 观察池:
+   ⏸️ 601921.SH (N/A) - ⏸️ [时机斧] 板块未共振：⏸️ 板块未共振：Leaders=0（需≥3），Breadth=0.0%（需≥35.0%）
+   ⏸️ 605577.SH (N/A) - ⏸️ [时机斧] 板块未共振（缓存）：⏸️ 板块未共振：Leaders=0（需≥3），Breadth=0.0%（需≥35.0%）
+   ⏸️ 603096.SH (N/A) - ⏸️ [时机斧] 板块未共振（缓存）：⏸️ 板块未共振：Leaders=0（需≥3），Breadth=0.0%（需≥35.0%）
+
+✅ 机会池（最终）: 12 只
+🛡️ 机会池（防守斧拦截）: 0 只
+⏸️ 机会池（时机斧降级→观察池）: 3 只
+⚠️  观察池（含降级）: 41 只
+❌ 黑名单: 0 只
+📈 系统置信度: 92.5%
+💰 今日建议最大总仓位: 74.0%
+🎯 累计保存快照: 0 次
+🔔 累计检测事件: 0 次
+
+【低风险机会池】（风险≤0.2，12 只）
+=============================================================================================================================
+代码       名称             价格     涨跌幅    成交额(亿)     流通市值(亿)      主力净入(亿)  占比(%)     资金    风险 诱多信号     决策
+-----------------------------------------------------------------------------------------------------------------------------
+2026-02-11 11:08:52,012 - __main__ - WARNING - [run_event_driven_monitor.py:494] - ⚠️ 资金流数据已过期: 1208.9 分钟前（容忍 30 分钟）
+2026-02-11 11:08:52,012 - __main__ - WARNING - [run_event_driven_monitor.py:562] - ⚠️ 002517.SZ 资金流数据过期，跳过显示
+2026-02-11 11:08:52,012 - __main__ - WARNING - [run_event_driven_monitor.py:494] - ⚠️ 资金流数据已过期: 1208.9 分钟前（容忍 30 分钟）
+2026-02-11 11:08:52,012 - __main__ - WARNING - [run_event_driven_monitor.py:562] - ⚠️ 600482.SH 资金流数据过期，跳过显示
+2026-02-11 11:08:52,012 - __main__ - WARNING - [run_event_driven_monitor.py:494] - ⚠️ 资金流数据已过期: 1208.9 分钟前（容忍 30 分钟）
+2026-02-11 11:08:52,012 - __main__ - WARNING - [run_event_driven_monitor.py:562] - ⚠️ 600292.SH 资金流数据过期，跳过显示
+2026-02-11 11:08:52,012 - __main__ - WARNING - [run_event_driven_monitor.py:494] - ⚠️ 资金流数据已过期: 1208.9 分钟前（容忍 30 分钟）
+2026-02-11 11:08:52,014 - __main__ - WARNING - [run_event_driven_monitor.py:562] - ⚠️ 603138.SH 资金流数据过期，跳过显示
+2026-02-11 11:08:52,014 - __main__ - WARNING - [run_event_driven_monitor.py:494] - ⚠️ 资金流数据已过期: 1208.9 分钟前（容忍 30 分钟）
+2026-02-11 11:08:52,014 - __main__ - WARNING - [run_event_driven_monitor.py:562] - ⚠️ 300767.SZ 资金流数据过期，跳过显示
+2026-02-11 11:08:52,014 - __main__ - WARNING - [run_event_driven_monitor.py:494] - ⚠️ 资金流数据已过期: 1208.9 分钟前（容忍 30 分钟）
+2026-02-11 11:08:52,014 - __main__ - WARNING - [run_event_driven_monitor.py:562] - ⚠️ 603968.SH 资金流数据过期，跳过显示
+2026-02-11 11:08:52,014 - __main__ - WARNING - [run_event_driven_monitor.py:494] - ⚠️ 资金流数据已过期: 1208.9 分钟前（容忍 30 分钟）
+2026-02-11 11:08:52,014 - __main__ - WARNING - [run_event_driven_monitor.py:562] - ⚠️ 600545.SH 资金流数据过期，跳过显示
+2026-02-11 11:08:52,014 - __main__ - WARNING - [run_event_driven_monitor.py:494] - ⚠️ 资金流数据已过期: 1208.9 分钟前（容忍 30 分钟）
+2026-02-11 11:08:52,014 - __main__ - WARNING - [run_event_driven_monitor.py:562] - ⚠️ 600299.SH 资金流数据过期，跳过显示
+2026-02-11 11:08:52,014 - __main__ - WARNING - [run_event_driven_monitor.py:494] - ⚠️ 资金流数据已过期: 1208.9 分钟前（容忍 30 分钟）
+2026-02-11 11:08:52,014 - __main__ - WARNING - [run_event_driven_monitor.py:562] - ⚠️ 300284.SZ 资金流数据过期，跳过显示
+2026-02-11 11:08:52,014 - __main__ - WARNING - [run_event_driven_monitor.py:494] - ⚠️ 资金流数据已过期: 1208.9 分钟前（容忍 30 分钟）
+2026-02-11 11:08:52,014 - __main__ - WARNING - [run_event_driven_monitor.py:562] - ⚠️ 600149.SH 资金流数据过期，跳过显示
+2026-02-11 11:08:52,014 - __main__ - WARNING - [run_event_driven_monitor.py:494] - ⚠️ 资金流数据已过期: 1208.9 分钟前（容忍 30 分钟）
+2026-02-11 11:08:52,014 - __main__ - WARNING - [run_event_driven_monitor.py:562] - ⚠️ 300849.SZ 资金流数据过期，跳过显示
+2026-02-11 11:08:52,014 - __main__ - WARNING - [run_event_driven_monitor.py:494] - ⚠️ 资金流数据已过期: 1208.9 分钟前（容忍 30 分钟）
+2026-02-11 11:08:52,014 - __main__ - WARNING - [run_event_driven_monitor.py:562] - ⚠️ 301203.SZ 资金流数据过期，跳过显示
+=============================================================================================================================
+
+🔥 机会池（最终） (12 只):
+   002517.SZ - 风险: 0.00 - 类型: UNCLEAR
+   600482.SH - 风险: 0.00 - 类型: UNCLEAR
+   600292.SH - 风险: 0.00 - 类型: UNCLEAR
+   603138.SH - 风险: 0.00 - 类型: UNCLEAR
+   300767.SZ - 风险: 0.00 - 类型: UNCLEAR
+   603968.SH - 风险: 0.00 - 类型: UNCLEAR
+   600545.SH - 风险: 0.00 - 类型: UNCLEAR
+   600299.SH - 风险: 0.00 - 类型: UNCLEAR
+   300284.SZ - 风险: 0.00 - 类型: UNCLEAR
+   600149.SH - 风险: 0.00 - 类型: UNCLEAR
+   300849.SZ - 风险: 0.00 - 类型: UNCLEAR
+   301203.SZ - 风险: 0.00 - 类型: UNCLEAR
+
+⚠️  观察池（含降级） (41 只):
+   300364.SZ - 风险: 0.20 - 类型: UNCLEAR 诱多信号: 长期流出+单日巨量
+   600418.SH - 风险: 0.20 - 类型: UNCLEAR 诱多信号: 长期流出+单日巨量
+   001330.SZ - 风险: 0.20 - 类型: UNCLEAR 诱多信号: 长期流出+单日巨量
+   300133.SZ - 风险: 0.20 - 类型: UNCLEAR 诱多信号: 长期流出+单日巨量
+   600977.SH - 风险: 0.20 - 类型: UNCLEAR 诱多信号: 长期流出+单日巨量
+   002739.SZ - 风险: 0.20 - 类型: UNCLEAR 诱多信号: 长期流出+单日巨量
+   000892.SZ - 风险: 0.20 - 类型: UNCLEAR 诱多信号: 长期流出+单日巨量
+   603466.SH - 风险: 0.20 - 类型: UNCLEAR 诱多信号: 长期流出+单日巨量
+   301231.SZ - 风险: 0.20 - 类型: UNCLEAR 诱多信号: 长期流出+单日巨量
+   605287.SH - 风险: 0.20 - 类型: UNCLEAR 诱多信号: 长期流出+单日巨量
+   601595.SH - 风险: 0.20 - 类型: UNCLEAR 诱多信号: 长期流出+单日巨量
+   300528.SZ - 风险: 0.20 - 类型: UNCLEAR 诱多信号: 长期流出+单日巨量
+   601599.SH - 风险: 0.20 - 类型: UNCLEAR 诱多信号: 长期流出+单日巨量
+   601929.SH - 风险: 0.20 - 类型: UNCLEAR 诱多信号: 长期流出+单日巨量
+   301085.SZ - 风险: 0.20 - 类型: UNCLEAR 诱多信号: 长期流出+单日巨量
+   300188.SZ - 风险: 0.20 - 类型: UNCLEAR 诱多信号: 长期流出+单日巨量
+   003018.SZ - 风险: 0.20 - 类型: UNCLEAR 诱多信号: 长期流出+单日巨量
+   605060.SH - 风险: 0.20 - 类型: UNCLEAR 诱多信号: 长期流出+单日巨量
+   301362.SZ - 风险: 0.20 - 类型: UNCLEAR 诱多信号: 长期流出+单日巨量
+   603301.SH - 风险: 0.20 - 类型: UNCLEAR 诱多信号: 长期流出+单日巨量
+   000801.SZ - 风险: 0.20 - 类型: UNCLEAR 诱多信号: 长期流出+单日巨量
+   600715.SH - 风险: 0.20 - 类型: UNCLEAR 诱多信号: 长期流出+单日巨量
+   600373.SH - 风险: 0.20 - 类型: UNCLEAR 诱多信号: 长期流出+单日巨量
+   603999.SH - 风险: 0.20 - 类型: UNCLEAR 诱多信号: 长期流出+单日巨量
+   600088.SH - 风险: 0.20 - 类型: UNCLEAR 诱多信号: 长期流出+单日巨量
+   002302.SZ - 风险: 0.20 - 类型: UNCLEAR 诱多信号: 长期流出+单日巨量
+   603150.SH - 风险: 0.20 - 类型: UNCLEAR 诱多信号: 长期流出+单日巨量
+   000056.SZ - 风险: 0.20 - 类型: UNCLEAR 诱多信号: 长期流出+单日巨量
+   003015.SZ - 风险: 0.20 - 类型: UNCLEAR 诱多信号: 长期流出+单日巨量
+   600575.SH - 风险: 0.20 - 类型: UNCLEAR 诱多信号: 长期流出+单日巨量
+   301281.SZ - 风险: 0.20 - 类型: UNCLEAR 诱多信号: 长期流出+单日巨量
+   300788.SZ - 风险: 0.20 - 类型: UNCLEAR 诱多信号: 长期流出+单日巨量
+   600207.SH - 风险: 0.20 - 类型: UNCLEAR 诱多信号: 长期流出+单日巨量
+   000802.SZ - 风险: 0.20 - 类型: UNCLEAR 诱多信号: 长期流出+单日巨量
+   000779.SZ - 风险: 0.20 - 类型: UNCLEAR 诱多信号: 长期流出+单日巨量
+   300804.SZ - 风险: 0.20 - 类型: UNCLEAR 诱多信号: 长期流出+单日巨量
+   001209.SZ - 风险: 0.20 - 类型: UNCLEAR 诱多信号: 长期流出+单日巨量
+   600381.SH - 风险: 0.20 - 类型: UNCLEAR 诱多信号: 长期流出+单日巨量
+   601921.SH - 风险: 0.00 - 类型: UNCLEAR [时机斧降级]
+   605577.SH - 风险: 0.00 - 类型: UNCLEAR [时机斧降级]
+   603096.SH - 风险: 0.00 - 类型: UNCLEAR [时机斧降级]
+================================================================================
+
+2026-02-11 11:08:52,017 - __main__ - INFO - [run_event_driven_monitor.py:1140] -    等待 30 秒后重新检测...
+2026-02-11 11:09:00,950 - __main__ - INFO - [run_event_driven_monitor.py:1075] - 
+================================================================================
+2026-02-11 11:09:00,950 - __main__ - INFO - [run_event_driven_monitor.py:1076] - 🛑 持续监控已停止
+2026-02-11 11:09:00,950 - __main__ - INFO - [run_event_driven_monitor.py:1077] - ================================================================================
+2026-02-11 11:09:00,950 - __main__ - INFO - [run_event_driven_monitor.py:1078] - 📊 运行统计:
+2026-02-11 11:09:00,950 - __main__ - INFO - [run_event_driven_monitor.py:1079] -    总扫描次数: 0
+2026-02-11 11:09:00,951 - __main__ - INFO - [run_event_driven_monitor.py:1080] -    总检测事件: 0
+2026-02-11 11:09:00,951 - __main__ - INFO - [run_event_driven_monitor.py:1081] -    快照保存次数: 0
+2026-02-11 11:09:00,951 - __main__ - INFO - [run_event_driven_monitor.py:1082] -    运行时长: 0:05:48.838261
+2026-02-11 11:09:00,951 - __main__ - INFO - [run_event_driven_monitor.py:1083] - ================================================================================
+(venv_qmt) PS E:\MyQuantTool> python tasks/run_event_driven_monitor.py 
+================================================================================
+📋 日志配置完成
+================================================================================
+✅ 根日志级别: INFO
+✅ 扫描模块级别: WARNING
+✅ QMT 模块级别: INFO
+✅ 精简模块数: 6
+================================================================================
+
+2026-02-11 11:23:19,730 - logic.full_market_scanner - INFO - [full_market_scanner.py:77] - ✅ QMT 数据源可用，将使用 QMT 进行高速扫描
+2026-02-11 11:23:19,779 - logic.full_market_scanner - INFO - [full_market_scanner.py:123] - ✅ 加载股本信息（Tushare版）: 3 只股票
+2026-02-11 11:23:19,800 - logic.full_market_scanner - INFO - [full_market_scanner.py:157] - ✅ 加载板块映射表: 5552 只股票
+2026-02-11 11:23:19,963 - logic.full_market_scanner - INFO - [full_market_scanner.py:185] - ✅ QMT 股票列表获取成功: 5190 只
+2026-02-11 11:23:19,965 - logic.full_market_scanner - INFO - [full_market_scanner.py:96] - ✅ 全市场扫描器初始化完成
+2026-02-11 11:23:19,965 - logic.full_market_scanner - INFO - [full_market_scanner.py:97] -    - 股票池: 5190 只
+2026-02-11 11:23:19,965 - logic.full_market_scanner - INFO - [full_market_scanner.py:98] -    - 股本信息: 3 只股票
+2026-02-11 11:23:19,965 - logic.full_market_scanner - INFO - [full_market_scanner.py:99] -    - Level 1 阈值: 涨跌幅>2.0%, 成交额>2千万
+2026-02-11 11:23:19,965 - logic.full_market_scanner - INFO - [full_market_scanner.py:100] -    - Level 2 阈值: 主力流入>5百万
+2026-02-11 11:23:19,965 - logic.full_market_scanner - INFO - [full_market_scanner.py:101] -    - Level 3 阈值: 风险评分<0.75
+2026-02-11 11:23:19,994 - logic.event_recorder - INFO - [event_recorder.py:141] - ✅ 数据库表初始化完成
+2026-02-11 11:23:19,994 - logic.event_recorder - INFO - [event_recorder.py:89] - ✅ 事件记录器初始化成功: data/event_records.db
+2026-02-11 11:23:19,994 - logic.market_phase_checker - INFO - [market_phase_checker.py:33] - ✅ MarketPhaseChecker 初始化成功
+2026-02-11 11:23:19,994 - __main__ - INFO - [run_event_driven_monitor.py:136] - ✅ 加载紧急模式配置: E:\MyQuantTool\config\market_scan_config.json
+2026-02-11 11:23:19,995 - logic.event_detector - INFO - [event_detector.py:145] - 📝 注册事件检测器: auction_event_detector
+2026-02-11 11:23:19,995 - logic.event_detector - INFO - [event_detector.py:145] - 📝 注册事件检测器: halfway_event_detector
+2026-02-11 11:23:19,995 - logic.event_detector - INFO - [event_detector.py:145] - 📝 注册事件检测器: dip_buy_event_detector
+2026-02-11 11:23:19,995 - logic.event_detector - INFO - [event_detector.py:145] - 📝 注册事件检测器: leader_event_detector
+2026-02-11 11:23:19,995 - __main__ - INFO - [run_event_driven_monitor.py:198] - ✅ 事件检测器初始化完成: 4 个
+2026-02-11 11:23:19,995 - logic.qmt_tick_monitor - INFO - [qmt_tick_monitor.py:121] - ✅ QMT Tick监控器初始化成功
+2026-02-11 11:23:19,995 - logic.qmt_tick_monitor - INFO - [qmt_tick_monitor.py:193] - 📝 添加事件回调，当前回调数: 1
+2026-02-11 11:23:19,995 - __main__ - INFO - [run_event_driven_monitor.py:208] - ✅ QMT Tick监控器初始化成功
+2026-02-11 11:23:20,010 - logic.qmt_health_check - INFO - [qmt_health_check.py:52] - ================================================================================
+2026-02-11 11:23:20,010 - logic.qmt_health_check - INFO - [qmt_health_check.py:53] - 🏥 QMT 状态自检开始
+2026-02-11 11:23:20,012 - logic.qmt_health_check - INFO - [qmt_health_check.py:54] - ================================================================================
+2026-02-11 11:23:20,047 - logic.qmt_health_check - INFO - [qmt_health_check.py:387] - 
+2026-02-11 11:23:20,047 - logic.qmt_health_check - INFO - [qmt_health_check.py:388] - 📊 QMT 状态检查结果
+2026-02-11 11:23:20,049 - logic.qmt_health_check - INFO - [qmt_health_check.py:389] - ================================================================================
+2026-02-11 11:23:20,049 - logic.qmt_health_check - INFO - [qmt_health_check.py:399] - 整体状态: ✅ HEALTHY
+2026-02-11 11:23:20,049 - logic.qmt_health_check - INFO - [qmt_health_check.py:400] - 检查时间: 2026-02-11 11:23:20
+2026-02-11 11:23:20,049 - logic.qmt_health_check - INFO - [qmt_health_check.py:401] -
+2026-02-11 11:23:20,049 - logic.qmt_health_check - INFO - [qmt_health_check.py:408] - QMT 客户端: ✅ 已启动
+2026-02-11 11:23:20,049 - logic.qmt_health_check - INFO - [qmt_health_check.py:410] -   - 股票数量: 5190 只
+2026-02-11 11:23:20,049 - logic.qmt_health_check - INFO - [qmt_health_check.py:411] -   - 消息: QMT 客户端已启动
+2026-02-11 11:23:20,049 - logic.qmt_health_check - INFO - [qmt_health_check.py:415] - 行情主站: ✅ 已登录
+2026-02-11 11:23:20,049 - logic.qmt_health_check - INFO - [qmt_health_check.py:417] -   - 时间戳: 20260211 11:23:21
+2026-02-11 11:23:20,049 - logic.qmt_health_check - INFO - [qmt_health_check.py:418] -   - 股票状态: 停牌
+2026-02-11 11:23:20,049 - logic.qmt_health_check - INFO - [qmt_health_check.py:419] -   - 消息: 行情主站已连接（探测标的: 000001.SH）
+2026-02-11 11:23:20,049 - logic.qmt_health_check - INFO - [qmt_health_check.py:425] - 市场状态: ✅ 交易时间 (上午交易)
+2026-02-11 11:23:20,049 - logic.qmt_health_check - INFO - [qmt_health_check.py:430] - 交易时间: ✅ 当前在交易时间
+2026-02-11 11:23:20,049 - logic.qmt_health_check - INFO - [qmt_health_check.py:438] - 数据模式: ✅ 实时订阅模式
+2026-02-11 11:23:20,049 - logic.qmt_health_check - INFO - [qmt_health_check.py:445] -
+2026-02-11 11:23:20,050 - logic.qmt_health_check - INFO - [qmt_health_check.py:446] - 💡 建议:
+2026-02-11 11:23:20,050 - logic.qmt_health_check - INFO - [qmt_health_check.py:448] -   ✅ QMT 状态正常，可以进行实时决策
+2026-02-11 11:23:20,050 - logic.qmt_health_check - INFO - [qmt_health_check.py:450] - ================================================================================
+2026-02-11 11:23:20,050 - logic.qmt_health_check - INFO - [qmt_health_check.py:451] -
+2026-02-11 11:23:20,050 - __main__ - INFO - [run_event_driven_monitor.py:1022] - ================================================================================
+2026-02-11 11:23:20,050 - __main__ - INFO - [run_event_driven_monitor.py:1023] - 🚀 事件驱动持续监控启动 - 第二阶段框架（重构版）
+2026-02-11 11:23:20,050 - __main__ - INFO - [run_event_driven_monitor.py:1024] - ================================================================================
+2026-02-11 11:23:20,050 - __main__ - INFO - [run_event_driven_monitor.py:1025] - 📅 启动时间: 2026-02-11 11:23:19
+2026-02-11 11:23:20,050 - __main__ - INFO - [run_event_driven_monitor.py:1026] - 🎯 运行模式: 自动策略切换
+2026-02-11 11:23:20,050 - __main__ - INFO - [run_event_driven_monitor.py:1027] - 🎯 支持策略: auction（竞价） / event_driven（盘中） / idle（空闲）
+2026-02-11 11:23:20,050 - __main__ - INFO - [run_event_driven_monitor.py:1028] - 🔌 QMT 状态: HEALTHY
+2026-02-11 11:23:20,050 - __main__ - INFO - [run_event_driven_monitor.py:1034] - ================================================================================
+
+🎯 事件驱动监控已启动，按 Ctrl+C 停止
+================================================================================
+
+2026-02-11 11:23:20,050 - __main__ - INFO - [run_event_driven_monitor.py:1073] - 🎯 当前策略: event_driven
+2026-02-11 11:23:20,050 - __main__ - INFO - [run_event_driven_monitor.py:1113] - 📡 [EVENT_DRIVEN] 进入事件驱动模式
+2026-02-11 11:23:20,050 - logic.qmt_health_check - INFO - [qmt_health_check.py:52] - ================================================================================
+2026-02-11 11:23:20,050 - logic.qmt_health_check - INFO - [qmt_health_check.py:53] - 🏥 QMT 状态自检开始
+2026-02-11 11:23:20,050 - logic.qmt_health_check - INFO - [qmt_health_check.py:54] - ================================================================================
+2026-02-11 11:23:20,081 - logic.qmt_health_check - INFO - [qmt_health_check.py:387] - 
+2026-02-11 11:23:20,081 - logic.qmt_health_check - INFO - [qmt_health_check.py:388] - 📊 QMT 状态检查结果
+2026-02-11 11:23:20,081 - logic.qmt_health_check - INFO - [qmt_health_check.py:389] - ================================================================================
+2026-02-11 11:23:20,081 - logic.qmt_health_check - INFO - [qmt_health_check.py:399] - 整体状态: ✅ HEALTHY
+2026-02-11 11:23:20,081 - logic.qmt_health_check - INFO - [qmt_health_check.py:400] - 检查时间: 2026-02-11 11:23:20
+2026-02-11 11:23:20,081 - logic.qmt_health_check - INFO - [qmt_health_check.py:401] -
+2026-02-11 11:23:20,081 - logic.qmt_health_check - INFO - [qmt_health_check.py:408] - QMT 客户端: ✅ 已启动
+2026-02-11 11:23:20,081 - logic.qmt_health_check - INFO - [qmt_health_check.py:410] -   - 股票数量: 5190 只
+2026-02-11 11:23:20,081 - logic.qmt_health_check - INFO - [qmt_health_check.py:411] -   - 消息: QMT 客户端已启动
+2026-02-11 11:23:20,081 - logic.qmt_health_check - INFO - [qmt_health_check.py:415] - 行情主站: ✅ 已登录
+2026-02-11 11:23:20,082 - logic.qmt_health_check - INFO - [qmt_health_check.py:417] -   - 时间戳: 20260211 11:23:21
+2026-02-11 11:23:20,082 - logic.qmt_health_check - INFO - [qmt_health_check.py:418] -   - 股票状态: 停牌
+2026-02-11 11:23:20,082 - logic.qmt_health_check - INFO - [qmt_health_check.py:419] -   - 消息: 行情主站已连接（探测标的: 000001.SH）
+2026-02-11 11:23:20,082 - logic.qmt_health_check - INFO - [qmt_health_check.py:425] - 市场状态: ✅ 交易时间 (上午交易)
+2026-02-11 11:23:20,082 - logic.qmt_health_check - INFO - [qmt_health_check.py:430] - 交易时间: ✅ 当前在交易时间
+2026-02-11 11:23:20,082 - logic.qmt_health_check - INFO - [qmt_health_check.py:438] - 数据模式: ✅ 实时订阅模式
+2026-02-11 11:23:20,082 - logic.qmt_health_check - INFO - [qmt_health_check.py:445] -
+2026-02-11 11:23:20,082 - logic.qmt_health_check - INFO - [qmt_health_check.py:446] - 💡 建议:
+2026-02-11 11:23:20,082 - logic.qmt_health_check - INFO - [qmt_health_check.py:448] -   ✅ QMT 状态正常，可以进行实时决策
+2026-02-11 11:23:20,082 - logic.qmt_health_check - INFO - [qmt_health_check.py:450] - ================================================================================
+2026-02-11 11:23:20,082 - logic.qmt_health_check - INFO - [qmt_health_check.py:451] -
+2026-02-11 11:23:20,157 - logic.full_market_scanner - INFO - [full_market_scanner.py:597] - 批次 1 获取成功, tick_data 类型: <class 'dict'>
+2026-02-11 11:23:32,300 - logic.full_market_scanner - INFO - [full_market_scanner.py:597] - 批次 2 获取成功, tick_data 类型: <class 'dict'>
+2026-02-11 11:23:43,906 - logic.full_market_scanner - INFO - [full_market_scanner.py:597] - 批次 3 获取成功, tick_data 类型: <class 'dict'>
+2026-02-11 11:23:56,246 - logic.full_market_scanner - INFO - [full_market_scanner.py:1001] - 🔍 [DEBUG 001335] Level 1检查开始: code=001335.SZ
+2026-02-11 11:23:56,249 - logic.full_market_scanner - INFO - [full_market_scanner.py:1092] - 🔍 [DEBUG 001335] Level 1失败: 量比过低 (volume_ratio=0.55, threshold=1.50)
+2026-02-11 11:23:56,859 - logic.full_market_scanner - INFO - [full_market_scanner.py:597] - 批次 4 获取成功, tick_data 类型: <class 'dict'>
+2026-02-11 11:24:09,325 - logic.full_market_scanner - INFO - [full_market_scanner.py:597] - 批次 5 获取成功, tick_data 类型: <class 'dict'>
+2026-02-11 11:24:22,343 - logic.full_market_scanner - INFO - [full_market_scanner.py:597] - 批次 6 获取成功, tick_data 类型: <class 'dict'>
+2026-02-11 11:24:25,609 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 603999.SH (P40, level1_screening)
+2026-02-11 11:24:25,609 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 605287.SH (P40, level1_screening)
+2026-02-11 11:24:25,609 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 600418.SH (P40, level1_screening)
+2026-02-11 11:24:25,609 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 600207.SH (P40, level1_screening)
+2026-02-11 11:24:25,610 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 603855.SH (P40, level1_screening)
+2026-02-11 11:24:25,610 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 600545.SH (P40, level1_screening)
+2026-02-11 11:24:25,610 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 603268.SH (P40, level1_screening)
+2026-02-11 11:24:25,610 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 605060.SH (P40, level1_screening)
+2026-02-11 11:24:25,610 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 605088.SH (P40, level1_screening)
+2026-02-11 11:24:25,610 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 603082.SH (P40, level1_screening)
+2026-02-11 11:24:25,610 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 600715.SH (P40, level1_screening)
+2026-02-11 11:24:25,610 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 600381.SH (P40, level1_screening)
+2026-02-11 11:24:25,610 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 600185.SH (P40, level1_screening)
+2026-02-11 11:24:25,610 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 603150.SH (P40, level1_screening)
+2026-02-11 11:24:25,610 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 601999.SH (P40, level1_screening)
+2026-02-11 11:24:25,610 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 600482.SH (P40, level1_screening)
+2026-02-11 11:24:25,610 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 603000.SH (P40, level1_screening)
+2026-02-11 11:24:25,610 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 603826.SH (P40, level1_screening)
+2026-02-11 11:24:25,610 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 603682.SH (P40, level1_screening)
+2026-02-11 11:24:25,610 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 603103.SH (P40, level1_screening)
+2026-02-11 11:24:25,610 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 603125.SH (P40, level1_screening)
+2026-02-11 11:24:25,610 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 605566.SH (P40, level1_screening)
+2026-02-11 11:24:25,610 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 605033.SH (P40, level1_screening)
+2026-02-11 11:24:25,610 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 603968.SH (P40, level1_screening)
+2026-02-11 11:24:25,612 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 600080.SH (P40, level1_screening)
+2026-02-11 11:24:25,612 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 603096.SH (P40, level1_screening)
+2026-02-11 11:24:25,612 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 601929.SH (P40, level1_screening)
+2026-02-11 11:24:25,612 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 603618.SH (P40, level1_screening)
+2026-02-11 11:24:25,612 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 603301.SH (P40, level1_screening)
+2026-02-11 11:24:25,612 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 600370.SH (P40, level1_screening)
+2026-02-11 11:24:25,612 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 603060.SH (P40, level1_screening)
+2026-02-11 11:24:25,612 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 600769.SH (P40, level1_screening)
+2026-02-11 11:24:25,612 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 600683.SH (P40, level1_screening)
+2026-02-11 11:24:25,612 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 601595.SH (P40, level1_screening)
+2026-02-11 11:24:25,612 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 600977.SH (P40, level1_screening)
+2026-02-11 11:24:25,612 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 600969.SH (P40, level1_screening)
+2026-02-11 11:24:25,612 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 600575.SH (P40, level1_screening)
+2026-02-11 11:24:25,612 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 600186.SH (P40, level1_screening)
+2026-02-11 11:24:25,612 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 605577.SH (P40, level1_screening)
+2026-02-11 11:24:25,612 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 600243.SH (P40, level1_screening)
+2026-02-11 11:24:25,612 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 601921.SH (P40, level1_screening)
+2026-02-11 11:24:25,612 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 600088.SH (P40, level1_screening)
+2026-02-11 11:24:25,612 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 601098.SH (P40, level1_screening)
+2026-02-11 11:24:25,613 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 603138.SH (P40, level1_screening)
+2026-02-11 11:24:25,613 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 600149.SH (P40, level1_screening)
+2026-02-11 11:24:25,613 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 600292.SH (P40, level1_screening)
+2026-02-11 11:24:25,613 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 601599.SH (P40, level1_screening)
+2026-02-11 11:24:25,613 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 603616.SH (P40, level1_screening)
+2026-02-11 11:24:25,613 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 600355.SH (P40, level1_screening)
+2026-02-11 11:24:25,613 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 600373.SH (P40, level1_screening)
+2026-02-11 11:24:25,613 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 600299.SH (P40, level1_screening)
+2026-02-11 11:24:25,613 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 002947.SZ (P40, level1_screening)
+2026-02-11 11:24:25,613 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 301231.SZ (P40, level1_screening)
+2026-02-11 11:24:25,613 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 000779.SZ (P40, level1_screening)
+2026-02-11 11:24:25,613 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 300802.SZ (P40, level1_screening)
+2026-02-11 11:24:25,613 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 003015.SZ (P40, level1_screening)
+2026-02-11 11:24:25,613 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 301176.SZ (P40, level1_screening)
+2026-02-11 11:24:25,615 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 000802.SZ (P40, level1_screening)
+2026-02-11 11:24:25,615 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 002438.SZ (P40, level1_screening)
+2026-02-11 11:24:25,615 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 300166.SZ (P40, level1_screening)
+2026-02-11 11:24:25,615 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 301217.SZ (P40, level1_screening)
+2026-02-11 11:24:25,615 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 003018.SZ (P40, level1_screening)
+2026-02-11 11:24:25,615 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 001209.SZ (P40, level1_screening)
+2026-02-11 11:24:25,615 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 300767.SZ (P40, level1_screening)
+2026-02-11 11:24:25,615 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 002886.SZ (P40, level1_screening)
+2026-02-11 11:24:25,615 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 002517.SZ (P40, level1_screening)
+2026-02-11 11:24:25,615 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 300426.SZ (P40, level1_screening)
+2026-02-11 11:24:25,615 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 300369.SZ (P40, level1_screening)
+2026-02-11 11:24:25,615 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 300196.SZ (P40, level1_screening)
+2026-02-11 11:24:25,615 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 300511.SZ (P40, level1_screening)
+2026-02-11 11:24:25,616 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 002624.SZ (P40, level1_screening)
+2026-02-11 11:24:25,616 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 000822.SZ (P40, level1_screening)
+2026-02-11 11:24:25,616 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 300804.SZ (P40, level1_screening)
+2026-02-11 11:24:25,616 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 300364.SZ (P40, level1_screening)
+2026-02-11 11:24:25,616 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 002344.SZ (P40, level1_screening)
+2026-02-11 11:24:25,616 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 002802.SZ (P40, level1_screening)
+2026-02-11 11:24:25,616 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 002739.SZ (P40, level1_screening)
+2026-02-11 11:24:25,616 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 000056.SZ (P40, level1_screening)
+2026-02-11 11:24:25,616 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 301203.SZ (P40, level1_screening)
+2026-02-11 11:24:25,616 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 300960.SZ (P40, level1_screening)
+2026-02-11 11:24:25,616 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 300528.SZ (P40, level1_screening)
+2026-02-11 11:24:25,616 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 300133.SZ (P40, level1_screening)
+2026-02-11 11:24:25,616 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 301281.SZ (P40, level1_screening)
+2026-02-11 11:24:25,616 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 000525.SZ (P40, level1_screening)
+2026-02-11 11:24:25,616 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 301085.SZ (P40, level1_screening)
+2026-02-11 11:24:25,616 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 300788.SZ (P40, level1_screening)
+2026-02-11 11:24:25,616 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 300849.SZ (P40, level1_screening)
+2026-02-11 11:24:25,616 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 301292.SZ (P40, level1_screening)
+2026-02-11 11:24:25,616 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 300985.SZ (P40, level1_screening)
+2026-02-11 11:24:25,617 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 002887.SZ (P40, level1_screening)
+2026-02-11 11:24:25,617 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 300284.SZ (P40, level1_screening)
+2026-02-11 11:24:25,617 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 002919.SZ (P40, level1_screening)
+2026-02-11 11:24:25,617 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 300603.SZ (P40, level1_screening)
+2026-02-11 11:24:25,617 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 000892.SZ (P40, level1_screening)
+2026-02-11 11:24:25,617 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 002343.SZ (P40, level1_screening)
+2026-02-11 11:24:25,617 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 300065.SZ (P40, level1_screening)
+2026-02-11 11:24:25,618 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 301262.SZ (P40, level1_screening)
+2026-02-11 11:24:25,618 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 002302.SZ (P40, level1_screening)
+2026-02-11 11:24:25,618 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 002830.SZ (P40, level1_screening)
+2026-02-11 11:24:25,618 - __main__ - INFO - [run_event_driven_monitor.py:1214] -    新增候选: 301136.SZ (P40, level1_screening)
+2026-02-11 11:24:25,618 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 300912.SZ (P40)
+2026-02-11 11:24:25,618 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 300152.SZ (P40)
+2026-02-11 11:24:25,618 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 301362.SZ (P40)
+2026-02-11 11:24:25,618 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 000801.SZ (P40)
+2026-02-11 11:24:25,618 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 001330.SZ (P40)
+2026-02-11 11:24:25,619 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 002905.SZ (P40)
+2026-02-11 11:24:25,619 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 300834.SZ (P40)
+2026-02-11 11:24:25,619 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 002015.SZ (P40)
+2026-02-11 11:24:25,619 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 301025.SZ (P40)
+2026-02-11 11:24:25,619 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 300449.SZ (P40)
+2026-02-11 11:24:25,619 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 300875.SZ (P40)
+2026-02-11 11:24:25,619 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 002072.SZ (P40)
+2026-02-11 11:24:25,619 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 300507.SZ (P40)
+2026-02-11 11:24:25,619 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 300384.SZ (P40)
+2026-02-11 11:24:25,620 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 002723.SZ (P40)
+2026-02-11 11:24:25,620 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 300079.SZ (P40)
+2026-02-11 11:24:25,620 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 000839.SZ (P40)
+2026-02-11 11:24:25,620 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 300969.SZ (P40)
+2026-02-11 11:24:25,621 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 300575.SZ (P40)
+2026-02-11 11:24:25,621 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 300607.SZ (P40)
+2026-02-11 11:24:25,621 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 000156.SZ (P40)
+2026-02-11 11:24:25,621 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 002270.SZ (P40)
+2026-02-11 11:24:25,621 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 001266.SZ (P40)
+2026-02-11 11:24:25,621 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 301030.SZ (P40)
+2026-02-11 11:24:25,621 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 002951.SZ (P40)
+2026-02-11 11:24:25,621 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 002067.SZ (P40)
+2026-02-11 11:24:25,621 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 002177.SZ (P40)
+2026-02-11 11:24:25,621 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 301252.SZ (P40)
+2026-02-11 11:24:25,621 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 002360.SZ (P40)
+2026-02-11 11:24:25,621 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 002597.SZ (P40)
+2026-02-11 11:24:25,621 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 002012.SZ (P40)
+2026-02-11 11:24:25,621 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 300251.SZ (P40)
+2026-02-11 11:24:25,623 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 000582.SZ (P40)
+2026-02-11 11:24:25,623 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 300277.SZ (P40)
+2026-02-11 11:24:25,623 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 002976.SZ (P40)
+2026-02-11 11:24:25,623 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 301004.SZ (P40)
+2026-02-11 11:24:25,623 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 000659.SZ (P40)
+2026-02-11 11:24:25,623 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 002355.SZ (P40)
+2026-02-11 11:24:25,623 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 301630.SZ (P40)
+2026-02-11 11:24:25,623 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 002470.SZ (P40)
+2026-02-11 11:24:25,623 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 002547.SZ (P40)
+2026-02-11 11:24:25,623 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 003029.SZ (P40)
+2026-02-11 11:24:25,623 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 002085.SZ (P40)
+2026-02-11 11:24:25,623 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 002292.SZ (P40)
+2026-02-11 11:24:25,623 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 002717.SZ (P40)
+2026-02-11 11:24:25,623 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 002424.SZ (P40)
+2026-02-11 11:24:25,623 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 000533.SZ (P40)
+2026-02-11 11:24:25,624 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 002526.SZ (P40)
+2026-02-11 11:24:25,624 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 300027.SZ (P40)
+2026-02-11 11:24:25,624 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 002931.SZ (P40)
+2026-02-11 11:24:25,624 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 001215.SZ (P40)
+2026-02-11 11:24:25,624 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 000638.SZ (P40)
+2026-02-11 11:24:25,624 - __main__ - WARNING - [run_event_driven_monitor.py:1208] -    候选池满且优先级不足: 002429.SZ (P40)
+2026-02-11 11:24:25,624 - __main__ - INFO - [run_event_driven_monitor.py:1169] -    全市场初筛: 新增 100 只候选
+2026-02-11 11:24:25,624 - __main__ - INFO - [run_event_driven_monitor.py:1139] -    候选池: 100 只
+2026-02-11 11:24:25,624 - __main__ - INFO - [run_event_driven_monitor.py:1143] -    候选池: ['603999.SH', '605287.SH', '600418.SH']...
+2026-02-11 11:24:25,624 - __main__ - INFO - [run_event_driven_monitor.py:1244] -    开始深度扫描: 100 只候选
+2026-02-11 11:24:25,624 - logic.qmt_health_check - INFO - [qmt_health_check.py:52] - ================================================================================
+2026-02-11 11:24:25,626 - logic.qmt_health_check - INFO - [qmt_health_check.py:53] - 🏥 QMT 状态自检开始
+2026-02-11 11:24:25,626 - logic.qmt_health_check - INFO - [qmt_health_check.py:54] - ================================================================================
+2026-02-11 11:24:25,662 - logic.qmt_health_check - INFO - [qmt_health_check.py:387] - 
+2026-02-11 11:24:25,662 - logic.qmt_health_check - INFO - [qmt_health_check.py:388] - 📊 QMT 状态检查结果
+2026-02-11 11:24:25,662 - logic.qmt_health_check - INFO - [qmt_health_check.py:389] - ================================================================================
+2026-02-11 11:24:25,662 - logic.qmt_health_check - INFO - [qmt_health_check.py:399] - 整体状态: ✅ HEALTHY
+2026-02-11 11:24:25,662 - logic.qmt_health_check - INFO - [qmt_health_check.py:400] - 检查时间: 2026-02-11 11:24:25
+2026-02-11 11:24:25,662 - logic.qmt_health_check - INFO - [qmt_health_check.py:401] -
+2026-02-11 11:24:25,662 - logic.qmt_health_check - INFO - [qmt_health_check.py:408] - QMT 客户端: ✅ 已启动
+2026-02-11 11:24:25,663 - logic.qmt_health_check - INFO - [qmt_health_check.py:410] -   - 股票数量: 5190 只
+2026-02-11 11:24:25,663 - logic.qmt_health_check - INFO - [qmt_health_check.py:411] -   - 消息: QMT 客户端已启动
+2026-02-11 11:24:25,663 - logic.qmt_health_check - INFO - [qmt_health_check.py:415] - 行情主站: ✅ 已登录
+2026-02-11 11:24:25,663 - logic.qmt_health_check - INFO - [qmt_health_check.py:417] -   - 时间戳: 20260211 11:24:27
+2026-02-11 11:24:25,663 - logic.qmt_health_check - INFO - [qmt_health_check.py:418] -   - 股票状态: 停牌
+2026-02-11 11:24:25,663 - logic.qmt_health_check - INFO - [qmt_health_check.py:419] -   - 消息: 行情主站已连接（探测标的: 000001.SH）
+2026-02-11 11:24:25,663 - logic.qmt_health_check - INFO - [qmt_health_check.py:425] - 市场状态: ✅ 交易时间 (上午交易)
+2026-02-11 11:24:25,663 - logic.qmt_health_check - INFO - [qmt_health_check.py:430] - 交易时间: ✅ 当前在交易时间
+2026-02-11 11:24:25,663 - logic.qmt_health_check - INFO - [qmt_health_check.py:438] - 数据模式: ✅ 实时订阅模式
+2026-02-11 11:24:25,663 - logic.qmt_health_check - INFO - [qmt_health_check.py:445] -
+2026-02-11 11:24:25,663 - logic.qmt_health_check - INFO - [qmt_health_check.py:446] - 💡 建议:
+2026-02-11 11:24:25,663 - logic.qmt_health_check - INFO - [qmt_health_check.py:448] -   ✅ QMT 状态正常，可以进行实时决策
+2026-02-11 11:24:25,663 - logic.qmt_health_check - INFO - [qmt_health_check.py:450] - ================================================================================
+2026-02-11 11:24:25,665 - logic.qmt_health_check - INFO - [qmt_health_check.py:451] -
+2026-02-11 11:24:25,665 - logic.full_market_scanner - INFO - [full_market_scanner.py:295] - ================================================================================
+2026-02-11 11:24:25,665 - logic.full_market_scanner - INFO - [full_market_scanner.py:297] - 🚀 开始候选池扫描（带风险管理） (模式: intraday)
+2026-02-11 11:24:25,665 - logic.full_market_scanner - INFO - [full_market_scanner.py:298] -    扫描范围: 100 只候选股票
+2026-02-11 11:24:25,665 - logic.full_market_scanner - INFO - [full_market_scanner.py:301] - ================================================================================
+2026-02-11 11:24:25,665 - logic.full_market_scanner - WARNING - [full_market_scanner.py:334] - 🔥 [9:38 AM Hotfix] QMT状态检查已移除，假设QMT正常工作
+2026-02-11 11:24:25,665 - logic.full_market_scanner - INFO - [full_market_scanner.py:338] - \n🔍 [Level 1] 技术面粗筛...
+2026-02-11 11:24:25,673 - logic.full_market_scanner - INFO - [full_market_scanner.py:720] - 批次 1 获取成功, tick_data 类型: <class 'dict'>
+2026-02-11 11:24:27,347 - logic.full_market_scanner - INFO - [full_market_scanner.py:347] - ✅ Level 1 完成: 100 → 100 只 (耗时: 1.7秒)
+2026-02-11 11:24:27,347 - logic.full_market_scanner - INFO - [full_market_scanner.py:354] - \n🔥 计算相对热门度...
+2026-02-11 11:24:27,347 - logic.full_market_scanner - INFO - [full_market_scanner.py:1285] -   计算相对热门度...
+2026-02-11 11:24:27,347 - logic.full_market_scanner - INFO - [full_market_scanner.py:1293] -   成交额范围: 0.34亿 - 74.02亿，范围: 73.68亿
+2026-02-11 11:24:27,347 - logic.full_market_scanner - INFO - [full_market_scanner.py:1348] -   ✅ 相对热门度计算完成 (有效数据: 100 只, 无效数据: 0 只)
+2026-02-11 11:24:27,347 - logic.full_market_scanner - INFO - [full_market_scanner.py:364] -   数据有效性统计: 有效 100 只, 无效 0 只
+2026-02-11 11:24:27,347 - logic.full_market_scanner - INFO - [full_market_scanner.py:373] - ✅ 热门票池构建完成: TOP 100 (热门评分范围: 1.0000 - 0.0000)
+2026-02-11 11:24:27,347 - logic.full_market_scanner - INFO - [full_market_scanner.py:380] -   检查风险标签...
+2026-02-11 11:24:27,851 - logic.full_market_scanner - INFO - [full_market_scanner.py:388] -   ✅ 风险标签检查完成: 正常 100 只, 极端风险 0 只
+2026-02-11 11:24:27,851 - logic.full_market_scanner - INFO - [full_market_scanner.py:402] - \n💰 [Level 2] 资金流向分析 (热门池 100 只)...
+2026-02-11 11:24:27,864 - logic.fund_flow_analyzer - WARNING - [fund_flow_analyzer.py:150] - ❌ 缓存未命中: 300065，调用 AkShare API
+2026-02-11 11:24:28,288 - logic.fund_flow_analyzer - WARNING - [fund_flow_analyzer.py:150] - ❌ 缓存未命中: 603000，调用 AkShare API
+2026-02-11 11:24:28,451 - logic.fund_flow_analyzer - WARNING - [fund_flow_analyzer.py:150] - ❌ 缓存未命中: 301217，调用 AkShare API
+2026-02-11 11:24:28,602 - logic.fund_flow_analyzer - WARNING - [fund_flow_analyzer.py:150] - ❌ 缓存未命中: 002947，调用 AkShare API
+2026-02-11 11:24:28,828 - logic.fund_flow_analyzer - WARNING - [fund_flow_analyzer.py:150] - ❌ 缓存未命中: 603268，调用 AkShare API
+2026-02-11 11:24:28,986 - logic.fund_flow_analyzer - WARNING - [fund_flow_analyzer.py:150] - ❌ 缓存未命中: 603125，调用 AkShare API
+2026-02-11 11:24:29,148 - logic.fund_flow_analyzer - WARNING - [fund_flow_analyzer.py:150] - ❌ 缓存未命中: 300985，调用 AkShare API
+2026-02-11 11:24:29,357 - logic.fund_flow_analyzer - WARNING - [fund_flow_analyzer.py:150] - ❌ 缓存未命中: 603682，调用 AkShare API
+2026-02-11 11:24:29,511 - logic.fund_flow_analyzer - WARNING - [fund_flow_analyzer.py:150] - ❌ 缓存未命中: 002887，调用 AkShare API
+2026-02-11 11:24:29,680 - logic.full_market_scanner - INFO - [full_market_scanner.py:1480] -   进度: 1/100 (1.0%)
+2026-02-11 11:24:29,813 - logic.full_market_scanner - INFO - [full_market_scanner.py:1480] -   进度: 21/100 (21.0%)
+2026-02-11 11:24:29,927 - logic.full_market_scanner - INFO - [full_market_scanner.py:1480] -   进度: 41/100 (41.0%)
+2026-02-11 11:24:30,043 - logic.full_market_scanner - INFO - [full_market_scanner.py:1480] -   进度: 61/100 (61.0%)
+2026-02-11 11:24:30,167 - logic.full_market_scanner - INFO - [full_market_scanner.py:1480] -   进度: 81/100 (81.0%)
+2026-02-11 11:24:30,233 - logic.full_market_scanner - INFO - [full_market_scanner.py:1480] -   进度: 100/100 (100.0%)
+2026-02-11 11:24:30,237 - logic.full_market_scanner - INFO - [full_market_scanner.py:449] - ✅ Level 2 完成: 热门池 100 → 51 只 (耗时: 2.4秒)
+2026-02-11 11:24:30,237 - logic.full_market_scanner - INFO - [full_market_scanner.py:453] - \n⚠️  [Level 3] 诱多陷阱检测 (51 只)...
+2026-02-11 11:24:30,237 - logic.full_market_scanner - INFO - [full_market_scanner.py:1783] -   进度: 1/51
+2026-02-11 11:24:30,237 - logic.equity_data_accessor - WARNING - [equity_data_accessor.py:68] - ⚠️  检测到旧数据结构，建议运行 rebuild_equity_database.py 重建
+2026-02-11 11:24:30,239 - logic.full_market_scanner - INFO - [full_market_scanner.py:1933] - 🚀 [白名单短路] 002517.SZ 命中主线起爆，跳过风险判定 (原Risk: 0.00)
+2026-02-11 11:24:30,240 - logic.full_market_scanner - INFO - [full_market_scanner.py:1933] - 🚀 [白名单短路] 600482.SH 命中主线起爆，跳过风险判定 (原Risk: 0.00)
+2026-02-11 11:24:30,243 - logic.full_market_scanner - INFO - [full_market_scanner.py:1783] -   进度: 11/51
+2026-02-11 11:24:30,246 - logic.full_market_scanner - INFO - [full_market_scanner.py:1933] - 🚀 [白名单短路] 600292.SH 命中主线起爆，跳过风险判定 (原Risk: 0.00)
+2026-02-11 11:24:30,248 - logic.full_market_scanner - INFO - [full_market_scanner.py:1933] - 🚀 [白名单短路] 603138.SH 命中主线起爆，跳过风险判定 (原Risk: 0.00)
+2026-02-11 11:24:30,248 - logic.full_market_scanner - INFO - [full_market_scanner.py:1783] -   进度: 21/51
+2026-02-11 11:24:30,249 - logic.full_market_scanner - INFO - [full_market_scanner.py:1933] - 🚀 [白名单短路] 300767.SZ 命中主线起爆，跳过风险判定 (原Risk: 0.00)
+2026-02-11 11:24:30,249 - logic.full_market_scanner - INFO - [full_market_scanner.py:1933] - 🚀 [白名单短路] 603268.SH 命中主线起爆，跳过风险判定 (原Risk: 0.00)
+2026-02-11 11:24:30,251 - logic.full_market_scanner - INFO - [full_market_scanner.py:1933] - 🚀 [白名单短路] 603968.SH 命中主线起爆，跳过风险判定 (原Risk: 0.00)
+2026-02-11 11:24:30,251 - logic.full_market_scanner - INFO - [full_market_scanner.py:1783] -   进度: 31/51
+2026-02-11 11:24:30,252 - logic.full_market_scanner - INFO - [full_market_scanner.py:1933] - 🚀 [白名单短路] 600545.SH 命中主线起爆，跳过风险判定 (原Risk: 0.00)
+2026-02-11 11:24:30,253 - logic.full_market_scanner - INFO - [full_market_scanner.py:1933] - 🚀 [白名单短路] 600299.SH 命中主线起爆，跳过风险判定 (原Risk: 0.00)
+2026-02-11 11:24:30,253 - logic.full_market_scanner - INFO - [full_market_scanner.py:1933] - 🚀 [白名单短路] 601921.SH 命中主线起爆，跳过风险判定 (原Risk: 0.00)
+2026-02-11 11:24:30,255 - logic.full_market_scanner - INFO - [full_market_scanner.py:1783] -   进度: 41/51
+2026-02-11 11:24:30,256 - logic.full_market_scanner - INFO - [full_market_scanner.py:1933] - 🚀 [白名单短路] 600149.SH 命中主线起爆，跳过风险判定 (原Risk: 0.00)
+2026-02-11 11:24:30,256 - logic.full_market_scanner - INFO - [full_market_scanner.py:1933] - 🚀 [白名单短路] 300849.SZ 命中主线起爆，跳过风险判定 (原Risk: 0.00)
+2026-02-11 11:24:30,258 - logic.full_market_scanner - INFO - [full_market_scanner.py:1933] - 🚀 [白名单短路] 300284.SZ 命中主线起爆，跳过风险判定 (原Risk: 0.00)
+2026-02-11 11:24:30,258 - logic.full_market_scanner - INFO - [full_market_scanner.py:1933] - 🚀 [白名单短路] 301203.SZ 命中主线起爆，跳过风险判定 (原Risk: 0.00)
+2026-02-11 11:24:30,260 - logic.full_market_scanner - INFO - [full_market_scanner.py:1933] - 🚀 [白名单短路] 605577.SH 命中主线起爆，跳过风险判定 (原Risk: 0.00)
+2026-02-11 11:24:30,261 - logic.full_market_scanner - INFO - [full_market_scanner.py:1933] - 🚀 [白名单短路] 603096.SH 命中主线起爆，跳过风险判定 (原Risk: 0.00)
+2026-02-11 11:24:30,261 - logic.full_market_scanner - INFO - [full_market_scanner.py:1783] -   进度: 51/51
+2026-02-11 11:24:30,262 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 300364.SZ risk=0.20
+2026-02-11 11:24:30,262 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 600418.SH risk=0.20
+2026-02-11 11:24:30,262 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 603000.SH risk=0.20
+2026-02-11 11:24:30,262 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 300133.SZ risk=0.20
+2026-02-11 11:24:30,262 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 600977.SH risk=0.20
+2026-02-11 11:24:30,262 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 002739.SZ risk=0.20
+2026-02-11 11:24:30,262 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 000892.SZ risk=0.20
+2026-02-11 11:24:30,262 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 605287.SH risk=0.20
+2026-02-11 11:24:30,262 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 301231.SZ risk=0.20
+2026-02-11 11:24:30,262 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 601595.SH risk=0.20
+2026-02-11 11:24:30,264 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 300528.SZ risk=0.20
+2026-02-11 11:24:30,264 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 601599.SH risk=0.20
+2026-02-11 11:24:30,264 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 601929.SH risk=0.20
+2026-02-11 11:24:30,264 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 301085.SZ risk=0.20
+2026-02-11 11:24:30,264 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 605060.SH risk=0.20
+2026-02-11 11:24:30,264 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 003018.SZ risk=0.20
+2026-02-11 11:24:30,264 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 002947.SZ risk=0.20
+2026-02-11 11:24:30,264 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 603301.SH risk=0.20
+2026-02-11 11:24:30,264 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 600715.SH risk=0.20
+2026-02-11 11:24:30,264 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 600373.SH risk=0.20
+2026-02-11 11:24:30,264 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 603999.SH risk=0.20
+2026-02-11 11:24:30,264 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 600088.SH risk=0.20
+2026-02-11 11:24:30,266 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 002302.SZ risk=0.20
+2026-02-11 11:24:30,266 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 603150.SH risk=0.20
+2026-02-11 11:24:30,266 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 000056.SZ risk=0.20
+2026-02-11 11:24:30,266 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 600575.SH risk=0.20
+2026-02-11 11:24:30,266 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 003015.SZ risk=0.20
+2026-02-11 11:24:30,266 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 300788.SZ risk=0.20
+2026-02-11 11:24:30,266 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 600207.SH risk=0.20
+2026-02-11 11:24:30,266 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 301281.SZ risk=0.20
+2026-02-11 11:24:30,266 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 000802.SZ risk=0.20
+2026-02-11 11:24:30,266 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 000779.SZ risk=0.20
+2026-02-11 11:24:30,266 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 300804.SZ risk=0.20
+2026-02-11 11:24:30,266 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 001209.SZ risk=0.20
+2026-02-11 11:24:30,266 - logic.full_market_scanner - INFO - [full_market_scanner.py:1726] - ⏸️ 降级观察池: 600381.SH risk=0.20
+2026-02-11 11:24:30,266 - logic.full_market_scanner - INFO - [full_market_scanner.py:456] - ✅ Level 3 完成 (耗时: 0.0秒)
+2026-02-11 11:24:30,280 - logic.risk_manager - INFO - [risk_manager.py:38] - ✅ RiskManager 初始化成功
+2026-02-11 11:24:30,280 - logic.full_market_scanner - INFO - [full_market_scanner.py:505] - \n================================================================================
+2026-02-11 11:24:30,280 - logic.full_market_scanner - INFO - [full_market_scanner.py:506] - 📊 扫描结果统计
+2026-02-11 11:24:30,280 - logic.full_market_scanner - INFO - [full_market_scanner.py:507] - ================================================================================
+2026-02-11 11:24:30,280 - logic.full_market_scanner - INFO - [full_market_scanner.py:518] - ✅ 机会池: 16 | 观察池: 35 | 黑名单:  0
+📈 系统置信度: 92.5% | 💰 今日建议最大总仓位: 74.0%
+⏰ 扫描耗时: 4.6s
+2026-02-11 11:24:30,282 - logic.full_market_scanner - INFO - [full_market_scanner.py:519] - 🎯 风控原因: 系统置信度高（≥ 70%），允许高仓位
+2026-02-11 11:24:30,282 - logic.full_market_scanner - INFO - [full_market_scanner.py:530] - ⏱️  总耗时: 4.6 秒
+2026-02-11 11:24:30,282 - logic.full_market_scanner - INFO - [full_market_scanner.py:531] - ================================================================================
+2026-02-11 11:24:30,287 - logic.full_market_scanner - INFO - [full_market_scanner.py:2166] - 💾 结果已保存: data/scan_results/2026-02-11_intraday.json
+
+================================================================================
+📊 扫描完成 #0 - 11:24:30
+================================================================================
+2026-02-11 11:24:30,303 - logic.sector_resonance - INFO - [sector_resonance.py:116] - 📊 [文化传媒] 板块共振分析:
+2026-02-11 11:24:30,303 - logic.sector_resonance - INFO - [sector_resonance.py:117] -    Leaders: 0/3
+2026-02-11 11:24:30,303 - logic.sector_resonance - INFO - [sector_resonance.py:118] -    Breadth: 0.0%/35.0%
+2026-02-11 11:24:30,303 - logic.sector_resonance - INFO - [sector_resonance.py:119] -    结果: ⏸️ 未共振
+2026-02-11 11:24:30,303 - __main__ - INFO - [run_event_driven_monitor.py:766] - ⏸️ [时机斧拦截-监控层] 601921.SH (N/A)
+2026-02-11 11:24:30,303 - __main__ - INFO - [run_event_driven_monitor.py:767] -    板块: 文化传媒
+2026-02-11 11:24:30,303 - __main__ - INFO - [run_event_driven_monitor.py:768] -    Leaders: 0（需≥3）
+2026-02-11 11:24:30,303 - __main__ - INFO - [run_event_driven_monitor.py:769] -    Breadth: 0.0%（需≥35%）
+2026-02-11 11:24:30,303 - __main__ - INFO - [run_event_driven_monitor.py:770] -    拦截位置: 监控层 (run_event_driven_monitor.py)
+⏸️ [时机斧] 本次降级 3 只未共振股票 → 观察池:
+   ⏸️ 601921.SH (N/A) - ⏸️ [时机斧] 板块未共振：⏸️ 板块未共振：Leaders=0（需≥3），Breadth=0.0%（需≥35.0%）
+   ⏸️ 605577.SH (N/A) - ⏸️ [时机斧] 板块未共振（缓存）：⏸️ 板块未共振：Leaders=0（需≥3），Breadth=0.0%（需≥35.0%）
+   ⏸️ 603096.SH (N/A) - ⏸️ [时机斧] 板块未共振（缓存）：⏸️ 板块未共振：Leaders=0（需≥3），Breadth=0.0%（需≥35.0%）
+
+✅ 机会池（最终）: 13 只
+🛡️ 机会池（防守斧拦截）: 0 只
+⏸️ 机会池（时机斧降级→观察池）: 3 只
+⚠️  观察池（含降级）: 38 只
+❌ 黑名单: 0 只
+📈 系统置信度: 92.5%
+💰 今日建议最大总仓位: 74.0%
+🎯 累计保存快照: 0 次
+🔔 累计检测事件: 0 次
+
+【低风险机会池】（风险≤0.2，13 只）
+=============================================================================================================================
+代码       名称             价格     涨跌幅    成交额(亿)     流通市值(亿)      主力净入(亿)  占比(%)     资金    风险 诱多信号     决策
+-----------------------------------------------------------------------------------------------------------------------------
+2026-02-11 11:24:30,304 - __main__ - WARNING - [run_event_driven_monitor.py:506] - ⚠️ 资金流数据已过期: 1224.5 分钟前（容忍 30 分钟）
+2026-02-11 11:24:30,304 - __main__ - WARNING - [run_event_driven_monitor.py:574] - ⚠️ 002517.SZ 资金流数据过期，跳过显示
+2026-02-11 11:24:30,304 - __main__ - WARNING - [run_event_driven_monitor.py:506] - ⚠️ 资金流数据已过期: 1224.5 分钟前（容忍 30 分钟）
+2026-02-11 11:24:30,304 - __main__ - WARNING - [run_event_driven_monitor.py:574] - ⚠️ 600482.SH 资金流数据过期，跳过显示
+2026-02-11 11:24:30,306 - __main__ - WARNING - [run_event_driven_monitor.py:506] - ⚠️ 资金流数据已过期: 1224.5 分钟前（容忍 30 分钟）
+2026-02-11 11:24:30,306 - __main__ - WARNING - [run_event_driven_monitor.py:574] - ⚠️ 600292.SH 资金流数据过期，跳过显示
+2026-02-11 11:24:30,306 - __main__ - WARNING - [run_event_driven_monitor.py:506] - ⚠️ 资金流数据已过期: 1224.5 分钟前（容忍 30 分钟）
+2026-02-11 11:24:30,306 - __main__ - WARNING - [run_event_driven_monitor.py:574] - ⚠️ 603138.SH 资金流数据过期，跳过显示
+2026-02-11 11:24:30,306 - __main__ - WARNING - [run_event_driven_monitor.py:506] - ⚠️ 资金流数据已过期: 1224.5 分钟前（容忍 30 分钟）
+2026-02-11 11:24:30,306 - __main__ - WARNING - [run_event_driven_monitor.py:574] - ⚠️ 300767.SZ 资金流数据过期，跳过显示
+2026-02-11 11:24:30,307 - __main__ - WARNING - [run_event_driven_monitor.py:506] - ⚠️ 资金流数据已过期: 1224.5 分钟前（容忍 30 分钟）
+2026-02-11 11:24:30,307 - __main__ - WARNING - [run_event_driven_monitor.py:574] - ⚠️ 603268.SH 资金流数据过期，跳过显示
+2026-02-11 11:24:30,307 - __main__ - WARNING - [run_event_driven_monitor.py:506] - ⚠️ 资金流数据已过期: 1224.5 分钟前（容忍 30 分钟）
+2026-02-11 11:24:30,307 - __main__ - WARNING - [run_event_driven_monitor.py:574] - ⚠️ 603968.SH 资金流数据过期，跳过显示
+2026-02-11 11:24:30,307 - __main__ - WARNING - [run_event_driven_monitor.py:506] - ⚠️ 资金流数据已过期: 1224.5 分钟前（容忍 30 分钟）
+2026-02-11 11:24:30,307 - __main__ - WARNING - [run_event_driven_monitor.py:574] - ⚠️ 600545.SH 资金流数据过期，跳过显示
+2026-02-11 11:24:30,307 - __main__ - WARNING - [run_event_driven_monitor.py:506] - ⚠️ 资金流数据已过期: 1224.5 分钟前（容忍 30 分钟）
+2026-02-11 11:24:30,307 - __main__ - WARNING - [run_event_driven_monitor.py:574] - ⚠️ 600299.SH 资金流数据过期，跳过显示
+2026-02-11 11:24:30,307 - __main__ - WARNING - [run_event_driven_monitor.py:506] - ⚠️ 资金流数据已过期: 1224.5 分钟前（容忍 30 分钟）
+2026-02-11 11:24:30,307 - __main__ - WARNING - [run_event_driven_monitor.py:574] - ⚠️ 600149.SH 资金流数据过期，跳过显示
+2026-02-11 11:24:30,307 - __main__ - WARNING - [run_event_driven_monitor.py:506] - ⚠️ 资金流数据已过期: 1224.5 分钟前（容忍 30 分钟）
+2026-02-11 11:24:30,307 - __main__ - WARNING - [run_event_driven_monitor.py:574] - ⚠️ 300849.SZ 资金流数据过期，跳过显示
+2026-02-11 11:24:30,307 - __main__ - WARNING - [run_event_driven_monitor.py:506] - ⚠️ 资金流数据已过期: 1224.5 分钟前（容忍 30 分钟）
+2026-02-11 11:24:30,307 - __main__ - WARNING - [run_event_driven_monitor.py:574] - ⚠️ 300284.SZ 资金流数据过期，跳过显示
+2026-02-11 11:24:30,307 - __main__ - WARNING - [run_event_driven_monitor.py:506] - ⚠️ 资金流数据已过期: 1224.5 分钟前（容忍 30 分钟）
+2026-02-11 11:24:30,307 - __main__ - WARNING - [run_event_driven_monitor.py:574] - ⚠️ 301203.SZ 资金流数据过期，跳过显示
+=============================================================================================================================
+
+🔥 机会池（最终） (13 只):
+   002517.SZ - 风险: 0.00 - 类型: UNCLEAR
+   600482.SH - 风险: 0.00 - 类型: UNCLEAR
+   600292.SH - 风险: 0.00 - 类型: UNCLEAR
+   603138.SH - 风险: 0.00 - 类型: UNCLEAR
+   300767.SZ - 风险: 0.00 - 类型: UNCLEAR
+   603268.SH - 风险: 0.00 - 类型: UNCLEAR
+   603968.SH - 风险: 0.00 - 类型: UNCLEAR
+   600545.SH - 风险: 0.00 - 类型: UNCLEAR
+   600299.SH - 风险: 0.00 - 类型: UNCLEAR
+   600149.SH - 风险: 0.00 - 类型: UNCLEAR
+   300849.SZ - 风险: 0.00 - 类型: UNCLEAR
+   300284.SZ - 风险: 0.00 - 类型: UNCLEAR
+   301203.SZ - 风险: 0.00 - 类型: UNCLEAR

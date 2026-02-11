@@ -1,0 +1,3916 @@
+{
+  "scan_time": "2026-02-11T14:18:43.451994",
+  "mode": "intraday",
+  "summary": {
+    "opportunities": 13,
+    "watchlist": 37,
+    "blacklist": 0
+  },
+  "results": {
+    "mode": "FULL",
+    "evidence_matrix": {
+      "technical": {
+        "available": true,
+        "quality": "GOOD",
+        "count": 100,
+        "hot_pool_size": 100,
+        "details": "QMT Tick 数据，本地可控"
+      },
+      "fund_flow": {
+        "available": true,
+        "quality": "GOOD",
+        "error_rate": 0.0,
+        "details": "东方财富 API（仅热门池）"
+      },
+      "market_sentiment": {
+        "available": true,
+        "quality": "MEDIUM",
+        "score": 0.6,
+        "details": "基于涨跌停统计"
+      }
+    },
+    "position_limit": 0.7400000000000001,
+    "confidence": 0.925,
+    "risk_reason": "系统置信度高（≥ 70%），允许高仓位",
+    "risk_warnings": [],
+    "opportunities": [
+      {
+        "last_price": 31.2,
+        "price_3d_change": 0.13454545454545452,
+        "code": "600482.SH",
+        "flow_data": {
+          "stock_code": "600482",
+          "records": [
+            {
+              "stock_code": "600482",
+              "date": "2026-02-10",
+              "main_net_inflow": 229045415.0,
+              "super_large_net": 160081191.0,
+              "large_net": 68964224.0,
+              "medium_net": -44676032.0,
+              "small_net": -184369384.0,
+              "institution_net": 229045415.0,
+              "retail_net": -229045416.0,
+              "super_ratio": 0.6989058960206648,
+              "updated_at": "2026-02-11 10:47:13"
+            }
+          ],
+          "latest": {
+            "stock_code": "600482",
+            "date": "2026-02-10",
+            "main_net_inflow": 229045415.0,
+            "super_large_net": 160081191.0,
+            "large_net": 68964224.0,
+            "medium_net": -44676032.0,
+            "small_net": -184369384.0,
+            "institution_net": 229045415.0,
+            "retail_net": -229045416.0,
+            "super_ratio": 0.6989058960206648,
+            "updated_at": "2026-02-11 10:47:13"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "600482",
+        "risk_score": 0.0,
+        "ratio": 0.0,
+        "trap_signals": [],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.424926",
+        "sector_name": "船舶制造",
+        "sector_code": "船舶制造",
+        "decision_tag": "FOCUS✅",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.13454545454545452,
+          "capital_3d_net_sum": 229045415.0
+        },
+        "scenario_features": {
+          "net_main_5d": 229045415.0,
+          "net_main_10d": 229045415.0,
+          "net_main_20d": 229045415.0,
+          "net_main_30d": 229045415.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": false,
+        "is_potential_mainline": true,
+        "scenario_type": "MAINLINE_RALLY",
+        "scenario_confidence": 0.9,
+        "scenario_reasons": [
+          "多日资金流健康 (5日: 22904.5万（流入）, 20日: 22904.5万（流入）)",
+          "风险评分较低 (0.00)",
+          "无明显陷阱信号"
+        ]
+      },
+      {
+        "last_price": 26.04,
+        "price_3d_change": 0.1713900134952766,
+        "code": "002517.SZ",
+        "flow_data": {
+          "stock_code": "002517",
+          "records": [
+            {
+              "stock_code": "002517",
+              "date": "2026-02-10",
+              "main_net_inflow": 189601435.0,
+              "super_large_net": 102164715.0,
+              "large_net": 87436720.0,
+              "medium_net": -92584064.0,
+              "small_net": -97017360.0,
+              "institution_net": 189601435.0,
+              "retail_net": -189601424.0,
+              "super_ratio": 0.5388393553034027,
+              "updated_at": "2026-02-11 10:47:13"
+            }
+          ],
+          "latest": {
+            "stock_code": "002517",
+            "date": "2026-02-10",
+            "main_net_inflow": 189601435.0,
+            "super_large_net": 102164715.0,
+            "large_net": 87436720.0,
+            "medium_net": -92584064.0,
+            "small_net": -97017360.0,
+            "institution_net": 189601435.0,
+            "retail_net": -189601424.0,
+            "super_ratio": 0.5388393553034027,
+            "updated_at": "2026-02-11 10:47:13"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "002517",
+        "risk_score": 0.0,
+        "ratio": 0.0,
+        "trap_signals": [],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.424926",
+        "sector_name": "游戏",
+        "sector_code": "游戏",
+        "decision_tag": "FOCUS✅",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.1713900134952766,
+          "capital_3d_net_sum": 189601435.0
+        },
+        "scenario_features": {
+          "net_main_5d": 189601435.0,
+          "net_main_10d": 189601435.0,
+          "net_main_20d": 189601435.0,
+          "net_main_30d": 189601435.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": false,
+        "is_potential_mainline": true,
+        "scenario_type": "MAINLINE_RALLY",
+        "scenario_confidence": 0.9,
+        "scenario_reasons": [
+          "多日资金流健康 (5日: 18960.1万（流入）, 20日: 18960.1万（流入）)",
+          "风险评分较低 (0.00)",
+          "无明显陷阱信号"
+        ]
+      },
+      {
+        "last_price": 43.05,
+        "price_3d_change": 0.11470740548938353,
+        "code": "301052.SZ",
+        "flow_data": {
+          "stock_code": "301052",
+          "records": [
+            {
+              "stock_code": "301052",
+              "date": "2026-02-10",
+              "main_net_inflow": 139852315.0,
+              "super_large_net": 76544571.0,
+              "large_net": 63307744.0,
+              "medium_net": -33081952.0,
+              "small_net": -106770368.0,
+              "institution_net": 139852315.0,
+              "retail_net": -139852320.0,
+              "super_ratio": 0.5473243042133411,
+              "updated_at": "2026-02-11 13:49:06"
+            }
+          ],
+          "latest": {
+            "stock_code": "301052",
+            "date": "2026-02-10",
+            "main_net_inflow": 139852315.0,
+            "super_large_net": 76544571.0,
+            "large_net": 63307744.0,
+            "medium_net": -33081952.0,
+            "small_net": -106770368.0,
+            "institution_net": 139852315.0,
+            "retail_net": -139852320.0,
+            "super_ratio": 0.5473243042133411,
+            "updated_at": "2026-02-11 13:49:06"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "301052",
+        "risk_score": 0.0,
+        "ratio": 0.0,
+        "trap_signals": [],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.434075",
+        "sector_name": "文化传媒",
+        "sector_code": "文化传媒",
+        "decision_tag": "FOCUS✅",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.11470740548938353,
+          "capital_3d_net_sum": 139852315.0
+        },
+        "scenario_features": {
+          "net_main_5d": 139852315.0,
+          "net_main_10d": 139852315.0,
+          "net_main_20d": 139852315.0,
+          "net_main_30d": 139852315.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": false,
+        "is_potential_mainline": true,
+        "scenario_type": "MAINLINE_RALLY",
+        "scenario_confidence": 0.9,
+        "scenario_reasons": [
+          "多日资金流健康 (5日: 13985.2万（流入）, 20日: 13985.2万（流入）)",
+          "风险评分较低 (0.00)",
+          "无明显陷阱信号"
+        ]
+      },
+      {
+        "last_price": 15.49,
+        "price_3d_change": 0.14740740740740743,
+        "code": "600292.SH",
+        "flow_data": {
+          "stock_code": "600292",
+          "records": [
+            {
+              "stock_code": "600292",
+              "date": "2026-02-10",
+              "main_net_inflow": 26252664.0,
+              "super_large_net": 13872695.0,
+              "large_net": 12379969.0,
+              "medium_net": -23242305.0,
+              "small_net": -3010358.0,
+              "institution_net": 26252664.0,
+              "retail_net": -26252663.0,
+              "super_ratio": 0.5284299909525373,
+              "updated_at": "2026-02-11 10:47:14"
+            }
+          ],
+          "latest": {
+            "stock_code": "600292",
+            "date": "2026-02-10",
+            "main_net_inflow": 26252664.0,
+            "super_large_net": 13872695.0,
+            "large_net": 12379969.0,
+            "medium_net": -23242305.0,
+            "small_net": -3010358.0,
+            "institution_net": 26252664.0,
+            "retail_net": -26252663.0,
+            "super_ratio": 0.5284299909525373,
+            "updated_at": "2026-02-11 10:47:14"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "600292",
+        "risk_score": 0.0,
+        "ratio": 0.0,
+        "trap_signals": [],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.434864",
+        "sector_name": "环保行业",
+        "sector_code": "环保行业",
+        "decision_tag": "FOCUS✅",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.14740740740740743,
+          "capital_3d_net_sum": 26252664.0
+        },
+        "scenario_features": {
+          "net_main_5d": 26252664.0,
+          "net_main_10d": 26252664.0,
+          "net_main_20d": 26252664.0,
+          "net_main_30d": 26252664.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": false,
+        "is_potential_mainline": true,
+        "scenario_type": "MAINLINE_RALLY",
+        "scenario_confidence": 0.9,
+        "scenario_reasons": [
+          "多日资金流健康 (5日: 2625.3万（流入）, 20日: 2625.3万（流入）)",
+          "风险评分较低 (0.00)",
+          "无明显陷阱信号"
+        ]
+      },
+      {
+        "last_price": 20.56,
+        "price_3d_change": 0.13029136888400206,
+        "code": "603138.SH",
+        "flow_data": {
+          "stock_code": "603138",
+          "records": [
+            {
+              "stock_code": "603138",
+              "date": "2026-02-10",
+              "main_net_inflow": 50319046.0,
+              "super_large_net": 17904851.0,
+              "large_net": 32414195.0,
+              "medium_net": 40614250.0,
+              "small_net": -90933301.0,
+              "institution_net": 50319046.0,
+              "retail_net": -50319051.0,
+              "super_ratio": 0.35582651944553956,
+              "updated_at": "2026-02-11 10:47:13"
+            }
+          ],
+          "latest": {
+            "stock_code": "603138",
+            "date": "2026-02-10",
+            "main_net_inflow": 50319046.0,
+            "super_large_net": 17904851.0,
+            "large_net": 32414195.0,
+            "medium_net": 40614250.0,
+            "small_net": -90933301.0,
+            "institution_net": 50319046.0,
+            "retail_net": -50319051.0,
+            "super_ratio": 0.35582651944553956,
+            "updated_at": "2026-02-11 10:47:13"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "603138",
+        "risk_score": 0.0,
+        "ratio": 0.0,
+        "trap_signals": [],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.435536",
+        "sector_name": "软件开发",
+        "sector_code": "软件开发",
+        "decision_tag": "FOCUS✅",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.13029136888400206,
+          "capital_3d_net_sum": 50319046.0
+        },
+        "scenario_features": {
+          "net_main_5d": 50319046.0,
+          "net_main_10d": 50319046.0,
+          "net_main_20d": 50319046.0,
+          "net_main_30d": 50319046.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": false,
+        "is_potential_mainline": true,
+        "scenario_type": "MAINLINE_RALLY",
+        "scenario_confidence": 0.9,
+        "scenario_reasons": [
+          "多日资金流健康 (5日: 5031.9万（流入）, 20日: 5031.9万（流入）)",
+          "风险评分较低 (0.00)",
+          "无明显陷阱信号"
+        ]
+      },
+      {
+        "last_price": 21.18,
+        "price_3d_change": 0.06325301204819267,
+        "code": "300767.SZ",
+        "flow_data": {
+          "stock_code": "300767",
+          "records": [
+            {
+              "stock_code": "300767",
+              "date": "2026-02-10",
+              "main_net_inflow": 11654405.0,
+              "super_large_net": 3530320.0,
+              "large_net": 8124085.0,
+              "medium_net": 1540087.0,
+              "small_net": -13194492.0,
+              "institution_net": 11654405.0,
+              "retail_net": -11654405.0,
+              "super_ratio": 0.3029172231443819,
+              "updated_at": "2026-02-11 10:47:14"
+            }
+          ],
+          "latest": {
+            "stock_code": "300767",
+            "date": "2026-02-10",
+            "main_net_inflow": 11654405.0,
+            "super_large_net": 3530320.0,
+            "large_net": 8124085.0,
+            "medium_net": 1540087.0,
+            "small_net": -13194492.0,
+            "institution_net": 11654405.0,
+            "retail_net": -11654405.0,
+            "super_ratio": 0.3029172231443819,
+            "updated_at": "2026-02-11 10:47:14"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "300767",
+        "risk_score": 0.0,
+        "ratio": 0.0,
+        "trap_signals": [],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.438575",
+        "sector_name": "橡胶制品",
+        "sector_code": "橡胶制品",
+        "decision_tag": "FOCUS✅",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.06325301204819267,
+          "capital_3d_net_sum": 11654405.0
+        },
+        "scenario_features": {
+          "net_main_5d": 11654405.0,
+          "net_main_10d": 11654405.0,
+          "net_main_20d": 11654405.0,
+          "net_main_30d": 11654405.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": false,
+        "is_potential_mainline": true,
+        "scenario_type": "MAINLINE_RALLY",
+        "scenario_confidence": 0.9,
+        "scenario_reasons": [
+          "多日资金流健康 (5日: 1165.4万（流入）, 20日: 1165.4万（流入）)",
+          "风险评分较低 (0.00)",
+          "无明显陷阱信号"
+        ]
+      },
+      {
+        "last_price": 2.9,
+        "price_3d_change": 0.13281249999999994,
+        "code": "600545.SH",
+        "flow_data": {
+          "stock_code": "600545",
+          "records": [
+            {
+              "stock_code": "600545",
+              "date": "2026-02-10",
+              "main_net_inflow": 21315515.0,
+              "super_large_net": 11423466.0,
+              "large_net": 9892049.0,
+              "medium_net": -1904236.0,
+              "small_net": -19411280.0,
+              "institution_net": 21315515.0,
+              "retail_net": -21315516.0,
+              "super_ratio": 0.5359225897192725,
+              "updated_at": "2026-02-11 10:47:16"
+            }
+          ],
+          "latest": {
+            "stock_code": "600545",
+            "date": "2026-02-10",
+            "main_net_inflow": 21315515.0,
+            "super_large_net": 11423466.0,
+            "large_net": 9892049.0,
+            "medium_net": -1904236.0,
+            "small_net": -19411280.0,
+            "institution_net": 21315515.0,
+            "retail_net": -21315516.0,
+            "super_ratio": 0.5359225897192725,
+            "updated_at": "2026-02-11 10:47:16"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "600545",
+        "risk_score": 0.0,
+        "ratio": 0.0,
+        "trap_signals": [],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.438575",
+        "sector_name": "专用设备",
+        "sector_code": "专用设备",
+        "decision_tag": "FOCUS✅",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.13281249999999994,
+          "capital_3d_net_sum": 21315515.0
+        },
+        "scenario_features": {
+          "net_main_5d": 21315515.0,
+          "net_main_10d": 21315515.0,
+          "net_main_20d": 21315515.0,
+          "net_main_30d": 21315515.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": false,
+        "is_potential_mainline": true,
+        "scenario_type": "MAINLINE_RALLY",
+        "scenario_confidence": 0.9,
+        "scenario_reasons": [
+          "多日资金流健康 (5日: 2131.6万（流入）, 20日: 2131.6万（流入）)",
+          "风险评分较低 (0.00)",
+          "无明显陷阱信号"
+        ]
+      },
+      {
+        "last_price": 10.65,
+        "price_3d_change": 0.11053180396246096,
+        "code": "600299.SH",
+        "flow_data": {
+          "stock_code": "600299",
+          "records": [
+            {
+              "stock_code": "600299",
+              "date": "2026-02-10",
+              "main_net_inflow": 34770600.0,
+              "super_large_net": 11798681.0,
+              "large_net": 22971919.0,
+              "medium_net": -41343.0,
+              "small_net": -34729257.0,
+              "institution_net": 34770600.0,
+              "retail_net": -34770600.0,
+              "super_ratio": 0.3393292321674058,
+              "updated_at": "2026-02-11 10:47:16"
+            }
+          ],
+          "latest": {
+            "stock_code": "600299",
+            "date": "2026-02-10",
+            "main_net_inflow": 34770600.0,
+            "super_large_net": 11798681.0,
+            "large_net": 22971919.0,
+            "medium_net": -41343.0,
+            "small_net": -34729257.0,
+            "institution_net": 34770600.0,
+            "retail_net": -34770600.0,
+            "super_ratio": 0.3393292321674058,
+            "updated_at": "2026-02-11 10:47:16"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "600299",
+        "risk_score": 0.0,
+        "ratio": 0.0,
+        "trap_signals": [],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.443138",
+        "sector_name": "化学制品",
+        "sector_code": "化学制品",
+        "decision_tag": "FOCUS✅",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.11053180396246096,
+          "capital_3d_net_sum": 34770600.0
+        },
+        "scenario_features": {
+          "net_main_5d": 34770600.0,
+          "net_main_10d": 34770600.0,
+          "net_main_20d": 34770600.0,
+          "net_main_30d": 34770600.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": false,
+        "is_potential_mainline": true,
+        "scenario_type": "MAINLINE_RALLY",
+        "scenario_confidence": 0.9,
+        "scenario_reasons": [
+          "多日资金流健康 (5日: 3477.1万（流入）, 20日: 3477.1万（流入）)",
+          "风险评分较低 (0.00)",
+          "无明显陷阱信号"
+        ]
+      },
+      {
+        "last_price": 15.68,
+        "price_3d_change": 0.3288135593220338,
+        "code": "603968.SH",
+        "flow_data": {
+          "stock_code": "603968",
+          "records": [
+            {
+              "stock_code": "603968",
+              "date": "2026-02-10",
+              "main_net_inflow": 48859749.0,
+              "super_large_net": 30549522.0,
+              "large_net": 18310227.0,
+              "medium_net": -23509630.0,
+              "small_net": -25350119.0,
+              "institution_net": 48859749.0,
+              "retail_net": -48859749.0,
+              "super_ratio": 0.6252492619231425,
+              "updated_at": "2026-02-11 10:47:15"
+            }
+          ],
+          "latest": {
+            "stock_code": "603968",
+            "date": "2026-02-10",
+            "main_net_inflow": 48859749.0,
+            "super_large_net": 30549522.0,
+            "large_net": 18310227.0,
+            "medium_net": -23509630.0,
+            "small_net": -25350119.0,
+            "institution_net": 48859749.0,
+            "retail_net": -48859749.0,
+            "super_ratio": 0.6252492619231425,
+            "updated_at": "2026-02-11 10:47:15"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "603968",
+        "risk_score": 0.0,
+        "ratio": 0.0,
+        "trap_signals": [],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.444658",
+        "sector_name": "化学制品",
+        "sector_code": "化学制品",
+        "decision_tag": "FOCUS✅",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.3288135593220338,
+          "capital_3d_net_sum": 48859749.0
+        },
+        "scenario_features": {
+          "net_main_5d": 48859749.0,
+          "net_main_10d": 48859749.0,
+          "net_main_20d": 48859749.0,
+          "net_main_30d": 48859749.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": false,
+        "is_potential_mainline": true,
+        "scenario_type": "MAINLINE_RALLY",
+        "scenario_confidence": 0.9,
+        "scenario_reasons": [
+          "多日资金流健康 (5日: 4886.0万（流入）, 20日: 4886.0万（流入）)",
+          "风险评分较低 (0.00)",
+          "无明显陷阱信号"
+        ]
+      },
+      {
+        "last_price": 8.48,
+        "price_3d_change": 0.03288672350791734,
+        "code": "601921.SH",
+        "flow_data": {
+          "stock_code": "601921",
+          "records": [
+            {
+              "stock_code": "601921",
+              "date": "2026-02-10",
+              "main_net_inflow": 47161936.0,
+              "super_large_net": 26578371.0,
+              "large_net": 20583565.0,
+              "medium_net": -19138176.0,
+              "small_net": -28023760.0,
+              "institution_net": 47161936.0,
+              "retail_net": -47161936.0,
+              "super_ratio": 0.5635555546320236,
+              "updated_at": "2026-02-11 10:47:16"
+            }
+          ],
+          "latest": {
+            "stock_code": "601921",
+            "date": "2026-02-10",
+            "main_net_inflow": 47161936.0,
+            "super_large_net": 26578371.0,
+            "large_net": 20583565.0,
+            "medium_net": -19138176.0,
+            "small_net": -28023760.0,
+            "institution_net": 47161936.0,
+            "retail_net": -47161936.0,
+            "super_ratio": 0.5635555546320236,
+            "updated_at": "2026-02-11 10:47:16"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "601921",
+        "risk_score": 0.0,
+        "ratio": 0.0,
+        "trap_signals": [],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.446181",
+        "sector_name": "文化传媒",
+        "sector_code": "文化传媒",
+        "decision_tag": "FOCUS✅",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.03288672350791734,
+          "capital_3d_net_sum": 47161936.0
+        },
+        "scenario_features": {
+          "net_main_5d": 47161936.0,
+          "net_main_10d": 47161936.0,
+          "net_main_20d": 47161936.0,
+          "net_main_30d": 47161936.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": false,
+        "is_potential_mainline": true,
+        "scenario_type": "MAINLINE_RALLY",
+        "scenario_confidence": 0.9,
+        "scenario_reasons": [
+          "多日资金流健康 (5日: 4716.2万（流入）, 20日: 4716.2万（流入）)",
+          "风险评分较低 (0.00)",
+          "无明显陷阱信号"
+        ]
+      },
+      {
+        "last_price": 6.29,
+        "price_3d_change": 0.18679245283018853,
+        "code": "600149.SH",
+        "flow_data": {
+          "stock_code": "600149",
+          "records": [
+            {
+              "stock_code": "600149",
+              "date": "2026-02-10",
+              "main_net_inflow": 13471414.0,
+              "super_large_net": 4538911.0,
+              "large_net": 8932503.0,
+              "medium_net": -4893427.0,
+              "small_net": -8577987.0,
+              "institution_net": 13471414.0,
+              "retail_net": -13471414.0,
+              "super_ratio": 0.33692907069740413,
+              "updated_at": "2026-02-11 10:49:17"
+            }
+          ],
+          "latest": {
+            "stock_code": "600149",
+            "date": "2026-02-10",
+            "main_net_inflow": 13471414.0,
+            "super_large_net": 4538911.0,
+            "large_net": 8932503.0,
+            "medium_net": -4893427.0,
+            "small_net": -8577987.0,
+            "institution_net": 13471414.0,
+            "retail_net": -13471414.0,
+            "super_ratio": 0.33692907069740413,
+            "updated_at": "2026-02-11 10:49:17"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "600149",
+        "risk_score": 0.0,
+        "ratio": 0.0,
+        "trap_signals": [],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.449225",
+        "sector_name": "电力行业",
+        "sector_code": "电力行业",
+        "decision_tag": "FOCUS✅",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.18679245283018853,
+          "capital_3d_net_sum": 13471414.0
+        },
+        "scenario_features": {
+          "net_main_5d": 13471414.0,
+          "net_main_10d": 13471414.0,
+          "net_main_20d": 13471414.0,
+          "net_main_30d": 13471414.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": false,
+        "is_potential_mainline": true,
+        "scenario_type": "MAINLINE_RALLY",
+        "scenario_confidence": 0.9,
+        "scenario_reasons": [
+          "多日资金流健康 (5日: 1347.1万（流入）, 20日: 1347.1万（流入）)",
+          "风险评分较低 (0.00)",
+          "无明显陷阱信号"
+        ]
+      },
+      {
+        "last_price": 44.08,
+        "price_3d_change": 0.2501418037436186,
+        "code": "301203.SZ",
+        "flow_data": {
+          "stock_code": "301203",
+          "records": [
+            {
+              "stock_code": "301203",
+              "date": "2026-02-10",
+              "main_net_inflow": 23415281.0,
+              "super_large_net": -9680669.0,
+              "large_net": 33095950.0,
+              "medium_net": 8917701.0,
+              "small_net": -32332982.0,
+              "institution_net": 23415281.0,
+              "retail_net": -23415281.0,
+              "super_ratio": 0.41343381700181175,
+              "updated_at": "2026-02-11 10:49:19"
+            }
+          ],
+          "latest": {
+            "stock_code": "301203",
+            "date": "2026-02-10",
+            "main_net_inflow": 23415281.0,
+            "super_large_net": -9680669.0,
+            "large_net": 33095950.0,
+            "medium_net": 8917701.0,
+            "small_net": -32332982.0,
+            "institution_net": 23415281.0,
+            "retail_net": -23415281.0,
+            "super_ratio": 0.41343381700181175,
+            "updated_at": "2026-02-11 10:49:19"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "301203",
+        "risk_score": 0.0,
+        "ratio": 0.0,
+        "trap_signals": [],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.451256",
+        "sector_name": "环保行业",
+        "sector_code": "环保行业",
+        "decision_tag": "FOCUS✅",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.2501418037436186,
+          "capital_3d_net_sum": 23415281.0
+        },
+        "scenario_features": {
+          "net_main_5d": 23415281.0,
+          "net_main_10d": 23415281.0,
+          "net_main_20d": 23415281.0,
+          "net_main_30d": 23415281.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": false,
+        "is_potential_mainline": true,
+        "scenario_type": "MAINLINE_RALLY",
+        "scenario_confidence": 0.9,
+        "scenario_reasons": [
+          "多日资金流健康 (5日: 2341.5万（流入）, 20日: 2341.5万（流入）)",
+          "风险评分较低 (0.00)",
+          "无明显陷阱信号"
+        ]
+      },
+      {
+        "last_price": 14.29,
+        "price_3d_change": 0.033261026753434494,
+        "code": "605577.SH",
+        "flow_data": {
+          "stock_code": "605577",
+          "records": [
+            {
+              "stock_code": "605577",
+              "date": "2026-02-10",
+              "main_net_inflow": 17929109.0,
+              "super_large_net": 7387715.0,
+              "large_net": 10541394.0,
+              "medium_net": 3957542.0,
+              "small_net": -21886651.0,
+              "institution_net": 17929109.0,
+              "retail_net": -17929109.0,
+              "super_ratio": 0.4120514298842179,
+              "updated_at": "2026-02-11 10:49:20"
+            }
+          ],
+          "latest": {
+            "stock_code": "605577",
+            "date": "2026-02-10",
+            "main_net_inflow": 17929109.0,
+            "super_large_net": 7387715.0,
+            "large_net": 10541394.0,
+            "medium_net": 3957542.0,
+            "small_net": -21886651.0,
+            "institution_net": 17929109.0,
+            "retail_net": -17929109.0,
+            "super_ratio": 0.4120514298842179,
+            "updated_at": "2026-02-11 10:49:20"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "605577",
+        "risk_score": 0.0,
+        "ratio": 0.0,
+        "trap_signals": [],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.451994",
+        "sector_name": "文化传媒",
+        "sector_code": "文化传媒",
+        "decision_tag": "FOCUS✅",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.033261026753434494,
+          "capital_3d_net_sum": 17929109.0
+        },
+        "scenario_features": {
+          "net_main_5d": 17929109.0,
+          "net_main_10d": 17929109.0,
+          "net_main_20d": 17929109.0,
+          "net_main_30d": 17929109.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": false,
+        "is_potential_mainline": true,
+        "scenario_type": "MAINLINE_RALLY",
+        "scenario_confidence": 0.9,
+        "scenario_reasons": [
+          "多日资金流健康 (5日: 1792.9万（流入）, 20日: 1792.9万（流入）)",
+          "风险评分较低 (0.00)",
+          "无明显陷阱信号"
+        ]
+      }
+    ],
+    "watchlist": [
+      {
+        "last_price": 39.54,
+        "price_3d_change": 0.2722007722007721,
+        "code": "300364.SZ",
+        "flow_data": {
+          "stock_code": "300364",
+          "records": [
+            {
+              "stock_code": "300364",
+              "date": "2026-02-10",
+              "main_net_inflow": 617721424.0,
+              "super_large_net": 1098014032.0,
+              "large_net": -480292608.0,
+              "medium_net": -384157360.0,
+              "small_net": -233564064.0,
+              "institution_net": 617721424.0,
+              "retail_net": -617721424.0,
+              "super_ratio": 1.777522989068289,
+              "updated_at": "2026-02-11 10:48:55"
+            }
+          ],
+          "latest": {
+            "stock_code": "300364",
+            "date": "2026-02-10",
+            "main_net_inflow": 617721424.0,
+            "super_large_net": 1098014032.0,
+            "large_net": -480292608.0,
+            "medium_net": -384157360.0,
+            "small_net": -233564064.0,
+            "institution_net": 617721424.0,
+            "retail_net": -617721424.0,
+            "super_ratio": 1.777522989068289,
+            "updated_at": "2026-02-11 10:48:55"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "300364",
+        "risk_score": 0.2,
+        "ratio": 0.0,
+        "trap_signals": [
+          "长期流出+单日巨量"
+        ],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.421891",
+        "sector_name": "文化传媒",
+        "sector_code": "文化传媒",
+        "decision_tag": "PASS❌",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.2722007722007721,
+          "capital_3d_net_sum": 617721424.0
+        },
+        "scenario_features": {
+          "net_main_5d": 617721424.0,
+          "net_main_10d": 617721424.0,
+          "net_main_20d": 617721424.0,
+          "net_main_30d": 617721424.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": true,
+        "is_potential_mainline": false,
+        "scenario_type": "TRAP_PUMP_DUMP",
+        "scenario_confidence": 0.7,
+        "scenario_reasons": [
+          "检测到拉高出货模式",
+          "风险评分较低 (0.20)",
+          "超大单占比过高或次日大幅流出"
+        ]
+      },
+      {
+        "last_price": 56.76,
+        "price_3d_change": 0.06491557223264528,
+        "code": "600418.SH",
+        "flow_data": {
+          "stock_code": "600418",
+          "records": [
+            {
+              "stock_code": "600418",
+              "date": "2026-02-10",
+              "main_net_inflow": 78038784.0,
+              "super_large_net": 59895984.0,
+              "large_net": 18142800.0,
+              "medium_net": -143680432.0,
+              "small_net": 65641648.0,
+              "institution_net": 78038784.0,
+              "retail_net": -78038784.0,
+              "super_ratio": 0.7675155983978428,
+              "updated_at": "2026-02-11 11:03:41"
+            }
+          ],
+          "latest": {
+            "stock_code": "600418",
+            "date": "2026-02-10",
+            "main_net_inflow": 78038784.0,
+            "super_large_net": 59895984.0,
+            "large_net": 18142800.0,
+            "medium_net": -143680432.0,
+            "small_net": 65641648.0,
+            "institution_net": 78038784.0,
+            "retail_net": -78038784.0,
+            "super_ratio": 0.7675155983978428,
+            "updated_at": "2026-02-11 11:03:41"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "600418",
+        "risk_score": 0.2,
+        "ratio": 0.0,
+        "trap_signals": [
+          "长期流出+单日巨量"
+        ],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.423412",
+        "sector_name": "汽车整车",
+        "sector_code": "汽车整车",
+        "decision_tag": "PASS❌",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.06491557223264528,
+          "capital_3d_net_sum": 78038784.0
+        },
+        "scenario_features": {
+          "net_main_5d": 78038784.0,
+          "net_main_10d": 78038784.0,
+          "net_main_20d": 78038784.0,
+          "net_main_30d": 78038784.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": true,
+        "is_potential_mainline": false,
+        "scenario_type": "TRAP_PUMP_DUMP",
+        "scenario_confidence": 0.7,
+        "scenario_reasons": [
+          "检测到拉高出货模式",
+          "风险评分较低 (0.20)",
+          "超大单占比过高或次日大幅流出"
+        ]
+      },
+      {
+        "last_price": 25.08,
+        "price_3d_change": 0.08665511265164628,
+        "code": "603000.SH",
+        "flow_data": {
+          "stock_code": "603000",
+          "records": [
+            {
+              "stock_code": "603000",
+              "date": "2026-02-10",
+              "main_net_inflow": 385073989.0,
+              "super_large_net": 501772104.0,
+              "large_net": -116698115.0,
+              "medium_net": -185415186.0,
+              "small_net": -199658802.0,
+              "institution_net": 385073989.0,
+              "retail_net": -385073988.0,
+              "super_ratio": 1.3030537463801535,
+              "updated_at": "2026-02-11 11:24:28"
+            }
+          ],
+          "latest": {
+            "stock_code": "603000",
+            "date": "2026-02-10",
+            "main_net_inflow": 385073989.0,
+            "super_large_net": 501772104.0,
+            "large_net": -116698115.0,
+            "medium_net": -185415186.0,
+            "small_net": -199658802.0,
+            "institution_net": 385073989.0,
+            "retail_net": -385073988.0,
+            "super_ratio": 1.3030537463801535,
+            "updated_at": "2026-02-11 11:24:28"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "603000",
+        "risk_score": 0.2,
+        "ratio": 0.0,
+        "trap_signals": [
+          "长期流出+单日巨量"
+        ],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.424926",
+        "sector_name": "文化传媒",
+        "sector_code": "文化传媒",
+        "decision_tag": "PASS❌",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.08665511265164628,
+          "capital_3d_net_sum": 385073989.0
+        },
+        "scenario_features": {
+          "net_main_5d": 385073989.0,
+          "net_main_10d": 385073989.0,
+          "net_main_20d": 385073989.0,
+          "net_main_30d": 385073989.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": true,
+        "is_potential_mainline": false,
+        "scenario_type": "TRAP_PUMP_DUMP",
+        "scenario_confidence": 0.7,
+        "scenario_reasons": [
+          "检测到拉高出货模式",
+          "风险评分较低 (0.20)",
+          "超大单占比过高或次日大幅流出"
+        ]
+      },
+      {
+        "last_price": 19.03,
+        "price_3d_change": 0.12470449172576852,
+        "code": "600977.SH",
+        "flow_data": {
+          "stock_code": "600977",
+          "records": [
+            {
+              "stock_code": "600977",
+              "date": "2026-02-10",
+              "main_net_inflow": 211422768.0,
+              "super_large_net": 378696928.0,
+              "large_net": -167274160.0,
+              "medium_net": -96928912.0,
+              "small_net": -114493856.0,
+              "institution_net": 211422768.0,
+              "retail_net": -211422768.0,
+              "super_ratio": 1.7911832844795599,
+              "updated_at": "2026-02-11 10:48:57"
+            }
+          ],
+          "latest": {
+            "stock_code": "600977",
+            "date": "2026-02-10",
+            "main_net_inflow": 211422768.0,
+            "super_large_net": 378696928.0,
+            "large_net": -167274160.0,
+            "medium_net": -96928912.0,
+            "small_net": -114493856.0,
+            "institution_net": 211422768.0,
+            "retail_net": -211422768.0,
+            "super_ratio": 1.7911832844795599,
+            "updated_at": "2026-02-11 10:48:57"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "600977",
+        "risk_score": 0.2,
+        "ratio": 0.0,
+        "trap_signals": [
+          "长期流出+单日巨量"
+        ],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.426437",
+        "sector_name": "文化传媒",
+        "sector_code": "文化传媒",
+        "decision_tag": "PASS❌",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.12470449172576852,
+          "capital_3d_net_sum": 211422768.0
+        },
+        "scenario_features": {
+          "net_main_5d": 211422768.0,
+          "net_main_10d": 211422768.0,
+          "net_main_20d": 211422768.0,
+          "net_main_30d": 211422768.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": true,
+        "is_potential_mainline": false,
+        "scenario_type": "TRAP_PUMP_DUMP",
+        "scenario_confidence": 0.7,
+        "scenario_reasons": [
+          "检测到拉高出货模式",
+          "风险评分较低 (0.20)",
+          "超大单占比过高或次日大幅流出"
+        ]
+      },
+      {
+        "last_price": 12.65,
+        "price_3d_change": 0.09713790112749358,
+        "code": "002739.SZ",
+        "flow_data": {
+          "stock_code": "002739",
+          "records": [
+            {
+              "stock_code": "002739",
+              "date": "2026-02-10",
+              "main_net_inflow": 142091264.0,
+              "super_large_net": 263310512.0,
+              "large_net": -121219248.0,
+              "medium_net": -116147136.0,
+              "small_net": -25944144.0,
+              "institution_net": 142091264.0,
+              "retail_net": -142091280.0,
+              "super_ratio": 1.8531083796960242,
+              "updated_at": "2026-02-11 10:48:57"
+            }
+          ],
+          "latest": {
+            "stock_code": "002739",
+            "date": "2026-02-10",
+            "main_net_inflow": 142091264.0,
+            "super_large_net": 263310512.0,
+            "large_net": -121219248.0,
+            "medium_net": -116147136.0,
+            "small_net": -25944144.0,
+            "institution_net": 142091264.0,
+            "retail_net": -142091280.0,
+            "super_ratio": 1.8531083796960242,
+            "updated_at": "2026-02-11 10:48:57"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "002739",
+        "risk_score": 0.2,
+        "ratio": 0.0,
+        "trap_signals": [
+          "长期流出+单日巨量"
+        ],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.426437",
+        "sector_name": "文化传媒",
+        "sector_code": "文化传媒",
+        "decision_tag": "PASS❌",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.09713790112749358,
+          "capital_3d_net_sum": 142091264.0
+        },
+        "scenario_features": {
+          "net_main_5d": 142091264.0,
+          "net_main_10d": 142091264.0,
+          "net_main_20d": 142091264.0,
+          "net_main_30d": 142091264.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": true,
+        "is_potential_mainline": false,
+        "scenario_type": "TRAP_PUMP_DUMP",
+        "scenario_confidence": 0.7,
+        "scenario_reasons": [
+          "检测到拉高出货模式",
+          "风险评分较低 (0.20)",
+          "超大单占比过高或次日大幅流出"
+        ]
+      },
+      {
+        "last_price": 11.25,
+        "price_3d_change": 0.2281659388646288,
+        "code": "603466.SH",
+        "flow_data": {
+          "stock_code": "603466",
+          "records": [
+            {
+              "stock_code": "603466",
+              "date": "2026-02-10",
+              "main_net_inflow": 92736992.0,
+              "super_large_net": 123202754.0,
+              "large_net": -30465762.0,
+              "medium_net": -44064712.0,
+              "small_net": -48672279.0,
+              "institution_net": 92736992.0,
+              "retail_net": -92736991.0,
+              "super_ratio": 1.328517901464822,
+              "updated_at": "2026-02-11 10:48:57"
+            }
+          ],
+          "latest": {
+            "stock_code": "603466",
+            "date": "2026-02-10",
+            "main_net_inflow": 92736992.0,
+            "super_large_net": 123202754.0,
+            "large_net": -30465762.0,
+            "medium_net": -44064712.0,
+            "small_net": -48672279.0,
+            "institution_net": 92736992.0,
+            "retail_net": -92736991.0,
+            "super_ratio": 1.328517901464822,
+            "updated_at": "2026-02-11 10:48:57"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "603466",
+        "risk_score": 0.2,
+        "ratio": 0.0,
+        "trap_signals": [
+          "长期流出+单日巨量"
+        ],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.426437",
+        "sector_name": "文化传媒",
+        "sector_code": "文化传媒",
+        "decision_tag": "PASS❌",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.2281659388646288,
+          "capital_3d_net_sum": 92736992.0
+        },
+        "scenario_features": {
+          "net_main_5d": 92736992.0,
+          "net_main_10d": 92736992.0,
+          "net_main_20d": 92736992.0,
+          "net_main_30d": 92736992.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": true,
+        "is_potential_mainline": false,
+        "scenario_type": "TRAP_PUMP_DUMP",
+        "scenario_confidence": 0.7,
+        "scenario_reasons": [
+          "检测到拉高出货模式",
+          "风险评分较低 (0.20)",
+          "超大单占比过高或次日大幅流出"
+        ]
+      },
+      {
+        "last_price": 47.66,
+        "price_3d_change": 0.18263027295285358,
+        "code": "301231.SZ",
+        "flow_data": {
+          "stock_code": "301231",
+          "records": [
+            {
+              "stock_code": "301231",
+              "date": "2026-02-10",
+              "main_net_inflow": 35725399.0,
+              "super_large_net": 52057717.0,
+              "large_net": -16332318.0,
+              "medium_net": -17488050.0,
+              "small_net": -18237349.0,
+              "institution_net": 35725399.0,
+              "retail_net": -35725399.0,
+              "super_ratio": 1.4571626477845636,
+              "updated_at": "2026-02-11 10:48:58"
+            }
+          ],
+          "latest": {
+            "stock_code": "301231",
+            "date": "2026-02-10",
+            "main_net_inflow": 35725399.0,
+            "super_large_net": 52057717.0,
+            "large_net": -16332318.0,
+            "medium_net": -17488050.0,
+            "small_net": -18237349.0,
+            "institution_net": 35725399.0,
+            "retail_net": -35725399.0,
+            "super_ratio": 1.4571626477845636,
+            "updated_at": "2026-02-11 10:48:58"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "301231",
+        "risk_score": 0.2,
+        "ratio": 0.0,
+        "trap_signals": [
+          "长期流出+单日巨量"
+        ],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.427958",
+        "sector_name": "文化传媒",
+        "sector_code": "文化传媒",
+        "decision_tag": "PASS❌",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.18263027295285358,
+          "capital_3d_net_sum": 35725399.0
+        },
+        "scenario_features": {
+          "net_main_5d": 35725399.0,
+          "net_main_10d": 35725399.0,
+          "net_main_20d": 35725399.0,
+          "net_main_30d": 35725399.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": true,
+        "is_potential_mainline": false,
+        "scenario_type": "TRAP_PUMP_DUMP",
+        "scenario_confidence": 0.7,
+        "scenario_reasons": [
+          "检测到拉高出货模式",
+          "风险评分较低 (0.20)",
+          "超大单占比过高或次日大幅流出"
+        ]
+      },
+      {
+        "last_price": 61.24,
+        "price_3d_change": 0.34622994064629586,
+        "code": "605287.SH",
+        "flow_data": {
+          "stock_code": "605287",
+          "records": [
+            {
+              "stock_code": "605287",
+              "date": "2026-02-10",
+              "main_net_inflow": 5828649.0,
+              "super_large_net": 9675446.0,
+              "large_net": -3846797.0,
+              "medium_net": -3407004.0,
+              "small_net": -2421645.0,
+              "institution_net": 5828649.0,
+              "retail_net": -5828649.0,
+              "super_ratio": 1.6599808978032473,
+              "updated_at": "2026-02-11 10:48:58"
+            }
+          ],
+          "latest": {
+            "stock_code": "605287",
+            "date": "2026-02-10",
+            "main_net_inflow": 5828649.0,
+            "super_large_net": 9675446.0,
+            "large_net": -3846797.0,
+            "medium_net": -3407004.0,
+            "small_net": -2421645.0,
+            "institution_net": 5828649.0,
+            "retail_net": -5828649.0,
+            "super_ratio": 1.6599808978032473,
+            "updated_at": "2026-02-11 10:48:58"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "605287",
+        "risk_score": 0.2,
+        "ratio": 0.0,
+        "trap_signals": [
+          "长期流出+单日巨量"
+        ],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.427958",
+        "sector_name": "装修装饰",
+        "sector_code": "装修装饰",
+        "decision_tag": "PASS❌",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.34622994064629586,
+          "capital_3d_net_sum": 5828649.0
+        },
+        "scenario_features": {
+          "net_main_5d": 5828649.0,
+          "net_main_10d": 5828649.0,
+          "net_main_20d": 5828649.0,
+          "net_main_30d": 5828649.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": true,
+        "is_potential_mainline": false,
+        "scenario_type": "TRAP_PUMP_DUMP",
+        "scenario_confidence": 0.7,
+        "scenario_reasons": [
+          "检测到拉高出货模式",
+          "风险评分较低 (0.20)",
+          "超大单占比过高或次日大幅流出"
+        ]
+      },
+      {
+        "last_price": 32.51,
+        "price_3d_change": 0.12491349480968843,
+        "code": "601595.SH",
+        "flow_data": {
+          "stock_code": "601595",
+          "records": [
+            {
+              "stock_code": "601595",
+              "date": "2026-02-10",
+              "main_net_inflow": 259504880.0,
+              "super_large_net": 306681872.0,
+              "large_net": -47176992.0,
+              "medium_net": -163334624.0,
+              "small_net": -96170261.0,
+              "institution_net": 259504880.0,
+              "retail_net": -259504885.0,
+              "super_ratio": 1.1817961650663371,
+              "updated_at": "2026-02-11 10:48:59"
+            }
+          ],
+          "latest": {
+            "stock_code": "601595",
+            "date": "2026-02-10",
+            "main_net_inflow": 259504880.0,
+            "super_large_net": 306681872.0,
+            "large_net": -47176992.0,
+            "medium_net": -163334624.0,
+            "small_net": -96170261.0,
+            "institution_net": 259504880.0,
+            "retail_net": -259504885.0,
+            "super_ratio": 1.1817961650663371,
+            "updated_at": "2026-02-11 10:48:59"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "601595",
+        "risk_score": 0.2,
+        "ratio": 0.0,
+        "trap_signals": [
+          "长期流出+单日巨量"
+        ],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.427958",
+        "sector_name": "文化传媒",
+        "sector_code": "文化传媒",
+        "decision_tag": "PASS❌",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.12491349480968843,
+          "capital_3d_net_sum": 259504880.0
+        },
+        "scenario_features": {
+          "net_main_5d": 259504880.0,
+          "net_main_10d": 259504880.0,
+          "net_main_20d": 259504880.0,
+          "net_main_30d": 259504880.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": true,
+        "is_potential_mainline": false,
+        "scenario_type": "TRAP_PUMP_DUMP",
+        "scenario_confidence": 0.7,
+        "scenario_reasons": [
+          "检测到拉高出货模式",
+          "风险评分较低 (0.20)",
+          "超大单占比过高或次日大幅流出"
+        ]
+      },
+      {
+        "last_price": 24.69,
+        "price_3d_change": 0.04177215189873411,
+        "code": "603888.SH",
+        "flow_data": {
+          "stock_code": "603888",
+          "records": [
+            {
+              "stock_code": "603888",
+              "date": "2026-02-10",
+              "main_net_inflow": 262162044.0,
+              "super_large_net": 307368172.0,
+              "large_net": -45206128.0,
+              "medium_net": -87632096.0,
+              "small_net": -174529952.0,
+              "institution_net": 262162044.0,
+              "retail_net": -262162048.0,
+              "super_ratio": 1.1724358236999404,
+              "updated_at": "2026-02-11 13:49:05"
+            }
+          ],
+          "latest": {
+            "stock_code": "603888",
+            "date": "2026-02-10",
+            "main_net_inflow": 262162044.0,
+            "super_large_net": 307368172.0,
+            "large_net": -45206128.0,
+            "medium_net": -87632096.0,
+            "small_net": -174529952.0,
+            "institution_net": 262162044.0,
+            "retail_net": -262162048.0,
+            "super_ratio": 1.1724358236999404,
+            "updated_at": "2026-02-11 13:49:05"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "603888",
+        "risk_score": 0.2,
+        "ratio": 0.0,
+        "trap_signals": [
+          "长期流出+单日巨量"
+        ],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.429480",
+        "sector_name": "文化传媒",
+        "sector_code": "文化传媒",
+        "decision_tag": "PASS❌",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.04177215189873411,
+          "capital_3d_net_sum": 262162044.0
+        },
+        "scenario_features": {
+          "net_main_5d": 262162044.0,
+          "net_main_10d": 262162044.0,
+          "net_main_20d": 262162044.0,
+          "net_main_30d": 262162044.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": true,
+        "is_potential_mainline": false,
+        "scenario_type": "TRAP_PUMP_DUMP",
+        "scenario_confidence": 0.7,
+        "scenario_reasons": [
+          "检测到拉高出货模式",
+          "风险评分较低 (0.20)",
+          "超大单占比过高或次日大幅流出"
+        ]
+      },
+      {
+        "last_price": 8.72,
+        "price_3d_change": 0.5797101449275363,
+        "code": "603980.SH",
+        "flow_data": {
+          "stock_code": "603980",
+          "records": [
+            {
+              "stock_code": "603980",
+              "date": "2026-02-10",
+              "main_net_inflow": 17384454.0,
+              "super_large_net": 18536684.0,
+              "large_net": -1152230.0,
+              "medium_net": -5004623.0,
+              "small_net": -12379832.0,
+              "institution_net": 17384454.0,
+              "retail_net": -17384455.0,
+              "super_ratio": 1.0662793320975166,
+              "updated_at": "2026-02-11 13:49:05"
+            }
+          ],
+          "latest": {
+            "stock_code": "603980",
+            "date": "2026-02-10",
+            "main_net_inflow": 17384454.0,
+            "super_large_net": 18536684.0,
+            "large_net": -1152230.0,
+            "medium_net": -5004623.0,
+            "small_net": -12379832.0,
+            "institution_net": 17384454.0,
+            "retail_net": -17384455.0,
+            "super_ratio": 1.0662793320975166,
+            "updated_at": "2026-02-11 13:49:05"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "603980",
+        "risk_score": 0.2,
+        "ratio": 0.0,
+        "trap_signals": [
+          "长期流出+单日巨量"
+        ],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.429480",
+        "sector_name": "化学制品",
+        "sector_code": "化学制品",
+        "decision_tag": "PASS❌",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.5797101449275363,
+          "capital_3d_net_sum": 17384454.0
+        },
+        "scenario_features": {
+          "net_main_5d": 17384454.0,
+          "net_main_10d": 17384454.0,
+          "net_main_20d": 17384454.0,
+          "net_main_30d": 17384454.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": true,
+        "is_potential_mainline": false,
+        "scenario_type": "TRAP_PUMP_DUMP",
+        "scenario_confidence": 0.7,
+        "scenario_reasons": [
+          "检测到拉高出货模式",
+          "风险评分较低 (0.20)",
+          "超大单占比过高或次日大幅流出"
+        ]
+      },
+      {
+        "last_price": 5.08,
+        "price_3d_change": 0.22705314009661848,
+        "code": "601599.SH",
+        "flow_data": {
+          "stock_code": "601599",
+          "records": [
+            {
+              "stock_code": "601599",
+              "date": "2026-02-10",
+              "main_net_inflow": 135808373.0,
+              "super_large_net": 205367002.0,
+              "large_net": -69558629.0,
+              "medium_net": -64424801.0,
+              "small_net": -71383574.0,
+              "institution_net": 135808373.0,
+              "retail_net": -135808375.0,
+              "super_ratio": 1.512182183347414,
+              "updated_at": "2026-02-11 10:48:59"
+            }
+          ],
+          "latest": {
+            "stock_code": "601599",
+            "date": "2026-02-10",
+            "main_net_inflow": 135808373.0,
+            "super_large_net": 205367002.0,
+            "large_net": -69558629.0,
+            "medium_net": -64424801.0,
+            "small_net": -71383574.0,
+            "institution_net": 135808373.0,
+            "retail_net": -135808375.0,
+            "super_ratio": 1.512182183347414,
+            "updated_at": "2026-02-11 10:48:59"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "601599",
+        "risk_score": 0.2,
+        "ratio": 0.0,
+        "trap_signals": [
+          "长期流出+单日巨量"
+        ],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.429480",
+        "sector_name": "纺织服装",
+        "sector_code": "纺织服装",
+        "decision_tag": "PASS❌",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.22705314009661848,
+          "capital_3d_net_sum": 135808373.0
+        },
+        "scenario_features": {
+          "net_main_5d": 135808373.0,
+          "net_main_10d": 135808373.0,
+          "net_main_20d": 135808373.0,
+          "net_main_30d": 135808373.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": true,
+        "is_potential_mainline": false,
+        "scenario_type": "TRAP_PUMP_DUMP",
+        "scenario_confidence": 0.7,
+        "scenario_reasons": [
+          "检测到拉高出货模式",
+          "风险评分较低 (0.20)",
+          "超大单占比过高或次日大幅流出"
+        ]
+      },
+      {
+        "last_price": 3.93,
+        "price_3d_change": 0.05645161290322579,
+        "code": "601929.SH",
+        "flow_data": {
+          "stock_code": "601929",
+          "records": [
+            {
+              "stock_code": "601929",
+              "date": "2026-02-10",
+              "main_net_inflow": 41927104.0,
+              "super_large_net": 55293392.0,
+              "large_net": -13366288.0,
+              "medium_net": 23722512.0,
+              "small_net": -65649616.0,
+              "institution_net": 41927104.0,
+              "retail_net": -41927104.0,
+              "super_ratio": 1.318798264721551,
+              "updated_at": "2026-02-11 11:03:41"
+            }
+          ],
+          "latest": {
+            "stock_code": "601929",
+            "date": "2026-02-10",
+            "main_net_inflow": 41927104.0,
+            "super_large_net": 55293392.0,
+            "large_net": -13366288.0,
+            "medium_net": 23722512.0,
+            "small_net": -65649616.0,
+            "institution_net": 41927104.0,
+            "retail_net": -41927104.0,
+            "super_ratio": 1.318798264721551,
+            "updated_at": "2026-02-11 11:03:41"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "601929",
+        "risk_score": 0.2,
+        "ratio": 0.0,
+        "trap_signals": [
+          "长期流出+单日巨量"
+        ],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.431035",
+        "sector_name": "文化传媒",
+        "sector_code": "文化传媒",
+        "decision_tag": "PASS❌",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.05645161290322579,
+          "capital_3d_net_sum": 41927104.0
+        },
+        "scenario_features": {
+          "net_main_5d": 41927104.0,
+          "net_main_10d": 41927104.0,
+          "net_main_20d": 41927104.0,
+          "net_main_30d": 41927104.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": true,
+        "is_potential_mainline": false,
+        "scenario_type": "TRAP_PUMP_DUMP",
+        "scenario_confidence": 0.7,
+        "scenario_reasons": [
+          "检测到拉高出货模式",
+          "风险评分较低 (0.20)",
+          "超大单占比过高或次日大幅流出"
+        ]
+      },
+      {
+        "last_price": 50.67,
+        "price_3d_change": 0.09038089089735303,
+        "code": "002947.SZ",
+        "flow_data": {
+          "stock_code": "002947",
+          "records": [
+            {
+              "stock_code": "002947",
+              "date": "2026-02-10",
+              "main_net_inflow": 132562999.0,
+              "super_large_net": 130585439.0,
+              "large_net": 1977560.0,
+              "medium_net": -40835511.0,
+              "small_net": -91727490.0,
+              "institution_net": 132562999.0,
+              "retail_net": -132563001.0,
+              "super_ratio": 0.9850821117889766,
+              "updated_at": "2026-02-11 11:24:28"
+            }
+          ],
+          "latest": {
+            "stock_code": "002947",
+            "date": "2026-02-10",
+            "main_net_inflow": 132562999.0,
+            "super_large_net": 130585439.0,
+            "large_net": 1977560.0,
+            "medium_net": -40835511.0,
+            "small_net": -91727490.0,
+            "institution_net": 132562999.0,
+            "retail_net": -132563001.0,
+            "super_ratio": 0.9850821117889766,
+            "updated_at": "2026-02-11 11:24:28"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "002947",
+        "risk_score": 0.2,
+        "ratio": 0.0,
+        "trap_signals": [
+          "长期流出+单日巨量"
+        ],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.431035",
+        "sector_name": "消费电子",
+        "sector_code": "消费电子",
+        "decision_tag": "PASS❌",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.09038089089735303,
+          "capital_3d_net_sum": 132562999.0
+        },
+        "scenario_features": {
+          "net_main_5d": 132562999.0,
+          "net_main_10d": 132562999.0,
+          "net_main_20d": 132562999.0,
+          "net_main_30d": 132562999.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": true,
+        "is_potential_mainline": false,
+        "scenario_type": "TRAP_PUMP_DUMP",
+        "scenario_confidence": 0.7,
+        "scenario_reasons": [
+          "检测到拉高出货模式",
+          "风险评分较低 (0.20)",
+          "超大单占比过高或次日大幅流出"
+        ]
+      },
+      {
+        "last_price": 55.88,
+        "price_3d_change": 0.3807758833703979,
+        "code": "605060.SH",
+        "flow_data": {
+          "stock_code": "605060",
+          "records": [
+            {
+              "stock_code": "605060",
+              "date": "2026-02-10",
+              "main_net_inflow": 62051886.0,
+              "super_large_net": 80727611.0,
+              "large_net": -18675725.0,
+              "medium_net": -13676000.0,
+              "small_net": -48375886.0,
+              "institution_net": 62051886.0,
+              "retail_net": -62051886.0,
+              "super_ratio": 1.3009694983324116,
+              "updated_at": "2026-02-11 10:49:03"
+            }
+          ],
+          "latest": {
+            "stock_code": "605060",
+            "date": "2026-02-10",
+            "main_net_inflow": 62051886.0,
+            "super_large_net": 80727611.0,
+            "large_net": -18675725.0,
+            "medium_net": -13676000.0,
+            "small_net": -48375886.0,
+            "institution_net": 62051886.0,
+            "retail_net": -62051886.0,
+            "super_ratio": 1.3009694983324116,
+            "updated_at": "2026-02-11 10:49:03"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "605060",
+        "risk_score": 0.2,
+        "ratio": 0.0,
+        "trap_signals": [
+          "长期流出+单日巨量"
+        ],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.431035",
+        "sector_name": "通用设备",
+        "sector_code": "通用设备",
+        "decision_tag": "PASS❌",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.3807758833703979,
+          "capital_3d_net_sum": 62051886.0
+        },
+        "scenario_features": {
+          "net_main_5d": 62051886.0,
+          "net_main_10d": 62051886.0,
+          "net_main_20d": 62051886.0,
+          "net_main_30d": 62051886.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": true,
+        "is_potential_mainline": false,
+        "scenario_type": "TRAP_PUMP_DUMP",
+        "scenario_confidence": 0.7,
+        "scenario_reasons": [
+          "检测到拉高出货模式",
+          "风险评分较低 (0.20)",
+          "超大单占比过高或次日大幅流出"
+        ]
+      },
+      {
+        "last_price": 23.54,
+        "price_3d_change": 0.29768467475192933,
+        "code": "003018.SZ",
+        "flow_data": {
+          "stock_code": "003018",
+          "records": [
+            {
+              "stock_code": "003018",
+              "date": "2026-02-10",
+              "main_net_inflow": 9068232.0,
+              "super_large_net": -19955004.0,
+              "large_net": 29023236.0,
+              "medium_net": 42863789.0,
+              "small_net": -51932016.0,
+              "institution_net": 9068232.0,
+              "retail_net": -9068227.0,
+              "super_ratio": 2.2005396421264916,
+              "updated_at": "2026-02-11 10:49:02"
+            }
+          ],
+          "latest": {
+            "stock_code": "003018",
+            "date": "2026-02-10",
+            "main_net_inflow": 9068232.0,
+            "super_large_net": -19955004.0,
+            "large_net": 29023236.0,
+            "medium_net": 42863789.0,
+            "small_net": -51932016.0,
+            "institution_net": 9068232.0,
+            "retail_net": -9068227.0,
+            "super_ratio": 2.2005396421264916,
+            "updated_at": "2026-02-11 10:49:02"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "003018",
+        "risk_score": 0.2,
+        "ratio": 0.0,
+        "trap_signals": [
+          "长期流出+单日巨量"
+        ],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.432557",
+        "sector_name": "塑料制品",
+        "sector_code": "塑料制品",
+        "decision_tag": "PASS❌",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.29768467475192933,
+          "capital_3d_net_sum": 9068232.0
+        },
+        "scenario_features": {
+          "net_main_5d": 9068232.0,
+          "net_main_10d": 9068232.0,
+          "net_main_20d": 9068232.0,
+          "net_main_30d": 9068232.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": true,
+        "is_potential_mainline": false,
+        "scenario_type": "TRAP_PUMP_DUMP",
+        "scenario_confidence": 0.7,
+        "scenario_reasons": [
+          "检测到拉高出货模式",
+          "风险评分较低 (0.20)",
+          "超大单占比过高或次日大幅流出"
+        ]
+      },
+      {
+        "last_price": 92.44,
+        "price_3d_change": 0.36644493717664434,
+        "code": "603301.SH",
+        "flow_data": {
+          "stock_code": "603301",
+          "records": [
+            {
+              "stock_code": "603301",
+              "date": "2026-02-10",
+              "main_net_inflow": 48098194.0,
+              "super_large_net": 115504418.0,
+              "large_net": -67406224.0,
+              "medium_net": -33772704.0,
+              "small_net": -14325491.0,
+              "institution_net": 48098194.0,
+              "retail_net": -48098195.0,
+              "super_ratio": 2.4014294174953847,
+              "updated_at": "2026-02-11 10:49:06"
+            }
+          ],
+          "latest": {
+            "stock_code": "603301",
+            "date": "2026-02-10",
+            "main_net_inflow": 48098194.0,
+            "super_large_net": 115504418.0,
+            "large_net": -67406224.0,
+            "medium_net": -33772704.0,
+            "small_net": -14325491.0,
+            "institution_net": 48098194.0,
+            "retail_net": -48098195.0,
+            "super_ratio": 2.4014294174953847,
+            "updated_at": "2026-02-11 10:49:06"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "603301",
+        "risk_score": 0.2,
+        "ratio": 0.0,
+        "trap_signals": [
+          "长期流出+单日巨量"
+        ],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.434075",
+        "sector_name": "医疗器械",
+        "sector_code": "医疗器械",
+        "decision_tag": "PASS❌",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.36644493717664434,
+          "capital_3d_net_sum": 48098194.0
+        },
+        "scenario_features": {
+          "net_main_5d": 48098194.0,
+          "net_main_10d": 48098194.0,
+          "net_main_20d": 48098194.0,
+          "net_main_30d": 48098194.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": true,
+        "is_potential_mainline": false,
+        "scenario_type": "TRAP_PUMP_DUMP",
+        "scenario_confidence": 0.7,
+        "scenario_reasons": [
+          "检测到拉高出货模式",
+          "风险评分较低 (0.20)",
+          "超大单占比过高或次日大幅流出"
+        ]
+      },
+      {
+        "last_price": 2.48,
+        "price_3d_change": 0.11210762331838565,
+        "code": "600715.SH",
+        "flow_data": {
+          "stock_code": "600715",
+          "records": [
+            {
+              "stock_code": "600715",
+              "date": "2026-02-10",
+              "main_net_inflow": 113463088.0,
+              "super_large_net": 113403993.0,
+              "large_net": 59095.0,
+              "medium_net": -54650065.0,
+              "small_net": -58813023.0,
+              "institution_net": 113463088.0,
+              "retail_net": -113463088.0,
+              "super_ratio": 0.9994791698248157,
+              "updated_at": "2026-02-11 10:49:06"
+            }
+          ],
+          "latest": {
+            "stock_code": "600715",
+            "date": "2026-02-10",
+            "main_net_inflow": 113463088.0,
+            "super_large_net": 113403993.0,
+            "large_net": 59095.0,
+            "medium_net": -54650065.0,
+            "small_net": -58813023.0,
+            "institution_net": 113463088.0,
+            "retail_net": -113463088.0,
+            "super_ratio": 0.9994791698248157,
+            "updated_at": "2026-02-11 10:49:06"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "600715",
+        "risk_score": 0.2,
+        "ratio": 0.0,
+        "trap_signals": [
+          "长期流出+单日巨量"
+        ],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.435536",
+        "sector_name": "游戏",
+        "sector_code": "游戏",
+        "decision_tag": "PASS❌",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.11210762331838565,
+          "capital_3d_net_sum": 113463088.0
+        },
+        "scenario_features": {
+          "net_main_5d": 113463088.0,
+          "net_main_10d": 113463088.0,
+          "net_main_20d": 113463088.0,
+          "net_main_30d": 113463088.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": true,
+        "is_potential_mainline": false,
+        "scenario_type": "TRAP_PUMP_DUMP",
+        "scenario_confidence": 0.7,
+        "scenario_reasons": [
+          "检测到拉高出货模式",
+          "风险评分较低 (0.20)",
+          "超大单占比过高或次日大幅流出"
+        ]
+      },
+      {
+        "last_price": 8.46,
+        "price_3d_change": 0.15102040816326534,
+        "code": "603999.SH",
+        "flow_data": {
+          "stock_code": "603999",
+          "records": [
+            {
+              "stock_code": "603999",
+              "date": "2026-02-10",
+              "main_net_inflow": 64261603.0,
+              "super_large_net": 51964646.0,
+              "large_net": 12296957.0,
+              "medium_net": -16582141.0,
+              "small_net": -47679462.0,
+              "institution_net": 64261603.0,
+              "retail_net": -64261603.0,
+              "super_ratio": 0.8086422307267996,
+              "updated_at": "2026-02-11 10:49:09"
+            }
+          ],
+          "latest": {
+            "stock_code": "603999",
+            "date": "2026-02-10",
+            "main_net_inflow": 64261603.0,
+            "super_large_net": 51964646.0,
+            "large_net": 12296957.0,
+            "medium_net": -16582141.0,
+            "small_net": -47679462.0,
+            "institution_net": 64261603.0,
+            "retail_net": -64261603.0,
+            "super_ratio": 0.8086422307267996,
+            "updated_at": "2026-02-11 10:49:09"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "603999",
+        "risk_score": 0.2,
+        "ratio": 0.0,
+        "trap_signals": [
+          "长期流出+单日巨量"
+        ],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.435536",
+        "sector_name": "文化传媒",
+        "sector_code": "文化传媒",
+        "decision_tag": "PASS❌",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.15102040816326534,
+          "capital_3d_net_sum": 64261603.0
+        },
+        "scenario_features": {
+          "net_main_5d": 64261603.0,
+          "net_main_10d": 64261603.0,
+          "net_main_20d": 64261603.0,
+          "net_main_30d": 64261603.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": true,
+        "is_potential_mainline": false,
+        "scenario_type": "TRAP_PUMP_DUMP",
+        "scenario_confidence": 0.7,
+        "scenario_reasons": [
+          "检测到拉高出货模式",
+          "风险评分较低 (0.20)",
+          "超大单占比过高或次日大幅流出"
+        ]
+      },
+      {
+        "last_price": 8.47,
+        "price_3d_change": 0.00713436385255654,
+        "code": "600651.SH",
+        "flow_data": {
+          "stock_code": "600651",
+          "records": [
+            {
+              "stock_code": "600651",
+              "date": "2026-02-10",
+              "main_net_inflow": 11208167.0,
+              "super_large_net": 13591597.0,
+              "large_net": -2383430.0,
+              "medium_net": -3609247.0,
+              "small_net": -7598920.0,
+              "institution_net": 11208167.0,
+              "retail_net": -11208167.0,
+              "super_ratio": 1.212651185514991,
+              "updated_at": "2026-02-11 13:49:06"
+            }
+          ],
+          "latest": {
+            "stock_code": "600651",
+            "date": "2026-02-10",
+            "main_net_inflow": 11208167.0,
+            "super_large_net": 13591597.0,
+            "large_net": -2383430.0,
+            "medium_net": -3609247.0,
+            "small_net": -7598920.0,
+            "institution_net": 11208167.0,
+            "retail_net": -11208167.0,
+            "super_ratio": 1.212651185514991,
+            "updated_at": "2026-02-11 13:49:06"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "600651",
+        "risk_score": 0.2,
+        "ratio": 0.0,
+        "trap_signals": [
+          "长期流出+单日巨量"
+        ],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.438575",
+        "sector_name": "光学光电子",
+        "sector_code": "光学光电子",
+        "decision_tag": "PASS❌",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.00713436385255654,
+          "capital_3d_net_sum": 11208167.0
+        },
+        "scenario_features": {
+          "net_main_5d": 11208167.0,
+          "net_main_10d": 11208167.0,
+          "net_main_20d": 11208167.0,
+          "net_main_30d": 11208167.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": true,
+        "is_potential_mainline": false,
+        "scenario_type": "TRAP_PUMP_DUMP",
+        "scenario_confidence": 0.7,
+        "scenario_reasons": [
+          "检测到拉高出货模式",
+          "风险评分较低 (0.20)",
+          "超大单占比过高或次日大幅流出"
+        ]
+      },
+      {
+        "last_price": 9.78,
+        "price_3d_change": 0.04823151125401921,
+        "code": "600373.SH",
+        "flow_data": {
+          "stock_code": "600373",
+          "records": [
+            {
+              "stock_code": "600373",
+              "date": "2026-02-10",
+              "main_net_inflow": 103676431.0,
+              "super_large_net": 110821606.0,
+              "large_net": -7145175.0,
+              "medium_net": -47599360.0,
+              "small_net": -56077086.0,
+              "institution_net": 103676431.0,
+              "retail_net": -103676446.0,
+              "super_ratio": 1.0689180263159328,
+              "updated_at": "2026-02-11 10:49:09"
+            }
+          ],
+          "latest": {
+            "stock_code": "600373",
+            "date": "2026-02-10",
+            "main_net_inflow": 103676431.0,
+            "super_large_net": 110821606.0,
+            "large_net": -7145175.0,
+            "medium_net": -47599360.0,
+            "small_net": -56077086.0,
+            "institution_net": 103676431.0,
+            "retail_net": -103676446.0,
+            "super_ratio": 1.0689180263159328,
+            "updated_at": "2026-02-11 10:49:09"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "600373",
+        "risk_score": 0.2,
+        "ratio": 0.0,
+        "trap_signals": [
+          "长期流出+单日巨量"
+        ],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.440096",
+        "sector_name": "文化传媒",
+        "sector_code": "文化传媒",
+        "decision_tag": "PASS❌",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.04823151125401921,
+          "capital_3d_net_sum": 103676431.0
+        },
+        "scenario_features": {
+          "net_main_5d": 103676431.0,
+          "net_main_10d": 103676431.0,
+          "net_main_20d": 103676431.0,
+          "net_main_30d": 103676431.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": true,
+        "is_potential_mainline": false,
+        "scenario_type": "TRAP_PUMP_DUMP",
+        "scenario_confidence": 0.7,
+        "scenario_reasons": [
+          "检测到拉高出货模式",
+          "风险评分较低 (0.20)",
+          "超大单占比过高或次日大幅流出"
+        ]
+      },
+      {
+        "last_price": 2.17,
+        "price_3d_change": 0.07425742574257421,
+        "code": "000056.SZ",
+        "flow_data": {
+          "stock_code": "000056",
+          "records": [
+            {
+              "stock_code": "000056",
+              "date": "2026-02-10",
+              "main_net_inflow": 22973728.0,
+              "super_large_net": 55975969.0,
+              "large_net": -33002241.0,
+              "medium_net": -6993695.0,
+              "small_net": -15980033.0,
+              "institution_net": 22973728.0,
+              "retail_net": -22973728.0,
+              "super_ratio": 2.4365209251193365,
+              "updated_at": "2026-02-11 10:49:10"
+            }
+          ],
+          "latest": {
+            "stock_code": "000056",
+            "date": "2026-02-10",
+            "main_net_inflow": 22973728.0,
+            "super_large_net": 55975969.0,
+            "large_net": -33002241.0,
+            "medium_net": -6993695.0,
+            "small_net": -15980033.0,
+            "institution_net": 22973728.0,
+            "retail_net": -22973728.0,
+            "super_ratio": 2.4365209251193365,
+            "updated_at": "2026-02-11 10:49:10"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "000056",
+        "risk_score": 0.2,
+        "ratio": 0.0,
+        "trap_signals": [
+          "长期流出+单日巨量"
+        ],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.441617",
+        "sector_name": "房地产服务",
+        "sector_code": "房地产服务",
+        "decision_tag": "PASS❌",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.07425742574257421,
+          "capital_3d_net_sum": 22973728.0
+        },
+        "scenario_features": {
+          "net_main_5d": 22973728.0,
+          "net_main_10d": 22973728.0,
+          "net_main_20d": 22973728.0,
+          "net_main_30d": 22973728.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": true,
+        "is_potential_mainline": false,
+        "scenario_type": "TRAP_PUMP_DUMP",
+        "scenario_confidence": 0.7,
+        "scenario_reasons": [
+          "检测到拉高出货模式",
+          "风险评分较低 (0.20)",
+          "超大单占比过高或次日大幅流出"
+        ]
+      },
+      {
+        "last_price": 18.7,
+        "price_3d_change": 0.06310403638430924,
+        "code": "600088.SH",
+        "flow_data": {
+          "stock_code": "600088",
+          "records": [
+            {
+              "stock_code": "600088",
+              "date": "2026-02-10",
+              "main_net_inflow": 111467479.0,
+              "super_large_net": 103734547.0,
+              "large_net": 7732932.0,
+              "medium_net": -44319287.0,
+              "small_net": -67148193.0,
+              "institution_net": 111467479.0,
+              "retail_net": -111467480.0,
+              "super_ratio": 0.9306261156224768,
+              "updated_at": "2026-02-11 10:49:09"
+            }
+          ],
+          "latest": {
+            "stock_code": "600088",
+            "date": "2026-02-10",
+            "main_net_inflow": 111467479.0,
+            "super_large_net": 103734547.0,
+            "large_net": 7732932.0,
+            "medium_net": -44319287.0,
+            "small_net": -67148193.0,
+            "institution_net": 111467479.0,
+            "retail_net": -111467480.0,
+            "super_ratio": 0.9306261156224768,
+            "updated_at": "2026-02-11 10:49:09"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "600088",
+        "risk_score": 0.2,
+        "ratio": 0.0,
+        "trap_signals": [
+          "长期流出+单日巨量"
+        ],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.441617",
+        "sector_name": "文化传媒",
+        "sector_code": "文化传媒",
+        "decision_tag": "PASS❌",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.06310403638430924,
+          "capital_3d_net_sum": 111467479.0
+        },
+        "scenario_features": {
+          "net_main_5d": 111467479.0,
+          "net_main_10d": 111467479.0,
+          "net_main_20d": 111467479.0,
+          "net_main_30d": 111467479.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": true,
+        "is_potential_mainline": false,
+        "scenario_type": "TRAP_PUMP_DUMP",
+        "scenario_confidence": 0.7,
+        "scenario_reasons": [
+          "检测到拉高出货模式",
+          "风险评分较低 (0.20)",
+          "超大单占比过高或次日大幅流出"
+        ]
+      },
+      {
+        "last_price": 61.9,
+        "price_3d_change": 0.47240723120837297,
+        "code": "603150.SH",
+        "flow_data": {
+          "stock_code": "603150",
+          "records": [
+            {
+              "stock_code": "603150",
+              "date": "2026-02-10",
+              "main_net_inflow": 22866912.0,
+              "super_large_net": 20517751.0,
+              "large_net": 2349161.0,
+              "medium_net": -5281529.0,
+              "small_net": -17585383.0,
+              "institution_net": 22866912.0,
+              "retail_net": -22866912.0,
+              "super_ratio": 0.897268113858137,
+              "updated_at": "2026-02-11 10:49:10"
+            }
+          ],
+          "latest": {
+            "stock_code": "603150",
+            "date": "2026-02-10",
+            "main_net_inflow": 22866912.0,
+            "super_large_net": 20517751.0,
+            "large_net": 2349161.0,
+            "medium_net": -5281529.0,
+            "small_net": -17585383.0,
+            "institution_net": 22866912.0,
+            "retail_net": -22866912.0,
+            "super_ratio": 0.897268113858137,
+            "updated_at": "2026-02-11 10:49:10"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "603150",
+        "risk_score": 0.2,
+        "ratio": 0.0,
+        "trap_signals": [
+          "长期流出+单日巨量"
+        ],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.443138",
+        "sector_name": "塑料制品",
+        "sector_code": "塑料制品",
+        "decision_tag": "PASS❌",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.47240723120837297,
+          "capital_3d_net_sum": 22866912.0
+        },
+        "scenario_features": {
+          "net_main_5d": 22866912.0,
+          "net_main_10d": 22866912.0,
+          "net_main_20d": 22866912.0,
+          "net_main_30d": 22866912.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": true,
+        "is_potential_mainline": false,
+        "scenario_type": "TRAP_PUMP_DUMP",
+        "scenario_confidence": 0.7,
+        "scenario_reasons": [
+          "检测到拉高出货模式",
+          "风险评分较低 (0.20)",
+          "超大单占比过高或次日大幅流出"
+        ]
+      },
+      {
+        "last_price": 36.68,
+        "price_3d_change": 0.15673289183222955,
+        "code": "603950.SH",
+        "flow_data": {
+          "stock_code": "603950",
+          "records": [
+            {
+              "stock_code": "603950",
+              "date": "2026-02-10",
+              "main_net_inflow": 3353750.0,
+              "super_large_net": 5141539.0,
+              "large_net": -1787789.0,
+              "medium_net": 5033931.0,
+              "small_net": -8387682.0,
+              "institution_net": 3353750.0,
+              "retail_net": -3353751.0,
+              "super_ratio": 1.533071636228103,
+              "updated_at": "2026-02-11 13:49:07"
+            }
+          ],
+          "latest": {
+            "stock_code": "603950",
+            "date": "2026-02-10",
+            "main_net_inflow": 3353750.0,
+            "super_large_net": 5141539.0,
+            "large_net": -1787789.0,
+            "medium_net": 5033931.0,
+            "small_net": -8387682.0,
+            "institution_net": 3353750.0,
+            "retail_net": -3353751.0,
+            "super_ratio": 1.533071636228103,
+            "updated_at": "2026-02-11 13:49:07"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "603950",
+        "risk_score": 0.2,
+        "ratio": 0.0,
+        "trap_signals": [
+          "长期流出+单日巨量"
+        ],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.443138",
+        "sector_name": "汽车零部件",
+        "sector_code": "汽车零部件",
+        "decision_tag": "PASS❌",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.15673289183222955,
+          "capital_3d_net_sum": 3353750.0
+        },
+        "scenario_features": {
+          "net_main_5d": 3353750.0,
+          "net_main_10d": 3353750.0,
+          "net_main_20d": 3353750.0,
+          "net_main_30d": 3353750.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": true,
+        "is_potential_mainline": false,
+        "scenario_type": "TRAP_PUMP_DUMP",
+        "scenario_confidence": 0.7,
+        "scenario_reasons": [
+          "检测到拉高出货模式",
+          "风险评分较低 (0.20)",
+          "超大单占比过高或次日大幅流出"
+        ]
+      },
+      {
+        "last_price": 17.51,
+        "price_3d_change": 0.08153180975911081,
+        "code": "003015.SZ",
+        "flow_data": {
+          "stock_code": "003015",
+          "records": [
+            {
+              "stock_code": "003015",
+              "date": "2026-02-10",
+              "main_net_inflow": 11995422.0,
+              "super_large_net": 9020073.0,
+              "large_net": 2975349.0,
+              "medium_net": -11002607.0,
+              "small_net": -992815.0,
+              "institution_net": 11995422.0,
+              "retail_net": -11995422.0,
+              "super_ratio": 0.7519596225960203,
+              "updated_at": "2026-02-11 10:49:11"
+            }
+          ],
+          "latest": {
+            "stock_code": "003015",
+            "date": "2026-02-10",
+            "main_net_inflow": 11995422.0,
+            "super_large_net": 9020073.0,
+            "large_net": 2975349.0,
+            "medium_net": -11002607.0,
+            "small_net": -992815.0,
+            "institution_net": 11995422.0,
+            "retail_net": -11995422.0,
+            "super_ratio": 0.7519596225960203,
+            "updated_at": "2026-02-11 10:49:11"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "003015",
+        "risk_score": 0.2,
+        "ratio": 0.0,
+        "trap_signals": [
+          "长期流出+单日巨量"
+        ],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.444658",
+        "sector_name": "光学光电子",
+        "sector_code": "光学光电子",
+        "decision_tag": "PASS❌",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.08153180975911081,
+          "capital_3d_net_sum": 11995422.0
+        },
+        "scenario_features": {
+          "net_main_5d": 11995422.0,
+          "net_main_10d": 11995422.0,
+          "net_main_20d": 11995422.0,
+          "net_main_30d": 11995422.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": true,
+        "is_potential_mainline": false,
+        "scenario_type": "TRAP_PUMP_DUMP",
+        "scenario_confidence": 0.7,
+        "scenario_reasons": [
+          "检测到拉高出货模式",
+          "风险评分较低 (0.20)",
+          "超大单占比过高或次日大幅流出"
+        ]
+      },
+      {
+        "last_price": 3.58,
+        "price_3d_change": 0.03768115942028982,
+        "code": "600575.SH",
+        "flow_data": {
+          "stock_code": "600575",
+          "records": [
+            {
+              "stock_code": "600575",
+              "date": "2026-02-10",
+              "main_net_inflow": 3194726.0,
+              "super_large_net": 2771567.0,
+              "large_net": 423159.0,
+              "medium_net": -1231447.0,
+              "small_net": -1963279.0,
+              "institution_net": 3194726.0,
+              "retail_net": -3194726.0,
+              "super_ratio": 0.8675445092943808,
+              "updated_at": "2026-02-11 10:49:12"
+            }
+          ],
+          "latest": {
+            "stock_code": "600575",
+            "date": "2026-02-10",
+            "main_net_inflow": 3194726.0,
+            "super_large_net": 2771567.0,
+            "large_net": 423159.0,
+            "medium_net": -1231447.0,
+            "small_net": -1963279.0,
+            "institution_net": 3194726.0,
+            "retail_net": -3194726.0,
+            "super_ratio": 0.8675445092943808,
+            "updated_at": "2026-02-11 10:49:12"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "600575",
+        "risk_score": 0.2,
+        "ratio": 0.0,
+        "trap_signals": [
+          "长期流出+单日巨量"
+        ],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.444658",
+        "sector_name": "电力行业",
+        "sector_code": "电力行业",
+        "decision_tag": "PASS❌",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.03768115942028982,
+          "capital_3d_net_sum": 3194726.0
+        },
+        "scenario_features": {
+          "net_main_5d": 3194726.0,
+          "net_main_10d": 3194726.0,
+          "net_main_20d": 3194726.0,
+          "net_main_30d": 3194726.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": true,
+        "is_potential_mainline": false,
+        "scenario_type": "TRAP_PUMP_DUMP",
+        "scenario_confidence": 0.7,
+        "scenario_reasons": [
+          "检测到拉高出货模式",
+          "风险评分较低 (0.20)",
+          "超大单占比过高或次日大幅流出"
+        ]
+      },
+      {
+        "last_price": 5.34,
+        "price_3d_change": 0.08979591836734703,
+        "code": "600207.SH",
+        "flow_data": {
+          "stock_code": "600207",
+          "records": [
+            {
+              "stock_code": "600207",
+              "date": "2026-02-10",
+              "main_net_inflow": 118788786.0,
+              "super_large_net": 111969030.0,
+              "large_net": 6819756.0,
+              "medium_net": -53396263.0,
+              "small_net": -65392522.0,
+              "institution_net": 118788786.0,
+              "retail_net": -118788785.0,
+              "super_ratio": 0.9425892272356415,
+              "updated_at": "2026-02-11 10:49:15"
+            }
+          ],
+          "latest": {
+            "stock_code": "600207",
+            "date": "2026-02-10",
+            "main_net_inflow": 118788786.0,
+            "super_large_net": 111969030.0,
+            "large_net": 6819756.0,
+            "medium_net": -53396263.0,
+            "small_net": -65392522.0,
+            "institution_net": 118788786.0,
+            "retail_net": -118788785.0,
+            "super_ratio": 0.9425892272356415,
+            "updated_at": "2026-02-11 10:49:15"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "600207",
+        "risk_score": 0.2,
+        "ratio": 0.0,
+        "trap_signals": [
+          "长期流出+单日巨量"
+        ],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.446181",
+        "sector_name": "光伏设备",
+        "sector_code": "光伏设备",
+        "decision_tag": "PASS❌",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.08979591836734703,
+          "capital_3d_net_sum": 118788786.0
+        },
+        "scenario_features": {
+          "net_main_5d": 118788786.0,
+          "net_main_10d": 118788786.0,
+          "net_main_20d": 118788786.0,
+          "net_main_30d": 118788786.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": true,
+        "is_potential_mainline": false,
+        "scenario_type": "TRAP_PUMP_DUMP",
+        "scenario_confidence": 0.7,
+        "scenario_reasons": [
+          "检测到拉高出货模式",
+          "风险评分较低 (0.20)",
+          "超大单占比过高或次日大幅流出"
+        ]
+      },
+      {
+        "last_price": 41.18,
+        "price_3d_change": 0.03649635036496339,
+        "code": "301270.SZ",
+        "flow_data": {
+          "stock_code": "301270",
+          "records": [
+            {
+              "stock_code": "301270",
+              "date": "2026-02-10",
+              "main_net_inflow": 1197382.0,
+              "super_large_net": 11407737.0,
+              "large_net": -10210355.0,
+              "medium_net": -33227480.0,
+              "small_net": 32030098.0,
+              "institution_net": 1197382.0,
+              "retail_net": -1197382.0,
+              "super_ratio": 9.527232746107758,
+              "updated_at": "2026-02-11 13:49:06"
+            }
+          ],
+          "latest": {
+            "stock_code": "301270",
+            "date": "2026-02-10",
+            "main_net_inflow": 1197382.0,
+            "super_large_net": 11407737.0,
+            "large_net": -10210355.0,
+            "medium_net": -33227480.0,
+            "small_net": 32030098.0,
+            "institution_net": 1197382.0,
+            "retail_net": -1197382.0,
+            "super_ratio": 9.527232746107758,
+            "updated_at": "2026-02-11 13:49:06"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "301270",
+        "risk_score": 0.2,
+        "ratio": 0.0,
+        "trap_signals": [
+          "长期流出+单日巨量"
+        ],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.446181",
+        "sector_name": "互联网服务",
+        "sector_code": "互联网服务",
+        "decision_tag": "PASS❌",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.03649635036496339,
+          "capital_3d_net_sum": 1197382.0
+        },
+        "scenario_features": {
+          "net_main_5d": 1197382.0,
+          "net_main_10d": 1197382.0,
+          "net_main_20d": 1197382.0,
+          "net_main_30d": 1197382.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": true,
+        "is_potential_mainline": false,
+        "scenario_type": "TRAP_PUMP_DUMP",
+        "scenario_confidence": 0.7,
+        "scenario_reasons": [
+          "检测到拉高出货模式",
+          "风险评分较低 (0.20)",
+          "超大单占比过高或次日大幅流出"
+        ]
+      },
+      {
+        "last_price": 4.88,
+        "price_3d_change": 0.08685968819599123,
+        "code": "000802.SZ",
+        "flow_data": {
+          "stock_code": "000802",
+          "records": [
+            {
+              "stock_code": "000802",
+              "date": "2026-02-10",
+              "main_net_inflow": 55579356.0,
+              "super_large_net": 40038927.0,
+              "large_net": 15540429.0,
+              "medium_net": 7112065.0,
+              "small_net": -62691420.0,
+              "institution_net": 55579356.0,
+              "retail_net": -55579355.0,
+              "super_ratio": 0.7203920642765275,
+              "updated_at": "2026-02-11 10:49:15"
+            }
+          ],
+          "latest": {
+            "stock_code": "000802",
+            "date": "2026-02-10",
+            "main_net_inflow": 55579356.0,
+            "super_large_net": 40038927.0,
+            "large_net": 15540429.0,
+            "medium_net": 7112065.0,
+            "small_net": -62691420.0,
+            "institution_net": 55579356.0,
+            "retail_net": -55579355.0,
+            "super_ratio": 0.7203920642765275,
+            "updated_at": "2026-02-11 10:49:15"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "000802",
+        "risk_score": 0.2,
+        "ratio": 0.0,
+        "trap_signals": [
+          "长期流出+单日巨量"
+        ],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.447702",
+        "sector_name": "文化传媒",
+        "sector_code": "文化传媒",
+        "decision_tag": "PASS❌",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.08685968819599123,
+          "capital_3d_net_sum": 55579356.0
+        },
+        "scenario_features": {
+          "net_main_5d": 55579356.0,
+          "net_main_10d": 55579356.0,
+          "net_main_20d": 55579356.0,
+          "net_main_30d": 55579356.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": true,
+        "is_potential_mainline": false,
+        "scenario_type": "TRAP_PUMP_DUMP",
+        "scenario_confidence": 0.7,
+        "scenario_reasons": [
+          "检测到拉高出货模式",
+          "风险评分较低 (0.20)",
+          "超大单占比过高或次日大幅流出"
+        ]
+      },
+      {
+        "last_price": 9.48,
+        "price_3d_change": 0.0859106529209622,
+        "code": "000779.SZ",
+        "flow_data": {
+          "stock_code": "000779",
+          "records": [
+            {
+              "stock_code": "000779",
+              "date": "2026-02-10",
+              "main_net_inflow": 424055.0,
+              "super_large_net": -995848.0,
+              "large_net": 1419903.0,
+              "medium_net": 19083831.0,
+              "small_net": -19507887.0,
+              "institution_net": 424055.0,
+              "retail_net": -424056.0,
+              "super_ratio": 2.348393486693943,
+              "updated_at": "2026-02-11 10:49:15"
+            }
+          ],
+          "latest": {
+            "stock_code": "000779",
+            "date": "2026-02-10",
+            "main_net_inflow": 424055.0,
+            "super_large_net": -995848.0,
+            "large_net": 1419903.0,
+            "medium_net": 19083831.0,
+            "small_net": -19507887.0,
+            "institution_net": 424055.0,
+            "retail_net": -424056.0,
+            "super_ratio": 2.348393486693943,
+            "updated_at": "2026-02-11 10:49:15"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "000779",
+        "risk_score": 0.2,
+        "ratio": 0.0,
+        "trap_signals": [
+          "长期流出+单日巨量"
+        ],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.447702",
+        "sector_name": "工程咨询服务",
+        "sector_code": "工程咨询服务",
+        "decision_tag": "PASS❌",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.0859106529209622,
+          "capital_3d_net_sum": 424055.0
+        },
+        "scenario_features": {
+          "net_main_5d": 424055.0,
+          "net_main_10d": 424055.0,
+          "net_main_20d": 424055.0,
+          "net_main_30d": 424055.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": true,
+        "is_potential_mainline": false,
+        "scenario_type": "TRAP_PUMP_DUMP",
+        "scenario_confidence": 0.7,
+        "scenario_reasons": [
+          "检测到拉高出货模式",
+          "风险评分较低 (0.20)",
+          "超大单占比过高或次日大幅流出"
+        ]
+      },
+      {
+        "last_price": 7.32,
+        "price_3d_change": 0.022346368715083817,
+        "code": "601949.SH",
+        "flow_data": {
+          "stock_code": "601949",
+          "records": [
+            {
+              "stock_code": "601949",
+              "date": "2026-02-10",
+              "main_net_inflow": 47589387.0,
+              "super_large_net": 35719206.0,
+              "large_net": 11870181.0,
+              "medium_net": 1445826.0,
+              "small_net": -49035213.0,
+              "institution_net": 47589387.0,
+              "retail_net": -47589387.0,
+              "super_ratio": 0.750570836308524,
+              "updated_at": "2026-02-11 13:49:07"
+            }
+          ],
+          "latest": {
+            "stock_code": "601949",
+            "date": "2026-02-10",
+            "main_net_inflow": 47589387.0,
+            "super_large_net": 35719206.0,
+            "large_net": 11870181.0,
+            "medium_net": 1445826.0,
+            "small_net": -49035213.0,
+            "institution_net": 47589387.0,
+            "retail_net": -47589387.0,
+            "super_ratio": 0.750570836308524,
+            "updated_at": "2026-02-11 13:49:07"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "601949",
+        "risk_score": 0.2,
+        "ratio": 0.0,
+        "trap_signals": [
+          "长期流出+单日巨量"
+        ],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.447702",
+        "sector_name": "文化传媒",
+        "sector_code": "文化传媒",
+        "decision_tag": "PASS❌",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.022346368715083817,
+          "capital_3d_net_sum": 47589387.0
+        },
+        "scenario_features": {
+          "net_main_5d": 47589387.0,
+          "net_main_10d": 47589387.0,
+          "net_main_20d": 47589387.0,
+          "net_main_30d": 47589387.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": true,
+        "is_potential_mainline": false,
+        "scenario_type": "TRAP_PUMP_DUMP",
+        "scenario_confidence": 0.7,
+        "scenario_reasons": [
+          "检测到拉高出货模式",
+          "风险评分较低 (0.20)",
+          "超大单占比过高或次日大幅流出"
+        ]
+      },
+      {
+        "last_price": 18.7,
+        "price_3d_change": 0.007000538502961713,
+        "code": "605555.SH",
+        "flow_data": {
+          "stock_code": "605555",
+          "records": [
+            {
+              "stock_code": "605555",
+              "date": "2026-02-10",
+              "main_net_inflow": 919280.0,
+              "super_large_net": -2905500.0,
+              "large_net": 3824780.0,
+              "medium_net": -36995528.0,
+              "small_net": 36076247.0,
+              "institution_net": 919280.0,
+              "retail_net": -919281.0,
+              "super_ratio": 3.160625707075102,
+              "updated_at": "2026-02-11 13:49:08"
+            }
+          ],
+          "latest": {
+            "stock_code": "605555",
+            "date": "2026-02-10",
+            "main_net_inflow": 919280.0,
+            "super_large_net": -2905500.0,
+            "large_net": 3824780.0,
+            "medium_net": -36995528.0,
+            "small_net": 36076247.0,
+            "institution_net": 919280.0,
+            "retail_net": -919281.0,
+            "super_ratio": 3.160625707075102,
+            "updated_at": "2026-02-11 13:49:08"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "605555",
+        "risk_score": 0.2,
+        "ratio": 0.0,
+        "trap_signals": [
+          "长期流出+单日巨量"
+        ],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.447702",
+        "sector_name": "家电行业",
+        "sector_code": "家电行业",
+        "decision_tag": "PASS❌",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.007000538502961713,
+          "capital_3d_net_sum": 919280.0
+        },
+        "scenario_features": {
+          "net_main_5d": 919280.0,
+          "net_main_10d": 919280.0,
+          "net_main_20d": 919280.0,
+          "net_main_30d": 919280.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": true,
+        "is_potential_mainline": false,
+        "scenario_type": "TRAP_PUMP_DUMP",
+        "scenario_confidence": 0.7,
+        "scenario_reasons": [
+          "检测到拉高出货模式",
+          "风险评分较低 (0.20)",
+          "超大单占比过高或次日大幅流出"
+        ]
+      },
+      {
+        "last_price": 2.38,
+        "price_3d_change": 0.3370786516853932,
+        "code": "002323.SZ",
+        "flow_data": {
+          "stock_code": "002323",
+          "records": [
+            {
+              "stock_code": "002323",
+              "date": "2026-02-10",
+              "main_net_inflow": 77925501.0,
+              "super_large_net": 81755100.0,
+              "large_net": -3829599.0,
+              "medium_net": -62751641.0,
+              "small_net": -15173860.0,
+              "institution_net": 77925501.0,
+              "retail_net": -77925501.0,
+              "super_ratio": 1.0491443616127665,
+              "updated_at": "2026-02-11 13:49:07"
+            }
+          ],
+          "latest": {
+            "stock_code": "002323",
+            "date": "2026-02-10",
+            "main_net_inflow": 77925501.0,
+            "super_large_net": 81755100.0,
+            "large_net": -3829599.0,
+            "medium_net": -62751641.0,
+            "small_net": -15173860.0,
+            "institution_net": 77925501.0,
+            "retail_net": -77925501.0,
+            "super_ratio": 1.0491443616127665,
+            "updated_at": "2026-02-11 13:49:07"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "002323",
+        "risk_score": 0.2,
+        "ratio": 0.0,
+        "trap_signals": [
+          "长期流出+单日巨量"
+        ],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.449225",
+        "sector_name": "装修建材",
+        "sector_code": "装修建材",
+        "decision_tag": "PASS❌",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.3370786516853932,
+          "capital_3d_net_sum": 77925501.0
+        },
+        "scenario_features": {
+          "net_main_5d": 77925501.0,
+          "net_main_10d": 77925501.0,
+          "net_main_20d": 77925501.0,
+          "net_main_30d": 77925501.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": true,
+        "is_potential_mainline": false,
+        "scenario_type": "TRAP_PUMP_DUMP",
+        "scenario_confidence": 0.7,
+        "scenario_reasons": [
+          "检测到拉高出货模式",
+          "风险评分较低 (0.20)",
+          "超大单占比过高或次日大幅流出"
+        ]
+      },
+      {
+        "last_price": 6.95,
+        "price_3d_change": 0.010174418604651073,
+        "code": "600825.SH",
+        "flow_data": {
+          "stock_code": "600825",
+          "records": [
+            {
+              "stock_code": "600825",
+              "date": "2026-02-10",
+              "main_net_inflow": 12055963.0,
+              "super_large_net": 9585669.0,
+              "large_net": 2470294.0,
+              "medium_net": -13287901.0,
+              "small_net": 1231939.0,
+              "institution_net": 12055963.0,
+              "retail_net": -12055962.0,
+              "super_ratio": 0.795097745406153,
+              "updated_at": "2026-02-11 13:49:07"
+            }
+          ],
+          "latest": {
+            "stock_code": "600825",
+            "date": "2026-02-10",
+            "main_net_inflow": 12055963.0,
+            "super_large_net": 9585669.0,
+            "large_net": 2470294.0,
+            "medium_net": -13287901.0,
+            "small_net": 1231939.0,
+            "institution_net": 12055963.0,
+            "retail_net": -12055962.0,
+            "super_ratio": 0.795097745406153,
+            "updated_at": "2026-02-11 13:49:07"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "600825",
+        "risk_score": 0.2,
+        "ratio": 0.0,
+        "trap_signals": [
+          "长期流出+单日巨量"
+        ],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.449225",
+        "sector_name": "文化传媒",
+        "sector_code": "文化传媒",
+        "decision_tag": "PASS❌",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.010174418604651073,
+          "capital_3d_net_sum": 12055963.0
+        },
+        "scenario_features": {
+          "net_main_5d": 12055963.0,
+          "net_main_10d": 12055963.0,
+          "net_main_20d": 12055963.0,
+          "net_main_30d": 12055963.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": true,
+        "is_potential_mainline": false,
+        "scenario_type": "TRAP_PUMP_DUMP",
+        "scenario_confidence": 0.7,
+        "scenario_reasons": [
+          "检测到拉高出货模式",
+          "风险评分较低 (0.20)",
+          "超大单占比过高或次日大幅流出"
+        ]
+      },
+      {
+        "last_price": 27.79,
+        "price_3d_change": 0.07338740826573961,
+        "code": "300988.SZ",
+        "flow_data": {
+          "stock_code": "300988",
+          "records": [
+            {
+              "stock_code": "300988",
+              "date": "2026-02-10",
+              "main_net_inflow": 3366043.0,
+              "super_large_net": -2825256.0,
+              "large_net": 6191299.0,
+              "medium_net": -3130674.0,
+              "small_net": -235369.0,
+              "institution_net": 3366043.0,
+              "retail_net": -3366043.0,
+              "super_ratio": 0.8393404362332864,
+              "updated_at": "2026-02-11 13:49:08"
+            }
+          ],
+          "latest": {
+            "stock_code": "300988",
+            "date": "2026-02-10",
+            "main_net_inflow": 3366043.0,
+            "super_large_net": -2825256.0,
+            "large_net": 6191299.0,
+            "medium_net": -3130674.0,
+            "small_net": -235369.0,
+            "institution_net": 3366043.0,
+            "retail_net": -3366043.0,
+            "super_ratio": 0.8393404362332864,
+            "updated_at": "2026-02-11 13:49:08"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "300988",
+        "risk_score": 0.2,
+        "ratio": 0.0,
+        "trap_signals": [
+          "长期流出+单日巨量"
+        ],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.450710",
+        "sector_name": "通用设备",
+        "sector_code": "通用设备",
+        "decision_tag": "PASS❌",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.07338740826573961,
+          "capital_3d_net_sum": 3366043.0
+        },
+        "scenario_features": {
+          "net_main_5d": 3366043.0,
+          "net_main_10d": 3366043.0,
+          "net_main_20d": 3366043.0,
+          "net_main_30d": 3366043.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": true,
+        "is_potential_mainline": false,
+        "scenario_type": "TRAP_PUMP_DUMP",
+        "scenario_confidence": 0.7,
+        "scenario_reasons": [
+          "检测到拉高出货模式",
+          "风险评分较低 (0.20)",
+          "超大单占比过高或次日大幅流出"
+        ]
+      },
+      {
+        "last_price": 5.64,
+        "price_3d_change": 0.02919708029197083,
+        "code": "000665.SZ",
+        "flow_data": {
+          "stock_code": "000665",
+          "records": [
+            {
+              "stock_code": "000665",
+              "date": "2026-02-10",
+              "main_net_inflow": 7045328.0,
+              "super_large_net": 14210311.0,
+              "large_net": -7164983.0,
+              "medium_net": -7632884.0,
+              "small_net": 587556.0,
+              "institution_net": 7045328.0,
+              "retail_net": -7045328.0,
+              "super_ratio": 2.016983595369868,
+              "updated_at": "2026-02-11 13:49:09"
+            }
+          ],
+          "latest": {
+            "stock_code": "000665",
+            "date": "2026-02-10",
+            "main_net_inflow": 7045328.0,
+            "super_large_net": 14210311.0,
+            "large_net": -7164983.0,
+            "medium_net": -7632884.0,
+            "small_net": 587556.0,
+            "institution_net": 7045328.0,
+            "retail_net": -7045328.0,
+            "super_ratio": 2.016983595369868,
+            "updated_at": "2026-02-11 13:49:09"
+          },
+          "from_cache": true,
+          "cache_date": "2026-02-10"
+        },
+        "code_6digit": "000665",
+        "risk_score": 0.2,
+        "ratio": 0.0,
+        "trap_signals": [
+          "长期流出+单日巨量"
+        ],
+        "capital_type": "UNCLEAR",
+        "scan_time": "2026-02-11T14:18:43.451994",
+        "sector_name": "文化传媒",
+        "sector_code": "文化传媒",
+        "decision_tag": "PASS❌",
+        "risk_features": {
+          "is_price_up_3d_capital_not_follow": false,
+          "price_3d_change": 0.02919708029197083,
+          "capital_3d_net_sum": 7045328.0
+        },
+        "scenario_features": {
+          "net_main_5d": 7045328.0,
+          "net_main_10d": 7045328.0,
+          "net_main_20d": 7045328.0,
+          "net_main_30d": 7045328.0,
+          "one_day_pump_next_day_dump": false,
+          "confidence": 0.0,
+          "reasons": [
+            "数据不足30天"
+          ],
+          "first_pump_after_30d_outflow": false,
+          "sector_stage": 2,
+          "stage_name": "主升"
+        },
+        "is_tail_rally": false,
+        "is_potential_trap": true,
+        "is_potential_mainline": false,
+        "scenario_type": "TRAP_PUMP_DUMP",
+        "scenario_confidence": 0.7,
+        "scenario_reasons": [
+          "检测到拉高出货模式",
+          "风险评分较低 (0.20)",
+          "超大单占比过高或次日大幅流出"
+        ]
+      }
+    ],
+    "blacklist": []
+  }
+}
