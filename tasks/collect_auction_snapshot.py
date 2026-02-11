@@ -203,8 +203,11 @@ class AuctionSnapshotCollector:
             import xtquant.xtdata as xtdata
             import pandas as pd
 
-            # 获取前5日K线数据
-            hist_data = xtdata.get_market_data(
+            # 🔥 关键修复：使用 get_market_data_ex（项目成功案例使用的API）
+            # get_market_data_ex 返回：{code: DataFrame, ...}
+            # DataFrame列名是字段名，索引是时间
+            hist_data = xtdata.get_market_data_ex(
+                field_list=['volume'],
                 stock_list=codes,
                 period='1d',
                 count=5,
@@ -215,44 +218,38 @@ class AuctionSnapshotCollector:
             result = {}
             invalid_count = 0
 
-            # QMT返回：{'volume': DataFrame, 'time': DataFrame, ...}
-            # DataFrame索引是股票代码
-            if hist_data and 'volume' in hist_data:
-                volume_df = hist_data['volume']
+            for code in codes:
+                try:
+                    # get_market_data_ex 返回结构：{code: DataFrame, ...}
+                    if code in hist_data:
+                        code_data = hist_data[code]
 
-                for code in codes:
-                    try:
-                        # ✅ P0修复：QMT DataFrame的列名是股票代码，应使用 [] 访问
-                        if code in volume_df.columns:
-                            volumes = volume_df[code]
+                        # 检查数据有效性
+                        if isinstance(code_data, pd.DataFrame):
+                            if 'volume' in code_data.columns and len(code_data) > 0:
+                                volumes = code_data['volume'].tolist()
+                                valid_vols = [v for v in volumes if v is not None and v > 0]
 
-                            # 严格验证：必须是Series且有有效数据
-                            if isinstance(volumes, pd.Series) and len(volumes) > 0:
-                                valid_vols = volumes.dropna()
-                                if len(valid_vols) > 0:
-                                    avg_volume_per_day = float(valid_vols.mean())
+                                if len(valid_vols) >= 1:  # 至少1天有效数据
+                                    avg_volume_per_day = sum(valid_vols) / len(valid_vols)
                                     avg_volume_per_minute = avg_volume_per_day / 240.0
                                     result[code] = avg_volume_per_minute
                                 else:
-                                    # 全为NaN
                                     result[code] = None
                                     invalid_count += 1
                             else:
-                                # 不是Series或为空
                                 result[code] = None
                                 invalid_count += 1
                         else:
-                            # 股票不在列中
                             result[code] = None
                             invalid_count += 1
-                    except Exception as e:
-                        logger.warning(f"⚠️ 处理{code}历史数据失败: {e}")
+                    else:
                         result[code] = None
                         invalid_count += 1
-            else:
-                # 无volume字段，全部无效
-                result = {code: None for code in codes}
-                invalid_count = len(codes)
+                except Exception as e:
+                    logger.warning(f"⚠️ 处理{code}历史数据失败: {e}")
+                    result[code] = None
+                    invalid_count += 1
 
             # 数据质量告警
             if len(codes) > 0:
