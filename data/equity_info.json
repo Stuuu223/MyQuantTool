@@ -1,0 +1,20 @@
+{
+  "300997.SZ": {
+    "name": "欢乐家",
+    "float_shares": 150000000.0,
+    "total_shares": 200000000.0,
+    "updated_at": "2026-02-11"
+  },
+  "603697.SH": {
+    "name": "有友食品",
+    "float_shares": 120000000.0,
+    "total_shares": 180000000.0,
+    "updated_at": "2026-02-11"
+  },
+  "601869.SH": {
+    "name": "长飞科技",
+    "float_shares": 500000000.0,
+    "total_shares": 800000000.0,
+    "updated_at": "2026-02-11"
+  }
+}

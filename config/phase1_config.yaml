@@ -1,0 +1,80 @@
+# Phase 1 配置文件
+# 单股票实时监控配置
+
+# 监控股票列表
+monitor_codes:
+  - "300997.SZ"  # 欢乐家
+  - "603697.SH"  # 有友食品
+  # - "601869.SH"  # 长飞科技
+
+# 刷新间隔（秒）
+refresh_interval: 5
+
+# QPST四维分析参数
+qpst_params:
+  # Tick级别窗口（秒）
+  tick_window: 20
+  
+  # 日线级别窗口（天）
+  day_window: 5
+  
+  # 是否启用持久化
+  enable_persistence: true
+
+# 预警配置
+alert_config:
+  # 预警通知方式（多选）
+  notification_methods:
+    - "log"        # 日志记录
+    # - "dingtalk"   # 钉钉机器人
+    # - "wechat"     # 企业微信
+    # - "email"      # 邮件
+  
+  # 钉钉机器人 Webhook（如果启用）
+  dingtalk_webhook: "https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN"
+  
+  # 企业微信机器人 Webhook（如果启用）
+  wechat_webhook: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY"
+  
+  # 邮件配置（如果启用）
+  email:
+    smtp_server: "smtp.qq.com"
+    smtp_port: 465
+    sender: "your_email@qq.com"
+    password: "your_password"
+    receivers:
+      - "receiver1@example.com"
+      - "receiver2@example.com"
+
+# 日志配置
+log_config:
+  # 日志级别（DEBUG, INFO, WARNING, ERROR）
+  level: "INFO"
+  
+  # 日志保存路径
+  monitor_log: "logs/smart_flow_monitor.log"
+  trap_alert_log: "logs/trap_alerts/"
+  
+  # 日志轮转
+  max_bytes: 10485760  # 10MB
+  backup_count: 5
+
+# 数据路径
+data_paths:
+  equity_info: "data/equity_info.json"
+  tick_history_db: "data/tick_history.db"
+  kline_cache: "data/kline_cache/"
+
+# 验证标准
+validation:
+  # 验证周期（天）
+  validation_period: 28  # 4周
+  
+  # 最小预警次数
+  min_alerts: 3
+  
+  # 目标准确率
+  target_accuracy: 0.7  # 70%
+  
+  # 最大误报率
+  max_false_positive_rate: 0.2  # 20%
