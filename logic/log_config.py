@@ -162,3 +162,33 @@ if __name__ == "__main__":
 
     print("\n3️⃣ 调试模式:")
     use_debug_mode()
+
+
+# ===== 条件编译：调试目标股票 =====
+# 调试模式标志（通过环境变量控制）
+DEBUG_TARGET_STOCK = os.environ.get('DEBUG_TARGET_STOCK', '')  # 默认为空（关闭）
+
+
+def is_debug_target(stock_code: str) -> bool:
+    """
+    判断是否为调试目标股票
+
+    Args:
+        stock_code: 股票代码
+
+    Returns:
+        bool: 是否启用调试输出
+
+    Example:
+        # 启用调试：export DEBUG_TARGET_STOCK=601869.SH
+        # 关闭调试：unset DEBUG_TARGET_STOCK
+
+        # 调试多只股票（逗号分隔）
+        # export DEBUG_TARGET_STOCK=601869.SH,300997.SZ
+    """
+    if not DEBUG_TARGET_STOCK:
+        return False
+
+    # 支持多个股票（逗号分隔）
+    target_stocks = [s.strip() for s in DEBUG_TARGET_STOCK.split(',')]
+    return stock_code in target_stocks
