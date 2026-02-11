@@ -222,8 +222,9 @@ class AuctionSnapshotCollector:
 
                 for code in codes:
                     try:
-                        if code in volume_df.index:
-                            volumes = volume_df.loc[code]
+                        # ✅ P0修复：QMT DataFrame的列名是股票代码，应使用 [] 访问
+                        if code in volume_df.columns:
+                            volumes = volume_df[code]
 
                             # 严格验证：必须是Series且有有效数据
                             if isinstance(volumes, pd.Series) and len(volumes) > 0:
@@ -241,7 +242,7 @@ class AuctionSnapshotCollector:
                                 result[code] = None
                                 invalid_count += 1
                         else:
-                            # 股票不在索引中
+                            # 股票不在列中
                             result[code] = None
                             invalid_count += 1
                     except Exception as e:
@@ -392,10 +393,12 @@ class AuctionSnapshotCollector:
                     if invalid_rate > 0.5:
                         logger.warning(f"⚠️ 批次{batch_num}历史数据无效率{invalid_rate*100:.1f}%，量比计算可能不准确")
 
-                    # 拦截阈值：超过90%数据无效，记录严重告警
+                    # ✅ P1修复：拦截阈值：超过90%数据无效，跳过此批次
                     if invalid_rate > 0.9:
-                        logger.error(f"❌ 批次{batch_num}历史数据严重缺失（{invalid_rate*100:.1f}%），建议检查QMT环境")
-                
+                        logger.error(f"❌ 批次{batch_num}历史数据严重缺失（{invalid_rate*100:.1f}%），跳过此批次处理")
+                        failed_count += len(batch_codes)
+                        continue  # 跳过当前批次，不处理无效数据
+
                 # 准备批量保存的数据
                 batch_snapshots = []
                 
