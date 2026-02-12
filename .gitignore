@@ -103,3 +103,7 @@ config/qmt_config.json
 config/tushare_token.txt
 config/config.json  # 🔥 [P0] 包含 API Key，必须忽略
 config/config.local.json  # 本地配置模板
+
+# Streamlit (已废弃，使用Rich CLI)
+.streamlit/
+pages/
