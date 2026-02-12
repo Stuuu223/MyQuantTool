@@ -81,15 +81,18 @@ python tools/run_backtest_1m_v2.py
 ## 📂 tasks/ - 任务/运行目录
 
 ### 运行任务
-- `run_dashboard.py` - 运行主仪表板
-- `run_dashboard_home.py` - 运行主页仪表板
+- `run_event_driven_monitor.py` - 事件驱动持续监控（核心）
+- `run_full_market_scan.py` - 全市场三漏斗扫描
 - `run_pre_market_warmup.py` - 盘前预热任务
-- `run_scan_v19_final.py` - 运行扫描任务（V19版）
+- `run_triple_funnel_scan.py` - 三漏斗扫描系统
+- `auction_scan.py` - 竞价扫描（09:20执行）
+- `daily_summary.py` - 每日统计（14:55执行）
 
 **使用方式**:
 ```bash
-python tasks/run_dashboard.py
-python tasks/run_scan_v19_final.py
+python tasks/run_event_driven_monitor.py
+python tasks/run_full_market_scan.py
+python tasks/run_triple_funnel_scan.py
 ```
 
 ---
@@ -101,7 +104,6 @@ python tasks/run_scan_v19_final.py
 - `daily_update.py` - 每日更新脚本
 - `generate_concept_map.py` - 生成概念映射
 - `init_qmt.py` - QMT 初始化脚本
-- `streamlit_fixer.py` - Streamlit 修复脚本
 
 **使用方式**:
 ```bash
@@ -186,7 +188,7 @@ config = Config()
 - `risk_control.py` - 风控管理器
 - `iron_rule_*.py` - 铁律系统
 
-### UI 辅助模块
+### CLI 监控模块
 - `monitor.py` - 监控模块
 - `logger.py` - 日志模块
 - `error_handler.py` - 错误处理
@@ -194,23 +196,18 @@ config = Config()
 
 ---
 
-## 📂 ui/ - UI 目录
+## 📺 Rich CLI 监控终端（V11.2.0）
 
-### Streamlit 页面
-- `main_dashboard.py` - 主仪表板
-- `dashboard_home.py` - 主页仪表板
-- `single_stock.py` - 个股分析页面
-- `historical_replay.py` - 历史复盘页面
-- `capital*.py` - 资金分析相关页面
-- `dragon_strategy.py` - 龙头战法页面
-- `limit_up*.py` - 涨停板分析页面
-- `backtest.py` - 回测页面
-- `strategy_*_tab.py` - 策略相关标签页
+### 核心功能
+- `cli_monitor.py` - Rich CLI 监控终端（零延迟、轻量级、事件驱动）
+- 实时显示三把斧拦截结果
+- 显示板块共振状态
+- 显示低风险机会池
 
 **使用方式**:
 ```bash
-streamlit run ui/main_dashboard.py
-streamlit run ui/single_stock.py
+python main.py cli-monitor
+python tools/cli_monitor.py
 ```
 
 ---
@@ -323,14 +320,6 @@ streamlit run ui/single_stock.py
 
 ---
 
-## 📂 .streamlit/ - Streamlit 配置
-
-### Streamlit 配置
-- Streamlit 全局配置文件
-- 主题配置、页面设置等
-
----
-
 ## 📂 __pycache__/ - Python 缓存
 
 ### Python 字节码缓存
@@ -346,7 +335,7 @@ streamlit run ui/single_stock.py
 - 任务类：`run_*.py`
 - 脚本类：动词开头（clean、generate、init）
 - 策略类：`strategy_*.py`
-- UI 类：页面名称（如 `dashboard_home.py`）
+- CLI类：页面名称（如 `cli_monitor.py`）
 
 ### 目录命名
 - 小写字母，使用下划线分隔
@@ -359,12 +348,11 @@ streamlit run ui/single_stock.py
 | 目录 | 文件数 | 用途 |
 |------|--------|------|
 | 根目录 | 15+ | 核心配置和启动文件 |
-| tools/ | 30+ | 工具和分析模块（含 Rich CLI 监控终端） |
-| tasks/ | 4+ | 运行任务和定时任务 |
-| scripts/ | 45+ | 维护和初始化脚本 |
+| tools/ | 18+ | 工具和分析模块（含 Rich CLI 监控终端） |
+| tasks/ | 18+ | 运行任务和定时任务（含竞价系统） |
+| scripts/ | 9 | 维护和初始化脚本 |
 | config/ | 12+ | 配置文件 |
-| logic/ | 200+ | 核心逻辑模块（含三把斧体系、数据抽象层） |
-| ui/ | 70+ | Streamlit UI 页面 |
+| logic/ | 400+ | 核心逻辑模块（含三把斧体系、数据抽象层） |
 | docs/ | 20+ | 文档文件（分4个子目录） |
 | tests/ | - | 测试文件 |
 | logs/ | - | 日志文件 |
@@ -374,7 +362,7 @@ streamlit run ui/single_stock.py
 | xtquant/ | - | QMT 数据源 |
 | venv_qmt/ | - | QMT 虚拟环境 |
 
-**总计**: 400+ 文件
+**总计**: 500+ 文件
 
 ---
 
@@ -389,12 +377,32 @@ python tools/cli_monitor.py
 start_event_driven_monitor.bat
 ```
 
-### 2. 启动 UI 应用
+### 2. 启动事件驱动监控
 ```bash
-# 启动 Streamlit UI
-streamlit run ui/main_dashboard.py
+# 启动事件驱动监控（推荐）
+python main.py monitor
 
-# 或使用启动脚本
+# 使用 bat 文件启动
+start_event_driven_monitor.bat
+```
+
+### 3. 执行全市场扫描
+```bash
+# 执行全市场扫描
+python main.py scan
+
+# 或使用任务脚本
+python tasks/run_full_market_scan.py
+```
+
+### 4. 运行工具脚本
+```bash
+# 使用分析工具
+python tools/comprehensive_stock_tool.py 002514.SZ
+
+# 运行回测
+python tools/run_backtest_1m_v2.py
+```
 start.bat
 ```
 
