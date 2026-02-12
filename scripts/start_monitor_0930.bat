@@ -1,68 +1,76 @@
 @echo off
-chcp 65001 > nul
 setlocal enabledelayedexpansion
 
 echo ========================================
-echo CLI监控自动启动器 V1.0
+echo CLI Monitor Launcher V1.0
 echo ========================================
 echo.
 
-REM 切换到项目根目录
+REM Change to project root
 cd /d E:\MyQuantTool
 
-echo [INFO] 目标时间: 09:30:00
-echo [INFO] 当前时间: %TIME%
-echo.
+REM === Target time: 09:30:00 => 9*3600 + 30*60 ===
+set TARGET_HH=9
+set TARGET_MM=30
+set TARGET_SS=0
+set /a TARGET_SECONDS=%TARGET_HH%*3600+%TARGET_MM%*60+%TARGET_SS%
 
-REM 等待到09:30:00
-:WAIT_LOOP
-for /f "tokens=1-3 delims=:" %%a in ("%TIME%") do (
+:CHECK_TIME
+REM Use delims=:. to correctly separate HH:MM:SS.ms
+for /f "tokens=1-4 delims=:." %%a in ("%TIME%") do (
     set HH=%%a
     set MM=%%b
     set SS=%%c
 )
 
-REM 去除前导空格
-set HH=%HH: =0%
-set MM=%MM: =0%
+REM Remove leading spaces (DO NOT pad with zeros - causes octal error)
+set HH=%HH: =%
+set MM=%MM: =%
+set SS=%SS: =%
 set SS=%SS:~0,2%
 
-REM 计算当前秒数
-set /a CURRENT_SECONDS=(%HH%*3600)+(%MM%*60)+%SS%
-set /a TARGET_SECONDS=(9*3600)+(30*60)+0
+REM Calculate current seconds using 1%HH% to force decimal interpretation
+set /a CURRENT_SECONDS=1%HH%*3600+1%MM%*60+1%SS%
 
-REM 显示当前时间
-echo [WAIT] 当前时间: %HH%:%MM%:%SS% - 等待中...
+echo [INFO] Target time: 09:30:00
+echo [INFO] Current time: %HH%:%MM%:%SS%  -> %CURRENT_SECONDS% seconds
 
-if %CURRENT_SECONDS% LSS %TARGET_SECONDS% (
-    timeout /t 5 /nobreak > nul
-    goto WAIT_LOOP
+REM Use GEQ to check if past 09:30
+if %CURRENT_SECONDS% GEQ %TARGET_SECONDS% (
+    echo.
+    echo [INFO] Past 09:30, starting monitor now...
+    goto START_MONITOR
+) else (
+    echo [WAIT] Current time: %HH%:%MM%:%SS% - Waiting...
+    timeout /t 5 /nobreak >nul
+    goto CHECK_TIME
 )
 
+:START_MONITOR
 echo.
 echo ========================================
-echo [START] 启动CLI监控 - %TIME%
+echo [START] Starting CLI monitor - %TIME%
 echo ========================================
 echo.
 
-REM 激活虚拟环境并启动监控
+REM Activate virtual environment and start monitor
 call venv_qmt\Scripts\activate.bat
 
-echo [INFO] 正在启动CLI监控面板...
-echo [INFO] 监控内容：
-echo   - 🛡️ 时机斧：板块雷达
-echo   - 🎯 资格斧：狙击镜
-echo   - 🚫 防守斧：拦截网
+echo [INFO] Starting CLI monitor panel...
+echo [INFO] Monitor content:
+echo   - [Timing Axe] Sector Radar
+echo   - [Qualification Axe] Sniper Scope
+echo   - [Defensive Axe] Interception Net
 echo.
-echo [TIP] 按 Ctrl+C 退出监控
+echo [TIP] Press Ctrl+C to exit monitor
 echo.
 
-REM 运行CLI监控
+REM Run CLI monitor
 python tools/cli_monitor.py
 
 echo.
 echo ========================================
-echo [DONE] 监控已退出 - %TIME%
+echo [DONE] Monitor exited - %TIME%
 echo ========================================
 echo.
 

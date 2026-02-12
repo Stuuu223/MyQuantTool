@@ -1,5 +1,4 @@
 @echo off
-chcp 65001 > nul
 setlocal enabledelayedexpansion
 
 echo ========================================
@@ -20,35 +19,44 @@ for /f "tokens=1-3 delims=/- " %%a in ("%DATE%") do (
 REM 格式化日期为YYYY-MM-DD
 set TODAY=%YEAR%-%MONTH%-%DAY%
 
+REM === 目标时间：09:24:50 => 9*3600 + 24*60 + 50 ===
+set TARGET_HH=9
+set TARGET_MM=24
+set TARGET_SS=50
+set /a TARGET_SECONDS=%TARGET_HH%*3600+%TARGET_MM%*60+%TARGET_SS%
+
 echo [INFO] 当前日期: %TODAY%
 echo [INFO] 目标时间: 09:24:50
 echo.
 
-REM 等待到09:24:50
-:WAIT_LOOP
-for /f "tokens=1-3 delims=:" %%a in ("%TIME%") do (
+:CHECK_TIME
+REM 使用 delims=:. 正确分隔时分秒和小数秒
+for /f "tokens=1-4 delims=:." %%a in ("%TIME%") do (
     set HH=%%a
     set MM=%%b
     set SS=%%c
 )
 
-REM 去除前导空格
+REM 去掉前导空格并补零
 set HH=%HH: =0%
 set MM=%MM: =0%
+set SS=%SS: =0%
 set SS=%SS:~0,2%
 
-REM 计算当前秒数
-set /a CURRENT_SECONDS=(%HH%*3600)+(%MM%*60)+%SS%
-set /a TARGET_SECONDS=(9*3600)+(24*60)+50
+REM 这里只允许纯数字，不与if混合
+set /a CURRENT_SECONDS=%HH%*3600+%MM%*60+%SS%
 
-REM 显示当前时间
-echo [WAIT] 当前时间: %HH%:%MM%:%SS% - 等待中...
-
-if %CURRENT_SECONDS% LSS %TARGET_SECONDS% (
-    timeout /t 5 /nobreak > nul
-    goto WAIT_LOOP
+REM 使用 GEQ 判断是否已过 09:24:50
+if %CURRENT_SECONDS% GEQ %TARGET_SECONDS% (
+    echo [WAIT] 当前时间: %HH%:%MM%:%SS% - 已过目标时间，立即启动...
+    goto START_AUCTION
+) else (
+    echo [WAIT] 当前时间: %HH%:%MM%:%SS% - 等待中...
+    timeout /t 5 /nobreak >nul
+    goto CHECK_TIME
 )
 
+:START_AUCTION
 echo.
 echo ========================================
 echo [START] 启动竞价采集 - %TIME%
@@ -61,11 +69,12 @@ call venv_qmt\Scripts\activate.bat
 REM 创建日志目录
 if not exist "logs\auction" mkdir logs\auction
 
-REM 运行竞价采集
+REM 运行竞价采集（Windows CMD不支持tee，改用重定向）
 echo [RUN] python tasks/collect_auction_snapshot.py --date %TODAY%
 echo.
 
-python tasks/collect_auction_snapshot.py --date %TODAY% 2>&1 | tee logs\auction\%TODAY%.log
+python tasks/collect_auction_snapshot.py --date %TODAY% > logs\auction\%TODAY%.log 2>&1
+type logs\auction\%TODAY%.log
 
 echo.
 echo ========================================
