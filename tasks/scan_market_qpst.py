@@ -23,7 +23,8 @@
     python tasks/scan_market_qpst.py --no-multiprocess
 
 作者：量化CTO
-日期：2026-02-11
+日期：2026-02-12
+版本：V2.1 (修复xtdata导入 + Windows编码)
 """
 
 import os
@@ -34,6 +35,12 @@ import argparse
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict
+
+# 🔥 [Windows Fix] 强制UTF-8输出（防止中文乱码）
+if sys.platform == 'win32':
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
 # 添加项目根目录到路径
 ROOT_DIR = Path(__file__).parent.parent
@@ -56,6 +63,52 @@ from logic.trap_detector_batch import TrapDetectorBatch
 console = Console()
 
 
+def check_qmt_environment() -> bool:
+    """
+    启动前QMT环境校验
+    
+    Returns:
+        bool: 环境正常返回 True，异常返回 False
+    """
+    console.print("\n[检查中] 验证QMT环境...\n", style="yellow")
+    
+    try:
+        # 🔥 [Critical Fix] 正确导入 xtdata
+        from xtquant import xtdata
+        from xtquant import xttrader
+        
+        console.print("✅ xtquant 模块加载成功", style="green")
+        
+        # 测试连接（可选，避免阻塞）
+        try:
+            test_list = xtdata.get_stock_list_in_sector('沪深A股')
+            if test_list:
+                console.print(f"✅ QMT数据服务正常 (测试获取 {len(test_list)} 只股票)\n", style="green")
+                return True
+            else:
+                console.print("⚠️  数据服务返回空列表，请检查QMT登录状态\n", style="yellow")
+                return False
+        except Exception as conn_err:
+            console.print(f"⚠️  QMT连接测试失败: {conn_err}\n", style="yellow")
+            console.print("   提示: 如果QMT已登录，此警告可忽略\n", style="dim")
+            return True  # 允许继续（可能是超时导致）
+            
+    except ImportError as e:
+        console.print(f"\n❌ QMT环境异常: {e}\n", style="bold red")
+        console.print("⚠️  请确认：", style="yellow")
+        console.print("   1. QMT客户端已安装 (MiniQuant 或 QMT专业版)")
+        console.print("   2. Python环境已连接到 QMT/userdata_mini")
+        console.print("   3. xtquant 版本兼容 Python 3.10 (64-bit)")
+        console.print("\n修复建议：")
+        console.print("   pip install xtquant --upgrade")
+        console.print("   或检查 QMT 安装目录下的 Python 环境配置\n")
+        return False
+    
+    except Exception as e:
+        console.print(f"\n❌ 环境检测异常: {e}\n", style="bold red")
+        return False
+
+
 def print_banner():
     """打印启动横幅"""
     banner = """
@@ -70,17 +123,53 @@ def print_banner():
 
 
 def load_stock_list() -> List[str]:
-    """加载全A股股票列表"""
+    """
+    加载全A股股票列表
+    
+    Returns:
+        List[str]: 股票代码列表（如 ['000001.SZ', '600000.SH', ...]）
+    """
     with console.status("[加载中] 获取全A股股票列表...", spinner="dots"):
         try:
-            import xtdata
+            # 🔥 [Critical Fix] 正确导入 xtdata（从 xtquant 包导入）
+            from xtquant import xtdata
+            
             # 获取所有A股股票
             stock_list = xtdata.get_stock_list_in_sector('沸腾板块.A股列表')
+            
+            if not stock_list:
+                console.print("\n⚠️  未获取到股票列表，可能原因：", style="yellow")
+                console.print("   1. QMT客户端未登录")
+                console.print("   2. 数据服务未启动")
+                console.print("   3. 板块名称错误（尝试使用 '沪深A股'）\n")
+                
+                # 尝试备用板块
+                console.print("[尝试] 使用备用板块 '沪深A股'...", style="yellow")
+                stock_list = xtdata.get_stock_list_in_sector('沪深A股')
+                
+                if not stock_list:
+                    console.print("\n❌ 仍然无法获取股票列表\n", style="bold red")
+                    console.print("⚠️  请确认：")
+                    console.print("   1. 打开 QMT 客户端")
+                    console.print("   2. 登录账户（或使用离线模式）")
+                    console.print("   3. 等待数据服务初始化完成（通常需要 10-30 秒）\n")
+                    sys.exit(1)
+            
             console.print(f"\n✅ 成功加载 {len(stock_list)} 只股票\n", style="bold green")
             return stock_list
+            
+        except ImportError as e:
+            console.print(f"\n❌ QMT模块导入失败: {e}\n", style="bold red")
+            console.print("⚠️  这不应该发生（环境检测已通过）\n", style="yellow")
+            console.print("   请重新运行脚本或检查 Python 环境\n")
+            sys.exit(1)
+            
         except Exception as e:
             console.print(f"\n❌ 加载股票列表失败: {e}\n", style="bold red")
             console.print("⚠️  请确认QMT客户端已登录\n", style="yellow")
+            import traceback
+            console.print("\n详细错误信息:", style="dim")
+            traceback.print_exc()
             sys.exit(1)
 
 
@@ -95,7 +184,7 @@ def run_scan(scan_time: str, stock_list: List[str], use_multiprocess: bool = Tru
     # 初始化扫描器
     scanner = MarketScanner(
         use_multiprocess=use_multiprocess,
-        batch_size=batch_size  # 🔥 [P1 FIX] 传递分批大小参数
+        batch_size=batch_size
     )
     
     start_time = time.time()
@@ -174,7 +263,7 @@ def save_results(trap_list: List[Dict], output_dir: str):
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     json_file = output_path / f"scan_qpst_{timestamp}.json"
     
-    # 保存JSON
+    # 🔥 [Windows Fix] 显式指定UTF-8编码
     with open(json_file, 'w', encoding='utf-8') as f:
         json.dump({
             'scan_time': datetime.now().isoformat(),
@@ -218,10 +307,23 @@ def main():
         help="预筛选分批大小 (默认: 500只/批，防止内存溢出)"
     )
     
+    parser.add_argument(
+        '--skip-check',
+        action='store_true',
+        help="跳过环境检测（不推荐）"
+    )
+    
     args = parser.parse_args()
     
     # 打印启动横幅
     print_banner()
+    
+    # 🔥 [New Feature] 启动前环境检测
+    if not args.skip_check:
+        if not check_qmt_environment():
+            console.print("\n❌ 环境检测失败，程序退出\n", style="bold red")
+            console.print("   如需跳过检测，使用参数: --skip-check\n", style="dim")
+            sys.exit(1)
     
     # 加载股票列表
     stock_list = load_stock_list()
@@ -231,7 +333,7 @@ def main():
         scan_time=args.time,
         stock_list=stock_list,
         use_multiprocess=not args.no_multiprocess,
-        batch_size=args.batch_size  # 🔥 [P1 FIX] 传递分批大小参数
+        batch_size=args.batch_size
     )
     
     # 展示结果
