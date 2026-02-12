@@ -16,7 +16,7 @@ from typing import Dict, Optional, List, Tuple
 from dataclasses import dataclass
 from enum import Enum
 import numpy as np
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 
 logger = get_logger(__name__)
 

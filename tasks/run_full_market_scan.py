@@ -16,8 +16,8 @@ import argparse
 # 添加项目根目录到路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from logic.full_market_scanner import FullMarketScanner
-from logic.logger import get_logger
+from logic.strategies.full_market_scanner import FullMarketScanner
+from logic.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -124,7 +124,7 @@ def main():
                 print(f"\n📋 热门池 TOP20：")
                 print("-" * 80)
                 
-                from logic.code_converter import CodeConverter
+                from logic.utils.code_converter import CodeConverter
                 
                 for idx, candidate in enumerate(hot_pool[:20], 1):
                     code = candidate['code']
@@ -166,7 +166,7 @@ def main():
                 print("-" * 80)
                 
                 if results.get('level1_candidates'):
-                    from logic.code_converter import CodeConverter
+                    from logic.utils.code_converter import CodeConverter
                     # 需要获取股票详情来展示
                     batch_size = 1000
                     level1_data = {}

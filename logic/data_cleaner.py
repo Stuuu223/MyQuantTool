@@ -5,7 +5,7 @@
 包括：手/股换算、涨跌幅阈值、停牌标记等
 """
 
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 
 logger = get_logger(__name__)
 

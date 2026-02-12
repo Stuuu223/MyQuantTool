@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 from collections import deque
 
 from logic.event_detector import BaseEventDetector, EventType, TradingEvent
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 
 logger = get_logger(__name__)
 

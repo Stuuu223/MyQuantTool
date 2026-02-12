@@ -8,10 +8,10 @@ import time
 import threading
 from datetime import datetime
 from typing import List, Dict, Callable, Optional
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 from logic.data_manager import DataManager
 from logic.data_cleaner import DataCleaner
-from logic.market_sentiment import MarketSentiment
+from logic.monitors.market_sentiment import MarketSentiment
 
 logger = get_logger(__name__)
 

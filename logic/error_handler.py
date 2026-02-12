@@ -6,7 +6,7 @@
 
 import functools
 from typing import Callable, Any, Optional
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 
 logger = get_logger(__name__)
 

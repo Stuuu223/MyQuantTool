@@ -8,7 +8,7 @@ V18 板块共振识别器
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 import pandas as pd
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 from logic.data_manager import DataManager
 from logic.cache_manager import CacheManager
 

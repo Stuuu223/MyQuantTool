@@ -14,7 +14,7 @@ Version: V1.0
 from datetime import datetime
 from typing import Optional
 
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 
 logger = get_logger(__name__)
 

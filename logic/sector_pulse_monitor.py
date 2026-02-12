@@ -9,7 +9,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 import akshare as ak
 
 logger = get_logger(__name__)

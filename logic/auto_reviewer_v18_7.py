@@ -16,7 +16,7 @@ import pandas as pd
 import datetime
 from typing import Dict, List
 from logic.data_manager import DataManager
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 
 logger = get_logger(__name__)
 

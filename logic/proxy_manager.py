@@ -16,7 +16,7 @@ Version: V19.10
 import os
 from typing import Optional, Dict, Any
 from enum import Enum
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 
 logger = get_logger(__name__)
 

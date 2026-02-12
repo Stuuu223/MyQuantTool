@@ -30,7 +30,7 @@ except ImportError:
     QMT_AVAILABLE = False
     print("⚠️ xtquant未安装，QMT数据源不可用")
 
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 
 logger = get_logger(__name__)
 

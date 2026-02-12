@@ -9,7 +9,7 @@ import sqlite3
 import json
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 
 logger = get_logger(__name__)
 

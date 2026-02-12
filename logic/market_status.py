@@ -16,7 +16,7 @@ import pytz
 from datetime import datetime, time
 from typing import Optional, Tuple, Dict, Any
 from enum import Enum
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 
 logger = get_logger(__name__)
 

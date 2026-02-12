@@ -3,7 +3,7 @@
 """
 import pandas as pd
 import numpy as np
-from logic.algo import QuantAlgo
+from logic.core.algo import QuantAlgo
 
 class StockComparator:
     """股票对比分析器"""

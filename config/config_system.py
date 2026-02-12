@@ -6,7 +6,7 @@ V10.1.9 系统配置文件
 """
 
 # 🆕 V20.5: 导入 logger
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 logger = get_logger(__name__)
 
 # ==========================================

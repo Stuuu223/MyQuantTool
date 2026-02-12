@@ -23,7 +23,7 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 
 from logic.event_detector import EventType, TradingEvent
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 
 logger = get_logger(__name__)
 

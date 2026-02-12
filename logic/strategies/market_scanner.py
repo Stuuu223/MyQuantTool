@@ -32,7 +32,7 @@ except ImportError:
 
 from logic.batch_qpst_analyzer import BatchQPSTAnalyzer
 from logic.trap_detector_batch import TrapDetectorBatch
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 
 logger = get_logger(__name__)
 

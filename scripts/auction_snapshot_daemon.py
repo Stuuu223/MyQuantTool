@@ -27,7 +27,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from xtquant import xtdata
 from logic.auction_snapshot_manager import AuctionSnapshotManager
 from logic.database_manager import DatabaseManager
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 
 logger = get_logger(__name__)
 

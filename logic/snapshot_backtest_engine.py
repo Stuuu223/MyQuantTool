@@ -30,7 +30,7 @@ from typing import Dict, List
 from datetime import datetime
 
 from data_sources.price_history_fetcher import PriceHistoryFetcher
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 
 logger = get_logger(__name__)
 

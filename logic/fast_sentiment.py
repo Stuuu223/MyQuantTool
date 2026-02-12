@@ -17,7 +17,7 @@ import pandas as pd
 import numpy as np
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 from logic.data_manager import DataManager
 from logic.data_cleaner import DataCleaner
 from logic.sector_analysis import FastSectorAnalyzer

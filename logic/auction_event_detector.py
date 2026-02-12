@@ -16,7 +16,7 @@ from datetime import datetime, time as dt_time
 
 from logic.event_detector import BaseEventDetector, EventType, TradingEvent
 from logic.market_status import MarketStatusChecker
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 
 logger = get_logger(__name__)
 

@@ -17,9 +17,9 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from datetime import datetime
-from logic.full_market_scanner import FullMarketScanner
+from logic.strategies.full_market_scanner import FullMarketScanner
 from logic.signal_tracker.signal_recorder import get_signal_recorder
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 
 logger = get_logger(__name__)
 

@@ -26,7 +26,7 @@ import json
 import os
 
 # 🔧 新增：导入日志系统
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 logger = get_logger(__name__)
 
 # 尝试导入AkShare
@@ -69,7 +69,7 @@ class IntraDayMonitor:
 
         # 尝试加载 CodeConverter
         try:
-            from logic.code_converter import CodeConverter
+            from logic.utils.code_converter import CodeConverter
             self.converter = CodeConverter()
             logger.info("✅ [IntraDayMonitor] CodeConverter 初始化成功")
         except Exception as e:

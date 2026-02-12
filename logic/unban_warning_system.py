@@ -8,7 +8,7 @@ V18 解禁/减持预警系统
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Set
 import pandas as pd
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 from logic.cache_manager import CacheManager
 
 logger = get_logger(__name__)

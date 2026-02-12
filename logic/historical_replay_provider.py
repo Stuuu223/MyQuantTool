@@ -6,7 +6,7 @@
 """
 
 from logic.data_provider_factory import DataProvider
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 import config.config_system as config
 import akshare as ak
 import pandas as pd

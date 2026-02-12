@@ -12,7 +12,7 @@ Version: V19.11.6
 import os
 import time
 import glob
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 
 logger = get_logger(__name__)
 

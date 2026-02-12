@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 from logic.data_manager import DataManager
-from logic.logger import get_logger, log_execution_time, performance_context
+from logic.utils.logger import get_logger, log_execution_time, performance_context
 
 # 获取日志记录器
 logger = get_logger(__name__)

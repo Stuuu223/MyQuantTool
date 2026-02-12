@@ -30,7 +30,7 @@ from dataclasses import dataclass
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from logic.full_market_scanner import FullMarketScanner
+from logic.strategies.full_market_scanner import FullMarketScanner
 from logic.output_formatter import format_scan_result
 from logic.market_status import MarketStatusChecker
 from logic.equity_data_accessor import get_circ_mv
@@ -41,7 +41,7 @@ from logic.dip_buy_event_detector import DipBuyEventDetector
 from logic.leader_event_detector import LeaderEventDetector
 from logic.qmt_tick_monitor import get_tick_monitor
 from logic.event_recorder import get_event_recorder
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 from logic.market_phase_checker import MarketPhaseChecker
 from logic.sector_resonance import SectorResonanceCalculator
 

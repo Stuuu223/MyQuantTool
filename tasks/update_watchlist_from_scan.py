@@ -18,8 +18,8 @@ from datetime import datetime
 # 添加项目根目录到路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from logic.logger import get_logger
-from logic.triple_funnel_scanner import WatchlistManager
+from logic.utils.logger import get_logger
+from logic.strategies.triple_funnel_scanner import WatchlistManager
 
 logger = get_logger(__name__)
 

@@ -6,7 +6,7 @@
 
 import numpy as np
 from typing import Dict, List, Tuple
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 from logic.backtest_engine import BacktestEngine
 
 logger = get_logger(__name__)

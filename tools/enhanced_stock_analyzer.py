@@ -18,9 +18,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from logic.rate_limiter import get_rate_limiter, safe_request
 
 # 导入新模块
-from logic.trap_detector import TrapDetector
-from logic.capital_classifier import CapitalClassifier
-from logic.rolling_metrics import RollingMetricsCalculator
+from logic.analyzers.trap_detector import TrapDetector
+from logic.analyzers.capital_classifier import CapitalClassifier
+from logic.analyzers.rolling_metrics import RollingMetricsCalculator
 
 
 class EnhancedStockAnalyzer:
@@ -40,7 +40,7 @@ class EnhancedStockAnalyzer:
         if use_qmt:
             try:
                 from xtquant import xtdata
-                from logic.code_converter import CodeConverter
+                from logic.utils.code_converter import CodeConverter
                 self.xtdata = xtdata
                 self.converter = CodeConverter()
                 self.qmt_available = True
@@ -946,7 +946,7 @@ def analyze_stock_json(stock_code, days=60, use_qmt=True, auto_download=True, pu
         # 如果数据为空且自动下载开启，尝试下载
         if (qmt_df is None or qmt_df.empty) and auto_download:
             try:
-                from logic.code_converter import CodeConverter
+                from logic.utils.code_converter import CodeConverter
                 converter = CodeConverter()
                 qmt_code = converter.to_qmt(stock_code)
 

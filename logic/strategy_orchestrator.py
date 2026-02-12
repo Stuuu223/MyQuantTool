@@ -11,11 +11,11 @@
 
 from typing import Dict, List, Optional, Any, Tuple
 from enum import Enum
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 from logic.market_cycle import MarketCycleManager
 from logic.theme_detector import ThemeDetector
 from logic.dragon_tactics import DragonTactics
-from logic.intraday_turnaround_detector import IntradayTurnaroundDetector  # 🆕 V9.0
+from logic.monitors.intraday_turnaround_detector import IntradayTurnaroundDetector  # 🆕 V9.0
 
 logger = get_logger(__name__)
 

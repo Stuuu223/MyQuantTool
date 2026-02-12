@@ -29,7 +29,7 @@ import threading
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
 
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 from logic.data_manager import DataManager
 
 logger = get_logger(__name__)

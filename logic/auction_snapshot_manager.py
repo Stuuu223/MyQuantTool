@@ -15,7 +15,7 @@ import json
 import time
 from datetime import datetime
 from typing import Dict, Optional, Any
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 
 logger = get_logger(__name__)
 

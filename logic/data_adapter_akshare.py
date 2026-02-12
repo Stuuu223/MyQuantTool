@@ -13,7 +13,7 @@
 import akshare as ak
 import pandas as pd
 from datetime import datetime
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 
 logger = get_logger(__name__)
 

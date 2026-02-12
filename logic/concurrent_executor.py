@@ -17,7 +17,7 @@ import concurrent.futures
 import time
 from typing import List, Dict, Any, Callable, Optional, Tuple
 from functools import partial
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 
 logger = get_logger(__name__)
 

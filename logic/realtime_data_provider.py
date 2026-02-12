@@ -9,7 +9,7 @@ V18.6.1: 后台线程异步获取 DDE 数据，避免阻塞主线程
 """
 
 from logic.data_provider_factory import DataProvider
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 from logic.utils import Utils
 from logic.data_adapter_akshare import MoneyFlowAdapter
 import config.config_system as config
@@ -67,7 +67,7 @@ class RealtimeDataProvider(DataProvider):
             self.qmt = None
 
         # 🆕 V19.15: 初始化代码转换器
-        from logic.code_converter import CodeConverter
+        from logic.utils.code_converter import CodeConverter
         self.code_converter = CodeConverter
 
         # 🚨 V19.13: 强制清理代理配置，防止连接池爆满
@@ -629,7 +629,7 @@ class RealtimeDataProvider(DataProvider):
             limit_up_stocks = dm.get_limit_up_stocks()
             
             # 获取市场情绪
-            from logic.market_sentiment import MarketSentiment
+            from logic.monitors.market_sentiment import MarketSentiment
             ms = MarketSentiment()
             sentiment_data = ms.get_market_sentiment_score()
             

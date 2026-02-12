@@ -10,7 +10,7 @@ import logging
 from datetime import datetime
 from typing import List, Dict, Optional
 from pathlib import Path
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 
 logger = get_logger(__name__)
 

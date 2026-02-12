@@ -385,7 +385,7 @@ class MarketSentimentAnalyzer:
                         })
             
             # 龙虎榜质量评估
-            from logic.algo import QuantAlgo
+            from logic.core.algo import QuantAlgo
             quality_analysis = QuantAlgo.analyze_lhb_quality()
             
             return {

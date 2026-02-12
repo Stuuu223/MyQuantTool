@@ -53,7 +53,7 @@ class QMTSupplement:
         """初始化 QMT 连接"""
         try:
             from xtquant import xtdata
-            from logic.code_converter import CodeConverter
+            from logic.utils.code_converter import CodeConverter
             self.xtdata = xtdata
             self.converter = CodeConverter()
             logger.info("QMT 补充模块初始化成功")

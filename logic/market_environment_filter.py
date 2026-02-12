@@ -14,7 +14,7 @@ Version: V18.6.1
 """
 
 from typing import Dict, List, Optional, Tuple
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 from logic.data_manager import DataManager
 from logic.sector_analysis import FastSectorAnalyzer
 

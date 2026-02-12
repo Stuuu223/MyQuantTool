@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 from typing import Optional, Dict, Union, Any
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 import config.config_system as config
 
 logger = get_logger(__name__)
@@ -114,7 +114,7 @@ class SignalGenerator:
         # 0.5 [V16.3] 内部人防御盾 (Insider Shield) - 防止被内部人收割
         # =========================================================
         try:
-            from logic.iron_rule_monitor import IronRuleMonitor
+            from logic.monitors.iron_rule_monitor import IronRuleMonitor
             
             iron_monitor = IronRuleMonitor()
             insider_risk = iron_monitor.check_insider_selling(stock_code, days=90)
@@ -140,7 +140,7 @@ class SignalGenerator:
         # 0.6 [V16.3] 生态看门人 (Ecological Watchdog) - 识别"德不配位"的流动性异常
         # =========================================================
         try:
-            from logic.iron_rule_monitor import IronRuleMonitor
+            from logic.monitors.iron_rule_monitor import IronRuleMonitor
             
             iron_monitor = IronRuleMonitor()
             

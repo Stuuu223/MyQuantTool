@@ -7,8 +7,8 @@ QMT 历史数据提供者
 """
 
 from logic.data_provider_factory import DataProvider
-from logic.logger import get_logger
-from logic.code_converter import CodeConverter
+from logic.utils.logger import get_logger
+from logic.utils.code_converter import CodeConverter
 import pandas as pd
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional

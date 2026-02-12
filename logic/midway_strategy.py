@@ -24,7 +24,7 @@ import numpy as np
 from typing import Dict, List, Optional
 from dataclasses import dataclass
 import talib
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 from logic.data_manager import DataManager
 from logic.data_adapter_akshare import MoneyFlowAdapter
 

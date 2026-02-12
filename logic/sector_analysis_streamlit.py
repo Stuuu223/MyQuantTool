@@ -15,7 +15,7 @@ import json
 import os
 from typing import Dict, List, Optional, Tuple, Union
 from datetime import datetime
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 from logic.data_manager import DataManager
 import akshare as ak
 

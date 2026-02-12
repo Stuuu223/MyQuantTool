@@ -21,7 +21,7 @@ sys.path.insert(0, str(project_root))
 
 from datetime import datetime
 from logic.database_manager import DatabaseManager
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 
 logger = get_logger(__name__)
 

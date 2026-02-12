@@ -175,7 +175,7 @@ def analyze_stock(stock_code, days=10, mode='analyze', use_qmt=None, output_all_
         return result
     elif mode == 'intraday':
         # 盘中实时分析模式（QMT 实时数据）
-        from logic.intraday_analyzer import IntraDayAnalyzer
+        from logic.monitors.intraday_analyzer import IntraDayAnalyzer
         analyzer = IntraDayAnalyzer()
         
         # 检查 QMT 是否可用
@@ -207,7 +207,7 @@ def analyze_stock(stock_code, days=10, mode='analyze', use_qmt=None, output_all_
         return result
     elif mode == 'auto':
         # 自动判断模式：交易时间内用 intraday，否则用 enhanced
-        from logic.intraday_analyzer import IntraDayAnalyzer
+        from logic.monitors.intraday_analyzer import IntraDayAnalyzer
         analyzer = IntraDayAnalyzer()
         
         if analyzer.is_available() and analyzer.is_trading_time():

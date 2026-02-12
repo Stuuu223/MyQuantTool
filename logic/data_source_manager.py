@@ -18,7 +18,7 @@ import time
 import pandas as pd
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 from logic.api_robust import robust_api_call, rate_limit_decorator
 from logic.proxy_manager import get_proxy_manager, record_failure, record_success
 

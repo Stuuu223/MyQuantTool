@@ -11,7 +11,7 @@ Version: V1.0
 
 import pandas as pd
 from typing import List, Dict, Any, Optional
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 from logic.active_stock_filter import get_active_stock_filter
 
 logger = get_logger(__name__)

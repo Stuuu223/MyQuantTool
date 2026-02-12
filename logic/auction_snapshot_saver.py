@@ -14,7 +14,7 @@ import pandas as pd
 import time
 from datetime import datetime
 from logic.data_source_manager import get_data_source_manager
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 
 logger = get_logger(__name__)
 

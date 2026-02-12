@@ -16,7 +16,7 @@ import os
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 from logic.data_source_manager import DataSourceManager
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 
 logger = get_logger(__name__)
 

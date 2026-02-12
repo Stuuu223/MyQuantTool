@@ -1144,7 +1144,7 @@ class RealAIAgent:
 
                 try:
 
-                    from logic.market_sentiment_monitor import MarketSentimentMonitor, CircuitBreaker
+                    from logic.monitors.market_sentiment_monitor import MarketSentimentMonitor, CircuitBreaker
 
                     
 

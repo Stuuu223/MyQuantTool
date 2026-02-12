@@ -17,7 +17,7 @@ import functools
 import pandas as pd
 from typing import Callable, Any, Optional
 from requests.exceptions import RequestException, ConnectionError
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 
 logger = get_logger(__name__)
 

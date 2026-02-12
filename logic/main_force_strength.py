@@ -15,7 +15,7 @@
 import pandas as pd
 import numpy as np
 from typing import Dict, Any, Optional
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 
 logger = get_logger(__name__)
 

@@ -44,7 +44,7 @@ class IntraDayAnalyzer:
         """初始化 QMT 连接"""
         try:
             from xtquant import xtdata
-            from logic.code_converter import CodeConverter
+            from logic.utils.code_converter import CodeConverter
             self.xtdata = xtdata
             self.converter = CodeConverter()
             logger.info("✅ [盘中分析器] QMT 初始化成功")

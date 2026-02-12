@@ -27,7 +27,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from logic.auto_maintenance import AutoMaintenance
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 
 logger = get_logger(__name__)
 

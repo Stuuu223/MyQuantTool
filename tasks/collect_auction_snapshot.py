@@ -46,7 +46,7 @@ from typing import Dict, List, Optional, Any, Tuple
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 from logic.database_manager import DatabaseManager
 from logic.auction_snapshot_manager import AuctionSnapshotManager
 

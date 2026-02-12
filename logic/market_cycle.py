@@ -10,7 +10,7 @@ from typing import Dict, List, Optional, Tuple
 import akshare as ak
 import threading
 import time
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 from logic.data_manager import DataManager
 from logic.data_cleaner import DataCleaner
 

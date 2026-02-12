@@ -14,7 +14,7 @@
 """
 
 from typing import Optional
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 
 logger = get_logger(__name__)
 

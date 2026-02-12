@@ -20,7 +20,7 @@ Version: V18.6.1
 
 import os
 from typing import Optional, Dict, Any, List
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 from logic.data_provider_factory import DataProviderFactory
 
 logger = get_logger(__name__)

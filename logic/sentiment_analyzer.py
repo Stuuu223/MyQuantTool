@@ -14,7 +14,7 @@ Version: V9.11
 import pandas as pd
 import numpy as np
 from typing import Optional, Dict, Any
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 from logic.market_status import get_market_status_checker
 from logic.technical_analyzer import TechnicalAnalyzer
 
@@ -597,7 +597,7 @@ class SentimentAnalyzer:
             # 5. 获取股票池数据（可选）
             if include_stock_pool:
                 try:
-                    from logic.algo import QuantAlgo
+                    from logic.core.algo import QuantAlgo
                     snapshot = self.get_market_snapshot()
                     
                     if snapshot is not None:

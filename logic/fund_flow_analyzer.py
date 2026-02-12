@@ -10,7 +10,7 @@ from typing import Dict, List, Optional, Tuple
 import time
 import akshare as ak
 from logic.fund_flow_cache import get_fund_flow_cache
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 
 logger = get_logger(__name__)
 

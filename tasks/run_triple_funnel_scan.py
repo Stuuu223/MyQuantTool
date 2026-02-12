@@ -39,8 +39,8 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from logic.logger import get_logger
-from logic.triple_funnel_scanner import TripleFunnelScanner
+from logic.utils.logger import get_logger
+from logic.strategies.triple_funnel_scanner import TripleFunnelScanner
 from logic.signal_manager import get_signal_manager
 
 logger = get_logger(__name__)
@@ -93,7 +93,7 @@ def run_intraday_monitor(scanner: TripleFunnelScanner, interval: int = 3):
     try:
         while True:
             # 检查交易时间
-            from logic.intraday_monitor import IntraDayMonitor
+            from logic.monitors.intraday_monitor import IntraDayMonitor
             monitor = IntraDayMonitor()
             phase = monitor.get_trading_phase()
 
@@ -212,7 +212,7 @@ def auto_detect_mode():
     Returns:
         str: 运行模式 (post-market, intraday, weekend, after-hours)
     """
-    from logic.intraday_monitor import IntraDayMonitor
+    from logic.monitors.intraday_monitor import IntraDayMonitor
 
     monitor = IntraDayMonitor()
     phase = monitor.get_trading_phase()

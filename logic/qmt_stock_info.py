@@ -11,8 +11,8 @@ Version: V1.0
 
 import pandas as pd
 from typing import Dict, Optional
-from logic.logger import get_logger
-from logic.code_converter import CodeConverter
+from logic.utils.logger import get_logger
+from logic.utils.code_converter import CodeConverter
 
 logger = get_logger(__name__)
 

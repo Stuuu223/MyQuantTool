@@ -9,7 +9,7 @@ import numpy as np
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 from dataclasses import dataclass
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 from logic.data_manager import DataManager
 from logic.data_cleaner import DataCleaner
 from logic.position_manager import PositionManager

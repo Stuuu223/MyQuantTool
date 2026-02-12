@@ -68,12 +68,12 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 
-from logic.logger import get_logger
-from logic.code_converter import CodeConverter
+from logic.utils.logger import get_logger
+from logic.utils.code_converter import CodeConverter
 from logic.data_source_manager import get_smart_data_manager
-from logic.intraday_monitor import IntraDayMonitor
-from logic.trap_detector import TrapDetector
-from logic.capital_classifier import CapitalClassifier
+from logic.monitors.intraday_monitor import IntraDayMonitor
+from logic.analyzers.trap_detector import TrapDetector
+from logic.analyzers.capital_classifier import CapitalClassifier
 
 logger = get_logger(__name__)
 

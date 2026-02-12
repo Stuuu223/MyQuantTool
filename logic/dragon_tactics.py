@@ -53,7 +53,7 @@ class DragonTactics:
             
             try:
                 # 🆕 V19.8: 初始化市场情绪分析器
-                from logic.market_sentiment import MarketSentiment
+                from logic.monitors.market_sentiment import MarketSentiment
                 self._market_sentiment = MarketSentiment(db)
                 logger.info("✅ [龙头战法] 市场情绪分析器初始化完成")
             except Exception as e:

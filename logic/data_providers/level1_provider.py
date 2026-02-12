@@ -24,8 +24,8 @@ from .base import (
     DataNotAvailableError
 )
 from .dongcai_provider import DongCaiT1Provider
-from logic.code_converter import CodeConverter
-from logic.logger import get_logger
+from logic.utils.code_converter import CodeConverter
+from logic.utils.logger import get_logger
 
 logger = get_logger(__name__)
 

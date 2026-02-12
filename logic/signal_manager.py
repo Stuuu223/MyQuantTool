@@ -21,8 +21,8 @@ from typing import Dict, List, Optional, Set
 from dataclasses import dataclass, field, asdict
 from enum import Enum
 
-from logic.logger import get_logger
-from logic.triple_funnel_scanner import TradingSignal, SignalType, RiskLevel
+from logic.utils.logger import get_logger
+from logic.strategies.triple_funnel_scanner import TradingSignal, SignalType, RiskLevel
 
 logger = get_logger(__name__)
 
@@ -464,7 +464,7 @@ if __name__ == "__main__":
     manager = get_signal_manager()
 
     # 创建测试信号
-    from logic.triple_funnel_scanner import TradingSignal, SignalType, RiskLevel
+    from logic.strategies.triple_funnel_scanner import TradingSignal, SignalType, RiskLevel
 
     signal1 = TradingSignal(
         id="TEST_001",

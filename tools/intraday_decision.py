@@ -29,7 +29,7 @@ from typing import Dict, Any, Literal
 # 添加项目根目录到路径
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from logic.intraday_monitor import IntraDayMonitor
+from logic.monitors.intraday_monitor import IntraDayMonitor
 
 
 class IntraDayDecisionTool:

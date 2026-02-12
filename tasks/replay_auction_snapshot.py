@@ -28,7 +28,7 @@ from typing import Dict, List, Optional, Any
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from logic.logger import get_logger
+from logic.utils.logger import get_logger
 from logic.auction_trap_detector import AuctionTrapDetector
 
 logger = get_logger(__name__)

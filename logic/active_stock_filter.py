@@ -19,8 +19,8 @@ import pandas as pd
 import os
 from datetime import datetime
 from typing import List, Dict, Any, Optional
-from logic.logger import get_logger
-from logic.code_converter import CodeConverter
+from logic.utils.logger import get_logger
+from logic.utils.code_converter import CodeConverter
 
 logger = get_logger(__name__)
 
