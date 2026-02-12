@@ -107,3 +107,6 @@ config/config.local.json  # 本地配置模板
 # Streamlit (已废弃，使用Rich CLI)
 .streamlit/
 pages/
+
+# Vendor libraries (第三方库)
+vendor/
