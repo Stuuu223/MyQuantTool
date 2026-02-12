@@ -23,12 +23,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Tuple, Optional
 from collections import defaultdict
 
-try:
-    from xtquant import xtdata
-    QMT_AVAILABLE = True
-except ImportError:
-    QMT_AVAILABLE = False
-
+from logic.data_providers import get_provider
 from logic.equity_data_accessor import get_circ_mv
 from logic.rolling_risk_features import compute_multi_day_risk_features, compute_all_scenario_features
 from logic.scenario_classifier import ScenarioClassifier
@@ -62,20 +57,17 @@ class FullMarketScanner:
     def __init__(self, config_path: str = "config/market_scan_config.json"):
         """
         初始化全市场扫描器
-        
+
         Args:
             config_path: 配置文件路径
         """
         # 加载配置
         self.config = self._load_config(config_path)
-        
-        # 检查 QMT 可用性（警告但不阻止初始化）
-        if not QMT_AVAILABLE:
-            logger.warning("⚠️  xtquant 未安装，QMT 数据源不可用")
-            logger.warning("⚠️  系统将使用 AkShare 降级数据源，扫描速度会变慢")
-        else:
-            logger.info("✅ QMT 数据源可用，将使用 QMT 进行高速扫描")
-        
+
+        # 初始化数据提供者（抽象层）
+        self.data_provider = get_provider('level1')
+        logger.info("✅ 数据提供者已初始化")
+
         # 初始化核心模块
         self.trap_detector = TrapDetector()
         self.capital_classifier = CapitalClassifier()
@@ -83,10 +75,10 @@ class FullMarketScanner:
         self.limiter = RateLimiter(max_requests_per_minute=60, max_requests_per_hour=2000, min_request_interval=0.1)  # 东方财富 API 限速
         self.converter = CodeConverter()
         self.scenario_classifier = ScenarioClassifier()  # 场景分类器
-        
+
         # 加载本地股本信息（用于市值分层）
         self.equity_info = self._load_equity_info()
-        
+
         # 🎯 加载板块映射表（用于时机斧）
         self.sector_map = self._load_sector_map()
         
@@ -181,7 +173,7 @@ class FullMarketScanner:
         """初始化 QMT 全市场股票列表"""
         try:
             # 获取沪深A股全部股票
-            stocks = xtdata.get_stock_list_in_sector('沪深A股')
+            stocks = self.data_provider.get_stock_list_in_sector('沪深A股')
             logger.info(f"✅ QMT 股票列表获取成功: {len(stocks)} 只")
             return stocks
         except Exception as e:
@@ -591,8 +583,8 @@ class FullMarketScanner:
             
             # 分批获取 QMT Tick 数据
             try:
-                tick_data = xtdata.get_full_tick(batch)
-                
+                tick_data = self.data_provider.get_full_tick(batch)
+
                 # 详细日志：检查返回值
                 logger.info(f"批次 {batch_num} 获取成功, tick_data 类型: {type(tick_data)}")
                 if not isinstance(tick_data, dict):
@@ -715,8 +707,8 @@ class FullMarketScanner:
             
             # 分批获取 QMT Tick 数据
             try:
-                tick_data = xtdata.get_full_tick(batch)
-                
+                tick_data = self.data_provider.get_full_tick(batch)
+
                 logger.info(f"批次 {batch_num} 获取成功, tick_data 类型: {type(tick_data)}")
                 if not isinstance(tick_data, dict):
                     logger.warning(f"⚠️  批次 {batch_num} 返回数据类型异常: {type(tick_data)}")
@@ -803,14 +795,12 @@ class FullMarketScanner:
         """
         try:
             # 获取最近5日K线数据（只需要成交量）
-            kline_data = xtdata.get_market_data_ex(
-                field_list=['volume'],
-                stock_list=[code],
+            kline_data = self.data_provider.get_kline_data(
+                code_list=[code],
                 period='1d',
                 start_time='',
                 end_time='',
-                count=5,
-                dividend_type='none'
+                count=5
             )
             
             # 数据缺失：返回None
@@ -918,7 +908,7 @@ class FullMarketScanner:
             
             # 3. 备用：尝试从 QMT 获取
             try:
-                financial_data = xtdata.get_market_data(
+                financial_data = self.data_provider.get_market_data(
                     field_list=['SH_FLOAT_VAL', 'FLOAT_VAL'],
                     stock_list=[code],
                     period='1d',
@@ -1123,7 +1113,7 @@ class FullMarketScanner:
             # 方法 1: 使用 get_market_data 获取流通股本（尝试多个字段）
             try:
                 # 尝试多个可能的流通股本字段
-                financial_data = xtdata.get_market_data(
+                financial_data = self.data_provider.get_market_data(
                     field_list=['SH_FLOAT_VAL', 'FLOAT_VAL', 'TOTAL_SHARES'],  # 尝试多个字段
                     stock_list=[code],
                     period='1d',
@@ -1144,7 +1134,7 @@ class FullMarketScanner:
                     
                     if circulating_shares and circulating_shares > 0:
                         # 获取当前价格
-                        tick_data = xtdata.get_full_tick([code])
+                        tick_data = self.data_provider.get_full_tick([code])
                         if tick_data and code in tick_data:
                             current_price = tick_data[code].get('lastPrice', 0)
                             if current_price > 0:
@@ -1159,7 +1149,7 @@ class FullMarketScanner:
             
             # 方法 2: 使用 get_instrument_detail 获取股票详细信息
             try:
-                instrument_detail = xtdata.get_instrument_detail(code)
+                instrument_detail = self.data_provider.get_instrument_detail(code)
                 if instrument_detail:
                     # 尝试从详细信息中获取流通股本
                     circulating_shares = (
@@ -1183,7 +1173,7 @@ class FullMarketScanner:
             
             # 方法 3: 使用 get_full_tick 中的流通市值字段
             try:
-                tick_data = xtdata.get_full_tick([code])
+                tick_data = self.data_provider.get_full_tick([code])
                 if tick_data and code in tick_data:
                     tick = tick_data[code]
                     # 尝试从 tick 数据中获取流通市值
@@ -1361,7 +1351,7 @@ class FullMarketScanner:
         """
         try:
             # 获取最近 10 个交易日收盘价
-            kline = xtdata.get_market_data(
+            kline = self.data_provider.get_market_data(
                 field_list=['close'],
                 stock_list=[code],
                 period='1d',
@@ -1502,7 +1492,7 @@ class FullMarketScanner:
                     if not isinstance(current_price, (int, float)) or current_price <= 0:
                         if QMT_AVAILABLE:
                             try:
-                                tick = xtdata.get_full_tick([code])
+                                tick = self.data_provider.get_full_tick([code])
                                 if code in tick and tick[code]:
                                     current_price = tick[code].get('lastPrice', 0) or tick[code].get('last_price', 0)
                                     if current_price > 0:
@@ -1527,15 +1517,12 @@ class FullMarketScanner:
                         # 策略1：QMT 日线数据 (最快)
                         if QMT_AVAILABLE:
                             try:
-                                kline_data = xtdata.get_market_data_ex(
-                                    field_list=['close'],
-                                    stock_list=[code],
+                                kline_data = self.data_provider.get_kline_data(
+                                    code_list=[code],
                                     period='1d',
                                     start_time='',
                                     end_time='',
-                                    count=10,  # ✅ [P1修复] 预取更多数据，防止仅取4根遇到停牌不足的情况
-                                    dividend_type='front',  # 前复权
-                                    fill_data=True
+                                    count=10
                                 )
 
                                 if code in kline_data and hasattr(kline_data[code], '__len__'):
@@ -1588,18 +1575,15 @@ class FullMarketScanner:
                                 # ✅ [P2修复] 增加 count 到 2400 (约10个交易日)，确保覆盖长假
                                 count_min = 2400
                                 # 尝试下载最近的分钟数据 (确保数据存在)
-                                xtdata.download_history_data(code, period='1m', count=count_min, incrementally=True)
+                                self.data_provider.download_history_data(code, period='1m', count=count_min, incrementally=True)
                                 
                                 # 获取最近2400根1分钟K线 (约10个交易日)
-                                kline_1m = xtdata.get_market_data_ex(
-                                    field_list=['time', 'close'],
-                                    stock_list=[code],
+                                kline_1m = self.data_provider.get_kline_data(
+                                    code_list=[code],
                                     period='1m',
                                     start_time='',
                                     end_time='',
-                                    count=count_min,  # ✅ [P2修复] 同步增加获取数量
-                                    dividend_type='front',
-                                    fill_data=True
+                                    count=count_min
                                 )
                                 
                                 if code in kline_1m and not kline_1m[code].empty:
