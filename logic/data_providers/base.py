@@ -2,6 +2,17 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Optional, Dict, List
 
+
+class DataNotAvailableError(Exception):
+    """数据源不可用异常"""
+    pass
+
+
+class InvalidCodeError(Exception):
+    """股票代码无效异常"""
+    pass
+
+
 @dataclass
 class CapitalFlowSignal:
     code: str
