@@ -1,7 +1,13 @@
 # MyQuantTool 项目结构说明
 
-**更新时间**: 2026-02-02  
-**版本**: V9.4.5
+> **版本**: V11.2.0
+> **创建日期**: 2026-02-02
+> **最后更新**: 2026-02-12
+> **定位**: 项目结构说明（文件组织）
+> **相关文档**:
+>   - `Q_AND_A_ALIGNMENT.md` - 核心策略文档（三大战法 + Q&A对齐）
+>   - `CLI_USAGE.md` - 使用指南（命令行操作 + Rich CLI）
+>   - `PROJECT_ARCHITECTURE.md` - 技术架构文档（系统设计）
 
 ---
 
@@ -10,8 +16,11 @@
 ### 核心文件
 - `main.py` - 主程序入口
 - `start_app.py` - 应用启动脚本
-- `start.bat` - Windows 启动脚本
-- `quick_start.bat` - 快速启动脚本
+- `start_event_driven_monitor.bat` - 事件驱动监控启动脚本
+- `qmt_auction_monitor.py` - QMT 竞价监控主程序
+- `CLI_USAGE.md` - 命令行使用指南
+- `PROJECT_ARCHITECTURE.md` - 技术架构文档
+- `Q_AND_A_ALIGNMENT.md` - 核心策略文档
 
 ### 配置文件
 - `pytest.ini` - 测试配置
@@ -26,21 +35,45 @@
 
 ## 📂 tools/ - 工具目录
 
+### 核心监控工具（V11.2.0 核心）
+- `cli_monitor.py` - Rich CLI 监控终端（零延迟、轻量级、事件驱动）
+- `run_event_driven_monitor.py` - 事件驱动监控脚本
+
+### 数据获取工具
+- `fetch_1m_data.py` - 分钟 K 线数据获取器
+- `download_from_list.py` - 从股票列表下载 QMT 数据
+- `download_real_batch_1m.py` - 批量下载（Tushare Pro 集成）
+- `get_hot_stocks_v2.py` - 热股选择器 V2（防封增强版）
+
 ### 个股分析工具
 - `comprehensive_stock_tool.py` - 综合分析工具（AkShare + QMT）
 - `enhanced_stock_analyzer.py` - 增强分析器（技术指标 + 诱多检测）
-- `stock_ai_tool.py` - AI 便捷接口（统一调用入口）
+- `stock_analyzer.py` - 统一股票分析器（自动场景检测）
+- `intraday_decision.py` - 盘中决策工具（买入/卖出/等待）
 
-### 数据工具
-- `generate_static_map.py` - 生成静态映射
-- `harvest_data.py` - 数据采集工具
-- `update_concepts.py` - 更新概念数据
+### 回测工具
+- `run_backtest_1m_v2.py` - 回测引擎 V2（修复幸存者偏差）
+- `run_backtest_1m.py` - 基础回测工具
+
+### 验证工具
+- `verify_t1_performance.py` - T+1 性能验证
+- `check_qmt_environment.py` - QMT 环境检查器
+
+### 维护工具
+- `archive_daily_logs.py` - 自动归档日志
+- `daily_update.py` - 每日数据更新脚本
+- `generate_concept_map.py` - 生成概念映射表
 
 **使用方式**:
-```python
-from tools.comprehensive_stock_tool import comprehensive_stock_analysis
-from tools.enhanced_stock_analyzer import analyze_stock_enhanced
-from tools.stock_ai_tool import analyze_stock
+```bash
+# 启动 CLI 监控终端
+python tools/cli_monitor.py
+
+# 个股分析
+python tools/comprehensive_stock_tool.py 002514.SZ
+
+# 回测
+python tools/run_backtest_1m_v2.py
 ```
 
 ---
@@ -97,19 +130,46 @@ config = Config()
 
 ## 📂 logic/ - 核心逻辑目录
 
-### 核心模块
+### 三把斧体系（V11.2.0 核心）
+- `triple_funnel.py` - 三把斧体系主模块（三大战法核心逻辑）
+- `defense_axe.py` - 防守斧（四层拦截）
+- `qualification_axe.py` - 资格斧（场景分类）
+- `timing_axe.py` - 时机斧（板块共振）
+
+### 数据抽象层（V11.2.0 新增）
+- `data_provider_factory.py` - 数据提供者工厂
+- `data_provider/base.py` - 数据提供者接口（ICapitalFlowProvider）
+- `data_provider/level2_provider.py` - Level2 数据提供者
+- `data_provider/level1_provider.py` - Level1 数据提供者（QMT Tick 推断）
+- `data_provider/dongcai_provider.py` - 东方财富数据提供者（T-1 历史）
+
+### 事件检测系统
+- `event_detector.py` - 事件检测器基类
+- `dip_buy_event_detector.py` - 黄金坑买入点检测
+- `leader_event_detector.py` - 龙头加速检测
+- `late_trading_scanner.py` - 尾盘急拉检测
+- `halfway_event_detector.py` - 半路事件检测
+- `intraday_turnaround_detector.py` - 倒V反转检测
+
+### 核心算法模块
 - `algo*.py` - 算法模块（基础算法、高级算法、资金流向算法等）
-- `data_adapter*.py` - 数据适配器（支持多数据源）
-- `fund_flow_*.py` - 资金流向分析（收集器、分析器、调度器）
-- `market_*.py` - 市场分析（市场情绪、市场状态、市场周期等）
-- `trap_detector.py` - 诱多陷阱检测器（V9.4.5 新增）
-- `capital_classifier.py` - 资金性质分类器（V9.4.5 新增）
-- `rolling_metrics.py` - 滚动指标计算器（V9.4.5 新增）
+- `trap_detector.py` - 诱多陷阱检测器
+- `capital_classifier.py` - 资金性质分类器
+- `rolling_risk_features.py` - 多日风险特征计算
 
 ### 数据模块
 - `data_*.py` - 数据管理（采集、清洗、健康监控等）
+- `data_adapter*.py` - 数据适配器（支持多数据源）
 - `database_manager.py` - 数据库管理
 - `cache_manager.py` - 缓存管理
+- `cache_replay_provider.py` - 快照回放提供者
+
+### 资金流向分析
+- `fund_flow_*.py` - 资金流向分析（收集器、分析器、调度器）
+- `sector_resonance.py` - 板块共振计算器
+
+### 市场分析
+- `market_*.py` - 市场分析（市场情绪、市场状态、市场周期等）
 
 ### QMT 模块
 - `qmt_*.py` - QMT 数据提供（历史数据、Tick数据）
@@ -117,6 +177,14 @@ config = Config()
 
 ### 策略模块
 - `strategy_*.py` - 策略库（策略工厂、策略比较、投资组合优化等）
+
+### 回测引擎
+- `backtest_engine.py` - 回测引擎 V2（修复幸存者偏差）
+- `backtest_framework.py` - 回测框架
+
+### 风控模块
+- `risk_control.py` - 风控管理器
+- `iron_rule_*.py` - 铁律系统
 
 ### UI 辅助模块
 - `monitor.py` - 监控模块
@@ -149,14 +217,31 @@ streamlit run ui/single_stock.py
 
 ## 📂 data/ - 数据目录
 
-### 数据文件
-- `stock_analysis/` - 个股分析数据（按股票代码分类）
-- `concept_map.json` - 概念映射数据
-- `stock_sector_map.json` - 股票板块映射
+### 核心数据文件
+- `monitor_state.json` - 监控状态文件（1秒刷新）
+- `stock_sector_map.json` - 股票板块映射（申万行业，5552只股票）
+- `equity_info.json` - 股本信息数据
+- `stock_names.json` - 股票名称映射
+
+### 数据目录
+- `scan_results/` - 扫描结果目录（按时间点存储）
 - `kline_cache/` - K线缓存
+- `minute_data/` - 分钟 K 线数据
+- `minute_data_hot/` - 热股分钟数据
+- `rebuild_snapshots/` - 历史快照重建目录
+- `decision_logs/` - 决策日志
 - `review_cases/` - 复盘案例
+- `tracking/` - 跟踪数据
+
+### 事件记录
+- `event_records.csv` - 事件记录 CSV
+- `event_records.xlsx` - 事件记录 Excel
+- `test_event_records.csv` - 测试事件记录
+
+### 其他数据
 - `execution_record.json` - 执行记录
 - `scheduled_alerts.json` - 定时任务告警
+- `my_quant_cache.sqlite` - SQLite 缓存数据库
 
 ---
 
@@ -273,63 +358,89 @@ streamlit run ui/single_stock.py
 
 | 目录 | 文件数 | 用途 |
 |------|--------|------|
-| 根目录 | 10 | 核心配置和启动文件 |
-| tools/ | 6 | 工具和分析模块 |
-| tasks/ | 4 | 运行任务和定时任务 |
-| scripts/ | 5 | 维护和初始化脚本 |
-| config/ | 5 | 配置文件 |
-| logic/ | 180+ | 核心逻辑模块 |
+| 根目录 | 15+ | 核心配置和启动文件 |
+| tools/ | 30+ | 工具和分析模块（含 Rich CLI 监控终端） |
+| tasks/ | 4+ | 运行任务和定时任务 |
+| scripts/ | 45+ | 维护和初始化脚本 |
+| config/ | 12+ | 配置文件 |
+| logic/ | 200+ | 核心逻辑模块（含三把斧体系、数据抽象层） |
 | ui/ | 70+ | Streamlit UI 页面 |
-| docs/ | 16 | 文档文件（分4个子目录） |
+| docs/ | 20+ | 文档文件（分4个子目录） |
 | tests/ | - | 测试文件 |
-| models/ | - | ML 模型文件 |
 | logs/ | - | 日志文件 |
-| data/ | - | 数据文件 |
+| data/ | - | 数据文件（含监控状态、快照等） |
+| data_sources/ | 1+ | 数据源模块 |
 | easyquotation/ | - | 实时数据源 |
 | xtquant/ | - | QMT 数据源 |
 | venv_qmt/ | - | QMT 虚拟环境 |
+
+**总计**: 400+ 文件
 
 ---
 
 ## 🚀 快速开始
 
-### 1. 启动应用
+### 1. 启动 Rich CLI 监控终端（推荐）
 ```bash
-# Windows
+# 启动 CLI 监控终端（零延迟、轻量级、事件驱动）
+python tools/cli_monitor.py
+
+# 使用 bat 文件启动
+start_event_driven_monitor.bat
+```
+
+### 2. 启动 UI 应用
+```bash
+# 启动 Streamlit UI
+streamlit run ui/main_dashboard.py
+
+# 或使用启动脚本
 start.bat
-
-# 或者
-python main.py
 ```
 
-### 2. 运行工具
+### 3. 运行分析工具
 ```python
-# 使用分析工具
-from tools.stock_ai_tool import analyze_stock
-result = analyze_stock('603697', days=90, mode='enhanced')
+# 使用综合分析工具
+from tools.comprehensive_stock_tool import comprehensive_stock_analysis
+result = comprehensive_stock_analysis('002514.SZ')
+
+# 使用统一分析器
+from tools.stock_analyzer import analyze_stock
+result = analyze_stock('002514.SZ')
 ```
 
-### 3. 运行任务
+### 4. 运行回测
 ```bash
-# 运行仪表板
-python tasks/run_dashboard.py
-
-# 运行扫描
-python tasks/run_scan_v19_final.py
+# 运行回测引擎 V2（修复幸存者偏差）
+python tools/run_backtest_1m_v2.py
 ```
 
-### 4. 运行脚本
+### 5. 运行脚本
 ```bash
-# 清理项目
-python scripts/clean_project.py
-
 # 初始化 QMT
 python scripts/init_qmt.py
+
+# 每日数据更新
+python scripts/daily_update.py
+
+# 生成概念映射
+python scripts/generate_concept_map.py
 ```
 
 ---
 
 ## 📝 更新日志
+
+### V11.2.0 (2026-02-12)
+- ✨ **三把斧体系**：防守斧、资格斧、时机斧（三大战法核心逻辑）
+- ✨ **Rich CLI 监控终端**：零延迟、轻量级、事件驱动（1秒刷新）
+- ✨ **数据抽象层**：Level2→Level1→DongCai 自动降级
+- ✨ **事件驱动监控**：实时事件触发扫描和响应
+- ✨ **信号记录系统**：4表结构追踪交易绩效
+- ✨ **回测引擎 V2**：修复幸存者偏差
+- ✨ **QMT Tick 推断逻辑**：从 Tick 数据推断资金流向
+- ✨ **板块共振计算**：Leaders ≥ 3 + Breadth ≥ 35%
+- ✨ **文档对齐**：Q_AND_A_ALIGNMENT.md、CLI_USAGE.md、PROJECT_ARCHITECTURE.md 保持一致
 
 ### V9.4.5 (2026-02-02)
 - ✨ 新增诱多陷阱检测系统
@@ -342,5 +453,5 @@ python scripts/init_qmt.py
 
 ---
 
-**最后更新**: 2026-02-02  
-**版本**: V9.4.5
+**最后更新**: 2026-02-12  
+**版本**: V11.2.0
