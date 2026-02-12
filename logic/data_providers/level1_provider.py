@@ -55,6 +55,43 @@ class Level1InferenceProvider(ICapitalFlowProvider):
         self.dongcai_provider = DongCaiT1Provider()  # 降级数据源
         self._cache = {}
         self._cache_ttl = 10  # Tick缓存10秒
+        self._qmt_connected = False  # QMT连接状态
+        self._last_connection_check = None  # 上次连接检查时间
+
+    def _check_qmt_connection(self) -> bool:
+        """
+        检查QMT连接状态
+
+        Returns:
+            bool: True=连接正常, False=连接失败
+        """
+        # 如果最近5秒检查过，使用缓存结果
+        now = datetime.now()
+        if self._last_connection_check:
+            age = (now - self._last_connection_check).total_seconds()
+            if age < 5 and self._qmt_connected:
+                return True
+
+        try:
+            # 测试获取一个常见股票的Tick数据
+            test_tick = xtdata.get_full_tick(['000001.SZ'])
+            
+            if test_tick is not None and len(test_tick) > 0:
+                self._qmt_connected = True
+                self._last_connection_check = now
+                logger.debug("✅ QMT连接检查通过")
+                return True
+            else:
+                self._qmt_connected = False
+                self._last_connection_check = now
+                logger.warning("⚠️ QMT连接检查失败：返回空数据")
+                return False
+
+        except Exception as e:
+            self._qmt_connected = False
+            self._last_connection_check = now
+            logger.error(f"❌ QMT连接检查异常: {e}")
+            return False
 
     def get_realtime_flow(self, code: str) -> CapitalFlowSignal:
         """
@@ -67,6 +104,11 @@ class Level1InferenceProvider(ICapitalFlowProvider):
             CapitalFlowSignal: 推断的资金流数据
         """
         try:
+            # 🔥 P0-2: 检查QMT连接状态
+            if not self._check_qmt_connection():
+                logger.warning(f"⚠️ QMT连接异常，{code} 降级到东方财富T-1数据")
+                return self.dongcai_provider.get_realtime_flow(code)
+
             # 检查缓存
             if code in self._cache:
                 cached_signal, cache_time = self._cache[code]
@@ -110,6 +152,68 @@ class Level1InferenceProvider(ICapitalFlowProvider):
             logger.warning(f"⚠️ {code} Level1推断失败: {e}，降级到东方财富")
             return self.dongcai_provider.get_realtime_flow(code)
 
+    def _validate_tick_data(self, tick: dict) -> tuple[bool, str]:
+        """
+        验证Tick数据的完整性和有效性
+
+        Args:
+            tick: QMT Tick数据
+
+        Returns:
+            tuple: (是否有效, 错误消息)
+        """
+        required_fields = ['lastPrice', 'lastClose', 'amount', 'buyVol', 'sellVol']
+
+        # 1. 检查必需字段是否存在
+        for field in required_fields:
+            if field not in tick:
+                return False, f"缺少必需字段: {field}"
+
+        # 2. 检查数值类型和范围
+        last_price = tick.get('lastPrice', 0)
+        last_close = tick.get('lastClose', 0)
+        amount = tick.get('amount', 0)
+        buy_vol = tick.get('buyVol', [])
+        sell_vol = tick.get('sellVol', [])
+
+        # 价格检查：必须为正数且在合理范围内（0.1-10000元）
+        if not isinstance(last_price, (int, float)) or last_price <= 0:
+            return False, f"lastPrice无效: {last_price}"
+
+        if not isinstance(last_close, (int, float)) or last_close <= 0:
+            return False, f"lastClose无效: {last_close}"
+
+        if last_price < 0.1 or last_price > 10000:
+            return False, f"lastPrice超出合理范围: {last_price}"
+
+        # 涨跌幅检查：单日涨跌不能超过20%（主板）或30%（科创板/创业板）
+        if last_close > 0:
+            pct_change = abs((last_price - last_close) / last_close)
+            if pct_change > 0.3:
+                return False, f"涨跌幅异常: {pct_change:.2%}"
+
+        # 成交额检查：必须为非负数
+        if not isinstance(amount, (int, float)) or amount < 0:
+            return False, f"amount无效: {amount}"
+
+        # 买卖盘检查：必须是列表且长度≥0
+        if not isinstance(buy_vol, list):
+            return False, f"buyVol不是列表: {type(buy_vol)}"
+
+        if not isinstance(sell_vol, list):
+            return False, f"sellVol不是列表: {type(sell_vol)}"
+
+        # 买卖盘量检查：所有值必须为非负数
+        for i, vol in enumerate(buy_vol):
+            if not isinstance(vol, (int, float)) or vol < 0:
+                return False, f"buyVol[{i}]无效: {vol}"
+
+        for i, vol in enumerate(sell_vol):
+            if not isinstance(vol, (int, float)) or vol < 0:
+                return False, f"sellVol[{i}]无效: {vol}"
+
+        return True, ""
+
     def _infer_from_tick(self, tick: dict, dongcai_signal: CapitalFlowSignal) -> dict:
         """
         从Tick数据推断资金流
@@ -124,6 +228,17 @@ class Level1InferenceProvider(ICapitalFlowProvider):
         Returns:
             dict: 推断结果
         """
+        # 🔥 P0-3: 验证Tick数据
+        is_valid, error_msg = self._validate_tick_data(tick)
+        if not is_valid:
+            logger.warning(f"⚠️ Tick数据验证失败: {error_msg}，使用昨日资金流")
+            return {
+                'main_net_inflow': dongcai_signal.main_net_inflow,
+                'super_large_net': dongcai_signal.super_large_inflow,
+                'large_net': dongcai_signal.large_inflow,
+                'confidence': dongcai_signal.confidence * 0.5,  # 降低置信度
+                'flow_direction': 'INFLOW' if dongcai_signal.main_net_inflow > 0 else 'OUTFLOW'
+            }
         # 提取Tick字段
         last_price = tick.get('lastPrice', 0)
         last_close = tick.get('lastClose', 0)

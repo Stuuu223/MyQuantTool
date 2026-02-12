@@ -207,6 +207,10 @@ class EventDrivenMonitor:
         
         # 🔥 [P0修复] 板块共振缓存（5分钟TTL）
         self.sector_resonance_cache = {}  # {sector_name: (result, timestamp)}
+
+        # 🔥 P0-4: 资金流历史缓存（用于检测主力资金大量流出）
+        self.capital_flow_history = {}  # {stock_code: {'main_net_inflow': float, 'timestamp': datetime}}
+        self.capital_flow_history_ttl = 300  # 缓存5分钟
     
     def _init_event_detectors(self):
         """初始化所有事件检测器"""
@@ -585,6 +589,99 @@ class EventDrivenMonitor:
         
         return base_priority
 
+    def _check_capital_flow_change(self, code: str, main_net_inflow: float) -> dict:
+        """
+        🔥 P0-4: 检查资金流变化（主力资金大量流出检测）
+
+        检测逻辑：
+        - 对比当前资金流与历史资金流
+        - 检测是否出现大量流出
+        - 检测资金推动力急剧下降
+
+        Args:
+            code: 股票代码
+            main_net_inflow: 当前主力净流入（元）
+
+        Returns:
+            dict: {
+                'has_alert': bool,        # 是否有预警
+                'alert_type': str,        # 预警类型
+                'change_amount': float,   # 变化金额（元）
+                'change_pct': float,      # 变化百分比
+                'message': str            # 预警消息
+            }
+        """
+        result = {
+            'has_alert': False,
+            'alert_type': '',
+            'change_amount': 0,
+            'change_pct': 0,
+            'message': ''
+        }
+
+        try:
+            now = datetime.now()
+
+            # 获取历史资金流数据
+            if code in self.capital_flow_history:
+                history = self.capital_flow_history[code]
+                historical_flow = history['main_net_inflow']
+                timestamp = history['timestamp']
+
+                # 检查数据时效性（5分钟内有效）
+                age = (now - timestamp).total_seconds()
+                if age > self.capital_flow_history_ttl:
+                    # 数据过期，清除历史数据
+                    del self.capital_flow_history[code]
+                    logger.debug(f"🔍 {code} 资金流历史数据已过期，重新建立基线")
+                else:
+                    # 计算资金流变化
+                    change = main_net_inflow - historical_flow
+                    change_pct = 0
+
+                    if historical_flow != 0:
+                        change_pct = change / abs(historical_flow) * 100
+
+                    result['change_amount'] = change
+                    result['change_pct'] = change_pct
+
+                    # 检测预警条件
+
+                    # 条件1: 主力资金大量流出（流入转为流出）
+                    if historical_flow > 0 and main_net_inflow < 0:
+                        outflow_amount = abs(change)
+                        if outflow_amount > 50_000_000:  # 超过5000万
+                            result['has_alert'] = True
+                            result['alert_type'] = 'MASSIVE_OUTFLOW'
+                            result['message'] = f'🚨 [资金流预警] {code} 主力资金大量流出 {outflow_amount/1e8:.2f}亿（由入转出）'
+                            logger.warning(result['message'])
+
+                    # 条件2: 资金推动力急剧下降（>50%下降）
+                    elif historical_flow > 0 and change_pct < -50:
+                        result['has_alert'] = True
+                        result['alert_type'] = 'MOMENTUM_DROP'
+                        result['message'] = f'⚠️ [资金流预警] {code} 资金推动力急剧下降 {change_pct:.1f}%'
+                        logger.warning(result['message'])
+
+                    # 条件3: 持续大量流出（连续3次检测到流出）
+                    elif historical_flow < 0 and main_net_inflow < 0:
+                        if abs(change) > 50_000_000:  # 超过5000万
+                            result['has_alert'] = True
+                            result['alert_type'] = 'CONTINUOUS_OUTFLOW'
+                            result['message'] = f'⚠️ [资金流预警] {code} 持续大量流出 {abs(main_net_inflow)/1e8:.2f}亿'
+                            logger.warning(result['message'])
+
+            # 更新历史资金流数据
+            self.capital_flow_history[code] = {
+                'main_net_inflow': main_net_inflow,
+                'timestamp': now
+            }
+
+        except Exception as e:
+            logger.error(f"❌ 检测资金流变化失败 {code}: {e}")
+
+        return result
+
     def _print_low_risk_opportunities(self, opportunities: list):
         """打印低风险机会池表格（风险≤0.2）"""
         # 过滤低风险股票
@@ -625,6 +722,12 @@ class EventDrivenMonitor:
             # 获取主力净流入
             latest = flow_data.get('latest', {})
             main_net_yuan = latest.get('main_net_inflow', 0)
+
+            # 🔥 P0-4: 检测资金流变化（主力资金大量流出）
+            flow_alert = self._check_capital_flow_change(code, main_net_yuan)
+            if flow_alert['has_alert']:
+                # 如果有预警，打印到控制台
+                print(f"   {flow_alert['message']}")
 
             # 单位转换：元→亿
             amount_yi = amount_yuan / 1e8
@@ -1253,25 +1356,57 @@ class EventDrivenMonitor:
         return True
     
     def _cleanup_expired_candidates(self):
-        """清理过期的候选（TTL）"""
-        if not self.hot_candidates_heap:
-            return
-        
-        now = datetime.now()
-        expired_codes = []
-        
-        for candidate in self.hot_candidates_heap:
-            age_minutes = (now - candidate.timestamp).total_seconds() / 60
-            if age_minutes > self.candidate_ttl_minutes:
-                expired_codes.append(candidate.code)
+        """
+        清理过期的候选（TTL）+ 资金流历史缓存
+        防止内存溢出
+        """
+        # 1. 清理过期的候选
+        if self.hot_candidates_heap:
+            now = datetime.now()
+            expired_codes = []
 
-        # 移除过期候选
-        if expired_codes:
-            self.hot_candidates_heap = [c for c in self.hot_candidates_heap if c.code not in expired_codes]
-            heapq.heapify(self.hot_candidates_heap)
-            for code in expired_codes:
-                self.hot_candidates_set.discard(code)
-            logger.info(f"   清理过期候选: {len(expired_codes)} 只")
+            for candidate in self.hot_candidates_heap:
+                age_minutes = (now - candidate.timestamp).total_seconds() / 60
+                if age_minutes > self.candidate_ttl_minutes:
+                    expired_codes.append(candidate.code)
+
+            # 移除过期候选
+            if expired_codes:
+                self.hot_candidates_heap = [c for c in self.hot_candidates_heap if c.code not in expired_codes]
+                heapq.heapify(self.hot_candidates_heap)
+                for code in expired_codes:
+                    self.hot_candidates_set.discard(code)
+                logger.info(f"   清理过期候选: {len(expired_codes)} 只")
+
+        # 🔥 P1-1: 清理资金流历史缓存（防止内存溢出）
+        if self.capital_flow_history:
+            now = datetime.now()
+            expired_flow_codes = []
+
+            for code, flow_data in self.capital_flow_history.items():
+                age_seconds = (now - flow_data['timestamp']).total_seconds()
+                if age_seconds > self.capital_flow_history_ttl:  # 超过5分钟
+                    expired_flow_codes.append(code)
+
+            if expired_flow_codes:
+                for code in expired_flow_codes:
+                    del self.capital_flow_history[code]
+                logger.debug(f"   清理资金流历史缓存: {len(expired_flow_codes)} 只")
+
+        # 🔥 P1-1: 清理板块共振缓存（防止内存溢出）
+        if self.sector_resonance_cache:
+            now = datetime.now()
+            expired_sectors = []
+
+            for sector_name, (result, timestamp) in self.sector_resonance_cache.items():
+                age_seconds = (now - timestamp).total_seconds()
+                if age_seconds > self.sector_resonance_cache_ttl:  # 超过5分钟
+                    expired_sectors.append(sector_name)
+
+            if expired_sectors:
+                for sector_name in expired_sectors:
+                    del self.sector_resonance_cache[sector_name]
+                logger.debug(f"   清理板块共振缓存: {len(expired_sectors)} 个")
     
     def _deep_scan_candidates(self):
         """对候选池执行深度扫描"""

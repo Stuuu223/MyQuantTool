@@ -31,6 +31,7 @@ class AuctionEventDetector(BaseEventDetector):
     # 竞价时间窗口
     AUCTION_START = dt_time(9, 15)
     AUCTION_END = dt_time(9, 25)
+    AUCTION_MIDPOINT = dt_time(9, 20)  # 🔥 P1-2: 竞价中点（第一阶段结束，第二阶段开始）
     
     # 弱转强阈值
     WEAK_TO_STRONG_GAP_MIN = 0.05  # 高开幅度 ≥ 5%
@@ -52,6 +53,22 @@ class AuctionEventDetector(BaseEventDetector):
         """判断当前是否在竞价时间"""
         current_time = self.market_checker.get_current_time()
         return self.AUCTION_START <= current_time <= self.AUCTION_END
+
+    def _get_auction_phase(self) -> str:
+        """
+        🔥 P1-2: 获取当前竞价阶段
+
+        Returns:
+            str: 'PHASE1'（9:15-9:20），'PHASE2'（9:20-9:25），'NONE'（非竞价时间）
+        """
+        current_time = self.market_checker.get_current_time()
+
+        if self.AUCTION_START <= current_time < self.AUCTION_MIDPOINT:
+            return 'PHASE1'
+        elif self.AUCTION_MIDPOINT <= current_time <= self.AUCTION_END:
+            return 'PHASE2'
+        else:
+            return 'NONE'
     
     def detect_weak_to_strong(
         self,
@@ -243,31 +260,42 @@ class AuctionEventDetector(BaseEventDetector):
     ) -> Optional[TradingEvent]:
         """
         检测集合竞价事件
-        
+
         按优先级检测：
         1. 一字板扩散（优先级更高）
         2. 弱转强
-        
+
         Args:
             tick_data: Tick数据
             context: 上下文信息
-        
+
         Returns:
             检测到的事件对象，如果没有则返回None
         """
+        # 🔥 P1-2: 获取当前竞价阶段
+        phase = self._get_auction_phase()
+
         # 只在竞价时间生效
-        if not self._is_auction_time():
+        if phase == 'NONE':
             return None
-        
+
+        # 🔥 P1-2: 记录当前竞价阶段
+        stock_code = tick_data.get('code', '')
+        logger.debug(f"🔍 竞价检测 [{phase}]: {stock_code}")
+
         # 按优先级检测
         event = self.detect_limit_up_spread(tick_data, context)
         if event:
+            # 🔥 P1-2: 在事件中添加竞价阶段信息
+            event.metadata['auction_phase'] = phase
             return event
-        
+
         event = self.detect_weak_to_strong(tick_data, context)
         if event:
+            # 🔥 P1-2: 在事件中添加竞价阶段信息
+            event.metadata['auction_phase'] = phase
             return event
-        
+
         return None
 
 
