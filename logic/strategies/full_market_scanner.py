@@ -1737,12 +1737,13 @@ class FullMarketScanner:
                                         ref_close = daily_close.iloc[idx_ref]
                                         
                                         if ref_close > 0:
-                                            price_3d_change = (current_price - ref_close) / ref_close\n                                            logger.info(f\"✅ {code} 使用QMT分钟数据合成计算price_3d_change={price_3d_change:.4f}\")
+                                            price_3d_change = (current_price - ref_close) / ref_close
+                                            logger.info(f"✅ {code} 使用QMT分钟数据合成计算price_3d_change={price_3d_change:.4f}")
                             except Exception as e:
-                                logger.warning(f\"⚠️  {code} 分钟数据合成失败: {e}\")
+                                logger.warning(f"⚠️  {code} 分钟数据合成失败: {e}")
 
                 except Exception as e:
-                    logger.warning(f\"⚠️  {code} 计算price_3d_change异常: {e}\")
+                    logger.warning(f"⚠️  {code} 计算price_3d_change异常: {e}")
                     price_3d_change = 0.0
 
                 # 将计算结果写入 candidate_dict，传递给后续流程
