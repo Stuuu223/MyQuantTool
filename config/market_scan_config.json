@@ -36,7 +36,35 @@
     "pct_chg_min": 0.5,
     "amount_min": 5000000,
     "turnover_min": 1.0,
-    "_comment": "临时降低阈值测试修复效果"
+    "_comment": "已废弃：改用基于时间分段的阈值",
+    "_deprecated": "pct_chg_min, amount_min 已被 time_segments 中的参数替代"
+  },
+  "time_segments": {
+    "_comment": "基于拾荒网知识的时间分段筛选",
+    "opening": {
+      "start": "09:30",
+      "end": "10:00",
+      "pct_chg_min": 0.5,
+      "volume_ratio_min": 1.9,
+      "turnover_min": 0.03,
+      "_comment": "开盘阶段：捕捉起爆，最宽松"
+    },
+    "midday": {
+      "start": "10:00",
+      "end": "14:30",
+      "pct_chg_min": 1.0,
+      "volume_ratio_min": 1.5,
+      "turnover_min": 0.02,
+      "_comment": "盘中阶段：平台突破，中等阈值"
+    },
+    "close": {
+      "start": "14:30",
+      "end": "15:00",
+      "pct_chg_min": 2.0,
+      "volume_ratio_min": 3.0,
+      "turnover_min": 0.05,
+      "_comment": "尾盘阶段：避免诱多，最严格"
+    }
   },
   "level2": {
     "main_inflow_min": 5000000,

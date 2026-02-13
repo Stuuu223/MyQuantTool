@@ -1141,19 +1141,69 @@ class FullMarketScanner:
 
             cfg = self.config['level1']
 
-            # 两个条件必须同时满足
-            if pct_chg < cfg['pct_chg_min']:
+            # 🔥 [基于拾荒网知识优化] 时间分段筛选
+            from datetime import datetime
+            current_time = datetime.now()
+            hour = current_time.hour
+            minute = current_time.minute
+            
+            # 根据时间段设置不同阈值（拾荒网知识：时间维度最重要）
+            if 9 <= hour < 10:  # 开盘阶段（9:30-10:00）
+                pct_chg_threshold = cfg.get('opening_pct_chg_min', 0.5)
+                volume_ratio_threshold = cfg.get('opening_volume_ratio_min', 1.9)
+                turnover_threshold = cfg.get('opening_turnover_min', 0.03)  # 换手率 3%（首板标准）
+            elif 10 <= hour < 14 or (hour == 14 and minute < 30):  # 盘中阶段（10:00-14:30）
+                pct_chg_threshold = cfg.get('midday_pct_chg_min', 1.0)
+                volume_ratio_threshold = cfg.get('midday_volume_ratio_min', 1.5)
+                turnover_threshold = cfg.get('midday_turnover_min', 0.02)  # 换手率 2%
+            else:  # 尾盘阶段（14:30-15:00）
+                pct_chg_threshold = cfg.get('close_pct_chg_min', 2.0)
+                volume_ratio_threshold = cfg.get('close_volume_ratio_min', 3.0)  # 警惕尾盘拉升
+                turnover_threshold = cfg.get('close_turnover_min', 0.05)  # 换手率 5%
+
+            # 1. 涨跌幅检查（基于时间分段）
+            if pct_chg < pct_chg_threshold:
                 self._l1_debug['pct_fail'] += 1
-                # 🔥 [Debug] 追踪001335.SZ
                 if code == '001335.SZ' or code.endswith('001335'):
-                    logger.info(f"🔍 [DEBUG 001335] Level 1失败: 涨跌幅过低 (pct_chg={pct_chg:.2f}%, threshold={cfg['pct_chg_min']:.2f}%)")
+                    logger.info(f"🔍 [DEBUG 001335] Level 1失败: 涨跌幅过低 (pct_chg={pct_chg:.2f}%, threshold={pct_chg_threshold:.2f}%)")
                 return False
-            if amount < cfg['amount_min']:
-                self._l1_debug['amount_fail'] += 1
-                # 🔥 [Debug] 追踪001335.SZ
-                if code == '001335.SZ' or code.endswith('001335'):
-                    logger.info(f"🔍 [DEBUG 001335] Level 1失败: 成交额过低 (amount={amount/1e8:.2f}亿, threshold={cfg['amount_min']/1e8:.2f}亿)")
-                return False
+            
+            # 🔥 [基于拾荒网知识优化] 移除绝对成交额检查，改用换手率检查
+            # 右侧起爆的关键是相对放量（换手率），不是绝对成交额
+            # 小盘股500万=0.5%换手率，大盘股500万=0.005%换手率，不公平
+            
+            # 2. 换手率检查（基于拾荒网知识：换手够了，可以进场）
+            market_cap = self._get_market_cap(code, tick)
+            if market_cap > 0:
+                # 获取当前价格用于计算流通股本
+                last_price = tick.get('lastPrice', tick.get('last_price', 1))
+                if last_price > 0:
+                    circulating_shares = market_cap / last_price
+                    turnover_rate = self._calculate_turnover_rate(code, volume, circulating_shares)
+                    
+                    # 检查换手率是否达标
+                    if turnover_rate < turnover_threshold:
+                        self._l1_debug['turnover_fail'] += 1
+                        if code == '001335.SZ' or code.endswith('001335'):
+                            logger.info(f"🔍 [DEBUG 001335] Level 1失败: 换手率过低 (turnover={turnover_rate*100:.2f}%, threshold={turnover_threshold*100:.2f}%)")
+                        return False
+            else:
+                # 市值为0时的降级策略：使用成交额作为替代指标
+                # 小盘股（< 50亿）：成交额 > 1000万
+                # 中盘股（50-200亿）：成交额 > 5000万
+                # 大盘股（> 200亿）：成交额 > 1亿
+                if market_cap < 50_0000_0000:  # < 50亿
+                    amount_threshold = 10_000_000  # 1000万
+                elif market_cap < 200_0000_0000:  # 50-200亿
+                    amount_threshold = 50_000_000  # 5000万
+                else:  # > 200亿
+                    amount_threshold = 100_000_000  # 1亿
+                
+                if amount < amount_threshold:
+                    self._l1_debug['amount_fail'] += 1
+                    if code == '001335.SZ' or code.endswith('001335'):
+                        logger.info(f"🔍 [DEBUG 001335] Level 1失败: 成交额过低 (amount={amount/1e8:.2f}亿, threshold={amount_threshold/1e8:.2f}亿)")
+                    return False
 
             # 检查量比（新增：市值分层阈值）
             volume_ratio = self._check_volume_ratio(code, volume, tick)
