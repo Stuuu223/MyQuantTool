@@ -1,1611 +1,534 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-事件驱动持续监控脚本 - 第二阶段框架
+事件驱动的实时监控器 (Event-Driven Realtime Monitor)
 
-功能：
-1. 支持两种模式：固定间隔扫描、事件驱动扫描
-2. 在交易时间内持续运行（9:25-15:00）
-3. 固定间隔模式：每N分钟执行一次全市场扫描
-4. 事件驱动模式：检测到事件时触发扫描
-5. 生成状态指纹，检测信号变化
-6. 只有在状态变化时才保存快照
-7. 输出实时日志到命令行
+架构设计：
+    1. 独立进程运行，不阻塞主策略循环
+    2. 基于文件变更或定时器触发 Level 1 扫描
+    3. 维护热点候选池 (Hot Candidates Pool)
+    4. 实时更新 CLI 仪表盘
 
-Author: iFlow CLI
-Version: V2.0
+Author: MyQuantTool Team
+Date: 2026-02-05
 """
 
 import time
 import os
-import sys
 import json
-import heapq
-from datetime import datetime, time as dt_time
-from pathlib import Path
-from typing import Dict, List, Any, Tuple
-from dataclasses import dataclass
+import threading
+import sys
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Set
+import queue
+import logging
 
-# 添加项目根目录到Python路径
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
+try:
+    from xtquant import xtdata
+    QMT_AVAILABLE = True
+except ImportError:
+    QMT_AVAILABLE = False
+
+from rich.live import Live
+from rich.layout import Layout
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
+from rich.console import Console
+from rich import box
 
 from logic.strategies.full_market_scanner import FullMarketScanner
-from logic.output_formatter import format_scan_result
-from logic.market_status import MarketStatusChecker
-from logic.equity_data_accessor import get_circ_mv
-from logic.event_detector import EventManager, EventType
-from logic.auction_event_detector import AuctionEventDetector
-from logic.halfway_event_detector import HalfwayEventDetector
-from logic.dip_buy_event_detector import DipBuyEventDetector
-from logic.leader_event_detector import LeaderEventDetector
-from logic.qmt_tick_monitor import get_tick_monitor
-from logic.event_recorder import get_event_recorder
 from logic.utils.logger import get_logger
-from logic.market_phase_checker import MarketPhaseChecker
-from logic.sector_resonance import SectorResonanceCalculator
-from logic.core.trade_gatekeeper import TradeGatekeeper
+from logic.utils.code_converter import CodeConverter
+from logic.data_providers import get_provider
 
-# 🔥 [日志精简] 导入日志配置模块
-from logic.log_config import use_normal_mode, use_quiet_mode, use_debug_mode, is_debug_target
-
-# ===== 日志精简配置 =====
-# use_debug_mode()   # 调试时用
-use_normal_mode()    # ✅ 正常运行（推荐）
-# use_quiet_mode()   # 极简模式
-# ===== 日志精简配置结束 =====
-
-logger = get_logger(__name__)
-
-
-@dataclass
-class Candidate:
-    """候选股票（带优先级）"""
-    code: str
-    timestamp: datetime
-    trigger_reason: str
-    priority: int  # 优先级（越高越重要）
-    
-    def __lt__(self, other):
-        # heapq是最小堆，所以priority越小越优先（反转）
-        return self.priority < other.priority
-
+# 配置日志
+logger = get_logger("EventDrivenMonitor")
 
 class EventDrivenMonitor:
     """
-    事件驱动持续监控器 - 第二阶段框架
+    事件驱动的实时监控器
     
     核心功能：
-    - 事件驱动扫描（推荐）
-    - 固定间隔扫描（备用）
-    - 状态指纹对比
-    - 智能快照保存
+    - 维护一个固定大小的候选池 (Candidate Pool)
+    - 定期执行 Level 1 全市场扫描，更新候选池
+    - 对候选池内的股票进行高频 Level 2/3 监控
+    - 实时输出 CLI 仪表盘
     """
     
-    def __init__(
-        self,
-        scan_interval: int = 300,
-        mode: str = "event_driven",
-        monitor_stocks: List[str] = None
-    ):
-        """
-        初始化事件驱动监控器
+    def __init__(self, config_path: str = "config/market_scan_config.json"):
+        """初始化监控器"""
+        self.config_path = config_path
+        self.config = self._load_config(config_path)
         
-        Args:
-            scan_interval: 扫描间隔（秒），默认300秒（5分钟）
-            mode: 运行模式
-                  - "event_driven": 事件驱动模式（推荐）
-                  - "fixed_interval": 固定间隔模式
-            monitor_stocks: 监控的股票列表（事件驱动模式下使用）
-        """
-        self.scan_interval = scan_interval
-        self.mode = mode
-        self.monitor_stocks = monitor_stocks or []
+        # 初始化扫描器
+        self.scanner = FullMarketScanner(config_path)
         
-        # 初始化核心组件
-        self.scanner = FullMarketScanner()
-        self.market_checker = MarketStatusChecker()
-        self.event_manager = EventManager()
-        self.event_recorder = get_event_recorder()  # 初始化事件记录器
+        # 候选池状态
+        self.candidates: Dict[str, dict] = {}  # code -> candidate_info
+        self.candidates_lock = threading.Lock()
+        
+        # 统计信息
+        self.stats = {
+            'last_scan_time': None,
+            'scan_count': 0,
+            'opportunities_count': 0,
+            'watchlist_count': 0,
+            'blacklist_count': 0,
+            'market_temperature': 50.0,  # 市场温度（0-100）
+            'status': 'Initializing'
+        }
+        
+        # 监控控制
+        self.running = False
+        self.scan_thread = None
+        self.display_thread = None
+        self.stop_event = threading.Event()
+        
+        # 消息队列（用于日志显示）
+        self.log_queue = queue.Queue(maxsize=100)
+        
+        # 候选池参数
+        pool_config = self.config.get('monitor', {}).get('candidate_pool', {})
+        self.max_candidates = pool_config.get('max_size', 100)
+        self.candidate_ttl = pool_config.get('ttl_minutes', 10) * 60
+        
+        # QMT 数据检查
+        self.data_provider = get_provider('level1')
+        
+        # 🔥 [V11.0.1] 初始化交易守门人
+        from logic.core.trade_gatekeeper import TradeGatekeeper
+        self.gatekeeper = TradeGatekeeper(self.config)
+        
+        # 记录已处理的股票集合（防止重复添加）
+        self.hot_candidates_set: Set[str] = set()
+        
+        logger.info(f"✅ 监控器初始化完成 (候选池容量: {self.max_candidates})")
 
-        # 初始化市场阶段检查器
-        self.phase_checker = MarketPhaseChecker(self.market_checker)
-
-        # 🔥 [重构] 加载配置（紧急模式 + 监控参数）+ 性能监控
-        import json
-        import time
-        from pathlib import Path
-
-        # ⏱️ [性能监控] 配置加载计时开始
-        config_load_start = time.perf_counter()
-
-        # 定位项目根目录：从当前文件路径向上两级（tasks -> 项目根）
-        project_root = Path(__file__).resolve().parent.parent
-        config_path = project_root / 'config' / 'market_scan_config.json'
-
+    def _load_config(self, config_path: str) -> dict:
+        """加载配置"""
         try:
             with open(config_path, 'r', encoding='utf-8') as f:
-                config = json.load(f)
-                
-                # 加载紧急模式配置
-                self.emergency_config = config.get('system', {}).get('emergency_mode', {
-                    'enabled': False,
-                    'allow_bypass_qmt_check': False,
-                    'bypass_reason': ''
-                })
-                
-                # 🔥 [新增] 加载监控配置
-                monitor_config = config.get('monitor', {})
-                
-                # 板块共振缓存TTL
-                self.sector_resonance_cache_ttl = monitor_config.get('cache', {}).get('sector_resonance_ttl', 300)
-                
-                # 数据时效性容忍度
-                self.data_tolerance_minutes = monitor_config.get('data_freshness', {}).get('tolerance_minutes', 30)
-                
-                # 候选池配置
-                candidate_config = monitor_config.get('candidate_pool', {})
-                self.candidate_ttl_minutes = candidate_config.get('ttl_minutes', 10)
-                self.max_candidates = candidate_config.get('max_size', 100)
-                
-                # 状态导出间隔
-                self.state_export_interval = monitor_config.get('state_export', {}).get('interval_seconds', 5)
-
-            # 🔥 [V11.0.1 架构重构] 保存配置并初始化交易守门人
-            self.config = config
-            self.gatekeeper = TradeGatekeeper(self.config)
-
-            # 🔥 [P0修复] 验证配置完整性
-            if not self._validate_emergency_config(self.emergency_config):
-                raise RuntimeError("❌ 紧急模式配置不完整，拒绝启动")
-
-            # ⏱️ [性能监控] 配置加载计时结束
-            config_load_elapsed = (time.perf_counter() - config_load_start) * 1000  # 转换为毫秒
-
-            logger.info(f"✅ 加载监控配置: {config_path}")
-            logger.info(f"   板块共振缓存TTL: {self.sector_resonance_cache_ttl}秒")
-            logger.info(f"   数据容忍延迟: {self.data_tolerance_minutes}分钟")
-            logger.info(f"   候选池TTL: {self.candidate_ttl_minutes}分钟")
-            logger.info(f"   候选池上限: {self.max_candidates}只")
-            logger.info(f"   状态导出间隔: {self.state_export_interval}秒")
-            logger.info(f"⏱️  配置加载耗时: {config_load_elapsed:.2f}ms")
-
-            # 🔥 [性能告警] 配置加载耗时超过100ms时警告
-            if config_load_elapsed > 100:
-                logger.warning(f"⚠️  配置加载耗时过长: {config_load_elapsed:.2f}ms（正常应 <50ms）")
-                logger.warning(f"   可能原因: 磁盘IO延迟、JSON文件过大、网络磁盘")
-            
+                return json.load(f)
         except Exception as e:
-            logger.error(f"❌ 加载配置失败: {e}")
-            logger.error(f"   配置路径: {config_path}")
-            logger.error(f"   系统无法启动，请检查配置文件")
-            raise RuntimeError(f"配置加载失败: {e}")
+            logger.warning(f"⚠️  加载配置失败: {e}，使用默认配置")
+            return {}
 
-        # 状态管理
-        self.last_signature = None
-        self.scan_count = 0
-        self.event_count = 0
-        self.save_count = 0
-        self.start_time = time.time()  # ⏱️ [性能监控] 记录启动时间
+    def start(self):
+        """启动监控器"""
+        if self.running:
+            logger.warning("⚠️  监控器已经在运行中")
+            return
+            
+        self.running = True
+        self.stop_event.clear()
         
-        # 🎯 CLI监控状态（供cli_monitor.py读取）
-        self.monitor_state = {
-            "sectors": {},   # 板块共振状态
-            "signals": []    # 最终买入信号
-        }
-        self.last_state_export_time = None  # 上次状态导出时间
-        # 🔥 [已配置] state_export_interval 从配置文件加载
+        # 启动扫描线程
+        self.scan_thread = threading.Thread(target=self._scan_loop, name="ScanThread", daemon=True)
+        self.scan_thread.start()
         
-        # 真实候选池（带优先级队列）
-        self.hot_candidates_heap: List[Candidate] = []  # 优先级队列
-        self.hot_candidates_set = set()  # 用于快速查重
-        # 🔥 [已配置] max_candidates 和 candidate_ttl_minutes 从配置文件加载
-        self.last_deep_scan_time = None  # 上次深扫时间
-        
-        # 初始化事件检测器
-        self._init_event_detectors()
-        
-        # 初始化QMT Tick监控器（事件驱动模式）
-        self.tick_monitor = None
-        if self.mode == "event_driven":
-            self._init_tick_monitor()
-        
-        # 🔥 [P0修复] 板块共振缓存（5分钟TTL）
-        self.sector_resonance_cache = {}  # {sector_name: (result, timestamp)}
-
-        # 🔥 P0-4: 资金流历史缓存（用于检测主力资金大量流出）
-        self.capital_flow_history = {}  # {stock_code: {'main_net_inflow': float, 'timestamp': datetime}}
-        self.capital_flow_history_ttl = 300  # 缓存5分钟
-    
-    def _init_event_detectors(self):
-        """初始化所有事件检测器"""
-        # 集合竞价战法事件检测器
-        auction_detector = AuctionEventDetector()
-        self.auction_detector = auction_detector  # 🔥 [Fix] 补全 AuctionDetector 初始化
-        self.event_manager.register_detector(auction_detector)
-
-        # 半路战法事件检测器
-        halfway_detector = HalfwayEventDetector()
-        self.halfway_detector = halfway_detector
-        self.event_manager.register_detector(halfway_detector)
-
-        # 低吸战法事件检测器
-        dip_detector = DipBuyEventDetector()
-        self.dip_detector = dip_detector
-        self.event_manager.register_detector(dip_detector)
-
-        # 龙头战法事件检测器
-        leader_detector = LeaderEventDetector()
-        self.leader_detector = leader_detector
-        self.event_manager.register_detector(leader_detector)
-
-        logger.info(f"✅ 事件检测器初始化完成: {len(self.event_manager.detectors)} 个")
-    
-    def _init_tick_monitor(self):
-        """初始化QMT Tick监控器"""
+        # 启动显示线程（主线程运行）
         try:
-            self.tick_monitor = get_tick_monitor()
-            
-            # 添加事件回调
-            self.tick_monitor.add_event_callback(self._on_tick_update)
-            
-            logger.info("✅ QMT Tick监控器初始化成功")
-        except Exception as e:
-            logger.error(f"❌ QMT Tick监控器初始化失败: {e}")
-            self.tick_monitor = None
-    
-    def _verify_qmt_status(self) -> bool:
-        """
-        🔥 [P0修复] 验证QMT状态（双重校验）
+            self._display_loop()
+        except KeyboardInterrupt:
+            logger.info("🛑 用户中断，正在停止监控器...")
+            self.stop()
+
+    def stop(self):
+        """停止监控器"""
+        self.running = False
+        self.stop_event.set()
+        if self.scan_thread and self.scan_thread.is_alive():
+            self.scan_thread.join(timeout=5.0)
+        logger.info("✅ 监控器已停止")
+
+    def _scan_loop(self):
+        """扫描循环（后台线程）"""
+        logger.info("🚀 扫描线程已启动")
         
-        在每次扫描前检查QMT连接状态，防止盘中断线导致使用过期数据
-        
-        Returns:
-            bool: QMT状态是否正常
-        """
-        from logic.qmt_health_check import check_qmt_health
-        
-        try:
-            qmt_status = check_qmt_health()
-            
-            if qmt_status['status'] == 'ERROR':
-                logger.error(f"❌ QMT状态异常: {qmt_status.get('recommendations', ['未知错误'])}")
-                logger.error(f"   跳过本次扫描以防止使用过期数据")
-                return False
-            elif qmt_status['status'] == 'WARNING':
-                logger.warning(f"⚠️ QMT状态警告: {qmt_status.get('recommendations', ['未知警告'])}")
-                # WARNING状态继续扫描，但记录日志
-                return True
-            else:
-                # HEALTHY状态
-                return True
+        while not self.stop_event.is_set():
+            try:
+                # 1. 执行全市场扫描（Level 1）
+                self.stats['status'] = 'Scanning Level 1...'
+                start_time = time.time()
                 
-        except Exception as e:
-            logger.error(f"❌ QMT状态检查失败: {e}")
-            logger.error(f"   跳过本次扫描")
-            return False
-    
-    def _validate_emergency_config(self, config: dict) -> bool:
-        """
-        🔥 [P0修复] 验证紧急模式配置完整性
+                # 获取全市场候选
+                candidates_l1 = self.scanner.run_level1_screening()
+                
+                # 更新候选池
+                self._update_candidates_from_market_scan(candidates_l1)
+                
+                # 2. 对候选池进行深入分析（Level 2 & 3）
+                self.stats['status'] = 'Analyzing Candidates...'
+                self._analyze_candidates()
+                
+                # 更新统计
+                self.stats['last_scan_time'] = datetime.now()
+                self.stats['scan_count'] += 1
+                self.stats['scan_duration'] = time.time() - start_time
+                self.stats['status'] = 'Idle'
+                
+                # 导出状态（用于 CLI 工具或其他消费者）
+                self._export_state()
+                
+                # 休眠（避免过度消耗资源）
+                # 动态调整休眠时间：盘中短休眠，盘后长休眠
+                sleep_time = self._calculate_sleep_time()
+                self.stop_event.wait(sleep_time)
+                
+            except Exception as e:
+                logger.error(f"❌ 扫描循环异常: {e}")
+                self.log_queue.put(f"❌ [Error] {str(e)}")
+                self.stop_event.wait(10.0)  # 出错后暂停 10 秒
+
+    def _calculate_sleep_time(self) -> float:
+        """计算休眠时间"""
+        now = datetime.now().time()
+        # 交易时间：9:30-11:30, 13:00-15:00
+        is_trading_hours = (
+            (now >= datetime.strptime("09:30", "%H:%M").time() and now <= datetime.strptime("11:30", "%H:%M").time()) or
+            (now >= datetime.strptime("13:00", "%H:%M").time() and now <= datetime.strptime("15:00", "%H:%M").time())
+        )
         
-        Args:
-            config: 紧急模式配置字典
-            
-        Returns:
-            bool: 配置是否完整有效
-        """
-        required_keys = ['enabled', 'allow_bypass_qmt_check', 'bypass_reason']
-        
-        # 检查必需键是否存在
-        for key in required_keys:
-            if key not in config:
-                logger.error(f"❌ 紧急模式配置缺少必需键: {key}")
-                return False
-        
-        # 检查enabled类型
-        if not isinstance(config['enabled'], bool):
-            logger.error(f"❌ 紧急模式配置 'enabled' 必须是布尔值")
-            return False
-        
-        # 检查allow_bypass_qmt_check类型
-        if not isinstance(config['allow_bypass_qmt_check'], bool):
-            logger.error(f"❌ 紧急模式配置 'allow_bypass_qmt_check' 必须是布尔值")
-            return False
-        
-        # 检查bypass_reason类型
-        if not isinstance(config['bypass_reason'], str):
-            logger.error(f"❌ 紧急模式配置 'bypass_reason' 必须是字符串")
-            return False
-        
-        # 配置完整性校验通过
-        return True
-    
-    def _on_tick_update(self, stock_code: str, tick_data: Dict[str, Any]):
-        """
-        Tick数据更新回调
-        
-        Args:
-            stock_code: 股票代码
-            tick_data: Tick数据
-        """
-        try:
-            # 构建上下文信息
-            context = self._build_context(stock_code, tick_data)
-            
-            # 检测事件
-            events = self.event_manager.detect_events(tick_data, context)
-            
-            if events:
-                self.event_count += len(events)
-                for event in events:
-                    logger.info(f"🔔 检测到事件: {event.stock_code} - {event.description}")
-                    
-                    # 自动记录事件到数据库
-                    try:
-                        record_id = self.event_recorder.record_event(event, tick_data)
-                        logger.info(f"💾 事件已记录到数据库 (ID: {record_id})")
-                    except Exception as e:
-                        logger.error(f"❌ 记录事件失败: {e}")
-        
-        except Exception as e:
-            logger.error(f"❌ 处理Tick更新失败: {e}")
-    
-    def _build_context(self, stock_code: str, tick_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        构建上下文信息
-        
-        Args:
-            stock_code: 股票代码
-            tick_data: Tick数据
-        
-        Returns:
-            上下文字典
-        """
-        context = {
-            'yesterday_close': tick_data.get('close', 0),
-            'yesterday_volume': 0,  # 需要从其他地方获取
-            'ma5': 0,  # 需要从K线数据获取
-            'ma10': 0,
-            'ma20': 0,
-            'sector_data': {},  # 需要从板块数据获取
-            'yesterday_data': {}  # 需要从历史数据获取
-        }
-        
-        return context
-    
-    def is_trading_time(self) -> bool:
-        """判断当前是否在交易时间内"""
-        # 🚨 紧急补丁：强制基于本地系统时间判断交易阶段
-        # 因为QMT时间戳异常（停留在午夜），绕过QMT的时间判断
-        from datetime import time as dt_time
-        
-        current_time = datetime.now().time()
-        
-        # 竞价阶段：9:15-9:25
-        if dt_time(9, 15) <= current_time <= dt_time(9, 25):
-            logger.warning("🚨 紧急模式：强制进入竞价阶段（基于本地时间）")
-            return True
-        
-        # 上午交易：9:30-11:30
-        elif dt_time(9, 30) <= current_time <= dt_time(11, 30):
-            logger.warning("🚨 紧急模式：强制进入上午交易（基于本地时间）")
-            return True
-        
-        # 下午交易：13:00-15:00
-        elif dt_time(13, 0) <= current_time <= dt_time(15, 0):
-            logger.warning("🚨 紧急模式：强制进入下午交易（基于本地时间）")
-            return True
-        
-        # 否则使用原逻辑
-        return self.market_checker.is_trading_time()
-    
-    def save_snapshot(self, results: dict, mode: str):
-        """
-        保存快照（带状态指纹对比）
-        
-        Args:
-            results: 扫描结果
-            mode: 扫描模式
-        """
-        # 生成状态指纹
-        current_signature = self.scanner.generate_state_signature(results)
-        
-        # 对比状态指纹
-        if current_signature != self.last_signature:
-            # 状态发生变化，保存快照
-            os.makedirs('data/scan_results', exist_ok=True)
-            
-            # 使用时间戳命名，避免覆盖
-            timestamp = datetime.now().strftime('%Y-%m-%d_%H%M%S')
-            filename = f"data/scan_results/{timestamp}_{mode}.json"
-            
-            output = {
-                'scan_time': datetime.now().isoformat(),
-                'mode': mode,
-                'state_signature': current_signature,
-                'state_changed': True,
-                'summary': {
-                    'opportunities': len(results['opportunities']),
-                    'watchlist': len(results['watchlist']),
-                    'blacklist': len(results['blacklist'])
-                },
-                'results': results
-            }
-            
-            # 自定义 JSON 编码器处理 datetime.date 对象
-            class DateTimeEncoder(json.JSONEncoder):
-                def default(self, obj):
-                    if hasattr(obj, 'strftime'):
-                        return obj.strftime('%Y-%m-%d')
-                    elif hasattr(obj, 'isoformat'):
-                        return obj.isoformat()
-                    return super().default(obj)
-            
-            with open(filename, 'w', encoding='utf-8') as f:
-                json.dump(output, f, ensure_ascii=False, indent=2, cls=DateTimeEncoder)
-            
-            self.last_signature = current_signature
-            self.save_count += 1
-            
-            logger.info(f"💾 [状态变化] 快照已保存: {filename}")
-            logger.info(f"   状态指纹: {current_signature[:8]}...")
+        if is_trading_hours:
+            return 30.0  # 盘中 30 秒一轮（Level 1 比较重）
         else:
-            logger.info(f"⏭️  [状态未变] 跳过保存，状态指纹: {current_signature[:8]}...")
-    
-    def _compress_trap_signals(self, trap_signals: list) -> str:
-        """压缩诱多信号为短字符串"""
-        if not trap_signals:
-            return "-"
+            return 60.0  # 盘后 60 秒一轮
 
-        # 信号映射表
-        signal_map = {
-            "单日暴量+隔日反手": "暴量",
-            "长期流出+单日巨量": "长+巨",
-            "游资突袭": "突袭",
-            "连续涨停+巨量": "连涨",
-            "尾盘拉升+巨量": "尾拉",
-            "开盘暴跌+巨量": "开跌",
-        }
+    def _update_candidates_from_market_scan(self, candidates_l1: List[dict]):
+        """从全市场扫描结果更新候选池"""
+        current_time = time.time()
+        
+        # 转换格式：List[dict] -> Dict
+        new_candidates = {}
+        for c in candidates_l1:
+            code = c['code']
+            # 计算优先级分数（基于涨幅、量比、成交额）
+            priority_score = self._calculate_priority_score(c)
+            c['priority_score'] = priority_score
+            c['added_time'] = current_time
+            c['last_update'] = current_time
+            new_candidates[code] = c
+            
+        # 维护候选池
+        with self.candidates_lock:
+            # 1. 移除过期候选
+            expired = [
+                code for code, info in self.candidates.items() 
+                if current_time - info['added_time'] > self.candidate_ttl and code not in new_candidates
+            ]
+            for code in expired:
+                del self.candidates[code]
+                if code in self.hot_candidates_set:
+                    self.hot_candidates_set.remove(code)
+            
+            # 2. 添加新候选 / 更新现有候选
+            # 🔥 [修复] 聚合日志，避免刷屏
+            dropped_count = 0
+            
+            for code, info in new_candidates.items():
+                # 尝试添加，如果因满池失败则不打印日志 (suppress_log=True)
+                if not self._add_candidate(code, info, suppress_log=True):
+                    # 如果不在现有集合中（即是新来的且被拒绝），增加计数
+                    if code not in self.hot_candidates_set:
+                        dropped_count += 1
+            
+            # 统一汇报被拒绝的数量
+            if dropped_count > 0:
+                logger.warning(f"⚠️ 候选池已满，已忽略 {dropped_count} 只低优先级候选股票（日志已聚合）")
+            
+            # 更新日志
+            if len(new_candidates) > 0:
+                self.log_queue.put(f"🔍 Level 1 扫描完成: 发现 {len(new_candidates)} 只异动股, 候选池: {len(self.candidates)}/{self.max_candidates}")
 
-        # 统计信号出现次数
-        signal_count = {}
-        for signal in trap_signals:
-            short = signal_map.get(signal, signal[:4])  # 最多取前4个字符
-            signal_count[short] = signal_count.get(short, 0) + 1
-
-        # 生成压缩字符串
-        compressed_parts = []
-        for short, count in signal_count.items():
-            if count > 1:
-                compressed_parts.append(f"{short}*{count}")
-            else:
-                compressed_parts.append(short)
-
-        return ",".join(compressed_parts)[:8]  # 限制最多8个字符
-
-    def _calculate_decision_tag(self, ratio: float, risk_score: float, trap_signals: list) -> str:
+    def _calculate_priority_score(self, candidate: dict) -> float:
         """
-        资金推动力决策树:
-        第1关: ratio < 0.5% → PASS❌（止损优先，资金推动力太弱）
-        第2关: ratio > 5% → TRAP❌（暴拉出货风险）
-        第3关: 诱多 + 高风险 → BLOCK❌
-        第4关: 1-3% + 低风险 + 无诱多 → FOCUS✅
+        计算候选优先级分数
+        
+        分数越高，优先级越高。用于候选池满时决定淘汰谁。
+        
+        权重：
+        - 涨跌幅: 40% (越接近涨停越高，但也考虑跌停撬板)
+        - 量比: 30% (放量优先)
+        - 成交额: 30% (大额优先)
         """
-        # 第1关: 资金推动力太弱，直接 PASS（止损优先）
-        if ratio is not None and ratio < 0.5:
-            return "PASS❌"
-
-        # 第2关: 暴拉出货风险
-        if ratio is not None and ratio > 5:
-            return "TRAP❌"
-
-        # 第3关: 诱多 + 高风险
-        if trap_signals and risk_score >= 0.4:
-            return "BLOCK❌"
-
-        # 第4关: 标准 FOCUS
-        if (ratio is not None and
-            1 <= ratio <= 3 and
-            risk_score <= 0.2 and
-            not trap_signals):
-            return "FOCUS✅"
-
-        # 兜底
-        return "BLOCK❌"
-
-    def _validate_flow_data_freshness(self, flow_data: dict, tolerance_minutes: int = None) -> bool:
-        """
-        🔥 [P0修复] 验证资金流数据时效性（小时级精度）
-
-        Args:
-            flow_data: 资金流数据字典
-            tolerance_minutes: 允许的数据延迟（分钟），默认使用配置值
-
-        Returns:
-            bool: 数据是否新鲜
-        """
-        # 🔥 [重构] 使用配置值作为默认值
-        if tolerance_minutes is None:
-            tolerance_minutes = self.data_tolerance_minutes
-
-        if not flow_data or 'latest' not in flow_data:
-            logger.warning("❌ 资金流数据缺少时间戳")
-            return False
-
-        latest = flow_data.get('latest', {})
-        fetch_time_str = latest.get('date', '')
-
-        if not fetch_time_str:
-            logger.warning("❌ 资金流数据缺少日期时间戳")
-            return False
-
         try:
-            # 解析日期时间（格式：YYYY-MM-DD）
-            fetch_time = datetime.strptime(fetch_time_str, '%Y-%m-%d').replace(hour=15, minute=0)
-        except Exception as e:
-            logger.error(f"❌ 时间戳解析失败: {e}")
-            return False
+            pct_chg = abs(candidate.get('pct_chg', 0))
+            # 归一化涨跌幅 (0-20%) -> 0-100
+            score_pct = min(pct_chg * 5, 100)
+            
+            # 量比 (0-10) -> 0-100
+            # 注意：volume_ratio 可能是字符串 "数据缺失"
+            vr_str = candidate.get('volume_ratio_str', '0')
+            try:
+                vr = float(vr_str)
+            except ValueError:
+                vr = 0
+            score_vr = min(vr * 10, 100)
+            
+            # 成交额 (3000万 - 10亿) -> 0-100
+            amount = candidate.get('amount', 0)
+            score_amount = min(max((amount - 30000000) / 10000000, 0), 100)
+            
+            # 综合评分
+            total_score = score_pct * 0.4 + score_vr * 0.3 + score_amount * 0.3
+            return total_score
+            
+        except Exception:
+            return 0.0
 
-        # 计算数据年龄（分钟）
-        age_minutes = (datetime.now() - fetch_time).total_seconds() / 60
-
-        if age_minutes > tolerance_minutes:
-            logger.warning(f"⚠️ 资金流数据已过期: {age_minutes:.1f} 分钟前（容忍 {tolerance_minutes} 分钟）")
-            return False
-
-        return True
-
-    def _calculate_priority(self, trigger_reason: str, stock_data: dict = None) -> int:
+    def _add_candidate(self, code: str, info: dict, suppress_log: bool = False) -> bool:
         """
-        🔥 [P1修复] 计算候选优先级
+        向候选池添加股票
         
-        优先级规则：
-        - 涨停板: 100
-        - 巨量流入（>1亿）: 80
-        - 板块共振: 60
-        - Level1初筛: 40
-        - 默认: 20
+        如果池已满，且新股票优先级高于池中最低优先级的股票，则替换。
         
-        Args:
-            trigger_reason: 触发原因
-            stock_data: 股票数据（可选，用于动态调整）
-        
-        Returns:
-            int: 优先级（越高越重要）
-        """
-        priority_map = {
-            'limit_up': 100,
-            'huge_inflow': 80,
-            'sector_resonance': 60,
-            'level1_screening': 40,
-            'default': 20
-        }
-        
-        base_priority = priority_map.get(trigger_reason, priority_map['default'])
-        
-        # 根据stock_data动态调整
-        if stock_data:
-            main_net_inflow = stock_data.get('main_net_inflow', 0) or stock_data.get('flow_data', {}).get('latest', {}).get('main_net_inflow', 0)
-            if main_net_inflow and main_net_inflow > 100_000_000:  # 超过1亿
-                base_priority += 20
-            elif main_net_inflow and main_net_inflow > 50_000_000:  # 超过5000万
-                base_priority += 10
-        
-        return base_priority
-
-    def _check_capital_flow_change(self, code: str, main_net_inflow: float) -> dict:
-        """
-        🔥 P0-4: 检查资金流变化（主力资金大量流出检测）
-
-        检测逻辑：
-        - 对比当前资金流与历史资金流
-        - 检测是否出现大量流出
-        - 检测资金推动力急剧下降
-
         Args:
             code: 股票代码
-            main_net_inflow: 当前主力净流入（元）
-
+            info: 候选信息
+            suppress_log: 是否抑制日志输出（防止刷屏）
+            
         Returns:
-            dict: {
-                'has_alert': bool,        # 是否有预警
-                'alert_type': str,        # 预警类型
-                'change_amount': float,   # 变化金额（元）
-                'change_pct': float,      # 变化百分比
-                'message': str            # 预警消息
-            }
+            bool: 是否成功添加/更新
         """
-        result = {
-            'has_alert': False,
-            'alert_type': '',
-            'change_amount': 0,
-            'change_pct': 0,
-            'message': ''
-        }
+        # 如果已存在，直接更新
+        if code in self.candidates:
+            self.candidates[code].update(info)
+            return True
+            
+        # 如果未满，直接添加
+        if len(self.candidates) < self.max_candidates:
+            self.candidates[code] = info
+            self.hot_candidates_set.add(code)
+            return True
+            
+        # 池已满，尝试替换最低优先级的
+        min_code = min(self.candidates, key=lambda k: self.candidates[k].get('priority_score', 0))
+        min_score = self.candidates[min_code].get('priority_score', 0)
+        new_score = info.get('priority_score', 0)
+        
+        if new_score > min_score:
+            # 替换
+            del self.candidates[min_code]
+            if min_code in self.hot_candidates_set:
+                self.hot_candidates_set.remove(min_code)
+            
+            self.candidates[code] = info
+            self.hot_candidates_set.add(code)
+            if not suppress_log:
+                logger.info(f"🔄 候选池置换: {code}({new_score:.1f}) 替换 {min_code}({min_score:.1f})")
+            return True
+        else:
+            # 优先级不足，无法进入
+            if not suppress_log:
+                logger.warning(f"⚠️ 候选池满且优先级不足: {code}({new_score:.1f}) < {min_code}({min_score:.1f})")
+            return False
 
-        try:
-            now = datetime.now()
-
-            # 获取历史资金流数据
-            if code in self.capital_flow_history:
-                history = self.capital_flow_history[code]
-                historical_flow = history['main_net_inflow']
-                timestamp = history['timestamp']
-
-                # 检查数据时效性（5分钟内有效）
-                age = (now - timestamp).total_seconds()
-                if age > self.capital_flow_history_ttl:
-                    # 数据过期，清除历史数据
-                    del self.capital_flow_history[code]
-                    logger.debug(f"🔍 {code} 资金流历史数据已过期，重新建立基线")
-                else:
-                    # 计算资金流变化
-                    change = main_net_inflow - historical_flow
-                    change_pct = 0
-
-                    if historical_flow != 0:
-                        change_pct = change / abs(historical_flow) * 100
-
-                    result['change_amount'] = change
-                    result['change_pct'] = change_pct
-
-                    # 检测预警条件
-
-                    # 条件1: 主力资金大量流出（流入转为流出）
-                    if historical_flow > 0 and main_net_inflow < 0:
-                        outflow_amount = abs(change)
-                        if outflow_amount > 50_000_000:  # 超过5000万
-                            result['has_alert'] = True
-                            result['alert_type'] = 'MASSIVE_OUTFLOW'
-                            result['message'] = f'🚨 [资金流预警] {code} 主力资金大量流出 {outflow_amount/1e8:.2f}亿（由入转出）'
-                            logger.warning(result['message'])
-
-                    # 条件2: 资金推动力急剧下降（>50%下降）
-                    elif historical_flow > 0 and change_pct < -50:
-                        result['has_alert'] = True
-                        result['alert_type'] = 'MOMENTUM_DROP'
-                        result['message'] = f'⚠️ [资金流预警] {code} 资金推动力急剧下降 {change_pct:.1f}%'
-                        logger.warning(result['message'])
-
-                    # 条件3: 持续大量流出（连续3次检测到流出）
-                    elif historical_flow < 0 and main_net_inflow < 0:
-                        if abs(change) > 50_000_000:  # 超过5000万
-                            result['has_alert'] = True
-                            result['alert_type'] = 'CONTINUOUS_OUTFLOW'
-                            result['message'] = f'⚠️ [资金流预警] {code} 持续大量流出 {abs(main_net_inflow)/1e8:.2f}亿'
-                            logger.warning(result['message'])
-
-            # 更新历史资金流数据
-            self.capital_flow_history[code] = {
-                'main_net_inflow': main_net_inflow,
-                'timestamp': now
-            }
-
-        except Exception as e:
-            logger.error(f"❌ 检测资金流变化失败 {code}: {e}")
-
-        return result
-
-    def _print_low_risk_opportunities(self, opportunities: list):
-        """打印低风险机会池表格（风险≤0.2）"""
-        # 过滤低风险股票
-        low_risk = [item for item in opportunities if item.get('risk_score', 0) <= 0.2]
-
-        if not low_risk:
+    def _analyze_candidates(self):
+        """分析候选池中的股票（Level 2 & 3）"""
+        with self.candidates_lock:
+            current_candidates = list(self.candidates.values())
+            
+        if not current_candidates:
             return
 
-        print(f"\n【低风险机会池】（风险≤0.2，{len(low_risk)} 只）")
-        print("=" * 125)
-        print(f"{'代码':<8} {'名称':<10} {'价格':>6} {'涨跌幅':>7} {'成交额(亿)':>9} {'流通市值(亿)':>11} {'主力净入(亿)':>12} {'占比(%)':>6} {'资金':>6} {'风险':>5} {'诱多信号':<8} {'决策':<8}")
-        print("-" * 125)
-
-        for item in low_risk:
-            # 获取基础字段
-            code = item.get('code', '')
-            name = item.get('name', '')
-            last_price = item.get('last_price', 0)
-            pct_chg = item.get('pct_chg', 0)
-
-            # 获取资金流数据
-            flow_data = item.get('flow_data', {})
-            
-            # 🔥 [P0修复] 验证资金流数据时效性
-            if not self._validate_flow_data_freshness(flow_data):
-                logger.warning(f"⚠️ {code} 资金流数据过期，跳过显示")
-                continue
-
-            # 计算流通市值（优先使用 circulating_market_cap，否则用 circulating_shares * last_price）
-            circulating_market_cap = item.get('circulating_market_cap', 0)
-            if circulating_market_cap == 0:
-                circulating_shares = item.get('circulating_shares', 0)
-                circulating_market_cap = circulating_shares * last_price
-
-            # 获取成交额
-            amount_yuan = item.get('amount', 0)
-
-            # 获取主力净流入
-            latest = flow_data.get('latest', {})
-            main_net_yuan = latest.get('main_net_inflow', 0)
-
-            # 🔥 P0-4: 检测资金流变化（主力资金大量流出）
-            flow_alert = self._check_capital_flow_change(code, main_net_yuan)
-            if flow_alert['has_alert']:
-                # 如果有预警，打印到控制台
-                print(f"   {flow_alert['message']}")
-
-            # 单位转换：元→亿
-            amount_yi = amount_yuan / 1e8
-            float_mv_yi = circulating_market_cap / 1e8
-            main_net_yi = main_net_yuan / 1e8
-
-            # 计算占比（主力净入占流通市值比）
-            # 优先使用 Tushare 数据，回退到现有逻辑
-            trade_date = item.get("trade_date")
-            circ_mv_tushare = get_circ_mv(code, trade_date)
-
-            if circ_mv_tushare > 0:
-                ratio = main_net_yuan / circ_mv_tushare * 100
-                # 更新流通市值显示为 Tushare 数据
-                float_mv_yi = circ_mv_tushare / 1e8
-            elif circulating_market_cap > 0:
-                ratio = main_net_yuan / circulating_market_cap * 100
-            else:
-                ratio = None
-
-            # 风险标签
-            risk_score = item.get('risk_score', 0)
-            risk_str = f"L{risk_score:.1f}"
-
-            # 资金类型
-            capital_type = item.get('capital_type', 'UNKNOWN')
-            capital_abbr = {
-                'HOT_MONEY': 'HOT',
-                'INSTITUTIONAL': 'INST',
-                'SPECULATION': 'SPEC',
-                'UNKNOWN': 'UNKN'
-            }.get(capital_type, capital_type[:4])
-
-            # 诱多信号压缩
-            trap_signals = item.get('trap_signals', [])
-            trap_short = self._compress_trap_signals(trap_signals)
-
-            # 计算决策标签
-            decision_tag = self._calculate_decision_tag(ratio, risk_score, trap_signals)
-
-            # 🔥 [重构] 条件编译调试日志
-            if is_debug_target(code):
-                logger.debug(f"\n[DEBUG {code}]")
-                logger.debug(f"  trade_date={trade_date}")
-                logger.debug(f"  main_net_inflow={main_net_yuan} 元 ({main_net_yi:.4f} 亿)")
-                logger.debug(f"  circ_mv_tushare={circ_mv_tushare} 元 ({float_mv_yi:.2f} 亿)")
-                logger.debug(f"  ratio={ratio} %")
-                logger.debug(f"  decision_tag={decision_tag}")
-                logger.debug(f"  risk_score={risk_score}")
-                logger.debug(f"  trap_signals={trap_signals}")
-
-            # 打印行
-            print(f"{code:<8} {name:<10} {last_price:>6.2f} {pct_chg:>7.2f} {amount_yi:>9.2f} {float_mv_yi:>11.2f} {main_net_yi:>12.2f} {f'{ratio:>6.2f}' if ratio is not None else '  --  ':>6} {capital_abbr:>6} {risk_str:>5} {trap_short:<8} {decision_tag:<8}")
-
-        print("=" * 125)
-
-    def _export_monitor_state(self):
-        """
-        🎯 导出监控状态到文件（供CLI监控终端读取）
+        # 1. Level 2: 资金流向分析
+        # 注意：这里我们只对候选池中的股票做资金分析，大大减少了请求量
+        candidates_l2 = self.scanner._level2_capital_analysis(current_candidates)
         
-        将当前的三把斧状态导出到data/monitor_state.json
-        """
-        try:
-            state_file = Path("data/monitor_state.json")
+        # 2. Level 3: 诱多检测与分类
+        results = self.scanner._level3_trap_classification(candidates_l2)
+        
+        # 更新统计
+        self.stats['opportunities_count'] = len(results['opportunities'])
+        self.stats['watchlist_count'] = len(results['watchlist'])
+        self.stats['blacklist_count'] = len(results['blacklist'])
+        
+        # 将最新的分析结果合并回候选池
+        with self.candidates_lock:
+            for cat in ['opportunities', 'watchlist', 'blacklist']:
+                for item in results[cat]:
+                    code = item['code']
+                    if code in self.candidates:
+                        # 更新分析结果
+                        self.candidates[code].update(item)
+                        # 标记分类
+                        self.candidates[code]['category'] = cat
+        
+        # 输出日志
+        if results['opportunities']:
+            self.log_queue.put(f"✨ 发现 {len(results['opportunities'])} 个机会: {', '.join([c['code'] for c in results['opportunities'][:3]])}...")
             
-            # 确保data目录存在
-            state_file.parent.mkdir(exist_ok=True)
-            
-            # 导出状态
-            with open(state_file, 'w', encoding='utf-8') as f:
-                json.dump(self.monitor_state, f, ensure_ascii=False, indent=2)
-            
-            self.last_state_export_time = datetime.now()
-            
-        except Exception as e:
-            logger.warning(f"⚠️ 导出监控状态失败: {e}")
+        # 🔥 [V11.0.1] 调用 Gatekeeper 进行最终过滤和自动交易（如果开启）
+        self._process_trading_signals(results)
 
-    def print_summary(self, results: dict):
-        """打印扫描结果摘要（带防守斧拦截）"""
-        print("\n" + "=" * 80)
-        print(f"📊 扫描完成 #{self.scan_count} - {datetime.now().strftime('%H:%M:%S')}")
-        print("=" * 80)
-
-        # 🎯 [V11.0.1 架构重构] 使用 Gatekeeper 统一过滤机会池
+    def _process_trading_signals(self, results: dict):
+        """处理交易信号"""
+        # 1. 使用 Gatekeeper 过滤机会池
         opportunities_final, opportunities_blocked, timing_downgraded = self.gatekeeper.filter_opportunities(
             results['opportunities'],
             results
         )
-
-        # 打印拦截统计
-        if opportunities_blocked:
-            print(f"🛡️ [防守斧] 本次拦截 {len(opportunities_blocked)} 只禁止场景股票:")
-            for item, reason in opportunities_blocked:
-                print(f"   ❌ {item['code']} ({item.get('name', 'N/A')}) - {reason}")
-            print()
-
-        # 打印时机斧降级统计
-        if timing_downgraded:
-            print(f"⏸️ [时机斧] 本次降级 {len(timing_downgraded)} 只未共振股票 → 观察池:")
-            for item, reason in timing_downgraded[:5]:
-                print(f"   ⏸️ {item['code']} ({item.get('name', 'N/A')}) - {reason}")
-            if len(timing_downgraded) > 5:
-                print(f"   ... 还有 {len(timing_downgraded) - 5} 只")
-            print()
-
-        # 🔥 P1-1 修复：合并观察池（原观察池 + 时机斧降级）
-        watchlist_merged = results['watchlist'] + [item for item, _ in timing_downgraded]  # ✅ 合并
-
-        # 显示过滤后的机会池数量
-        print(f"✅ 机会池（最终）: {len(opportunities_final)} 只")
-        print(f"🛡️ 机会池（防守斧拦截）: {len(opportunities_blocked)} 只")
-        print(f"⏸️ 机会池（时机斧降级→观察池）: {len(timing_downgraded)} 只")
-        print(f"⚠️  观察池（含降级）: {len(watchlist_merged)} 只")
-        print(f"❌ 黑名单: {len(results['blacklist'])} 只")
-        print(f"📈 系统置信度: {results['confidence']*100:.1f}%")
-        print(f"💰 今日建议最大总仓位: {results['position_limit']*100:.1f}%")
-        print(f"🎯 累计保存快照: {self.save_count} 次")
-        print(f"🔔 累计检测事件: {self.event_count} 次")
-
-        # 显示低风险机会池表格（只显示最终安全股票）
-        if opportunities_final:
-            self._print_low_risk_opportunities(opportunities_final)
-
-        # 显示机会池全部股票（简化版，只显示最终安全股票）
-        if opportunities_final:
-            print(f"\n🔥 机会池（最终） ({len(opportunities_final)} 只):")
-            for item in opportunities_final:
-                risk_score = item.get('risk_score', 0)
-                capital_type = item.get('capital_type', 'UNKNOWN')
-                trap_signals = item.get('trap_signals', [])
-                signal_str = f" 诱多信号: {', '.join(trap_signals)}" if trap_signals else ""
-                print(f"   {item['code']} - 风险: {risk_score:.2f} - 类型: {capital_type}{signal_str}")
-
-        # 🎯 更新CLI监控状态：最终买入信号
-        self.monitor_state["signals"] = []
-        for item in opportunities_final:
-            flow_records = item.get('flow_data', {}).get('records', [])
-            main_net_inflow = flow_records[0].get('main_net_inflow', 0) if flow_records else 0
-            
-            self.monitor_state["signals"].append({
-                "time": datetime.now().strftime('%H:%M:%S'),
-                "code": item.get('code', ''),
-                "name": item.get('name', ''),
-                "price": item.get('last_price', 0),
-                "flow": main_net_inflow / 10000  # 转换为万元
-            })
-
-        # 🔥 P1-1 修复：显示观察池（包含降级股票）
-        if watchlist_merged:
-            print(f"\n⚠️  观察池（含降级） ({len(watchlist_merged)} 只):")
-            
-            # 创建降级股票代码集合，用于快速查找
-            downgraded_codes = {item['code'] for item, _ in timing_downgraded}
-            # 创建降级股票原因映射
-            downgraded_reasons = {item['code']: reason for item, reason in timing_downgraded}
-            
-            for item in watchlist_merged:
-                code = item['code']
-                risk_score = item.get('risk_score', 0)
-                capital_type = item.get('capital_type', 'UNKNOWN')
-                trap_signals = item.get('trap_signals', [])
-                signal_str = f" 诱多信号: {', '.join(trap_signals)}" if trap_signals else ""
-                
-                # 🔥 P1-1 修复：标注降级股票
-                if code in downgraded_codes:
-                    print(f"   {code} - 风险: {risk_score:.2f} - 类型: {capital_type}{signal_str} [时机斧降级]")
-                else:
-                    print(f"   {code} - 风险: {risk_score:.2f} - 类型: {capital_type}{signal_str}")
-
-        print("=" * 80 + "\n")
-    
-    def run_fixed_interval(self):
-        """运行固定间隔模式"""
-        logger.info("🔄 切换到固定间隔模式")
         
-        while True:
-            # 检查是否在交易时间
-            if not self.is_trading_time():
-                logger.info(f"⏰ 当前不在交易时间，等待中...")
-                time.sleep(60)
-                continue
-            
-            # 执行扫描
-            logger.info(f"\n🔍 开始扫描 #{self.scan_count + 1}")
-            logger.info("-" * 80)
-            
-            try:
-                # 🔥 [P0修复] 双重校验：每次扫描前检查QMT状态
-                if not self._verify_qmt_status():
-                    logger.warning(f"⏸️ 跳过本次扫描（QMT状态异常）")
-                    time.sleep(60)
-                    continue
-                
-                results = self.scanner.scan_with_risk_management(mode='intraday')
-                self.scan_count += 1
-                
-                # 打印摘要
-                self.print_summary(results)
-                
-                # 保存快照（带状态指纹对比）
-                self.save_snapshot(results, mode='intraday')
-                
-            except Exception as e:
-                logger.error(f"❌ 扫描失败: {e}")
-                import traceback
-                traceback.print_exc()
-            
-            # 等待下一次扫描
-            logger.info(f"⏱️  等待 {self.scan_interval} 秒后进行下一次扫描...")
-            time.sleep(self.scan_interval)
-    
-    def run_event_driven(self):
-        """运行事件驱动模式"""
-        logger.info("🎯 切换到事件驱动模式")
+        # 2. 更新统计
+        self.stats['opportunities_count'] = len(opportunities_final)
         
-        # 订阅监控股票
-        if self.tick_monitor and self.monitor_stocks:
-            try:
-                self.tick_monitor.subscribe(self.monitor_stocks)
-                self.tick_monitor.start()
-            except Exception as e:
-                logger.error(f"❌ 启动Tick监控失败: {e}")
-                # 回退到固定间隔模式
-                logger.info("🔄 回退到固定间隔模式")
-                self.run_fixed_interval()
-                return
-        
-        while True:
-            # 检查是否在交易时间
-            if not self.is_trading_time():
-                logger.info(f"⏰ 当前不在交易时间，等待中...")
-                time.sleep(60)
-                continue
-            
-            # 检查是否有事件触发
-            if self.event_manager.should_trigger_scan():
-                logger.info(f"\n🔥 事件触发扫描！")
-                logger.info("-" * 80)
-                
-                try:
-                    # 🔥 [P0修复] 双重校验：每次扫描前检查QMT状态
-                    if not self._verify_qmt_status():
-                        logger.warning(f"⏸️ 跳过本次扫描（QMT状态异常）")
-                        self.event_manager.mark_scan_complete()
-                        time.sleep(10)
-                        continue
-                    
-                    results = self.scanner.scan_with_risk_management(mode='intraday')
-                    self.scan_count += 1
-                    
-                    # 打印摘要
-                    self.print_summary(results)
-                    
-                    # 🎯 导出监控状态（供CLI监控终端读取）
-                    self._export_monitor_state()
-                    
-                    # 保存快照（带状态指纹对比）
-                    self.save_snapshot(results, mode='intraday')
-                    
-                    # 标记扫描完成
-                    self.event_manager.mark_scan_complete()
-                    
-                except Exception as e:
-                    logger.error(f"❌ 扫描失败: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    self.event_manager.mark_scan_complete()
-            else:
-                # 显示心跳日志
-                logger.info(f"💓 监控中... (累计事件: {self.event_count})")
-            
-            # 等待下一次检查
-            time.sleep(10)  # 每10秒检查一次
-    
-    def run(self):
-        """运行持续监控 - 统一入口，内部自动切换策略"""
-        self.start_time = datetime.now()
+        # 3. (未来扩展) 自动下单逻辑
+        # if self.config.get('auto_trade', False):
+        #     for opp in opportunities_final:
+        #         self.trader.buy(...)
 
-        # ===== QMT 状态检查（启动时检查一次）=====
-        from logic.qmt_health_check import check_qmt_health
-        qmt_status = check_qmt_health()
-
-        logger.info("=" * 80)
-        logger.info("🚀 事件驱动持续监控启动 - 第二阶段框架（重构版）")
-        logger.info("=" * 80)
-        logger.info(f"📅 启动时间: {self.start_time.strftime('%Y-%m-%d %H:%M:%S')}")
-        logger.info(f"🎯 运行模式: 自动策略切换")
-        logger.info(f"🎯 支持策略: auction（竞价） / event_driven（盘中） / idle（空闲）")
-        logger.info(f"🔌 QMT 状态: {qmt_status['status']}")
-
-        if qmt_status['status'] == 'ERROR':
-            logger.warning("⚠️  QMT 状态异常，可能影响监控效果")
-        elif qmt_status['status'] == 'WARNING':
-            logger.warning("⚠️  QMT 状态警告，请注意")
-        logger.info("=" * 80)
-        
-        print("\n🎯 事件驱动监控已启动，按 Ctrl+C 停止")
-        print("=" * 80 + "\n")
-        
-        try:
-            # 调度循环
-            while True:
-                # 🔥 [修复] 仅在配置开启时进入紧急模式
-                if self.emergency_config.get('enabled', False):
-                    # 🚨 [配置启用] 紧急模式：强制基于本地系统时间确定当前策略
-                    # 因为QMT时间戳异常（停留在午夜），绕过QMT的策略判断
-                    from datetime import time as dt_time
-
-                    current_time = datetime.now().time()
-
-                    # 竞价阶段：9:15-9:25
-                    if dt_time(9, 15) <= current_time <= dt_time(9, 25):
-                        strategy = 'auction'
-                        logger.warning(f"🚨 [配置启用] 紧急模式：强制进入竞价策略（基于本地时间 {current_time.strftime('%H:%M:%S')}）")
-
-                    # 上午交易：9:30-11:30
-                    elif dt_time(9, 30) <= current_time <= dt_time(11, 30):
-                        strategy = 'event_driven'
-                        logger.warning(f"🚨 [配置启用] 紧急模式：强制进入事件驱动策略（基于本地时间 {current_time.strftime('%H:%M:%S')}）")
-
-                    # 下午交易：13:00-15:00
-                    elif dt_time(13, 0) <= current_time <= dt_time(15, 0):
-                        strategy = 'event_driven'
-                        logger.warning(f"🚨 [配置启用] 紧急模式：强制进入事件驱动策略（基于本地时间 {current_time.strftime('%H:%M:%S')}）")
-
-                    # 否则使用原逻辑
-                    else:
-                        strategy = self.phase_checker.determine_strategy()
-                else:
-                    # 🔥 [修复] 正常模式：使用QMT时间判断
-                    strategy = self.phase_checker.determine_strategy()
-                
-                # 2. 打印策略
-                logger.info(f"🎯 当前策略: {strategy}")
-                
-                # 3. 按策略分发
-                if strategy == 'auction':
-                    self._run_auction_strategy()
-                elif strategy == 'event_driven':
-                    self._run_event_driven_strategy()
-                elif strategy == 'idle':
-                    self._run_idle_strategy()
-                else:
-                    logger.warning(f"⚠️ 未知策略: {strategy}")
-                    time.sleep(60)
-                    
-        except KeyboardInterrupt:
-            logger.info("\n" + "=" * 80)
-            logger.info("🛑 持续监控已停止")
-            logger.info("=" * 80)
-            logger.info(f"📊 运行统计:")
-            logger.info(f"   总扫描次数: {self.scan_count}")
-            logger.info(f"   总检测事件: {self.event_count}")
-            logger.info(f"   快照保存次数: {self.save_count}")
-            logger.info(f"   运行时长: {datetime.now() - self.start_time}")
-            logger.info("=" * 80)
-    
-    def _run_auction_strategy(self):
-        """竞价策略 - 第一版（最小功能）"""
-        logger.info("📢 [AUCTION] 进入竞价模式")
-        
-        # 🚨 Hotfix: 屏蔽竞价检测（auction_detector未实现）
-        logger.info("   🚨 Hotfix: 竞价检测器未实现，跳过")
-        
-        # 1. 模拟深扫（跳过，第一版只验证阶段切换）
-        logger.info("   模拟深扫: 跳过（第一版只验证阶段切换）")
-        
-        # 2. 等待下次循环（验证循环能跑通）
-        logger.info("   等待 30 秒后重新检测...")
-        time.sleep(30)
-    
-    def _run_event_driven_strategy(self):
-        """事件驱动策略 - 第二版（真实候选池 + 深扫）"""
-        logger.info("📡 [EVENT_DRIVEN] 进入事件驱动模式")
-
-        # ===== QMT 状态检查（盘中模式强制要求实时）=====
-        # 🔥 [修复] 仅在配置开启时允许绕过QMT检查
-        if self.emergency_config.get('allow_bypass_qmt_check', False):
-            bypass_reason = self.emergency_config.get('bypass_reason', 'No reason')
-            logger.warning(f"🔥 [配置启用] 紧急绕过 QMT 检查: {bypass_reason}")
-        else:
-            # 🔥 [修复] 恢复正常的检查逻辑
-            from logic.qmt_health_check import require_realtime_mode
-            try:
-                require_realtime_mode()
-            except RuntimeError as e:
-                logger.error(f"❌ QMT 状态不满足要求且紧急绕过未开启: {e}")
-                logger.error("❌ 无法进行盘中监控，等待下一次循环...")
-                time.sleep(60)
-                return
-        # ===== QMT 状态检查结束 =====
-        
-        # 1. 清理过期候选
-        self._cleanup_expired_candidates()
-        
-        # 2. 从全市场扫描更新候选池
-        self._update_candidates_from_market_scan()
-        
-        # 3. 打印候选池状态
-        logger.info(f"   候选池: {len(self.hot_candidates_heap)} 只")
-        if self.hot_candidates_heap:
-            # 显示优先级最高的3个候选
-            top_candidates = sorted(self.hot_candidates_heap, key=lambda x: x.priority, reverse=True)[:3]
-            logger.info(f"   候选池: {[c.code for c in top_candidates]}...")
-        
-        # 4. 如果有候选，执行深扫
-        if self.hot_candidates_heap:
-            self._deep_scan_candidates()
-        else:
-            logger.info("   候选池为空，跳过深扫")
-        
-        # 5. 等待下次循环
-        logger.info("   等待 30 秒后重新检测...")
-        time.sleep(30)
-    
-    def _update_candidates_from_market_scan(self):
-        """从全市场扫描更新候选池"""
-        try:
-            # 只运行Level1初筛（轻量级）
-            level1_passed = self.scanner.run_level1_screening()
-            
-            if level1_passed:
-                new_candidates_count = 0
-                for stock_code in level1_passed:
-                    # 添加到候选池
-                    if self._add_candidate(stock_code, 'level1_screening'):
-                        new_candidates_count += 1
-                
-                if new_candidates_count > 0:
-                    logger.info(f"   全市场初筛: 新增 {new_candidates_count} 只候选")
-        except Exception as e:
-            logger.warning(f"   全市场初筛失败: {e}")
-    
-    def _add_candidate(self, code: str, trigger_reason: str = 'unknown', stock_data: dict = None) -> bool:
-        """
-        🔥 [P1修复] 添加候选（带优先级淘汰）
-        
-        Args:
-            code: 股票代码
-            trigger_reason: 触发原因
-            stock_data: 股票数据（用于动态调整优先级）
-        
-        Returns:
-            bool: 是否成功添加
-        """
-        if code in self.hot_candidates_set:
-            # 已存在，更新优先级和时间戳
-            # 需要先从堆中删除，再重新添加（因为优先级可能变化）
-            self.hot_candidates_heap = [c for c in self.hot_candidates_heap if c.code != code]
-            heapq.heapify(self.hot_candidates_heap)
-            
-            priority = self._calculate_priority(trigger_reason, stock_data)
-            candidate = Candidate(code, datetime.now(), trigger_reason, priority)
-            heapq.heappush(self.hot_candidates_heap, candidate)
-            return False
-        
-        priority = self._calculate_priority(trigger_reason, stock_data)
-        candidate = Candidate(code, datetime.now(), trigger_reason, priority)
-        
-        if len(self.hot_candidates_heap) >= self.max_candidates:
-            # 队列满，比较优先级
-            lowest = self.hot_candidates_heap[0]
-            if priority > lowest.priority:
-                # 淘汰最低优先级
-                heapq.heappop(self.hot_candidates_heap)
-                self.hot_candidates_set.remove(lowest.code)
-                logger.info(f"   淘汰低优先级候选: {lowest.code} (P{lowest.priority})")
-            else:
-                logger.warning(f"   候选池满且优先级不足: {code} (P{priority})")
-                return False
-        
-        # 加入优先级队列
-        heapq.heappush(self.hot_candidates_heap, candidate)
-        self.hot_candidates_set.add(code)
-        logger.info(f"   新增候选: {code} (P{priority}, {trigger_reason})")
-        return True
-    
-    def _cleanup_expired_candidates(self):
-        """
-        清理过期的候选（TTL）+ 资金流历史缓存
-        防止内存溢出
-        """
-        # 1. 清理过期的候选
-        if self.hot_candidates_heap:
-            now = datetime.now()
-            expired_codes = []
-
-            for candidate in self.hot_candidates_heap:
-                age_minutes = (now - candidate.timestamp).total_seconds() / 60
-                if age_minutes > self.candidate_ttl_minutes:
-                    expired_codes.append(candidate.code)
-
-            # 移除过期候选
-            if expired_codes:
-                self.hot_candidates_heap = [c for c in self.hot_candidates_heap if c.code not in expired_codes]
-                heapq.heapify(self.hot_candidates_heap)
-                for code in expired_codes:
-                    self.hot_candidates_set.discard(code)
-                logger.info(f"   清理过期候选: {len(expired_codes)} 只")
-
-        # 🔥 P1-1: 清理资金流历史缓存（防止内存溢出）
-        if self.capital_flow_history:
-            now = datetime.now()
-            expired_flow_codes = []
-
-            for code, flow_data in self.capital_flow_history.items():
-                age_seconds = (now - flow_data['timestamp']).total_seconds()
-                if age_seconds > self.capital_flow_history_ttl:  # 超过5分钟
-                    expired_flow_codes.append(code)
-
-            if expired_flow_codes:
-                for code in expired_flow_codes:
-                    del self.capital_flow_history[code]
-                logger.debug(f"   清理资金流历史缓存: {len(expired_flow_codes)} 只")
-
-        # 🔥 P1-1: 清理板块共振缓存（防止内存溢出）
-        if self.sector_resonance_cache:
-            now = datetime.now()
-            expired_sectors = []
-
-            for sector_name, (result, timestamp) in self.sector_resonance_cache.items():
-                age_seconds = (now - timestamp).total_seconds()
-                if age_seconds > self.sector_resonance_cache_ttl:  # 超过5分钟
-                    expired_sectors.append(sector_name)
-
-            if expired_sectors:
-                for sector_name in expired_sectors:
-                    del self.sector_resonance_cache[sector_name]
-                logger.debug(f"   清理板块共振缓存: {len(expired_sectors)} 个")
-    
-    def _deep_scan_candidates(self):
-        """对候选池执行深度扫描"""
-        try:
-            # 提取候选股票代码列表
-            candidate_codes = [c.code for c in self.hot_candidates_heap]
-            
-            logger.info(f"   开始深度扫描: {len(candidate_codes)} 只候选")
-            
-            # 🔥 [P0修复] 双重校验：深度扫描前检查QMT状态
-            if not self._verify_qmt_status():
-                logger.warning(f"   ⏸️ 跳过本次深度扫描（QMT状态异常）")
-                return
-            
-            # 执行深度扫描（只扫描候选集）
-            results = self.scanner.scan_with_risk_management(
-                stock_list=candidate_codes,
-                mode='intraday'
-            )
-            
-            # 打印结果摘要
-            self.print_summary(results)
-            
-            # 更新扫描时间
-            self.last_deep_scan_time = datetime.now()
-            
-        except Exception as e:
-            logger.error(f"   深度扫描失败: {e}")
-            import traceback
-            traceback.print_exc()
-    
-    def _run_idle_strategy(self):
-        """空闲策略 - 非交易时间"""
-        logger.info("⏸️  [IDLE] 当前不在交易时间")
-        
-        # 检查是否刚刚收盘（15:00-15:10之间）
-        now = datetime.now()
-        if now.hour == 15 and now.minute < 10:
-            logger.info("=" * 80)
-            logger.info("📊 收盘后复盘提示")
-            logger.info("=" * 80)
-            logger.info("")
-            logger.info("💡 建议操作：")
-            logger.info("   1. 记录今日成交：python tasks/record_trade.py")
-            logger.info("   2. 运行复盘脚本：python tasks/review_daily.py --date today")
-            logger.info("   3. 重点分析B类样本（系统FOCUS + 没上）")
-            logger.info("")
-            logger.info("=" * 80)
-        
-        logger.info("   等待 60 秒后重新检测...")
-        time.sleep(60)
-
-
-if __name__ == "__main__":
-    import argparse
-
-    # 解析命令行参数
-    parser = argparse.ArgumentParser(description='事件驱动持续监控')
-    parser.add_argument(
-        '--mode',
-        type=str,
-        default='event_driven',
-        choices=['event_driven', 'fixed_interval'],
-        help='运行模式'
-    )
-    parser.add_argument(
-        '--interval',
-        type=int,
-        default=300,
-        help='扫描间隔（秒），仅在固定间隔模式下生效'
-    )
-    parser.add_argument(
-        '--stocks',
-        type=str,
-        nargs='+',
-        default=[],
-        help='监控的股票列表，仅在事件驱动模式下生效'
-    )
-    # 新增：复盘模式参数
-    parser.add_argument(
-        '--replay',
-        action='store_true',
-        help='启用缓存回放模式'
-    )
-    parser.add_argument(
-        '--date',
-        type=str,
-        help='复盘日期（格式：YYYY-MM-DD），例如：2026-02-06'
-    )
-    parser.add_argument(
-        '--timepoint',
-        type=str,
-        help='复盘时间点（格式：HHMMSS），例如：093027'
-    )
-    parser.add_argument(
-        '--list-snapshots',
-        action='store_true',
-        help='列出指定日期的所有可用快照'
-    )
-
-    args = parser.parse_args()
-
-    # ===== 复盘模式逻辑 =====
-    if args.replay:
-        if not args.date:
-            print("❌ 错误：--replay 模式需要指定 --date 参数")
-            print("示例：python tasks/run_event_driven_monitor.py --replay --date 2026-02-06")
-            sys.exit(1)
-
-        from logic.cache_replay_provider import CacheReplayProvider
-
-        # 创建缓存回放提供器
-        provider = CacheReplayProvider(args.date)
-
-        # 验证复盘是否可行
-        possible, message = provider.validate_replay_possible()
-        print(message)
-        if not possible:
-            sys.exit(1)
-
-        # 列出快照
-        if args.list_snapshots:
-            print("\n📋 可用时间点：")
-            for tp in provider.list_available_timepoints():
-                snapshot = provider.get_snapshot(tp)
-                if snapshot:
-                    summary = snapshot.get('summary', {})
-                    print(f"   {tp}: 机会{summary.get('opportunities', 0)} | 观察{summary.get('watchlist', 0)} | 黑名单{summary.get('blacklist', 0)}")
-            sys.exit(0)
-
-        # 回放指定时间点
-        if not args.timepoint:
-            print("❌ 错误：需要指定 --timepoint 参数")
-            print(f"可用时间点：{provider.list_available_timepoints()}")
-            print("示例：python tasks/run_event_driven_monitor.py --replay --date 2026-02-06 --timepoint 093027")
-            sys.exit(1)
-
-        # 读取快照
-        snapshot = provider.get_snapshot(args.timepoint)
-        if not snapshot:
-            print(f"❌ 无法读取时间点 {args.timepoint} 的快照")
-            sys.exit(1)
-
-        # 打印回放报告
-        print("\n" + "=" * 80)
-        print(f"📜 复盘报告：{snapshot['scan_time']} ({snapshot['mode']})")
-        print("=" * 80)
-
-        # 打印风控结论
-        results = snapshot['results']
-        print(f"\n📊 风控结论:")
-        print(f"   系统置信度: {results['confidence']*100:.1f}%")
-        print(f"   建议最大仓位: {results['position_limit']*100:.1f}%")
-        if results.get('risk_warnings'):
-            print(f"   风险提示:")
-            for warning in results['risk_warnings']:
-                print(f"     {warning}")
-
-        # 打印机会池表格（复用现有的打印逻辑）
-        opportunities = results.get('opportunities', [])
-        watchlist = results.get('watchlist', [])
-        blacklist = results.get('blacklist', [])
-
-        # 🔥 修复：使用统一格式化输出，避免硬编码
-        scan_time = results.get('scan_time', 0.0)
-        print(format_scan_result(results, scan_time))
-
-        # 打印机会池表格（全部）
-        if opportunities:
-            print(f"\n【机会池】（{len(opportunities)} 只）")
-            print("=" * 125)
-            print(f"{'代码':<8} {'名称':<10} {'价格':>6} {'涨跌幅':>7} {'成交额(亿)':>9} {'流通市值(亿)':>11} {'主力净入(亿)':>12} {'占比(%)':>6} {'资金':>6} {'风险':>5} {'诱多信号':<8} {'决策':<8}")
-            print("-" * 125)
-
-            for item in opportunities:
-                code = item.get('code', '')
-                name = item.get('name', '')
-                last_price = item.get('last_price', 0)
-                pct_chg = item.get('pct_chg', 0)
-
-                # 计算流通市值
-                circulating_market_cap = item.get('circulating_market_cap', 0)
-                if circulating_market_cap == 0:
-                    circulating_shares = item.get('circulating_shares', 0)
-                    circulating_market_cap = circulating_shares * last_price
-
-                # 获取成交额
-                amount_yuan = item.get('amount', 0)
-
-                # 获取主力净流入
-                flow_data = item.get('flow_data', {})
-                latest = flow_data.get('latest', {})
-                main_net_yuan = latest.get('main_net_inflow', 0)
-
-                # 单位转换
-                amount_yi = amount_yuan / 1e8
-                float_mv_yi = circulating_market_cap / 1e8
-                main_net_yi = main_net_yuan / 1e8
-
-                # 计算占比（使用新的 get_circ_mv）
-                trade_date = item.get("trade_date")
-                circ_mv_tushare = get_circ_mv(code, trade_date)
-
-                if circ_mv_tushare > 0:
-                    ratio = main_net_yuan / circ_mv_tushare * 100
-                    float_mv_yi = circ_mv_tushare / 1e8
-                elif circulating_market_cap > 0:
-                    ratio = main_net_yuan / circulating_market_cap * 100
-                else:
-                    ratio = None
-
-                # 风险标签
-                risk_score = item.get('risk_score', 0)
-                risk_str = f"L{risk_score:.1f}"
-
-                # 资金类型
-                capital_type = item.get('capital_type', 'UNKNOWN')
-                capital_abbr = {
-                    'HOT_MONEY': 'HOT',
-                    'INSTITUTIONAL': 'INST',
-                    'SPECULATION': 'SPEC',
-                    'UNKNOWN': 'UNKN'
-                }.get(capital_type, capital_type[:4])
-
-                # 诱多信号压缩
-                trap_signals = item.get('trap_signals', [])
-                signal_map = {
-                    "单日暴量+隔日反手": "暴量",
-                    "长期流出+单日巨量": "长+巨",
-                    "游资突袭": "突袭",
-                    "连续涨停+巨量": "连涨",
-                    "尾盘拉升+巨量": "尾拉",
-                    "开盘暴跌+巨量": "开跌",
-                }
-                signal_count = {}
-                for signal in trap_signals:
-                    short = signal_map.get(signal, signal[:4])
-                    signal_count[short] = signal_count.get(short, 0) + 1
-                compressed_parts = []
-                for short, count in signal_count.items():
-                    if count > 1:
-                        compressed_parts.append(f"{short}*{count}")
-                    else:
-                        compressed_parts.append(short)
-                trap_short = ",".join(compressed_parts)[:8] if trap_signals else "-"
-
-                # 决策标签（使用新的决策树逻辑）
-                if ratio is not None and ratio < 0.5:
-                    decision_tag = "PASS❌"
-                elif ratio is not None and ratio > 5:
-                    decision_tag = "TRAP❌"
-                elif trap_signals and risk_score >= 0.4:
-                    decision_tag = "BLOCK❌"
-                elif (ratio is not None and 1 <= ratio <= 3 and risk_score <= 0.2 and not trap_signals):
-                    decision_tag = "FOCUS✅"
-                else:
-                    decision_tag = "BLOCK❌"
-
-                # 🔥 [重构] 条件编译调试日志
-                if is_debug_target(code):
-                    logger.debug(f"\n[DEBUG {code}]")
-                    logger.debug(f"  trade_date={trade_date}")
-                    logger.debug(f"  main_net_inflow={main_net_yuan} 元 ({main_net_yi:.4f} 亿)")
-                    logger.debug(f"  circ_mv_tushare={circ_mv_tushare} 元 ({float_mv_yi:.2f} 亿)")
-                    logger.debug(f"  ratio={ratio} %")
-                    logger.debug(f"  decision_tag={decision_tag}")
-                    logger.debug(f"  risk_score={risk_score}")
-                    logger.debug(f"  trap_signals={trap_signals}")
-
-                # 打印行
-                print(f"{code:<8} {name:<10} {last_price:>6.2f} {pct_chg:>7.2f} {amount_yi:>9.2f} {float_mv_yi:>11.2f} {main_net_yi:>12.2f} {f'{ratio:>6.2f}' if ratio is not None else '  --  ':>6} {capital_abbr:>6} {risk_str:>5} {trap_short:<8} {decision_tag:<8}")
-
-            print("=" * 125)
-
-        print("=" * 80 + "\n")
-
-    def get_performance_stats(self) -> dict:
-        """
-        🔥 [性能监控] 获取系统性能统计
-
-        Returns:
-            dict: 性能指标字典
-
-        Example:
-            >>> monitor = EventDrivenMonitor()
-            >>> stats = monitor.get_performance_stats()
-            >>> print(stats)
-            {
-                'uptime_hours': 2.5,
-                'scan_count': 10,
-                'config': {...}
-            }
-        """
-        import time
-
-        stats = {
-            'uptime_hours': (time.time() - self.start_time) / 3600 if hasattr(self, 'start_time') and self.start_time else 0,
-            'scan_count': self.scan_count,
-            'event_count': self.event_count,
-            'save_count': self.save_count,
-            'config': {
-                'sector_resonance_ttl': self.sector_resonance_cache_ttl,
-                'data_tolerance_minutes': self.data_tolerance_minutes,
-                'candidate_ttl_minutes': self.candidate_ttl_minutes,
-                'max_candidates': self.max_candidates,
-                'state_export_interval': self.state_export_interval,
-            }
+    def _export_state(self):
+        """导出状态到文件（供 CLI 读取）"""
+        state = {
+            'updated_at': datetime.now().isoformat(),
+            'stats': self.stats,
+            'log_tail': list(self.log_queue.queue)[-10:], # 最近10条日志
+            'top_opportunities': []
         }
+        
+        # 提取 Top 机会（按风险分排序）
+        with self.candidates_lock:
+            opps = [c for c in self.candidates.values() if c.get('category') == 'opportunities']
+            opps.sort(key=lambda x: x.get('risk_score', 1.0))
+            
+            # 转换为 JSON 可序列化格式
+            for opp in opps[:5]:
+                state['top_opportunities'].append({
+                    'code': opp['code'],
+                    'name': opp.get('name', 'N/A'),
+                    'price': opp.get('last_price', 0),
+                    'pct': opp.get('pct_chg', 0),
+                    'risk': opp.get('risk_score', 0),
+                    'tag': opp.get('decision_tag', 'N/A')
+                })
+        
+        # 写入文件（原子操作）
+        temp_file = "data/monitor_state.tmp"
+        final_file = "data/monitor_state.json"
+        try:
+            with open(temp_file, 'w', encoding='utf-8') as f:
+                json.dump(state, f, ensure_ascii=False, indent=2)
+            os.replace(temp_file, final_file)
+        except Exception as e:
+            logger.error(f"导出状态失败: {e}")
 
-        return stats
+    def _display_loop(self):
+        """显示循环（主线程，使用 Rich）"""
+        # 创建布局
+        layout = Layout()
+        layout.split_column(
+            Layout(name="header", size=3),
+            Layout(name="body", ratio=1),
+            Layout(name="footer", size=10)
+        )
+        layout["body"].split_row(
+            Layout(name="left", ratio=1),
+            Layout(name="right", ratio=1)
+        )
+        
+        with Live(layout, refresh_per_second=4, screen=True) as live:
+            while self.running:
+                # 更新 Header
+                layout["header"].update(self._render_header())
+                
+                # 更新 Body
+                layout["left"].update(self._render_candidates_table())
+                layout["right"].update(self._render_opportunities_panel())
+                
+                # 更新 Footer (日志)
+                layout["footer"].update(self._render_logs())
+                
+                time.sleep(0.25)
 
+    def _render_header(self) -> Panel:
+        """渲染头部"""
+        grid = Table.grid(expand=True)
+        grid.add_column(justify="left", ratio=1)
+        grid.add_column(justify="right", ratio=1)
+        
+        status_style = "green" if self.stats['status'] == 'Idle' else "yellow"
+        grid.add_row(
+            f"[bold cyan]MyQuantTool 实时监控器[/bold cyan] | Status: [{status_style}]{self.stats['status']}[/]",
+            f"扫描次数: {self.stats['scan_count']} | 上次扫描: {self.stats.get('last_scan_time', 'N/A')}"
+        )
+        
+        return Panel(grid, style="white on blue")
 
-# ===== 主程序入口 =====
+    def _render_candidates_table(self) -> Panel:
+        """渲染候选池表格"""
+        table = Table(expand=True, box=box.SIMPLE)
+        table.add_column("代码", style="cyan")
+        table.add_column("名称")
+        table.add_column("涨幅", justify="right")
+        table.add_column("量比", justify="right")
+        table.add_column("优先级", justify="right")
+        
+        with self.candidates_lock:
+            # 按优先级排序，取前 15 个
+            sorted_candidates = sorted(
+                self.candidates.values(), 
+                key=lambda x: x.get('priority_score', 0), 
+                reverse=True
+            )[:15]
+            
+            for c in sorted_candidates:
+                pct = c.get('pct_chg', 0)
+                pct_style = "red" if pct > 0 else "green"
+                table.add_row(
+                    c['code'],
+                    c.get('name', 'N/A'),
+                    f"[{pct_style}]{pct:.2f}%[/]",
+                    c.get('volume_ratio_str', 'N/A'),
+                    f"{c.get('priority_score', 0):.1f}"
+                )
+                
+        return Panel(table, title=f"🔥 热门候选池 (TOP 15 / {len(self.candidates)})", border_style="blue")
+
+    def _render_opportunities_panel(self) -> Panel:
+        """渲染机会面板"""
+        table = Table(expand=True, box=box.SIMPLE)
+        table.add_column("代码", style="bold green")
+        table.add_column("名称")
+        table.add_column("风险分", justify="right")
+        table.add_column("决策", justify="center")
+        table.add_column("原因")
+        
+        with self.candidates_lock:
+            opps = [c for c in self.candidates.values() if c.get('category') == 'opportunities']
+            opps.sort(key=lambda x: x.get('risk_score', 1.0))
+            
+            for opp in opps[:10]:
+                risk = opp.get('risk_score', 0)
+                risk_style = "green" if risk < 0.3 else "yellow"
+                table.add_row(
+                    opp['code'],
+                    opp.get('name', 'N/A'),
+                    f"[{risk_style}]{risk:.2f}[/]",
+                    opp.get('decision_tag', 'N/A'),
+                    opp.get('scenario_reasons', [''])[0] if opp.get('scenario_reasons') else ''
+                )
+                
+        return Panel(table, title=f"✨ 机会池 ({len(opps)})", border_style="green")
+
+    def _render_logs(self) -> Panel:
+        """渲染日志"""
+        log_text = Text()
+        # 获取最近 8 条日志
+        logs = list(self.log_queue.queue)[-8:]
+        for log in logs:
+            if "❌" in log:
+                style = "bold red"
+            elif "⚠️" in log:
+                style = "yellow"
+            elif "✨" in log:
+                style = "bold green"
+            else:
+                style = "white"
+            log_text.append(log + "\n", style=style)
+            
+        return Panel(log_text, title="📜 运行日志", border_style="grey50")
+
 if __name__ == "__main__":
-    import argparse
-    import sys
-
-    parser = argparse.ArgumentParser(description='事件驱动持续监控器')
-    parser.add_argument('--mode', choices=['event_driven', 'fixed_interval', 'replay'],
-                        default='event_driven', help='运行模式')
-    parser.add_argument('--interval', type=int, default=300,
-                        help='扫描间隔（秒），默认300秒（5分钟）')
-    parser.add_argument('--stocks', nargs='*', help='监控的股票列表')
-    parser.add_argument('--replay-date', type=str, help='复盘模式：指定日期（YYYY-MM-DD）')
-
-    args = parser.parse_args()
-
-    # 复盘模式逻辑
-    if args.mode == 'replay':
-        if not args.replay_date:
-            print("❌ 复盘模式需要指定日期: --replay-date YYYY-MM-DD")
-            sys.exit(1)
-
-        # ...（复盘点码省略）...
-        print("=" * 80 + "\n")
-        sys.exit(0)
-
-    # ===== 实时监控模式逻辑 =====
-    # 创建监控器
-    monitor = EventDrivenMonitor(
-        scan_interval=args.interval,
-        mode=args.mode,
-        monitor_stocks=args.stocks
-    )
-
-    # 运行监控
-    monitor.run()
+    monitor = EventDrivenMonitor()
+    monitor.start()
