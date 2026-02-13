@@ -57,6 +57,7 @@ class Level1InferenceProvider(ICapitalFlowProvider):
         self._cache_ttl = 10  # Tick缓存10秒
         self._qmt_connected = False  # QMT连接状态
         self._last_connection_check = None  # 上次连接检查时间
+        self._tick_validation_warning_count = 0  # Tick验证警告计数器
 
     def _check_qmt_connection(self) -> bool:
         """
@@ -231,7 +232,7 @@ class Level1InferenceProvider(ICapitalFlowProvider):
         # 🔥 P0-3: 验证Tick数据
         is_valid, error_msg = self._validate_tick_data(tick)
         if not is_valid:
-            logger.warning(f"⚠️ Tick数据验证失败: {error_msg}，使用昨日资金流")
+            self._tick_validation_warning_count += 1  # 只计数，不打印
             return {
                 'main_net_inflow': dongcai_signal.main_net_inflow,
                 'super_large_net': dongcai_signal.super_large_inflow,
@@ -408,6 +409,14 @@ class Level1InferenceProvider(ICapitalFlowProvider):
         except Exception as e:
             logger.error(f"[Level1] get_instrument_detail error: {e}")
             return {}
+
+    def get_tick_validation_warning_count(self) -> int:
+        """获取 Tick 验证警告计数"""
+        return self._tick_validation_warning_count
+
+    def reset_tick_validation_warning_count(self):
+        """重置 Tick 验证警告计数"""
+        self._tick_validation_warning_count = 0
 
     def download_history_data(self, code, period='1m', count=-1, incrementally=False):
         """下载历史数据"""

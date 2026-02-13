@@ -42,16 +42,21 @@ class Logger:
         self.log_dir.mkdir(exist_ok=True)
         
         # 配置日志系统
+        # FileHandler: 保持 INFO 级别（用于事后排查）
+        file_handler = logging.FileHandler(
+            self.log_dir / f'app_{datetime.now().strftime("%Y%m%d")}.log',
+            encoding='utf-8'
+        )
+        file_handler.setLevel(logging.INFO)
+
+        # StreamHandler: 降级为 WARNING 级别（仅显示严重错误）
+        stream_handler = logging.StreamHandler(sys.stdout)
+        stream_handler.setLevel(logging.WARNING)
+
         logging.basicConfig(
             level=logging.INFO,
             format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s',
-            handlers=[
-                logging.FileHandler(
-                    self.log_dir / f'app_{datetime.now().strftime("%Y%m%d")}.log',
-                    encoding='utf-8'
-                ),
-                logging.StreamHandler(sys.stdout)
-            ]
+            handlers=[file_handler, stream_handler]
         )
         
         # 性能日志单独文件

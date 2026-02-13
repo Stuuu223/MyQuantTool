@@ -23,6 +23,14 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Tuple, Optional
 from collections import defaultdict
 
+try:
+    from xtquant import xtdata
+    QMT_AVAILABLE = True
+except ImportError:
+    QMT_AVAILABLE = False
+
+from rich.progress import track
+
 from logic.data_providers import get_provider
 from logic.equity_data_accessor import get_circ_mv
 from logic.analyzers.rolling_risk_features import compute_multi_day_risk_features, compute_all_scenario_features
@@ -469,6 +477,13 @@ class FullMarketScanner:
                 'details': str(e)
             }
             logger.warning(f"⚠️  Level 2 异常: {e}")
+        
+        # 🔥 Tick 验证警告聚合统计
+        if hasattr(self.data_provider, 'get_tick_validation_warning_count'):
+            warning_count = self.data_provider.get_tick_validation_warning_count()
+            if warning_count > 0:
+                logger.warning(f"⚠️ Tick 数据完整性校验: 共发现 {warning_count} 只股票缺少 'buyVol' 等字段，已自动降级处理。")
+                self.data_provider.reset_tick_validation_warning_count()
         
         logger.info(f"✅ Level 2 完成: 热门池 {len(hot_pool)} → {len(candidates_l2)} 只 (耗时: {time.time()-l2_start:.1f}秒)")
         
@@ -1068,10 +1083,6 @@ class FullMarketScanner:
                 'ratio_pass': 0
             }
         self._l1_debug['checked'] += 1
-        
-        # 🔥 [调试] 每100只股票打印一次统计
-        if self._l1_debug['checked'] % 100 == 0:
-            logger.info(f"📊 [L1调试] 已检查{self._l1_debug['checked']}只: 涨跌幅失败={self._l1_debug['pct_fail']}, 成交额失败={self._l1_debug['amount_fail']}, 量比缺失={self._l1_debug['ratio_none']}, 量比失败={self._l1_debug['ratio_fail']}, 通过={self._l1_debug['ratio_pass']}")
 
         # 🔥 [调试] 统计Level 1过滤原因
         if not hasattr(self, '_l1_stats'):
@@ -1452,48 +1463,51 @@ class FullMarketScanner:
     def _check_short_term_risk(self, code: str) -> Optional[str]:
         """
         检查短期涨幅风险（10 日涨幅）
-        
+
         Args:
             code: 股票代码（QMT格式）
-        
+
         Returns:
             None 或 '短期涨幅极端'
         """
         try:
             # 获取最近 10 个交易日收盘价
+            # 使用时间范围：大约 14 天（10 个交易日 + 周末）
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=14)
+
             kline = self.data_provider.get_market_data(
                 field_list=['close'],
                 stock_list=[code],
                 period='1d',
-                start_time='',
-                end_time='',
-                count=10,
+                start_time=start_date.strftime('%Y%m%d'),
+                end_time=end_date.strftime('%Y%m%d'),
                 dividend_type='none'
             )
-            
+
             if not kline or code not in kline or len(kline[code]) < 10:
                 return None
-            
+
             # 提取收盘价数据
             close_prices = kline[code]['close']
             if len(close_prices) < 10:
                 return None
-            
+
             # 计算 10 日累计涨幅
             close_10_days_ago = close_prices[0]
             close_today = close_prices[-1]
-            
+
             if close_10_days_ago == 0:
                 return None
-            
+
             r10 = (close_today - close_10_days_ago) / close_10_days_ago
-            
+
             # 风险标签（两档）
             if r10 >= 0.8:  # 10 日涨幅 ≥ 80%
                 return '短期涨幅极端'
             else:
                 return None
-        
+
         except Exception as e:
             logger.warning(f"⚠️  检查短期涨幅风险失败 {code}: {e}")
             return None
@@ -1575,10 +1589,6 @@ class FullMarketScanner:
         total = len(candidates)
 
         for idx, candidate in enumerate(candidates):
-            # 进度打印（改为每20只打印一次，减少刷屏）
-            if idx % 20 == 0 or idx == total - 1:
-                logger.info(f"  进度: {idx+1}/{total} ({(idx+1)/total*100:.1f}%)")
-
             try:
                 # 兼容两种输入格式：代码字符串 或 字典
                 if isinstance(candidate, str):
@@ -1887,11 +1897,7 @@ class FullMarketScanner:
         
         for idx, item in enumerate(candidates):
             code = item['code']
-            
-            # 进度打印（改为每10只打印一次）
-            if idx % 10 == 0:
-                logger.info(f"  进度: {idx+1}/{len(candidates)}")
-            
+
             try:
                 # 转换为6位代码
                 code_6digit = CodeConverter.to_akshare(code)
