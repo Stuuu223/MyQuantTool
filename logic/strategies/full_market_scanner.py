@@ -262,6 +262,13 @@ class FullMarketScanner:
         candidates_l2 = self._level2_capital_analysis(candidates_l1)
         logger.info(f"✅ Level 2 完成: {len(candidates_l1)} → {len(candidates_l2)} 只 (耗时: {time.time()-l2_start:.1f}秒)")
         
+        # 输出 Tick 验证警告聚合
+        tick_warning_count = self.data_provider.get_tick_validation_warning_count()
+        if tick_warning_count > 0:
+            logger.warning(f"⚠️ Tick 数据完整性校验: 共发现 {tick_warning_count} 只股票缺少 'buyVol' 等字段，已自动降级处理")
+        # 重置计数器（为下次扫描做准备）
+        self.data_provider.reset_tick_validation_warning_count()
+        
         if not candidates_l2:
             logger.warning("⚠️  Level 2 未筛选出任何股票，提前结束")
             return {'opportunities': [], 'watchlist': [], 'blacklist': []}
@@ -650,7 +657,8 @@ class FullMarketScanner:
         batch_size = 1000
         total_batches = (len(self.all_stocks) + batch_size - 1) // batch_size
         
-        for i in range(0, len(self.all_stocks), batch_size):
+        for i in track(range(0, len(self.all_stocks), batch_size), 
+                   description="[cyan]🔍 Level 1 技术面粗筛..."):
             batch = self.all_stocks[i:i+batch_size]
             batch_num = i // batch_size + 1
             
@@ -658,8 +666,6 @@ class FullMarketScanner:
             try:
                 tick_data = self.data_provider.get_full_tick(batch)
 
-                # 详细日志：检查返回值
-                logger.info(f"批次 {batch_num} 获取成功, tick_data 类型: {type(tick_data)}")
                 if not isinstance(tick_data, dict):
                     logger.warning(f"⚠️  批次 {batch_num} 返回数据类型异常: {type(tick_data)}, 值: {str(tick_data)[:200]}")
                     continue
@@ -751,7 +757,6 @@ class FullMarketScanner:
                         })
                 
                 hit_count = len([c for c in batch if any(c['code'] == x['code'] for x in candidates)])
-                logger.info(f"  批次 {batch_num}/{total_batches}: 获取 {len(batch)} 只股票 (命中: {hit_count} 只)")
                 
             except Exception as e:
                 # 静默处理，避免刷屏
@@ -774,7 +779,8 @@ class FullMarketScanner:
         candidates = []
         batch_size = 1000
         
-        for i in range(0, len(stock_list), batch_size):
+        for i in track(range(0, len(stock_list), batch_size), 
+                   description="[cyan]🔍 Level 1 技术面筛选（指定列表）..."):
             batch = stock_list[i:i+batch_size]
             batch_num = i // batch_size + 1
             
@@ -782,7 +788,6 @@ class FullMarketScanner:
             try:
                 tick_data = self.data_provider.get_full_tick(batch)
 
-                logger.info(f"批次 {batch_num} 获取成功, tick_data 类型: {type(tick_data)}")
                 if not isinstance(tick_data, dict):
                     logger.warning(f"⚠️  批次 {batch_num} 返回数据类型异常: {type(tick_data)}")
                     continue
@@ -834,15 +839,6 @@ class FullMarketScanner:
                         })
                 
                 hit_count = len([c for c in batch if any(c['code'] == x['code'] for x in candidates)])
-                logger.info(f"  批次 {batch_num}: 获取 {len(batch)} 只股票 (命中: {hit_count} 只)")
-                
-                # 打印每批次涨跌幅最高的样本
-                if batch_samples:
-                    # 按涨跌幅降序排序
-                    sorted_samples = sorted(batch_samples, key=lambda x: x['pct_chg'], reverse=True)
-                    # 打印前3只涨跌幅最高的
-                    for sample in sorted_samples[:3]:
-                        logger.info(f"[L1样本] {sample['code']}: 涨跌幅={sample['pct_chg']:.2f}%, 成交额={sample['amount']/1e8:.2f}亿, 量比={sample['volume_ratio_str']}, 市值={sample['market_cap_str']}")
                 
             except Exception as e:
                 # 静默处理，避免刷屏
@@ -1588,7 +1584,7 @@ class FullMarketScanner:
         results = []
         total = len(candidates)
 
-        for idx, candidate in enumerate(candidates):
+        for candidate in track(candidates, description="[green]💰 Level 2 资金流向分析..."):
             try:
                 # 兼容两种输入格式：代码字符串 或 字典
                 if isinstance(candidate, str):
@@ -1895,7 +1891,7 @@ class FullMarketScanner:
         watchlist = []
         blacklist = []
         
-        for idx, item in enumerate(candidates):
+        for item in track(candidates, description="[yellow]⚠️ Level 3 诱多陷阱检测..."):
             code = item['code']
 
             try:
