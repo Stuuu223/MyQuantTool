@@ -471,11 +471,12 @@ class AuctionSnapshotCollector:
                     failed_count += len(batch_codes)
                     continue
 
-                # 🔥 关键2：批量获取历史成交量（带本地缓存回退）
+                # 🔥 关键2：批量获取历史成交量（带本地缓存回退）- 改为可选
                 avg_volumes, cache_hits = self.get_historical_avg_volume_with_fallback(batch_codes, date)
                 cache_hit_total += cache_hits
 
-                # 🔥 三级验证：检查历史数据质量
+                # 🔥 修复：移除批次跳过逻辑，允许历史数据缺失
+                # 历史数据仅用于计算量比，不影响价格和成交量采集
                 if avg_volumes:
                     valid_avg_count = sum(1 for v in avg_volumes.values() if v is not None and v > 0)
                     total_avg_count = len(avg_volumes)
@@ -485,11 +486,8 @@ class AuctionSnapshotCollector:
                     if invalid_rate > 0.5:
                         logger.warning(f"⚠️ 批次{batch_num}历史数据无效率{invalid_rate*100:.1f}%，量比计算可能不准确")
 
-                    # ✅ P1修复：拦截阈值：超过90%数据无效，跳过此批次
-                    if invalid_rate > 0.9:
-                        logger.error(f"❌ 批次{batch_num}历史数据严重缺失（{invalid_rate*100:.1f}%），跳过此批次处理")
-                        failed_count += len(batch_codes)
-                        continue  # 跳过当前批次，不处理无效数据
+                    # 🔥 修复：不再跳过批次，继续采集价格和成交量数据
+                    # 量比标记为无效即可
 
                 # 准备批量保存的数据
                 batch_snapshots = []

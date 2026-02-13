@@ -30,23 +30,31 @@ class AuctionSnapshotManager:
     def __init__(self, db_manager=None):
         """
         初始化竞价快照管理器
-        
+
         Args:
             db_manager: DatabaseManager 实例（用于访问 Redis）
         """
         self.db_manager = db_manager
         self.is_available = False
-        
-        if db_manager and db_manager._redis_client:
+
+        if db_manager:
             try:
+                # 🔥 修复：强制初始化Redis连接（解决懒加载问题）
+                if not db_manager._redis_initialized:
+                    db_manager._init_redis()
+                    db_manager._redis_initialized = True
+
                 # 测试 Redis 连接
-                db_manager._redis_client.ping()
-                self.is_available = True
-                logger.info("✅ 竞价快照管理器初始化成功（Redis 可用）")
+                if db_manager._redis_client:
+                    db_manager._redis_client.ping()
+                    self.is_available = True
+                    logger.info("✅ 竞价快照管理器初始化成功（Redis 可用）")
+                else:
+                    logger.warning("⚠️ Redis 客户端初始化失败")
             except Exception as e:
                 logger.warning(f"⚠️ Redis 连接失败，竞价快照功能不可用: {e}")
         else:
-            logger.warning("⚠️ 未提供 DatabaseManager 或 Redis 未连接，竞价快照功能不可用")
+            logger.warning("⚠️ 未提供 DatabaseManager，竞价快照功能不可用")
     
     def get_today_str(self) -> str:
         """获取今天的日期字符串（格式：YYYYMMDD）"""
