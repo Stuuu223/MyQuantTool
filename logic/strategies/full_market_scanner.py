@@ -1671,19 +1671,37 @@ class FullMarketScanner:
                         if price_3d_change == 0.0:
                             try:
                                 import akshare as ak
-                                symbol_6 = CodeConverter.to_akshare(code)
-                                # ✅ [P0修复] 动态计算 start_date，避免年度切换时失效
-                                # 获取过去90天的数据，确保有足够的数据计算3日涨幅
-                                start_date = (datetime.now() - timedelta(days=90)).strftime('%Y%m%d')
-                                df = ak.stock_zh_a_hist(symbol=symbol_6, period='daily', start_date=start_date, adjust='qfq')
-                                if df is not None and len(df) >= 2:
-                                    df.sort_values('日期', ascending=True, inplace=True)
-                                    ref_close = df.iloc[-4]['收盘'] if len(df) >= 4 else df.iloc[0]['收盘']
-                                    if ref_close > 0:
-                                        price_3d_change = (current_price - ref_close) / ref_close
-                                        logger.info(f"✅ {code} 使用AkShare计算price_3d_change={price_3d_change:.4f}")
+                                # 🔥 [修复] 禁用系统代理，避免 AkShare API 调用失败
+                                import os
+                                old_http_proxy = os.environ.get('HTTP_PROXY', '')
+                                old_https_proxy = os.environ.get('HTTPS_PROXY', '')
+                                old_no_proxy = os.environ.get('NO_PROXY', '')
+                                os.environ['HTTP_PROXY'] = ''
+                                os.environ['HTTPS_PROXY'] = ''
+                                os.environ['NO_PROXY'] = '*'
+
+                                try:
+                                    symbol_6 = CodeConverter.to_akshare(code)
+                                    # ✅ [P0修复] 动态计算 start_date，避免年度切换时失效
+                                    # 获取过去90天的数据，确保有足够的数据计算3日涨幅
+                                    start_date = (datetime.now() - timedelta(days=90)).strftime('%Y%m%d')
+                                    df = ak.stock_zh_a_hist(symbol=symbol_6, period='daily', start_date=start_date, adjust='qfq')
+                                    if df is not None and len(df) >= 2:
+                                        df.sort_values('日期', ascending=True, inplace=True)
+                                        ref_close = df.iloc[-4]['收盘'] if len(df) >= 4 else df.iloc[0]['收盘']
+                                        if ref_close > 0:
+                                            price_3d_change = (current_price - ref_close) / ref_close
+                                            logger.info(f"✅ {code} 使用AkShare计算price_3d_change={price_3d_change:.4f}")
+                                finally:
+                                    # 恢复代理设置
+                                    if old_http_proxy:
+                                        os.environ['HTTP_PROXY'] = old_http_proxy
+                                    if old_https_proxy:
+                                        os.environ['HTTPS_PROXY'] = old_https_proxy
+                                    if old_no_proxy:
+                                        os.environ['NO_PROXY'] = old_no_proxy
                             except Exception as e:
-                                logger.warning(f"⚠️  {code} AkShare获取K线失败: {e}")
+                                logger.debug(f"⚠️ {code} AkShare获取K线失败: {e}（跳过，使用QMT兜底）")
 
                         # 策略3：QMT 1分钟数据合成 (兜底)
                         if price_3d_change == 0.0 and QMT_AVAILABLE:
@@ -1719,13 +1737,12 @@ class FullMarketScanner:
                                         ref_close = daily_close.iloc[idx_ref]
                                         
                                         if ref_close > 0:
-                                            price_3d_change = (current_price - ref_close) / ref_close
-                                            logger.info(f"✅ {code} 使用QMT分钟数据合成计算price_3d_change={price_3d_change:.4f}")
+                                            price_3d_change = (current_price - ref_close) / ref_close\n                                            logger.info(f\"✅ {code} 使用QMT分钟数据合成计算price_3d_change={price_3d_change:.4f}\")
                             except Exception as e:
-                                logger.warning(f"⚠️  {code} 分钟数据合成失败: {e}")
+                                logger.warning(f\"⚠️  {code} 分钟数据合成失败: {e}\")
 
                 except Exception as e:
-                    logger.warning(f"⚠️  {code} 计算price_3d_change异常: {e}")
+                    logger.warning(f\"⚠️  {code} 计算price_3d_change异常: {e}\")
                     price_3d_change = 0.0
 
                 # 将计算结果写入 candidate_dict，传递给后续流程
