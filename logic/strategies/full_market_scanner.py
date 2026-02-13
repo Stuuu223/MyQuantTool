@@ -1148,18 +1148,24 @@ class FullMarketScanner:
             minute = current_time.minute
             
             # 根据时间段设置不同阈值（拾荒网知识：时间维度最重要）
+            # 从 config['time_segments'] 读取
+            time_segments = self.config.get('time_segments', {})
+            
             if 9 <= hour < 10:  # 开盘阶段（9:30-10:00）
-                pct_chg_threshold = cfg.get('opening_pct_chg_min', 0.5)
-                volume_ratio_threshold = cfg.get('opening_volume_ratio_min', 1.9)
-                turnover_threshold = cfg.get('opening_turnover_min', 0.03)  # 换手率 3%（首板标准）
+                segment = time_segments.get('opening', {})
+                pct_chg_threshold = segment.get('pct_chg_min', 0.5)
+                volume_ratio_threshold = segment.get('volume_ratio_min', 1.9)
+                turnover_threshold = segment.get('turnover_min', 0.03)  # 换手率 3%（首板标准）
             elif 10 <= hour < 14 or (hour == 14 and minute < 30):  # 盘中阶段（10:00-14:30）
-                pct_chg_threshold = cfg.get('midday_pct_chg_min', 1.0)
-                volume_ratio_threshold = cfg.get('midday_volume_ratio_min', 1.5)
-                turnover_threshold = cfg.get('midday_turnover_min', 0.02)  # 换手率 2%
+                segment = time_segments.get('midday', {})
+                pct_chg_threshold = segment.get('pct_chg_min', 1.0)
+                volume_ratio_threshold = segment.get('volume_ratio_min', 1.5)
+                turnover_threshold = segment.get('turnover_min', 0.02)  # 换手率 2%
             else:  # 尾盘阶段（14:30-15:00）
-                pct_chg_threshold = cfg.get('close_pct_chg_min', 2.0)
-                volume_ratio_threshold = cfg.get('close_volume_ratio_min', 3.0)  # 警惕尾盘拉升
-                turnover_threshold = cfg.get('close_turnover_min', 0.05)  # 换手率 5%
+                segment = time_segments.get('close', {})
+                pct_chg_threshold = segment.get('pct_chg_min', 2.0)
+                volume_ratio_threshold = segment.get('volume_ratio_min', 3.0)  # 警惕尾盘拉升
+                turnover_threshold = segment.get('turnover_min', 0.05)  # 换手率 5%
 
             # 1. 涨跌幅检查（基于时间分段）
             if pct_chg < pct_chg_threshold:
@@ -1173,12 +1179,15 @@ class FullMarketScanner:
             # 小盘股500万=0.5%换手率，大盘股500万=0.005%换手率，不公平
             
             # 2. 换手率检查（基于拾荒网知识：换手够了，可以进场）
-            market_cap = self._get_market_cap(code, tick)
-            if market_cap > 0:
-                # 获取当前价格用于计算流通股本
+            # 优先使用本地股本数据
+            from logic.equity_data_accessor import get_circ_mv
+            circ_mv = get_circ_mv(code, datetime.now().strftime('%Y%m%d'))
+            
+            if circ_mv and circ_mv > 0:
+                # 使用本地股本数据计算换手率
                 last_price = tick.get('lastPrice', tick.get('last_price', 1))
                 if last_price > 0:
-                    circulating_shares = market_cap / last_price
+                    circulating_shares = circ_mv / last_price
                     turnover_rate = self._calculate_turnover_rate(code, volume, circulating_shares)
                     
                     # 检查换手率是否达标
@@ -1188,11 +1197,14 @@ class FullMarketScanner:
                             logger.info(f"🔍 [DEBUG 001335] Level 1失败: 换手率过低 (turnover={turnover_rate*100:.2f}%, threshold={turnover_threshold*100:.2f}%)")
                         return False
             else:
-                # 市值为0时的降级策略：使用成交额作为替代指标
-                # 小盘股（< 50亿）：成交额 > 1000万
-                # 中盘股（50-200亿）：成交额 > 5000万
-                # 大盘股（> 200亿）：成交额 > 1亿
-                if market_cap < 50_0000_0000:  # < 50亿
+                # 本地股本数据不可用时的降级策略：使用更严格的量比检查
+                # 不再按市值分层（因为市值未知），直接使用成交额作为兜底指标
+                # 要求：成交额 > 1000万 且 量比 > 2.0
+                if amount < 10_000_000:
+                    self._l1_debug['amount_fail'] += 1
+                    if code == '001335.SZ' or code.endswith('001335'):
+                        logger.info(f"🔍 [DEBUG 001335] Level 1失败: 成交额过低 (amount={amount/1e8:.2f}亿, threshold=1000万)")
+                    return False
                     amount_threshold = 10_000_000  # 1000万
                 elif market_cap < 200_0000_0000:  # 50-200亿
                     amount_threshold = 50_000_000  # 5000万
