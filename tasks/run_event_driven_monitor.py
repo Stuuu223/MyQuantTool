@@ -44,6 +44,7 @@ from logic.event_recorder import get_event_recorder
 from logic.utils.logger import get_logger
 from logic.market_phase_checker import MarketPhaseChecker
 from logic.sector_resonance import SectorResonanceCalculator
+from logic.core.trade_gatekeeper import TradeGatekeeper
 
 # 🔥 [日志精简] 导入日志配置模块
 from logic.log_config import use_normal_mode, use_quiet_mode, use_debug_mode, is_debug_target
@@ -149,7 +150,11 @@ class EventDrivenMonitor:
                 
                 # 状态导出间隔
                 self.state_export_interval = monitor_config.get('state_export', {}).get('interval_seconds', 5)
-            
+
+            # 🔥 [V11.0.1 架构重构] 保存配置并初始化交易守门人
+            self.config = config
+            self.gatekeeper = TradeGatekeeper(self.config)
+
             # 🔥 [P0修复] 验证配置完整性
             if not self._validate_emergency_config(self.emergency_config):
                 raise RuntimeError("❌ 紧急模式配置不完整，拒绝启动")
@@ -784,141 +789,6 @@ class EventDrivenMonitor:
 
         print("=" * 125)
 
-    def _check_defensive_scenario(self, item: dict) -> Tuple[bool, str]:
-        """
-        🛡️ 防守斧：场景检查 - 监控层拦截
-
-        严格禁止 TAIL_RALLY/TRAP 场景开仓
-
-        Args:
-            item: 股票数据字典（来自全市场扫描结果）
-
-        Returns:
-            (is_forbidden, reason)
-            is_forbidden: 是否禁止开仓
-            reason: 禁止原因
-        """
-        # 导入硬编码禁止场景列表
-        from logic.risk_control import FORBIDDEN_SCENARIOS
-
-        code = item.get('code', '')
-        name = item.get('name', 'N/A')
-        scenario_type = item.get('scenario_type', '')
-        is_tail_rally = item.get('is_tail_rally', False)
-        is_potential_trap = item.get('is_potential_trap', False)
-
-        # 硬编码禁止规则
-        if scenario_type in FORBIDDEN_SCENARIOS:
-            reason = f"🛡️ [防守斧] 禁止场景: {scenario_type}"
-            logger.warning(f"🛡️ [防守斧拦截-监控层] {code} ({name})")
-            logger.warning(f"   场景类型: {scenario_type}")
-            logger.warning(f"   原因: {', '.join(item.get('scenario_reasons', [])[:2])}")
-            logger.warning(f"   拦截位置: 监控层 (run_event_driven_monitor.py)")
-            return True, reason
-
-        # 兼容旧版：通过布尔值检查
-        if is_tail_rally:
-            reason = "🛡️ [防守斧] 补涨尾声场景，严禁开仓"
-            logger.warning(f"🛡️ [防守斧拦截-监控层] {code} ({name})")
-            logger.warning(f"   is_tail_rally: {is_tail_rally}")
-            logger.warning(f"   拦截位置: 监控层 (run_event_driven_monitor.py)")
-            return True, reason
-
-        if is_potential_trap:
-            reason = "🛡️ [防守斧] 拉高出货陷阱，严禁开仓"
-            logger.warning(f"🛡️ [防守斧拦截-监控层] {code} ({name})")
-            logger.warning(f"   is_potential_trap: {is_potential_trap}")
-            logger.warning(f"   拦截位置: 监控层 (run_event_driven_monitor.py)")
-            return True, reason
-
-        # 通过检查
-        return False, ""
-
-    def _check_sector_resonance(self, item: dict, all_results: dict) -> Tuple[bool, str]:
-        """
-        🎯 时机斧：板块共振检查 - 监控层触发
-
-        只在板块满足共振条件时才允许入场：
-        - Leaders ≥ 3：板块内涨停股数量 ≥ 3
-        - Breadth ≥ 35%：板块内上涨比例 ≥ 35%
-
-        Args:
-            item: 股票数据字典（来自全市场扫描结果）
-            all_results: 完整的扫描结果（用于计算板块共振）
-
-        Returns:
-            (is_blocked, reason)
-            is_blocked: 是否阻止入场
-            reason: 阻止原因或允许原因
-        """
-        code = item.get('code', '')
-        name = item.get('name', 'N/A')
-        sector_name = item.get('sector_name', '')
-        sector_code = item.get('sector_code', '')
-
-        # 如果没有板块信息或板块信息未知，跳过检查（不拦截）
-        if not sector_name or not sector_code or sector_name == '未知板块':
-            return False, "⏸️ 无板块信息，跳过共振检查"
-
-        # 🔥 [重构] 检查板块共振缓存（使用配置值）
-        cache_ttl = self.sector_resonance_cache_ttl
-        if sector_name in self.sector_resonance_cache:
-            result, timestamp = self.sector_resonance_cache[sector_name]
-            # 🔥 [P0修复] 使用total_seconds()而不是seconds，避免跨天场景错误
-            if (datetime.now() - timestamp).total_seconds() < cache_ttl:
-                # 缓存有效，使用缓存结果
-                if not result.is_resonant:
-                    reason = f"⏸️ [时机斧] 板块未共振（缓存）：{result.reason}"
-                    return True, reason
-                else:
-                    return False, f"✅ [时机斧] 板块共振满足（缓存）：{result.reason}"
-        
-        # 提取板块内所有股票数据
-        sector_stocks = []
-        for stock in all_results.get('opportunities', []) + all_results.get('watchlist', []):
-            if stock.get('sector_name') == sector_name:
-                sector_stocks.append({
-                    'pct_chg': stock.get('pct_chg', 0),
-                    'is_limit_up': stock.get('is_limit_up', False),
-                })
-
-        # 如果板块内股票太少，跳过检查
-        if len(sector_stocks) < 3:
-            return False, f"⏸️ 板块内股票不足（{len(sector_stocks)}只），跳过共振检查"
-
-        # 计算板块共振
-        calculator = SectorResonanceCalculator()
-        resonance_result = calculator.calculate(sector_stocks, sector_name, sector_code)
-        
-        # 🔥 [P1修复] 更新缓存
-        self.sector_resonance_cache[sector_name] = (resonance_result, datetime.now())
-        
-        # 🎯 更新CLI监控状态：板块共振状态
-        self.monitor_state["sectors"][sector_name] = {
-            "leaders": resonance_result.leaders,
-            "breadth": resonance_result.breadth,
-            "is_resonant": resonance_result.is_resonant,
-            "reason": resonance_result.reason
-        }
-
-        # 检查是否满足共振条件
-        if not resonance_result.is_resonant:
-            reason = f"⏸️ [时机斧] 板块未共振：{resonance_result.reason}"
-            logger.info(f"⏸️ [时机斧拦截-监控层] {code} ({name})")
-            logger.info(f"   板块: {sector_name}")
-            logger.info(f"   Leaders: {resonance_result.leaders}（需≥3）")
-            logger.info(f"   Breadth: {resonance_result.breadth:.1f}%（需≥35%）")
-            logger.info(f"   拦截位置: 监控层 (run_event_driven_monitor.py)")
-            return True, reason
-
-        # 通过检查
-        reason = f"✅ [时机斧] 板块共振满足：{resonance_result.reason}"
-        logger.info(f"✅ [时机斧通过-监控层] {code} ({name})")
-        logger.info(f"   板块: {sector_name}")
-        logger.info(f"   Leaders: {resonance_result.leaders}✅")
-        logger.info(f"   Breadth: {resonance_result.breadth:.1f}%✅")
-        return False, reason
-
     def _export_monitor_state(self):
         """
         🎯 导出监控状态到文件（供CLI监控终端读取）
@@ -946,15 +816,11 @@ class EventDrivenMonitor:
         print(f"📊 扫描完成 #{self.scan_count} - {datetime.now().strftime('%H:%M:%S')}")
         print("=" * 80)
 
-        # 🛡️ 防守斧：过滤机会池中的禁止场景
-        opportunities_safe = []
-        opportunities_blocked = []
-        for item in results['opportunities']:
-            is_forbidden, reason = self._check_defensive_scenario(item)
-            if is_forbidden:
-                opportunities_blocked.append((item, reason))
-            else:
-                opportunities_safe.append(item)
+        # 🎯 [V11.0.1 架构重构] 使用 Gatekeeper 统一过滤机会池
+        opportunities_final, opportunities_blocked, timing_downgraded = self.gatekeeper.filter_opportunities(
+            results['opportunities'],
+            results
+        )
 
         # 打印拦截统计
         if opportunities_blocked:
@@ -962,17 +828,6 @@ class EventDrivenMonitor:
             for item, reason in opportunities_blocked:
                 print(f"   ❌ {item['code']} ({item.get('name', 'N/A')}) - {reason}")
             print()
-
-        # 🎯 P1-2 修复：时机斧改为降级策略（未共振→观察池）
-        opportunities_final = []
-        timing_downgraded = []  # ✅ 降级的股票（加入观察池）
-        for item in opportunities_safe:
-            is_blocked, reason = self._check_sector_resonance(item, results)
-            if is_blocked:
-                # 🔥 修复：降级到观察池，而非直接拒绝
-                timing_downgraded.append((item, reason))  # ✅ 降级
-            else:
-                opportunities_final.append(item)
 
         # 打印时机斧降级统计
         if timing_downgraded:
