@@ -114,7 +114,22 @@ class FullMarketScanner:
         try:
             with open('data/equity_info_tushare.json', 'r', encoding='utf-8') as f:
                 equity_info = json.load(f)
-            logger.info(f"✅ 加载股本信息（Tushare版）: {len(equity_info)} 只股票")
+            
+            # 🔥 修复：解包裹数据结构
+            # 实际结构：{latest_update, retention_days, data: {date: {code: {...}}}}
+            # 需要提取 data[date] 中的股票数据
+            if 'data' in equity_info and isinstance(equity_info['data'], dict):
+                dates = list(equity_info['data'].keys())
+                if dates:
+                    latest_date = dates[0]  # 获取最新日期
+                    equity_info = equity_info['data'][latest_date]
+                    logger.info(f"✅ 加载股本信息（Tushare版）: {len(equity_info)} 只股票 (日期: {latest_date})")
+                else:
+                    logger.warning("⚠️ Tushare版 data 字段为空")
+                    return {}
+            else:
+                logger.info(f"✅ 加载股本信息（Tushare版）: {len(equity_info)} 只股票")
+            
             return equity_info
         except Exception as e:
             logger.warning(f"⚠️ 加载Tushare版失败: {e}")
@@ -1141,8 +1156,8 @@ class FullMarketScanner:
             # 策略：如果成交额够大 + 涨幅不错，强制通过（避免错失机会）
             if volume_ratio is None:
                 self._l1_debug['ratio_none'] += 1
-                # 降级条件：成交额>5000万 且 涨幅>2%
-                if amount > 50_000_000 and pct_chg > 2.0:
+                # 降级条件：成交额>5000万 且 涨幅>1%（降低阈值以适应当前市场）
+                if amount > 50_000_000 and pct_chg > 1.0:
                     volume_ratio = 2.0  # 给予默认合格分
                     logger.warning(f"[L1降级] {code}: 量比数据缺失但资金活跃，强制通过 (成交额={amount/1e8:.2f}亿, 涨幅={pct_chg:.2f}%)")
                     # 🔥 [Debug] 追踪001335.SZ

@@ -47,8 +47,16 @@ class CodeConverter:
         if not code:
             return code
 
-        # 清理代码
-        code = str(code).strip().replace('.', '')
+        code = str(code).strip()
+
+        # 🔥 修复：如果已经是 QMT 格式，直接返回
+        # QMT 格式特征：6位数字 + 交易所后缀
+        import re
+        if re.match(r'^\d{6}\.[A-Z]{2}$', code):
+            return code
+
+        # 清理代码（移除所有点，但只在不是 QMT 格式时执行）
+        code = code.replace('.', '')
 
         # 提取纯数字代码
         if code.startswith('sh'):
