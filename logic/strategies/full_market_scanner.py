@@ -1098,11 +1098,11 @@ class FullMarketScanner:
                 if code == '001335.SZ' or code.endswith('001335'):
                     logger.info(f"🔍 [DEBUG 001335] Level 1失败: 剔除垃圾股 (name={stock_name})")
                 return False
-            if code.startswith(('688', '8', '4')):  # 科创板、北交所
+            if code.startswith(('8', '4')):  # 北交所(8)、三板(4)
                 self._l1_debug['sector_exclude'] += 1
                 # 🔥 [Debug] 追踪001335.SZ
                 if code == '001335.SZ' or code.endswith('001335'):
-                    logger.info(f"🔍 [DEBUG 001335] Level 1失败: 科创板/北交所 (code={code})")
+                    logger.info(f"🔍 [DEBUG 001335] Level 1失败: 北交所/三板 (code={code})")
                 return False
 
             # 获取价格数据（仅使用 QMT Tick 实际存在的字段）
@@ -1156,8 +1156,8 @@ class FullMarketScanner:
             # 策略：如果成交额够大 + 涨幅不错，强制通过（避免错失机会）
             if volume_ratio is None:
                 self._l1_debug['ratio_none'] += 1
-                # 降级条件：成交额>5000万 且 涨幅>1%（降低阈值以适应当前市场）
-                if amount > 50_000_000 and pct_chg > 1.0:
+                # 降级条件：成交额>5000万 且 涨幅>0.5%（进一步降低阈值，成交额大比涨幅高更重要）
+                if amount > 50_000_000 and pct_chg > 0.5:
                     volume_ratio = 2.0  # 给予默认合格分
                     logger.warning(f"[L1降级] {code}: 量比数据缺失但资金活跃，强制通过 (成交额={amount/1e8:.2f}亿, 涨幅={pct_chg:.2f}%)")
                     # 🔥 [Debug] 追踪001335.SZ
