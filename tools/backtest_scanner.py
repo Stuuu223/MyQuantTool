@@ -19,6 +19,7 @@ import glob
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 import time
+import pandas as pd
 
 try:
     from xtquant import xtdata
@@ -76,8 +77,9 @@ class BacktestScanner:
                     with open(file_path, 'r', encoding='utf-8') as f:
                         data = json.load(f)
                         
-                    # 提取机会池
-                    opportunities = data.get('opportunities', [])
+                    # 提取机会池（在 results.opportunities 中）
+                    scan_results = data.get('results', {})
+                    opportunities = scan_results.get('opportunities', [])
                     
                     if opportunities:
                         results.append({
@@ -139,12 +141,42 @@ class BacktestScanner:
                 dividend_type='none'
             )
             
-            if not kline or code_qmt not in kline or len(kline[code_qmt]) <= 1:
+            print(f"    🔍 {code} kline 结果: {kline.keys() if kline else 'None'}")
+            
+            if not kline:
                 return {
                     'daily_gains': [], 'max_gain': 0, 'max_loss': 0, 'final_gain': 0
                 }
-                
-            df = kline[code_qmt]
+            
+            # QMT 返回格式: {字段: DataFrame(索引为股票代码)}
+            # 提取股票代码对应的所有字段的 DataFrame
+            # kline 结构: {'open': DataFrame(索引为股票代码), 'high': DataFrame(索引为股票代码), ...}
+            
+            # 重新组织为单个 DataFrame（索引为日期，列为不同字段）
+            # 从所有字段中提取该股票的数据
+            df_list = []
+            for field, field_data in kline.items():
+                # 确保 field_data 是 DataFrame
+                if isinstance(field_data, pd.DataFrame):
+                    if code_qmt in field_data.index:
+                        field_df = field_data.loc[code_qmt]
+                        if hasattr(field_df, '__len__') and len(field_df) > 0:
+                            # 转换为 Series，重命名后合并
+                            series = pd.Series(field_df, name=field)
+                            df_list.append(series)
+            
+            if not df_list:
+                return {
+                    'daily_gains': [], 'max_gain': 0, 'max_loss': 0, 'final_gain': 0
+                }
+            
+            # 合并所有字段为一个 DataFrame
+            df = pd.concat(df_list, axis=1)
+            
+            if not hasattr(df, '__len__') or len(df) <= 1:
+                return {
+                    'daily_gains': [], 'max_gain': 0, 'max_loss': 0, 'final_gain': 0
+                }
             
             # 找到扫描日之后的交易日
             # df 的索引是时间戳 (milliseconds) 或日期字符串
@@ -158,30 +190,45 @@ class BacktestScanner:
             if hasattr(df, 'index'):
                  # 处理时间戳索引
                 for idx in df.index:
-                    if isinstance(idx, str):
-                        dates.append(idx) # YYYYMMDD
+                    idx_str = str(idx)
+                    if len(idx_str) == 8 and idx_str.isdigit():
+                        # YYYYMMDD 格式
+                        dates.append(idx_str)
                     else:
-                        # 假设是时间戳
-                        dt = datetime.fromtimestamp(idx / 1000)
-                        dates.append(dt.strftime("%Y%m%d"))
+                        # 尝试解析为时间戳或 datetime 对象
+                        try:
+                            if hasattr(idx, 'strftime'):
+                                # pd.Timestamp 或 datetime 对象
+                                dates.append(idx.strftime("%Y%m%d"))
+                            else:
+                                # 时间戳（毫秒）
+                                dt = datetime.fromtimestamp(idx / 1000)
+                                dates.append(dt.strftime("%Y%m%d"))
+                        except:
+                            dates.append(idx_str)
             else:
                 # 假设是 recarray
                 dates = [d.decode() if isinstance(d, bytes) else str(d) for d in df['time']]
+            
+            print(f"    🔍 {code} dates 列表: {dates[:5]} (共{len(dates)}个)")
                 
             # 找到扫描日
             scan_date_compact = scan_date.replace('-', '')
             
             start_idx = -1
             for i, d in enumerate(dates):
-                if d > scan_date_compact:
-                    start_idx = i
-                    break
+                # 确保 d 是字符串
+                d_str = str(d)
+                if len(d_str) == 8 and d_str.isdigit():
+                    if d_str > scan_date_compact:
+                        start_idx = i
+                        break
             
             if start_idx == -1:
-                 return {
+                return {
                     'daily_gains': [], 'max_gain': 0, 'max_loss': 0, 'final_gain': 0
                 }
-                
+            
             # 获取 T+1 至 T+days 的数据
             future_data = []
             
@@ -251,7 +298,6 @@ class BacktestScanner:
             }
             
         except Exception as e:
-            print(f"⚠️  获取表现失败 {code}: {e}")
             return {
                 'daily_gains': [], 'max_gain': 0, 'max_loss': 0, 'final_gain': 0
             }
