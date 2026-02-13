@@ -83,6 +83,10 @@ class FullMarketScanner:
         # 获取全市场股票列表
         self.all_stocks = self._init_qmt_stock_list()
         
+        # 🔥 [V11.0.1 架构重构] 初始化交易守门人（统一策略拦截逻辑）
+        from logic.core.trade_gatekeeper import TradeGatekeeper
+        self.gatekeeper = TradeGatekeeper(self.config)
+        
         logger.info(f"✅ 全市场扫描器初始化完成")
         logger.info(f"   - 股票池: {len(self.all_stocks)} 只")
         logger.info(f"   - 股本信息: {len(self.equity_info)} 只股票")
@@ -537,6 +541,32 @@ class FullMarketScanner:
         
         # 保存结果
         self._save_results(result, mode)
+        
+        # 🔥 [V11.0.1 架构重构] 使用 Gatekeeper 统一过滤机会池
+        opportunities_final, opportunities_blocked, timing_downgraded = self.gatekeeper.filter_opportunities(
+            result['opportunities'],
+            result
+        )
+        
+        # 更新结果
+        result['opportunities'] = opportunities_final
+        result['opportunities_blocked'] = opportunities_blocked
+        result['opportunities_downgraded'] = timing_downgraded
+        
+        # 输出拦截统计
+        if opportunities_blocked:
+            logger.info(f"\\n🛡️ [防守斧] 拦截 {len(opportunities_blocked)} 只禁止场景股票:")
+            for item, reason in opportunities_blocked[:5]:
+                logger.info(f"   ❌ {item['code']} ({item.get('name', 'N/A')}) - {reason}")
+            if len(opportunities_blocked) > 5:
+                logger.info(f"   ... 还有 {len(opportunities_blocked) - 5} 只")
+        
+        if timing_downgraded:
+            logger.info(f"\\n⏸️ [时机斧] 降级 {len(timing_downgraded)} 只未共振股票 → 观察池:")
+            for item, reason in timing_downgraded[:5]:
+                logger.info(f"   ⏸️ {item['code']} ({item.get('name', 'N/A')}) - {reason}")
+            if len(timing_downgraded) > 5:
+                logger.info(f"   ... 还有 {len(timing_downgraded) - 5} 只")
         
         return result
     
@@ -1009,15 +1039,52 @@ class FullMarketScanner:
                 logger.info(f"🔍 [DEBUG 001335] Level 1失败: tick数据为空")
             return False
 
+        # 🔥 [调试] 添加统计追踪
+        if not hasattr(self, '_l1_debug'):
+            self._l1_debug = {
+                'checked': 0,
+                'no_tick': 0,
+                'garbage': 0,
+                'sector_exclude': 0,
+                'pct_fail': 0,
+                'amount_fail': 0,
+                'ratio_none': 0,
+                'ratio_fail': 0,
+                'ratio_pass': 0
+            }
+        self._l1_debug['checked'] += 1
+        
+        # 🔥 [调试] 每100只股票打印一次统计
+        if self._l1_debug['checked'] % 100 == 0:
+            logger.info(f"📊 [L1调试] 已检查{self._l1_debug['checked']}只: 涨跌幅失败={self._l1_debug['pct_fail']}, 成交额失败={self._l1_debug['amount_fail']}, 量比缺失={self._l1_debug['ratio_none']}, 量比失败={self._l1_debug['ratio_fail']}, 通过={self._l1_debug['ratio_pass']}")
+
+        # 🔥 [调试] 统计Level 1过滤原因
+        if not hasattr(self, '_l1_stats'):
+            self._l1_stats = {
+                'total': 0,
+                'tick_empty': 0,
+                'garbage': 0,
+                'sector_exclude': 0,
+                'pct_chg_fail': 0,
+                'amount_fail': 0,
+                'volume_ratio_fail': 0,
+                'volume_ratio_fallback': 0,
+                'volume_ratio_pass': 0,
+                'final_pass': 0
+            }
+        self._l1_stats['total'] += 1
+
         try:
             # 基础风控：剔除垃圾股
             stock_name = tick.get('stockName', '')
             if 'ST' in stock_name or '退' in stock_name:
+                self._l1_debug['garbage'] += 1
                 # 🔥 [Debug] 追踪001335.SZ
                 if code == '001335.SZ' or code.endswith('001335'):
                     logger.info(f"🔍 [DEBUG 001335] Level 1失败: 剔除垃圾股 (name={stock_name})")
                 return False
             if code.startswith(('688', '8', '4')):  # 科创板、北交所
+                self._l1_debug['sector_exclude'] += 1
                 # 🔥 [Debug] 追踪001335.SZ
                 if code == '001335.SZ' or code.endswith('001335'):
                     logger.info(f"🔍 [DEBUG 001335] Level 1失败: 科创板/北交所 (code={code})")
@@ -1054,11 +1121,13 @@ class FullMarketScanner:
 
             # 两个条件必须同时满足
             if pct_chg < cfg['pct_chg_min']:
+                self._l1_debug['pct_fail'] += 1
                 # 🔥 [Debug] 追踪001335.SZ
                 if code == '001335.SZ' or code.endswith('001335'):
                     logger.info(f"🔍 [DEBUG 001335] Level 1失败: 涨跌幅过低 (pct_chg={pct_chg:.2f}%, threshold={cfg['pct_chg_min']:.2f}%)")
                 return False
             if amount < cfg['amount_min']:
+                self._l1_debug['amount_fail'] += 1
                 # 🔥 [Debug] 追踪001335.SZ
                 if code == '001335.SZ' or code.endswith('001335'):
                     logger.info(f"🔍 [DEBUG 001335] Level 1失败: 成交额过低 (amount={amount/1e8:.2f}亿, threshold={cfg['amount_min']/1e8:.2f}亿)")
@@ -1067,13 +1136,24 @@ class FullMarketScanner:
             # 检查量比（新增：市值分层阈值）
             volume_ratio = self._check_volume_ratio(code, volume, tick)
 
-            # 量比数据缺失：直接拒绝（避免候选池溢出）
+            # 🔥 修复V11.0: 量比数据缺失时的降级策略
+            # 原因：高并发时段（09:30-09:40），QMT历史K线查询极易超时
+            # 策略：如果成交额够大 + 涨幅不错，强制通过（避免错失机会）
             if volume_ratio is None:
-                logger.debug(f"[L1过滤] {code}: 量比数据缺失，拒绝")
-                # 🔥 [Debug] 追踪001335.SZ
-                if code == '001335.SZ' or code.endswith('001335'):
-                    logger.info(f"🔍 [DEBUG 001335] Level 1失败: 量比数据缺失")
-                return False
+                self._l1_debug['ratio_none'] += 1
+                # 降级条件：成交额>5000万 且 涨幅>2%
+                if amount > 50_000_000 and pct_chg > 2.0:
+                    volume_ratio = 2.0  # 给予默认合格分
+                    logger.warning(f"[L1降级] {code}: 量比数据缺失但资金活跃，强制通过 (成交额={amount/1e8:.2f}亿, 涨幅={pct_chg:.2f}%)")
+                    # 🔥 [Debug] 追踪001335.SZ
+                    if code == '001335.SZ' or code.endswith('001335'):
+                        logger.info(f"🔍 [DEBUG 001335] Level 1降级通过: 量比缺失但资金活跃")
+                else:
+                    logger.debug(f"[L1过滤] {code}: 量比数据缺失，拒绝 (成交额={amount/1e8:.2f}亿, 涨幅={pct_chg:.2f}%)")
+                    # 🔥 [Debug] 追踪001335.SZ
+                    if code == '001335.SZ' or code.endswith('001335'):
+                        logger.info(f"🔍 [DEBUG 001335] Level 1失败: 量比数据缺失且不符合降级条件")
+                    return False
 
             # 量比数据正常：按市值分层阈值判断
             # 获取流通市值用于分层
@@ -1089,6 +1169,7 @@ class FullMarketScanner:
 
             # 检查量比是否达标
             if volume_ratio < volume_ratio_threshold:
+                self._l1_debug['ratio_fail'] += 1
                 logger.debug(f"[L1过滤] {code}: 量比={volume_ratio:.2f} < 阈值={volume_ratio_threshold:.2f}")
                 # 🔥 [Debug] 追踪001335.SZ
                 if code == '001335.SZ' or code.endswith('001335'):
@@ -1096,6 +1177,7 @@ class FullMarketScanner:
                 return False
 
             # 所有检查通过
+            self._l1_debug['ratio_pass'] += 1
             volume_ratio_str = f"{volume_ratio:.2f}" if volume_ratio is not None else "数据缺失"
             logger.debug(f"[L1通过] {code}: 涨跌幅={pct_chg:.2f}%, 成交额={amount/1e8:.2f}亿, 量比={volume_ratio_str}")
             # 🔥 [Debug] 追踪001335.SZ
