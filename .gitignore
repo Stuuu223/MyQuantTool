@@ -93,6 +93,11 @@ data/equity_info_tushare.json
 data/equity_info_tushare.json.backup*
 data/money_flow_tushare/
 
+# QMT数据文件（太大，不应提交到 Git）
+data/qmt_data/
+data/data/
+data/datadir/
+
 # Coverage
 .coverage
 htmlcov/

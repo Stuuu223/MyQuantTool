@@ -1,0 +1,123 @@
+Logic目录文件分析报告
+================================================================================
+
+总文件数: 172
+建议删除: 3 个文件
+建议移动: 88 个文件
+
+建议删除的文件:
+  auto_reviewer_v18_7.py (旧版本文件)
+  intraday_monitor_v1_backup.py (备份文件)
+  midway_strategy_v19_final.py (旧版本文件)
+
+建议移动的文件:
+
+auction/ (3个文件):
+  - auction_prediction_system.py
+  - auction_snapshot_manager.py
+  - auction_snapshot_saver.py
+
+backtest/ (4个文件):
+  - backtest.py
+  - backtest_framework.py
+  - backtesting_review.py
+  - slippage_model.py
+
+data/ (29个文件):
+  - cache_manager.py
+  - cache_replay_provider.py
+  - data_adapter.py
+  - data_adapter_akshare.py
+  - data_cleaner.py
+  - data_harvester.py
+  - data_health_monitor.py
+  - data_maintenance.py
+  - data_manager.py
+  - data_monitor.py
+  - data_provider_factory.py
+  - data_quality_monitor.py
+  - data_quality_validator.py
+  - data_sanitizer.py
+  - data_source_manager.py
+  - equity_data_accessor.py
+  - fund_flow_analyzer.py
+  - fund_flow_cache.py
+  - fund_flow_collector.py
+  - fund_flow_freshness.py
+  - fund_flow_scheduler.py
+  - qmt_health_check.py
+  - qmt_historical_provider.py
+  - qmt_keepalive.py
+  - qmt_manager.py
+  - qmt_stock_info.py
+  - qmt_supplement.py
+  - qmt_tick_monitor.py
+  - realtime_data_provider.py
+
+ml/ (11个文件):
+  - ai_agent.py
+  - autonomous_learning_system.py
+  - feature_engineer.py
+  - federated_learning_system.py
+  - feedback_learning.py
+  - limit_up_predictor.py
+  - lstm_enhanced.py
+  - lstm_predictor.py
+  - meta_learning_system.py
+  - ml_predictor.py
+  - opportunity_predictor.py
+
+monitors/ (2个文件):
+  - monitor.py
+  - scheduled_task_monitor.py
+
+risk/ (4个文件):
+  - position_manager.py
+  - risk_control.py
+  - risk_manager.py
+  - risk_scanner.py
+
+sectors/ (6个文件):
+  - sector_analysis.py
+  - sector_analysis_streamlit.py
+  - sector_capital_tracker.py
+  - sector_pulse_monitor.py
+  - sector_resonance.py
+  - sector_rotation_analyzer.py
+
+sentiment/ (4个文件):
+  - market_cycle.py
+  - market_phase_checker.py
+  - market_status.py
+  - sentiment_analyzer.py
+
+signals/ (4个文件):
+  - signal_deduplicator.py
+  - signal_generator.py
+  - signal_history.py
+  - signal_manager.py
+
+strategies/ (18个文件):
+  - auction_event_detector.py
+  - auction_trap_detector.py
+  - backtest_engine.py
+  - dip_buy_event_detector.py
+  - dragon_tactics.py
+  - event_detector.py
+  - fake_order_detector.py
+  - halfway_event_detector.py
+  - leader_event_detector.py
+  - low_suction_engine.py
+  - midway_strategy.py
+  - national_team_detector.py
+  - predictive_engine.py
+  - second_wave_detector.py
+  - sector_resonance_detector.py
+  - sector_rotation_detector.py
+  - snapshot_backtest_engine.py
+  - theme_detector.py
+
+trading/ (3个文件):
+  - broker_api.py
+  - live_trading_interface.py
+  - paper_trading_system.py

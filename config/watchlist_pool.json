@@ -299,7 +299,27 @@
       "level1_result": null,
       "level2_result": null,
       "level3_result": null
+    },
+    {
+      "code": "000001",
+      "name": "平安银行",
+      "reason": "测试用",
+      "added_at": "2026-02-14T17:52:15.961661",
+      "last_updated": "2026-02-14T17:52:15.961661",
+      "level1_result": null,
+      "level2_result": null,
+      "level3_result": null
+    },
+    {
+      "code": "600519",
+      "name": "贵州茅台",
+      "reason": "测试用",
+      "added_at": "2026-02-14T17:52:15.961661",
+      "last_updated": "2026-02-14T17:52:15.961661",
+      "level1_result": null,
+      "level2_result": null,
+      "level3_result": null
     }
   ],
-  "updated_at": "2026-02-06T12:34:20.120912"
+  "updated_at": "2026-02-14T17:52:15.961661"
 }
