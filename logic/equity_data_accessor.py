@@ -20,7 +20,7 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-EQUITY_INFO_PATH = Path(__file__).resolve().parents[1] / "data" / "equity_info_tushare.json"
+EQUITY_INFO_PATH = Path(__file__).resolve().parents[1] / "data" / "equity_info" / "equity_info_tushare.json"
 
 
 def _validate_trade_date(trade_date: str) -> None:
