@@ -1,0 +1,43 @@
+{
+  "config": {
+    "start_date": "2026-01-15",
+    "end_date": "2026-02-13",
+    "initial_capital": 100000,
+    "commission_rate": 0.0003
+  },
+  "summary": {
+    "total_trades": 1,
+    "win_count": 0,
+    "lose_count": 0,
+    "win_rate": 0.0,
+    "avg_profit": 0,
+    "avg_loss": 0,
+    "total_profit_pct": 0.0,
+    "stop_loss_rate": 0.0,
+    "take_profit_rate": 0.0
+  },
+  "trades": [
+    {
+      "date": "2026-01-15",
+      "code": "002802.SZ",
+      "buy_time": "2026-01-15 07:00:00",
+      "buy_price": 12.74,
+      "sell_time": "2026-01-15 07:00:00",
+      "sell_price": 12.74,
+      "profit_pct": 0.0,
+      "reason": "NORMAL",
+      "open_price": 12.59,
+      "close_price": 12.74
+    }
+  ],
+  "daily_results": [
+    {
+      "date": "2026-01-15",
+      "trades": 1,
+      "total_profit": 0.0,
+      "win_count": 0,
+      "lose_count": 0,
+      "win_rate": 0.0
+    }
+  ]
+}
