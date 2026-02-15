@@ -271,7 +271,7 @@ def generate_review_report(date_str, all_class_a, all_class_b, all_class_c):
 
 def save_review_report(date_str, report):
     """保存复盘报告"""
-    review_dir = Path("data/review")
+    review_dir = Path("data/snapshots")
     review_dir.mkdir(exist_ok=True)
     
     file_path = review_dir / f"{date_str}_review.md"

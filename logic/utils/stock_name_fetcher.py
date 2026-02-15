@@ -43,7 +43,7 @@ class StockNameFetcher:
 
     def _load_stock_names(self):
         """从本地 JSON 加载股票名称"""
-        json_path = Path(__file__).parent.parent / 'data' / 'stock_names.json'
+        json_path = Path(__file__).parent.parent / 'data' / 'reference' / 'stock_names.json'
 
         if not json_path.exists():
             raise FileNotFoundError(

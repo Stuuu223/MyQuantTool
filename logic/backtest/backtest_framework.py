@@ -11,7 +11,7 @@ from typing import List, Dict, Optional, Tuple
 import pandas as pd
 
 # 导入路径配置
-from config.paths import REBUILD_SNAP_DIR, BACKTEST_RESULTS_DIR
+from config.paths import SNAPSHOTS_DIR, BACKTEST_RESULTS_DIR
 
 
 class BacktestPosition:
@@ -232,7 +232,7 @@ class BacktestEngine:
         """
         # 懒加载风控管理器
         if self.risk_mgr is None:
-            from logic.risk_control import RiskControlManager
+            from logic.risk.risk_control import RiskControlManager
             self.risk_mgr = RiskControlManager(
                 price_stop_pct=-5.0,           # 价格止损-5%
                 time_stop_min_days=3,          # 最小持仓天数3天
@@ -591,7 +591,7 @@ def main():
     engine = BacktestEngine(initial_capital=100000.0)
 
     # 加载快照
-    snapshot_dir = str(REBUILD_SNAP_DIR)
+    snapshot_dir = str(SNAPSHOTS_DIR)
     snapshots = engine.load_snapshots_from_dir(snapshot_dir)
 
     if len(snapshots) == 0:

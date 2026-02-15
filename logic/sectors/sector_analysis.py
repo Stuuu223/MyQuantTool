@@ -1039,7 +1039,7 @@ class FastSectorAnalyzer:
         
         try:
             # 检查静态映射表文件是否存在
-            static_map_file = os.path.join('data', 'stock_sector_map.json')
+            static_map_file = os.path.join('data', 'sector_map', 'stock_sector_map.json')
             
             if not os.path.exists(static_map_file):
                 logger.info(f"📁 [V18.1] 静态映射表文件不存在: {static_map_file}")

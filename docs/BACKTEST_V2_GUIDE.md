@@ -1,3 +1,10 @@
+---
+version: V12.1.0
+updated: 2026-02-15
+scope: logic/full_market_scanner.py, tasks/run_event_driven_monitor.py
+author: MyQuantTool Team
+---
+
 # 量化回测执行手册 V2（严格版）
 
 > **目标**：修复幸存者偏差，验证5日均线突破策略在“成交额Top 500股票”上的真实表现

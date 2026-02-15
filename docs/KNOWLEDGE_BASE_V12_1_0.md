@@ -1,3 +1,10 @@
+---
+version: V12.1.0
+updated: 2026-02-15
+scope: logic/full_market_scanner.py, tasks/run_event_driven_monitor.py
+author: MyQuantTool Team
+---
+
 # MyQuantTool 项目知识库 V12.1.0
 
 > **版本**: V12.1.0  

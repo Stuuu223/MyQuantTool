@@ -142,7 +142,7 @@ class AuctionStrengthValidator:
                                 }
 
             # 2. 尝试加载股票基本信息
-            stock_names_path = Path("data/stock_names.json")
+            stock_names_path = Path("data/reference/stock_names.json")
             if stock_names_path.exists():
                 with open(stock_names_path, 'r', encoding='utf-8') as f:
                     data = json.load(f)

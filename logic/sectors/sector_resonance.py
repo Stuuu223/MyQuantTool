@@ -9,7 +9,7 @@
 3. 判断板块是否满足共振条件
 
 使用方式：
-    from logic.sector_resonance import SectorResonanceCalculator
+    from logic.sectors.sector_resonance import SectorResonanceCalculator
     calculator = SectorResonanceCalculator()
     result = calculator.calculate(sector_stocks)
 """

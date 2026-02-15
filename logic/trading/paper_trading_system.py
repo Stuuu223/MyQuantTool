@@ -265,7 +265,7 @@ class PaperTradingSystem:
             reason: 拒绝原因或允许原因
         """
         # 导入硬编码禁止场景列表
-        from logic.risk_control import FORBIDDEN_SCENARIOS
+        from logic.risk.risk_control import FORBIDDEN_SCENARIOS
 
         code = symbol
         name = stock_name or 'N/A'

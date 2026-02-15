@@ -18,7 +18,7 @@ import numpy as np
 from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime, timedelta
 from logic.utils.logger import get_logger
-from logic.theme_detector import ThemeDetector
+from logic.sectors.theme_detector import ThemeDetector
 
 logger = get_logger(__name__)
 

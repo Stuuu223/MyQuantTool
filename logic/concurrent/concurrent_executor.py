@@ -346,7 +346,7 @@ if __name__ == '__main__':
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     sys.path.insert(0, project_root)
     
-    from logic.data_manager import DataManager
+    from logic.data_providers.data_manager import DataManager
     
     print("=" * 80)
     print("🚀 测试并发执行器")

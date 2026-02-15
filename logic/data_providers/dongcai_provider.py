@@ -12,7 +12,7 @@ Date: 2026-02-12
 from datetime import datetime
 from typing import Optional
 
-from logic.fund_flow_analyzer import FundFlowAnalyzer
+from logic.data_providers.fund_flow_analyzer import FundFlowAnalyzer
 from .base import (
     ICapitalFlowProvider,
     CapitalFlowSignal,

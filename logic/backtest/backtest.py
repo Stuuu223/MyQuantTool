@@ -543,7 +543,7 @@ class BacktestEngine:
             组合回测结果
         """
         if not data_manager:
-            from logic.data_manager import DataManager
+            from logic.data_providers.data_manager import DataManager
             data_manager = DataManager()
         
         portfolio_results = []

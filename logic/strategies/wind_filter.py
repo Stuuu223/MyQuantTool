@@ -47,7 +47,7 @@ class WindFilter:
     """
 
     # 配置参数
-    SECTOR_MAP_PATH = Path("data/stock_sector_map.json")
+    SECTOR_MAP_PATH = Path("data/sector_map/stock_sector_map.json")
     MIN_LIMIT_UP_COUNT = 3  # 条件A: 最少涨停股数
     MIN_RISE_RATIO = 0.35  # 条件B: 最少上涨比例 (35%)
     SUSTAINED_INFLOW_DAYS = 3  # 条件C: 连续流入天数

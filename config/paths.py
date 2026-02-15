@@ -2,8 +2,8 @@
 项目路径配置 - 统一管理所有路径，避免硬编码盘符
 
 使用方式：
-    from config.paths import REBUILD_SNAP_DIR
-    snapshot_path = REBUILD_SNAP_DIR / "xxx.json"
+    from config.paths import SNAPSHOTS_DIR
+    snapshot_path = SNAPSHOTS_DIR / "xxx.json"
 """
 from pathlib import Path
 
@@ -13,12 +13,16 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 # 数据目录
 DATA_DIR = PROJECT_ROOT / "data"
 
-# 各子目录
-REBUILD_SNAP_DIR = DATA_DIR / "rebuild_snapshots"
-SCAN_RESULTS_DIR = DATA_DIR / "scan_results"
-REVIEW_DIR = DATA_DIR / "review"
-STOCK_ANALYSIS_DIR = DATA_DIR / "stock_analysis"
-KLINE_CACHE_DIR = DATA_DIR / "kline_cache"
+# 各子目录（按生命周期分类）
+SNAPSHOTS_DIR = DATA_DIR / "snapshots"          # 历史快照（90天轮转）
+SCAN_RESULTS_DIR = DATA_DIR / "scan_results"  # 扫描结果（4h轮转）
+DECISION_LOGS_DIR = DATA_DIR / "decision_logs" # 决策日志（30天轮转）
+MINUTE_DATA_DIR = DATA_DIR / "minute_data"    # K线数据（7天轮转）
+BACKTEST_RESULTS_DIR = DATA_DIR / "backtest_results"  # 回测结果（永久保留）
+EQUITY_INFO_DIR = DATA_DIR / "equity_info"    # 股本信息（定期更新）
+SECTOR_MAP_DIR = DATA_DIR / "sector_map"      # 板块映射（定期更新）
+REFERENCE_DIR = DATA_DIR / "reference"        # 参考数据（静态）
+AUCTION_DIR = DATA_DIR / "auction"            # 竞价数据
 
 # 日志目录
 LOGS_DIR = PROJECT_ROOT / "logs"
@@ -29,20 +33,20 @@ CONFIG_DIR = PROJECT_ROOT / "config"
 # 输出目录
 OUTPUT_DIR = PROJECT_ROOT / "output"
 
-# 回测结果目录
-BACKTEST_RESULTS_DIR = OUTPUT_DIR / "backtest_results"
-
 # 创建目录（如果不存在）
 def ensure_directories():
     """确保所有目录存在"""
-    REBUILD_SNAP_DIR.mkdir(parents=True, exist_ok=True)
+    SNAPSHOTS_DIR.mkdir(parents=True, exist_ok=True)
     SCAN_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    REVIEW_DIR.mkdir(parents=True, exist_ok=True)
-    STOCK_ANALYSIS_DIR.mkdir(parents=True, exist_ok=True)
-    KLINE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    DECISION_LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    MINUTE_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    BACKTEST_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    EQUITY_INFO_DIR.mkdir(parents=True, exist_ok=True)
+    SECTOR_MAP_DIR.mkdir(parents=True, exist_ok=True)
+    REFERENCE_DIR.mkdir(parents=True, exist_ok=True)
+    AUCTION_DIR.mkdir(parents=True, exist_ok=True)
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    BACKTEST_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 if __name__ == "__main__":
@@ -51,10 +55,12 @@ if __name__ == "__main__":
     print("=" * 60)
     print(f"PROJECT_ROOT: {PROJECT_ROOT}")
     print(f"DATA_DIR: {DATA_DIR}")
-    print(f"REBUILD_SNAP_DIR: {REBUILD_SNAP_DIR}")
+    print(f"SNAPSHOTS_DIR: {SNAPSHOTS_DIR}")
     print(f"SCAN_RESULTS_DIR: {SCAN_RESULTS_DIR}")
-    print(f"LOGS_DIR: {LOGS_DIR}")
+    print(f"DECISION_LOGS_DIR: {DECISION_LOGS_DIR}")
+    print(f"MINUTE_DATA_DIR: {MINUTE_DATA_DIR}")
     print(f"BACKTEST_RESULTS_DIR: {BACKTEST_RESULTS_DIR}")
+    print(f"LOGS_DIR: {LOGS_DIR}")
     print("=" * 60)
 
     # 创建所有目录

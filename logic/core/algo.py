@@ -1492,7 +1492,7 @@ class QuantAlgo:
         """
         try:
             import akshare as ak
-            from logic.data_manager import DataManager
+            from logic.data_providers.data_manager import DataManager
             from datetime import datetime
             
             # 🆕 V20.5: 记录复盘模式状态
@@ -2711,7 +2711,7 @@ class QuantAlgo:
         使用 Easyquotation 极速接口
         """
         try:
-            from logic.data_manager import DataManager
+            from logic.data_providers.data_manager import DataManager
             
             # 使用 Easyquotation 获取实时数据
             db = DataManager()
@@ -3056,7 +3056,7 @@ class QuantAlgo:
         limit: 扫描的股票数量限制
         """
         try:
-            from logic.data_manager import DataManager
+            from logic.data_providers.data_manager import DataManager
             
             # 获取股票列表
             import akshare as ak

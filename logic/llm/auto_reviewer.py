@@ -17,9 +17,9 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Tuple, Optional
 from pathlib import Path
 from collections import Counter
-from logic.data_manager import DataManager
+from logic.data_providers.data_manager import DataManager
 from logic.signal_generator import SignalGenerator
-from logic.signal_history import get_signal_history_manager
+from logic.signal_tracker.signal_history import get_signal_history_manager
 from logic.utils.logger import get_logger
 
 logger = get_logger(__name__)

@@ -35,7 +35,7 @@ def load_stock_list(file_path: str) -> List[str]:
 def download_stocks(
     codes: List[str],
     days: int = 30,
-    output_dir: str = 'data/minute_data_hot'
+    output_dir: str = 'data/minute_data/1m'
 ):
     """下载股票分钟数据"""
     
@@ -123,7 +123,7 @@ def main():
                         help='股票列表文件路径（每行一个代码）')
     parser.add_argument('--days', type=int, default=30,
                         help='下载天数（默认30）')
-    parser.add_argument('--output', type=str, default='data/minute_data_hot',
+    parser.add_argument('--output', type=str, default='data/minute_data/1m',
                         help='输出目录')
     args = parser.parse_args()
     

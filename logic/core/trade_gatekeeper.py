@@ -13,7 +13,7 @@ Version: V11.0.1 - 架构重构版
 
 from typing import Dict, List, Tuple
 from datetime import datetime
-from logic.sector_resonance import SectorResonanceCalculator
+from logic.sectors.sector_resonance import SectorResonanceCalculator
 from logic.utils.logger import get_logger
 from logic.equity_data_accessor import get_circ_mv
 
@@ -66,7 +66,7 @@ class TradeGatekeeper:
         Returns:
             (is_forbidden, reason)
         """
-        from logic.risk_control import FORBIDDEN_SCENARIOS
+        from logic.risk.risk_control import FORBIDDEN_SCENARIOS
         
         code = item.get('code', '')
         name = item.get('name', 'N/A')

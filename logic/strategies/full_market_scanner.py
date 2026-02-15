@@ -120,7 +120,7 @@ class FullMarketScanner:
         """
         # 优先级1: Tushare版本
         try:
-            with open('data/equity_info_tushare.json', 'r', encoding='utf-8') as f:
+            with open('data/equity_info/equity_info_tushare.json', 'r', encoding='utf-8') as f:
                 equity_info = json.load(f)
             
             # 🔥 修复：解包裹数据结构
@@ -153,7 +153,7 @@ class FullMarketScanner:
         
         # 优先级3: MVP版本
         try:
-            with open('data/equity_info_mvp.json', 'r', encoding='utf-8') as f:
+            with open('data/equity_info/equity_info_mvp.json', 'r', encoding='utf-8') as f:
                 equity_info = json.load(f)
             logger.info(f"✅ 加载股本信息（MVP版）: {len(equity_info)} 只股票")
             return equity_info
@@ -169,7 +169,7 @@ class FullMarketScanner:
             dict: 板块映射字典 {code: {industry, concepts}}
         """
         try:
-            with open('data/stock_sector_map.json', 'r', encoding='utf-8') as f:
+            with open('data/sector_map/stock_sector_map.json', 'r', encoding='utf-8') as f:
                 sector_map = json.load(f)
             logger.info(f"✅ 加载板块映射表: {len(sector_map)} 只股票")
             return sector_map
@@ -519,7 +519,7 @@ class FullMarketScanner:
         
         # ===== 风控评估 =====
         try:
-            from logic.risk_manager import RiskManager
+            from logic.risk.risk_manager import RiskManager
             risk_manager = RiskManager()
             risk_result = risk_manager.calculate_position_limit(evidence_matrix)
         except Exception as e:
@@ -1590,7 +1590,7 @@ class FullMarketScanner:
         
         # 检查 1：系统置信度
         try:
-            from logic.risk_manager import RiskManager
+            from logic.risk.risk_manager import RiskManager
             risk_manager = RiskManager()
             
             # 构建证据矩阵（简化版）

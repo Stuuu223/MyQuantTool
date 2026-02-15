@@ -136,7 +136,7 @@ class DynamicThreshold:
         """
         try:
             # 优先使用 Tushare 完整版（数据更全面）
-            tushare_path = Path("data/equity_info_tushare.json")
+            tushare_path = Path("data/equity_info/equity_info_tushare.json")
             if tushare_path.exists():
                 with open(tushare_path, 'r', encoding='utf-8') as f:
                     data = json.load(f)
@@ -177,7 +177,7 @@ class DynamicThreshold:
                     logger.warning(f"⚠️ [动态阈值] Tushare数据结构不匹配: {data_structure}")
 
             # 备用：使用 MVP 版本
-            mvp_path = Path("data/equity_info_mvp.json")
+            mvp_path = Path("data/equity_info/equity_info_mvp.json")
             if mvp_path.exists():
                 with open(mvp_path, 'r', encoding='utf-8') as f:
                     data = json.load(f)
