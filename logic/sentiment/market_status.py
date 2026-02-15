@@ -327,7 +327,7 @@ class MarketStatusChecker:
             # 🆕 V18.5: 尝试从数据库或 Redis 读取历史数据
             if bid1_volume == 0 and ask1_volume == 0:
                 try:
-                    from logic.data_manager import get_db_manager
+                    from logic.data.data_manager import get_db_manager
                     db = get_db_manager()
                     
                     # 尝试从数据库获取历史数据

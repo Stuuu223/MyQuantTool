@@ -41,7 +41,7 @@ from dataclasses import dataclass, field
 
 from logic.utils.logger import get_logger
 from logic.utils.code_converter import CodeConverter
-from logic.data_source_manager import get_smart_data_manager
+from logic.data.data_source_manager import get_smart_data_manager
 
 # 导入三大过滤器
 from logic.strategies.wind_filter import get_wind_filter, WindFilter

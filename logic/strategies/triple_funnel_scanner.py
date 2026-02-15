@@ -70,7 +70,7 @@ from pathlib import Path
 
 from logic.utils.logger import get_logger
 from logic.utils.code_converter import CodeConverter
-from logic.data_source_manager import get_smart_data_manager
+from logic.data.data_source_manager import get_smart_data_manager
 from logic.monitors.intraday_monitor import IntraDayMonitor
 from logic.analyzers.trap_detector import TrapDetector
 from logic.analyzers.capital_classifier import CapitalClassifier
@@ -525,7 +525,7 @@ class Level4Monitor:
                 VWAP 价格
             """
             try:
-                from logic.qmt_manager import get_qmt_manager
+                from logic.data.qmt_manager import get_qmt_manager
     
                 # 🔥 优先策略1: 使用 QMT Tick 数据（实时、最快）
                 qmt_manager = get_qmt_manager()

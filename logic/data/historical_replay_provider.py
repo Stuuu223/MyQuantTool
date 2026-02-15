@@ -5,7 +5,7 @@
 从 AkShare 获取历史数据并伪装成实时数据
 """
 
-from logic.data_provider_factory import DataProvider
+from logic.data.data_provider_factory import DataProvider
 from logic.utils.logger import get_logger
 import config.config_system as config
 import akshare as ak

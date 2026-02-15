@@ -18,8 +18,8 @@ import numpy as np
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime
 from logic.utils.logger import get_logger
-from logic.data_manager import DataManager
-from logic.data_cleaner import DataCleaner
+from logic.data.data_manager import DataManager
+from logic.data.data_cleaner import DataCleaner
 from logic.sector_analysis import FastSectorAnalyzer
 import akshare as ak
 
@@ -319,7 +319,7 @@ def get_fast_sentiment_analyzer(db: DataManager) -> FastSentimentAnalyzer:
 
 if __name__ == '__main__':
     # 测试代码
-    from logic.data_manager import DataManager
+    from logic.data.data_manager import DataManager
     
     print("=" * 60)
     print("🧪 测试 FastSentimentAnalyzer")

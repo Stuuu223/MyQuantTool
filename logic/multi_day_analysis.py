@@ -12,7 +12,7 @@ from typing import Dict, List
 # 添加项目根目录到路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from logic.fund_flow_collector import FundFlowCollector, get_fund_flow_collector
+from logic.data.fund_flow_collector import FundFlowCollector, get_fund_flow_collector
 
 
 class MultiDayAnalysis:

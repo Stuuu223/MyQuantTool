@@ -42,7 +42,7 @@ sys.path.insert(0, str(project_root))
 from logic.utils.logger import get_logger
 from logic.database_manager import DatabaseManager
 from logic.auction_snapshot_manager import AuctionSnapshotManager
-from logic.qmt_manager import QMTManager
+from logic.data.qmt_manager import QMTManager
 
 logger = get_logger(__name__)
 

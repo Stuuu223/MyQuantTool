@@ -11,7 +11,7 @@ from pathlib import Path
 project_root = Path(__file__).resolve().parents[1]
 sys.path.append(str(project_root))
 
-from logic.qmt_manager import get_qmt_manager
+from logic.data.qmt_manager import get_qmt_manager
 
 def check_tick_data():
     print("=" * 50)

@@ -10,7 +10,7 @@ from typing import Dict, List, Optional, Callable
 from logic.utils.logger import get_logger
 from logic.database_manager import get_db_manager
 from logic.monitors.iron_rule_monitor import IronRuleMonitor
-from logic.position_manager import PositionManager
+from logic.risk.position_manager import PositionManager
 
 logger = get_logger(__name__)
 

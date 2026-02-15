@@ -15,8 +15,8 @@ import pandas as pd
 import numpy as np
 from typing import Optional, Dict, Any
 from logic.utils.logger import get_logger
-from logic.market_status import get_market_status_checker
-from logic.technical_analyzer import TechnicalAnalyzer
+from logic.sentiment.market_status import get_market_status_checker
+from logic.analyzers.technical_analyzer import TechnicalAnalyzer
 
 logger = get_logger(__name__)
 

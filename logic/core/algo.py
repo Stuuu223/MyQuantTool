@@ -45,7 +45,7 @@ def get_time_weight(current_time=None, is_review_mode=False):
     
     if current_time is None:
         from datetime import datetime
-        from logic.market_status import get_market_status_checker
+        from logic.sentiment.market_status import get_market_status_checker
         checker = get_market_status_checker()
         current_time = checker.get_current_time()
     

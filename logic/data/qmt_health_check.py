@@ -21,7 +21,7 @@ try:
 except ImportError:
     QMT_AVAILABLE = False
 
-from logic.market_status import MarketStatusChecker
+from logic.sentiment.market_status import MarketStatusChecker
 from logic.utils.logger import get_logger
 
 logger = get_logger(__name__)

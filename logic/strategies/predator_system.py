@@ -521,7 +521,7 @@ class PredatorSystem:
             涨停系数（如 1.1 表示 10% 涨停）
         """
         try:
-            from logic.utils import Utils
+            from logic.utils.utils import Utils
             return Utils.get_limit_ratio(symbol)
         except Exception as e:
             logger.warning(f"获取涨停系数失败: {e}，使用默认值 1.1")

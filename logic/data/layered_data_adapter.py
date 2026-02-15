@@ -12,7 +12,7 @@ import pandas as pd
 import numpy as np
 from functools import lru_cache
 
-from logic.fund_flow_analyzer import FundFlowAnalyzer
+from logic.data.fund_flow_analyzer import FundFlowAnalyzer
 
 
 class LayeredDataAdapter:

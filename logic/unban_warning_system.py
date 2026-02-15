@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Set
 import pandas as pd
 from logic.utils.logger import get_logger
-from logic.cache_manager import CacheManager
+from logic.data.cache_manager import CacheManager
 
 logger = get_logger(__name__)
 

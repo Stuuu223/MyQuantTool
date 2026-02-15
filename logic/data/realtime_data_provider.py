@@ -8,10 +8,10 @@ V18.6: 集成东方财富 DDE 数据适配器（异步化）
 V18.6.1: 后台线程异步获取 DDE 数据，避免阻塞主线程
 """
 
-from logic.data_provider_factory import DataProvider
+from logic.data.data_provider_factory import DataProvider
 from logic.utils.logger import get_logger
-from logic.utils import Utils
-from logic.data_adapter_akshare import MoneyFlowAdapter
+from logic.utils.utils import Utils
+from logic.data.data_adapter_akshare import MoneyFlowAdapter
 import config.config_system as config
 from datetime import datetime
 import threading
@@ -56,7 +56,7 @@ class RealtimeDataProvider(DataProvider):
 
         # 🆕 V19.15: 初始化 QMT 管理器（优先数据源）
         try:
-            from logic.qmt_manager import get_qmt_manager
+            from logic.data.qmt_manager import get_qmt_manager
             self.qmt = get_qmt_manager()
             if self.qmt.is_available():
                 logger.info("✅ [V19.15] QMT 数据接口已加载（优先数据源）")
@@ -486,7 +486,7 @@ class RealtimeDataProvider(DataProvider):
                         time_diff = (current_time - data_time).total_seconds()
 
                         # 🚀 V19.1 优化：动态阈值逻辑
-                        from logic.market_status import MarketStatusChecker
+                        from logic.sentiment.market_status import MarketStatusChecker
                         checker = MarketStatusChecker()
                         current_time_time = current_time.time()
 
@@ -621,7 +621,7 @@ class RealtimeDataProvider(DataProvider):
             dict: 市场数据
         """
         try:
-            from logic.data_manager import DataManager
+            from logic.data.data_manager import DataManager
             
             dm = DataManager()
             

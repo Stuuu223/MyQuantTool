@@ -5,7 +5,7 @@
 import logging
 import pandas as pd
 from typing import Dict
-from logic.data_source_manager import get_data_source_manager, DataSourceStatus
+from logic.data.data_source_manager import get_data_source_manager, DataSourceStatus
 
 logger = logging.getLogger(__name__)
 

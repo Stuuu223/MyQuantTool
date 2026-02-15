@@ -6,7 +6,7 @@ QMT 历史数据提供者
 支持时间点快照（如 14:56:55）和时间段数据获取
 """
 
-from logic.data_provider_factory import DataProvider
+from logic.data.data_provider_factory import DataProvider
 from logic.utils.logger import get_logger
 from logic.utils.code_converter import CodeConverter
 import pandas as pd

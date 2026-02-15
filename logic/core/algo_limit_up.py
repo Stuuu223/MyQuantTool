@@ -4,7 +4,7 @@
 """
 
 import pandas as pd
-from logic.data_manager import DataManager
+from logic.data.data_manager import DataManager
 
 
 class LimitUpPredictor:

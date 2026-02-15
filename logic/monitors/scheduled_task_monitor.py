@@ -30,7 +30,7 @@ project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
 
 from logic.utils.logger import get_logger
-from logic.data_manager import DataManager
+from logic.data.data_manager import DataManager
 
 logger = get_logger(__name__)
 
@@ -316,7 +316,7 @@ class ScheduledTaskMonitor:
         
         try:
             from logic.pre_market_cache import get_pre_market_cache
-            from logic.data_manager import DataManager
+            from logic.data.data_manager import DataManager
             
             logger.info("🔄 开始盘前预计算...")
             

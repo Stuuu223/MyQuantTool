@@ -11,8 +11,8 @@ from logic.utils.logger import get_logger
 from logic.database_manager import get_db_manager
 from logic.monitors.iron_rule_engine import IronRuleEngine
 from logic.news_crawler import NewsCrawler
-from logic.data_manager import DataManager
-from logic.utils import Utils
+from logic.data.data_manager import DataManager
+from logic.utils.utils import Utils
 
 logger = get_logger(__name__)
 

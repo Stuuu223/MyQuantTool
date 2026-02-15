@@ -274,7 +274,7 @@ class SignalGenerator:
         # =========================================================
         # 铁律：如果 DDE 为负，根据买入模式决定是否否决
         try:
-            from logic.money_flow_master import get_money_flow_master
+            from logic.data.money_flow_master import get_money_flow_master
             mfm = get_money_flow_master()
             
             # 🆕 V18.6: 根据当前涨幅判断买入模式
@@ -572,7 +572,7 @@ class SignalGenerator:
         
         try:
             # 1. 获取涨停系数
-            from logic.utils import Utils
+            from logic.utils.utils import Utils
             limit_ratio = Utils.get_limit_ratio(stock_code)
             limit_up_pct = (limit_ratio - 1.0) * 100
             result['limit_up_pct'] = limit_up_pct

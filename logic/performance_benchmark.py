@@ -347,7 +347,7 @@ def run_full_benchmark(adapter, output_file: str = 'benchmark_report.json') -> N
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    from logic.multi_source_adapter import get_adapter
+    from logic.data.multi_source_adapter import get_adapter
     
     adapter = get_adapter()
     run_full_benchmark(adapter)

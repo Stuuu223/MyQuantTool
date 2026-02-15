@@ -11,7 +11,7 @@ from datetime import datetime, time
 from typing import Dict, Optional
 from enum import Enum
 from logic.utils.logger import get_logger
-from logic.utils import Utils
+from logic.utils.utils import Utils
 
 logger = get_logger(__name__)
 

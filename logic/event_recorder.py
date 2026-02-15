@@ -22,7 +22,7 @@ from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
-from logic.event_detector import EventType, TradingEvent
+from logic.strategies.event_detector import EventType, TradingEvent
 from logic.utils.logger import get_logger
 
 logger = get_logger(__name__)

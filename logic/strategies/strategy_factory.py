@@ -18,7 +18,7 @@ from abc import ABC, abstractmethod
 import inspect
 import copy
 
-from logic.backtest_engine import BacktestEngine, BacktestMetrics
+from logic.strategies.backtest_engine import BacktestEngine, BacktestMetrics
 from logic.parameter_optimizer import ParameterOptimizer  # 假设已存在参数优化器
 
 
@@ -543,7 +543,7 @@ def demo_strategy_factory():
     
     # 这里需要导入回测引擎
     try:
-        from logic.backtest_engine import BacktestEngine
+        from logic.strategies.backtest_engine import BacktestEngine
         backtest_engine = BacktestEngine()
         
         comparator = StrategyComparison()

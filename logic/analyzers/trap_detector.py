@@ -79,7 +79,7 @@ class TrapDetector:
         """
         try:
             # 延迟导入，避免循环依赖
-            from logic.fund_flow_analyzer import FundFlowAnalyzer
+            from logic.data.fund_flow_analyzer import FundFlowAnalyzer
 
             # 初始化资金流向分析器
             analyzer = FundFlowAnalyzer(enable_cache=True)

@@ -25,8 +25,8 @@ from typing import Dict, List, Optional
 from dataclasses import dataclass
 import talib
 from logic.utils.logger import get_logger
-from logic.data_manager import DataManager
-from logic.data_adapter_akshare import MoneyFlowAdapter
+from logic.data.data_manager import DataManager
+from logic.data.data_adapter_akshare import MoneyFlowAdapter
 
 logger = get_logger(__name__)
 

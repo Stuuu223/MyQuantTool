@@ -17,7 +17,7 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime
 from collections import deque
 
-from logic.event_detector import BaseEventDetector, EventType, TradingEvent
+from logic.strategies.event_detector import BaseEventDetector, EventType, TradingEvent
 from logic.utils.logger import get_logger
 
 logger = get_logger(__name__)

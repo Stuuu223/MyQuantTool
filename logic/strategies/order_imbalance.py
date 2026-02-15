@@ -9,8 +9,8 @@ from typing import Dict, List, Optional, Tuple
 from collections import deque
 from datetime import datetime, timedelta
 from logic.utils.logger import get_logger
-from logic.data_manager import DataManager
-from logic.data_cleaner import DataCleaner
+from logic.data.data_manager import DataManager
+from logic.data.data_cleaner import DataCleaner
 
 logger = get_logger(__name__)
 
