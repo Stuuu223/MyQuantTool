@@ -385,7 +385,7 @@ class RealtimeDataProvider(DataProvider):
 
     def _get_easyquotation_data(self, stock_list) -> list:
         """
-        🆕 V19.15: 使用 EasyQuotation 获取实时数据（降级方案）
+        🆕 V15.0: 使用 QMT适配器获取实时数据（替代EasyQuotation）
 
         Args:
             stock_list: 股票代码列表或包含股票信息的字典列表
@@ -394,10 +394,9 @@ class RealtimeDataProvider(DataProvider):
             list: 股票数据列表
         """
         try:
-            import easyquotation as eq
-
-            # 🆕 V19.5 盲扫模式优化：使用 tencent 数据源以获取正确的换手率和量比
-            quotation = eq.use('tencent')
+            # 🆕 V15.0: 使用EasyQuotation适配器（内部使用QMT）
+            from logic.data.easyquotation_adapter import get_easyquotation_adapter
+            quotation = get_easyquotation_adapter()
 
             # 提取股票代码
             if isinstance(stock_list[0], dict):
@@ -420,7 +419,7 @@ class RealtimeDataProvider(DataProvider):
                 logger.info(f"📊 [批次 {batch_num}/{total_batches}] 正在扫描 {len(batch)} 只股票...")
 
                 try:
-                    # 获取实时数据
+                    # 获取实时数据（使用QMT适配器）
                     market_data = quotation.stocks(batch)
 
                     if market_data:

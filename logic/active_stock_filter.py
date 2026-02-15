@@ -107,12 +107,12 @@ class ActiveStockFilter:
 
             logger.info(f"✅ [V19.17] QMT 成功获取 {len(market_data)} 只股票数据")
 
-            # 🔥 V20.2: 尝试从 EasyQuotation 获取换手率数据（作为补充）
+            # 🔥 V20.2: 尝试从 QMT适配器获取换手率数据（作为补充）
             turnover_rates = {}
             try:
-                logger.info("⚡ [V20.2] 尝试从 EasyQuotation 获取换手率数据...")
-                import easyquotation as eq
-                eq_source = eq.use('tencent')
+                logger.info("⚡ [V20.2] 尝试从 QMT适配器获取换手率数据...")
+                from logic.data.easyquotation_adapter import get_easyquotation_adapter
+                eq_source = get_easyquotation_adapter()
                 
                 # 批量获取股票列表
                 std_codes = [self.code_converter.to_standard(code) for code in market_data.keys()]
@@ -121,7 +121,7 @@ class ActiveStockFilter:
                 if eq_data:
                     for std_code, eq_stock in eq_data.items():
                         if eq_stock and 'turnover' in eq_stock:
-                            # EasyQuotation 的 turnover 是百分比，直接使用
+                            # QMT适配器的 turnover 是百分比，直接使用
                             turnover_rates[std_code] = eq_stock['turnover']
                 
                 logger.info(f"✅ [V20.2] 成功获取 {len(turnover_rates)} 只股票的换手率")
@@ -204,16 +204,16 @@ class ActiveStockFilter:
 
     def _get_easyquotation_market_data(self) -> Optional[pd.DataFrame]:
         """
-        🆕 V19.17: 灾备方案 - 使用 EasyQuotation 获取全市场数据
+        🆕 V19.17: 灾备方案 - 使用 QMT适配器获取全市场数据
 
         Returns:
             DataFrame: 全市场股票数据
         """
         try:
-            logger.warning("🚑 [V19.17] QMT 失败，切换到 EasyQuotation 灾备方案...")
+            logger.warning("🚑 [V19.17] QMT 失败，切换到 QMT适配器灾备方案...")
 
-            import easyquotation as eq
-            quotation = eq.use('sina')
+            from logic.data.easyquotation_adapter import get_easyquotation_adapter
+            quotation = get_easyquotation_adapter()
 
             # 从配置文件中获取股票代码列表
             from pathlib import Path

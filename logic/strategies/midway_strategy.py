@@ -68,13 +68,13 @@ class MidwayStrategy:
         self.only_20cm = only_20cm
         self.db = DataManager()
         
-        # 🆕 V19.9: 绑定极速层（easyquotation）用于半路战法
+        # 🆕 V19.9: 绑定极速层（QMT适配器）用于半路战法
         try:
-            import easyquotation as eq
-            self.easy_q = eq.use('sina')  # 使用新浪行情源
-            logger.info("✅ [半路战法] 极速层（easyquotation）初始化成功")
+            from logic.data.easyquotation_adapter import get_easyquotation_adapter
+            self.easy_q = get_easyquotation_adapter()
+            logger.info("✅ [半路战法] 极速层（QMT适配器）初始化成功")
         except ImportError:
-            logger.warning("⚠️ [半路战法] easyquotation 未安装，请运行: pip install easyquotation")
+            logger.warning("⚠️ [半路战法] QMT适配器初始化失败，请检查qmt_manager")
             self.easy_q = None
         
         logger.info(f"🚀 [半路战法] 初始化完成，回看天数: {lookback_days}, 只扫描20cm: {only_20cm}")
@@ -189,10 +189,10 @@ class MidwayStrategy:
                 logger.info(f"✅ [半路战法] 活跃股筛选完成，共 {len(stock_list_df)} 只股票")
             else:
                 # 激进半路：全市场扫描
-                # 🆕 V19.14: 优先使用 easyquotation（更稳定）
+                # 🆕 V19.14: 优先使用 QMT适配器（更稳定）
                 try:
-                    import easyquotation as eq
-                    quotation = eq.use('sina')
+                    from logic.data.easyquotation_adapter import get_easyquotation_adapter
+                    quotation = get_easyquotation_adapter()
 
                     # 从配置文件中获取股票代码列表
                     from pathlib import Path

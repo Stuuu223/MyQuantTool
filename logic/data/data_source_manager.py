@@ -55,30 +55,16 @@ class SmartDataManager:
         logger.info("   - 增强层: akshare（龙头战法，带缓存）")
     
     def _init_fast_layer(self):
-        """初始化极速层（easyquotation）"""
+        """初始化极速层（QMT - V15升级）"""
         try:
-            import easyquotation as eq
-            self.easy_q = eq.use('sina')  # 使用新浪行情源
+            # 🆕 V15.0: 使用EasyQuotation适配器（内部使用QMT）
+            from logic.data.easyquotation_adapter import get_easyquotation_adapter
+            self.easy_q = get_easyquotation_adapter()
             
-            # 🆕 V19.12: 给easyquotation穿上"浏览器马甲"（伪装头）
-            # 模拟Chrome浏览器的请求头，避免被反爬防火墙识别
-            browser_headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Accept": "*/*",
-                "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-                "Connection": "keep-alive",
-                "Referer": "http://quote.eastmoney.com/"
-            }
-            
-            # 给easyquotation内部的session穿上马甲
-            if hasattr(self.easy_q, 'session'):
-                self.easy_q.session.headers.update(browser_headers)
-                logger.info("✅ [极速层] easyquotation 初始化成功（已穿上浏览器马甲）")
-            else:
-                logger.info("✅ [极速层] easyquotation 初始化成功")
+            logger.info("✅ [极速层] QMT适配器初始化成功（替代easyquotation）")
                 
         except ImportError:
-            logger.warning("⚠️ [极速层] easyquotation 未安装，请运行: pip install easyquotation")
+            logger.warning("⚠️ [极速层] QMT适配器初始化失败，请检查qmt_manager")
             self.easy_q = None
     
     def _init_basic_layer(self):
