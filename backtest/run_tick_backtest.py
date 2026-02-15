@@ -101,11 +101,11 @@ def load_tick_data(stock_code: str, start_date: str, end_date: str) -> pd.DataFr
                 'lastPrice': 'price'
             })
 
-            # 转换时间戳（毫秒转换为datetime）
-            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-
-            # 筛选有效数据（价格不为空）
-            df = df[df['price'].notna()].copy()
+            # ✅ 关键修复1：正确转换时间戳（北京时间+8小时）
+            df['timestamp'] = pd.to_datetime(df['time'], unit='ms', utc=True).dt.tz_convert('Asia/Shanghai')
+            
+            # ✅ 关键修复2：只保留成交Tick（price > 0）
+            df = df[df['price'] > 0].copy()
 
             # 添加日期列
             df['date'] = df['timestamp'].dt.strftime('%Y-%m-%d')
