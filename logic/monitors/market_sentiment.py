@@ -19,7 +19,7 @@ Version: V19.8
 import pandas as pd
 from typing import Dict, Any, Optional
 from logic.utils.logger import get_logger
-from logic.api_robust import robust_api_call
+from logic.network.api_robust import robust_api_call
 
 logger = get_logger(__name__)
 

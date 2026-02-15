@@ -17,7 +17,7 @@
 """
 
 # 🚀 [最高优先级] 禁用代理：必须在 import 其他库之前执行！
-from logic.network_utils import disable_proxy
+from logic.core.network_utils import disable_proxy
 disable_proxy()
 
 from datetime import datetime, time

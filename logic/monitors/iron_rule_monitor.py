@@ -8,10 +8,10 @@ V13 实时铁律监控模块
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 from logic.utils.logger import get_logger
-from logic.database_manager import get_db_manager
+from logic.data_providers.database_manager import get_db_manager
 from logic.monitors.iron_rule_engine import IronRuleEngine
-from logic.news_crawler import NewsCrawler
-from logic.data.data_manager import DataManager
+from logic.network.news_crawler import NewsCrawler
+from logic.data_providers.data_manager import DataManager
 from logic.utils.utils import Utils
 
 logger = get_logger(__name__)
@@ -48,7 +48,7 @@ class IronRuleMonitor:
         
         # 🆕 V18 深度迭代 1：解禁预警系统
         try:
-            from logic.unban_warning_system import get_unban_warning_system
+            from logic.notifications.unban_warning_system import get_unban_warning_system
             self.unban_warning = get_unban_warning_system()
             logger.info("✅ 解禁预警系统集成成功")
         except Exception as e:

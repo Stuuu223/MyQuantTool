@@ -4,10 +4,10 @@
 股票名称查询工具（本地 JSON 映射）
 
 Usage:
-    from logic.stock_name_fetcher import get_stock_name
+    from logic.utils.stock_name_fetcher import get_stock_name
     name = get_stock_name('000001.SZ')  # 返回 '平安银行'
 
-    from logic.stock_name_fetcher import get_stock_names
+    from logic.utils.stock_name_fetcher import get_stock_names
     names = get_stock_names(['000001.SZ', '600000.SH'])
     # 返回 {'000001.SZ': '平安银行', '600000.SH': '浦发银行'}
 """
@@ -118,7 +118,7 @@ def get_stock_name(stock_code: str) -> str:
     快捷函数：获取股票名称
 
     Usage:
-        >>> from logic.stock_name_fetcher import get_stock_name
+        >>> from logic.utils.stock_name_fetcher import get_stock_name
         >>> get_stock_name('000001.SZ')
         '平安银行'
         >>> get_stock_name('600000.SH')
@@ -132,7 +132,7 @@ def get_stock_names(stock_codes: list) -> dict:
     快捷函数：批量获取股票名称
 
     Usage:
-        >>> from logic.stock_name_fetcher import get_stock_names
+        >>> from logic.utils.stock_name_fetcher import get_stock_names
         >>> get_stock_names(['000001.SZ', '600000.SH'])
         {'000001.SZ': '平安银行', '600000.SH': '浦发银行'}
     """
@@ -170,7 +170,7 @@ def get_fetcher() -> StockNameFetcher:
     快捷函数：获取 StockNameFetcher 实例
 
     Usage:
-        >>> from logic.stock_name_fetcher import get_fetcher
+        >>> from logic.utils.stock_name_fetcher import get_fetcher
         >>> fetcher = get_fetcher()
         >>> fetcher.get_name('000001.SZ')
         '平安银行'

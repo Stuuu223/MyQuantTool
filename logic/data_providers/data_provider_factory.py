@@ -39,7 +39,7 @@ class DataProviderFactory:
             DataProvider: 数据提供者实例
         """
         if mode == 'live':
-            from logic.data.realtime_data_provider import RealtimeDataProvider
+            from logic.data_providers.realtime_data_provider import RealtimeDataProvider
             return RealtimeDataProvider(**kwargs)
         elif mode == 'replay':
             from logic.historical_replay_provider import HistoricalReplayProvider

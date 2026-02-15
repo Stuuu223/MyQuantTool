@@ -19,8 +19,8 @@ import numpy as np
 from typing import Dict, List, Optional, Tuple, Union
 from datetime import datetime
 from logic.utils.logger import get_logger
-from logic.data.data_manager import DataManager
-from logic.data.data_cleaner import DataCleaner
+from logic.data_providers.data_manager import DataManager
+from logic.data_providers.data_cleaner import DataCleaner
 import akshare as ak
 
 logger = get_logger(__name__)
@@ -1115,7 +1115,7 @@ def get_fast_sector_analyzer(db: DataManager) -> FastSectorAnalyzer:
 
 if __name__ == '__main__':
     # 测试代码
-    from logic.data.data_manager import DataManager
+    from logic.data_providers.data_manager import DataManager
     
     print("=" * 60)
     print("🧪 测试 FastSectorAnalyzer")

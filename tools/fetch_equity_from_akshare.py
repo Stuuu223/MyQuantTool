@@ -28,7 +28,7 @@ sys.path.insert(0, str(project_root))
 
 try:
     import akshare as ak
-    from logic.rate_limiter import RateLimiter
+    from logic.core.rate_limiter import RateLimiter
     from logic.utils.logger import get_logger
 except ImportError as e:
     print(f"❌ 导入失败: {e}")

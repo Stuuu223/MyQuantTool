@@ -49,7 +49,7 @@ from typing import Dict, List, Optional, Tuple
 
 from logic.utils.logger import get_logger
 from logic.utils.code_converter import CodeConverter
-from logic.data.cache_manager import CacheManager
+from logic.data_providers.cache_manager import CacheManager
 
 logger = get_logger(__name__)
 

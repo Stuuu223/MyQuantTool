@@ -7,7 +7,7 @@
 3. 识别"补涨尾声"风险
 
 使用方式：
-    from logic.scenario_classifier import ScenarioClassifier
+    from logic.analyzers.scenario_classifier import ScenarioClassifier
     classifier = ScenarioClassifier()
     result = classifier.classify(stock_data)
 """

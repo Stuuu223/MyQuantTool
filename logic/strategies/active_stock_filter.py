@@ -111,7 +111,7 @@ class ActiveStockFilter:
             turnover_rates = {}
             try:
                 logger.info("⚡ [V20.2] 尝试从 QMT适配器获取换手率数据...")
-                from logic.data.easyquotation_adapter import get_easyquotation_adapter
+                from logic.data_providers.easyquotation_adapter import get_easyquotation_adapter
                 eq_source = get_easyquotation_adapter()
                 
                 # 批量获取股票列表
@@ -212,7 +212,7 @@ class ActiveStockFilter:
         try:
             logger.warning("🚑 [V19.17] QMT 失败，切换到 QMT适配器灾备方案...")
 
-            from logic.data.easyquotation_adapter import get_easyquotation_adapter
+            from logic.data_providers.easyquotation_adapter import get_easyquotation_adapter
             quotation = get_easyquotation_adapter()
 
             # 从配置文件中获取股票代码列表

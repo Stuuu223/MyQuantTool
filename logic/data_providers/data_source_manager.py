@@ -19,8 +19,8 @@ import pandas as pd
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
 from logic.utils.logger import get_logger
-from logic.api_robust import robust_api_call, rate_limit_decorator
-from logic.proxy_manager import get_proxy_manager, record_failure, record_success
+from logic.network.api_robust import robust_api_call, rate_limit_decorator
+from logic.network.proxy_manager import get_proxy_manager, record_failure, record_success
 
 logger = get_logger(__name__)
 
@@ -58,7 +58,7 @@ class SmartDataManager:
         """初始化极速层（QMT - V15升级）"""
         try:
             # 🆕 V15.0: 使用EasyQuotation适配器（内部使用QMT）
-            from logic.data.easyquotation_adapter import get_easyquotation_adapter
+            from logic.data_providers.easyquotation_adapter import get_easyquotation_adapter
             self.easy_q = get_easyquotation_adapter()
             
             logger.info("✅ [极速层] QMT适配器初始化成功（替代easyquotation）")

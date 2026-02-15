@@ -24,7 +24,7 @@ import logging
 
 # 导入项目现有模块
 from logic.utils.logger import get_logger
-from logic.data.qmt_manager import get_qmt_manager
+from logic.data_providers.qmt_manager import get_qmt_manager
 from logic.utils.code_converter import CodeConverter
 
 logger = get_logger(__name__)

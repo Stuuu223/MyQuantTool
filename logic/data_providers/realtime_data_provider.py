@@ -8,10 +8,10 @@ V18.6: 集成东方财富 DDE 数据适配器（异步化）
 V18.6.1: 后台线程异步获取 DDE 数据，避免阻塞主线程
 """
 
-from logic.data.data_provider_factory import DataProvider
+from logic.data_providers.data_provider_factory import DataProvider
 from logic.utils.logger import get_logger
 from logic.utils.utils import Utils
-from logic.data.data_adapter_akshare import MoneyFlowAdapter
+from logic.data_providers.data_adapter_akshare import MoneyFlowAdapter
 import config.config_system as config
 from datetime import datetime
 import threading
@@ -56,7 +56,7 @@ class RealtimeDataProvider(DataProvider):
 
         # 🆕 V19.15: 初始化 QMT 管理器（优先数据源）
         try:
-            from logic.data.qmt_manager import get_qmt_manager
+            from logic.data_providers.qmt_manager import get_qmt_manager
             self.qmt = get_qmt_manager()
             if self.qmt.is_available():
                 logger.info("✅ [V19.15] QMT 数据接口已加载（优先数据源）")
@@ -395,7 +395,7 @@ class RealtimeDataProvider(DataProvider):
         """
         try:
             # 🆕 V15.0: 使用EasyQuotation适配器（内部使用QMT）
-            from logic.data.easyquotation_adapter import get_easyquotation_adapter
+            from logic.data_providers.easyquotation_adapter import get_easyquotation_adapter
             quotation = get_easyquotation_adapter()
 
             # 提取股票代码
@@ -620,7 +620,7 @@ class RealtimeDataProvider(DataProvider):
             dict: 市场数据
         """
         try:
-            from logic.data.data_manager import DataManager
+            from logic.data_providers.data_manager import DataManager
             
             dm = DataManager()
             

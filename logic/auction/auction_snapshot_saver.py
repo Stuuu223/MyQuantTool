@@ -13,7 +13,7 @@ import os
 import pandas as pd
 import time
 from datetime import datetime
-from logic.data.data_source_manager import get_data_source_manager
+from logic.data_providers.data_source_manager import get_data_source_manager
 from logic.utils.logger import get_logger
 
 logger = get_logger(__name__)

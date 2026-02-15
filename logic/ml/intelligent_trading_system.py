@@ -11,7 +11,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 from logic.akshare_data_loader import AKShareDataLoader
-from logic.llm_interface import LLMInterface, LLMMessage
+from logic.llm.llm_interface import LLMInterface, LLMMessage
 import logging
 
 logger = logging.getLogger(__name__)

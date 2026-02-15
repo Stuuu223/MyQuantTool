@@ -11,8 +11,8 @@ import akshare as ak
 import threading
 import time
 from logic.utils.logger import get_logger
-from logic.data.data_manager import DataManager
-from logic.data.data_cleaner import DataCleaner
+from logic.data_providers.data_manager import DataManager
+from logic.data_providers.data_cleaner import DataCleaner
 
 logger = get_logger(__name__)
 
@@ -46,7 +46,7 @@ class MarketCycleManager:
     def __init__(self):
         """初始化市场周期管理器"""
         self.data_manager = DataManager()  # 用于获取实时数据
-        from logic.database_manager import DatabaseManager
+        from logic.data_providers.database_manager import DatabaseManager
         self.db = DatabaseManager()  # 用于数据库和Redis操作
         self.current_cycle = None
         self.cycle_history = []

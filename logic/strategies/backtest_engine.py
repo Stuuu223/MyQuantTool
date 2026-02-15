@@ -10,8 +10,8 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 from dataclasses import dataclass
 from logic.utils.logger import get_logger
-from logic.data.data_manager import DataManager
-from logic.data.data_cleaner import DataCleaner
+from logic.data_providers.data_manager import DataManager
+from logic.data_providers.data_cleaner import DataCleaner
 from logic.risk.position_manager import PositionManager
 
 logger = get_logger(__name__)

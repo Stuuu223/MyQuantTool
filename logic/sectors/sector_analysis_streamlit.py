@@ -16,7 +16,7 @@ import os
 from typing import Dict, List, Optional, Tuple, Union
 from datetime import datetime
 from logic.utils.logger import get_logger
-from logic.data.data_manager import DataManager
+from logic.data_providers.data_manager import DataManager
 import akshare as ak
 
 logger = get_logger(__name__)

@@ -10,7 +10,7 @@ import numpy as np
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 from logic.utils.logger import get_logger
-from logic.database_manager import get_db_manager
+from logic.data_providers.database_manager import get_db_manager
 
 logger = get_logger(__name__)
 

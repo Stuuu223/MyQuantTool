@@ -15,8 +15,8 @@ import os
 # 添加项目根目录到路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from logic.data.fund_flow_analyzer import analyze_fund_flow, FundFlowAnalyzer
-from logic.multi_day_analysis import analyze_multi_day
+from logic.data_providers.fund_flow_analyzer import analyze_fund_flow, FundFlowAnalyzer
+from logic.analyzers.multi_day_analysis import analyze_multi_day
 
 
 def analyze_stock_single(stock_code: str, use_qmt: bool = True) -> str:
@@ -86,7 +86,7 @@ def analyze_stock_comprehensive(stock_code: str, days: int = 10, use_qmt: bool =
     else:
         # 使用资金流向分析代替
         report += "### 📊 单日资金流向分析\n\n"
-        from logic.data.fund_flow_analyzer import FundFlowAnalyzer
+        from logic.data_providers.fund_flow_analyzer import FundFlowAnalyzer
         analyzer = FundFlowAnalyzer()
         result = analyzer.analyze_fund_flow(stock_code)
         report += analyzer.format_analysis(result)

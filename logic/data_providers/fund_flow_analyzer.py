@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 import time
 import akshare as ak
-from logic.data.fund_flow_cache import get_fund_flow_cache
+from logic.data_providers.fund_flow_cache import get_fund_flow_cache
 from logic.utils.logger import get_logger
 
 logger = get_logger(__name__)

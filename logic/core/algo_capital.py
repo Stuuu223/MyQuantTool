@@ -12,7 +12,7 @@ from functools import wraps
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
-from logic.data.data_manager import DataManager
+from logic.data_providers.data_manager import DataManager
 from logic.utils.logger import get_logger, log_execution_time, performance_context
 
 # 获取日志记录器

@@ -54,7 +54,7 @@ class TimeStrategyManager:
         
         # 🆕 V18 深度迭代 3：国家队指纹监控器
         try:
-            from logic.national_team_detector import get_national_team_detector
+            from logic.strategies.national_team_detector import get_national_team_detector
             self.national_team = get_national_team_detector()
             logger.info("✅ 国家队指纹监控系统集成成功")
         except Exception as e:

@@ -11,7 +11,7 @@ import numpy as np
 from typing import Dict, List, Optional, Tuple, Any
 from datetime import datetime, timedelta
 from logic.utils.logger import get_logger
-from logic.data.data_manager import DataManager
+from logic.data_providers.data_manager import DataManager
 
 logger = get_logger(__name__)
 

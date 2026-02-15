@@ -13,7 +13,7 @@ import numpy as np
 from typing import Dict, List, Optional, Any
 import logging
 import json
-from logic.predictive_engine import PredictiveEngine
+from logic.analyzers.predictive_engine import PredictiveEngine
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +56,7 @@ class RealAIAgent:
         """延迟初始化预测引擎"""
         if not self._pe_initialized:
             try:
-                from logic.predictive_engine import PredictiveEngine
+                from logic.analyzers.predictive_engine import PredictiveEngine
                 self.pe = PredictiveEngine()
                 self._pe_initialized = True
                 logger.info("✅ PredictiveEngine 初始化成功")
@@ -82,7 +82,7 @@ class RealAIAgent:
     def _init_llm(self):
         """初始化 LLM 接口"""
         try:
-            from logic.llm_interface import DeepSeekProvider, OpenAIProvider
+            from logic.llm.llm_interface import DeepSeekProvider, OpenAIProvider
 
             # 根据提供商选择对应的类
             if self.provider == 'deepseek':
@@ -1597,7 +1597,7 @@ class DragonAIAgent:
     def _init_llm(self):
         """初始化 LLM 接口"""
         try:
-            from logic.llm_interface import DeepSeekProvider, OpenAIProvider
+            from logic.llm.llm_interface import DeepSeekProvider, OpenAIProvider
 
             # 根据提供商选择对应的类
             if self.provider == 'deepseek':

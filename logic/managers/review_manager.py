@@ -11,7 +11,7 @@ import json
 import os
 from datetime import datetime
 from typing import List, Dict
-from logic.database_manager import get_db_manager
+from logic.data_providers.database_manager import get_db_manager
 from logic.utils.logger import get_logger
 import akshare as ak
 

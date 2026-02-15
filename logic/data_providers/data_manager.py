@@ -21,7 +21,7 @@ Version: V18.6.1
 import os
 from typing import Optional, Dict, Any, List
 from logic.utils.logger import get_logger
-from logic.data.data_provider_factory import DataProviderFactory
+from logic.data_providers.data_provider_factory import DataProviderFactory
 
 logger = get_logger(__name__)
 
@@ -205,7 +205,7 @@ class DataManager:
             dict: 股票数据字典，格式：{code: data_dict}
         """
         try:
-            from logic.concurrent_executor import batch_get_realtime_data_fast
+            from logic.concurrent.concurrent_executor import batch_get_realtime_data_fast
             return batch_get_realtime_data_fast(self, stock_list, batch_size)
         except Exception as e:
             logger.error(f"并发获取快速价格失败: {e}")
@@ -224,7 +224,7 @@ class DataManager:
             dict: 股票历史数据字典 {code: df}
         """
         try:
-            from logic.concurrent_executor import batch_get_history_data_fast
+            from logic.concurrent.concurrent_executor import batch_get_history_data_fast
             return batch_get_history_data_fast(self, stock_list, **kwargs)
         except Exception as e:
             logger.error(f"并发获取历史数据失败: {e}")

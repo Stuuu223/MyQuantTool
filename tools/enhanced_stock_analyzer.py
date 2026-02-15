@@ -15,7 +15,7 @@ import json
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # 导入速率限制器
-from logic.rate_limiter import get_rate_limiter, safe_request
+from logic.core.rate_limiter import get_rate_limiter, safe_request
 
 # 导入新模块
 from logic.analyzers.trap_detector import TrapDetector

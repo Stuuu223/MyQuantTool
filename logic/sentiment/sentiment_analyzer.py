@@ -220,7 +220,7 @@ class SentimentAnalyzer:
         try:
             # 🆕 V15.0 修复：使用 QMT适配器获取全市场快照
             # 绕过 DataManager 的代理层，直接使用 QMT适配器
-            from logic.data.easyquotation_adapter import get_easyquotation_adapter
+            from logic.data_providers.easyquotation_adapter import get_easyquotation_adapter
             
             # 初始化行情接口
             quotation = get_easyquotation_adapter()

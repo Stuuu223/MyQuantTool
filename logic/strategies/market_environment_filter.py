@@ -15,7 +15,7 @@ Version: V18.6.1
 
 from typing import Dict, List, Optional, Tuple
 from logic.utils.logger import get_logger
-from logic.data.data_manager import DataManager
+from logic.data_providers.data_manager import DataManager
 from logic.sector_analysis import FastSectorAnalyzer
 
 logger = get_logger(__name__)
@@ -170,7 +170,7 @@ def get_market_environment_filter(db: DataManager = None) -> MarketEnvironmentFi
     
     if _instance is None:
         if db is None:
-            from logic.data.data_manager import DataManager
+            from logic.data_providers.data_manager import DataManager
             db = DataManager()
         _instance = MarketEnvironmentFilter(db)
     

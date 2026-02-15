@@ -193,7 +193,7 @@ class SignalGenerator:
         resonance_details = []
         
         try:
-            from logic.market_environment_filter import get_market_environment_filter
+            from logic.strategies.market_environment_filter import get_market_environment_filter
             
             # 获取市场环境过滤器
             env_filter = get_market_environment_filter(self.db)
@@ -274,7 +274,7 @@ class SignalGenerator:
         # =========================================================
         # 铁律：如果 DDE 为负，根据买入模式决定是否否决
         try:
-            from logic.data.money_flow_master import get_money_flow_master
+            from logic.data_providers.money_flow_master import get_money_flow_master
             mfm = get_money_flow_master()
             
             # 🆕 V18.6: 根据当前涨幅判断买入模式
@@ -501,7 +501,7 @@ class SignalGenerator:
         # 7. [V17] 时间策略 (Time-Lord) - 分时段策略
         # =========================================================
         try:
-            from logic.time_strategy_manager import get_time_strategy_manager
+            from logic.strategies.time_strategy_manager import get_time_strategy_manager
             
             time_manager = get_time_strategy_manager()
             # V17.2: 传入市场情绪分数，实现时空融合

@@ -23,7 +23,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from datetime import datetime
-from logic.database_manager import DatabaseManager
+from logic.data_providers.database_manager import DatabaseManager
 from logic.utils.logger import get_logger
 
 logger = get_logger(__name__)

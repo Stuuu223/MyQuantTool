@@ -7,7 +7,7 @@ V12 核心组件：预测引擎 (Predictive Engine)
 
 import pandas as pd
 import json
-from logic.database_manager import get_db_manager
+from logic.data_providers.database_manager import get_db_manager
 from logic.utils.logger import get_logger
 
 logger = get_logger(__name__)
