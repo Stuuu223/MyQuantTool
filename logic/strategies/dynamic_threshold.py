@@ -135,7 +135,48 @@ class DynamicThreshold:
             dict: 股本信息字典，结构: {code: {float_shares, last_close, amount}}
         """
         try:
-            # 优先使用 MVP 版本（数据结构：{data: {code: {date: {...}}}}）
+            # 优先使用 Tushare 完整版（数据更全面）
+            tushare_path = Path("data/equity_info_tushare.json")
+            if tushare_path.exists():
+                with open(tushare_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+
+                # 检查数据结构
+                data_structure = data.get("data_structure", "")
+                if "{code: {date: {...}}}" in data_structure:
+                    # 新结构：获取最新日期的数据
+                    data_by_date = data["data"]
+                    
+                    # 查找所有股票的最新可用日期
+                    all_dates = set()
+                    for code, dates_data in data_by_date.items():
+                        if isinstance(dates_data, dict):
+                            all_dates.update(dates_data.keys())
+                    
+                    # 使用实际存在的最新日期
+                    if all_dates:
+                        latest_date = max(all_dates)
+                    else:
+                        latest_date = ""
+                    
+                    # 提取最新日期的数据，转换为扁平结构
+                    equity_info = {}
+                    for code, dates_data in data_by_date.items():
+                        if isinstance(dates_data, dict) and latest_date in dates_data:
+                            stock_data = dates_data[latest_date]
+                            equity_info[code] = {
+                                'float_mv': stock_data.get('float_mv', 0),
+                                'float_shares': stock_data.get('float_shares', 0),
+                                'last_close': stock_data.get('close', 0),
+                                'amount': stock_data.get('amount', 0)
+                            }
+
+                    logger.info(f"✅ [动态阈值] 加载股本信息（Tushare完整版）: {len(equity_info)} 只股票 (日期: {latest_date})")
+                    return equity_info
+                else:
+                    logger.warning(f"⚠️ [动态阈值] Tushare数据结构不匹配: {data_structure}")
+
+            # 备用：使用 MVP 版本
             mvp_path = Path("data/equity_info_mvp.json")
             if mvp_path.exists():
                 with open(mvp_path, 'r', encoding='utf-8') as f:
@@ -169,68 +210,8 @@ class DynamicThreshold:
                                 'amount': 0  # MVP版本没有成交额数据
                             }
 
-                    logger.info(f"✅ [动态阈值] 加载股本信息（MVP版）: {len(equity_info)} 只股票 (日期: {latest_date})")
+                    logger.info(f"✅ [动态阈值] 加载股本信息（MVP版 - 备用）: {len(equity_info)} 只股票 (日期: {latest_date})")
                     return equity_info
-
-            # 备用：使用 Tushare 版本
-            tushare_path = Path("data/equity_info_tushare.json")
-            if tushare_path.exists():
-                with open(tushare_path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-
-                # 检查数据结构
-                data_structure = data.get("data_structure", "")
-                if "{code: {date: {...}}}" in data_structure:
-                    # 新结构：获取最新日期的数据
-                    data_by_date = data["data"]
-                    
-                    # 查找所有股票的最新可用日期
-                    all_dates = set()
-                    for code, dates_data in data_by_date.items():
-                        if isinstance(dates_data, dict):
-                            all_dates.update(dates_data.keys())
-                    
-                    # 使用实际存在的最新日期
-                    if all_dates:
-                        latest_date = max(all_dates)
-                    else:
-                        latest_date = ""
-
-                    if latest_date:
-                        # 提取最新日期的数据，转换为扁平结构
-                        equity_info = {}
-                        for code, dates_data in data_by_date.items():
-                            if isinstance(dates_data, dict) and latest_date in dates_data:
-                                stock_data = dates_data[latest_date]
-                                equity_info[code] = {
-                                    'float_mv': stock_data.get('float_mv', 0) or stock_data.get('circ_mv', 0),
-                                    'float_shares': stock_data.get('float_shares', 0),
-                                    'last_close': stock_data.get('close', 0),
-                                    'amount': 0
-                                }
-
-                        logger.info(f"✅ [动态阈值] 加载股本信息（Tushare版）: {len(equity_info)} 只股票 (日期: {latest_date})")
-                        return equity_info
-
-                # 旧结构：{data: {date: {code: {...}}}}
-                if "data" in data and isinstance(data["data"], dict):
-                    dates = list(data["data"].keys())
-                    if dates:
-                        latest_date = max(dates)
-                        data_by_date = data["data"][latest_date]
-
-                        # 转换为扁平结构
-                        equity_info = {}
-                        for code, stock_data in data_by_date.items():
-                            equity_info[code] = {
-                                'float_mv': stock_data.get('float_mv', 0) or stock_data.get('circ_mv', 0),
-                                'float_shares': stock_data.get('float_shares', 0),
-                                'last_close': stock_data.get('close', 0),
-                                'amount': 0
-                            }
-
-                        logger.info(f"✅ [动态阈值] 加载股本信息（Tushare旧版）: {len(equity_info)} 只股票 (日期: {latest_date})")
-                        return equity_info
 
             # 备用：使用完整版
             full_path = Path("data/equity_info.json")

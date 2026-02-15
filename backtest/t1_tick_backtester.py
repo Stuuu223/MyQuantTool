@@ -242,7 +242,14 @@ class T1TickBacktester:
             self.sell(code, current_price, 'TAKE_PROFIT')
 
     def generate_signals(self, date: str, tick_data_dict: Dict[str, pd.DataFrame]) -> List[Dict]:
-        """生成买入信号（集成V12.1.0三大过滤器）"""
+        """
+        生成买入信号 - V12.1.0三大过滤器直接决策
+        
+        核心逻辑：
+        1. 板块共振（P0）- 满足至少2个条件（涨停≥3、涨幅≥1.5%、资金流入>0）
+        2. 动态阈值（P1）- 根据市值调整（小盘0.2%，大盘0.05%）
+        3. 竞价校验（P2）- 竞价超预期（仅开盘阶段）
+        """
         signals = []
 
         for code, df in tick_data_dict.items():
@@ -254,64 +261,28 @@ class T1TickBacktester:
             if daily_df.empty:
                 continue
 
-            # 基础策略：早盘强势（09:30-09:35涨幅 > 1%）
-            early_df = daily_df[daily_df['timestamp'].dt.time <= pd.to_datetime('09:35:00').time()]
-            if len(early_df) < 10:
-                continue
+            # 获取当前价格（最后一笔成交）
+            current_price = daily_df.iloc[-1]['price']
+            current_time = daily_df.iloc[-1]['timestamp']
 
-            first_price = early_df.iloc[0]['price']
-            last_price = early_df.iloc[-1]['price']
-            early_gain = (last_price - first_price) / first_price * 100
-
-            if early_gain <= 1.0:  # 早盘涨幅不足
-                continue
-
-            # ================= V12.1.0 三大过滤器检查 =================
-            if not self.enable_filters:
-                # 如果禁用过滤器，直接生成信号
-                signals.append({
-                    'code': code,
-                    'date': date,
-                    'price': last_price,
-                    'strategy': 'V12.1.0_三大过滤器',
-                    'gain_pct': early_gain,
-                    'filter_results': {
-                        'wind_result': {'passed': True, 'reason': '过滤器禁用'},
-                        'threshold_result': {'passed': True, 'reason': '过滤器禁用'},
-                        'auction_result': {'passed': True, 'reason': '过滤器禁用'}
-                    }
-                })
-                continue
-
-            # 1. 板块共振过滤器
-            wind_passed = True
-            wind_reason = ''
-            if self.wind_filter:
+            # ================= V12.1.0 过滤器1: 板块共振（P0）=================
+            if self.wind_filter and self.enable_filters:
                 try:
                     wind_result = self.wind_filter.check_sector_resonance(code)
-                    wind_passed = wind_result.get('is_resonance', False)
-                    wind_reason = wind_result.get('reason', '')
-                    if wind_passed:
-                        self.filter_stats['wind_passed'] += 1
-                        logger.debug(f"✅ [板块共振] {code} 通过: {wind_reason}")
-                    else:
+                    if not wind_result.get('is_resonance', False):
                         self.filter_stats['wind_rejected'] += 1
-                        logger.debug(f"❌ [板块共振] {code} 未通过: {wind_reason}")
+                        logger.debug(f"❌ [板块共振] {code} 未通过")
                         continue  # 板块共振不通过，直接跳过
+                    else:
+                        self.filter_stats['wind_passed'] += 1
+                        logger.debug(f"✅ [板块共振] {code} 通过")
                 except Exception as e:
                     logger.warning(f"⚠️ [板块共振] 检查失败: {code}, {e}")
-                    wind_passed = True  # 检查失败时默认通过
+                    continue
 
-            # 2. 动态阈值过滤器
-            threshold_passed = True
-            threshold_reason = ''
-            if self.dynamic_threshold and wind_passed:
+            # ================= V12.1.0 过滤器2: 动态阈值（P1）=================
+            if self.dynamic_threshold and self.enable_filters:
                 try:
-                    # 获取当前时间（用于动态阈值的时间调整）
-                    current_time = early_df.iloc[-1]['timestamp']
-                    current_price = last_price
-
-                    # 计算基础阈值（正确的API签名）
                     threshold_result = self.dynamic_threshold.calculate_thresholds(
                         stock_code=code,
                         current_time=current_time,
@@ -319,36 +290,68 @@ class T1TickBacktester:
                         current_price=current_price
                     )
 
-                    # 检查主力流入阈值（这里简化处理）
-                    threshold_passed = True  # 暂时默认通过，因为Tick数据中没有资金流信息
-                    threshold_reason = f"市值层: {threshold_result.get('market_cap_tier', 'N/A')}, 时间段: {threshold_result.get('time_segment', 'N/A')}"
-
-                    if threshold_passed:
-                        self.filter_stats['threshold_passed'] += 1
-                        logger.debug(f"✅ [动态阈值] {code} 通过: {threshold_reason}")
-                    else:
+                    # 检查市值是否在合理范围内
+                    circulating_cap = threshold_result.get('circulating_cap', 0)
+                    if circulating_cap < 5_0000_0000 or circulating_cap > 1000_0000_0000:
+                        # 市值 < 50亿 或 > 1000亿，跳过
                         self.filter_stats['threshold_rejected'] += 1
-                        logger.debug(f"❌ [动态阈值] {code} 未通过: {threshold_reason}")
-                        continue  # 动态阈值不通过，直接跳过
+                        logger.debug(f"❌ [动态阈值] {code} 市值不在范围内")
+                        continue
+                    else:
+                        self.filter_stats['threshold_passed'] += 1
+                        logger.debug(f"✅ [动态阈值] {code} 市值={circulating_cap/1e8:.1f}亿")
+
                 except Exception as e:
                     logger.warning(f"⚠️ [动态阈值] 检查失败: {code}, {e}")
-                    threshold_passed = True  # 检查失败时默认通过
+                    continue
 
-            # 3. 竞价校验器（临时禁用，先测试前两个过滤器）
+            # ================= V12.1.0 过滤器3: 竞价校验（P2）=================
+            # 仅开盘阶段（09:25-09:30）使用竞价校验
             auction_passed = True
-            auction_reason = '竞价校验器临时禁用'
-            logger.debug(f"⚠️ [竞价校验] {code} 跳过（临时禁用）")
+            auction_reason = '非竞价阶段'
+            if self.auction_validator and self.enable_filters:
+                try:
+                    auction_time = current_time.time()
+                    if pd.to_datetime('09:25:00').time() <= auction_time <= pd.to_datetime('09:30:00').time():
+                        # 构建竞价数据
+                        auction_data = {
+                            'open_price': current_price,
+                            'prev_close': daily_df.iloc[0]['price'] * 0.99,  # 估算昨日收盘价
+                            'volume_ratio': len(daily_df) / 10,  # 估算量比
+                            'amount': daily_df['price'].sum(),  # 竞价成交额
+                            'high_price': daily_df['price'].max(),
+                            'low_price': daily_df['price'].min(),
+                            'is_limit_up': False
+                        }
 
-            # 通过所有过滤器，生成买入信号
+                        auction_result = self.auction_validator.validate_auction(
+                            stock_code=code,
+                            auction_data=auction_data,
+                            is_focus_stock=False
+                        )
+
+                        auction_passed = auction_result.get('is_valid', True)
+                        auction_reason = auction_result.get('reason', '')
+                        if auction_passed:
+                            self.filter_stats['auction_passed'] += 1
+                            logger.debug(f"✅ [竞价校验] {code} 通过")
+                        else:
+                            self.filter_stats['auction_rejected'] += 1
+                            logger.debug(f"❌ [竞价校验] {code} 未通过")
+                            continue  # 竞价校验不通过，直接跳过
+                except Exception as e:
+                    logger.warning(f"⚠️ [竞价校验] 检查失败: {code}, {e}")
+                    auction_passed = True  # 检查失败时默认通过
+
+            # ================= 所有过滤器通过，生成买入信号 =================
             signals.append({
                 'code': code,
                 'date': date,
-                'price': last_price,
+                'price': current_price,
                 'strategy': 'V12.1.0_三大过滤器',
-                'gain_pct': early_gain,
                 'filter_results': {
-                    'wind_result': {'passed': wind_passed, 'reason': wind_reason},
-                    'threshold_result': {'passed': threshold_passed, 'reason': threshold_reason},
+                    'wind_result': {'passed': True, 'reason': '板块共振通过'},
+                    'threshold_result': {'passed': True, 'reason': '市值范围通过'},
                     'auction_result': {'passed': auction_passed, 'reason': auction_reason}
                 }
             })
@@ -567,8 +570,8 @@ def main():
         logger.error("没有找到有Tick数据的股票")
         return
 
-    # 限制股票数量（快速测试）
-    max_stocks = 10  # 先测试10只
+    # 限制股票数量（全量回测）
+    max_stocks = 50  # 全量回测：50只股票
     if len(stock_codes) > max_stocks:
         stock_codes = stock_codes[:max_stocks]
         logger.info(f"限制回测股票数量为 {max_stocks} 只")
