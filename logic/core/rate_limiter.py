@@ -8,6 +8,7 @@ from threading import Lock
 from collections import deque
 import json
 import os
+from pathlib import Path
 
 
 class RateLimiter:
@@ -38,8 +39,9 @@ class RateLimiter:
         self.last_request_time = None
         self.lock = Lock()
 
-        # 加载历史记录
-        self.history_file = os.path.join(os.path.dirname(__file__), '..', 'data', 'rate_limiter_history.json')
+        # 加载历史记录（V16.4.0: 统一到项目根目录data/）
+        project_root = Path(__file__).resolve().parent.parent.parent
+        self.history_file = project_root / 'data' / 'rate_limiter_history.json'
         self._load_history()
 
     def _load_history(self):
@@ -149,6 +151,34 @@ class RateLimiter:
 
             # 等待后重试
             time.sleep(1)
+
+    def update_limits(self, max_requests_per_minute=None, max_requests_per_hour=None, min_request_interval=None):
+        """
+        V16.4.0: 更新限速参数
+
+        Args:
+            max_requests_per_minute: 每分钟最大请求数
+            max_requests_per_hour: 每小时最大请求数
+            min_request_interval: 最小请求间隔（秒）
+        """
+        with self.lock:
+            if max_requests_per_minute is not None:
+                old_rpm = self.max_rpm
+                self.max_rpm = max_requests_per_minute
+                if self.enable_logging:
+                    print(f"📊 [RateLimiter] 更新每分钟限制: {old_rpm} → {self.max_rpm}")
+
+            if max_requests_per_hour is not None:
+                old_rph = self.max_rph
+                self.max_rph = max_requests_per_hour
+                if self.enable_logging:
+                    print(f"📊 [RateLimiter] 更新每小时限制: {old_rph} → {self.max_rph}")
+
+            if min_request_interval is not None:
+                old_interval = self.min_interval
+                self.min_interval = min_request_interval
+                if self.enable_logging:
+                    print(f"📊 [RateLimiter] 更新请求间隔: {old_interval} → {self.min_interval}秒")
 
     def get_stats(self):
         """

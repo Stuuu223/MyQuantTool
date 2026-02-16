@@ -138,6 +138,7 @@ def update_blacklist():
             code = row['代码']
             name = row['名称']
             change_pct = abs(row['涨跌幅'])
+            change_pct_raw = row['涨跌幅']
 
             # 策略1: ST股票强制检查
             if 'ST' in name or '*ST' in name:
@@ -145,6 +146,9 @@ def update_blacklist():
             # 策略2: 异常波动股票（可能有利空）
             elif change_pct > 5:
                 focus_stocks.append((code, name, f'异常波动{change_pct:.1f}%'))
+            # V16.4.0 补丁: 策略3: 阴跌股票（防止阴跌出雷）
+            elif change_pct_raw < -2:  # 跌幅超过2%
+                focus_stocks.append((code, name, f'阴跌{change_pct_raw:.1f}%'))
 
         print(f"🎯 聚焦扫描 {len(focus_stocks)} 只高风险股票...")
 
