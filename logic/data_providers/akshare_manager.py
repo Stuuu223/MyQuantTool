@@ -41,7 +41,7 @@ import time
 import json
 import hashlib
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime as dt_datetime, date as dt_date, timedelta as dt_timedelta
 from typing import Optional, Dict, List, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -60,9 +60,45 @@ except ImportError:
     AKSHARE_AVAILABLE = False
     print("[AkShareDataManager] ⚠️ akshare 未安装，缓存模式将无法使用")
 
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+    print("[AkShareDataManager] ⚠️ pandas 未安装，缓存模式将无法使用")
+
 from logic.utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+class PandasJSONEncoder(json.JSONEncoder):
+    """自定义JSON编码器，处理pandas DataFrame和date对象"""
+
+    def default(self, obj):
+        if hasattr(obj, 'to_dict'):
+            # pandas DataFrame或Series
+            return obj.to_dict()
+        elif hasattr(pd, 'NaT') and obj is pd.NaT:
+            # pandas NaT
+            return None
+        elif hasattr(pd, 'Timestamp') and isinstance(obj, pd.Timestamp):
+            # pandas Timestamp
+            if pd.isna(obj):
+                return None
+            return obj.strftime('%Y-%m-%d %H:%M:%S')
+        elif isinstance(obj, (dt_date, dt_datetime)):
+            # Python date或datetime对象
+            return obj.strftime('%Y-%m-%d %H:%M:%S')
+        elif hasattr(obj, '__iter__') and not isinstance(obj, (str, bytes)):
+            # 可迭代对象（非字符串/字节）
+            try:
+                return list(obj)
+            except TypeError:
+                return str(obj)
+        else:
+            # 其他类型使用默认处理
+            return super().default(obj)
 
 
 class AkShareDataManager:
@@ -201,14 +237,14 @@ class AkShareDataManager:
     def _write_cache(self, cache_key: str, data_type: str, data: Any) -> None:
         """
         写入缓存
-        
+
         Args:
             cache_key: 缓存键
             data_type: 数据类型
             data: 数据
         """
         cache_file = self._get_cache_file(cache_key)
-        
+
         try:
             cache_data = {
                 'data_type': data_type,
@@ -216,51 +252,66 @@ class AkShareDataManager:
                 'data': data,
                 'cache_key': cache_key
             }
-            
+
             with open(cache_file, 'w', encoding='utf-8') as f:
-                json.dump(cache_data, f, ensure_ascii=False, indent=2)
-            
+                json.dump(cache_data, f, ensure_ascii=False, indent=2, cls=PandasJSONEncoder)
+
             logger.debug(f"[AkShareDataManager] 缓存写入成功: {cache_key}")
         except Exception as e:
-            logger.error(f"[AkShareDataManager] 写入缓存失败: {e}")
+            logger.error(f"[AkShareDataManager] 写入缓存失败: {e} (file: {cache_file})")
     
     def get_fund_flow(self, code: str, days: int = 100) -> Optional[Dict]:
         """
         获取个股资金流（带缓存）
-        
+
         Args:
             code: 股票代码
             days: 天数
-        
+
         Returns:
             Optional[Dict]: 资金流数据，如果缓存不存在返回None
         """
         cache_key = self._get_cache_key('fund_flow', code, days=days)
-        
+
         # 尝试读取缓存
         cached_data = self._read_cache(cache_key)
         if cached_data is not None:
             return cached_data['data']
-        
+
         # 只读模式：缓存不存在返回None
         if self.mode == 'readonly':
             logger.debug(f"[AkShareDataManager] 只读模式：资金流缓存不存在 {code}")
             return None
-        
+
         # 预热模式：联网拉取
         if not AKSHARE_AVAILABLE:
             logger.warning("[AkShareDataManager] akshare 未安装")
             return None
-        
+
         try:
             self._check_rate_limit()
-            
-            # 拉取数据
-            df = ak.stock_individual_fund_flow(stock=code, indicator="主力净流入", period="daily", start_date=(datetime.now() - timedelta(days=days)).strftime('%Y%m%d'))
-            
+
+            # 解析股票代码和市场
+            # code格式: "600000.SH" 或 "000001.SZ"
+            if '.' in code:
+                stock_code, market = code.split('.')
+                market = market.lower()  # sh, sz
+            else:
+                # 如果没有后缀，默认为sh
+                stock_code = code
+                market = 'sh'
+
+            # 拉取数据（正确的API签名）
+            df = ak.stock_individual_fund_flow(stock=stock_code, market=market)
+
+            # 检查数据是否为空
+            if df is None or df.empty:
+                logger.warning(f"[AkShareDataManager] 资金流数据为空: {code}")
+                return None
+
             # 写入缓存
-            self._write_cache(cache_key, 'fund_flow', df.to_dict())
-            
+            self._write_cache(cache_key, 'fund_flow', df)
+
             return df.to_dict()
         except Exception as e:
             logger.warning(f"[AkShareDataManager] 获取资金流失败 {code}: {e}")
@@ -295,17 +346,26 @@ class AkShareDataManager:
         
         try:
             self._check_rate_limit()
-            
-            # 拉取数据
-            df = ak.stock_news_em(stock=code)
-            
+
+            # 提取纯数字代码（移除市场后缀）
+            # code格式: "600000.SH" → "600000"
+            symbol = code.split('.')[0] if '.' in code else code
+
+            # 拉取数据（正确的API签名）
+            df = ak.stock_news_em(symbol=symbol)
+
+            # 检查数据是否为空
+            if df is None or df.empty:
+                logger.warning(f"[AkShareDataManager] 新闻数据为空: {code}")
+                return None
+
             # 只取最近20条
-            if not df.empty:
-                df = df.head(20)
-                self._write_cache(cache_key, 'news', df.to_dict())
-                return df.to_dict()
-            
-            return None
+            df = df.head(20)
+
+            # 写入缓存
+            self._write_cache(cache_key, 'news', df)
+
+            return df.to_dict()
         except Exception as e:
             logger.warning(f"[AkShareDataManager] 获取新闻失败 {code}: {e}")
             return None
@@ -313,16 +373,16 @@ class AkShareDataManager:
     def get_lhb_detail(self, date: str = None) -> Optional[List[Dict]]:
         """
         获取龙虎榜详情（带缓存）
-        
+
         Args:
             date: 日期（YYYYMMDD），默认为最近一个交易日
-        
+
         Returns:
             Optional[List[Dict]]: 龙虎榜数据，如果缓存不存在返回None
         """
         if date is None:
-            date = (datetime.now() - timedelta(days=1)).strftime('%Y%m%d')
-        
+            date = (dt_datetime.now() - dt_timedelta(days=1)).strftime('%Y%m%d')
+
         cache_key = self._get_cache_key('lhb_detail', date)
         
         # 尝试读取缓存
@@ -342,15 +402,19 @@ class AkShareDataManager:
         
         try:
             self._check_rate_limit()
-            
-            # 拉取数据
-            df = ak.stock_lhb_detail_em(date=date)
-            
-            if not df.empty:
-                self._write_cache(cache_key, 'lhb_detail', df.to_dict())
-                return df.to_dict()
-            
-            return None
+
+            # 拉取数据（正确的API签名：使用start_date和end_date）
+            df = ak.stock_lhb_detail_em(start_date=date, end_date=date)
+
+            # 检查数据是否为空
+            if df is None or df.empty:
+                logger.warning(f"[AkShareDataManager] 龙虎榜数据为空: {date}")
+                return None
+
+            # 写入缓存
+            self._write_cache(cache_key, 'lhb_detail', df)
+
+            return df.to_dict()
         except Exception as e:
             logger.warning(f"[AkShareDataManager] 获取龙虎榜失败 {date}: {e}")
             return None
@@ -384,15 +448,23 @@ class AkShareDataManager:
         
         try:
             self._check_rate_limit()
-            
-            # 拉取数据
-            df = ak.stock_financial_analysis_indicator(stock=code)
-            
-            if not df.empty:
-                self._write_cache(cache_key, 'financial_indicator', df.to_dict())
-                return df.to_dict()
-            
-            return None
+
+            # 提取纯数字代码（移除市场后缀）
+            # code格式: "600000.SH" → "600000"
+            symbol = code.split('.')[0] if '.' in code else code
+
+            # 拉取数据（正确的API签名）
+            df = ak.stock_financial_analysis_indicator(symbol=symbol)
+
+            # 检查数据是否为空
+            if df is None or df.empty:
+                logger.warning(f"[AkShareDataManager] 基本面指标数据为空: {code}")
+                return None
+
+            # 写入缓存
+            self._write_cache(cache_key, 'financial_indicator', df)
+
+            return df.to_dict()
         except Exception as e:
             logger.warning(f"[AkShareDataManager] 获取基本面指标失败 {code}: {e}")
             return None
@@ -400,16 +472,16 @@ class AkShareDataManager:
     def get_limit_up_pool(self, date: str = None) -> Optional[List[str]]:
         """
         获取昨日涨停池（带缓存）
-        
+
         Args:
             date: 日期（YYYYMMDD），默认为昨日
-        
+
         Returns:
             Optional[List[str]]: 涨停股票代码列表，如果缓存不存在返回None
         """
         if date is None:
-            date = (datetime.now() - timedelta(days=1)).strftime('%Y%m%d')
-        
+            date = (dt_datetime.now() - dt_timedelta(days=1)).strftime('%Y%m%d')
+
         cache_key = self._get_cache_key('limit_up_pool', date)
         
         # 尝试读取缓存
@@ -481,7 +553,14 @@ class AkShareDataManager:
         if stock_list:
             print(f"[AkShareDataManager] 3️⃣ 预热个股数据（{len(stock_list)}只股票）...")
             
-            for code in stock_list[:50]:  # 限制50只股票
+            # 🔥 [V16.2.1 修复] 删除硬编码限制，预热所有股票
+            # 增加进度显示
+            total = len(stock_list)
+            for i, code in enumerate(stock_list, 1):
+                # 每处理10只股票打印一次进度
+                if i % 10 == 0:
+                    print(f"[AkShareDataManager] 进度: {i}/{total} ({i/total*100:.0f}%)")
+                
                 # 预热资金流
                 if self.get_fund_flow(code) is not None:
                     report['fund_flow']['success'] += 1
@@ -499,6 +578,8 @@ class AkShareDataManager:
                     report['financial_indicator']['success'] += 1
                 else:
                     report['financial_indicator']['failed'] += 1
+            
+            print(f"[AkShareDataManager] ✅ 个股数据预热完成: {total}只股票")
         
         # 保存预热报告
         report_file = self.cache_dir / 'warmup_report.json'
