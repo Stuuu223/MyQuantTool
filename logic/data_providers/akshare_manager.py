@@ -372,34 +372,36 @@ class AkShareDataManager:
     
     def get_lhb_detail(self, date: str = None) -> Optional[List[Dict]]:
         """
-        获取龙虎榜详情（带缓存）
+        获取龙虎榜详情（带缓存和数据清洗）
+
+        数据清洗：提取核心字段，过滤无关信息
 
         Args:
             date: 日期（YYYYMMDD），默认为最近一个交易日
 
         Returns:
-            Optional[List[Dict]]: 龙虎榜数据，如果缓存不存在返回None
+            Optional[List[Dict]]: 清洗后的龙虎榜数据，如果缓存不存在返回None
         """
         if date is None:
             date = (dt_datetime.now() - dt_timedelta(days=1)).strftime('%Y%m%d')
 
         cache_key = self._get_cache_key('lhb_detail', date)
-        
+
         # 尝试读取缓存
         cached_data = self._read_cache(cache_key)
         if cached_data is not None:
             return cached_data['data']
-        
+
         # 只读模式：缓存不存在返回None
         if self.mode == 'readonly':
             logger.debug(f"[AkShareDataManager] 只读模式：龙虎榜缓存不存在 {date}")
             return None
-        
+
         # 预热模式：联网拉取
         if not AKSHARE_AVAILABLE:
             logger.warning("[AkShareDataManager] akshare 未安装")
             return None
-        
+
         try:
             self._check_rate_limit()
 
@@ -411,63 +413,122 @@ class AkShareDataManager:
                 logger.warning(f"[AkShareDataManager] 龙虎榜数据为空: {date}")
                 return None
 
-            # 写入缓存
-            self._write_cache(cache_key, 'lhb_detail', df)
+            # ========== 数据清洗：提取核心字段 ==========
+            # 核心字段列表（根据CTO要求）
+            core_columns = [
+                '代码',           # 股票代码
+                '名称',           # 股票名称
+                '上榜日',         # 上榜日期
+                '解读',           # 解读分析
+                '龙虎榜净买额',   # 净买入额
+                '龙虎榜买入额',   # 买入额
+                '龙虎榜卖出额',   # 卖出额
+                '龙虎榜成交额',   # 成交额
+                '上榜原因',       # 上榜原因
+                '上榜后1日',      # 后1日表现
+                '上榜后2日',      # 后2日表现
+                '上榜后5日',      # 后5日表现
+                '上榜后10日'      # 后10日表现
+            ]
 
-            return df.to_dict()
+            # 检查核心字段是否存在
+            available_columns = [col for col in core_columns if col in df.columns]
+            if len(available_columns) < len(core_columns):
+                missing = set(core_columns) - set(available_columns)
+                logger.warning(f"[AkShareDataManager] 龙虎榜数据字段缺失: {missing}")
+
+            # 只保留核心字段
+            df_cleaned = df[available_columns].copy()
+
+            # 写入缓存
+            self._write_cache(cache_key, 'lhb_detail', df_cleaned)
+
+            logger.info(f"[AkShareDataManager] ✅ 龙虎榜数据获取成功: {date}, {len(df_cleaned)}只股票, {len(available_columns)}个核心字段")
+
+            return df_cleaned.to_dict()
         except Exception as e:
             logger.warning(f"[AkShareDataManager] 获取龙虎榜失败 {date}: {e}")
             return None
     
     def get_financial_indicator(self, code: str) -> Optional[Dict]:
         """
-        获取基本面指标（带缓存）
-        
+        获取基本面指标（带缓存和降级策略）
+
+        降级策略：
+        1. 优先使用 stock_financial_analysis_indicator（详细指标）
+        2. 失败时降级到 stock_financial_abstract（简略指标）
+        3. 两者都失败时返回 None，并标记数据缺失
+
         Args:
             code: 股票代码
-        
+
         Returns:
-            Optional[Dict]: 基本面数据，如果缓存不存在返回None
+            Optional[Dict]: 基本面数据，包含 data_source 标识来源
         """
         cache_key = self._get_cache_key('financial_indicator', code)
-        
+
         # 尝试读取缓存
         cached_data = self._read_cache(cache_key)
         if cached_data is not None:
             return cached_data['data']
-        
+
         # 只读模式：缓存不存在返回None
         if self.mode == 'readonly':
             logger.debug(f"[AkShareDataManager] 只读模式：基本面缓存不存在 {code}")
             return None
-        
+
         # 预热模式：联网拉取
         if not AKSHARE_AVAILABLE:
             logger.warning("[AkShareDataManager] akshare 未安装")
             return None
-        
+
+        # 提取纯数字代码（移除市场后缀）
+        symbol = code.split('.')[0] if '.' in code else code
+
+        # ========== 策略1：尝试获取详细指标 ==========
         try:
             self._check_rate_limit()
-
-            # 提取纯数字代码（移除市场后缀）
-            # code格式: "600000.SH" → "600000"
-            symbol = code.split('.')[0] if '.' in code else code
-
-            # 拉取数据（正确的API签名）
             df = ak.stock_financial_analysis_indicator(symbol=symbol)
 
-            # 检查数据是否为空
-            if df is None or df.empty:
-                logger.warning(f"[AkShareDataManager] 基本面指标数据为空: {code}")
-                return None
-
-            # 写入缓存
-            self._write_cache(cache_key, 'financial_indicator', df)
-
-            return df.to_dict()
+            if df is not None and not df.empty:
+                # 添加数据来源标识
+                result = df.to_dict()
+                result['_metadata'] = {
+                    'data_source': 'stock_financial_analysis_indicator',
+                    'symbol': symbol,
+                    'timestamp': dt_datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                }
+                self._write_cache(cache_key, 'financial_indicator', df)
+                logger.info(f"[AkShareDataManager] ✅ 基本面指标获取成功（详细模式）: {code}")
+                return result
         except Exception as e:
-            logger.warning(f"[AkShareDataManager] 获取基本面指标失败 {code}: {e}")
-            return None
+            logger.warning(f"[AkShareDataManager] ⚠️ 详细指标获取失败，启用降级策略: {code} - {e}")
+
+        # ========== 策略2：降级到简略指标 ==========
+        try:
+            self._check_rate_limit()
+            df = ak.stock_financial_abstract(symbol=symbol)
+
+            if df is not None and not df.empty:
+                # 添加数据来源标识
+                result = df.to_dict()
+                result['_metadata'] = {
+                    'data_source': 'stock_financial_abstract (降级模式)',
+                    'symbol': symbol,
+                    'timestamp': dt_datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    'warning': '使用降级数据源，指标可能不完整'
+                }
+                self._write_cache(cache_key, 'financial_indicator', df)
+                logger.info(f"[AkShareDataManager] ✅ 基本面指标获取成功（降级模式）: {code}")
+                return result
+            else:
+                logger.warning(f"[AkShareDataManager] ⚠️ 降级数据源返回空: {code}")
+        except Exception as e:
+            logger.error(f"[AkShareDataManager] ❌ 降级数据源也失败: {code} - {e}")
+
+        # ========== 策略3：数据缺失警告 ==========
+        logger.error(f"[AkShareDataManager] ⛔ FUNDAMENTAL DATA MISSING: {code} - 所有数据源均失败")
+        return None
     
     def get_limit_up_pool(self, date: str = None) -> Optional[List[str]]:
         """
