@@ -102,10 +102,21 @@ class StrategyConfig:
     # ========================================
     # 8. 资金流阈值 (Capital Flow Thresholds)
     # ========================================
-    # 与现有CapitalClassifier兼容
-    CAPITAL_FLOW_BULLISH: float = 1000000  # 主力净流入 > 100万 (看多)
-    CAPITAL_FLOW_BEARISH: float = -1000000 # 主力净流出 < -100万 (看空)
-    CAPITAL_FLOW_STRONG_BULLISH: float = 5000000  # 主力净流入 > 500万 (强看多)
+    # 核心原则：资金流应该是相对于成交额的比例，而不是绝对值
+    # 拾荒网观点：主力资金流入应该占总成交额的30%以上
+    # 现有TradeGatekeeper：5000万作为资金流预警阈值
+    #
+    # 动态阈值（基于成交额比例）：
+    # - 小市值（<50亿）：主力流入 > 成交额的30%
+    # - 中市值（50-100亿）：主力流入 > 成交额的25%
+    # - 大市值（>100亿）：主力流入 > 成交额的20%
+    #
+    # 兼容性：提供绝对值阈值作为降级方案
+    CAPITAL_FLOW_RATIO_BULLISH: float = 0.30     # 主力净流入占比 > 30% (看多)
+    CAPITAL_FLOW_RATIO_BEARISH: float = -0.20    # 主力净流入占比 < -20% (看空)
+    CAPITAL_FLOW_RATIO_STRONG_BULLISH: float = 0.40  # 主力净流入占比 > 40% (强看多)
+    CAPITAL_FLOW_ABSOLUTE_BULLISH: float = 50000000  # 降级方案：主力净流入 > 5000万 (看多)
+    CAPITAL_FLOW_ABSOLUTE_BEARISH: float = -50000000 # 降级方案：主力净流出 < -5000万 (看空)
 
     # ========================================
     # 9. 风控阈值 (Risk Control)
@@ -188,9 +199,11 @@ class StrategyConfig:
                 'tier_large': self.MARKET_CAP_TIER_LARGE,
             },
             'capital_flow': {
-                'bullish': self.CAPITAL_FLOW_BULLISH,
-                'bearish': self.CAPITAL_FLOW_BEARISH,
-                'strong_bullish': self.CAPITAL_FLOW_STRONG_BULLISH,
+                'ratio_bullish': self.CAPITAL_FLOW_RATIO_BULLISH,
+                'ratio_bearish': self.CAPITAL_FLOW_RATIO_BEARISH,
+                'ratio_strong_bullish': self.CAPITAL_FLOW_RATIO_STRONG_BULLISH,
+                'absolute_bullish': self.CAPITAL_FLOW_ABSOLUTE_BULLISH,
+                'absolute_bearish': self.CAPITAL_FLOW_ABSOLUTE_BEARISH,
             },
             'risk': {
                 'max_loss_pct': self.RISK_MAX_LOSS_PCT,
