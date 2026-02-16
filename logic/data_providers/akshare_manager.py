@@ -70,6 +70,8 @@ except ImportError:
     print("[AkShareDataManager] ⚠️ pandas 未安装，缓存模式将无法使用")
 
 from logic.utils.logger import get_logger
+from logic.core.rate_limiter import get_rate_limiter
+import random
 
 logger = get_logger(__name__)
 
@@ -121,7 +123,7 @@ class AkShareDataManager:
     def __init__(self, mode: str = 'readonly', cache_dir: str = 'data/ak_cache'):
         """
         初始化AkShare数据管理器
-        
+
         Args:
             mode: 运行模式（'warmup'或'readonly'）
             cache_dir: 缓存目录
@@ -129,12 +131,16 @@ class AkShareDataManager:
         self.mode = mode
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
-        
-        # 限速保护：200次/小时
-        self.rate_limit = 200
-        self.rate_window = 3600  # 1小时
-        self.request_times = []
-        
+
+        # V16.4.0: 使用全局限流器（替代土制限速）
+        self.limiter = get_rate_limiter()
+        # 更新限速参数（针对AkShare优化）
+        self.limiter.update_limits(
+            max_requests_per_minute=60,
+            max_requests_per_hour=2000,
+            min_request_interval=0.1
+        )
+
         # TTL配置（秒）
         self.ttl_config = {
             'fund_flow': 8 * 3600,  # 8小时（当日收盘前）
@@ -142,33 +148,27 @@ class AkShareDataManager:
             'financial_indicator': 7 * 24 * 3600,  # 7天
             'limit_up_pool': 8 * 3600,  # 8小时（当日收盘前）
         }
-        
+
         print(f"[AkShareDataManager] ✅ 初始化完成，模式: {self.mode}, 缓存目录: {self.cache_dir}")
     
     def _check_rate_limit(self) -> None:
         """
-        检查并执行限速保护
-        
-        Raises:
-            RuntimeError: 超过限速阈值
+        检查并执行限速保护（V16.4.0: 使用RateLimiter）
+
+        功能：
+        1. 随机延迟（防WAF指纹识别）
+        2. 限流器检查（自动等待）
+        3. 记录请求
         """
         if self.mode == 'readonly':
             return  # 只读模式不限速
-        
-        now = time.time()
-        
-        # 清理过期记录
-        self.request_times = [t for t in self.request_times if now - t < self.rate_window]
-        
-        # 检查是否超过限速
-        if len(self.request_times) >= self.rate_limit:
-            raise RuntimeError(
-                f"[AkShareDataManager] ⚠️ 超过限速阈值！"
-                f"当前请求: {len(self.request_times)}, 限制: {self.rate_limit}/{self.rate_window}秒"
-            )
-        
-        # 记录本次请求
-        self.request_times.append(now)
+
+        # V16.4.0: 1. 强制随机延迟（防WAF指纹识别）
+        time.sleep(random.uniform(0.1, 0.3))
+
+        # V16.4.0: 2. 限流器检查（自动等待）
+        self.limiter.wait_if_needed(url="akshare")
+        self.limiter.record_request(url="akshare")
     
     def _get_cache_key(self, data_type: str, code: str, **kwargs) -> str:
         """

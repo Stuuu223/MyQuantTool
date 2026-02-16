@@ -19,6 +19,7 @@ Date: 2026-02-05
 import time
 import os
 import json
+from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Dict, List, Tuple, Optional
 from collections import defaultdict
@@ -843,9 +844,36 @@ class FullMarketScanner:
                 if batch_num == 1 or batch_num % 5 == 0:  # 只在部分批次显示
                     logger.debug(f"批次 {batch_num} 处理异常: {e}")
                 continue
-        
+
         return candidates
-    
+
+    def _is_in_blacklist(self, code: str) -> bool:
+        """
+        V16.4.0: 检查股票是否在黑名单中
+
+        Args:
+            code: 股票代码
+
+        Returns:
+            bool: 是否在黑名单中
+        """
+        if not hasattr(self, '_blacklist_cache'):
+            # 懒加载黑名单
+            blacklist_file = Path('data/risk/blacklist.json')
+            if not blacklist_file.exists():
+                self._blacklist_cache = set()
+            else:
+                try:
+                    with open(blacklist_file, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                        self._blacklist_cache = {item['code'] for item in data.get('stocks', [])}
+                    logger.info(f"✅ 黑名单已加载: {len(self._blacklist_cache)} 只")
+                except Exception as e:
+                    logger.error(f"❌ 黑名单加载失败: {e}")
+                    self._blacklist_cache = set()
+
+        return code in self._blacklist_cache
+
     def _check_volume_ratio(self, code: str, current_volume: float, tick: dict) -> Optional[float]:
         """
         检查量比（当日成交量 / 5日平均成交量）- 返回量比供外部判断
@@ -1135,7 +1163,22 @@ class FullMarketScanner:
                 if code == '001335.SZ' or code.endswith('001335'):
                     logger.info(f"🔍 [DEBUG 001335] Level 1失败: 昨收价为0 (last_close=0)")
                 return False
-            pct_chg = abs((last_price - last_close) / last_close * 100)
+
+            # 计算涨跌幅
+            pct_chg_raw = (last_price - last_close) / last_close * 100
+
+            # V16.4.0: 【风控补丁】强制过滤深跌股票（右侧策略，不抄底）
+            if pct_chg_raw < -2.0:  # 跌幅超过2%，直接拒绝
+                if code == '001335.SZ' or code.endswith('001335'):
+                    logger.info(f"🔍 [DEBUG 001335] Level 1失败: 跌幅过大({pct_chg_raw:.2f}%)")
+                return False
+
+            # V16.4.0: 【黑名单检查】
+            if self._is_in_blacklist(code):
+                logger.warning(f"⛔ {code}: 触发黑名单风控，Level 1拒绝")
+                return False
+
+            pct_chg = abs(pct_chg_raw)
 
             cfg = self.config['level1']
 
