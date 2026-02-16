@@ -57,12 +57,14 @@ def main():
 
     # 测试2: 获取新闻
     print(f"\n2️⃣ 测试获取新闻: {test_code}")
-    news = manager.get_news(test_code)
-    if news:
-        print(f"  ✅ 新闻获取成功")
-        print(f"  新闻条数: {len(news) if isinstance(news, list) else 'N/A'}")
-    else:
-        print(f"  ❌ 新闻获取失败")
+    # 🚫 V16.3.0: 新闻模块已移除（资金为王，拒绝噪音）
+    # news = manager.get_news(test_code)
+    # if news:
+    #     print(f"  ✅ 新闻获取成功")
+    #     print(f"  新闻条数: {len(news) if isinstance(news, list) else 'N/A'}")
+    # else:
+    #     print(f"  ❌ 新闻获取失败")
+    print(f"  ⚠️  新闻模块已移除（V16.3.0 - 资金为王，拒绝噪音）")
 
     # 测试3: 获取基本面指标
     print(f"\n3️⃣ 测试获取基本面指标: {test_code}")

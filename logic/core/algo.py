@@ -280,62 +280,63 @@ class QuantAlgo:
                 pass
             
             # 6. 检查公告风险（立案调查、诉讼仲裁等）
-            try:
-                announcements = ak.stock_news_em(symbol=symbol)
-                if not announcements.empty:
-                    risk_keywords = ['立案', '调查', '诉讼', '仲裁', '处罚', '违规', '退市', '停牌', 'ST', '*ST', '内控', '缺陷', '证监', '证监会']
-                    found_risks = set()
-                    risk_details = {}  # 存储具体的风险详情
-                    
-                    # 检查公告标题和内容
-                    for idx in range(min(30, len(announcements))):  # 检查最近30条公告
-                        title = str(announcements.iloc[idx, 1])
-                        content = str(announcements.iloc[idx, 2])
-                        date = str(announcements.iloc[idx, 3])
-                        full_text = title + ' ' + content
-                        
-                        for keyword in risk_keywords:
-                            if keyword in full_text:
-                                if keyword not in found_risks:
-                                    found_risks.add(keyword)
-                                    # 保存具体的风险详情
-                                    if keyword not in risk_details:
-                                        risk_details[keyword] = []
-                                    risk_details[keyword].append({
-                                        '日期': date,
-                                        '标题': title[:50] + '...' if len(title) > 50 else title
-                                    })
-                    
-                    # 根据发现的关键词添加详细风险
-                    if '立案' in found_risks or '调查' in found_risks:
-                        details = risk_details.get('立案', []) + risk_details.get('调查', [])
-                        details_str = '; '.join([f"{d['日期']}:{d['标题']}" for d in details[:2]])  # 只显示前2条
-                        risks.append(f"🔴 立案调查风险：公司涉及立案调查，存在重大法律风险 ({details_str})")
-                        risk_level = "高"
-                    elif '内控' in found_risks and '缺陷' in found_risks:
-                        details = risk_details.get('内控', []) + risk_details.get('缺陷', [])
-                        details_str = '; '.join([f"{d['日期']}:{d['标题']}" for d in details[:2]])
-                        risks.append(f"🟠 内控缺陷风险：公司内部控制存在缺陷 ({details_str})")
-                        if risk_level == "低":
-                            risk_level = "中"
-                    elif '诉讼' in found_risks or '仲裁' in found_risks:
-                        details = risk_details.get('诉讼', []) + risk_details.get('仲裁', [])
-                        details_str = '; '.join([f"{d['日期']}:{d['标题']}" for d in details[:2]])
-                        risks.append(f"🟡 诉讼仲裁风险：公司涉及诉讼或仲裁案件 ({details_str})")
-                        if risk_level == "低":
-                            risk_level = "中"
-                    elif '处罚' in found_risks or '违规' in found_risks:
-                        details = risk_details.get('处罚', []) + risk_details.get('违规', [])
-                        details_str = '; '.join([f"{d['日期']}:{d['标题']}" for d in details[:2]])
-                        risks.append(f"🟡 监管处罚风险：公司受到监管处罚 ({details_str})")
-                        if risk_level == "低":
-                            risk_level = "中"
-                    elif 'ST' in found_risks or '*ST' in found_risks:
-                        # ST风险已经在前面检测过了，这里不再重复
-                        pass
-            except Exception as e:
-                # 如果获取公告失败，不影响其他风险检测
-                pass
+            # 🚫 V16.3.0: 新闻模块已移除（资金为王，拒绝噪音）
+            # try:
+            #     announcements = ak.stock_news_em(symbol=symbol)
+            #     if not announcements.empty:
+            #         risk_keywords = ['立案', '调查', '诉讼', '仲裁', '处罚', '违规', '退市', '停牌', 'ST', '*ST', '内控', '缺陷', '证监', '证监会']
+            #         found_risks = set()
+            #         risk_details = {}  # 存储具体的风险详情
+            #         
+            #         # 检查公告标题和内容
+            #         for idx in range(min(30, len(announcements))):  # 检查最近30条公告
+            #             title = str(announcements.iloc[idx, 1])
+            #             content = str(announcements.iloc[idx, 2])
+            #             date = str(announcements.iloc[idx, 3])
+            #             full_text = title + ' ' + content
+            #             
+            #             for keyword in risk_keywords:
+            #                 if keyword in full_text:
+            #                     if keyword not in found_risks:
+            #                         found_risks.add(keyword)
+            #                         # 保存具体的风险详情
+            #                         if keyword not in risk_details:
+            #                             risk_details[keyword] = []
+            #                         risk_details[keyword].append({
+            #                             '日期': date,
+            #                             '标题': title[:50] + '...' if len(title) > 50 else title
+            #                         })
+            #         
+            #         # 根据发现的关键词添加详细风险
+            #         if '立案' in found_risks or '调查' in found_risks:
+            #             details = risk_details.get('立案', []) + risk_details.get('调查', [])
+            #             details_str = '; '.join([f"{d['日期']}:{d['标题']}" for d in details[:2]])  # 只显示前2条
+            #             risks.append(f"🔴 立案调查风险：公司涉及立案调查，存在重大法律风险 ({details_str})")
+            #             risk_level = "高"
+            #         elif '内控' in found_risks and '缺陷' in found_risks:
+            #             details = risk_details.get('内控', []) + risk_details.get('缺陷', [])
+            #             details_str = '; '.join([f"{d['日期']}:{d['标题']}" for d in details[:2]])
+            #             risks.append(f"🟠 内控缺陷风险：公司内部控制存在缺陷 ({details_str})")
+            #             if risk_level == "低":
+            #                 risk_level = "中"
+            #         elif '诉讼' in found_risks or '仲裁' in found_risks:
+            #             details = risk_details.get('诉讼', []) + risk_details.get('仲裁', [])
+            #             details_str = '; '.join([f"{d['日期']}:{d['标题']}" for d in details[:2]])
+            #             risks.append(f"🟡 诉讼仲裁风险：公司涉及诉讼或仲裁案件 ({details_str})")
+            #             if risk_level == "低":
+            #                 risk_level = "中"
+            #         elif '处罚' in found_risks or '违规' in found_risks:
+            #             details = risk_details.get('处罚', []) + risk_details.get('违规', [])
+            #             details_str = '; '.join([f"{d['日期']}:{d['标题']}" for d in details[:2]])
+            #             risks.append(f"🟡 监管处罚风险：公司受到监管处罚 ({details_str})")
+            #             if risk_level == "低":
+            #                 risk_level = "中"
+            #         elif 'ST' in found_risks or '*ST' in found_risks:
+            #             # ST风险已经在前面检测过了，这里不再重复
+            #             pass
+            # except Exception as e:
+            #     # 如果获取公告失败，不影响其他风险检测
+            #     pass
             
             # 7. 检查财报风险
             try:

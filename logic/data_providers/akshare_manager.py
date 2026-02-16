@@ -11,10 +11,12 @@ AkShare数据管理器 (V16.2 - 缓存+预热架构)
 
 数据类型：
 1. 个股资金流 - stock_individual_fund_flow（近100日主力/超大单）
-2. 个股新闻 - stock_news_em（最近20条）
-3. 龙虎榜 - stock_lhb_detail_em（每日详情）
-4. 基本面指标 - stock_financial_analysis_indicator（财务指标）
-5. 昨日涨停池 - stock_zt_pool_previous_em（昨日涨停）
+2. 龙虎榜 - stock_lhb_detail_em（每日详情）
+3. 基本面指标 - stock_financial_analysis_indicator（财务指标）
+4. 昨日涨停池 - stock_zt_pool_previous_em（昨日涨停）
+
+V16.3变更：
+- ❌ 已移除：个股新闻（stock_news_em）- 根据"资金为王，拒绝噪音"原则
 
 Usage:
     # 盘前预热模式
@@ -136,7 +138,6 @@ class AkShareDataManager:
         # TTL配置（秒）
         self.ttl_config = {
             'fund_flow': 8 * 3600,  # 8小时（当日收盘前）
-            'news': 4 * 3600,  # 4小时
             'lhb_detail': 24 * 3600,  # 24小时（次日收盘前）
             'financial_indicator': 7 * 24 * 3600,  # 7天
             'limit_up_pool': 8 * 3600,  # 8小时（当日收盘前）
@@ -315,59 +316,6 @@ class AkShareDataManager:
             return df.to_dict()
         except Exception as e:
             logger.warning(f"[AkShareDataManager] 获取资金流失败 {code}: {e}")
-            return None
-    
-    def get_news(self, code: str) -> Optional[List[Dict]]:
-        """
-        获取个股新闻（带缓存）
-        
-        Args:
-            code: 股票代码
-        
-        Returns:
-            Optional[List[Dict]]: 新闻列表，如果缓存不存在返回None
-        """
-        cache_key = self._get_cache_key('news', code)
-        
-        # 尝试读取缓存
-        cached_data = self._read_cache(cache_key)
-        if cached_data is not None:
-            return cached_data['data']
-        
-        # 只读模式：缓存不存在返回None
-        if self.mode == 'readonly':
-            logger.debug(f"[AkShareDataManager] 只读模式：新闻缓存不存在 {code}")
-            return None
-        
-        # 预热模式：联网拉取
-        if not AKSHARE_AVAILABLE:
-            logger.warning("[AkShareDataManager] akshare 未安装")
-            return None
-        
-        try:
-            self._check_rate_limit()
-
-            # 提取纯数字代码（移除市场后缀）
-            # code格式: "600000.SH" → "600000"
-            symbol = code.split('.')[0] if '.' in code else code
-
-            # 拉取数据（正确的API签名）
-            df = ak.stock_news_em(symbol=symbol)
-
-            # 检查数据是否为空
-            if df is None or df.empty:
-                logger.warning(f"[AkShareDataManager] 新闻数据为空: {code}")
-                return None
-
-            # 只取最近20条
-            df = df.head(20)
-
-            # 写入缓存
-            self._write_cache(cache_key, 'news', df)
-
-            return df.to_dict()
-        except Exception as e:
-            logger.warning(f"[AkShareDataManager] 获取新闻失败 {code}: {e}")
             return None
     
     def get_lhb_detail(self, date: str = None) -> Optional[List[Dict]]:
@@ -590,7 +538,6 @@ class AkShareDataManager:
         
         report = {
             'fund_flow': {'success': 0, 'failed': 0},
-            'news': {'success': 0, 'failed': 0},
             'lhb_detail': {'success': 0, 'failed': 0},
             'financial_indicator': {'success': 0, 'failed': 0},
             'limit_up_pool': {'success': 0, 'failed': 0},
@@ -627,12 +574,6 @@ class AkShareDataManager:
                     report['fund_flow']['success'] += 1
                 else:
                     report['fund_flow']['failed'] += 1
-                
-                # 预热新闻
-                if self.get_news(code) is not None:
-                    report['news']['success'] += 1
-                else:
-                    report['news']['failed'] += 1
                 
                 # 预热基本面
                 if self.get_financial_indicator(code) is not None:
