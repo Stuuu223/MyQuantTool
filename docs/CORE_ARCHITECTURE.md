@@ -1,7 +1,7 @@
 ---
-version: V16.3.0
+version: V17.0.0
 updated: 2026-02-16
-scope: logic/full_market_scanner.py, tasks/run_event_driven_monitor.py, logic/data_providers/akshare_manager.py
+scope: logic/full_market_scanner.py, tasks/run_event_driven_monitor.py, logic/data_providers/akshare_manager.py, logic/portfolio/capital_allocator.py
 author: MyQuantTool Team
 ---
 
@@ -35,6 +35,41 @@ author: MyQuantTool Team
 FullMarketScanner（资金为王）
     ↓
 EventDrivenMonitor（拒绝噪音）
+    ↓
+Portfolio层（V17.0.0新增：账户级资金调度）
+    ↓
+实盘执行
+```
+
+### 0.1 💰 账户曲线向上，机会成本最小化（V17.0.0新增）
+
+**核心理念更新（V17.0.0重大变更）**：
+> "账户曲线向上 > 单笔收益故事，机会成本最小化 > 死守某只股票，哪里赚钱最优去哪里，能赚就赚 > 风格教条"
+
+**具体要求**：
+1. **废除单笔收益目标**：移除"单只股票30%-50%收益"的硬性要求
+2. **动态风险管理**：最大回撤-12%（软约束，非硬性红线）
+3. **断层优势识别**：Top1评分>Top2的1.5倍时单吊
+4. **机会成本管理**：持有股票表现不佳且有更优机会时，优先换仓
+5. **T+1约束处理**：A股T+1，今日买入今日不能卖出
+6. **风格不重要**：日内/隔夜/持有几天都可以，只要能赚钱
+
+**技术实现（V17.0.0新增）**：
+- ✅ 新增：`logic/portfolio/capital_allocator.py` - 账户级资金调度器
+- ✅ 新增：`logic/portfolio/portfolio_metrics.py` - 业务指标追踪
+- ✅ 新增：`config/portfolio_config.json` - Portfolio层配置
+- ✅ 功能：实时重新评分（不看历史标签）
+- ✅ 功能：换仓决策（持仓 vs 候选池实时PK）
+- ✅ 功能：动态仓位分配（1只90%、2只60%+40%、3只50%+30%+20%）
+
+**关键参数**：
+```json
+{
+  "max_positions": 3,
+  "max_drawdown": -0.12,
+  "single_position_threshold": 1.5,
+  "t_plus_one": true
+}
 ```
 
 ### 1. 必须使用虚拟环境
@@ -123,9 +158,9 @@ limiter.wait_if_needed()
 
 ---
 
-## ⚠️ 重要提醒：核心系统定位
+## ⚠️ 重要提醒：核心系统定位（V17.0.0更新）
 
-**所有代码修改必须围绕以下两个核心模块展开：**
+**所有代码修改必须围绕以下三个核心模块展开：**
 
 ### 🫀 核心心脏：`logic/full_market_scanner.py`
 - 全市场三漏斗扫描器
@@ -139,6 +174,13 @@ limiter.wait_if_needed()
 - 实时Tick监控和事件检测
 - 候选池管理和深度扫描
 - **这是实盘执行的调度中心**
+
+### 💰 资金调度器：`logic/portfolio/capital_allocator.py`（V17.0.0新增）
+- 账户级资金调度管理
+- 实时重新评分（不看历史标签）
+- 换仓决策（持仓 vs 候选池实时PK）
+- 动态仓位分配（1只/2只/3只）
+- **这是账户曲线向上的核心引擎**
 
 ---
 

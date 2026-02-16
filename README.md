@@ -1,16 +1,17 @@
 # MyQuantTool - 小资金右侧起爆点量化交易系统
 
-**版本**: V12.1.0  
+**版本**: V17.0.0  
 **核心定位**: Windows本地化私有交易工具（Python 3.10 + QMT）  
-**战法**: 半路战法 + 龙头战法 + 三把斧风控
+**战法**: 半路战法 + 龙头战法 + 三把斧风控 + Portfolio层资金调度
 
 ---
 
 ## ⚡ 5分钟快速开始
 
-### 1. 核心系统（心脏+大脑）
+### 1. 核心系统（心脏+大脑+资金调度）
 - 🫀 **心脏**: `logic/strategies/full_market_scanner.py` - 三漏斗扫描器
 - 🧠 **大脑**: `tasks/run_event_driven_monitor.py` - 事件驱动监控
+- 💰 **资金调度**: `logic/portfolio/capital_allocator.py` - 账户级资金调度器（V17.0.0新增）
 
 ### 2. 启动命令
 ```bash
@@ -92,7 +93,7 @@ docs/
 
 ---
 
-## 📁 项目架构
+## 📁 项目架构（V17.0.0更新）
 
 ```
 MyQuantTool/
@@ -101,6 +102,9 @@ MyQuantTool/
 │   │   ├── full_market_scanner.py   # 🫀 三漏斗扫描器（心脏）
 │   │   ├── triple_funnel_scanner.py # 三把斧体系
 │   │   └── trap_detector.py         # 诱多陷阱检测器
+│   ├── portfolio/             # 💰 Portfolio层（V17.0.0新增）
+│   │   ├── capital_allocator.py     # 账户级资金调度器
+│   │   └── portfolio_metrics.py     # 业务指标追踪
 │   ├── data_providers/           # 数据抽象层（Level2→Level1→DongCai）
 │   │   ├── level2_provider.py      # Level-2逐笔（试用）
 │   │   ├── level1_provider.py      # Level-1推断
@@ -114,9 +118,12 @@ MyQuantTool/
 │   └── cli_monitor.py       # Rich CLI监控终端
 ├── data/                     # 数据存储
 │   └── qmt_data/             # QMT官方数据（38GB，不可删）
+├── config/                   # 配置文件
+│   └── portfolio_config.json        # Portfolio层配置（V17.0.0新增）
 └── docs/                     # 文档
     ├── README.md            # 文档导航
-    └── KNOWLEDGE_BASE_V12_1_0.md  # 核心知识库
+    ├── KNOWLEDGE_BASE_V12_1_0.md  # 核心知识库
+    └── CORE_ARCHITECTURE.md        # 核心架构文档
 ```
 
 ---
@@ -188,12 +195,24 @@ pip install -r requirements.txt
 
 ---
 
-## 📈 交易目标
+## 📈 交易目标（V17.0.0更新）
 
-- **单只股票**: 30%-50%收益
-- **月度账户**: 30%-50%目标
-- **止损**: -5%硬止损，动态基于资金流
-- **止盈**: 动态基于信号（主力流出、上升动能丧失）
+**核心理念**（V17.0.0重大更新）：
+- ✅ **账户曲线向上** > 单笔收益故事
+- ✅ **机会成本最小化** > 死守某只股票
+- ✅ **哪里赚钱最优去哪里**
+- ✅ **能赚就赚** > 风格教条
+
+**关键参数**：
+- **最大回撤**: -12%（软约束，非硬性红线）
+- **持仓策略**: 1只极致择时或2-3支分散（断层优势时单吊）
+- **交易风格**: A股T+1约束，风格不重要，只要能赚钱
+
+**历史目标**（V16.3.0及之前）：
+- ~~单只股票30%-50%收益~~（已废弃，改为账户曲线向上）
+- 月度账户30%-50%目标
+- 止损：-5%硬止损（已改为动态风险管理）
+- 止盈：动态基于信号（主力流出、上升动能丧失）
 
 ---
 
