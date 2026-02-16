@@ -681,7 +681,7 @@ class IntraDayMonitor:
         """
         try:
             # 创建竞价缓存目录
-            auction_cache_dir = Path("data/auction_cache")
+            auction_cache_dir = Path("data/auction/cache")
             auction_cache_dir.mkdir(parents=True, exist_ok=True)
 
             # 生成文件名：{code}_{date}.json

@@ -422,11 +422,11 @@ class WeakToStrongDetector:
 
 class AuctionMonitor:
     """集合竞价实时监控"""
-    
-    def __init__(self, db_path: str = 'data/auction_cache.db'):
+
+    def __init__(self, db_path: str = 'data/auction/auction_snapshots.db'):
         """
         初始化监控器
-        
+
         Args:
             db_path: 数据库路径
         """

@@ -231,13 +231,11 @@ class FullMarketScanner:
         from logic.qmt_health_check import check_qmt_health, require_realtime_mode
 
         if mode == 'intraday':
-            # 盘中模式：强制要求实时模式
-            try:
-                require_realtime_mode()
-            except RuntimeError as e:
-                logger.error(f"❌ QMT 状态不满足实时决策要求: {e}")
-                logger.error("❌ 无法进行盘中扫描，请检查 QMT 客户端状态")
-                return {'opportunities': [], 'watchlist': [], 'blacklist': []}
+            # 🔥 CTO指令：盘中模式强制要求实时模式，实施Fail-Fast机制
+            # 理由：我们的策略是"小资金右侧起爆点"，极度依赖Level-2资金流向和逐笔成交
+            # Level-1数据无法识别机构大单拆单，无法识别"假摔"或"对倒"
+            # 用Level-1数据做需要Level-2精度的决策，无异于盲人骑马
+            require_realtime_mode()
         else:
             # 盘前/盘后模式：软检查，只打印警告
             result = check_qmt_health()

@@ -61,9 +61,9 @@ log_config:
 
 # 数据路径
 data_paths:
-  equity_info: "data/equity_info.json"
-  tick_history_db: "data/tick_history.db"
-  kline_cache: "data/kline_cache/"
+  equity_info: "data/equity_info/equity_info_tushare.json"
+  tick_history_db: "data/cache/tick_history.db"
+  kline_cache: "data/cache/kline/"
 
 # 验证标准
 validation:

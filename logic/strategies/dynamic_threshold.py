@@ -214,7 +214,7 @@ class DynamicThreshold:
                     return equity_info
 
             # 备用：使用完整版
-            full_path = Path("data/equity_info.json")
+            full_path = Path("data/equity_info/equity_info_tushare.json")
             if full_path.exists():
                 with open(full_path, 'r', encoding='utf-8') as f:
                     data = json.load(f)

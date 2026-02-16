@@ -22,7 +22,7 @@ logger = get_logger(__name__)
 class AuctionSnapshotSaver:
     def __init__(self):
         self.ds = get_data_source_manager()
-        self.save_dir = "data/auction_snapshots"
+        self.save_dir = "data/auction/auction_snapshots"
         os.makedirs(self.save_dir, exist_ok=True)
     
     def snapshot(self, stock_list):

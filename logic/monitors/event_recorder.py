@@ -334,10 +334,10 @@ class EventRecorder:
         
         return records
     
-    def export_to_csv(self, output_path: str = "data/event_records.csv"):
+    def export_to_csv(self, output_path: str = "data/decision_logs/event_records.csv"):
         """
         导出为CSV文件
-        
+
         Args:
             output_path: 输出文件路径
         """
@@ -360,10 +360,10 @@ class EventRecorder:
         
         logger.info(f"✅ 导出CSV: {output_path}, 共 {len(records)} 条记录")
     
-    def export_to_excel(self, output_path: str = "data/event_records.xlsx"):
+    def export_to_excel(self, output_path: str = "data/decision_logs/event_records.xlsx"):
         """
         导出为Excel文件
-        
+
         Args:
             output_path: 输出文件路径
         """

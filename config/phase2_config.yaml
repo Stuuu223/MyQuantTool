@@ -101,9 +101,9 @@ report_settings:
 
 # 数据路径
 data_paths:
-  equity_info: "data/equity_info.json"
+  equity_info: "data/equity_info/equity_info_tushare.json"
   scan_results: "data/scan_results/"
-  kline_cache: "data/kline_cache/"
+  kline_cache: "data/cache/kline/"
 
 # 验证标准
 validation:
