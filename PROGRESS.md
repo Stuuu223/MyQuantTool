@@ -93,13 +93,17 @@ data/qmt_data/datadir/
 - 时间跨度：约3个月
 
 **VIP站点配置**：
-- VIP Token: 6b1446e317ed67596f13d2e808291a01e0dd9839
+- VIP Token: [已隐藏，防止泄露]
 - VIP站点1: vipsxmd1.thinktrader.net:55310
 - VIP站点2: vipsxmd2.thinktrader.net:55310
 - VIP站点3: dxzzmd1.thinktrader.net:55300
 - VIP站点4: dxzzmd2.thinktrader.net:55300
 - VIP站点5: ltzzmd1.thinktrader.net:55300
 - VIP站点6: ltzzmd2.thinktrader.net:55300
+
+**VIP Token存储位置**：
+- 本地配置文件：C:\Users\a'b\.iflow\AGENTS.md
+- ⚠️ 不要将VIP Token提交到Git仓库
 
 **数据访问方式**：
 ```python
