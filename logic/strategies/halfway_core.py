@@ -11,21 +11,21 @@ from datetime import datetime
 
 
 def evaluate_halfway_state(
-    prices: List[Tuple[int, float]],  # [(timestamp, price), ...]
-    volumes: List[Tuple[int, float]],  # [(timestamp, volume), ...]
-    current_time: int,
-    current_price: float,
-    params: Dict[str, Any]
+    prices: List[float],  # [price1, price2, ...] 或 [(timestamp, price), ...]
+    volumes: List[float],  # [volume1, volume2, ...] 或 [(timestamp, volume), ...]
+    current_time: int = None,
+    current_price: float = None,
+    params: Dict[str, Any] = None
 ) -> Dict[str, Any]:
     """
     评估当前是否满足Halfway条件
     
     Args:
-        prices: 价格历史 [(timestamp, price), ...]
-        volumes: 成交量历史 [(timestamp, volume), ...]
-        current_time: 当前时间戳
-        current_price: 当前价格
-        params: 策略参数
+        prices: 价格历史 [price1, price2, ...] 或 [(timestamp, price), ...]
+        volumes: 成交量历史 [volume1, volume2, ...] 或 [(timestamp, volume), ...]
+        current_time: 当前时间戳（可选）
+        current_price: 当前价格（可选）
+        params: 策略参数（可选）
         
     Returns:
         Dict包含：
@@ -33,15 +33,45 @@ def evaluate_halfway_state(
         - factors: 关键因子 {volatility, volume_surge, breakout_strength}
         - extra_info: 额外信息
     """
+    # 使用默认参数
+    if params is None:
+        params = {
+            'volatility_threshold': 0.03,
+            'volume_surge': 1.5,
+            'breakout_strength': 0.01,
+            'window_minutes': 30,
+            'min_history_points': 20
+        }
+    
     # 参数提取
     volatility_threshold = params.get('volatility_threshold', 0.03)
     volume_surge_threshold = params.get('volume_surge', 1.5)
     breakout_strength_threshold = params.get('breakout_strength', 0.01)
     window_minutes = params.get('window_minutes', 30)
-    min_history_points = params.get('min_history_points', 60)
+    min_history_points = params.get('min_history_points', 20)
+    
+    # 检查是否是元组格式的数据
+    if len(prices) > 0 and isinstance(prices[0], tuple):
+        # 是元组格式 [(timestamp, value), ...]
+        price_values = [item[1] for item in prices]
+        volume_values = [item[1] for item in volumes]
+        timestamps = [item[0] for item in prices]
+        current_time = timestamps[-1] if timestamps else current_time
+        current_price = price_values[-1] if price_values else current_price
+    else:
+        # 是简单列表格式 [value, value, ...]
+        price_values = prices
+        volume_values = volumes
+        # 如果当前价格未提供，使用最后一个价格
+        if current_price is None and len(price_values) > 0:
+            current_price = price_values[-1]
+        # 如果当前时间未提供，使用当前时间
+        if current_time is None:
+            import time
+            current_time = int(time.time() * 1000)
     
     # 检查历史数据点数是否足够
-    if len(prices) < min_history_points:
+    if len(price_values) < min_history_points:
         return {
             'is_signal': False,
             'factors': {
@@ -51,14 +81,38 @@ def evaluate_halfway_state(
             },
             'extra_info': {
                 'reason': '历史数据不足',
-                'history_length': len(prices)
+                'history_length': len(price_values)
             }
         }
     
+    # 检查当前价格是否有效
+    if current_price is None or current_price <= 0:
+        return {
+            'is_signal': False,
+            'factors': {
+                'volatility': 0.0,
+                'volume_surge': 0.0,
+                'breakout_strength': 0.0
+            },
+            'extra_info': {
+                'reason': '当前价格无效',
+                'current_price': current_price
+            }
+        }
+    
+    # 构建时间戳价格对和时间戳成交量对用于内部计算
+    timestamp_price_pairs = [(current_time - i * 60000, price_values[-(i+1)]) 
+                             for i in range(min(len(price_values), 100))]
+    timestamp_price_pairs.reverse()  # 从小时间到大时间
+    
+    timestamp_volume_pairs = [(current_time - i * 60000, volume_values[-(i+1)]) 
+                              for i in range(min(len(volume_values), 100))]
+    timestamp_volume_pairs.reverse()  # 从小时间到大时间
+    
     # 计算各项指标
-    current_volatility = _calculate_volatility(prices, current_time, window_minutes)
-    current_volume_surge = _calculate_volume_surge(volumes, current_time)
-    current_breakout_strength = _calculate_breakout_strength(prices, current_price)
+    current_volatility = _calculate_volatility(timestamp_price_pairs, current_time, window_minutes)
+    current_volume_surge = _calculate_volume_surge(timestamp_volume_pairs, current_time)
+    current_breakout_strength = _calculate_breakout_strength(timestamp_price_pairs, current_price)
     
     # 检查是否满足Halfway条件
     volatility_ok = current_volatility <= volatility_threshold
