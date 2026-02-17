@@ -65,7 +65,9 @@ def evaluate_halfway_state(
     # 计算各项指标
     current_volatility = _calculate_volatility(prices, current_time, window_minutes)
     current_volume_surge = _calculate_volume_surge(volumes, current_time)
-    current_breakout_strength = _calculate_breakout_strength(prices, prices[-1] if prices else 0)  # 使用最后一个价格作为当前价格
+    # 提取当前价格（处理tuple格式 (timestamp, price) 或纯price格式）
+    current_price_val = prices[-1][1] if prices and isinstance(prices[-1], tuple) else (prices[-1] if prices else 0)
+    current_breakout_strength = _calculate_breakout_strength(prices, current_price_val)
     
     # 检查是否满足Halfway条件
     volatility_ok = current_volatility <= volatility_threshold
@@ -286,7 +288,7 @@ def create_halfway_platform_detector(params: Dict[str, Any]):
         nonlocal platform_high, platform_recognized
         
         # 使用核心函数评估状态
-        result = evaluate_halfway_state(prices, volumes, current_time, current_price, params)
+        result = evaluate_halfway_state(prices, volumes, params)
         
         # 如果还没有识别到平台，检查是否可以识别
         if not platform_recognized:
@@ -316,7 +318,7 @@ def create_halfway_platform_detector(params: Dict[str, Any]):
             platform_high = current_price
         
         # 重新评估信号：必须在识别平台的基础上突破
-        if platform_recognized:
+        if platform_recognized and 'conditions' in result:
             # 重新计算突破强度，基于已识别的平台高点
             breakout_strength = (current_price - platform_high) / platform_high if platform_high > 0 else 0.0
             result['factors']['breakout_strength'] = breakout_strength

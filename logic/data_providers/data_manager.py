@@ -115,6 +115,8 @@ class DataManager:
     def get_history_data(self, symbol: str, period: str = 'daily', adjust: str = 'qfq', start_date: str = None, end_date: str = None):
         """
         获取历史数据（代理方法）
+        
+        V17修复：统一日期格式，确保返回DateTimeIndex
 
         Args:
             symbol: 股票代码
@@ -124,11 +126,56 @@ class DataManager:
             end_date: 结束日期（格式：YYYYMMDD），暂不支持
 
         Returns:
-            DataFrame: 历史数据
+            DataFrame: 历史数据，index为DateTimeIndex
         """
-        # 暂时忽略 start_date 和 end_date 参数，因为底层的 provider 不支持
-        # TODO: 实现对 start_date 和 end_date 参数的支持
-        return self.provider.get_history_data(symbol, period, adjust)
+        import pandas as pd
+        
+        # 从provider获取原始数据
+        df = self.provider.get_history_data(symbol, period, adjust)
+        
+        if df is None or df.empty:
+            return pd.DataFrame()
+        
+        # V17修复：统一处理日期格式
+        # 情况1: 'date'列存在，可能是Unix毫秒时间戳或字符串日期
+        if 'date' in df.columns:
+            # 尝试转换为数值（Unix毫秒时间戳）
+            try:
+                df['date'] = pd.to_numeric(df['date'], errors='coerce')
+                # 如果是Unix时间戳（数值较大，如1668700800000），用unit='ms'
+                if df['date'].max() > 1e10:  # 毫秒时间戳的特征
+                    df.index = pd.to_datetime(df['date'], unit='ms')
+                else:
+                    # 可能是秒级时间戳或已经是日期格式
+                    df.index = pd.to_datetime(df['date'])
+            except:
+                # 如果转换失败，尝试直接作为日期字符串解析
+                df.index = pd.to_datetime(df['date'], errors='coerce')
+            
+            # 删除原始date列（避免重复）
+            df.drop(columns=['date'], inplace=True, errors='ignore')
+        
+        # 情况2: 索引已经是datetime类型，无需处理
+        elif isinstance(df.index, pd.DatetimeIndex):
+            pass
+        
+        # 情况3: 其他情况，尝试将索引转换为datetime
+        else:
+            try:
+                df.index = pd.to_datetime(df.index)
+            except:
+                logger.warning(f"⚠️ 无法将 {symbol} 的索引转换为日期: {type(df.index)}")
+        
+        # 确保按日期排序
+        if isinstance(df.index, pd.DatetimeIndex):
+            df.sort_index(inplace=True)
+        
+        # 删除可能的冗余列
+        for col in ['index']:
+            if col in df.columns:
+                df.drop(columns=[col], inplace=True, errors='ignore')
+        
+        return df
 
     # ==================== 向后兼容的接口 ====================
 

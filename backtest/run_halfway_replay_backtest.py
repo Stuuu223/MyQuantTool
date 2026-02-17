@@ -45,7 +45,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from logic.strategies.unified_warfare_core import get_unified_warfare_core
-from logic.data_providers.qmt_historical_provider import QMTHistoricalProvider
+from logic.qmt_historical_provider import QMTHistoricalProvider
 from logic.strategies.tick_strategy_interface import TickData
 from logic.utils.logger import get_logger
 

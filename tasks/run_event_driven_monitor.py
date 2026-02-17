@@ -49,6 +49,10 @@ from logic.strategies.full_market_scanner import FullMarketScanner
 from logic.utils.logger import get_logger
 from logic.utils.code_converter import CodeConverter
 from logic.data_providers import get_provider
+from logic.scoring.opportunity_scorer import (
+    OpportunityScorer, OpportunityFactors, 
+    get_opportunity_scorer, select_best_opportunity
+)
 
 # 配置日志
 logger = get_logger("EventDrivenMonitor")
@@ -392,13 +396,55 @@ class EventDrivenMonitor:
             'updated_at': datetime.now().isoformat(),
             'stats': self.stats,
             'log_tail': list(self.log_queue.queue)[-10:], # 最近10条日志
-            'top_opportunities': []
+            'top_opportunities': [],
+            'daily_pick': {  # V17新增：每日首选和备选
+                'primary': None,
+                'alternatives': [],
+                'disclaimer': '系统建议，仅供参考，不自动下单，最终决策由人工拍板'
+            }
         }
         
-        # 提取 Top 机会（按风险分排序）
+        # 提取机会并进行评分
         with self.candidates_lock:
             opps = [c for c in self.candidates.values() if c.get('category') == 'opportunities']
-            opps.sort(key=lambda x: x.get('risk_score', 1.0))
+            
+            # 使用机会评分器
+            opportunities_for_scoring = []
+            for opp in opps:
+                factors = OpportunityFactors(
+                    pattern_type=opp.get('pattern_type', 'halfway'),
+                    pattern_quality=opp.get('pattern_quality', 0.5),
+                    platform_volatility=opp.get('platform_volatility', 0.03),
+                    breakout_strength=opp.get('breakout_strength', 0.01),
+                    volume_surge=opp.get('volume_ratio', 1.0),
+                    capital_inflow=opp.get('main_inflow', 0),
+                    capital_strength=opp.get('capital_strength', 0.5),
+                    capital_sustained=opp.get('capital_sustained', False),
+                    is_trap=opp.get('is_trap', False),
+                    sector_risk=opp.get('sector_risk', 0),
+                    market_sentiment=self.stats.get('market_temperature', 50) / 100
+                )
+                opportunities_for_scoring.append((opp['code'], factors))
+            
+            # 评分并选择首选/备选
+            if opportunities_for_scoring:
+                scorer = get_opportunity_scorer()
+                daily_pick = scorer.select_daily_pick(opportunities_for_scoring)
+                
+                # 记录首选
+                if daily_pick['primary']:
+                    state['daily_pick']['primary'] = daily_pick['primary']
+                    logger.info(f"⭐ [系统首选] {daily_pick['primary']['stock_code']} "
+                              f"评分:{daily_pick['primary']['score']:.2f} "
+                              f"{'[可交易]' if daily_pick['primary']['passed'] else '[不及格]'}")
+                
+                # 记录备选
+                for alt in daily_pick['alternatives']:
+                    state['daily_pick']['alternatives'].append(alt)
+                    logger.info(f"  [备选] {alt['stock_code']} 评分:{alt['score']:.2f}")
+            
+            # 按评分排序后提取Top机会
+            opps.sort(key=lambda x: x.get('score', 0), reverse=True)
             
             # 转换为 JSON 可序列化格式
             for opp in opps[:5]:
@@ -407,9 +453,15 @@ class EventDrivenMonitor:
                     'name': opp.get('name', 'N/A'),
                     'price': opp.get('last_price', 0),
                     'pct': opp.get('pct_chg', 0),
+                    'score': opp.get('score', 0),  # V17新增：机会评分
                     'risk': opp.get('risk_score', 0),
-                    'tag': opp.get('decision_tag', 'N/A')
+                    'tag': opp.get('decision_tag', 'N/A'),
+                    'capital_inflow': opp.get('main_inflow', 0)  # V17新增：资金流入
                 })
+        
+        # V17明确声明：不自动下单
+        state['auto_trade'] = False
+        state['trade_mode'] = 'OBSERVE_ONLY'  # 观察模式，人工决策
         
         # 写入文件（原子操作）
         temp_file = "data/monitor_state.tmp"

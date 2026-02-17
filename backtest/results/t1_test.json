@@ -1,0 +1,22 @@
+{
+  "enforce_t_plus_1": true,
+  "single_holding": true,
+  "signal_layer": {
+    "total_trades": 0,
+    "winning_trades": 0,
+    "losing_trades": 0,
+    "win_rate": 0.0,
+    "total_pnl": 0
+  },
+  "trade_layer": {
+    "total_trades": 0,
+    "winning_trades": 0,
+    "losing_trades": 0,
+    "win_rate": 0.0,
+    "total_pnl": 0,
+    "initial_capital": 100000,
+    "final_capital": 100000,
+    "max_drawdown": 0.0
+  },
+  "t1_trades": []
+}
