@@ -41,6 +41,7 @@ class DataProviderFactory:
             force_provider: 强制指定数据源
                 - 'level1': Level-1推断
                 - 'level2': Level-2逐笔（未来实现）
+                - 'qmt_tick': QMT Tick推断
                 - 'dongcai': 东方财富T-1
 
         Returns:
@@ -58,6 +59,45 @@ class DataProviderFactory:
         logger.info(f"✅ 数据提供者: {cls._instance.get_provider_name()}")
 
         return cls._instance
+
+    @classmethod
+    def create_for_mode(cls, mode: str = 'live') -> ICapitalFlowProvider:
+        """
+        根据模式创建数据提供者实例（支持回放/实时模式）
+
+        Args:
+            mode: 'live' or 'replay'
+                - 'live': 实时模式，优先使用 Level-2/Level-1
+                - 'replay': 回放模式，优先使用 QMT Tick
+
+        Returns:
+            ICapitalFlowProvider: 数据提供者实例
+        """
+        if mode == 'replay':
+            # 回放模式：QMT Tick 优先
+            provider_types = ['qmt_tick', 'level2', 'level1', 'dongcai']
+        elif mode == 'live':
+            # 实时模式：Level-2/Level-1 优先
+            provider_types = ['level2', 'level1', 'qmt_tick', 'dongcai']
+        else:
+            # 其他情况使用配置文件指定的类型
+            return cls.create()
+
+        # 按优先级顺序尝试创建
+        for provider_type in provider_types:
+            try:
+                provider = cls._create_provider_direct(provider_type)
+                if provider:
+                    logger.info(f"✅ {mode}模式: 使用 {provider.get_provider_name()}")
+                    return provider
+            except Exception as e:
+                logger.warning(f"⚠️ {mode}模式: {provider_type}创建失败: {e}")
+                continue
+
+        # 全部失败，降级到东财
+        from .dongcai_provider import DongCaiT1Provider
+        logger.info("✅ 使用 东方财富T-1数据（降级）")
+        return DongCaiT1Provider()
 
     @classmethod
     def _load_config(cls) -> str:
@@ -84,14 +124,40 @@ class DataProviderFactory:
     @classmethod
     def _create_provider(cls, provider_type: str) -> ICapitalFlowProvider:
         """
-        根据类型创建数据提供者
+        根据类型创建数据提供者（兼容旧接口）
 
         Args:
-            provider_type: 'level1' / 'level2' / 'dongcai'
+            provider_type: 'level1' / 'level2' / 'qmt_tick' / 'dongcai'
 
         Returns:
             ICapitalFlowProvider: 数据提供者实例
         """
+        return cls._create_provider_direct(provider_type)
+
+    @classmethod
+    def _create_provider_direct(cls, provider_type: str) -> ICapitalFlowProvider:
+        """
+        直接根据类型创建数据提供者
+
+        Args:
+            provider_type: 'level1' / 'level2' / 'qmt_tick' / 'dongcai'
+
+        Returns:
+            ICapitalFlowProvider: 数据提供者实例
+        """
+        # 使用QMT Tick数据（如果需要）
+        if provider_type == 'qmt_tick':
+            try:
+                from logic.qmt_historical_provider import QmtTickCapitalFlowProvider
+                # 不在factory中直接连接xtdata，依赖外部初始化
+                provider = QmtTickCapitalFlowProvider()
+                logger.info("✅ 使用 QMT Tick 数据（实时资金流推断）")
+                return provider
+            except ImportError as e:
+                logger.warning(f"⚠️ QMT Tick模块未找到: {e}，降级到Level-2/Level-1")
+            except Exception as e:
+                logger.warning(f"⚠️ QMT Tick初始化失败: {e}，降级到Level-2/Level-1")
+
         # 尝试创建指定类型
         if provider_type == 'level2':
             try:
@@ -105,7 +171,7 @@ class DataProviderFactory:
             except ImportError:
                 logger.warning("⚠️ Level-2未实现，降级到Level-1")
 
-        if provider_type == 'level1' or provider_type == 'level2':
+        if provider_type == 'level1':
             try:
                 from .level1_provider import Level1InferenceProvider
                 provider = Level1InferenceProvider()
@@ -117,7 +183,13 @@ class DataProviderFactory:
             except Exception as e:
                 logger.warning(f"⚠️ Level-1创建失败: {e}，降级到东方财富")
 
-        # 最终降级到东方财富T-1
+        # 东方财富T-1
+        if provider_type == 'dongcai':
+            from .dongcai_provider import DongCaiT1Provider
+            logger.info("✅ 使用 东方财富T-1数据")
+            return DongCaiT1Provider()
+
+        # 默认降级到东方财富T-1
         from .dongcai_provider import DongCaiT1Provider
         logger.info("✅ 使用 东方财富T-1数据（降级）")
         return DongCaiT1Provider()

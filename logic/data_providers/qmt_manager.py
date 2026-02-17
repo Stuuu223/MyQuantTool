@@ -26,6 +26,48 @@ except ImportError:
     XT_AVAILABLE = False
 
 
+def init_qmt_data_dir() -> None:
+    """
+    初始化 QMT 数据目录
+    
+    从 Config.qmt_data_dir 读取 QMT 数据目录路径，
+    并设置为 xtdata 的默认数据目录
+    
+    Raises:
+        RuntimeError: 如果 Config.qmt_data_dir 未配置
+    """
+    try:
+        import config.config_system as config
+        from xtquant import xtdata
+        
+        # 🔥 关键修复：通过实例调用get()方法，而不是通过类
+        config_instance = config.Config()
+        qmt_dir = config_instance.get('qmt_data_dir')
+        
+        if not qmt_dir:
+            raise RuntimeError("Config.qmt_data_dir is empty, please set it in config/qmt_config.json")
+        
+        # 设置 QMT 数据目录
+        # 注意：根据 xtquant 版本，可能使用 data_dir 或 set_data_dir
+        if hasattr(xtdata, 'data_dir'):
+            xtdata.data_dir = qmt_dir
+        elif hasattr(xtdata, 'set_data_dir'):
+            xtdata.set_data_dir(qmt_dir)
+        else:
+            print(f"⚠️ [QMT] 无法设置数据目录，xtdata 未提供 data_dir 或 set_data_dir 方法")
+            print(f"⚠️ [QMT] 当前数据目录可能指向默认安装目录，而非 {qmt_dir}")
+        
+        print(f"✅ [QMT] 数据目录已设置: {qmt_dir}")
+        
+    except ImportError as e:
+        print(f"❌ [QMT] 导入模块失败: {e}")
+    except Exception as e:
+        print(f"❌ [QMT] 初始化数据目录失败: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
+
+
 class QMTManager:
     """QMT 接口管理器"""
 
@@ -340,9 +382,16 @@ _qmt_manager: Optional[QMTManager] = None
 
 
 def get_qmt_manager() -> QMTManager:
-    """获取全局 QMT 管理器实例"""
+    """
+    获取全局 QMT 管理器实例
+    
+    Returns:
+        QMTManager: QMT 管理器实例
+    """
     global _qmt_manager
     if _qmt_manager is None:
+        # 🔥 关键修复：第一件事就是初始化数据目录
+        init_qmt_data_dir()
         _qmt_manager = QMTManager()
     return _qmt_manager
 

@@ -281,16 +281,23 @@ class Config:
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
-            cls._instance._load_config()
-        return cls._instance
-    
+            try:
+                cls._instance._load_config()
+            except Exception as e:
+                print(f"⚠️ 加载配置失败: {e}")
+                cls._instance._config_data = {}
+        return cls._instance    
     def _load_config(self):
         """加载配置文件"""
         import json
         import os
+        from pathlib import Path
         
-        config_path = 'config.json'
-        if os.path.exists(config_path):
+        # 🔥 关键修复：使用绝对路径，避免工作目录问题
+        project_root = Path(__file__).parent.parent
+        config_path = project_root / 'config' / 'config.json'
+        
+        if config_path.exists():
             try:
                 with open(config_path, 'r', encoding='utf-8') as f:
                     self._config_data = json.load(f)
@@ -300,6 +307,30 @@ class Config:
         else:
             print(f"⚠️ 配置文件不存在: {config_path}")
             self._config_data = {}
+        
+        # 加载 QMT 配置文件 qmt_config.json
+        self._load_qmt_config()
+    
+    def _load_qmt_config(self):
+        """加载 QMT 配置文件"""
+        import json
+        import os
+        from pathlib import Path
+        
+        # 🔥 关键修复：使用绝对路径
+        project_root = Path(__file__).parent.parent
+        qmt_config_path = project_root / 'config' / 'qmt_config.json'
+        
+        if qmt_config_path.exists():
+            try:
+                with open(qmt_config_path, 'r', encoding='utf-8') as f:
+                    qmt_config = json.load(f)
+                    # 将QMT配置合并到主配置中
+                    self._config_data.update(qmt_config)
+            except Exception as e:
+                print(f"⚠️ 加载QMT配置文件失败: {e}")
+        else:
+            print(f"⚠️ QMT配置文件不存在: {qmt_config_path}")
     
     def set_review_mode(self, enabled: bool):
         """

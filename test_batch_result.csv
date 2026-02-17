@@ -1,0 +1,13 @@
+﻿stock_code,trade_date,strategy,param_id,params,tick_count,total_signals,win_rate_1min,win_rate_5min,win_rate_10min,avg_return_1min,avg_return_5min,avg_return_10min,total_returns_1min,total_returns_5min,total_returns_10min
+300997.SZ,20251114,halfway,0,"{'volatility_threshold': 0.02, 'volume_surge': 1.3, 'breakout_strength': 0.005}",4742,0,0.0,0.0,0.0,0.0,0.0,0.0,0,0,0
+300997.SZ,20251114,halfway,1,"{'volatility_threshold': 0.02, 'volume_surge': 1.3, 'breakout_strength': 0.01}",4742,0,0.0,0.0,0.0,0.0,0.0,0.0,0,0,0
+300997.SZ,20251114,halfway,2,"{'volatility_threshold': 0.03, 'volume_surge': 1.5, 'breakout_strength': 0.005}",4742,0,0.0,0.0,0.0,0.0,0.0,0.0,0,0,0
+300997.SZ,20251114,halfway,3,"{'volatility_threshold': 0.03, 'volume_surge': 1.5, 'breakout_strength': 0.01}",4742,0,0.0,0.0,0.0,0.0,0.0,0.0,0,0,0
+300997.SZ,20251114,halfway,4,"{'volatility_threshold': 0.04, 'volume_surge': 1.8, 'breakout_strength': 0.005}",4742,0,0.0,0.0,0.0,0.0,0.0,0.0,0,0,0
+300997.SZ,20251114,halfway,5,"{'volatility_threshold': 0.04, 'volume_surge': 1.8, 'breakout_strength': 0.01}",4742,0,0.0,0.0,0.0,0.0,0.0,0.0,0,0,0
+300986.SZ,20251114,halfway,0,"{'volatility_threshold': 0.02, 'volume_surge': 1.3, 'breakout_strength': 0.005}",3026,0,0.0,0.0,0.0,0.0,0.0,0.0,0,0,0
+300986.SZ,20251114,halfway,1,"{'volatility_threshold': 0.02, 'volume_surge': 1.3, 'breakout_strength': 0.01}",3026,0,0.0,0.0,0.0,0.0,0.0,0.0,0,0,0
+300986.SZ,20251114,halfway,2,"{'volatility_threshold': 0.03, 'volume_surge': 1.5, 'breakout_strength': 0.005}",3026,0,0.0,0.0,0.0,0.0,0.0,0.0,0,0,0
+300986.SZ,20251114,halfway,3,"{'volatility_threshold': 0.03, 'volume_surge': 1.5, 'breakout_strength': 0.01}",3026,0,0.0,0.0,0.0,0.0,0.0,0.0,0,0,0
+300986.SZ,20251114,halfway,4,"{'volatility_threshold': 0.04, 'volume_surge': 1.8, 'breakout_strength': 0.005}",3026,0,0.0,0.0,0.0,0.0,0.0,0.0,0,0,0
+300986.SZ,20251114,halfway,5,"{'volatility_threshold': 0.04, 'volume_surge': 1.8, 'breakout_strength': 0.01}",3026,0,0.0,0.0,0.0,0.0,0.0,0.0,0,0,0
