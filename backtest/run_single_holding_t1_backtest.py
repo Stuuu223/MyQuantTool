@@ -77,7 +77,12 @@ class T1Trade:
 
 @dataclass
 class T1BacktestResult:
-    """T+1回测结果（双轨输出）"""
+    """T+1回测结果（双轨输出）
+    
+    V17声明：
+    - 采用全仓买入/全仓卖出的简化模型，不支持分批卖出
+    - 涨停检查：当前价格接近涨停价时禁止买入
+    """
     # 信号层（理论，无约束）
     signal_total: int = 0
     signal_winning: int = 0
@@ -99,6 +104,11 @@ class T1BacktestResult:
     signal_trades: List[T1Trade] = field(default_factory=list)  # 理论信号
     t1_trades: List[T1Trade] = field(default_factory=list)  # T+1可执行
     equity_curve: List[Dict] = field(default_factory=list)
+    
+    # V17新增：阻塞统计
+    blocked_by_limit_up: int = 0  # 因涨停无法买入次数
+    blocked_by_t1: int = 0  # 因T+1限制无法卖出次数
+    blocked_by_cash: int = 0  # 因资金不足未执行次数
     
     @property
     def signal_win_rate(self) -> float:
@@ -147,12 +157,23 @@ class T1BacktestResult:
                     'exit_reason': t.exit_reason,
                 }
                 for t in self.t1_trades
-            ]
+            ],
+            'blocked_stats': {
+                'by_limit_up': self.blocked_by_limit_up,
+                'by_t1_rule': self.blocked_by_t1,
+                'by_cash': self.blocked_by_cash,
+            }
         }
 
 
 class SingleHoldingT1Backtester:
-    """单吊T+1回测器"""
+    """单吊T+1回测器
+    
+    V17声明：
+    - 采用全仓买入/全仓卖出的简化模型，不支持分批卖出
+    - 涨停检查：价格接近涨停价时禁止买入
+    - 单吊约束：同时最多持有1只股票
+    """
     
     def __init__(
         self,
@@ -178,20 +199,47 @@ class SingleHoldingT1Backtester:
         self.t1_trades: List[T1Trade] = []
         self.equity_curve: List[Dict] = []
         
+        # V17新增：阻塞统计
+        self.blocked_by_limit_up = 0
+        self.blocked_by_t1 = 0
+        self.blocked_by_cash = 0
+        
         logger.info(f"✅ [单吊T+1回测器] 初始化完成")
         logger.info(f"   - 初始资金: {initial_capital:,.2f}")
         logger.info(f"   - 单吊仓位: {position_size*100:.0f}%")
         logger.info(f"   - 止损/止盈: {stop_loss_pct*100:.1f}% / {take_profit_pct*100:.1f}%")
         logger.info(f"   - 最大持有: {max_holding_minutes}分钟")
+        logger.info(f"   - ⚠️  V17简化模型：全仓进出，不支持分批卖出")
     
     def _can_open_position(self, date: str) -> bool:
         """检查是否可以开新仓（单吊：必须空仓）"""
         return self.current_holding is None
     
-    def _open_position(self, stock_code: str, date: str, time: str, price: float) -> Optional[T1Trade]:
-        """开新仓（T+1规则）"""
+    def _open_position(self, stock_code: str, date: str, time: str, price: float, pre_close: float = None) -> Optional[T1Trade]:
+        """开新仓（T+1规则+涨停检查）
+        
+        Args:
+            stock_code: 股票代码
+            date: 日期
+            time: 时间
+            price: 当前价格
+            pre_close: 昨收价（用于计算涨停价）
+        """
         if not self._can_open_position(date):
             return None
+        
+        # V17: 涨停检查（简化版）
+        if pre_close and pre_close > 0:
+            # 判断股票类型（简化：6开头上海，其他深圳）
+            is_shanghai = stock_code.startswith('6') or stock_code.startswith('SH')
+            limit_up_ratio = 1.10 if is_shanghai else 1.10  # A股都是10%
+            limit_up_price = pre_close * limit_up_ratio
+            
+            # 涨停价检查：如果当前价格接近或达到涨停价，不允许买入
+            if price >= limit_up_price * 0.998:  # 允许0.2%的误差
+                logger.warning(f"⛔ [涨停限制] {stock_code} 当前价{price:.2f}接近涨停价{limit_up_price:.2f}，不可买入")
+                self.blocked_by_limit_up += 1
+                return None
         
         # 计算买入数量
         position_value = self.cash * self.position_size
@@ -199,11 +247,13 @@ class SingleHoldingT1Backtester:
         
         if quantity < 100:
             logger.warning(f"资金不足，无法开仓: {stock_code} @ {price}")
+            self.blocked_by_cash += 1
             return None
         
         # 扣除现金
         cost = quantity * price * 1.0003  # 含手续费
         if cost > self.cash:
+            self.blocked_by_cash += 1
             return None
         
         self.cash -= cost
@@ -239,6 +289,7 @@ class SingleHoldingT1Backtester:
         # T+1规则检查：只能卖昨仓
         if position.position_carry == 0:
             logger.debug(f"⏳ [T+1限制] {stock_code} 今仓不能今日卖出")
+            self.blocked_by_t1 += 1
             return None
         
         # 计算盈亏
@@ -405,9 +456,15 @@ class SingleHoldingT1Backtester:
         result.trade_pnl = sum(t.pnl for t in result.t1_trades if t.pnl)
         result.final_capital = self.cash
         
+        # V17：阻塞统计
+        result.blocked_by_limit_up = self.blocked_by_limit_up
+        result.blocked_by_t1 = self.blocked_by_t1
+        result.blocked_by_cash = self.blocked_by_cash
+        
         logger.info(f"\n✅ [回测完成]")
         logger.info(f"   信号层: {result.signal_total}笔 胜率{result.signal_win_rate*100:.1f}% 盈亏{result.signal_pnl:.2f}")
         logger.info(f"   T+1层: {result.trade_total}笔 胜率{result.trade_win_rate*100:.1f}% 盈亏{result.trade_pnl:.2f}")
+        logger.info(f"   ⚠️  阻塞统计: 涨停{result.blocked_by_limit_up}次 T+1限制{result.blocked_by_t1}次 资金不足{result.blocked_by_cash}次")
         
         return result
 
