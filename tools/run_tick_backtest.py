@@ -21,10 +21,9 @@ from datetime import datetime
 from typing import List, Dict, Any
 
 from tools.per_day_tick_runner import PerDayTickRunner
-from logic.strategies.halfway_tick_strategy import HalfwayTickStrategy
 
 
-def load_hot_stocks(file_path: str) -> List[str]:
+def load_hot_stocks(file_path: str = None) -> List[str]:
     """
     加载热门股票列表
     
@@ -35,11 +34,17 @@ def load_hot_stocks(file_path: str) -> List[str]:
         List[str]: 股票代码列表
     """
     # 尝试从配置文件加载热门股票
-    config_path = Path(__file__).parent / 'config' / 'hot_stocks_codes.json'
+    config_path = PROJECT_ROOT / 'config' / 'hot_stocks_codes.json'
     if config_path.exists():
         with open(config_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
-            return data.get('hot_stocks', [])
+            # 如果配置文件格式是包含stocks数组的复杂结构
+            if 'stocks' in data:
+                stocks = [item['code'] for item in data['stocks'] if 'code' in item]
+                return stocks
+            # 如果是简单的{'hot_stocks': [...]}结构
+            elif 'hot_stocks' in data:
+                return data['hot_stocks']
     
     # 如果没有配置文件，返回一些示例股票
     return ['300997.SZ', '300986.SZ', '000001.SZ', '600000.SH']
@@ -71,7 +76,7 @@ def generate_date_range(start_date: str, end_date: str) -> List[str]:
     return trading_days
 
 
-def create_strategy(strategy_name: str, params: Dict[str, Any]) -> ITickStrategy:
+def create_strategy(strategy_name: str, params: Dict[str, Any]):
     """
     策略工厂函数
     
@@ -80,7 +85,7 @@ def create_strategy(strategy_name: str, params: Dict[str, Any]) -> ITickStrategy
         params: 策略参数
         
     Returns:
-        ITickStrategy: 策略实例
+        策略实例
     """
     if strategy_name.lower() == 'halfway':
         from logic.strategies.halfway_tick_strategy import HalfwayTickStrategy
@@ -112,7 +117,7 @@ def get_param_grid(strategy_name: str) -> List[Dict[str, Any]]:
         ]
     else:
         # 默认返回一个参数组合
-        return [{'default_param': 1.0}]
+        return [{'volatility_threshold': 0.03, 'volume_surge': 1.5, 'breakout_strength': 0.01}]
 
 
 def run_batch_backtest(stocks: List[str], dates: List[str], strategy_name: str, 
@@ -258,11 +263,7 @@ def main():
     args = parser.parse_args()
     
     # 加载股票列表
-    if args.stock_list:
-        stocks = load_hot_stocks(args.stock_list)
-    else:
-        # 使用默认股票列表
-        stocks = ['300997.SZ', '300986.SZ']  # 示例股票
+    stocks = load_hot_stocks(args.stock_list)
     
     # 生成日期范围
     dates = generate_date_range(args.date_start, args.date_end)
