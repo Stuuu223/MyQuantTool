@@ -44,7 +44,8 @@ class T1Position:
     position_carry: int = 0  # 昨仓（今日可卖）
     position_today: int = 0  # 今仓（今日不可卖）
     entry_price: float = 0.0
-    entry_time: str = ""
+    entry_date: str = ""  # 入场日期
+    entry_time: str = ""  # 入场时间
     
     @property
     def total_position(self) -> int:
@@ -215,31 +216,20 @@ class SingleHoldingT1Backtester:
         """检查是否可以开新仓（单吊：必须空仓）"""
         return self.current_holding is None
     
-    def _open_position(self, stock_code: str, date: str, time: str, price: float, pre_close: float = None) -> Optional[T1Trade]:
-        """开新仓（T+1规则+涨停检查）
+    def _open_position(self, stock_code: str, date: str, time: str, price: float) -> Optional[T1Trade]:
+        """开新仓（T+1规则）
         
         Args:
             stock_code: 股票代码
             date: 日期
             time: 时间
             price: 当前价格
-            pre_close: 昨收价（用于计算涨停价）
         """
         if not self._can_open_position(date):
             return None
         
-        # V17: 涨停检查（简化版）
-        if pre_close and pre_close > 0:
-            # 判断股票类型（简化：6开头上海，其他深圳）
-            is_shanghai = stock_code.startswith('6') or stock_code.startswith('SH')
-            limit_up_ratio = 1.10 if is_shanghai else 1.10  # A股都是10%
-            limit_up_price = pre_close * limit_up_ratio
-            
-            # 涨停价检查：如果当前价格接近或达到涨停价，不允许买入
-            if price >= limit_up_price * 0.998:  # 允许0.2%的误差
-                logger.warning(f"⛔ [涨停限制] {stock_code} 当前价{price:.2f}接近涨停价{limit_up_price:.2f}，不可买入")
-                self.blocked_by_limit_up += 1
-                return None
+        # V17极简规则：暂时关闭涨停检查，先验证引擎
+        # TODO: 后续接入真实涨停价检查
         
         # 计算买入数量
         position_value = self.cash * self.position_size
@@ -263,6 +253,7 @@ class SingleHoldingT1Backtester:
             stock_code=stock_code,
             position_today=quantity,
             entry_price=price,
+            entry_date=date,
             entry_time=time
         )
         self.positions[stock_code] = position
@@ -332,8 +323,11 @@ class SingleHoldingT1Backtester:
                 position.position_today = 0
                 logger.debug(f"🔄 [日结] {code} 今仓{position.position_carry}股变昨仓")
     
-    def _process_tick(self, stock_code: str, tick: TickData, date: str) -> Tuple[Optional[T1Trade], Optional[T1Trade]]:
-        """处理单个Tick
+    def _process_tick(self, stock_code: str, tick: TickData, date: str, tick_index: int = 0, total_ticks: int = 0) -> Tuple[Optional[T1Trade], Optional[T1Trade]]:
+        """处理单个Tick - 极简规则验证引擎
+        
+        规则：每天第一笔tick直接买入，持仓到止盈/止损/时间退出
+        目的：验证T+1状态机本身，不依赖策略信号
         
         Returns:
             (signal_trade, t1_trade) - 信号层交易和T+1层交易
@@ -341,10 +335,32 @@ class SingleHoldingT1Backtester:
         signal_trade = None
         t1_trade = None
         
-        # 简化的策略逻辑：价格突破即买入
-        # TODO: 接入真实的Halfway策略检测
         price = tick.last_price
+        
+        # 调试：打印第一笔tick的价格
+        if tick_index == 0:
+            print(f"   [第一笔tick] 价格={price}, time={tick.time}")
+        
+        # 跳过无效价格
+        if price <= 0:
+            if tick_index == 0:
+                print(f"   [第一笔tick被过滤] 价格{price}<=0")
+            return None, None
+        
         time_str = datetime.fromtimestamp(tick.time/1000).strftime('%H:%M:%S')
+        
+        # V17极简入场：找到当天第一个有效价格（>0）即买入
+        can_open = self._can_open_position(date)
+        
+        # 检查是否已在此日期开仓
+        if not hasattr(self, '_opened_today'):
+            self._opened_today = {}
+        
+        date_key = f"{stock_code}_{date}"
+        if can_open and price > 0 and date_key not in self._opened_today:
+            print(f"📈 [开仓] {stock_code} {date} {time_str} @ {price:.2f} (第{tick_index}笔tick)")
+            self._opened_today[date_key] = True
+            t1_trade = self._open_position(stock_code, date, time_str, price)
         
         # 检查是否需要平仓（止盈/止损/时间退出）
         if stock_code == self.current_holding and stock_code in self.positions:
@@ -393,20 +409,28 @@ class SingleHoldingT1Backtester:
             # 遍历每只股票
             for stock_code in stock_codes:
                 try:
-                    # 获取Tick数据
+                    # 获取Tick数据（end_time需要是下一天才能包含当天数据）
+                    from datetime import datetime, timedelta
+                    date_dt = datetime.strptime(date_str, '%Y-%m-%d')
+                    next_day = (date_dt + timedelta(days=1)).strftime('%Y%m%d')
+                    
                     provider = QMTHistoricalProvider(
                         stock_code=stock_code,
                         start_time=date_str.replace('-', ''),
-                        end_time=date_str.replace('-', ''),
+                        end_time=next_day,
                         period='tick'
                     )
                     
                     tick_df = provider.get_raw_ticks()
                     if tick_df.empty:
+                        logger.warning(f"⚠️  {stock_code} {date_str} 无tick数据")
                         continue
                     
+                    total_ticks = len(tick_df)
+                    print(f"📊 {stock_code} {date_str} 共{total_ticks}笔tick")
+                    
                     # 遍历Tick
-                    for _, row in tick_df.iterrows():
+                    for tick_idx, (_, row) in enumerate(tick_df.iterrows()):
                         tick = TickData(
                             time=int(row['time']),
                             last_price=float(row['lastPrice']),
@@ -418,7 +442,7 @@ class SingleHoldingT1Backtester:
                             ask_vol=int(row['askVol'][0]) if isinstance(row['askVol'], list) and len(row['askVol']) > 0 else int(row['askVol']),
                         )
                         
-                        signal_trade, t1_trade = self._process_tick(stock_code, tick, date_str)
+                        signal_trade, t1_trade = self._process_tick(stock_code, tick, date_str, tick_idx, total_ticks)
                         
                         if signal_trade:
                             result.signal_trades.append(signal_trade)
@@ -426,7 +450,9 @@ class SingleHoldingT1Backtester:
                             result.t1_trades.append(t1_trade)
                     
                 except Exception as e:
+                    import traceback
                     logger.error(f"处理 {stock_code} {date_str} 时出错: {e}")
+                    logger.error(traceback.format_exc())
                     continue
             
             # 收盘结算
