@@ -431,6 +431,17 @@ class EventDrivenMonitor:
                 scorer = get_opportunity_scorer()
                 daily_pick = scorer.select_daily_pick(opportunities_for_scoring)
                 
+                # V17修复：将score写回opp对象
+                all_scored = daily_pick.get('all_scored', [])
+                for scored_item in all_scored:
+                    code = scored_item['stock_code']
+                    # 找到对应的opp并写入score
+                    for opp in opps:
+                        if opp['code'] == code:
+                            opp['score'] = scored_item['score']
+                            opp['score_details'] = scored_item.get('details', {})
+                            break
+                
                 # 记录首选
                 if daily_pick['primary']:
                     state['daily_pick']['primary'] = daily_pick['primary']
