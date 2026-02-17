@@ -98,7 +98,8 @@ class T1BacktestResult:
     
     # 资金曲线
     initial_capital: float = 100000.0
-    final_capital: float = 100000.0
+    final_cash: float = 100000.0  # 纯现金（不含未平仓市值）
+    final_equity: float = 100000.0  # 总权益（现金+持仓市值）
     max_drawdown: float = 0.0
     
     # 交易明细
@@ -141,7 +142,8 @@ class T1BacktestResult:
                 'win_rate': self.trade_win_rate,
                 'total_pnl': self.trade_pnl,
                 'initial_capital': self.initial_capital,
-                'final_capital': self.final_capital,
+                'final_cash': self.final_cash,  # 纯现金
+                'final_equity': self.final_equity,  # 总权益（现金+持仓）
                 'max_drawdown': self.max_drawdown,
             },
             't1_trades': [
@@ -194,6 +196,7 @@ class SingleHoldingT1Backtester:
         self.cash = initial_capital
         self.positions: Dict[str, T1Position] = {}  # 股票代码 -> 仓位
         self.current_holding: Optional[str] = None  # 当前持有的股票（单吊）
+        self.last_prices: Dict[str, float] = {}  # 跟踪每只股票最后价格
         
         # 结果记录
         self.signal_trades: List[T1Trade] = []
@@ -225,6 +228,12 @@ class SingleHoldingT1Backtester:
             time: 时间
             price: 当前价格
         """
+        # 调试：计数器
+        if not hasattr(self, '_open_count'):
+            self._open_count = 0
+        self._open_count += 1
+        print(f"   [_open_position被调用 #{self._open_count}] {stock_code} {date} {time}")
+        
         if not self._can_open_position(date):
             return None
         
@@ -337,6 +346,10 @@ class SingleHoldingT1Backtester:
         
         price = tick.last_price
         
+        # 更新最后价格（用于权益计算）
+        if price > 0:
+            self.last_prices[stock_code] = price
+        
         # 调试：打印第一笔tick的价格
         if tick_index == 0:
             print(f"   [第一笔tick] 价格={price}, time={tick.time}")
@@ -357,10 +370,15 @@ class SingleHoldingT1Backtester:
             self._opened_today = {}
         
         date_key = f"{stock_code}_{date}"
-        if can_open and price > 0 and date_key not in self._opened_today:
-            print(f"📈 [开仓] {stock_code} {date} {time_str} @ {price:.2f} (第{tick_index}笔tick)")
-            self._opened_today[date_key] = True
-            t1_trade = self._open_position(stock_code, date, time_str, price)
+        if can_open and price > 0:
+            opened_keys = list(self._opened_today.keys())
+            if date_key not in self._opened_today:
+                print(f"📈 [开仓] {stock_code} {date} {time_str} @ {price:.2f} (第{tick_index}笔tick)")
+                self._opened_today[date_key] = True
+                t1_trade = self._open_position(stock_code, date, time_str, price)
+            else:
+                if tick_index < 50:  # 只打印前50个tick避免刷屏
+                    print(f"   [已开仓，跳过] {stock_code} {date} opened={opened_keys}")
         
         # 检查是否需要平仓（止盈/止损/时间退出）
         if stock_code == self.current_holding and stock_code in self.positions:
@@ -448,6 +466,10 @@ class SingleHoldingT1Backtester:
                             result.signal_trades.append(signal_trade)
                         if t1_trade:
                             result.t1_trades.append(t1_trade)
+                            if not hasattr(self, '_append_count'):
+                                self._append_count = 0
+                            self._append_count += 1
+                            print(f"   [trade被append #{self._append_count}] {t1_trade.stock_code} {t1_trade.entry_date} 当前列表长度:{len(result.t1_trades)}")
                     
                 except Exception as e:
                     import traceback
@@ -476,11 +498,20 @@ class SingleHoldingT1Backtester:
         result.signal_losing = sum(1 for t in result.signal_trades if t.pnl and t.pnl < 0)
         result.signal_pnl = sum(t.pnl for t in result.signal_trades if t.pnl)
         
-        result.trade_total = len(result.t1_trades)
+        result.trade_total = len([t for t in result.t1_trades if t.exit_date])  # 只统计已平仓
         result.trade_winning = sum(1 for t in result.t1_trades if t.pnl and t.pnl > 0)
         result.trade_losing = sum(1 for t in result.t1_trades if t.pnl and t.pnl < 0)
         result.trade_pnl = sum(t.pnl for t in result.t1_trades if t.pnl)
-        result.final_capital = self.cash
+        
+        # V17：计算最终资金（区分cash和equity）
+        result.final_cash = self.cash
+        # 计算总权益：现金 + 未平仓持仓市值
+        unrealized_value = 0
+        for code, pos in self.positions.items():
+            # 使用最后已知价格或入场价格
+            last_price = self.last_prices.get(code, pos.entry_price)
+            unrealized_value += pos.total_position * last_price
+        result.final_equity = self.cash + unrealized_value
         
         # V17：阻塞统计
         result.blocked_by_limit_up = self.blocked_by_limit_up
@@ -490,6 +521,7 @@ class SingleHoldingT1Backtester:
         logger.info(f"\n✅ [回测完成]")
         logger.info(f"   信号层: {result.signal_total}笔 胜率{result.signal_win_rate*100:.1f}% 盈亏{result.signal_pnl:.2f}")
         logger.info(f"   T+1层: {result.trade_total}笔 胜率{result.trade_win_rate*100:.1f}% 盈亏{result.trade_pnl:.2f}")
+        logger.info(f"   💰 最终资金: 现金{result.final_cash:.0f} 权益{result.final_equity:.0f}")
         logger.info(f"   ⚠️  阻塞统计: 涨停{result.blocked_by_limit_up}次 T+1限制{result.blocked_by_t1}次 资金不足{result.blocked_by_cash}次")
         
         return result
