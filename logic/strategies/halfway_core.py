@@ -11,21 +11,17 @@ from datetime import datetime
 
 
 def evaluate_halfway_state(
-    prices: List[float],  # [price1, price2, ...] 或 [(timestamp, price), ...]
-    volumes: List[float],  # [volume1, volume2, ...] 或 [(timestamp, volume), ...]
-    current_time: int = None,
-    current_price: float = None,
-    params: Dict[str, Any] = None
+    prices: List,  # [(timestamp, price), ...] 或 [price, ...]
+    volumes: List,  # [(timestamp, volume), ...] 或 [volume, ...]
+    params: Dict[str, Any]
 ) -> Dict[str, Any]:
     """
     评估当前是否满足Halfway条件
     
     Args:
-        prices: 价格历史 [price1, price2, ...] 或 [(timestamp, price), ...]
-        volumes: 成交量历史 [volume1, volume2, ...] 或 [(timestamp, volume), ...]
-        current_time: 当前时间戳（可选）
-        current_price: 当前价格（可选）
-        params: 策略参数（可选）
+        prices: 价格历史 [(timestamp, price), ...] 或 [price, ...]
+        volumes: 成交量历史 [(timestamp, volume), ...] 或 [volume, ...]
+        params: 策略参数
         
     Returns:
         Dict包含：
@@ -33,45 +29,15 @@ def evaluate_halfway_state(
         - factors: 关键因子 {volatility, volume_surge, breakout_strength}
         - extra_info: 额外信息
     """
-    # 使用默认参数
-    if params is None:
-        params = {
-            'volatility_threshold': 0.03,
-            'volume_surge': 1.5,
-            'breakout_strength': 0.01,
-            'window_minutes': 30,
-            'min_history_points': 20
-        }
-    
     # 参数提取
     volatility_threshold = params.get('volatility_threshold', 0.03)
     volume_surge_threshold = params.get('volume_surge', 1.5)
     breakout_strength_threshold = params.get('breakout_strength', 0.01)
     window_minutes = params.get('window_minutes', 30)
-    min_history_points = params.get('min_history_points', 20)
-    
-    # 检查是否是元组格式的数据
-    if len(prices) > 0 and isinstance(prices[0], tuple):
-        # 是元组格式 [(timestamp, value), ...]
-        price_values = [item[1] for item in prices]
-        volume_values = [item[1] for item in volumes]
-        timestamps = [item[0] for item in prices]
-        current_time = timestamps[-1] if timestamps else current_time
-        current_price = price_values[-1] if price_values else current_price
-    else:
-        # 是简单列表格式 [value, value, ...]
-        price_values = prices
-        volume_values = volumes
-        # 如果当前价格未提供，使用最后一个价格
-        if current_price is None and len(price_values) > 0:
-            current_price = price_values[-1]
-        # 如果当前时间未提供，使用当前时间
-        if current_time is None:
-            import time
-            current_time = int(time.time() * 1000)
+    min_history_points = params.get('min_history_points', 5)  # 降低最小历史点数要求
     
     # 检查历史数据点数是否足够
-    if len(price_values) < min_history_points:
+    if len(prices) < min_history_points:
         return {
             'is_signal': False,
             'factors': {
@@ -81,38 +47,25 @@ def evaluate_halfway_state(
             },
             'extra_info': {
                 'reason': '历史数据不足',
-                'history_length': len(price_values)
+                'history_length': len(prices)
             }
         }
     
-    # 检查当前价格是否有效
-    if current_price is None or current_price <= 0:
-        return {
-            'is_signal': False,
-            'factors': {
-                'volatility': 0.0,
-                'volume_surge': 0.0,
-                'breakout_strength': 0.0
-            },
-            'extra_info': {
-                'reason': '当前价格无效',
-                'current_price': current_price
-            }
-        }
+    # 检查数据格式
+    is_tuple_format = len(prices) > 0 and isinstance(prices[0], tuple)
     
-    # 构建时间戳价格对和时间戳成交量对用于内部计算
-    timestamp_price_pairs = [(current_time - i * 60000, price_values[-(i+1)]) 
-                             for i in range(min(len(price_values), 100))]
-    timestamp_price_pairs.reverse()  # 从小时间到大时间
-    
-    timestamp_volume_pairs = [(current_time - i * 60000, volume_values[-(i+1)]) 
-                              for i in range(min(len(volume_values), 100))]
-    timestamp_volume_pairs.reverse()  # 从小时间到大时间
+    # 如果是元组格式，提取当前时间用于计算
+    current_time = None
+    if is_tuple_format and len(prices) > 0:
+        current_time = prices[-1][0]  # 使用最后一个时间戳
+    else:
+        import time
+        current_time = int(time.time() * 1000)  # 使用当前时间
     
     # 计算各项指标
-    current_volatility = _calculate_volatility(timestamp_price_pairs, current_time, window_minutes)
-    current_volume_surge = _calculate_volume_surge(timestamp_volume_pairs, current_time)
-    current_breakout_strength = _calculate_breakout_strength(timestamp_price_pairs, current_price)
+    current_volatility = _calculate_volatility(prices, current_time, window_minutes)
+    current_volume_surge = _calculate_volume_surge(volumes, current_time)
+    current_breakout_strength = _calculate_breakout_strength(prices, prices[-1] if prices else 0)  # 使用最后一个价格作为当前价格
     
     # 检查是否满足Halfway条件
     volatility_ok = current_volatility <= volatility_threshold
@@ -142,7 +95,7 @@ def evaluate_halfway_state(
 
 
 def _calculate_volatility(
-    prices: List[Tuple[int, float]], 
+    prices: List, 
     current_time: int, 
     window_minutes: int
 ) -> float:
@@ -150,7 +103,7 @@ def _calculate_volatility(
     计算平台波动率
     
     Args:
-        prices: 价格历史
+        prices: 价格历史 [(timestamp, price), ...] 或 [price, ...]
         current_time: 当前时间戳
         window_minutes: 计算窗口（分钟）
         
@@ -160,15 +113,23 @@ def _calculate_volatility(
     if len(prices) < 2:
         return 0.0
     
-    # 找到最近window_minutes的数据点
-    target_time = current_time - window_minutes * 60 * 1000  # 转换为毫秒
+    # 检查数据格式
+    is_tuple_format = len(prices) > 0 and isinstance(prices[0], tuple)
     
-    recent_prices = []
-    for i in range(len(prices)-1, -1, -1):
-        if prices[i][0] >= target_time:
-            recent_prices.append(prices[i][1])  # price
-        else:
-            break
+    if is_tuple_format:
+        # 处理元组格式 [(timestamp, price), ...]
+        target_time = current_time - window_minutes * 60 * 1000  # 转换为毫秒
+        
+        recent_prices = []
+        for i in range(len(prices)-1, -1, -1):
+            if prices[i][0] >= target_time:
+                recent_prices.append(prices[i][1])  # price
+            else:
+                break
+    else:
+        # 处理列表格式 [price, ...]
+        # 直接使用所有价格数据
+        recent_prices = prices[-min(len(prices), 20):]  # 限制为最近20个数据点
     
     if len(recent_prices) < 2:
         return 0.0
@@ -176,7 +137,7 @@ def _calculate_volatility(
     # 计算波动率（使用价格变化率的标准差）
     returns = []
     for i in range(1, len(recent_prices)):
-        if recent_prices[i-1] != 0:
+        if recent_prices[i-1] != 0 and recent_prices[i-1] is not None:
             ret = (recent_prices[i] - recent_prices[i-1]) / recent_prices[i-1]
             returns.append(ret)
     
@@ -185,7 +146,7 @@ def _calculate_volatility(
 
 
 def _calculate_volume_surge(
-    volumes: List[Tuple[int, float]], 
+    volumes: List, 
     current_time: int,
     baseline_window_minutes: int = 5
 ) -> float:
@@ -193,7 +154,7 @@ def _calculate_volume_surge(
     计算量能放大倍数
     
     Args:
-        volumes: 成交量历史
+        volumes: 成交量历史 [(timestamp, volume), ...] 或 [volume, ...]
         current_time: 当前时间戳
         baseline_window_minutes: 基准窗口（分钟）
         
@@ -203,20 +164,38 @@ def _calculate_volume_surge(
     if len(volumes) < 2:
         return 0.0
     
-    # 计算当前成交量变化
-    current_volume = volumes[-1][1] - volumes[-2][1]
-    if current_volume <= 0:
-        return 0.0
+    # 检查数据格式
+    is_tuple_format = len(volumes) > 0 and isinstance(volumes[0], tuple)
     
-    # 计算基准成交量（过去一段时间的平均值）
-    target_time = current_time - baseline_window_minutes * 60 * 1000  # 转换为毫秒
-    
-    recent_volumes = []
-    # 使用滑动窗口计算基准成交量，避免单笔大单影响
-    volume_window_size = min(20, len(volumes)-1)  # 最多取20个点
-    for i in range(len(volumes)-2, max(-1, len(volumes)-volume_window_size-2), -1):
-        if i >= 0:
-            vol_change = volumes[i][1] - (volumes[i-1][1] if i > 0 else 0)
+    if is_tuple_format:
+        # 处理元组格式 [(timestamp, volume), ...]
+        # 计算当前成交量变化
+        current_volume = volumes[-1][1] - volumes[-2][1]
+        if current_volume <= 0:
+            return 0.0
+        
+        # 计算基准成交量（过去一段时间的平均值）
+        target_time = current_time - baseline_window_minutes * 60 * 1000  # 转换为毫秒
+        
+        recent_volumes = []
+        # 使用滑动窗口计算基准成交量，避免单笔大单影响
+        volume_window_size = min(20, len(volumes)-1)  # 最多取20个点
+        for i in range(len(volumes)-2, max(-1, len(volumes)-volume_window_size-2), -1):
+            if i >= 0:
+                vol_change = volumes[i][1] - (volumes[i-1][1] if i > 0 else 0)
+                if vol_change > 0:
+                    recent_volumes.append(vol_change)
+    else:
+        # 处理列表格式 [volume, ...]
+        # 计算当前成交量变化（累计成交量）
+        current_volume = volumes[-1] - volumes[-2] if len(volumes) >= 2 else volumes[-1]
+        if current_volume <= 0:
+            return 0.0
+        
+        # 计算基准成交量（历史平均变化量）
+        recent_volumes = []
+        for i in range(1, len(volumes)):
+            vol_change = volumes[i] - volumes[i-1]
             if vol_change > 0:
                 recent_volumes.append(vol_change)
     
@@ -250,21 +229,30 @@ def _calculate_breakout_strength(
     if len(prices) < 2:
         return 0.0
     
-    # 获取平台期的最高价
-    platform_end_time = prices[-1][0]
-    platform_start_time = platform_end_time - platform_window_minutes * 60 * 1000
-    
-    platform_prices = []
-    for i in range(len(prices)-1, -1, -1):
-        if prices[i][0] >= platform_start_time:
-            platform_prices.append(prices[i][1])
-        else:
-            break
-    
-    if len(platform_prices) == 0:
-        return 0.0
-    
-    platform_high = max(platform_prices)
+    # 如果价格数据是列表格式而不是元组格式
+    if len(prices) > 0 and not isinstance(prices[0], tuple):
+        # 处理列表格式 [price1, price2, ...]
+        # 取最后几项作为平台期（排除当前价格）
+        platform_prices = prices[:-1] if len(prices) > 1 else prices
+        if len(platform_prices) == 0:
+            return 0.0
+        platform_high = max(platform_prices)
+    else:
+        # 处理元组格式 [(timestamp, price), ...]
+        platform_end_time = prices[-1][0]
+        platform_start_time = platform_end_time - platform_window_minutes * 60 * 1000
+        
+        platform_prices = []
+        for i in range(len(prices)-1, -1, -1):
+            if prices[i][0] >= platform_start_time:
+                platform_prices.append(prices[i][1])
+            else:
+                break
+        
+        if len(platform_prices) == 0:
+            return 0.0
+        
+        platform_high = max(platform_prices)
     
     if platform_high <= 0 or current_price <= 0:
         return 0.0

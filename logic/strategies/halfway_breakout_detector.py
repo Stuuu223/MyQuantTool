@@ -102,17 +102,23 @@ class HalfwayBreakoutDetector(BaseEventDetector):
             halfway_result = evaluate_halfway_state(
                 prices=price_history,
                 volumes=volume_history,
-                current_price=current_price,
                 params=params
             )
             
             # 检查是否符合半路突破条件
             is_breakout = halfway_result.get('is_signal', False)
-            confidence = halfway_result.get('factors', {}).get('breakout_strength', 0.0)
+            volatility = halfway_result.get('factors', {}).get('volatility', 1.0)
+            volume_surge = halfway_result.get('factors', {}).get('volume_surge', 1.0)
             breakout_strength = halfway_result.get('factors', {}).get('breakout_strength', 0.0)
             
+            # 计算综合置信度（基于多个因子）
+            # 突破强度越大，置信度越高；波动率越低，置信度越高；量能放大越大，置信度越高
+            confidence = min(1.0, breakout_strength * 10 + (volume_surge - 1.0) * 0.1 + (0.05 - volatility) * 2)
+            confidence = max(0.0, confidence)  # 确保置信度不小于0
+            
             # 只有高置信度的突破才触发事件
-            if is_breakout and confidence >= 0.6 and breakout_strength >= 0.5:
+            # 使用更合理的阈值，符合半路突破的实际场景
+            if is_breakout and confidence >= 0.3 and breakout_strength >= 0.01:
                 event = TradingEvent(
                     event_type=EventType.HALFWAY_BREAKOUT,
                     stock_code=stock_code,
@@ -157,13 +163,22 @@ class HalfwayBreakoutDetector(BaseEventDetector):
             str: 事件描述
         """
         try:
-            platform_status = '平台识别'  # 新逻辑
+            # 从结果中获取真实因子值
             breakout_strength = halfway_result.get('factors', {}).get('breakout_strength', 0)
             platform_volatility = halfway_result.get('factors', {}).get('volatility', 0)
+            volume_surge = halfway_result.get('factors', {}).get('volume_surge', 0)
+            
+            # 根据突破强度判断平台状态
+            if breakout_strength >= 0.03:
+                platform_status = '强势突破'
+            elif breakout_strength >= 0.01:
+                platform_status = '温和突破'
+            else:
+                platform_status = '突破微弱'
             
             description_parts = [
                 "半路突破",
-                f"：突破强度{breakout_strength:.2f}，平台波动率{platform_volatility:.4f}，价格{current_price:.2f}"
+                f"：{platform_status}，突破强度{breakout_strength:.4f}，波动率{platform_volatility:.4f}，量比{volume_surge:.2f}，价格{current_price:.2f}"
             ]
             
             return "".join(description_parts)
