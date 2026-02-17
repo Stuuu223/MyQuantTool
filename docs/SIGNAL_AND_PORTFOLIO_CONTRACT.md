@@ -493,4 +493,73 @@ CapitalAllocator.allocate() → AllocationDecision
 
 ---
 
+## 九、V17阶段生产约束（强制）
+
+### 9.1 统一战法冻结状态（硬约束）
+
+**状态**：🔒 **冻结（仅记录，不参与实盘决策）**
+
+**实施方式**：
+```python
+# config/portfolio_config.json 中的硬开关
+{
+  "unified_warfare": {
+    "enabled": false,           # V17阶段禁用
+    "mode": "observe_only",     # 仅观察模式
+    "log_events": true,         # 记录事件但不参与评分
+    "participate_in_allocation": false  # 不参与资金分配
+  }
+}
+```
+
+**代码层检查点**：
+- CapitalAllocator.allocate() 必须检查 `config['unified_warfare']['participate_in_allocation']`
+- 为false时，TradingEvent只能被记录，不能影响SignalForAllocation.opportunity_score
+
+### 9.2 唯一回测流水线（生死线）
+
+**V17上线前唯一认可的回测命令**：
+```bash
+python backtest/run_tick_replay_backtest.py \
+  --stock-codes config/hot_stocks.json \
+  --start-date 2026-01-01 \
+  --end-date 2026-02-15 \
+  --output backtest/results/v17_validation.json
+```
+
+**使用的引擎**：`logic.strategies.backtest_engine.BacktestEngine`（统一引擎）
+
+**禁止作为上线依据的脚本**：
+- ❌ `backtest/run_halfway_replay_backtest.py`（私有引擎，研究用途）
+- ❌ `backtest/run_tick_backtest.py`（TickBacktestEngine，私有实现）
+- ❌ `backtest/run_comprehensive_backtest.py`（SimpleBacktestEngine，私有实现）
+
+### 9.3 私有回测引擎降级声明
+
+以下脚本已标记为**研究用途**，不得在V17上线决策中使用：
+
+| 脚本 | 引擎类型 | 用途 | 状态 |
+|------|---------|------|------|
+| `run_halfway_replay_backtest.py` | 独立函数实现 | Halfway战法专题研究 | 🔒 研究用途 |
+| `run_tick_backtest.py` | TickBacktestEngine | Tick策略快速验证 | 🔒 研究用途 |
+| `run_comprehensive_backtest.py` | SimpleBacktestEngine | 综合策略测试 | 🔒 研究用途 |
+
+**V18任务**：将这些脚本统一迁移到`BacktestEngine`框架下（Issue #待创建）
+
+### 9.4 契约一致性检查（CI强制）
+
+**必须通过的测试**：
+```bash
+python tests/test_contract_compliance.py
+```
+
+**检查项**：
+1. Detector返回值schema合规性
+2. strategies目录无交易接口import
+3. CapitalAllocator输入输出契约合规性
+
+**失败后果**：CI阻断，禁止合并到master
+
+---
+
 **文档维护**：本契约应由 CTO 和 AI项目总监共同维护，任何接口变更需双方确认。

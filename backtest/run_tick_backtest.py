@@ -1,5 +1,17 @@
 """
 Tick数据回测脚本 - 使用QMT真实tick数据
+
+⚠️  V17生产约束声明 / 研究用途标记
+==============================================================================
+【重要】本脚本使用独立TickBacktestEngine，不是V17官方回测流水线
+
+根据 SIGNAL_AND_PORTFOLIO_CONTRACT.md V17生产约束：
+- V17上线前唯一认可的回测命令：run_tick_replay_backtest.py（使用统一BacktestEngine）
+- 本脚本（run_tick_backtest.py）禁止作为V17上线决策依据
+- 本脚本仅用于：Tick策略快速验证、参数调试、技术研究
+
+V18任务：将TickBacktestEngine统一迁移到BacktestEngine框架（Issue待创建）
+==============================================================================
 """
 
 import sys

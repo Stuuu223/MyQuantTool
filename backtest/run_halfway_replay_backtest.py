@@ -3,6 +3,18 @@
 """
 半路突破专题回放回测 (Halfway Breakout Replay Backtest)
 
+⚠️  V17生产约束声明 / 研究用途标记
+==============================================================================
+【重要】本脚本为"研究用途"（Research Use Only），不是V17官方回测流水线
+
+根据 SIGNAL_AND_PORTFOLIO_CONTRACT.md V17生产约束：
+- V17上线前唯一认可的回测命令：run_tick_replay_backtest.py
+- 本脚本（run_halfway_replay_backtest.py）禁止作为V17上线决策依据
+- 本脚本仅用于：Halfway战法离线研究、参数调优、样本挖掘
+
+V18任务：将此脚本统一迁移到BacktestEngine框架（Issue待创建）
+==============================================================================
+
 功能：
 1. 专门回放和评估Halfway Breakout策略的表现
 2. 独立于FullMarketScanner三漏斗体系，专注单一战法研究
@@ -11,10 +23,10 @@
 
 与FullMarketScanner的区别：
 - FullMarketScanner：三漏斗综合策略，实战使用
-- HalfwayReplay：单一战法研究，参数调优使用
+- HalfwayReplay：单一战法研究，参数调优使用（研究用途）
 
 Author: AI Project Director  
-Version: V1.0
+Version: V1.0（研究用途版）
 Date: 2026-02-17
 """
 
