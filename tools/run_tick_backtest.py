@@ -71,6 +71,26 @@ def generate_date_range(start_date: str, end_date: str) -> List[str]:
     return trading_days
 
 
+def create_strategy(strategy_name: str, params: Dict[str, Any]) -> ITickStrategy:
+    """
+    策略工厂函数
+    
+    Args:
+        strategy_name: 策略名称
+        params: 策略参数
+        
+    Returns:
+        ITickStrategy: 策略实例
+    """
+    if strategy_name.lower() == 'halfway':
+        from logic.strategies.halfway_tick_strategy import HalfwayTickStrategy
+        return HalfwayTickStrategy(params)
+    else:
+        # 默认使用Halfway策略
+        from logic.strategies.halfway_tick_strategy import HalfwayTickStrategy
+        return HalfwayTickStrategy(params)
+
+
 def get_param_grid(strategy_name: str) -> List[Dict[str, Any]]:
     """
     获取策略参数网格
@@ -83,12 +103,12 @@ def get_param_grid(strategy_name: str) -> List[Dict[str, Any]]:
     """
     if strategy_name.lower() == 'halfway':
         return [
-            {'volatility_threshold': 0.02, 'volume_surge': 1.3, 'breakout_strength': 0.005},
-            {'volatility_threshold': 0.02, 'volume_surge': 1.3, 'breakout_strength': 0.01},
-            {'volatility_threshold': 0.03, 'volume_surge': 1.5, 'breakout_strength': 0.005},
-            {'volatility_threshold': 0.03, 'volume_surge': 1.5, 'breakout_strength': 0.01},
-            {'volatility_threshold': 0.04, 'volume_surge': 1.8, 'breakout_strength': 0.005},
-            {'volatility_threshold': 0.04, 'volume_surge': 1.8, 'breakout_strength': 0.01},
+            {'volatility_threshold': 0.02, 'volume_surge': 1.3, 'breakout_strength': 0.005, 'min_history_points': 60},
+            {'volatility_threshold': 0.02, 'volume_surge': 1.3, 'breakout_strength': 0.01, 'min_history_points': 60},
+            {'volatility_threshold': 0.03, 'volume_surge': 1.5, 'breakout_strength': 0.005, 'min_history_points': 60},
+            {'volatility_threshold': 0.03, 'volume_surge': 1.5, 'breakout_strength': 0.01, 'min_history_points': 60},
+            {'volatility_threshold': 0.04, 'volume_surge': 1.8, 'breakout_strength': 0.005, 'min_history_points': 60},
+            {'volatility_threshold': 0.04, 'volume_surge': 1.8, 'breakout_strength': 0.01, 'min_history_points': 60},
         ]
     else:
         # 默认返回一个参数组合
@@ -131,11 +151,7 @@ def run_batch_backtest(stocks: List[str], dates: List[str], strategy_name: str,
             for param_idx, params in enumerate(param_grid):
                 try:
                     # 根据策略名称创建策略实例
-                    if strategy_name.lower() == 'halfway':
-                        strategy = HalfwayTickStrategy(params)
-                    else:
-                        # 默认使用Halfway策略
-                        strategy = HalfwayTickStrategy(params)
+                    strategy = create_strategy(strategy_name, params)
                     
                     # 创建runner并运行
                     runner = PerDayTickRunner(
