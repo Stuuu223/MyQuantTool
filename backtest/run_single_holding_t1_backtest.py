@@ -38,6 +38,58 @@ logger = get_logger(__name__)
 
 
 @dataclass
+class CostModel:
+    """成本模型 - 支持参数化配置真实交易费用
+    
+    默认值按真实账户费率设置（万0.85佣金）
+    支持压力测试：可通过提高费率测试策略鲁棒性
+    """
+    commission_rate: float = 0.000085  # 佣金率（万0.85，真实账户费率）
+    min_commission: float = 5.0        # 最低佣金（元）
+    stamp_duty_rate: float = 0.001     # 印花税率（卖出单边，千分之一）
+    transfer_fee_rate: float = 0.00002 # 过户费率（沪市，万分之0.2）
+    slippage_bp: float = 10.0          # 滑点（基点，10bp=0.1%，保守估计）
+    
+    def calculate_buy_cost(self, quantity: int, price: float) -> Tuple[float, float]:
+        """计算买入总成本
+        
+        Returns:
+            (总成本, 其中手续费) - 总成本包含股票市值+所有费用
+        """
+        notional = quantity * price
+        commission = max(notional * self.commission_rate, self.min_commission)
+        # 买入不收印花税，只收佣金和过户费（沪市）
+        transfer_fee = notional * self.transfer_fee_rate  # 过户费（双边）
+        total_cost = notional + commission + transfer_fee + (notional * self.slippage_bp / 10000)
+        return total_cost, commission + transfer_fee + (notional * self.slippage_bp / 10000)
+    
+    def calculate_sell_proceeds(self, quantity: int, price: float) -> Tuple[float, float]:
+        """计算卖出净收入
+        
+        Returns:
+            (净收入, 扣除的总费用) - 净收入=股票市值-所有费用
+        """
+        notional = quantity * price
+        commission = max(notional * self.commission_rate, self.min_commission)
+        stamp_duty = notional * self.stamp_duty_rate  # 印花税（卖出单边）
+        transfer_fee = notional * self.transfer_fee_rate  # 过户费
+        total_fees = commission + stamp_duty + transfer_fee + (notional * self.slippage_bp / 10000)
+        net_proceeds = notional - total_fees
+        return net_proceeds, total_fees
+    
+    def to_dict(self) -> Dict:
+        """转换为字典（用于JSON报告）"""
+        return {
+            'commission_rate': self.commission_rate,
+            'min_commission': self.min_commission,
+            'stamp_duty_rate': self.stamp_duty_rate,
+            'transfer_fee_rate': self.transfer_fee_rate,
+            'slippage_bp': self.slippage_bp,
+            'description': f'佣金{self.commission_rate*10000:.2f}万+印花税{self.stamp_duty_rate*1000:.1f}‰+滑点{self.slippage_bp}bp'
+        }
+
+
+@dataclass
 class T1Position:
     """T+1仓位状态"""
     stock_code: str
@@ -112,6 +164,9 @@ class T1BacktestResult:
     blocked_by_t1: int = 0  # 因T+1限制无法卖出次数
     blocked_by_cash: int = 0  # 因资金不足未执行次数
     
+    # V17新增：成本模型（用于报告中披露费用假设）
+    cost_model: Optional['CostModel'] = None
+    
     @property
     def signal_win_rate(self) -> float:
         if self.signal_total == 0:
@@ -165,6 +220,10 @@ class T1BacktestResult:
                 'by_limit_up': self.blocked_by_limit_up,
                 'by_t1_rule': self.blocked_by_t1,
                 'by_cash': self.blocked_by_cash,
+            },
+            'cost_assumptions': self.cost_model.to_dict() if self.cost_model else {
+                'commission_rate': 0.0003,
+                'note': '使用默认万三费率（未指定cost_model）'
             }
         }
 
@@ -285,10 +344,12 @@ class SingleHoldingT1Backtester:
         take_profit_pct: float = 0.05,  # 止盈5%
         max_holding_minutes: int = 120,  # 最长持有2小时
         signal_generator: Optional[SignalGenerator] = None,  # 策略信号生成器
+        cost_model: Optional[CostModel] = None,  # 成本模型（默认真实费率万0.85）
     ):
         self.initial_capital = initial_capital
         self.position_size = position_size
         self.stop_loss_pct = stop_loss_pct
+        self.cost_model = cost_model or CostModel()  # 默认使用真实费率
         self.take_profit_pct = take_profit_pct
         self.max_holding_minutes = max_holding_minutes
         
@@ -338,22 +399,32 @@ class SingleHoldingT1Backtester:
         # V17极简规则：暂时关闭涨停检查，先验证引擎
         # TODO: 后续接入真实涨停价检查
         
-        # 计算买入数量
+        # 计算买入数量（考虑手续费和滑点后的实际可买数量）
         position_value = self.cash * self.position_size
-        quantity = int(position_value / price / 100) * 100  # 手数（100股/手）
-        
-        if quantity < 100:
+        # 先估算数量，然后计算实际成本
+        estimated_quantity = int(position_value / price / 100) * 100
+        if estimated_quantity < 100:
             logger.warning(f"资金不足，无法开仓: {stock_code} @ {price}")
             self.blocked_by_cash += 1
             return None
         
-        # 扣除现金
-        cost = quantity * price * 1.0003  # 含手续费
-        if cost > self.cash:
-            self.blocked_by_cash += 1
-            return None
+        # 使用成本模型计算真实买入成本
+        total_cost, total_fees = self.cost_model.calculate_buy_cost(estimated_quantity, price)
         
-        self.cash -= cost
+        if total_cost > self.cash:
+            # 尝试减少数量
+            reduced_quantity = estimated_quantity - 100
+            if reduced_quantity >= 100:
+                total_cost, total_fees = self.cost_model.calculate_buy_cost(reduced_quantity, price)
+                estimated_quantity = reduced_quantity
+            else:
+                logger.warning(f"资金不足（含手续费{total_fees:.2f}元），无法开仓: {stock_code} @ {price}")
+                self.blocked_by_cash += 1
+                return None
+        
+        quantity = estimated_quantity
+        self.cash -= total_cost
+        commission = total_fees  # 记录实际费用
         
         # 创建仓位（今仓，今日不可卖）
         position = T1Position(
@@ -390,14 +461,22 @@ class SingleHoldingT1Backtester:
             # V17修正：不在此处计数，改为在_process_tick中按交易意图计数
             return None
         
-        # 计算盈亏
+        # 计算盈亏（使用成本模型计算真实卖出收入）
         quantity = position.position_carry
-        sell_value = quantity * price * 0.9997  # 扣除手续费
-        pnl = (price - position.entry_price) * quantity
-        pnl_pct = (price - position.entry_price) / position.entry_price
+        net_proceeds, total_fees = self.cost_model.calculate_sell_proceeds(quantity, price)
+        
+        # 计算PnL（扣除所有费用后的净盈亏）
+        entry_notional = quantity * position.entry_price
+        # 买入时的费用（估算）
+        _, entry_fees = self.cost_model.calculate_buy_cost(quantity, position.entry_price)
+        total_entry_cost = entry_notional + entry_fees
+        
+        # 净盈亏 = 卖出净收入 - 买入总成本
+        pnl = net_proceeds - total_entry_cost
+        pnl_pct = pnl / total_entry_cost if total_entry_cost > 0 else 0.0
         
         # 回收现金
-        self.cash += sell_value
+        self.cash += net_proceeds
         
         # 清理仓位
         del self.positions[stock_code]
@@ -435,10 +514,11 @@ class SingleHoldingT1Backtester:
             self.signal_generator.reset_daily()
     
     def _process_tick(self, stock_code: str, tick: TickData, date: str, tick_index: int = 0, total_ticks: int = 0) -> Tuple[Optional[T1Trade], Optional[T1Trade]]:
-        """处理单个Tick - 极简规则验证引擎
+        """处理单个Tick - 分离信号层与交易层
         
-        规则：每天第一笔tick直接买入，持仓到止盈/止损/时间退出
-        目的：验证T+1状态机本身，不依赖策略信号
+        双轨设计：
+        - signal_layer: 理论信号（策略意图，不受资金/T+1约束）
+        - trade_layer: 实际成交（受资金/T+1/涨停等约束）
         
         Returns:
             (signal_trade, t1_trade) - 信号层交易和T+1层交易
@@ -458,11 +538,22 @@ class SingleHoldingT1Backtester:
         
         time_str = datetime.fromtimestamp(tick.time/1000).strftime('%H:%M:%S')
         
-        # ====== 开仓逻辑（委托给策略信号生成器）======
-        # TRIVIAL模式：每天第一笔有效价格开仓（由signal_generator控制）
-        if self.signal_generator.should_open(stock_code, tick, date, {
+        # ====== 信号层：记录策略意图（不受约束）======
+        should_open_signal = self.signal_generator.should_open(stock_code, tick, date, {
             'current_holding': self.current_holding,
-        }):
+        })
+        
+        if should_open_signal:
+            # 记录理论信号（无论是否能成交）
+            signal_trade = T1Trade(
+                stock_code=stock_code,
+                entry_date=date,
+                entry_time=time_str,
+                entry_price=price,
+                is_signal_only=True  # 标记为理论信号
+            )
+            
+            # 交易层：尝试实际成交（受约束）
             t1_trade = self._open_position(stock_code, date, time_str, price)
         
         # 检查是否需要平仓（止盈/止损/时间退出）
@@ -485,10 +576,25 @@ class SingleHoldingT1Backtester:
                 if holding_minutes >= self.max_holding_minutes:
                     exit_reason = 'time_exit'
             
-            # 执行平仓（如果触发条件）
+            # 信号层：记录平仓信号（理论）
             if exit_reason:
+                signal_trade = T1Trade(
+                    stock_code=stock_code,
+                    entry_date=position.entry_date,
+                    entry_time=position.entry_time,
+                    entry_price=position.entry_price,
+                    exit_date=date,
+                    exit_time=time_str,
+                    exit_price=price,
+                    exit_reason=exit_reason,
+                    pnl=(price - position.entry_price) * position.total_position,  # 理论盈亏（未扣费）
+                    pnl_pct=pnl_pct,
+                    is_signal_only=True
+                )
+                
+                # 交易层：尝试实际平仓（受T+1约束）
                 t1_trade = self._close_position(stock_code, date, time_str, price, exit_reason)
-                # V17修正：按交易意图计数，只在触发平仓条件但被T+1阻挡时计数
+                # 按交易意图计数，只在触发平仓条件但被T+1阻挡时计数
                 if t1_trade is None and position.position_carry == 0:
                     self.blocked_by_t1 += 1
         
@@ -501,7 +607,10 @@ class SingleHoldingT1Backtester:
         end_date: str,
     ) -> T1BacktestResult:
         """运行回测"""
-        result = T1BacktestResult(initial_capital=self.initial_capital)
+        result = T1BacktestResult(
+            initial_capital=self.initial_capital,
+            cost_model=self.cost_model
+        )
         
         logger.info(f"🎯 [单吊T+1回测] 开始")
         logger.info(f"   - 股票数量: {len(stock_codes)}")
@@ -578,10 +687,13 @@ class SingleHoldingT1Backtester:
             })
         
         # 统计结果
-        result.signal_total = len(result.signal_trades)
-        result.signal_winning = sum(1 for t in result.signal_trades if t.pnl and t.pnl > 0)
-        result.signal_losing = sum(1 for t in result.signal_trades if t.pnl and t.pnl < 0)
-        result.signal_pnl = sum(t.pnl for t in result.signal_trades if t.pnl)
+        # V17：signal_layer统计（区分开仓和平仓信号）
+        signal_opens = [t for t in result.signal_trades if t.exit_date is None]  # 开仓信号
+        signal_closes = [t for t in result.signal_trades if t.exit_date is not None]  # 平仓信号
+        result.signal_total = len(signal_closes)  # 以完整交易（开仓+平仓）为统计单位
+        result.signal_winning = sum(1 for t in signal_closes if t.pnl and t.pnl > 0)
+        result.signal_losing = sum(1 for t in signal_closes if t.pnl and t.pnl < 0)
+        result.signal_pnl = sum(t.pnl for t in signal_closes if t.pnl)
         
         result.trade_total = len([t for t in result.t1_trades if t.exit_date])  # 只统计已平仓
         result.trade_winning = sum(1 for t in result.t1_trades if t.pnl and t.pnl > 0)
@@ -598,6 +710,18 @@ class SingleHoldingT1Backtester:
             unrealized_value += pos.total_position * last_price
         result.final_equity = self.cash + unrealized_value
         
+        # V17：计算最大回撤（基于equity_curve）
+        if result.equity_curve:
+            peak = result.equity_curve[0]['equity']
+            max_dd = 0.0
+            for point in result.equity_curve:
+                equity = point['equity']
+                if equity > peak:
+                    peak = equity
+                drawdown = (peak - equity) / peak if peak > 0 else 0.0
+                max_dd = max(max_dd, drawdown)
+            result.max_drawdown = max_dd
+        
         # V17：阻塞统计
         result.blocked_by_limit_up = self.blocked_by_limit_up
         result.blocked_by_t1 = self.blocked_by_t1
@@ -607,6 +731,8 @@ class SingleHoldingT1Backtester:
         logger.info(f"   信号层: {result.signal_total}笔 胜率{result.signal_win_rate*100:.1f}% 盈亏{result.signal_pnl:.2f}")
         logger.info(f"   T+1层: {result.trade_total}笔 胜率{result.trade_win_rate*100:.1f}% 盈亏{result.trade_pnl:.2f}")
         logger.info(f"   💰 最终资金: 现金{result.final_cash:.0f} 权益{result.final_equity:.0f}")
+        logger.info(f"   📉 最大回撤: {result.max_drawdown*100:.2f}%")
+        logger.info(f"   💸 成本假设: {self.cost_model.to_dict()['description']}")
         logger.info(f"   ⚠️  阻塞统计: 涨停{result.blocked_by_limit_up}次 T+1限制{result.blocked_by_t1}次 资金不足{result.blocked_by_cash}次")
         
         return result
