@@ -130,23 +130,45 @@ class T1Trade:
 
 @dataclass
 class T1BacktestResult:
-    """T+1回测结果（双轨输出）
+    """T+1回测结果（三层信号统计）
     
     V17声明：
     - 采用全仓买入/全仓卖出的简化模型，不支持分批卖出
     - 涨停检查：当前价格接近涨停价时禁止买入
+    - 三层信号统计：Raw -> Executable -> Executed
     """
-    # 信号层（理论，无约束）
-    signal_total: int = 0
-    signal_winning: int = 0
-    signal_losing: int = 0
-    signal_pnl: float = 0.0
+    # ========== 三层信号统计（CTO要求）==========
+    # Layer 1: Raw Signals（策略原始意图，仅策略条件过滤）
+    raw_signal_total: int = 0      # 策略条件满足次数
+    raw_signal_opens: int = 0      # Raw开仓信号数
+    raw_signal_closes: int = 0     # Raw平仓信号数
     
-    # T+1交易层（可执行）
+    # Layer 2: Executable Signals（可执行信号，过制度约束）
+    executable_signal_total: int = 0   # 可执行信号总数
+    executable_opens: int = 0          # 可执行开仓（过T+1/涨停/资金检查）
+    executable_opens_blocked: int = 0  # 开仓被阻断数
+    executable_closes: int = 0         # 可执行平仓
+    executable_closes_blocked: int = 0 # 平仓被阻断数
+    
+    # Layer 3: Executed Signals（实际成交，即trade_layer）
     trade_total: int = 0
     trade_winning: int = 0
     trade_losing: int = 0
     trade_pnl: float = 0.0
+    
+    # 兼容旧版本（signal_layer现在等于executable_layer）
+    @property
+    def signal_total(self) -> int:
+        return self.executable_signal_total
+    @property
+    def signal_winning(self) -> int:
+        return self.trade_winning  # 可执行信号的胜率按实际成交统计
+    @property
+    def signal_losing(self) -> int:
+        return self.trade_losing
+    @property
+    def signal_pnl(self) -> float:
+        return self.trade_pnl
     
     # 资金曲线
     initial_capital: float = 100000.0
@@ -155,13 +177,14 @@ class T1BacktestResult:
     max_drawdown: float = 0.0
     
     # 交易明细
-    signal_trades: List[T1Trade] = field(default_factory=list)  # 理论信号
-    t1_trades: List[T1Trade] = field(default_factory=list)  # T+1可执行
+    raw_signal_trades: List[T1Trade] = field(default_factory=list)        # Raw信号明细
+    executable_signal_trades: List[T1Trade] = field(default_factory=list)  # 可执行信号明细
+    t1_trades: List[T1Trade] = field(default_factory=list)                # 实际成交明细
     equity_curve: List[Dict] = field(default_factory=list)
     
     # V17新增：阻塞统计
     blocked_by_limit_up: int = 0    # 因涨停无法买入次数
-    blocked_by_limit_down: int = 0  # 因跌停无法卖出次数（新增）
+    blocked_by_limit_down: int = 0  # 因跌停无法卖出次数
     blocked_by_t1: int = 0          # 因T+1限制无法卖出次数
     blocked_by_cash: int = 0        # 因资金不足未执行次数
     
@@ -185,11 +208,36 @@ class T1BacktestResult:
             'enforce_t_plus_1': True,
             'single_holding': True,
             'signal_layer': {
+                'note': 'V17: 现在signal_layer = executable_layer（可执行信号）',
                 'total_trades': self.signal_total,
                 'winning_trades': self.signal_winning,
                 'losing_trades': self.signal_losing,
                 'win_rate': self.signal_win_rate,
                 'total_pnl': self.signal_pnl,
+            },
+            'three_layer_stats': {
+                'raw_signals': {
+                    'total': self.raw_signal_total,
+                    'open_signals': self.raw_signal_opens,
+                    'close_signals': self.raw_signal_closes,
+                    'description': '策略原始意图（仅策略条件过滤）'
+                },
+                'executable_signals': {
+                    'total': self.executable_signal_total,
+                    'opens': self.executable_opens,
+                    'opens_blocked': self.executable_opens_blocked,
+                    'closes': self.executable_closes,
+                    'closes_blocked': self.executable_closes_blocked,
+                    'description': '可执行信号（过T+1/涨停/资金检查）'
+                },
+                'executed_trades': {
+                    'total': self.trade_total,
+                    'winning': self.trade_winning,
+                    'losing': self.trade_losing,
+                    'win_rate': self.trade_win_rate,
+                    'pnl': self.trade_pnl,
+                    'description': '实际成交（executed）'
+                }
             },
             'trade_layer': {
                 'total_trades': self.trade_total,
@@ -243,27 +291,38 @@ class SignalGenerator(Protocol):
 
 
 class TrivialSignalGenerator:
-    """TRIVIAL策略：每天第一笔有效价格开仓（单吊）"""
+    """TRIVIAL策略：每天第一笔有效价格开仓（单吊）
+    
+    V17修正：
+    - 单吊=每天全局只开一次仓（不是每只股票每天一次）
+    - 使用_has_opened_today全局标记，而非每股票集合
+    """
     def __init__(self):
-        self._opened_today: set = set()
+        self._has_opened_today: bool = False  # 全局：今天是否已开仓
+        self._last_open_date: str = ""        # 记录上次开仓日期
     
     def reset_daily(self):
         """日结重置"""
-        self._opened_today.clear()
+        self._has_opened_today = False
     
     def should_open(self, stock_code: str, tick: TickData, date: str,
                     context: dict) -> bool:
         # 无效价格不开仓
         if tick.last_price <= 0:
             return False
+        
+        # V17修正：单吊策略，每天全局只开一次
+        # 如果今天已经开仓过（无论哪只股票），不再开仓
+        if self._has_opened_today:
+            return False
+        
         # 空仓才能开仓（单吊约束）
         if context.get('current_holding') is not None:
             return False
-        # 每天只开一笔
-        date_key = f"{stock_code}_{date}"
-        if date_key in self._opened_today:
-            return False
-        self._opened_today.add(date_key)
+        
+        # 满足条件：记录今日已开仓，返回True
+        self._has_opened_today = True
+        self._last_open_date = date
         return True
 
 
@@ -591,19 +650,19 @@ class SingleHoldingT1Backtester:
         if hasattr(self.signal_generator, 'reset_daily'):
             self.signal_generator.reset_daily()
     
-    def _process_tick(self, stock_code: str, tick: TickData, date: str, tick_index: int = 0, total_ticks: int = 0) -> Tuple[Optional[T1Trade], Optional[T1Trade]]:
-        """处理单个Tick - 分离信号层与交易层
+    def _process_tick(self, stock_code: str, tick: TickData, date: str, 
+                      result: T1BacktestResult,  # V17: 传入result用于实时统计
+                      tick_index: int = 0, total_ticks: int = 0) -> Optional[T1Trade]:
+        """处理单个Tick - 三层信号统计（Raw/Executable/Executed）
         
-        双轨设计：
-        - signal_layer: 理论信号（策略意图，不受资金/T+1约束）
-        - trade_layer: 实际成交（受资金/T+1/涨停等约束）
+        V17重构：
+        - Layer 1 (Raw): 策略原始意图（仅策略条件）
+        - Layer 2 (Executable): 可执行信号（过制度约束T+1/涨停/资金）
+        - Layer 3 (Executed): 实际成交（trade_layer）
         
         Returns:
-            (signal_trade, t1_trade) - 信号层交易和T+1层交易
+            t1_trade - 实际成交记录（Executed layer）
         """
-        signal_trade = None
-        t1_trade = None
-        
         price = tick.last_price
         
         # 更新最后价格（用于权益计算）
@@ -612,42 +671,77 @@ class SingleHoldingT1Backtester:
         
         # 跳过无效价格
         if price <= 0:
-            return None, None
+            return None
         
         time_str = datetime.fromtimestamp(tick.time/1000).strftime('%H:%M:%S')
         
-        # ====== 信号层：记录策略意图（不受约束）======
-        should_open_signal = self.signal_generator.should_open(stock_code, tick, date, {
+        # ========== Layer 1: Raw Signals（策略原始意图）==========
+        is_raw_open = self.signal_generator.should_open(stock_code, tick, date, {
             'current_holding': self.current_holding,
         })
         
-        if should_open_signal:
-            # 记录理论信号（无论是否能成交）
-            signal_trade = T1Trade(
+        if is_raw_open:
+            # 统计Raw信号
+            result.raw_signal_total += 1
+            result.raw_signal_opens += 1
+            
+            # 记录Raw信号明细（调试用）
+            raw_trade = T1Trade(
                 stock_code=stock_code,
                 entry_date=date,
                 entry_time=time_str,
                 entry_price=price,
-                is_signal_only=True  # 标记为理论信号
+                is_signal_only=True
             )
+            result.raw_signal_trades.append(raw_trade)
             
-            # 交易层：尝试实际成交（受约束）
-            # V17: 涨停检查（买入时）
-            can_buy = self._check_limit_price(stock_code, price, tick, 'buy')
-            if can_buy:
-                t1_trade = self._open_position(stock_code, date, time_str, price)
-            else:
+            # ========== Layer 2: Executable Signals（可执行信号）==========
+            # 检查制度约束：涨停/资金/T+1（单吊已在should_open中检查）
+            can_execute = True
+            block_reason = None
+            
+            # 2.1 涨停检查
+            if not self._check_limit_price(stock_code, price, tick, 'buy'):
+                can_execute = False
+                block_reason = 'limit_up'
                 self.blocked_by_limit_up += 1
-                logger.info(f"🚫 [涨停阻断] {stock_code} {date} {time_str} 价格{price:.2f}触及涨停，信号未成交")
+                result.executable_opens_blocked += 1
+                logger.debug(f"🚫 [涨停阻断] {stock_code} {date} {time_str}")
+            
+            # 2.2 资金检查
+            elif not self._can_open_position(date):
+                can_execute = False
+                block_reason = 'cash_or_holding'
+                self.blocked_by_cash += 1
+                result.executable_opens_blocked += 1
+            
+            if can_execute:
+                # 可执行信号统计
+                result.executable_signal_total += 1
+                result.executable_opens += 1
+                
+                # 记录Executable信号明细
+                exec_trade = T1Trade(
+                    stock_code=stock_code,
+                    entry_date=date,
+                    entry_time=time_str,
+                    entry_price=price,
+                    is_signal_only=True
+                )
+                result.executable_signal_trades.append(exec_trade)
+                
+                # ========== Layer 3: Executed（实际成交）==========
+                t1_trade = self._open_position(stock_code, date, time_str, price)
+                if t1_trade:
+                    result.t1_trades.append(t1_trade)
+                    return t1_trade
         
-        # 检查是否需要平仓（止盈/止损/时间退出）
+        # ========== 平仓逻辑（同样三层）==========
         if stock_code == self.current_holding and stock_code in self.positions:
             position = self.positions[stock_code]
-            
-            # 计算盈亏
             pnl_pct = (price - position.entry_price) / position.entry_price
             
-            # 确定平仓原因（如果有）
+            # 确定平仓原因
             exit_reason = None
             if pnl_pct >= self.take_profit_pct:
                 exit_reason = 'take_profit'
@@ -660,36 +754,38 @@ class SingleHoldingT1Backtester:
                 if holding_minutes >= self.max_holding_minutes:
                     exit_reason = 'time_exit'
             
-            # 信号层：记录平仓信号（理论）
             if exit_reason:
-                signal_trade = T1Trade(
-                    stock_code=stock_code,
-                    entry_date=position.entry_date,
-                    entry_time=position.entry_time,
-                    entry_price=position.entry_price,
-                    exit_date=date,
-                    exit_time=time_str,
-                    exit_price=price,
-                    exit_reason=exit_reason,
-                    pnl=(price - position.entry_price) * position.total_position,  # 理论盈亏（未扣费）
-                    pnl_pct=pnl_pct,
-                    is_signal_only=True
-                )
+                # Layer 1: Raw close signal
+                result.raw_signal_total += 1
+                result.raw_signal_closes += 1
                 
-                # 交易层：尝试实际平仓（受T+1和跌停约束）
-                # V17: 跌停检查（卖出时）
-                can_sell = self._check_limit_price(stock_code, price, tick, 'sell')
-                if can_sell:
-                    t1_trade = self._close_position(stock_code, date, time_str, price, exit_reason)
-                    # 按交易意图计数，只在触发平仓条件但被T+1阻挡时计数
-                    if t1_trade is None and position.position_carry == 0:
-                        self.blocked_by_t1 += 1
-                else:
-                    # 触及跌停，无法卖出
+                # Layer 2: Executable check
+                can_execute_close = True
+                
+                # 2.1 T+1检查（今仓不能卖）
+                if position.position_carry == 0:
+                    can_execute_close = False
+                    self.blocked_by_t1 += 1
+                    result.executable_closes_blocked += 1
+                
+                # 2.2 跌停检查
+                elif not self._check_limit_price(stock_code, price, tick, 'sell'):
+                    can_execute_close = False
                     self.blocked_by_limit_down += 1
-                    logger.info(f"🚫 [跌停阻断] {stock_code} {date} {time_str} 价格{price:.2f}触及跌停，平仓信号未成交")
+                    result.executable_closes_blocked += 1
+                    logger.debug(f"🚫 [跌停阻断] {stock_code} {date} {time_str}")
+                
+                if can_execute_close:
+                    result.executable_signal_total += 1
+                    result.executable_closes += 1
+                    
+                    # Layer 3: Execute close
+                    t1_trade = self._close_position(stock_code, date, time_str, price, exit_reason)
+                    if t1_trade:
+                        result.t1_trades.append(t1_trade)
+                        return t1_trade
         
-        return signal_trade, t1_trade
+        return None
     
     def run_backtest(
         self,
@@ -749,12 +845,8 @@ class SingleHoldingT1Backtester:
                             ask_vol=int(row['askVol'][0]) if isinstance(row['askVol'], list) and len(row['askVol']) > 0 else int(row['askVol']),
                         )
                         
-                        signal_trade, t1_trade = self._process_tick(stock_code, tick, date_str, tick_idx, total_ticks)
-                        
-                        if signal_trade:
-                            result.signal_trades.append(signal_trade)
-                        if t1_trade:
-                            result.t1_trades.append(t1_trade)
+                        # V17: 传入result进行三层信号统计
+                        t1_trade = self._process_tick(stock_code, tick, date_str, result, tick_idx, total_ticks)
                     
                 except Exception as e:
                     import traceback
@@ -777,15 +869,8 @@ class SingleHoldingT1Backtester:
                 'equity': total_equity
             })
         
-        # 统计结果
-        # V17：signal_layer统计（区分开仓和平仓信号）
-        signal_opens = [t for t in result.signal_trades if t.exit_date is None]  # 开仓信号
-        signal_closes = [t for t in result.signal_trades if t.exit_date is not None]  # 平仓信号
-        result.signal_total = len(signal_closes)  # 以完整交易（开仓+平仓）为统计单位
-        result.signal_winning = sum(1 for t in signal_closes if t.pnl and t.pnl > 0)
-        result.signal_losing = sum(1 for t in signal_closes if t.pnl and t.pnl < 0)
-        result.signal_pnl = sum(t.pnl for t in signal_closes if t.pnl)
-        
+        # V17：最终统计（三层信号统计已在_process_tick中实时完成）
+        # 只需汇总trade_layer（Executed层）
         result.trade_total = len([t for t in result.t1_trades if t.exit_date])  # 只统计已平仓
         result.trade_winning = sum(1 for t in result.t1_trades if t.pnl and t.pnl > 0)
         result.trade_losing = sum(1 for t in result.t1_trades if t.pnl and t.pnl < 0)
@@ -820,8 +905,10 @@ class SingleHoldingT1Backtester:
         result.blocked_by_cash = self.blocked_by_cash
         
         logger.info(f"\n✅ [回测完成]")
-        logger.info(f"   信号层: {result.signal_total}笔 胜率{result.signal_win_rate*100:.1f}% 盈亏{result.signal_pnl:.2f}")
-        logger.info(f"   T+1层: {result.trade_total}笔 胜率{result.trade_win_rate*100:.1f}% 盈亏{result.trade_pnl:.2f}")
+        logger.info(f"   📊 三层信号统计:")
+        logger.info(f"      Raw Signals: {result.raw_signal_total}笔 (开仓{result.raw_signal_opens}/平仓{result.raw_signal_closes})")
+        logger.info(f"      Executable: {result.executable_signal_total}笔 (开仓{result.executable_opens}/平仓{result.executable_closes}, 阻断{result.executable_opens_blocked + result.executable_closes_blocked})")
+        logger.info(f"      Executed: {result.trade_total}笔 胜率{result.trade_win_rate*100:.1f}% 盈亏{result.trade_pnl:.2f}")
         logger.info(f"   💰 最终资金: 现金{result.final_cash:.0f} 权益{result.final_equity:.0f}")
         logger.info(f"   📉 最大回撤: {result.max_drawdown*100:.2f}%")
         logger.info(f"   💸 成本假设: {self.cost_model.to_dict()['description']}")
