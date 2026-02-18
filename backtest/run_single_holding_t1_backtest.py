@@ -160,9 +160,10 @@ class T1BacktestResult:
     equity_curve: List[Dict] = field(default_factory=list)
     
     # V17新增：阻塞统计
-    blocked_by_limit_up: int = 0  # 因涨停无法买入次数
-    blocked_by_t1: int = 0  # 因T+1限制无法卖出次数
-    blocked_by_cash: int = 0  # 因资金不足未执行次数
+    blocked_by_limit_up: int = 0    # 因涨停无法买入次数
+    blocked_by_limit_down: int = 0  # 因跌停无法卖出次数（新增）
+    blocked_by_t1: int = 0          # 因T+1限制无法卖出次数
+    blocked_by_cash: int = 0        # 因资金不足未执行次数
     
     # V17新增：成本模型（用于报告中披露费用假设）
     cost_model: Optional['CostModel'] = None
@@ -218,6 +219,7 @@ class T1BacktestResult:
             ],
             'blocked_stats': {
                 'by_limit_up': self.blocked_by_limit_up,
+                'by_limit_down': self.blocked_by_limit_down,
                 'by_t1_rule': self.blocked_by_t1,
                 'by_cash': self.blocked_by_cash,
             },
@@ -365,9 +367,10 @@ class SingleHoldingT1Backtester:
         self.equity_curve: List[Dict] = []
         
         # V17新增：阻塞统计
-        self.blocked_by_limit_up = 0
-        self.blocked_by_t1 = 0
-        self.blocked_by_cash = 0
+        self.blocked_by_limit_up = 0   # 涨停无法买入
+        self.blocked_by_limit_down = 0  # 跌停无法卖出（新增）
+        self.blocked_by_t1 = 0         # T+1限制
+        self.blocked_by_cash = 0       # 资金不足
         
         # 策略信号生成器（默认TRIVIAL模式）
         self.signal_generator = signal_generator or TrivialSignalGenerator()
@@ -383,6 +386,81 @@ class SingleHoldingT1Backtester:
     def _can_open_position(self, date: str) -> bool:
         """检查是否可以开新仓（单吊：必须空仓）"""
         return self.current_holding is None
+    
+    def _get_limit_pct(self, stock_code: str) -> float:
+        """获取股票涨跌停幅度
+        
+        Returns:
+            float: 涨跌停幅度（0.10=10%, 0.20=20%）
+        """
+        # 创业板: 300/301开头，20cm
+        if stock_code.startswith(('300', '301')) and '.SZ' in stock_code:
+            return 0.20
+        # 科创板: 688开头，20cm
+        if stock_code.startswith('688') and '.SH' in stock_code:
+            return 0.20
+        # 北交所: 8/43开头，30cm（暂不处理，按20cm保守处理）
+        if stock_code.startswith(('8', '43')) and '.BJ' in stock_code:
+            return 0.30  # 北交所30cm
+        # 默认主板: 10cm
+        return 0.10
+    
+    def _get_prev_close(self, stock_code: str, tick: TickData) -> Optional[float]:
+        """获取昨日收盘价
+        
+        优先从tick数据获取，如果没有则尝试从缓存获取
+        """
+        # 尝试从tick的preclose字段获取（如果有的话）
+        if hasattr(tick, 'pre_close') and tick.pre_close > 0:
+            return tick.pre_close
+        
+        # 尝试从last_prices缓存获取（作为fallback）
+        # 注意：这只适用于已经有持仓的情况
+        if stock_code in self.positions:
+            return self.positions[stock_code].entry_price
+        
+        return None
+    
+    def _check_limit_price(self, stock_code: str, price: float, tick: TickData, direction: str) -> bool:
+        """检查价格是否触及涨跌停（保守版）
+        
+        Args:
+            stock_code: 股票代码
+            price: 当前价格
+            tick: Tick数据（用于获取preclose）
+            direction: 'buy' 或 'sell'
+            
+        Returns:
+            bool: True=可以成交, False=触及涨跌停不能成交
+        """
+        # 获取昨日收盘价
+        prev_close = self._get_prev_close(stock_code, tick)
+        if not prev_close or prev_close <= 0:
+            # 无法获取昨收，默认允许成交（保守起见）
+            return True
+        
+        # 获取涨跌停幅度
+        limit_pct = self._get_limit_pct(stock_code)
+        
+        # 计算涨跌停价格
+        limit_up = prev_close * (1 + limit_pct)
+        limit_down = prev_close * (1 - limit_pct)
+        
+        # 买入检查：如果价格接近或达到涨停价，禁止买入
+        if direction == 'buy':
+            # 保守策略：价格 >= 涨停价 * 0.995 视为触及涨停
+            if price >= limit_up * 0.995:
+                logger.debug(f"🚫 [涨停限制] {stock_code} 买入价{price:.2f} >= 涨停价{limit_up:.2f}")
+                return False
+        
+        # 卖出检查：如果价格接近或达到跌停价，禁止卖出
+        elif direction == 'sell':
+            # 保守策略：价格 <= 跌停价 * 1.005 视为触及跌停
+            if price <= limit_down * 1.005:
+                logger.debug(f"🚫 [跌停限制] {stock_code} 卖出价{price:.2f} <= 跌停价{limit_down:.2f}")
+                return False
+        
+        return True
     
     def _open_position(self, stock_code: str, date: str, time: str, price: float) -> Optional[T1Trade]:
         """开新仓（T+1规则）
@@ -554,7 +632,13 @@ class SingleHoldingT1Backtester:
             )
             
             # 交易层：尝试实际成交（受约束）
-            t1_trade = self._open_position(stock_code, date, time_str, price)
+            # V17: 涨停检查（买入时）
+            can_buy = self._check_limit_price(stock_code, price, tick, 'buy')
+            if can_buy:
+                t1_trade = self._open_position(stock_code, date, time_str, price)
+            else:
+                self.blocked_by_limit_up += 1
+                logger.info(f"🚫 [涨停阻断] {stock_code} {date} {time_str} 价格{price:.2f}触及涨停，信号未成交")
         
         # 检查是否需要平仓（止盈/止损/时间退出）
         if stock_code == self.current_holding and stock_code in self.positions:
@@ -592,11 +676,18 @@ class SingleHoldingT1Backtester:
                     is_signal_only=True
                 )
                 
-                # 交易层：尝试实际平仓（受T+1约束）
-                t1_trade = self._close_position(stock_code, date, time_str, price, exit_reason)
-                # 按交易意图计数，只在触发平仓条件但被T+1阻挡时计数
-                if t1_trade is None and position.position_carry == 0:
-                    self.blocked_by_t1 += 1
+                # 交易层：尝试实际平仓（受T+1和跌停约束）
+                # V17: 跌停检查（卖出时）
+                can_sell = self._check_limit_price(stock_code, price, tick, 'sell')
+                if can_sell:
+                    t1_trade = self._close_position(stock_code, date, time_str, price, exit_reason)
+                    # 按交易意图计数，只在触发平仓条件但被T+1阻挡时计数
+                    if t1_trade is None and position.position_carry == 0:
+                        self.blocked_by_t1 += 1
+                else:
+                    # 触及跌停，无法卖出
+                    self.blocked_by_limit_down += 1
+                    logger.info(f"🚫 [跌停阻断] {stock_code} {date} {time_str} 价格{price:.2f}触及跌停，平仓信号未成交")
         
         return signal_trade, t1_trade
     
@@ -724,6 +815,7 @@ class SingleHoldingT1Backtester:
         
         # V17：阻塞统计
         result.blocked_by_limit_up = self.blocked_by_limit_up
+        result.blocked_by_limit_down = self.blocked_by_limit_down
         result.blocked_by_t1 = self.blocked_by_t1
         result.blocked_by_cash = self.blocked_by_cash
         
@@ -733,7 +825,7 @@ class SingleHoldingT1Backtester:
         logger.info(f"   💰 最终资金: 现金{result.final_cash:.0f} 权益{result.final_equity:.0f}")
         logger.info(f"   📉 最大回撤: {result.max_drawdown*100:.2f}%")
         logger.info(f"   💸 成本假设: {self.cost_model.to_dict()['description']}")
-        logger.info(f"   ⚠️  阻塞统计: 涨停{result.blocked_by_limit_up}次 T+1限制{result.blocked_by_t1}次 资金不足{result.blocked_by_cash}次")
+        logger.info(f"   ⚠️  阻塞统计: 涨停{result.blocked_by_limit_up}次 跌停{result.blocked_by_limit_down}次 T+1限制{result.blocked_by_t1}次 资金不足{result.blocked_by_cash}次")
         
         return result
 
