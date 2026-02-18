@@ -343,16 +343,27 @@ def generate_stratified_sample(
           f'范围[¥{final_sample["竞价价格"].min():.2f}, ¥{final_sample["竞价价格"].max():.2f}]')
     print(f'成交额统计: 平均{final_sample["成交额"].mean()/1e6:.2f}百万')
     
-    # 12. 保存
+    # 12. 保存（添加元数据注释，便于追溯）
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     output_file = Path(output_dir) / f'test_{target_count}_stocks_{config_profile}.txt'
     sample_codes = final_sample['股票代码'].tolist()
     
+    from datetime import datetime
     with open(output_file, 'w') as f:
+        # 写入元数据注释（CTO要求）
+        f.write(f'# profile={config_profile}\n')
+        f.write(f'# generated_at={datetime.now().isoformat()}\n')
+        f.write(f'# version=V12.1.0\n')
+        f.write(f'# count={len(sample_codes)}\n')
+        f.write(f'# price_range={price_min}-{price_max}\n')
+        f.write(f'# min_amount={min_amount}\n')
+        f.write('#\n')
+        # 写入股票代码
         for code in sample_codes:
             f.write(code + '\n')
     
     print(f'\n[INFO] 样本池已保存: {output_file}')
+    print(f'[INFO] 元数据: profile={config_profile}, count={len(sample_codes)}')
     
     return sample_codes
 

@@ -187,11 +187,18 @@ codes = generate_stratified_sample(config_profile='v12_low_price_focus')
 | 版本 | 状态 | 说明 |
 |------|------|------|
 | test_80_stocks.txt | V11旧版 | 顺序抽样（539只tick数据前80只），仅作对照 |
-| test_80_stocks_v12_standard.txt | **V12标准** | 分层抽样（交易所+成交额），推荐使用 |
+| test_80_stocks_v12_standard.txt | **V12标准** ✅ APPROVED_IN_MILESTONE | 分层抽样（交易所+成交额），可用于正式回测 |
+
+**✅ CTO审批状态**：
+- **审批日期**：2026-02-18
+- **审批人**：CTO
+- **用途限定**："V12流动性分层基础样本池生成器"
+- **适用范围**：正式回测流水线（需标注使用的profile名）
 
 **⚠️ 重要限制**：
 - 当前样本池**不含情绪/龙头/周期标签**，仅用于回测引擎参数探索
 - 如需情绪周期标签，需接入额外数据源（Tushare DDE/顽主杯等）
+- 所有基于该样本池的回测报告必须标注使用的profile名（如v12_standard）
 
 ---
 
