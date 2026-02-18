@@ -1,0 +1,27 @@
+{
+  "enforce_t_plus_1": true,
+  "single_holding": true,
+  "signal_layer": {
+    "total_trades": 0,
+    "winning_trades": 0,
+    "losing_trades": 0,
+    "win_rate": 0.0,
+    "total_pnl": 0
+  },
+  "trade_layer": {
+    "total_trades": 0,
+    "winning_trades": 0,
+    "losing_trades": 0,
+    "win_rate": 0.0,
+    "total_pnl": 0,
+    "initial_capital": 100000,
+    "final_capital": 50427.132600000004,
+    "max_drawdown": 0.0
+  },
+  "t1_trades": [],
+  "blocked_stats": {
+    "by_limit_up": 0,
+    "by_t1_rule": 0,
+    "by_cash": 0
+  }
+}

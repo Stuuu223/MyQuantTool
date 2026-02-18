@@ -9,6 +9,13 @@ V12标准样本池生成脚本 - 分层抽样版
 2. 分层维度：交易所 + 成交额三分位（实际参与配额分配）
 3. 可复现性：固定随机种子(random_state=42)
 
+配置驱动：
+----------
+所有参数从config/auction_sample_config.json读取，支持多profile：
+- v12_standard: V12标准样本池（默认）
+- v12_low_price_focus: 低价股关注
+- v12_high_liquidity: 高流动性
+
 母体筛选规则（V12标准）：
 ------------------------
 - tick数据可用：本地QMT datadir存在该股票目录
@@ -52,25 +59,51 @@ V12标准样本池生成脚本 - 分层抽样版
 
 注：价格层和涨跌层仅作为辅助标签用于输出统计分布，不参与样本配额分配。
     四维度全分层会导致某些组合单元格样本过少，技术上不可行。
+    分层是"尽力而为（best-effort）"，不保证每个bucket都非空。
 
 输出文件：
 ----------
-- test_80_stocks_v12_standard.txt: V12标准样本池（推荐使用）
-- test_80_stocks_stratified_v2.txt: 脚本运行输出
+- scripts/samples/test_80_stocks_v12_standard.txt: V12标准样本池（推荐使用）
 
 历史版本：
 ----------
 - test_80_stocks.txt: V11顺序抽样（旧版，仅作对照）
 
 Author: AI Project Director
-Version: V12
+Version: V12.1.0
 Date: 2026-02-18
 """
 
+import json
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from typing import Set, List
+from typing import Set, List, Dict, Any
+
+
+def load_config_profile(config_path: str, profile_name: str) -> Dict[str, Any]:
+    """
+    从config文件加载指定profile的参数
+    
+    Args:
+        config_path: config文件路径
+        profile_name: profile名称（如'v12_standard'）
+        
+    Returns:
+        参数字典
+        
+    Raises:
+        FileNotFoundError: config文件不存在
+        KeyError: profile不存在
+    """
+    with open(config_path, 'r', encoding='utf-8') as f:
+        config = json.load(f)
+    
+    if 'profiles' not in config or profile_name not in config['profiles']:
+        available = list(config.get('profiles', {}).keys())
+        raise KeyError(f"Profile '{profile_name}' 不存在. 可用profiles: {available}")
+    
+    return config['profiles'][profile_name]
 
 
 def get_available_tick_universe(data_dir: str = 'data/qmt_data/datadir') -> Set[str]:
@@ -102,17 +135,46 @@ def get_available_tick_universe(data_dir: str = 'data/qmt_data/datadir') -> Set[
     return tick_stocks
 
 
+def check_code_format_match(df_codes: pd.Series, tick_codes: Set[str]) -> bool:
+    """
+    检查auction数据代码格式与tick数据格式是否匹配
+    
+    Args:
+        df_codes: auction数据中的股票代码列
+        tick_codes: tick数据中的股票代码集合
+        
+    Returns:
+        格式是否匹配
+        
+    Raises:
+        ValueError: 格式不匹配时抛出异常
+    """
+    # 取样检查格式
+    sample_df = df_codes.iloc[0] if len(df_codes) > 0 else ""
+    sample_tick = list(tick_codes)[0] if tick_codes else ""
+    
+    df_has_suffix = '.' in str(sample_df)
+    tick_has_suffix = '.' in str(sample_tick)
+    
+    if df_has_suffix != tick_has_suffix:
+        raise ValueError(
+            f"代码格式不匹配!\n"
+            f"  auction数据格式: {'带后缀' if df_has_suffix else '纯代码'} (示例: {sample_df})\n"
+            f"  tick数据格式: {'带后缀' if tick_has_suffix else '纯代码'} (示例: {sample_tick})\n"
+            f"  请统一代码格式后再运行抽样。"
+        )
+    
+    return True
+
+
 def generate_stratified_sample(
-    auction_file: str = 'data/auction/auction_export.csv',
-    target_count: int = 80,
-    random_seed: int = 42,
-    price_min: float = 3.0,
-    price_max: float = 100.0,
-    min_amount: float = 1_000_000,
-    output_file: str = 'test_80_stocks_v12_standard.txt'
+    config_profile: str = "v12_standard",
+    config_path: str = "config/auction_sample_config.json",
+    auction_file: str = "data/auction/auction_export.csv",
+    output_dir: str = "scripts/samples"
 ) -> List[str]:
     """
-    生成分层抽样的股票样本池
+    生成分层抽样的股票样本池（配置驱动）
     
     实际分层逻辑（2维）：
     - 第1维：交易所（用于比例配额分配）
@@ -121,34 +183,63 @@ def generate_stratified_sample(
     辅助标签（仅统计，不参与配额）：价格层、涨跌层
     
     Args:
+        config_profile: config profile名称（默认'v12_standard'）
+        config_path: config文件路径
         auction_file: 竞价数据CSV文件路径
-        target_count: 目标样本数量
-        random_seed: 随机种子，保证可复现
-        price_min: 最低价格过滤
-        price_max: 最高价格过滤
-        min_amount: 最小成交额过滤（元）
-        output_file: 输出文件路径
+        output_dir: 输出目录
         
     Returns:
         抽样得到的股票代码列表
+        
+    Raises:
+        ValueError: 母体数量不足或代码格式不匹配
     """
-    np.random.seed(random_seed)
+    # 1. 加载配置（禁止硬编码参数）
+    params = load_config_profile(config_path, config_profile)
     
-    # 1. 获取有tick数据的股票
+    price_min = params["price_min"]
+    price_max = params["price_max"]
+    min_amount = params["min_auction_amount"]
+    target_count = params["target_count"]
+    random_seed = params["random_seed"]
+    exchange_min_quota = params.get("exchange_min_quota", 2)
+    liquidity_buckets = params.get("liquidity_buckets", 3)
+    
+    print(f'[INFO] 使用配置: {config_profile}')
+    print(f'[INFO] 参数: 价格{price_min}-{price_max}元, 成交额≥{min_amount/1e6:.0f}万, 目标{target_count}只')
+    
+    # 2. 获取有tick数据的股票
     tick_stocks = get_available_tick_universe()
     print(f'[INFO] 本地tick数据股票: {len(tick_stocks)}只')
     
-    # 2. 读取auction数据并取交集
+    if len(tick_stocks) == 0:
+        raise ValueError("未找到任何tick数据，请检查data/qmt_data/datadir目录")
+    
+    # 3. 读取auction数据
     df = pd.read_csv(auction_file)
+    
+    # 4. 检查代码格式匹配（CTO要求）
+    check_code_format_match(df['股票代码'], tick_stocks)
+    
+    # 5. 取交集
     df = df[df['股票代码'].isin(tick_stocks)]
     print(f'[INFO] auction_export与tick交集: {len(df)}只')
     
-    # 3. 母体过滤（V12标准）
+    # 6. 母体过滤
     df = df[(df['竞价价格'] >= price_min) & (df['竞价价格'] <= price_max)]
     df = df[df['成交额'] >= min_amount]
     print(f'[INFO] 过滤后母体({price_min}-{price_max}元, ≥{min_amount/1e6:.0f}万成交): {len(df)}只')
     
-    # 4. 添加分层标签
+    # 检查母体数量是否充足（CTO要求：告警机制）
+    if len(df) < target_count * 2:
+        import warnings
+        warnings.warn(
+            f"[WARNING] 母体数量({len(df)})不足目标({target_count})的2倍，"
+            f"分层质量可能下降。建议检查过滤条件或扩大数据源。",
+            UserWarning
+        )
+    
+    # 7. 添加分层标签
     def classify_exchange(code: str) -> str:
         """交易所分类（配额分配维度1）"""
         if code.startswith('6'):
@@ -168,7 +259,7 @@ def generate_stratified_sample(
     # 成交额分层（配额分配维度2 - 核心分层维度）
     df['成交额层'] = pd.qcut(
         df['成交额'], 
-        q=3, 
+        q=liquidity_buckets, 
         labels=['低流动性', '中流动性', '高流动性']
     )
     
@@ -187,14 +278,14 @@ def generate_stratified_sample(
         labels=['低开', '平开', '高开']
     )
     
-    # 5. 打印分层统计
+    # 8. 打印分层统计
     print(f'\n[分层统计]')
     print(f'交易所分布:\n{df["交易所"].value_counts()}')
     print(f'\n成交额层分布（核心分层维度）:\n{df["成交额层"].value_counts()}')
     print(f'\n价格层分布（辅助统计）:\n{df["价格层"].value_counts()}')
     print(f'\n涨跌层分布（辅助统计）:\n{df["涨跌层"].value_counts()}')
     
-    # 6. 分层抽样（核心逻辑：交易所配额 + 成交额层抽样）
+    # 9. 分层抽样（核心逻辑：交易所配额 + 成交额层抽样）
     total_stocks = len(df)
     sampled = []
     
@@ -203,13 +294,15 @@ def generate_stratified_sample(
         if len(exchange_df) == 0:
             continue
         
-        # 按交易所比例分配名额（至少2只）
-        exchange_target = max(2, int(target_count * len(exchange_df) / total_stocks))
+        # 按交易所比例分配名额（至少exchange_min_quota只）
+        exchange_target = max(exchange_min_quota, int(target_count * len(exchange_df) / total_stocks))
         
         if len(exchange_df) > exchange_target:
-            # 核心逻辑：按成交额层分层抽样
+            # 核心逻辑：按成交额层分层抽样（每个层至少1只）
+            base_quota = max(1, exchange_target // liquidity_buckets)
             exchange_sample = exchange_df.groupby('成交额层', group_keys=False).apply(
-                lambda x: x.sample(min(len(x), max(1, exchange_target // 3)), random_state=random_seed)
+                lambda x: x.sample(min(len(x), base_quota), random_state=random_seed),
+                include_groups=False
             )
             # 补充不足
             if len(exchange_sample) < exchange_target:
@@ -229,7 +322,7 @@ def generate_stratified_sample(
         sampled.append(exchange_sample)
         print(f'[INFO] {exchange}: 母体{len(exchange_df)}只 → 抽样{len(exchange_sample)}只')
     
-    # 合并并调整总数
+    # 10. 合并并调整总数
     final_sample = pd.concat(sampled)
     
     if len(final_sample) > target_count:
@@ -242,7 +335,7 @@ def generate_stratified_sample(
         )
         final_sample = pd.concat([final_sample, additional])
     
-    # 7. 输出结果
+    # 11. 输出结果
     print(f'\n[最终结果]')
     print(f'样本总数: {len(final_sample)}只')
     print(f'交易所分布:\n{final_sample["交易所"].value_counts()}')
@@ -250,8 +343,11 @@ def generate_stratified_sample(
           f'范围[¥{final_sample["竞价价格"].min():.2f}, ¥{final_sample["竞价价格"].max():.2f}]')
     print(f'成交额统计: 平均{final_sample["成交额"].mean()/1e6:.2f}百万')
     
-    # 保存
+    # 12. 保存
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+    output_file = Path(output_dir) / f'test_{target_count}_stocks_{config_profile}.txt'
     sample_codes = final_sample['股票代码'].tolist()
+    
     with open(output_file, 'w') as f:
         for code in sample_codes:
             f.write(code + '\n')
@@ -262,11 +358,12 @@ def generate_stratified_sample(
 
 
 if __name__ == '__main__':
-    # V12标准样本池生成
+    # V12标准样本池生成（配置驱动）
     codes = generate_stratified_sample(
-        target_count=80,
-        random_seed=42,
-        output_file='test_80_stocks_v12_standard.txt'
+        config_profile='v12_standard',
+        config_path='config/auction_sample_config.json',
+        auction_file='data/auction/auction_export.csv',
+        output_dir='scripts/samples'
     )
     
     print(f'\n前20只样本: {codes[:20]}')

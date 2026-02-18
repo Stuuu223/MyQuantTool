@@ -132,6 +132,69 @@ data = xtdata.get_local_data(
 
 ---
 
+## 2.5 V12标准样本池规格（新增）
+
+### 2.5.1 设计原则
+
+**配置驱动**：所有参数从 `config/auction_sample_config.json` 读取，禁止硬编码。
+
+**分层抽样**：
+- **配额分配维度（2维）**：交易所 + 成交额三分位
+- **辅助标签（2维）**：价格层 + 涨跌层（仅统计，不参与配额）
+
+**可复现性**：固定随机种子（random_seed=42），保证相同样本池可重建。
+
+### 2.5.2 配置参数
+
+**Profile: v12_standard（默认）**
+
+| 参数 | 值 | 说明 |
+|------|-----|------|
+| price_min | 3.0 | 最低价格过滤（排除仙股） |
+| price_max | 100.0 | 最高价格过滤（排除超高价股） |
+| min_auction_amount | 1,000,000 | 最小竞价成交额（排除僵尸股） |
+| target_count | 80 | 目标样本数量 |
+| random_seed | 42 | 随机种子，保证可复现 |
+| exchange_min_quota | 2 | 每交易所最少样本数 |
+| liquidity_buckets | 3 | 成交额分层层数（三分位） |
+
+**其他Profiles**：
+- `v12_low_price_focus`: 价格范围2-30元，适合低价股策略研究
+- `v12_high_liquidity`: 成交额门槛500万，目标50只，适合高流动性策略
+
+### 2.5.3 存储位置
+
+```
+config/auction_sample_config.json          # 配置文件
+scripts/generate_stratified_sample_v2.py   # 生成脚本
+scripts/samples/test_80_stocks_v12_standard.txt  # 样本池输出
+```
+
+### 2.5.4 使用方式
+
+```python
+from scripts.generate_stratified_sample_v2 import generate_stratified_sample
+
+# 使用默认v12_standard配置
+codes = generate_stratified_sample()
+
+# 使用其他profile
+codes = generate_stratified_sample(config_profile='v12_low_price_focus')
+```
+
+### 2.5.5 样本池状态
+
+| 版本 | 状态 | 说明 |
+|------|------|------|
+| test_80_stocks.txt | V11旧版 | 顺序抽样（539只tick数据前80只），仅作对照 |
+| test_80_stocks_v12_standard.txt | **V12标准** | 分层抽样（交易所+成交额），推荐使用 |
+
+**⚠️ 重要限制**：
+- 当前样本池**不含情绪/龙头/周期标签**，仅用于回测引擎参数探索
+- 如需情绪周期标签，需接入额外数据源（Tushare DDE/顽主杯等）
+
+---
+
 ## 3. 项目当前状态（真实情况）
 
 ### 3.1 现有系统能力盘点
