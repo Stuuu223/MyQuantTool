@@ -361,6 +361,7 @@ class WanzhuHalfwayAnalyzer:
         stop_loss_pct: float = 0.02,
         take_profit_pct: float = 0.05,
         max_holding_minutes: int = 120,
+        min_rank: int = 0,
     ):
         self.lookback_days = lookback_days
         self.strategy_params = strategy_params or {
@@ -375,6 +376,7 @@ class WanzhuHalfwayAnalyzer:
         self.stop_loss_pct = stop_loss_pct
         self.take_profit_pct = take_profit_pct
         self.max_holding_minutes = max_holding_minutes
+        self.min_rank = min_rank
         
         self.results: List[HalfwayPreRankResult] = []
         
@@ -553,7 +555,7 @@ class WanzhuHalfwayAnalyzer:
             },
             "data_quality": {
                 "source": "api" if hasattr(self, '_use_api') and self._use_api else "csv/mock",
-                "filter_applied": f"Top{args.min_rank}" if hasattr(args, 'min_rank') and args.min_rank > 0 else "none",
+                "filter_applied": f"Top{self.min_rank}" if hasattr(self, 'min_rank') and self.min_rank > 0 else "none",
                 "total_records_in_csv": len(loader.history_df) if 'loader' in locals() and loader.history_df is not None else 0,
             },
             "strategy_params": self.strategy_params,
@@ -759,7 +761,7 @@ def main():
     logger.info(f"\n🎯 开始HALFWAY回测分析...")
     logger.info(f"   回测窗口: 首次上榜前 {args.lookback_days} 个交易日")
     
-    analyzer = WanzhuHalfwayAnalyzer(lookback_days=args.lookback_days)
+    analyzer = WanzhuHalfwayAnalyzer(lookback_days=args.lookback_days, min_rank=args.min_rank)
     
     stock_infos = list(first_rank_dict.values())
     analyzer.analyze_stocks(stock_infos, max_stocks=args.max_stocks)
