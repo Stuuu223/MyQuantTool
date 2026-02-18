@@ -21,7 +21,7 @@ import json
 import argparse
 from pathlib import Path
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Protocol
 from dataclasses import dataclass, field
 from collections import defaultdict
 import pandas as pd
@@ -169,6 +169,105 @@ class T1BacktestResult:
         }
 
 
+class SignalGenerator(Protocol):
+    """策略信号接口 - 只负责开仓决策"""
+    def should_open(self, stock_code: str, tick: TickData, date: str,
+                    context: dict) -> bool:
+        """返回是否应该开仓"""
+        pass
+    
+    def reset_daily(self):
+        """日结重置状态"""
+        pass
+
+
+class TrivialSignalGenerator:
+    """TRIVIAL策略：每天第一笔有效价格开仓（单吊）"""
+    def __init__(self):
+        self._opened_today: set = set()
+    
+    def reset_daily(self):
+        """日结重置"""
+        self._opened_today.clear()
+    
+    def should_open(self, stock_code: str, tick: TickData, date: str,
+                    context: dict) -> bool:
+        # 无效价格不开仓
+        if tick.last_price <= 0:
+            return False
+        # 空仓才能开仓（单吊约束）
+        if context.get('current_holding') is not None:
+            return False
+        # 每天只开一笔
+        date_key = f"{stock_code}_{date}"
+        if date_key in self._opened_today:
+            return False
+        self._opened_today.add(date_key)
+        return True
+
+
+class HalfwaySignalAdapter:
+    """Halfway策略适配器 - 只负责开仓信号"""
+    
+    def __init__(self, strategy):
+        """
+        初始化适配器
+        
+        Args:
+            strategy: HalfwayTickStrategy实例
+        """
+        self.strategy = strategy
+        self._opened_today: set = set()
+    
+    def reset_daily(self):
+        """日结重置"""
+        self._opened_today.clear()
+        # 同时重置底层策略状态（如果需要）
+        if hasattr(self.strategy, 'reset'):
+            self.strategy.reset()
+    
+    def should_open(self, stock_code: str, tick: TickData, date: str,
+                    context: dict) -> bool:
+        """
+        判断是否应该开仓
+        
+        规则：
+        1. 无效价格不开仓
+        2. 空仓才能开仓（单吊约束）
+        3. 每天每只股票只开一笔
+        4. 必须明确命中Halfway做多信号
+        """
+        # 无效价格不开仓
+        if tick.last_price <= 0:
+            return False
+        
+        # 空仓才能开仓（单吊约束）
+        if context.get('current_holding') is not None:
+            return False
+        
+        # 每天只开一笔
+        date_key = f"{stock_code}_{date}"
+        if date_key in self._opened_today:
+            return False
+        
+        # 调用Halfway策略获取信号
+        signals = self.strategy.on_tick(tick)
+        
+        # 检查是否有有效的Halfway做多信号
+        for signal in signals:
+            # 必须是Halfway类型的信号
+            if signal.signal_type != 'HALFWAY':
+                continue
+            # 信号强度必须大于0
+            if signal.strength <= 0:
+                continue
+            # 确认开仓
+            self._opened_today.add(date_key)
+            return True
+        
+        return False
+
+
 class SingleHoldingT1Backtester:
     """单吊T+1回测器
     
@@ -185,6 +284,7 @@ class SingleHoldingT1Backtester:
         stop_loss_pct: float = 0.02,  # 止损2%
         take_profit_pct: float = 0.05,  # 止盈5%
         max_holding_minutes: int = 120,  # 最长持有2小时
+        signal_generator: Optional[SignalGenerator] = None,  # 策略信号生成器
     ):
         self.initial_capital = initial_capital
         self.position_size = position_size
@@ -208,6 +308,10 @@ class SingleHoldingT1Backtester:
         self.blocked_by_t1 = 0
         self.blocked_by_cash = 0
         
+        # 策略信号生成器（默认TRIVIAL模式）
+        self.signal_generator = signal_generator or TrivialSignalGenerator()
+        self._strategy_mode = "TRIVIAL" if signal_generator is None else "CUSTOM"
+        
         logger.info(f"✅ [单吊T+1回测器] 初始化完成")
         logger.info(f"   - 初始资金: {initial_capital:,.2f}")
         logger.info(f"   - 单吊仓位: {position_size*100:.0f}%")
@@ -228,12 +332,6 @@ class SingleHoldingT1Backtester:
             time: 时间
             price: 当前价格
         """
-        # 调试：计数器
-        if not hasattr(self, '_open_count'):
-            self._open_count = 0
-        self._open_count += 1
-        print(f"   [_open_position被调用 #{self._open_count}] {stock_code} {date} {time}")
-        
         if not self._can_open_position(date):
             return None
         
@@ -289,7 +387,7 @@ class SingleHoldingT1Backtester:
         # T+1规则检查：只能卖昨仓
         if position.position_carry == 0:
             logger.debug(f"⏳ [T+1限制] {stock_code} 今仓不能今日卖出")
-            self.blocked_by_t1 += 1
+            # V17修正：不在此处计数，改为在_process_tick中按交易意图计数
             return None
         
         # 计算盈亏
@@ -324,13 +422,17 @@ class SingleHoldingT1Backtester:
         return trade
     
     def _end_of_day_settlement(self, date: str):
-        """收盘结算：今仓变昨仓"""
+        """收盘结算：今仓变昨仓 + 重置策略日度状态"""
         for code, position in self.positions.items():
             if position.position_today > 0:
                 # 今仓 -> 昨仓
                 position.position_carry = position.position_today
                 position.position_today = 0
                 logger.debug(f"🔄 [日结] {code} 今仓{position.position_carry}股变昨仓")
+        
+        # 重置策略日度状态
+        if hasattr(self.signal_generator, 'reset_daily'):
+            self.signal_generator.reset_daily()
     
     def _process_tick(self, stock_code: str, tick: TickData, date: str, tick_index: int = 0, total_ticks: int = 0) -> Tuple[Optional[T1Trade], Optional[T1Trade]]:
         """处理单个Tick - 极简规则验证引擎
@@ -350,35 +452,18 @@ class SingleHoldingT1Backtester:
         if price > 0:
             self.last_prices[stock_code] = price
         
-        # 调试：打印第一笔tick的价格
-        if tick_index == 0:
-            print(f"   [第一笔tick] 价格={price}, time={tick.time}")
-        
         # 跳过无效价格
         if price <= 0:
-            if tick_index == 0:
-                print(f"   [第一笔tick被过滤] 价格{price}<=0")
             return None, None
         
         time_str = datetime.fromtimestamp(tick.time/1000).strftime('%H:%M:%S')
         
-        # V17极简入场：找到当天第一个有效价格（>0）即买入
-        can_open = self._can_open_position(date)
-        
-        # 检查是否已在此日期开仓
-        if not hasattr(self, '_opened_today'):
-            self._opened_today = {}
-        
-        date_key = f"{stock_code}_{date}"
-        if can_open and price > 0:
-            opened_keys = list(self._opened_today.keys())
-            if date_key not in self._opened_today:
-                print(f"📈 [开仓] {stock_code} {date} {time_str} @ {price:.2f} (第{tick_index}笔tick)")
-                self._opened_today[date_key] = True
-                t1_trade = self._open_position(stock_code, date, time_str, price)
-            else:
-                if tick_index < 50:  # 只打印前50个tick避免刷屏
-                    print(f"   [已开仓，跳过] {stock_code} {date} opened={opened_keys}")
+        # ====== 开仓逻辑（委托给策略信号生成器）======
+        # TRIVIAL模式：每天第一笔有效价格开仓（由signal_generator控制）
+        if self.signal_generator.should_open(stock_code, tick, date, {
+            'current_holding': self.current_holding,
+        }):
+            t1_trade = self._open_position(stock_code, date, time_str, price)
         
         # 检查是否需要平仓（止盈/止损/时间退出）
         if stock_code == self.current_holding and stock_code in self.positions:
@@ -387,20 +472,25 @@ class SingleHoldingT1Backtester:
             # 计算盈亏
             pnl_pct = (price - position.entry_price) / position.entry_price
             
-            # 检查止盈
+            # 确定平仓原因（如果有）
+            exit_reason = None
             if pnl_pct >= self.take_profit_pct:
-                t1_trade = self._close_position(stock_code, date, time_str, price, 'take_profit')
-            # 检查止损
+                exit_reason = 'take_profit'
             elif pnl_pct <= -self.stop_loss_pct:
-                t1_trade = self._close_position(stock_code, date, time_str, price, 'stop_loss')
-            # 检查持仓时间
+                exit_reason = 'stop_loss'
             else:
                 entry_dt = datetime.strptime(f"{position.entry_date} {position.entry_time}", '%Y-%m-%d %H:%M:%S')
                 current_dt = datetime.strptime(f"{date} {time_str}", '%Y-%m-%d %H:%M:%S')
                 holding_minutes = (current_dt - entry_dt).total_seconds() / 60
-                
                 if holding_minutes >= self.max_holding_minutes:
-                    t1_trade = self._close_position(stock_code, date, time_str, price, 'time_exit')
+                    exit_reason = 'time_exit'
+            
+            # 执行平仓（如果触发条件）
+            if exit_reason:
+                t1_trade = self._close_position(stock_code, date, time_str, price, exit_reason)
+                # V17修正：按交易意图计数，只在触发平仓条件但被T+1阻挡时计数
+                if t1_trade is None and position.position_carry == 0:
+                    self.blocked_by_t1 += 1
         
         return signal_trade, t1_trade
     
@@ -445,7 +535,6 @@ class SingleHoldingT1Backtester:
                         continue
                     
                     total_ticks = len(tick_df)
-                    print(f"📊 {stock_code} {date_str} 共{total_ticks}笔tick")
                     
                     # 遍历Tick
                     for tick_idx, (_, row) in enumerate(tick_df.iterrows()):
@@ -466,10 +555,6 @@ class SingleHoldingT1Backtester:
                             result.signal_trades.append(signal_trade)
                         if t1_trade:
                             result.t1_trades.append(t1_trade)
-                            if not hasattr(self, '_append_count'):
-                                self._append_count = 0
-                            self._append_count += 1
-                            print(f"   [trade被append #{self._append_count}] {t1_trade.stock_code} {t1_trade.entry_date} 当前列表长度:{len(result.t1_trades)}")
                     
                 except Exception as e:
                     import traceback
