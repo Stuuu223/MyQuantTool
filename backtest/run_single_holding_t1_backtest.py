@@ -98,6 +98,7 @@ class T1Position:
     entry_price: float = 0.0
     entry_date: str = ""  # 入场日期
     entry_time: str = ""  # 入场时间
+    close_signal_recorded: bool = False  # V17: 是否已记录Raw Close Signal
     
     @property
     def total_position(self) -> int:
@@ -755,9 +756,11 @@ class SingleHoldingT1Backtester:
                     exit_reason = 'time_exit'
             
             if exit_reason:
-                # Layer 1: Raw close signal
-                result.raw_signal_total += 1
-                result.raw_signal_closes += 1
+                # Layer 1: Raw close signal（只记录一次）
+                if not position.close_signal_recorded:
+                    result.raw_signal_total += 1
+                    result.raw_signal_closes += 1
+                    position.close_signal_recorded = True
                 
                 # Layer 2: Executable check
                 can_execute_close = True
