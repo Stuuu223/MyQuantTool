@@ -54,17 +54,43 @@ def init_qmt():
     global _qmt_initialized
     if _qmt_initialized:
         return True
-    
+
     try:
         from xtquant import xtdatacenter as xtdc
+        from xtquant import xtdata
 
         # 设置VIP Token
         VIP_TOKEN = '6b1446e317ed67596f13d2e808291a01e0dd9839'
         DATA_DIR = PROJECT_ROOT / 'data' / 'qmt_data'
         DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+        # 🔥 关键修复：设置数据目录
         xtdc.set_data_home_dir(str(DATA_DIR))
         xtdc.set_token(VIP_TOKEN)
+
+        # 初始化
         xtdc.init()
+
+        # 监听端口
+        listen_port = xtdc.listen(port=(58700, 58720))
+        logger.info(f"QMT服务监听端口: {listen_port}")
+
+        # 连接到服务
+        _, port = listen_port
+        xtdata.connect(ip='127.0.0.1', port=port, remember_if_success=False)
+
+        # 验证数据目录
+        logger.info(f"QMT数据目录: {DATA_DIR}")
+        test_data = xtdata.get_market_data(['close'], ['300017.SZ'], period='1d', count=1)
+        if test_data is not None:
+            if isinstance(test_data, dict):
+                logger.info("✅ QMT数据目录验证成功（dict格式）")
+            elif hasattr(test_data, 'empty') and not test_data.empty:
+                logger.info("✅ QMT数据目录验证成功（DataFrame格式）")
+            else:
+                logger.warning("⚠️ QMT数据目录验证失败：返回数据为空")
+        else:
+            logger.warning("⚠️ QMT数据目录验证失败：返回None")
 
         _qmt_initialized = True
         logger.info("✅ QMT连接初始化成功")
@@ -72,6 +98,8 @@ def init_qmt():
 
     except Exception as e:
         logger.warning(f"初始化QMT连接失败: {e}")
+        import traceback
+        logger.warning(traceback.format_exc())
         return False
 
 # ================= Tick数据读取 =================
@@ -107,16 +135,15 @@ def load_tick_data(stock_code: str, start_date: str, end_date: str) -> pd.DataFr
         if stock_code in tick_df and not tick_df[stock_code].empty:
             df = tick_df[stock_code].copy()
 
-            # 重命名列
-            df = df.rename(columns={
-                'time': 'timestamp',
-                'lastPrice': 'price'
-            })
+            # 🔥 关键修复：索引就是时间戳！
+            # 重置索引，将时间戳转为列
+            df = df.reset_index()
+            df = df.rename(columns={'index': 'timestamp', 'lastPrice': 'price'})
 
-            # ✅ 关键修复1：正确转换时间戳（北京时间+8小时）
-            df['timestamp'] = pd.to_datetime(df['time'], unit='ms', utc=True).dt.tz_convert('Asia/Shanghai')
-            
-            # ✅ 关键修复2：只保留成交Tick（price > 0）
+            # ✅ 正确转换时间戳（字符串索引 → datetime）
+            df['timestamp'] = pd.to_datetime(df['timestamp'], format='%Y%m%d%H%M%S')
+
+            # ✅ 只保留成交Tick（price > 0）
             df = df[df['price'] > 0].copy()
 
             # 添加日期列
@@ -131,6 +158,8 @@ def load_tick_data(stock_code: str, start_date: str, end_date: str) -> pd.DataFr
 
     except Exception as e:
         logger.warning(f"加载 {stock_code} Tick数据失败: {e}")
+        import traceback
+        logger.warning(traceback.format_exc())
         return pd.DataFrame()
 
 def load_stock_list_with_tick_data() -> List[str]:
