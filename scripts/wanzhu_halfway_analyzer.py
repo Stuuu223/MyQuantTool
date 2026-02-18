@@ -18,6 +18,8 @@ import json
 import csv
 import random
 import argparse
+import requests
+import time
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
@@ -166,6 +168,129 @@ class WanzhuDataGenerator:
         logger.info(f"Mock数据已保存: {output_path} ({len(df)}条记录)")
         
         return df
+
+
+class WanzhuAPILoader:
+    """顽主杯官方API数据加载器
+    
+    从官方API获取历史排名数据:
+    https://www.hunanwanzhu.com/api/rankings?date=YYYY-MM-DD
+    """
+    
+    def __init__(self, base_url: str = "https://www.hunanwanzhu.com/api/rankings"):
+        self.base_url = base_url
+        self.session = requests.Session()
+        # 设置请求头模拟浏览器
+        self.session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
+        
+    def fetch_rankings_by_date(self, date_str: str) -> List[Dict]:
+        """获取指定日期的排行榜数据
+        
+        Args:
+            date_str: 日期字符串 (YYYY-MM-DD)
+            
+        Returns:
+            List[Dict]: 排名记录列表
+        """
+        url = f"{self.base_url}?date={date_str}"
+        
+        try:
+            response = self.session.get(url, timeout=30)
+            response.raise_for_status()
+            
+            data = response.json()
+            
+            # 解析API返回的数据
+            # 根据实际API结构调整字段映射
+            records = []
+            if isinstance(data, list):
+                # 如果返回的是列表格式
+                for item in data:
+                    record = {
+                        'date': date_str,
+                        'code': item.get('code') or item.get('stock_code'),
+                        'name': item.get('name') or item.get('stock_name'),
+                        'rank': item.get('rank'),
+                        'weight': item.get('weight') or item.get('position_weight', 0),
+                        'player_id': item.get('player_id') or item.get('user_id'),
+                        'sector': item.get('sector', '')
+                    }
+                    records.append(record)
+            elif isinstance(data, dict):
+                # 如果返回的是字典格式，提取data字段
+                items = data.get('data', []) or data.get('rankings', []) or data.get('list', [])
+                for item in items:
+                    record = {
+                        'date': date_str,
+                        'code': item.get('code') or item.get('stock_code'),
+                        'name': item.get('name') or item.get('stock_name'),
+                        'rank': item.get('rank'),
+                        'weight': item.get('weight') or item.get('position_weight', 0),
+                        'player_id': item.get('player_id') or item.get('user_id'),
+                        'sector': item.get('sector', '')
+                    }
+                    records.append(record)
+            
+            logger.info(f"获取 {date_str} 数据: {len(records)}条记录")
+            return records
+            
+        except requests.exceptions.RequestException as e:
+            logger.error(f"获取 {date_str} 数据失败: {e}")
+            return []
+        except json.JSONDecodeError as e:
+            logger.error(f"解析 {date_str} 数据失败: {e}")
+            return []
+    
+    def fetch_date_range(
+        self, 
+        start_date: str, 
+        end_date: str,
+        delay_seconds: float = 0.5
+    ) -> pd.DataFrame:
+        """获取日期范围内的所有排名数据
+        
+        Args:
+            start_date: 开始日期 (YYYY-MM-DD)
+            end_date: 结束日期 (YYYY-MM-DD)
+            delay_seconds: 请求间隔秒数(避免请求过快)
+            
+        Returns:
+            pd.DataFrame: 所有日期的排名数据
+        """
+        start = datetime.strptime(start_date, "%Y-%m-%d")
+        end = datetime.strptime(end_date, "%Y-%m-%d")
+        
+        all_records = []
+        current = start
+        
+        while current <= end:
+            date_str = current.strftime("%Y-%m-%d")
+            records = self.fetch_rankings_by_date(date_str)
+            all_records.extend(records)
+            
+            # 延迟避免请求过快
+            if delay_seconds > 0:
+                time.sleep(delay_seconds)
+            
+            current += timedelta(days=1)
+        
+        if not all_records:
+            logger.warning("未获取到任何数据")
+            return pd.DataFrame()
+        
+        df = pd.DataFrame(all_records)
+        df = df.sort_values(['date', 'rank']).reset_index(drop=True)
+        
+        logger.info(f"获取完成: {len(df)}条记录，日期范围 {start_date} 至 {end_date}")
+        return df
+    
+    def save_to_csv(self, df: pd.DataFrame, output_path: Path):
+        """保存数据到CSV"""
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        df.to_csv(output_path, index=False, encoding='utf-8-sig')
+        logger.info(f"数据已保存: {output_path}")
 
 
 class WanzhuDataLoader:
@@ -426,6 +551,11 @@ class WanzhuHalfwayAnalyzer:
                 "win_rate_pct": round(win_rate, 2),
                 "avg_pnl_pct": round(avg_pnl_pct, 2),
             },
+            "data_quality": {
+                "source": "api" if hasattr(self, '_use_api') and self._use_api else "csv/mock",
+                "filter_applied": f"Top{args.min_rank}" if hasattr(args, 'min_rank') and args.min_rank > 0 else "none",
+                "total_records_in_csv": len(loader.history_df) if 'loader' in locals() and loader.history_df is not None else 0,
+            },
             "strategy_params": self.strategy_params,
             "details": [
                 {
@@ -531,6 +661,20 @@ def main():
     parser.add_argument('--generate-mock-only', action='store_true',
                         help='仅生成mock数据，不运行回测')
     
+    # V17: 添加官方API数据获取选项
+    parser.add_argument('--use-api', action='store_true',
+                        help='使用官方API获取数据（默认使用本地CSV）')
+    parser.add_argument('--api-start-date', type=str,
+                        default='2025-11-01',
+                        help='API数据获取开始日期 (YYYY-MM-DD)')
+    parser.add_argument('--api-end-date', type=str,
+                        default='2025-12-31',
+                        help='API数据获取结束日期 (YYYY-MM-DD)')
+    parser.add_argument('--api-delay', type=float, default=0.5,
+                        help='API请求间隔秒数（避免请求过快）')
+    parser.add_argument('--min-rank', type=int, default=10,
+                        help='只处理排名在TopN以内的股票')
+    
     args = parser.parse_args()
     
     # 路径处理
@@ -555,8 +699,30 @@ def main():
     
     logger.info(f"加载了 {len(stock_list)} 只股票")
     
-    # 2. 准备历史数据
-    if not history_csv_path.exists():
+    # 2. 准备历史数据（本地CSV或API获取）
+    if args.use_api:
+        # V17: 使用官方API获取数据
+        logger.info(f"\n🌐 从官方API获取数据...")
+        logger.info(f"   日期范围: {args.api_start_date} 至 {args.api_end_date}")
+        logger.info(f"   请求间隔: {args.api_delay}秒")
+        
+        api_loader = WanzhuAPILoader()
+        history_df = api_loader.fetch_date_range(
+            start_date=args.api_start_date,
+            end_date=args.api_end_date,
+            delay_seconds=args.api_delay
+        )
+        
+        if history_df.empty:
+            logger.error("❌ API未返回数据，请检查网络连接或API地址")
+            logger.info("💡 提示: 可以使用 --use-api 参数切换到本地CSV模式")
+            return
+        
+        # 保存API数据到CSV（缓存）
+        api_loader.save_to_csv(history_df, history_csv_path)
+        logger.info(f"✅ API数据已缓存: {history_csv_path}")
+        
+    elif not history_csv_path.exists():
         logger.info(f"\n📝 生成Mock历史数据...")
         # 使用与QMT数据匹配的日期范围（2025年11月）
         generator = WanzhuDataGenerator(start_date="2025-11-01", end_date="2025-12-31")
@@ -578,6 +744,16 @@ def main():
     loader = WanzhuDataLoader()
     loader.load_from_csv(history_csv_path)
     first_rank_dict = loader.extract_first_rank_info()
+    
+    # V17: 应用排名过滤
+    if args.min_rank > 0:
+        logger.info(f"\n🔍 应用排名过滤: 只保留Top{args.min_rank}")
+        filtered_dict = {
+            code: info for code, info in first_rank_dict.items()
+            if info.first_rank_pos <= args.min_rank
+        }
+        logger.info(f"过滤前: {len(first_rank_dict)}只，过滤后: {len(filtered_dict)}只")
+        first_rank_dict = filtered_dict
     
     # 4. 运行分析
     logger.info(f"\n🎯 开始HALFWAY回测分析...")
