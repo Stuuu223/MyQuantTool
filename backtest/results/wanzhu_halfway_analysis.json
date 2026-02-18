@@ -1,0 +1,358 @@
+{
+  "summary": {
+    "total_stocks_analyzed": 30,
+    "stocks_with_signals": 0,
+    "stocks_without_signals": 30,
+    "stocks_with_errors": 0,
+    "signal_detection_rate": 0.0,
+    "avg_days_ahead": 0,
+    "lookback_window_days": 5
+  },
+  "performance": {
+    "completed_trades": 0,
+    "winning_trades": 0,
+    "losing_trades": 0,
+    "win_rate_pct": 0,
+    "avg_pnl_pct": 0
+  },
+  "strategy_params": {
+    "volatility_threshold": 0.02,
+    "volume_surge": 1.2,
+    "breakout_strength": 0.005,
+    "window_minutes": 30,
+    "min_history_points": 5
+  },
+  "details": [
+    {
+      "stock_code": "000021.SZ",
+      "stock_name": "深科技",
+      "first_rank_date": "2025-11-18",
+      "has_signal": false,
+      "signal_date": null,
+      "days_ahead": null,
+      "pnl_pct": null,
+      "exit_reason": null,
+      "error": null
+    },
+    {
+      "stock_code": "000066.SZ",
+      "stock_name": "中国长城",
+      "first_rank_date": "2025-11-20",
+      "has_signal": false,
+      "signal_date": null,
+      "days_ahead": null,
+      "pnl_pct": null,
+      "exit_reason": null,
+      "error": null
+    },
+    {
+      "stock_code": "000070.SZ",
+      "stock_name": "特发信息",
+      "first_rank_date": "2025-12-05",
+      "has_signal": false,
+      "signal_date": null,
+      "days_ahead": null,
+      "pnl_pct": null,
+      "exit_reason": null,
+      "error": null
+    },
+    {
+      "stock_code": "000156.SZ",
+      "stock_name": "华数传媒",
+      "first_rank_date": "2025-11-27",
+      "has_signal": false,
+      "signal_date": null,
+      "days_ahead": null,
+      "pnl_pct": null,
+      "exit_reason": null,
+      "error": null
+    },
+    {
+      "stock_code": "000547.SZ",
+      "stock_name": "航天发展",
+      "first_rank_date": "2025-12-10",
+      "has_signal": false,
+      "signal_date": null,
+      "days_ahead": null,
+      "pnl_pct": null,
+      "exit_reason": null,
+      "error": null
+    },
+    {
+      "stock_code": "000559.SZ",
+      "stock_name": "万向钱潮",
+      "first_rank_date": "2025-12-08",
+      "has_signal": false,
+      "signal_date": null,
+      "days_ahead": null,
+      "pnl_pct": null,
+      "exit_reason": null,
+      "error": null
+    },
+    {
+      "stock_code": "000592.SZ",
+      "stock_name": "平潭发展",
+      "first_rank_date": "2025-11-17",
+      "has_signal": false,
+      "signal_date": null,
+      "days_ahead": null,
+      "pnl_pct": null,
+      "exit_reason": null,
+      "error": null
+    },
+    {
+      "stock_code": "000681.SZ",
+      "stock_name": "视觉中国",
+      "first_rank_date": "2025-11-06",
+      "has_signal": false,
+      "signal_date": null,
+      "days_ahead": null,
+      "pnl_pct": null,
+      "exit_reason": null,
+      "error": null
+    },
+    {
+      "stock_code": "000738.SZ",
+      "stock_name": "航发控制",
+      "first_rank_date": "2025-11-03",
+      "has_signal": false,
+      "signal_date": null,
+      "days_ahead": null,
+      "pnl_pct": null,
+      "exit_reason": null,
+      "error": null
+    },
+    {
+      "stock_code": "000815.SZ",
+      "stock_name": "美利云",
+      "first_rank_date": "2025-11-11",
+      "has_signal": false,
+      "signal_date": null,
+      "days_ahead": null,
+      "pnl_pct": null,
+      "exit_reason": null,
+      "error": null
+    },
+    {
+      "stock_code": "000818.SZ",
+      "stock_name": "航锦科技",
+      "first_rank_date": "2025-11-28",
+      "has_signal": false,
+      "signal_date": null,
+      "days_ahead": null,
+      "pnl_pct": null,
+      "exit_reason": null,
+      "error": null
+    },
+    {
+      "stock_code": "000859.SZ",
+      "stock_name": "国风新材",
+      "first_rank_date": "2025-11-04",
+      "has_signal": false,
+      "signal_date": null,
+      "days_ahead": null,
+      "pnl_pct": null,
+      "exit_reason": null,
+      "error": null
+    },
+    {
+      "stock_code": "000892.SZ",
+      "stock_name": "欢瑞世纪",
+      "first_rank_date": "2025-11-17",
+      "has_signal": false,
+      "signal_date": null,
+      "days_ahead": null,
+      "pnl_pct": null,
+      "exit_reason": null,
+      "error": null
+    },
+    {
+      "stock_code": "000917.SZ",
+      "stock_name": "电广传媒",
+      "first_rank_date": "2025-11-03",
+      "has_signal": false,
+      "signal_date": null,
+      "days_ahead": null,
+      "pnl_pct": null,
+      "exit_reason": null,
+      "error": null
+    },
+    {
+      "stock_code": "000977.SZ",
+      "stock_name": "浪潮信息",
+      "first_rank_date": "2025-11-20",
+      "has_signal": false,
+      "signal_date": null,
+      "days_ahead": null,
+      "pnl_pct": null,
+      "exit_reason": null,
+      "error": null
+    },
+    {
+      "stock_code": "001270.SZ",
+      "stock_name": "*ST铖昌",
+      "first_rank_date": "2025-11-10",
+      "has_signal": false,
+      "signal_date": null,
+      "days_ahead": null,
+      "pnl_pct": null,
+      "exit_reason": null,
+      "error": null
+    },
+    {
+      "stock_code": "001309.SZ",
+      "stock_name": "德明利",
+      "first_rank_date": "2025-11-03",
+      "has_signal": false,
+      "signal_date": null,
+      "days_ahead": null,
+      "pnl_pct": null,
+      "exit_reason": null,
+      "error": null
+    },
+    {
+      "stock_code": "001330.SZ",
+      "stock_name": "博纳影业",
+      "first_rank_date": "2025-11-26",
+      "has_signal": false,
+      "signal_date": null,
+      "days_ahead": null,
+      "pnl_pct": null,
+      "exit_reason": null,
+      "error": null
+    },
+    {
+      "stock_code": "002009.SZ",
+      "stock_name": "天奇股份",
+      "first_rank_date": "2025-11-05",
+      "has_signal": false,
+      "signal_date": null,
+      "days_ahead": null,
+      "pnl_pct": null,
+      "exit_reason": null,
+      "error": null
+    },
+    {
+      "stock_code": "002054.SZ",
+      "stock_name": "德美化工",
+      "first_rank_date": "2025-11-03",
+      "has_signal": false,
+      "signal_date": null,
+      "days_ahead": null,
+      "pnl_pct": null,
+      "exit_reason": null,
+      "error": null
+    },
+    {
+      "stock_code": "002119.SZ",
+      "stock_name": "康强电子",
+      "first_rank_date": "2025-12-02",
+      "has_signal": false,
+      "signal_date": null,
+      "days_ahead": null,
+      "pnl_pct": null,
+      "exit_reason": null,
+      "error": null
+    },
+    {
+      "stock_code": "002131.SZ",
+      "stock_name": "利欧股份",
+      "first_rank_date": "2025-11-18",
+      "has_signal": false,
+      "signal_date": null,
+      "days_ahead": null,
+      "pnl_pct": null,
+      "exit_reason": null,
+      "error": null
+    },
+    {
+      "stock_code": "002149.SZ",
+      "stock_name": "西部材料",
+      "first_rank_date": "2025-11-25",
+      "has_signal": false,
+      "signal_date": null,
+      "days_ahead": null,
+      "pnl_pct": null,
+      "exit_reason": null,
+      "error": null
+    },
+    {
+      "stock_code": "002156.SZ",
+      "stock_name": "通富微电",
+      "first_rank_date": "2025-11-21",
+      "has_signal": false,
+      "signal_date": null,
+      "days_ahead": null,
+      "pnl_pct": null,
+      "exit_reason": null,
+      "error": null
+    },
+    {
+      "stock_code": "002163.SZ",
+      "stock_name": "海南发展",
+      "first_rank_date": "2025-12-02",
+      "has_signal": false,
+      "signal_date": null,
+      "days_ahead": null,
+      "pnl_pct": null,
+      "exit_reason": null,
+      "error": null
+    },
+    {
+      "stock_code": "002195.SZ",
+      "stock_name": "岩山科技",
+      "first_rank_date": "2025-12-03",
+      "has_signal": false,
+      "signal_date": null,
+      "days_ahead": null,
+      "pnl_pct": null,
+      "exit_reason": null,
+      "error": null
+    },
+    {
+      "stock_code": "002208.SZ",
+      "stock_name": "合肥城建",
+      "first_rank_date": "2025-11-07",
+      "has_signal": false,
+      "signal_date": null,
+      "days_ahead": null,
+      "pnl_pct": null,
+      "exit_reason": null,
+      "error": null
+    },
+    {
+      "stock_code": "002235.SZ",
+      "stock_name": "安妮股份",
+      "first_rank_date": "2025-12-03",
+      "has_signal": false,
+      "signal_date": null,
+      "days_ahead": null,
+      "pnl_pct": null,
+      "exit_reason": null,
+      "error": null
+    },
+    {
+      "stock_code": "002240.SZ",
+      "stock_name": "盛新锂能",
+      "first_rank_date": "2025-11-18",
+      "has_signal": false,
+      "signal_date": null,
+      "days_ahead": null,
+      "pnl_pct": null,
+      "exit_reason": null,
+      "error": null
+    },
+    {
+      "stock_code": "002323.SZ",
+      "stock_name": "雅博股份",
+      "first_rank_date": "2025-11-24",
+      "has_signal": false,
+      "signal_date": null,
+      "days_ahead": null,
+      "pnl_pct": null,
+      "exit_reason": null,
+      "error": null
+    }
+  ],
+  "signals_detail": []
+}
