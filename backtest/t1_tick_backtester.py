@@ -140,11 +140,12 @@ class T1TickBacktester:
         self.equity_curve = []
         self.daily_stats = []
 
-        # 初始化V12.1.0三大过滤器
+        # 初始化V12.1.0三大过滤器（EXPERIMENTAL - 已知问题见/docs/V12.1.0_FILTER_ISSUES.md）
+        # 问题：阈值过严、串联一票否决、竞价估算失真 - 在顽主/网宿实验线上默认禁用
         self.wind_filter = None
         self.dynamic_threshold = None
         self.auction_validator = None
-        self.enable_filters = True
+        self.enable_filters = False  # 默认禁用，直到重构完成
 
         try:
             self.wind_filter = get_wind_filter()
@@ -343,18 +344,20 @@ class T1TickBacktester:
                     logger.warning(f"⚠️ [竞价校验] 检查失败: {code}, {e}")
                     auction_passed = True  # 检查失败时默认通过
 
-            # ================= 所有过滤器通过，生成买入信号 =================
-            signals.append({
-                'code': code,
-                'date': date,
-                'price': current_price,
-                'strategy': 'V12.1.0_三大过滤器',
-                'filter_results': {
-                    'wind_result': {'passed': True, 'reason': '板块共振通过'},
-                    'threshold_result': {'passed': True, 'reason': '市值范围通过'},
-                    'auction_result': {'passed': auction_passed, 'reason': auction_reason}
-                }
-            })
+            # ================= 生成买入信号（简化版）=================
+            # V12.1.0过滤器已标记为EXPERIMENTAL并默认禁用
+            # 资金攻击检测将在独立实验脚本中实现，不污染核心引擎
+            if not self.enable_filters:
+                signals.append({
+                    'code': code,
+                    'date': date,
+                    'price': current_price,
+                    'strategy': 'SIMPLE_PASS',
+                    'filter_results': {
+                        'v12_filters_disabled': True,
+                        'note': 'V12.1.0过滤器EXPERIMENTAL，默认禁用'
+                    }
+                })
 
         return signals
 

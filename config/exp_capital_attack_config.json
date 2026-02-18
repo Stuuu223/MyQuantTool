@@ -1,0 +1,14 @@
+{
+  "experiment": "capital_attack",
+  "version": "0.1.0",
+  "thresholds": {
+    "main_inflow_min": 100000000,
+    "price_strength_min": 0.05,
+    "score_threshold": 0.5
+  },
+  "scoring": {
+    "inflow_weight": 0.5,
+    "strength_weight": 0.5
+  },
+  "note": "所有阈值可调，禁止硬编码在脚本中"
+}
