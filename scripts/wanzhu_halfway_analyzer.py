@@ -82,6 +82,15 @@ class HalfwayPreRankResult:
     raw_signal_count: int = 0
     executable_signal_count: int = 0
     
+    # ===== CTO Step 1: Tick覆盖统计 =====
+    tick_count: int = 0
+    tick_coverage_pct: float = 0.0
+    tick_days_with_data: int = 0
+    tick_is_valid: bool = False
+    
+    # 策略类型标记 (CTO: 支持A/B测试)
+    strategy_type: str = 'HALFWAY'
+    
     # 错误信息
     error: Optional[str] = None
 
@@ -307,13 +316,27 @@ class WanzhuDataLoader:
             raise FileNotFoundError(f"历史数据文件不存在: {csv_path}")
         
         df = pd.read_csv(csv_path)
-        required_cols = ['date', 'code', 'rank', 'weight']
+        
+        # 检查必要列（weight变为可选）
+        required_cols = ['date', 'code', 'rank']
         for col in required_cols:
             if col not in df.columns:
                 raise ValueError(f"CSV缺少必要列: {col}")
         
+        # 如果没有weight列，使用holding_amount或默认值
+        if 'weight' not in df.columns:
+            if 'holding_amount' in df.columns:
+                df['weight'] = df['holding_amount']
+                logger.info("使用 'holding_amount' 列作为 weight")
+            else:
+                df['weight'] = 1.0
+                logger.info("weight列不存在，使用默认值 1.0")
+        
+        # 确保date列是字符串格式
+        df['date'] = df['date'].astype(str)
+        
         self.history_df = df
-        logger.info(f"加载历史数据: {len(df)}条记录")
+        logger.info(f"加载历史数据: {len(df)}条记录，{df['date'].nunique()}个交易日，{df['code'].nunique()}只股票")
         return df
     
     def extract_first_rank_info(self) -> Dict[str, WanzhuStockInfo]:
@@ -397,9 +420,110 @@ class WanzhuHalfwayAnalyzer:
         
         return start.strftime("%Y-%m-%d"), target_date
     
+    def _check_tick_data_coverage(
+        self,
+        stock_code: str,
+        start_date: str,
+        end_date: str
+    ) -> Dict:
+        """检查Tick数据覆盖情况 (CTO Step 1要求)
+        
+        Returns:
+            {
+                'tick_count': int,          # Tick条数
+                'days_with_ticks': int,     # 有数据的交易日数
+                'total_days': int,          # 窗口总交易日数
+                'coverage_pct': float,      # 覆盖率
+                'price_high': float,        # 最高价
+                'price_low': float,         # 最低价
+                'is_valid': bool            # 是否满足最低要求
+            }
+        """
+        from logic.qmt_historical_provider import QMTHistoricalProvider
+        
+        try:
+            # QMTHistoricalProvider需要在初始化时传入参数
+            # 时间格式: YYYYMMDDhhmmss
+            start_time = f"{start_date.replace('-', '')}000000"
+            end_time = f"{end_date.replace('-', '')}235959"
+            
+            provider = QMTHistoricalProvider(
+                stock_code=stock_code,
+                start_time=start_time,
+                end_time=end_time,
+                period="tick"
+            )
+            
+            # 使用迭代器获取数据
+            tick_data_list = list(provider.iter_ticks())
+            tick_count = len(tick_data_list)
+            
+            if tick_count == 0:
+                return {
+                    'tick_count': 0,
+                    'days_with_ticks': 0,
+                    'total_days': 0,
+                    'coverage_pct': 0.0,
+                    'price_high': 0.0,
+                    'price_low': 0.0,
+                    'is_valid': False
+                }
+            
+            # 按日期分组统计
+            dates_with_data = set()
+            prices = []
+            for tick in tick_data_list:
+                if 'time' in tick:
+                    tick_date = str(tick['time'])[:8]  # YYYYMMDD
+                    dates_with_data.add(tick_date)
+                if 'price' in tick:
+                    prices.append(tick['price'])
+            
+            days_with_ticks = len(dates_with_data)
+            
+            # 计算窗口交易日数
+            start = datetime.strptime(start_date, "%Y-%m-%d")
+            end = datetime.strptime(end_date, "%Y-%m-%d")
+            total_days = (end - start).days + 1
+            
+            # 价格范围
+            if prices:
+                price_high = max(prices)
+                price_low = min(prices)
+            else:
+                price_high = price_low = 0.0
+            
+            coverage_pct = days_with_ticks / total_days if total_days > 0 else 0.0
+            
+            # 判断是否有效（至少50%覆盖且有足够tick）
+            is_valid = coverage_pct >= 0.5 and tick_count >= 100
+            
+            return {
+                'tick_count': tick_count,
+                'days_with_ticks': days_with_ticks,
+                'total_days': total_days,
+                'coverage_pct': round(coverage_pct * 100, 2),
+                'price_high': round(price_high, 2),
+                'price_low': round(price_low, 2),
+                'is_valid': is_valid
+            }
+            
+        except Exception as e:
+            logger.warning(f"检查Tick覆盖失败 {stock_code}: {e}")
+            return {
+                'tick_count': 0,
+                'days_with_ticks': 0,
+                'total_days': 0,
+                'coverage_pct': 0.0,
+                'price_high': 0.0,
+                'price_low': 0.0,
+                'is_valid': False
+            }
+    
     def _run_single_stock_backtest(
         self, 
-        stock_info: WanzhuStockInfo
+        stock_info: WanzhuStockInfo,
+        strategy_type: str = 'HALFWAY'  # CTO: 支持策略切换
     ) -> HalfwayPreRankResult:
         """对单只股票进行回测"""
         
@@ -423,10 +547,41 @@ class WanzhuHalfwayAnalyzer:
         logger.info(f"   首次上榜: {stock_info.first_rank_date}")
         logger.info(f"   回测窗口: {start_date} ~ {end_date}")
         
+        # ===== CTO Step 1: Tick覆盖检查 =====
+        tick_coverage = self._check_tick_data_coverage(
+            stock_info.code, start_date, end_date
+        )
+        result.tick_count = tick_coverage['tick_count']
+        result.tick_coverage_pct = tick_coverage['coverage_pct']
+        result.tick_days_with_data = tick_coverage['days_with_ticks']
+        result.tick_is_valid = tick_coverage['is_valid']
+        
+        logger.info(f"   Tick覆盖: {tick_coverage['tick_count']}条 "
+                   f"({tick_coverage['days_with_ticks']}/{tick_coverage['total_days']}天, "
+                   f"{tick_coverage['coverage_pct']}%)")
+        
+        if not tick_coverage['is_valid']:
+            logger.warning(f"   ⚠️ Tick数据不足，跳过回测")
+            result.error = f"Tick数据不足: {tick_coverage['tick_count']}条"
+            return result
+        
         try:
-            # 创建HALFWAY策略
-            halfway_strategy = HalfwayTickStrategy(self.strategy_params)
-            signal_generator = HalfwaySignalAdapter(halfway_strategy)
+            # ===== CTO Step 2: 支持策略切换 =====
+            result.strategy_type = strategy_type
+            
+            if strategy_type == 'HALFWAY':
+                # 创建HALFWAY策略
+                from logic.strategies.halfway_tick_strategy import HalfwayTickStrategy
+                strategy = HalfwayTickStrategy(self.strategy_params)
+                signal_generator = HalfwaySignalAdapter(strategy)
+                logger.info(f"   使用策略: HALFWAY")
+            elif strategy_type == 'TRIVIAL':
+                # 创建TRIVIAL策略 (CTO: 用于A/B测试验证)
+                from backtest.run_single_holding_t1_backtest import TrivialSignalGenerator
+                signal_generator = TrivialSignalGenerator()
+                logger.info(f"   使用策略: TRIVIAL")
+            else:
+                raise ValueError(f"未知策略类型: {strategy_type}")
             
             # 创建回测器
             backtester = SingleHoldingT1Backtester(
@@ -496,16 +651,18 @@ class WanzhuHalfwayAnalyzer:
     def analyze_stocks(
         self, 
         stock_infos: List[WanzhuStockInfo],
-        max_stocks: Optional[int] = None
+        max_stocks: Optional[int] = None,
+        strategy_type: str = 'HALFWAY'  # CTO: 支持A/B测试
     ) -> List[HalfwayPreRankResult]:
         """批量分析股票"""
         
         stocks_to_analyze = stock_infos[:max_stocks] if max_stocks else stock_infos
         logger.info(f"开始分析 {len(stocks_to_analyze)} 只股票...")
+        logger.info(f"策略类型: {strategy_type}")
         
         for i, info in enumerate(stocks_to_analyze):
             logger.info(f"\n[{i+1}/{len(stocks_to_analyze)}] {info.code}")
-            result = self._run_single_stock_backtest(info)
+            result = self._run_single_stock_backtest(info, strategy_type=strategy_type)
             self.results.append(result)
         
         return self.results
@@ -558,6 +715,14 @@ class WanzhuHalfwayAnalyzer:
                 "filter_applied": f"Top{self.min_rank}" if hasattr(self, 'min_rank') and self.min_rank > 0 else "none",
                 "total_records_in_csv": len(loader.history_df) if 'loader' in locals() and loader.history_df is not None else 0,
             },
+            # CTO Step 1: Tick覆盖统计
+            "tick_coverage": {
+                "stocks_with_valid_tick": len([r for r in self.results if r.tick_is_valid]),
+                "stocks_with_no_tick": len([r for r in self.results if r.tick_count == 0]),
+                "avg_tick_count": round(np.mean([r.tick_count for r in self.results]), 2) if self.results else 0,
+                "avg_tick_coverage_pct": round(np.mean([r.tick_coverage_pct for r in self.results]), 2) if self.results else 0,
+            },
+            "strategy_type": self.results[0].strategy_type if self.results else 'HALFWAY',
             "strategy_params": self.strategy_params,
             "details": [
                 {
@@ -569,7 +734,11 @@ class WanzhuHalfwayAnalyzer:
                     "days_ahead": r.days_ahead,
                     "pnl_pct": round(r.pnl_pct * 100, 2) if r.pnl_pct else None,
                     "exit_reason": r.exit_reason,
-                    "error": r.error
+                    "error": r.error,
+                    # CTO Step 1: Tick覆盖详情
+                    "tick_count": r.tick_count,
+                    "tick_coverage_pct": r.tick_coverage_pct,
+                    "tick_is_valid": r.tick_is_valid
                 }
                 for r in self.results
             ],
@@ -610,7 +779,38 @@ class WanzhuHalfwayAnalyzer:
         csv_path = output_path.with_suffix('.csv')
         self._save_csv_report(csv_path)
         
+        # CTO Step 1: 保存Tick覆盖报告
+        tick_csv_path = output_path.parent / f"{output_path.stem}_tick_coverage.csv"
+        self._save_tick_coverage_report(tick_csv_path)
+        
         return report
+    
+    def _save_tick_coverage_report(self, csv_path: Path):
+        """保存Tick覆盖报告 (CTO Step 1)"""
+        with open(csv_path, 'w', newline='', encoding='utf-8-sig') as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                '股票代码', '股票名称', '首次上榜日期', '回测窗口开始', '回测窗口结束',
+                'Tick条数', '有数据天数', '覆盖率%', '价格高点', '价格低点', '是否有效', '错误信息'
+            ])
+            
+            for r in self.results:
+                writer.writerow([
+                    r.stock_code,
+                    r.stock_name,
+                    r.first_rank_date,
+                    r.backtest_start_date,
+                    r.backtest_end_date,
+                    r.tick_count,
+                    r.tick_days_with_data,
+                    r.tick_coverage_pct,
+                    getattr(r, 'tick_price_high', ''),
+                    getattr(r, 'tick_price_low', ''),
+                    '是' if r.tick_is_valid else '否',
+                    r.error or ''
+                ])
+        
+        logger.info(f"💾 Tick覆盖报告已保存: {csv_path}")
     
     def _save_csv_report(self, csv_path: Path):
         """保存CSV格式报告"""
@@ -620,7 +820,9 @@ class WanzhuHalfwayAnalyzer:
                 '股票代码', '股票名称', '首次上榜日期', '首次上榜排名',
                 '是否有信号', '信号日期', '信号时间', '提前天数',
                 '入场价格', '出场价格', '盈亏%', '出场原因',
-                'Raw信号数', 'Executable信号数', '错误信息'
+                'Raw信号数', 'Executable信号数',
+                'Tick条数', 'Tick覆盖率%', 'Tick是否有效',  # CTO Step 1
+                '错误信息'
             ])
             
             for r in self.results:
@@ -639,6 +841,9 @@ class WanzhuHalfwayAnalyzer:
                     r.exit_reason or '',
                     r.raw_signal_count,
                     r.executable_signal_count,
+                    r.tick_count,  # CTO Step 1
+                    r.tick_coverage_pct,
+                    '是' if r.tick_is_valid else '否',
                     r.error or ''
                 ])
         
@@ -676,6 +881,13 @@ def main():
                         help='API请求间隔秒数（避免请求过快）')
     parser.add_argument('--min-rank', type=int, default=10,
                         help='只处理排名在TopN以内的股票')
+    
+    # CTO Step 2: 支持策略切换用于A/B测试
+    parser.add_argument('--strategy-type', type=str, default='HALFWAY',
+                        choices=['HALFWAY', 'TRIVIAL'],
+                        help='策略类型: HALFWAY或TRIVIAL (默认: HALFWAY)')
+    parser.add_argument('--tick-coverage-report', action='store_true',
+                        help='生成Tick覆盖报告后退出 (CTO Step 1)')
     
     args = parser.parse_args()
     
@@ -764,7 +976,7 @@ def main():
     analyzer = WanzhuHalfwayAnalyzer(lookback_days=args.lookback_days, min_rank=args.min_rank)
     
     stock_infos = list(first_rank_dict.values())
-    analyzer.analyze_stocks(stock_infos, max_stocks=args.max_stocks)
+    analyzer.analyze_stocks(stock_infos, max_stocks=args.max_stocks, strategy_type=args.strategy_type)
     
     # 5. 生成报告
     report = analyzer.save_report(output_path)

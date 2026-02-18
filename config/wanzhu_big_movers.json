@@ -1,0 +1,47 @@
+[
+  {
+    "name": "信维通信",
+    "code": "300136.SZ",
+    "first_rank_date": "2025-11-17",
+    "max_rank": 5,
+    "days_in_top5": 11,
+    "days_in_top10": 11,
+    "holding_trend": "减持"
+  },
+  {
+    "name": "大位科技",
+    "code": "600589.SH",
+    "first_rank_date": "2025-11-17",
+    "max_rank": 1,
+    "days_in_top5": 11,
+    "days_in_top10": 11,
+    "holding_trend": "减持"
+  },
+  {
+    "name": "捷成股份",
+    "code": "300182.SZ",
+    "first_rank_date": "2025-11-17",
+    "max_rank": 3,
+    "days_in_top5": 11,
+    "days_in_top10": 11,
+    "holding_trend": "减持"
+  },
+  {
+    "name": "掌阅科技",
+    "code": "603533.SH",
+    "first_rank_date": "2025-11-17",
+    "max_rank": 2,
+    "days_in_top5": 11,
+    "days_in_top10": 11,
+    "holding_trend": "减持"
+  },
+  {
+    "name": "网宿科技",
+    "code": "300017.SZ",
+    "first_rank_date": "2025-11-17",
+    "max_rank": 4,
+    "days_in_top5": 11,
+    "days_in_top10": 11,
+    "holding_trend": "减持"
+  }
+]

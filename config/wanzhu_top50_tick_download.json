@@ -1,0 +1,1181 @@
+[
+  {
+    "code": "300364.SZ",
+    "qmt_code": "300364",
+    "market": "SZ",
+    "name": "中文在线",
+    "first_date": "2026-02-09",
+    "best_rank": 1,
+    "days_on_list": 5
+  },
+  {
+    "code": "600589.SH",
+    "qmt_code": "600589",
+    "market": "SH",
+    "name": "大位科技",
+    "first_date": "2026-02-07",
+    "best_rank": 1,
+    "days_on_list": 5
+  },
+  {
+    "code": "002342.SZ",
+    "qmt_code": "002342",
+    "market": "SZ",
+    "name": "巨力索具",
+    "first_date": "2026-02-04",
+    "best_rank": 1,
+    "days_on_list": 10
+  },
+  {
+    "code": "300017.SZ",
+    "qmt_code": "300017",
+    "market": "SZ",
+    "name": "网宿科技",
+    "first_date": "2026-02-04",
+    "best_rank": 1,
+    "days_on_list": 10
+  },
+  {
+    "code": "000547.SZ",
+    "qmt_code": "000547",
+    "market": "SZ",
+    "name": "航天发展",
+    "first_date": "2026-02-04",
+    "best_rank": 1,
+    "days_on_list": 10
+  },
+  {
+    "code": "600986.SH",
+    "qmt_code": "600986",
+    "market": "SH",
+    "name": "浙文互联",
+    "first_date": "2026-02-04",
+    "best_rank": 2,
+    "days_on_list": 10
+  },
+  {
+    "code": "300182.SZ",
+    "qmt_code": "300182",
+    "market": "SZ",
+    "name": "捷成股份",
+    "first_date": "2026-02-10",
+    "best_rank": 2,
+    "days_on_list": 4
+  },
+  {
+    "code": "300136.SZ",
+    "qmt_code": "300136",
+    "market": "SZ",
+    "name": "信维通信",
+    "first_date": "2026-02-04",
+    "best_rank": 2,
+    "days_on_list": 10
+  },
+  {
+    "code": "603618.SH",
+    "qmt_code": "603618",
+    "market": "SH",
+    "name": "杭电股份",
+    "first_date": "2026-02-04",
+    "best_rank": 3,
+    "days_on_list": 10
+  },
+  {
+    "code": "002506.SZ",
+    "qmt_code": "002506",
+    "market": "SZ",
+    "name": "协鑫集成",
+    "first_date": "2026-02-04",
+    "best_rank": 3,
+    "days_on_list": 10
+  },
+  {
+    "code": "002624.SZ",
+    "qmt_code": "002624",
+    "market": "SZ",
+    "name": "完美世界",
+    "first_date": "2026-02-10",
+    "best_rank": 4,
+    "days_on_list": 2
+  },
+  {
+    "code": "001330.SZ",
+    "qmt_code": "001330",
+    "market": "SZ",
+    "name": "博纳影业",
+    "first_date": "2026-02-07",
+    "best_rank": 4,
+    "days_on_list": 7
+  },
+  {
+    "code": "300065.SZ",
+    "qmt_code": "300065",
+    "market": "SZ",
+    "name": "海兰信",
+    "first_date": "2026-02-04",
+    "best_rank": 5,
+    "days_on_list": 10
+  },
+  {
+    "code": "300058.SZ",
+    "qmt_code": "300058",
+    "market": "SZ",
+    "name": "蓝色光标",
+    "first_date": "2026-02-04",
+    "best_rank": 6,
+    "days_on_list": 10
+  },
+  {
+    "code": "000892.SZ",
+    "qmt_code": "000892",
+    "market": "SZ",
+    "name": "欢瑞世纪",
+    "first_date": "2026-02-11",
+    "best_rank": 7,
+    "days_on_list": 2
+  },
+  {
+    "code": "603881.SH",
+    "qmt_code": "603881",
+    "market": "SH",
+    "name": "数据港",
+    "first_date": "2026-02-06",
+    "best_rank": 8,
+    "days_on_list": 8
+  },
+  {
+    "code": "300986.SZ",
+    "qmt_code": "300986",
+    "market": "SZ",
+    "name": "志特新材",
+    "first_date": "2026-02-04",
+    "best_rank": 8,
+    "days_on_list": 9
+  },
+  {
+    "code": "300846.SZ",
+    "qmt_code": "300846",
+    "market": "SZ",
+    "name": "首都在线",
+    "first_date": "2026-02-12",
+    "best_rank": 8,
+    "days_on_list": 2
+  },
+  {
+    "code": "600410.SH",
+    "qmt_code": "600410",
+    "market": "SH",
+    "name": "华胜天成",
+    "first_date": "2026-02-07",
+    "best_rank": 9,
+    "days_on_list": 3
+  },
+  {
+    "code": "600814.SH",
+    "qmt_code": "600814",
+    "market": "SH",
+    "name": "杭州解百",
+    "first_date": "2026-02-06",
+    "best_rank": 9,
+    "days_on_list": 3
+  },
+  {
+    "code": "002837.SZ",
+    "qmt_code": "002837",
+    "market": "SZ",
+    "name": "英维克",
+    "first_date": "2026-02-04",
+    "best_rank": 9,
+    "days_on_list": 5
+  },
+  {
+    "code": "002931.SZ",
+    "qmt_code": "002931",
+    "market": "SZ",
+    "name": "锋龙股份",
+    "first_date": "2026-02-04",
+    "best_rank": 9,
+    "days_on_list": 10
+  },
+  {
+    "code": "002149.SZ",
+    "qmt_code": "002149",
+    "market": "SZ",
+    "name": "西部材料",
+    "first_date": "2026-02-04",
+    "best_rank": 10,
+    "days_on_list": 10
+  },
+  {
+    "code": "603103.SH",
+    "qmt_code": "603103",
+    "market": "SH",
+    "name": "横店影视",
+    "first_date": "2026-02-05",
+    "best_rank": 10,
+    "days_on_list": 6
+  },
+  {
+    "code": "000070.SZ",
+    "qmt_code": "000070",
+    "market": "SZ",
+    "name": "特发信息",
+    "first_date": "2026-02-07",
+    "best_rank": 10,
+    "days_on_list": 4
+  },
+  {
+    "code": "300383.SZ",
+    "qmt_code": "300383",
+    "market": "SZ",
+    "name": "光环新网",
+    "first_date": "2026-02-10",
+    "best_rank": 10,
+    "days_on_list": 4
+  },
+  {
+    "code": "000995.SZ",
+    "qmt_code": "000995",
+    "market": "SZ",
+    "name": "皇台酒业",
+    "first_date": "2026-02-04",
+    "best_rank": 10,
+    "days_on_list": 3
+  },
+  {
+    "code": "002155.SZ",
+    "qmt_code": "002155",
+    "market": "SZ",
+    "name": "湖南黄金",
+    "first_date": "2026-02-04",
+    "best_rank": 11,
+    "days_on_list": 3
+  },
+  {
+    "code": "002471.SZ",
+    "qmt_code": "002471",
+    "market": "SZ",
+    "name": "中超控股",
+    "first_date": "2026-02-05",
+    "best_rank": 12,
+    "days_on_list": 3
+  },
+  {
+    "code": "300118.SZ",
+    "qmt_code": "300118",
+    "market": "SZ",
+    "name": "东方日升",
+    "first_date": "2026-02-04",
+    "best_rank": 12,
+    "days_on_list": 3
+  },
+  {
+    "code": "300369.SZ",
+    "qmt_code": "300369",
+    "market": "SZ",
+    "name": "绿盟科技",
+    "first_date": "2026-02-13",
+    "best_rank": 12,
+    "days_on_list": 1
+  },
+  {
+    "code": "300102.SZ",
+    "qmt_code": "300102",
+    "market": "SZ",
+    "name": "乾照光电",
+    "first_date": "2026-02-04",
+    "best_rank": 13,
+    "days_on_list": 4
+  },
+  {
+    "code": "002131.SZ",
+    "qmt_code": "002131",
+    "market": "SZ",
+    "name": "利欧股份",
+    "first_date": "2026-02-04",
+    "best_rank": 13,
+    "days_on_list": 8
+  },
+  {
+    "code": "603667.SH",
+    "qmt_code": "603667",
+    "market": "SH",
+    "name": "五洲新春",
+    "first_date": "2026-02-04",
+    "best_rank": 13,
+    "days_on_list": 4
+  },
+  {
+    "code": "300251.SZ",
+    "qmt_code": "300251",
+    "market": "SZ",
+    "name": "光线传媒",
+    "first_date": "2026-02-07",
+    "best_rank": 13,
+    "days_on_list": 6
+  },
+  {
+    "code": "300418.SZ",
+    "qmt_code": "300418",
+    "market": "SZ",
+    "name": "昆仑万维",
+    "first_date": "2026-02-04",
+    "best_rank": 14,
+    "days_on_list": 8
+  },
+  {
+    "code": "301231.SZ",
+    "qmt_code": "301231",
+    "market": "SZ",
+    "name": "荣信文化",
+    "first_date": "2026-02-11",
+    "best_rank": 14,
+    "days_on_list": 2
+  },
+  {
+    "code": "300912.SZ",
+    "qmt_code": "300912",
+    "market": "SZ",
+    "name": "凯龙高科",
+    "first_date": "2026-02-10",
+    "best_rank": 15,
+    "days_on_list": 1
+  },
+  {
+    "code": "300342.SZ",
+    "qmt_code": "300342",
+    "market": "SZ",
+    "name": "天银机电",
+    "first_date": "2026-02-04",
+    "best_rank": 15,
+    "days_on_list": 7
+  },
+  {
+    "code": "600330.SH",
+    "qmt_code": "600330",
+    "market": "SH",
+    "name": "天通股份",
+    "first_date": "2026-02-04",
+    "best_rank": 16,
+    "days_on_list": 1
+  },
+  {
+    "code": "002792.SZ",
+    "qmt_code": "002792",
+    "market": "SZ",
+    "name": "通宇通讯",
+    "first_date": "2026-02-04",
+    "best_rank": 16,
+    "days_on_list": 3
+  },
+  {
+    "code": "603629.SH",
+    "qmt_code": "603629",
+    "market": "SH",
+    "name": "利通电子",
+    "first_date": "2026-02-04",
+    "best_rank": 16,
+    "days_on_list": 8
+  },
+  {
+    "code": "002491.SZ",
+    "qmt_code": "002491",
+    "market": "SZ",
+    "name": "通鼎互联",
+    "first_date": "2026-02-04",
+    "best_rank": 17,
+    "days_on_list": 3
+  },
+  {
+    "code": "000815.SZ",
+    "qmt_code": "000815",
+    "market": "SZ",
+    "name": "美利云",
+    "first_date": "2026-02-12",
+    "best_rank": 17,
+    "days_on_list": 1
+  },
+  {
+    "code": "002455.SZ",
+    "qmt_code": "002455",
+    "market": "SZ",
+    "name": "百川股份",
+    "first_date": "2026-02-11",
+    "best_rank": 17,
+    "days_on_list": 2
+  },
+  {
+    "code": "002995.SZ",
+    "qmt_code": "002995",
+    "market": "SZ",
+    "name": "天地在线",
+    "first_date": "2026-02-04",
+    "best_rank": 18,
+    "days_on_list": 4
+  },
+  {
+    "code": "000681.SZ",
+    "qmt_code": "000681",
+    "market": "SZ",
+    "name": "视觉中国",
+    "first_date": "2026-02-10",
+    "best_rank": 18,
+    "days_on_list": 2
+  },
+  {
+    "code": "300442.SZ",
+    "qmt_code": "300442",
+    "market": "SZ",
+    "name": "润泽科技",
+    "first_date": "2026-02-04",
+    "best_rank": 19,
+    "days_on_list": 10
+  },
+  {
+    "code": "300166.SZ",
+    "qmt_code": "300166",
+    "market": "SZ",
+    "name": "东方国信",
+    "first_date": "2026-02-09",
+    "best_rank": 19,
+    "days_on_list": 4
+  },
+  {
+    "code": "300316.SZ",
+    "qmt_code": "300316",
+    "market": "SZ",
+    "name": "晶盛机电",
+    "first_date": "2026-02-04",
+    "best_rank": 19,
+    "days_on_list": 2
+  },
+  {
+    "code": "000559.SZ",
+    "qmt_code": "000559",
+    "market": "SZ",
+    "name": "万向钱潮",
+    "first_date": "2026-02-11",
+    "best_rank": 20,
+    "days_on_list": 2
+  },
+  {
+    "code": "603598.SH",
+    "qmt_code": "603598",
+    "market": "SH",
+    "name": "引力传媒",
+    "first_date": "2026-02-10",
+    "best_rank": 20,
+    "days_on_list": 2
+  },
+  {
+    "code": "002361.SZ",
+    "qmt_code": "002361",
+    "market": "SZ",
+    "name": "神剑股份",
+    "first_date": "2026-02-06",
+    "best_rank": 21,
+    "days_on_list": 3
+  },
+  {
+    "code": "601360.SH",
+    "qmt_code": "601360",
+    "market": "SH",
+    "name": "三六零",
+    "first_date": "2026-02-09",
+    "best_rank": 21,
+    "days_on_list": 2
+  },
+  {
+    "code": "603000.SH",
+    "qmt_code": "603000",
+    "market": "SH",
+    "name": "人民网",
+    "first_date": "2026-02-11",
+    "best_rank": 22,
+    "days_on_list": 2
+  },
+  {
+    "code": "301005.SZ",
+    "qmt_code": "301005",
+    "market": "SZ",
+    "name": "超捷股份",
+    "first_date": "2026-02-07",
+    "best_rank": 22,
+    "days_on_list": 7
+  },
+  {
+    "code": "301085.SZ",
+    "qmt_code": "301085",
+    "market": "SZ",
+    "name": "亚康股份",
+    "first_date": "2026-02-10",
+    "best_rank": 22,
+    "days_on_list": 3
+  },
+  {
+    "code": "300436.SZ",
+    "qmt_code": "300436",
+    "market": "SZ",
+    "name": "广生堂",
+    "first_date": "2026-02-06",
+    "best_rank": 22,
+    "days_on_list": 2
+  },
+  {
+    "code": "002099.SZ",
+    "qmt_code": "002099",
+    "market": "SZ",
+    "name": "海翔药业",
+    "first_date": "2026-02-10",
+    "best_rank": 23,
+    "days_on_list": 1
+  },
+  {
+    "code": "301362.SZ",
+    "qmt_code": "301362",
+    "market": "SZ",
+    "name": "民爆光电",
+    "first_date": "2026-02-05",
+    "best_rank": 23,
+    "days_on_list": 5
+  },
+  {
+    "code": "002498.SZ",
+    "qmt_code": "002498",
+    "market": "SZ",
+    "name": "汉缆股份",
+    "first_date": "2026-02-13",
+    "best_rank": 23,
+    "days_on_list": 1
+  },
+  {
+    "code": "601212.SH",
+    "qmt_code": "601212",
+    "market": "SH",
+    "name": "白银有色",
+    "first_date": "2026-02-04",
+    "best_rank": 24,
+    "days_on_list": 1
+  },
+  {
+    "code": "000592.SZ",
+    "qmt_code": "000592",
+    "market": "SZ",
+    "name": "平潭发展",
+    "first_date": "2026-02-04",
+    "best_rank": 25,
+    "days_on_list": 7
+  },
+  {
+    "code": "300139.SZ",
+    "qmt_code": "300139",
+    "market": "SZ",
+    "name": "晓程科技",
+    "first_date": "2026-02-04",
+    "best_rank": 25,
+    "days_on_list": 4
+  },
+  {
+    "code": "603138.SH",
+    "qmt_code": "603138",
+    "market": "SH",
+    "name": "海量数据",
+    "first_date": "2026-02-12",
+    "best_rank": 25,
+    "days_on_list": 2
+  },
+  {
+    "code": "600683.SH",
+    "qmt_code": "600683",
+    "market": "SH",
+    "name": "京投发展",
+    "first_date": "2026-02-04",
+    "best_rank": 25,
+    "days_on_list": 2
+  },
+  {
+    "code": "000533.SZ",
+    "qmt_code": "000533",
+    "market": "SZ",
+    "name": "顺钠股份",
+    "first_date": "2026-02-04",
+    "best_rank": 26,
+    "days_on_list": 1
+  },
+  {
+    "code": "603616.SH",
+    "qmt_code": "603616",
+    "market": "SH",
+    "name": "韩建河山",
+    "first_date": "2026-02-06",
+    "best_rank": 26,
+    "days_on_list": 4
+  },
+  {
+    "code": "603466.SH",
+    "qmt_code": "603466",
+    "market": "SH",
+    "name": "风语筑",
+    "first_date": "2026-02-11",
+    "best_rank": 26,
+    "days_on_list": 2
+  },
+  {
+    "code": "600481.SH",
+    "qmt_code": "600481",
+    "market": "SH",
+    "name": "双良节能",
+    "first_date": "2026-02-04",
+    "best_rank": 27,
+    "days_on_list": 2
+  },
+  {
+    "code": "002565.SZ",
+    "qmt_code": "002565",
+    "market": "SZ",
+    "name": "顺灏股份",
+    "first_date": "2026-02-04",
+    "best_rank": 27,
+    "days_on_list": 3
+  },
+  {
+    "code": "600498.SH",
+    "qmt_code": "600498",
+    "market": "SH",
+    "name": "烽火通信",
+    "first_date": "2026-02-05",
+    "best_rank": 27,
+    "days_on_list": 5
+  },
+  {
+    "code": "300249.SZ",
+    "qmt_code": "300249",
+    "market": "SZ",
+    "name": "依米康",
+    "first_date": "2026-02-12",
+    "best_rank": 27,
+    "days_on_list": 1
+  },
+  {
+    "code": "300624.SZ",
+    "qmt_code": "300624",
+    "market": "SZ",
+    "name": "万兴科技",
+    "first_date": "2026-02-09",
+    "best_rank": 27,
+    "days_on_list": 2
+  },
+  {
+    "code": "601595.SH",
+    "qmt_code": "601595",
+    "market": "SH",
+    "name": "上海电影",
+    "first_date": "2026-02-10",
+    "best_rank": 28,
+    "days_on_list": 1
+  },
+  {
+    "code": "603778.SH",
+    "qmt_code": "603778",
+    "market": "SH",
+    "name": "国晟科技",
+    "first_date": "2026-02-04",
+    "best_rank": 28,
+    "days_on_list": 5
+  },
+  {
+    "code": "002054.SZ",
+    "qmt_code": "002054",
+    "market": "SZ",
+    "name": "德美化工",
+    "first_date": "2026-02-09",
+    "best_rank": 28,
+    "days_on_list": 1
+  },
+  {
+    "code": "600785.SH",
+    "qmt_code": "600785",
+    "market": "SH",
+    "name": "新华百货",
+    "first_date": "2026-02-04",
+    "best_rank": 28,
+    "days_on_list": 2
+  },
+  {
+    "code": "300724.SZ",
+    "qmt_code": "300724",
+    "market": "SZ",
+    "name": "捷佳伟创",
+    "first_date": "2026-02-04",
+    "best_rank": 29,
+    "days_on_list": 1
+  },
+  {
+    "code": "601599.SH",
+    "qmt_code": "601599",
+    "market": "SH",
+    "name": "浙文影业",
+    "first_date": "2026-02-06",
+    "best_rank": 29,
+    "days_on_list": 2
+  },
+  {
+    "code": "002009.SZ",
+    "qmt_code": "002009",
+    "market": "SZ",
+    "name": "天奇股份",
+    "first_date": "2026-02-04",
+    "best_rank": 29,
+    "days_on_list": 6
+  },
+  {
+    "code": "301262.SZ",
+    "qmt_code": "301262",
+    "market": "SZ",
+    "name": "海看股份",
+    "first_date": "2026-02-10",
+    "best_rank": 30,
+    "days_on_list": 1
+  },
+  {
+    "code": "605287.SH",
+    "qmt_code": "605287",
+    "market": "SH",
+    "name": "德才股份",
+    "first_date": "2026-02-12",
+    "best_rank": 30,
+    "days_on_list": 1
+  },
+  {
+    "code": "002291.SZ",
+    "qmt_code": "002291",
+    "market": "SZ",
+    "name": "遥望科技",
+    "first_date": "2026-02-05",
+    "best_rank": 30,
+    "days_on_list": 1
+  },
+  {
+    "code": "002865.SZ",
+    "qmt_code": "002865",
+    "market": "SZ",
+    "name": "钧达股份",
+    "first_date": "2026-02-04",
+    "best_rank": 31,
+    "days_on_list": 2
+  },
+  {
+    "code": "603256.SH",
+    "qmt_code": "603256",
+    "market": "SH",
+    "name": "宏和科技",
+    "first_date": "2026-02-11",
+    "best_rank": 31,
+    "days_on_list": 2
+  },
+  {
+    "code": "600118.SH",
+    "qmt_code": "600118",
+    "market": "SH",
+    "name": "中国卫星",
+    "first_date": "2026-02-04",
+    "best_rank": 32,
+    "days_on_list": 1
+  },
+  {
+    "code": "002440.SZ",
+    "qmt_code": "002440",
+    "market": "SZ",
+    "name": "闰土股份",
+    "first_date": "2026-02-06",
+    "best_rank": 32,
+    "days_on_list": 3
+  },
+  {
+    "code": "600879.SH",
+    "qmt_code": "600879",
+    "market": "SH",
+    "name": "航天电子",
+    "first_date": "2026-02-04",
+    "best_rank": 33,
+    "days_on_list": 5
+  },
+  {
+    "code": "601116.SH",
+    "qmt_code": "601116",
+    "market": "SH",
+    "name": "三江购物",
+    "first_date": "2026-02-05",
+    "best_rank": 33,
+    "days_on_list": 2
+  },
+  {
+    "code": "000066.SZ",
+    "qmt_code": "000066",
+    "market": "SZ",
+    "name": "中国长城",
+    "first_date": "2026-02-07",
+    "best_rank": 34,
+    "days_on_list": 4
+  },
+  {
+    "code": "300620.SZ",
+    "qmt_code": "300620",
+    "market": "SZ",
+    "name": "光库科技",
+    "first_date": "2026-02-09",
+    "best_rank": 34,
+    "days_on_list": 3
+  },
+  {
+    "code": "002340.SZ",
+    "qmt_code": "002340",
+    "market": "SZ",
+    "name": "格林美",
+    "first_date": "2026-02-11",
+    "best_rank": 34,
+    "days_on_list": 1
+  },
+  {
+    "code": "300394.SZ",
+    "qmt_code": "300394",
+    "market": "SZ",
+    "name": "天孚通信",
+    "first_date": "2026-02-07",
+    "best_rank": 35,
+    "days_on_list": 6
+  },
+  {
+    "code": "300751.SZ",
+    "qmt_code": "300751",
+    "market": "SZ",
+    "name": "迈为股份",
+    "first_date": "2026-02-04",
+    "best_rank": 35,
+    "days_on_list": 2
+  },
+  {
+    "code": "300063.SZ",
+    "qmt_code": "300063",
+    "market": "SZ",
+    "name": "天龙集团",
+    "first_date": "2026-02-09",
+    "best_rank": 36,
+    "days_on_list": 1
+  },
+  {
+    "code": "002413.SZ",
+    "qmt_code": "002413",
+    "market": "SZ",
+    "name": "雷科防务",
+    "first_date": "2026-02-06",
+    "best_rank": 36,
+    "days_on_list": 1
+  },
+  {
+    "code": "002323.SZ",
+    "qmt_code": "002323",
+    "market": "SZ",
+    "name": "雅博股份",
+    "first_date": "2026-02-11",
+    "best_rank": 36,
+    "days_on_list": 3
+  },
+  {
+    "code": "300133.SZ",
+    "qmt_code": "300133",
+    "market": "SZ",
+    "name": "华策影视",
+    "first_date": "2026-02-10",
+    "best_rank": 36,
+    "days_on_list": 1
+  },
+  {
+    "code": "002129.SZ",
+    "qmt_code": "002129",
+    "market": "SZ",
+    "name": "TCL中环",
+    "first_date": "2026-02-04",
+    "best_rank": 36,
+    "days_on_list": 1
+  },
+  {
+    "code": "601615.SH",
+    "qmt_code": "601615",
+    "market": "SH",
+    "name": "明阳智能",
+    "first_date": "2026-02-04",
+    "best_rank": 37,
+    "days_on_list": 4
+  },
+  {
+    "code": "000821.SZ",
+    "qmt_code": "000821",
+    "market": "SZ",
+    "name": "ST京机",
+    "first_date": "2026-02-05",
+    "best_rank": 37,
+    "days_on_list": 3
+  },
+  {
+    "code": "002969.SZ",
+    "qmt_code": "002969",
+    "market": "SZ",
+    "name": "嘉美包装",
+    "first_date": "2026-02-06",
+    "best_rank": 37,
+    "days_on_list": 4
+  },
+  {
+    "code": "300766.SZ",
+    "qmt_code": "300766",
+    "market": "SZ",
+    "name": "每日互动",
+    "first_date": "2026-02-11",
+    "best_rank": 38,
+    "days_on_list": 2
+  },
+  {
+    "code": "301025.SZ",
+    "qmt_code": "301025",
+    "market": "SZ",
+    "name": "读客文化",
+    "first_date": "2026-02-11",
+    "best_rank": 38,
+    "days_on_list": 2
+  },
+  {
+    "code": "000859.SZ",
+    "qmt_code": "000859",
+    "market": "SZ",
+    "name": "国风新材",
+    "first_date": "2026-02-13",
+    "best_rank": 39,
+    "days_on_list": 1
+  },
+  {
+    "code": "002218.SZ",
+    "qmt_code": "002218",
+    "market": "SZ",
+    "name": "拓日新能",
+    "first_date": "2026-02-05",
+    "best_rank": 39,
+    "days_on_list": 1
+  },
+  {
+    "code": "300548.SZ",
+    "qmt_code": "300548",
+    "market": "SZ",
+    "name": "长芯博创",
+    "first_date": "2026-02-07",
+    "best_rank": 39,
+    "days_on_list": 4
+  },
+  {
+    "code": "301486.SZ",
+    "qmt_code": "301486",
+    "market": "SZ",
+    "name": "致尚科技",
+    "first_date": "2026-02-06",
+    "best_rank": 40,
+    "days_on_list": 1
+  },
+  {
+    "code": "000977.SZ",
+    "qmt_code": "000977",
+    "market": "SZ",
+    "name": "浪潮信息",
+    "first_date": "2026-02-12",
+    "best_rank": 40,
+    "days_on_list": 2
+  },
+  {
+    "code": "300775.SZ",
+    "qmt_code": "300775",
+    "market": "SZ",
+    "name": "三角防务",
+    "first_date": "2026-02-10",
+    "best_rank": 40,
+    "days_on_list": 1
+  },
+  {
+    "code": "601869.SH",
+    "qmt_code": "601869",
+    "market": "SH",
+    "name": "长飞光纤",
+    "first_date": "2026-02-04",
+    "best_rank": 41,
+    "days_on_list": 3
+  },
+  {
+    "code": "002112.SZ",
+    "qmt_code": "002112",
+    "market": "SZ",
+    "name": "三变科技",
+    "first_date": "2026-02-09",
+    "best_rank": 41,
+    "days_on_list": 2
+  },
+  {
+    "code": "002429.SZ",
+    "qmt_code": "002429",
+    "market": "SZ",
+    "name": "兆驰股份",
+    "first_date": "2026-02-11",
+    "best_rank": 42,
+    "days_on_list": 1
+  },
+  {
+    "code": "002830.SZ",
+    "qmt_code": "002830",
+    "market": "SZ",
+    "name": "名雕股份",
+    "first_date": "2026-02-05",
+    "best_rank": 42,
+    "days_on_list": 1
+  },
+  {
+    "code": "300377.SZ",
+    "qmt_code": "300377",
+    "market": "SZ",
+    "name": "赢时胜",
+    "first_date": "2026-02-05",
+    "best_rank": 43,
+    "days_on_list": 1
+  },
+  {
+    "code": "601015.SH",
+    "qmt_code": "601015",
+    "market": "SH",
+    "name": "陕西黑猫",
+    "first_date": "2026-02-06",
+    "best_rank": 43,
+    "days_on_list": 1
+  },
+  {
+    "code": "603698.SH",
+    "qmt_code": "603698",
+    "market": "SH",
+    "name": "航天工程",
+    "first_date": "2026-02-06",
+    "best_rank": 44,
+    "days_on_list": 1
+  },
+  {
+    "code": "600778.SH",
+    "qmt_code": "600778",
+    "market": "SH",
+    "name": "友好集团",
+    "first_date": "2026-02-05",
+    "best_rank": 44,
+    "days_on_list": 1
+  },
+  {
+    "code": "300502.SZ",
+    "qmt_code": "300502",
+    "market": "SZ",
+    "name": "新易盛",
+    "first_date": "2026-02-09",
+    "best_rank": 44,
+    "days_on_list": 1
+  },
+  {
+    "code": "603980.SH",
+    "qmt_code": "603980",
+    "market": "SH",
+    "name": "吉华集团",
+    "first_date": "2026-02-11",
+    "best_rank": 44,
+    "days_on_list": 1
+  },
+  {
+    "code": "300113.SZ",
+    "qmt_code": "300113",
+    "market": "SZ",
+    "name": "顺网科技",
+    "first_date": "2026-02-11",
+    "best_rank": 45,
+    "days_on_list": 1
+  },
+  {
+    "code": "002202.SZ",
+    "qmt_code": "002202",
+    "market": "SZ",
+    "name": "金风科技",
+    "first_date": "2026-02-04",
+    "best_rank": 45,
+    "days_on_list": 2
+  },
+  {
+    "code": "301636.SZ",
+    "qmt_code": "301636",
+    "market": "SZ",
+    "name": "泽润新能",
+    "first_date": "2026-02-09",
+    "best_rank": 47,
+    "days_on_list": 1
+  },
+  {
+    "code": "002119.SZ",
+    "qmt_code": "002119",
+    "market": "SZ",
+    "name": "康强电子",
+    "first_date": "2026-02-04",
+    "best_rank": 47,
+    "days_on_list": 2
+  },
+  {
+    "code": "002957.SZ",
+    "qmt_code": "002957",
+    "market": "SZ",
+    "name": "科瑞技术",
+    "first_date": "2026-02-12",
+    "best_rank": 48,
+    "days_on_list": 1
+  },
+  {
+    "code": "002519.SZ",
+    "qmt_code": "002519",
+    "market": "SZ",
+    "name": "银河电子",
+    "first_date": "2026-02-06",
+    "best_rank": 48,
+    "days_on_list": 1
+  },
+  {
+    "code": "600673.SH",
+    "qmt_code": "600673",
+    "market": "SH",
+    "name": "东阳光",
+    "first_date": "2026-02-13",
+    "best_rank": 48,
+    "days_on_list": 1
+  },
+  {
+    "code": "301232.SZ",
+    "qmt_code": "301232",
+    "market": "SZ",
+    "name": "飞沃科技",
+    "first_date": "2026-02-10",
+    "best_rank": 48,
+    "days_on_list": 1
+  },
+  {
+    "code": "000981.SZ",
+    "qmt_code": "000981",
+    "market": "SZ",
+    "name": "山子高科",
+    "first_date": "2026-02-04",
+    "best_rank": 50,
+    "days_on_list": 1
+  },
+  {
+    "code": "000738.SZ",
+    "qmt_code": "000738",
+    "market": "SZ",
+    "name": "航发控制",
+    "first_date": "2026-02-07",
+    "best_rank": 50,
+    "days_on_list": 1
+  }
+]
