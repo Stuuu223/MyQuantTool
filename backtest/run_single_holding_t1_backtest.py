@@ -339,6 +339,12 @@ class HalfwaySignalAdapter:
         """
         self.strategy = strategy
         self._opened_today: set = set()
+        
+        # V17 Debug: 添加计数器
+        self.debug_counters = {
+            'strategy_signals_received': 0,  # 策略返回的信号数
+            'adapter_calls': 0,               # 适配器被调用次数
+        }
     
     def reset_daily(self):
         """日结重置"""
@@ -358,6 +364,9 @@ class HalfwaySignalAdapter:
         3. 每天每只股票只开一笔
         4. 必须明确命中Halfway做多信号
         """
+        # V17 Debug: 记录适配器调用
+        self.debug_counters['adapter_calls'] += 1
+        
         # 无效价格不开仓
         if tick.last_price <= 0:
             return False
@@ -382,6 +391,8 @@ class HalfwaySignalAdapter:
             # 信号强度必须大于0
             if signal.strength <= 0:
                 continue
+            # V17 Debug: 记录收到的策略信号
+            self.debug_counters['strategy_signals_received'] += 1
             # 确认开仓
             self._opened_today.add(date_key)
             return True

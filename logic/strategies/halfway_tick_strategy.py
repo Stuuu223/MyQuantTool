@@ -45,6 +45,17 @@ class HalfwayTickStrategy(ITickStrategy):
         # 使用halfway_core创建平台检测器
         self.platform_detector = create_halfway_platform_detector(params)
         
+        # V17 Debug: 添加计数器用于诊断策略活性
+        self.debug_counters = {
+            'ticks_seen': 0,           # 看到的tick总数
+            'volatility_pass': 0,      # 通过波动率阈值
+            'volume_surge_pass': 0,    # 通过量能阈值
+            'breakout_pass': 0,        # 通过突破阈值
+            'all_conditions_pass': 0,  # 同时通过三个条件
+            'raw_signals_generated': 0, # 最终生成的信号数
+            'history_insufficient': 0,  # 历史数据不足次数
+        }
+        
     def on_tick(self, tick: TickData) -> List[Signal]:
         """
         处理单个Tick数据
@@ -55,6 +66,9 @@ class HalfwayTickStrategy(ITickStrategy):
         Returns:
             List[Signal]: 产生的信号列表
         """
+        # V17 Debug: 记录tick总数
+        self.debug_counters['ticks_seen'] += 1
+        
         # 更新当前状态
         self.current_time = tick.time
         self.current_price = tick.last_price
@@ -77,9 +91,47 @@ class HalfwayTickStrategy(ITickStrategy):
             self.current_price
         )
         
+        # V17 Debug: 记录各条件通过情况
+        factors = result.get('factors', {})
+        conditions = result.get('conditions', {})
+        
+        # 检查历史数据是否足够
+        if len(self.price_history) < self.params.get('min_history_points', 5):
+            self.debug_counters['history_insufficient'] += 1
+            return []
+        
+        # 记录各条件通过情况
+        volatility_val = factors.get('volatility', 999)
+        volume_surge_val = factors.get('volume_surge', 0)
+        breakout_val = factors.get('breakout_strength', 0)
+        
+        volatility_threshold = self.params.get('volatility_threshold', 0.03)
+        volume_surge_threshold = self.params.get('volume_surge', 1.5)
+        breakout_threshold = self.params.get('breakout_strength', 0.01)
+        
+        volatility_ok = volatility_val <= volatility_threshold
+        volume_surge_ok = volume_surge_val >= volume_surge_threshold
+        breakout_ok = breakout_val >= breakout_threshold
+        
+        # V17 Debug: 采样记录前10个非零突破值
+        if breakout_val != 0 and self.debug_counters['breakout_pass'] < 10:
+            print(f"[Debug] breakout_val={breakout_val:.4f}, threshold={breakout_threshold}, current={self.current_price}, platform_high={result.get('platform_state', {}).get('platform_high', 'N/A')}")
+        
+        if volatility_ok:
+            self.debug_counters['volatility_pass'] += 1
+        if volume_surge_ok:
+            self.debug_counters['volume_surge_pass'] += 1
+        if breakout_ok:
+            self.debug_counters['breakout_pass'] += 1
+        if volatility_ok and volume_surge_ok and breakout_ok:
+            self.debug_counters['all_conditions_pass'] += 1
+        
         # 检查是否满足半路条件
         signals = []
         if result['is_signal']:
+            # V17 Debug: 记录信号生成
+            self.debug_counters['raw_signals_generated'] += 1
+            
             signal = Signal(
                 time=self.current_time,
                 price=self.current_price,
@@ -124,7 +176,8 @@ class HalfwayTickStrategy(ITickStrategy):
                 'current_breakout_strength': result['factors']['breakout_strength'],
                 'price_history_length': len(self.price_history),
                 'total_signals': len(self.signals),
-                'platform_state': result.get('platform_state', {})
+                'platform_state': result.get('platform_state', {}),
+                'debug_counters': self.debug_counters  # V17 Debug: 包含计数器
             }
         else:
             return {
@@ -134,7 +187,8 @@ class HalfwayTickStrategy(ITickStrategy):
                 'current_breakout_strength': 0.0,
                 'price_history_length': 0,
                 'total_signals': len(self.signals),
-                'platform_state': {}
+                'platform_state': {},
+                'debug_counters': self.debug_counters  # V17 Debug: 包含计数器
             }
 
 
