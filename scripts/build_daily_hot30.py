@@ -63,10 +63,11 @@ class HotUniverseBuilder:
             DataFrame: 市场数据
         """
         try:
-            # 获取日线行情
+            # 获取日线行情（使用start_date和end_date）
             daily_df = ts.pro_bar(
                 ts_code='',
-                trade_date=trade_date,
+                start_date=trade_date,
+                end_date=trade_date,
                 fields='ts_code,trade_date,open,high,low,close,vol,amount',
                 freq='D'
             )
@@ -78,7 +79,8 @@ class HotUniverseBuilder:
             # 获取基本面数据（流通市值）
             basic_df = ts.pro_bar_basic(
                 ts_code='',
-                trade_date=trade_date,
+                start_date=trade_date,
+                end_date=trade_date,
                 fields='ts_code,trade_date,circ_mv,total_mv',
                 freq='D'
             )
@@ -270,7 +272,7 @@ class HotUniverseBuilder:
 def main():
     """主函数"""
     # Tushare Token配置
-    tushare_token = "YOUR_TUSHARE_TOKEN"  # 请替换为真实token
+    tushare_token = "1430dca9c3419b91928e162935065bcd3531fa82976fee8355d550b"
     
     # 参数配置
     end_date = datetime.now()

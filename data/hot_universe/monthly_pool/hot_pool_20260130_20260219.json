@@ -1,0 +1,13 @@
+{
+  "meta": {
+    "window_start": "20260130",
+    "window_end": "20260219",
+    "selection_rule_version": "TOP30_V1",
+    "source": "tushare",
+    "generated_at": "2026-02-19T00:15:25.945396"
+  },
+  "daily_top30": {},
+  "monthly_pool": {
+    "stocks": {}
+  }
+}
