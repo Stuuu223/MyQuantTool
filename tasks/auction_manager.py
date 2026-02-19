@@ -250,6 +250,12 @@ def main():
         success = replay_snapshot(args.date)
     elif args.action == 'export':
         success = export_snapshot(args.date, auto=args.auto)
+        if not success and not args.auto:
+            print("\n⚠️  未找到竞价数据，可能原因：")
+            print("  1. 今天尚未运行竞价收集")
+            print("  2. 指定的日期没有数据")
+            print("  3. Redis服务未启动")
+            return 0  # 没有数据不是错误
     elif args.action == 'scheduled':
         success = scheduled_collection()
     else:
