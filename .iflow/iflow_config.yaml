@@ -1,0 +1,51 @@
+# iFlow CLI 启动配置
+# 此文件定义iFlow CLI会话启动时的行为
+
+# 必读文档（按优先级排序）
+# 这些文档会在每次会话开始时被加载到上下文中
+required_docs:
+  - path: .iflow/DEVELOPMENT_PARADIGM.md
+    priority: 1
+    description: "开发范式 - 角色分工与流程规范"
+    required: true
+    
+  - path: docs/KNOWLEDGE_BASE_V17.md
+    priority: 2
+    description: "知识库 - 业务与策略总纲"
+    required: true
+    
+  - path: docs/V17_TECH_DEBT.md
+    priority: 3
+    description: "技术债 - 未决问题记录"
+    required: false
+
+# 核心规则摘要（启动时显示）
+startup_rules:
+  - "角色分工：老板定战略，CTO定架构，iFlow拆任务，AI写代码"
+  - "流水线：需求卡 → 设计卡 → 实现+自测 → CTO审计"
+  - "红线：修改core抽象需CTO批准，删除模块需老板确认"
+  - "资金流：QMT Tick为主，AkShare DDE T+1为辅"
+  - "阈值：禁止硬编码，统一用相对分位数"
+
+# 禁止行为（启动时警告）
+prohibited_actions:
+  - "不得在没有设计卡的情况下修改核心抽象"
+  - "不得跳过自测直接声称任务完成"
+  - "不得绕过ICapitalFlowProvider直接调用QMT/AkShare"
+  - "不得在策略层硬编码绝对阈值"
+
+# 项目路径
+project_paths:
+  root: E:\MyQuantTool
+  core_logic: logic/
+  config: config/
+  data: data/
+  docs: docs/
+  tasks: tasks/
+  tools: tools/
+
+# Python环境
+python:
+  venv_path: venv_qmt
+  executable: venv_qmt/Scripts/python.exe
+  version: "3.10"

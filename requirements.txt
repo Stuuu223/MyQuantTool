@@ -20,25 +20,10 @@ seaborn>=0.13.0
 scipy>=1.10.0
 optuna>=3.0.0
 jieba>=0.42.0
-# cvxpy>=1.4.0  # 注释掉，因为在Windows上编译有困难，如果需要可在支持的系统上安装
 xgboost>=2.0.0
-textblob>=0.19.0
-
-# Lite 版高性能机器学习库
-lightgbm>=4.0.0
-catboost>=1.2.0
 
 # Optuna 可视化（可选）
 optuna-dashboard>=0.15.0
-
-# 深度学习依赖（可选，Lite 版不需要）
-# torch>=2.0.0
-# torchvision>=0.15.0
-
-# 机器学习依赖
-
-# 强化学习依赖
-gymnasium>=0.29.0
 
 # HTTP请求
 requests>=2.31.0
