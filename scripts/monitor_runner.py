@@ -76,24 +76,36 @@ def run_download_monitor():
     logger.info("启动下载进度监控...")
     
     try:
-        # 导入并复用tick_download的状态检查
-        from scripts.tick_download import is_running, read_status
+        import json
+        import time
+        from pathlib import Path
         
-        if not is_running()[0]:
-            print("❌ 没有正在运行的下载任务")
+        STATUS_FILE = PROJECT_ROOT / 'logs' / 'download_manager_status.json'
+        
+        if not STATUS_FILE.exists():
+            print("❌ 没有下载状态文件")
             print("提示: 先运行 python scripts/download_manager.py ...")
             return False
         
         # 实时监控
-        import time
         try:
             while True:
-                status = read_status()
-                if status:
-                    print(f"\r进度: {status.get('progress', 'N/A')}, "
-                          f"已下载: {status.get('downloaded_count', 0)}, "
-                          f"失败: {status.get('failed_count', 0)}",
-                          end='', flush=True)
+                if STATUS_FILE.exists():
+                    with open(STATUS_FILE, 'r') as f:
+                        status = json.load(f)
+                    
+                    total = status.get('total_stocks', 0)
+                    completed = status.get('completed_stocks', 0)
+                    failed = status.get('failed_stocks', 0)
+                    current = status.get('current_stock', '')
+                    
+                    if total > 0:
+                        pct = completed / total * 100
+                        print(f"\r[{completed}/{total} {pct:.1f}%] "
+                              f"当前: {current} "
+                              f"失败: {failed}     ",
+                              end='', flush=True)
+                
                 time.sleep(5)
         except KeyboardInterrupt:
             print("\n监控已停止")
