@@ -22,20 +22,23 @@ logger = get_logger(__name__)
 
 class EventType(Enum):
     """事件类型枚举"""
-    
+
     # 集合竞价战法事件
     OPENING_WEAK_TO_STRONG = "opening_weak_to_strong"  # 竞价弱转强
     OPENING_THEME_SPREAD = "opening_theme_spread"  # 一字板扩散
-    
+
     # 半路战法事件
     HALFWAY_BREAKOUT = "halfway_breakout"  # 半路平台突破
-    
+
     # 低吸战法事件
     DIP_BUY_CANDIDATE = "dip_buy_candidate"  # 低吸候选
-    
+
     # 龙头战法事件
     LEADER_CANDIDATE = "leader_candidate"  # 龙头候选
-    
+
+    # 资金攻击事件
+    CAPITAL_ATTACK = "capital_attack"  # 真资金攻击（非诱多）
+
     # 通用事件
     TICK_UPDATE = "tick_update"  # Tick数据更新
 

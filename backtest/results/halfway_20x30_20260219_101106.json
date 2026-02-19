@@ -1,0 +1,1339 @@
+{
+  "timestamp": "2026-02-19T10:11:06.600991",
+  "config": {
+    "strategy": "HALFWAY",
+    "stock_count": 12,
+    "start_date": "2025-11-01",
+    "end_date": "2025-12-15",
+    "halfway_params": {
+      "volatility_threshold": 0.02,
+      "volume_surge": 1.2,
+      "breakout_strength": 0.005
+    },
+    "trading_params": {
+      "initial_capital": 100000.0,
+      "position_size": 0.5,
+      "stop_loss_pct": 0.02,
+      "take_profit_pct": 0.05,
+      "max_holding_minutes": 120
+    }
+  },
+  "wanzhu": {
+    "total_count": 12,
+    "results": [
+      {
+        "code": "300058.SZ",
+        "start_date": "2025-11-01",
+        "end_date": "2025-12-15",
+        "initial_capital": 100000.0,
+        "final_equity": 100000.0,
+        "total_return": 0.0,
+        "max_drawdown": 0.0,
+        "total_trades": 0,
+        "win_rate": 0.0,
+        "sharpe_ratio": 0.0,
+        "trades": [],
+        "equity_curve": [
+          {
+            "date": "2025-11-14",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-17",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-18",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-19",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-20",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-21",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-24",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-25",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-26",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-27",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-28",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-01",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-02",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-03",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-04",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-05",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-08",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-09",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-10",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-11",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-12",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-15",
+            "equity": 100000.0
+          }
+        ],
+        "debug_info": {
+          "total_ticks_processed": 107223,
+          "signals_generated": 0,
+          "stocks_with_data": 0
+        }
+      },
+      {
+        "code": "603778.SH",
+        "start_date": "2025-11-01",
+        "end_date": "2025-12-15",
+        "initial_capital": 100000.0,
+        "final_equity": 100000.0,
+        "total_return": 0.0,
+        "max_drawdown": 0.0,
+        "total_trades": 0,
+        "win_rate": 0.0,
+        "sharpe_ratio": 0.0,
+        "trades": [],
+        "equity_curve": [
+          {
+            "date": "2025-11-14",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-17",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-18",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-19",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-20",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-21",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-24",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-25",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-26",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-27",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-28",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-01",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-02",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-03",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-04",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-05",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-08",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-09",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-10",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-11",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-12",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-15",
+            "equity": 100000.0
+          }
+        ],
+        "debug_info": {
+          "total_ticks_processed": 216157,
+          "signals_generated": 0,
+          "stocks_with_data": 0
+        }
+      },
+      {
+        "code": "301005.SZ",
+        "start_date": "2025-11-01",
+        "end_date": "2025-12-15",
+        "initial_capital": 100000.0,
+        "final_equity": 100000.0,
+        "total_return": 0.0,
+        "max_drawdown": 0.0,
+        "total_trades": 0,
+        "win_rate": 0.0,
+        "sharpe_ratio": 0.0,
+        "trades": [],
+        "equity_curve": [
+          {
+            "date": "2025-11-14",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-17",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-18",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-19",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-20",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-21",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-24",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-25",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-26",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-27",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-28",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-01",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-02",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-03",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-04",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-05",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-08",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-09",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-10",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-11",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-12",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-15",
+            "equity": 100000.0
+          }
+        ],
+        "debug_info": {
+          "total_ticks_processed": 317585,
+          "signals_generated": 0,
+          "stocks_with_data": 0
+        }
+      },
+      {
+        "code": "600343.SH",
+        "start_date": "2025-11-01",
+        "end_date": "2025-12-15",
+        "initial_capital": 100000.0,
+        "final_equity": 100000.0,
+        "total_return": 0.0,
+        "max_drawdown": 0.0,
+        "total_trades": 0,
+        "win_rate": 0.0,
+        "sharpe_ratio": 0.0,
+        "trades": [],
+        "equity_curve": [
+          {
+            "date": "2025-11-14",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-17",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-18",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-19",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-20",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-21",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-24",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-25",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-26",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-27",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-28",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-01",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-02",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-03",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-04",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-05",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-08",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-09",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-10",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-11",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-12",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-15",
+            "equity": 100000.0
+          }
+        ],
+        "debug_info": {
+          "total_ticks_processed": 425645,
+          "signals_generated": 0,
+          "stocks_with_data": 0
+        }
+      },
+      {
+        "code": "600879.SH",
+        "start_date": "2025-11-01",
+        "end_date": "2025-12-15",
+        "initial_capital": 100000.0,
+        "final_equity": 100000.0,
+        "total_return": 0.0,
+        "max_drawdown": 0.0,
+        "total_trades": 0,
+        "win_rate": 0.0,
+        "sharpe_ratio": 0.0,
+        "trades": [],
+        "equity_curve": [
+          {
+            "date": "2025-11-14",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-17",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-18",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-19",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-20",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-21",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-24",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-25",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-26",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-27",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-28",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-01",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-02",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-03",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-04",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-05",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-08",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-09",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-10",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-11",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-12",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-15",
+            "equity": 100000.0
+          }
+        ],
+        "debug_info": {
+          "total_ticks_processed": 535628,
+          "signals_generated": 0,
+          "stocks_with_data": 0
+        }
+      },
+      {
+        "code": "300342.SZ",
+        "start_date": "2025-11-01",
+        "end_date": "2025-12-15",
+        "initial_capital": 100000.0,
+        "final_equity": 100000.0,
+        "total_return": 0.0,
+        "max_drawdown": 0.0,
+        "total_trades": 0,
+        "win_rate": 0.0,
+        "sharpe_ratio": 0.0,
+        "trades": [],
+        "equity_curve": [
+          {
+            "date": "2025-11-14",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-17",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-18",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-19",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-20",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-21",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-24",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-25",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-26",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-27",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-28",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-01",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-02",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-03",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-04",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-05",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-08",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-09",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-10",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-11",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-12",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-15",
+            "equity": 100000.0
+          }
+        ],
+        "debug_info": {
+          "total_ticks_processed": 638000,
+          "signals_generated": 0,
+          "stocks_with_data": 0
+        }
+      },
+      {
+        "code": "600498.SH",
+        "start_date": "2025-11-01",
+        "end_date": "2025-12-15",
+        "initial_capital": 100000.0,
+        "final_equity": 100000.0,
+        "total_return": 0.0,
+        "max_drawdown": 0.0,
+        "total_trades": 0,
+        "win_rate": 0.0,
+        "sharpe_ratio": 0.0,
+        "trades": [],
+        "equity_curve": [
+          {
+            "date": "2025-11-14",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-17",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-18",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-19",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-20",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-21",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-24",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-25",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-26",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-27",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-28",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-01",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-02",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-03",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-04",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-05",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-08",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-09",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-10",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-11",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-12",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-15",
+            "equity": 100000.0
+          }
+        ],
+        "debug_info": {
+          "total_ticks_processed": 747647,
+          "signals_generated": 0,
+          "stocks_with_data": 0
+        }
+      },
+      {
+        "code": "300456.SZ",
+        "start_date": "2025-11-01",
+        "end_date": "2025-12-15",
+        "initial_capital": 100000.0,
+        "final_equity": 100000.0,
+        "total_return": 0.0,
+        "max_drawdown": 0.0,
+        "total_trades": 0,
+        "win_rate": 0.0,
+        "sharpe_ratio": 0.0,
+        "trades": [],
+        "equity_curve": [
+          {
+            "date": "2025-11-13",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-14",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-17",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-18",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-19",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-20",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-21",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-24",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-25",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-26",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-27",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-28",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-01",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-02",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-03",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-04",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-05",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-08",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-09",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-10",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-11",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-12",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-15",
+            "equity": 100000.0
+          }
+        ],
+        "debug_info": {
+          "total_ticks_processed": 859493,
+          "signals_generated": 0,
+          "stocks_with_data": 0
+        }
+      },
+      {
+        "code": "300475.SZ",
+        "start_date": "2025-11-01",
+        "end_date": "2025-12-15",
+        "initial_capital": 100000.0,
+        "final_equity": 100000.0,
+        "total_return": 0.0,
+        "max_drawdown": 0.0,
+        "total_trades": 0,
+        "win_rate": 0.0,
+        "sharpe_ratio": 0.0,
+        "trades": [],
+        "equity_curve": [
+          {
+            "date": "2025-11-14",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-17",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-18",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-19",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-20",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-21",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-24",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-25",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-26",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-27",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-28",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-01",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-02",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-03",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-04",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-05",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-08",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-09",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-10",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-11",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-12",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-15",
+            "equity": 100000.0
+          }
+        ],
+        "debug_info": {
+          "total_ticks_processed": 966400,
+          "signals_generated": 0,
+          "stocks_with_data": 0
+        }
+      },
+      {
+        "code": "300136.SZ",
+        "start_date": "2025-11-01",
+        "end_date": "2025-12-15",
+        "initial_capital": 100000.0,
+        "final_equity": 100000.0,
+        "total_return": 0.0,
+        "max_drawdown": 0.0,
+        "total_trades": 0,
+        "win_rate": 0.0,
+        "sharpe_ratio": 0.0,
+        "trades": [],
+        "equity_curve": [
+          {
+            "date": "2025-11-14",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-17",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-18",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-19",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-20",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-21",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-24",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-25",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-26",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-27",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-28",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-01",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-02",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-03",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-04",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-05",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-08",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-09",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-10",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-11",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-12",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-15",
+            "equity": 100000.0
+          }
+        ],
+        "debug_info": {
+          "total_ticks_processed": 1072284,
+          "signals_generated": 0,
+          "stocks_with_data": 0
+        }
+      },
+      {
+        "code": "600986.SH",
+        "start_date": "2025-11-01",
+        "end_date": "2025-12-15",
+        "initial_capital": 100000.0,
+        "final_equity": 100000.0,
+        "total_return": 0.0,
+        "max_drawdown": 0.0,
+        "total_trades": 0,
+        "win_rate": 0.0,
+        "sharpe_ratio": 0.0,
+        "trades": [],
+        "equity_curve": [
+          {
+            "date": "2025-11-14",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-17",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-18",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-19",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-20",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-21",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-24",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-25",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-26",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-27",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-28",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-01",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-02",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-03",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-04",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-05",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-08",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-09",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-10",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-11",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-12",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-15",
+            "equity": 100000.0
+          }
+        ],
+        "debug_info": {
+          "total_ticks_processed": 1180483,
+          "signals_generated": 0,
+          "stocks_with_data": 0
+        }
+      },
+      {
+        "code": "300986.SZ",
+        "start_date": "2025-11-01",
+        "end_date": "2025-12-15",
+        "initial_capital": 100000.0,
+        "final_equity": 100000.0,
+        "total_return": 0.0,
+        "max_drawdown": 0.0,
+        "total_trades": 0,
+        "win_rate": 0.0,
+        "sharpe_ratio": 0.0,
+        "trades": [],
+        "equity_curve": [
+          {
+            "date": "2025-11-14",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-17",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-18",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-19",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-20",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-21",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-24",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-25",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-26",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-27",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-11-28",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-01",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-02",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-03",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-04",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-05",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-08",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-09",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-10",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-11",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-12",
+            "equity": 100000.0
+          },
+          {
+            "date": "2025-12-15",
+            "equity": 100000.0
+          }
+        ],
+        "debug_info": {
+          "total_ticks_processed": 1250217,
+          "signals_generated": 0,
+          "stocks_with_data": 0
+        }
+      }
+    ],
+    "summary": {
+      "total_stocks": 12,
+      "total_trades": 0,
+      "avg_return": 0.0,
+      "avg_win_rate": 0.0,
+      "avg_max_drawdown": 0.0,
+      "total_profit_stocks": 0,
+      "total_loss_stocks": 12
+    }
+  },
+  "performance": {
+    "elapsed_time_seconds": 534.9738326072693,
+    "time_per_stock": 44.58115271727244
+  }
+}

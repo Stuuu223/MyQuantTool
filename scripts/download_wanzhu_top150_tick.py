@@ -135,15 +135,27 @@ def load_stock_list(csv_path: Path) -> list:
     return stocks
 
 
-def download_tick_with_retry(xtdata, qmt_code: str, max_retries: int = 3) -> bool:
-    """带重试机制的tick下载"""
+def download_tick_with_retry(xtdata, qmt_code: str, start_date: str, end_date: str, max_retries: int = 3) -> bool:
+    """带重试机制的tick下载
+    
+    Args:
+        xtdata: xtdata模块
+        qmt_code: QMT格式的股票代码(如000001.SZ)
+        start_date: 开始日期(YYYYMMDD格式)
+        end_date: 结束日期(YYYYMMDD格式)
+        max_retries: 最大重试次数
+    """
     for attempt in range(max_retries):
         try:
-            # 下载Tick数据
+            # 下载Tick数据 - 使用完整的日期范围
+            start_time = f'{start_date}000000'
+            end_time = f'{end_date}150000'  # 收盘时间
+            
             xtdata.download_history_data(
                 stock_code=qmt_code,
                 period='tick',
-                start_time='20251121000000'
+                start_time=start_time,
+                end_time=end_time
             )
             return True
         except Exception as e:
@@ -213,7 +225,9 @@ def download_tick_batch(stocks: list, start_date: str, end_date: str):
 
     # 3. 转换日期格式
     start = start_date.replace('-', '')
+    end = end_date.replace('-', '')
     start_time = f'{start}000000'
+    end_time_fmt = f'{end}150000'
 
     # 4. 下载每只股票的数据
     print(f"\n{'=' * 80}")
@@ -238,7 +252,7 @@ def download_tick_batch(stocks: list, start_date: str, end_date: str):
               f"✅{success_count} ❌{fail_count} | ETA: {remaining/60:.1f}min", end='', flush=True)
 
         # 尝试下载
-        if download_tick_with_retry(xtdata, qmt_code, max_retries=3):
+        if download_tick_with_retry(xtdata, qmt_code, start, end_date.replace('-', ''), max_retries=3):
             success_count += 1
             logger.info(f"[{i}/{len(stocks)}] 下载成功: {stock['name']} ({qmt_code})")
         else:
@@ -315,10 +329,10 @@ def main():
         print("\n" + "=" * 80)
         return
 
-    # 开始下载
+    # 开始下载 - 日期范围: 2025-11-15 至 2026-02-13
     download_tick_batch(
         stocks,
-        start_date='2025-11-21',
+        start_date='2025-11-15',
         end_date='2026-02-13'
     )
 

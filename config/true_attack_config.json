@@ -1,0 +1,18 @@
+{
+  "ratio_thresholds": {
+    "weak": 0.0001,
+    "normal": 0.0003,
+    "strong": 0.001
+  },
+  "feature_weights": {
+    "sustained_inflow": 0.30,
+    "volume_price": 0.25,
+    "buy_sell_ratio": 0.25,
+    "timing": 0.20
+  },
+  "timing": {
+    "sustained_minutes": 3,
+    "last_15_min_start": "14:45",
+    "cooldown_minutes": 2
+  }
+}
