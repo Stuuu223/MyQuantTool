@@ -175,13 +175,13 @@ def main():
         epilog="""
 示例:
   # 全面检查
-  python scripts/system_check.py --type all
+  python tools/system_check.py --type all
   
   # 只检查QMT连接
-  python scripts/system_check.py --type connection
+  python tools/system_check.py --type connection
   
   # 检查数据和配置
-  python scripts/system_check.py --type data --type config
+  python tools/system_check.py --type data --type config
         """
     )
     

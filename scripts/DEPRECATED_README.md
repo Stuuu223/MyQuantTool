@@ -30,8 +30,8 @@
 
 | 旧脚本 | 新入口 |
 |--------|--------|
-| download_*.py (9个) | scripts/download_manager.py |
-| check_*.py (4个) | scripts/system_check.py |
+| download_*.py (9个) | tools/download_manager.py |
+| check_*.py (4个) | tools/system_check.py |
 | monitor_*.py (3个) | scripts/monitor_runner.py |
 | generate_*_report.py (2个) | tasks/generate_report.py |
 | run_*_scan.py (4个) | tasks/run_scan.py |
@@ -42,6 +42,6 @@
 ```python
 raise RuntimeError(
     "此脚本已废弃，请使用新入口：\n"
-    "  python scripts/download_manager.py --help"
+    "  python tools/download_manager.py --help"
 )
 ```

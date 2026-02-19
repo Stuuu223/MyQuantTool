@@ -444,15 +444,15 @@ def main():
         epilog="""
 使用示例:
   # 下载顽主精选150的Tick数据（QMT）
-  python scripts/download_manager.py --source qmt --type tick \\
+  python tools/download_manager.py --source qmt --type tick \\
       --universe wanzhu_selected --start 20250101 --end 20250131
   
   # 下载1分钟数据（QMT）
-  python scripts/download_manager.py --source qmt --type 1m \\
+  python tools/download_manager.py --source qmt --type 1m \\
       --universe wanzhu_selected --start 20250101 --end 20250131
   
   # 自定义股票列表
-  python scripts/download_manager.py --source qmt --type tick \\
+  python tools/download_manager.py --source qmt --type tick \\
       --universe custom --custom-list my_stocks.txt --start 20250101 --end 20250131
         """
     )

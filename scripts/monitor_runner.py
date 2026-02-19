@@ -84,7 +84,7 @@ def run_download_monitor():
         
         if not STATUS_FILE.exists():
             print("❌ 没有下载状态文件")
-            print("提示: 先运行 python scripts/download_manager.py ...")
+            print("提示: 先运行 python tools/download_manager.py ...")
             return False
         
         # 实时监控
