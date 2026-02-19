@@ -26,7 +26,7 @@ project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from logic.auto_maintenance import AutoMaintenance
+from logic.data_providers.tick_provider import TickProvider
 from logic.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -40,19 +40,21 @@ def main():
     print(f"📅 运行时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print()
 
-    # 创建维护实例
-    maintainer = AutoMaintenance()
-
     # 检查 QMT 是否可用
-    if not maintainer.is_runnable():
-        print("❌ QMT 接口不可用，请检查：")
-        print("  1. QMT 客户端是否已启动")
-        print("  2. QMT Python 接口是否已正确安装")
+    try:
+        with TickProvider() as provider:
+            if not provider.connect():
+                print("❌ QMT 接口不可用，请检查：")
+                print("  1. QMT 客户端是否已启动")
+                print("  2. QMT Python 接口是否已正确安装")
+                print()
+                sys.exit(1)
+        print("✅ QMT 接口已连接")
+        print()
+    except Exception as e:
+        print(f"❌ QMT 连接失败: {e}")
         print()
         sys.exit(1)
-
-    print("✅ QMT 接口已连接")
-    print()
 
     # 检查命令行参数
     target_date = None
