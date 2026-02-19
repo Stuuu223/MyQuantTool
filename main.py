@@ -66,10 +66,7 @@ def print_usage():
         python main.py auction               # 执行集合竞价扫描
 
     启动脚本：
-        start.bat                            # 启动事件驱动监控
-        start_event_driven_monitor.bat       # 启动事件驱动监控
-        start_triple_funnel.bat              # 启动三把斧扫描
-        start_continuous_monitor.bat         # 启动持续监控
+        scripts/start_quant_system.bat       # 统一启动器（推荐）
 
     更多命令：
         使用 start_app.py 启动应用层功能
