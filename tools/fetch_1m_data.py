@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-分钟K线数据拉取工具 - 解决样本丢失问题
+分钟K线数据拉取工具 - TickProvider版（T4迁移）
 
 功能：
 1. 从QMT服务器下载1分钟K线数据到本地缓存
@@ -14,8 +14,10 @@
 - 数据量小（5000只股票/天约20MB）
 - 适合诱多检测和趋势分析
 
-Author: iFlow CLI
-Date: 2026-02-09
+使用TickProvider统一封装类，不再直接导入xtdata
+
+Author: iFlow CLI (T4迁移)
+Date: 2026-02-19
 """
 
 import time
@@ -30,46 +32,31 @@ import pandas as pd
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-# 🔥 添加DLL路径配置（解决DLL load failed问题）
-# 优先使用系统 QMT 安装目录（包含必要的 DLL 文件）
-# 如果你的 QMT 安装在其他位置，请修改下面的路径
+# 🔥 T4迁移：不再直接导入xtdata，改用TickProvider
+# 保留DLL路径配置以备需要
 POSSIBLE_QMT_PATHS = [
-    r"D:\国金QMT交易端\bin.x64",  # 最常见的安装路径
+    r"D:\国金QMT交易端\bin.x64",
     r"C:\国金QMT交易端\bin.x64",
     r"D:\国金QMT交易端\userdata_mini",
     r"C:\国金QMT交易端\userdata_mini",
-    project_root / 'xtquant',  # 回退到项目目录
+    project_root / 'xtquant',
 ]
 
-QMT_PATH = None
+# 尝试添加DLL路径（如果需要）
 for path in POSSIBLE_QMT_PATHS:
-    if isinstance(path, Path):
-        path_str = str(path)
-    else:
-        path_str = path
-    
-    if os.path.exists(path_str):
-        QMT_PATH = path_str
-        sys.path.append(QMT_PATH)
-        os.add_dll_directory(QMT_PATH)  # Python 3.8+ 必须加这句才能加载 DLL
-        print(f"✅ 添加QMT DLL路径: {QMT_PATH}")
-        break
+    path_str = str(path) if isinstance(path, Path) else path
+    if os.path.exists(path_str) and path_str not in sys.path:
+        sys.path.append(path_str)
+        if hasattr(os, 'add_dll_directory'):
+            try:
+                os.add_dll_directory(path_str)
+            except:
+                pass
 
-if QMT_PATH is None:
-    print("❌ 未找到 QMT 安装目录")
-    print("   请手动设置 QMT_PATH 为你的 QMT 安装路径（bin.x64 目录）")
+from logic.data_providers.tick_provider import TickProvider, DownloadStatus
 
-# 🔥 导入本地xtquant（项目目录中的QMT库）
-try:
-    from xtquant import xtdata
-    QMT_AVAILABLE = True
-    print("✅ 本地xtquant导入成功")
-except ImportError as e:
-    print(f"❌ 本地xtquant导入失败: {e}")
-    print(f"   Python版本: {sys.version}")
-    print(f"   QMT路径: {QMT_PATH}")
-    print(f"   系统架构: 64位")
-    QMT_AVAILABLE = False
+# 检查xtquant可用性（通过TickProvider间接使用）
+QMT_AVAILABLE = True  # 由TickProvider内部处理
 
 
 def fetch_minute_data(
@@ -79,7 +66,7 @@ def fetch_minute_data(
     verbose: bool = True
 ) -> Dict[str, pd.DataFrame]:
     """
-    拉取1分钟K线数据
+    拉取1分钟K线数据（使用TickProvider）
     
     Args:
         code_list: 股票代码列表，如 ['600519.SH', '000001.SZ']
@@ -90,9 +77,6 @@ def fetch_minute_data(
     Returns:
         字典，key为股票代码，value为DataFrame
     """
-    if not QMT_AVAILABLE:
-        return {}
-    
     # 默认日期范围：过去7天
     if start_date is None:
         start_date = (datetime.now() - timedelta(days=7)).strftime('%Y%m%d')
@@ -101,87 +85,93 @@ def fetch_minute_data(
     
     if verbose:
         print("=" * 80)
-        print("🚀 开始拉取1分钟K线数据")
+        print("🚀 开始拉取1分钟K线数据 (TickProvider版)")
         print("=" * 80)
         print(f"📅 时间范围: {start_date} ~ {end_date}")
         print(f"📊 股票数量: {len(code_list)}")
         print()
     
-    # 第1步：强制下载数据到本地缓存
-    if verbose:
-        print("📥 第1步：从QMT服务器下载数据到本地缓存...")
-
-    try:
-        # 使用 download_history_data2 批量下载
-        xtdata.download_history_data2(
-            stock_list=code_list,
-            period='1m',
-            start_time=start_date,
-            end_time=end_date
-        )
-        if verbose:
-            print("✅ 下载完成")
-    except Exception as e:
-        print(f"❌ 下载失败: {e}")
-        return {}
-    
-    # 第2步：从本地缓存读取数据
-    if verbose:
-        print()
-        print("📖 第2步：从本地缓存读取数据...")
-
-    try:
-        # get_market_data 对于K线数据返回格式：{field1: DataFrame1, field2: DataFrame2, ...}
-        # DataFrame 的 index 是股票代码，columns 是时间戳
-        data = xtdata.get_market_data(
-            field_list=['time', 'open', 'high', 'low', 'close', 'volume', 'amount'],
-            stock_list=code_list,
-            period='1m',
-            start_time=start_date,
-            end_time=end_date,
-            count=-1,  # -1 表示取时间段内所有数据
-            dividend_type='none',  # 不复权（回测通常用前复权 'front'）
-            fill_data=True  # 填充停牌数据
-        )
-    except Exception as e:
-        print(f"❌ 读取失败: {e}")
-        return {}
-
-    # 第3步：转换和验证数据
     result = {}
-
-    if not data or 'time' not in data:
-        print("❌ 数据为空或格式错误")
-        return {}
-
-    # 遍历每个股票代码
-    for code in code_list:
+    
+    # 🔥 T4迁移：使用TickProvider
+    with TickProvider() as provider:
+        if not provider.is_connected():
+            print("❌ QMT连接失败")
+            return {}
+        
+        if verbose:
+            print("✅ QMT连接成功")
+            print()
+        
+        # 第1步：下载数据
+        if verbose:
+            print("📥 第1步：从QMT服务器下载数据到本地缓存...")
+        
+        download_result = provider.download_minute_data(
+            stock_codes=code_list,
+            start_date=start_date,
+            end_date=end_date,
+            period='1m'
+        )
+        
+        if verbose:
+            print(f"✅ 下载完成: {download_result.success}/{download_result.total}")
+        
+        # 第2步：从本地缓存读取数据
+        if verbose:
+            print()
+            print("📖 第2步：从本地缓存读取数据...")
+        
         try:
-            # 为每只股票构建 DataFrame
-            df_dict = {}
-            for field in ['time', 'open', 'high', 'low', 'close', 'volume', 'amount']:
-                if field in data and code in data[field].index:
-                    df_dict[field] = data[field].loc[code]
-                else:
-                    print(f"⚠️  {code}: 字段 '{field}' 缺失")
-                    break
-            else:
-                # 所有字段都存在，构建 DataFrame
-                df = pd.DataFrame(df_dict)
-                
-                if not df.empty:
-                    # 转换时间戳为可读时间
-                    df['time_str'] = pd.to_datetime(df['time'], unit='ms') + pd.Timedelta(hours=8)
-                    result[code] = df
-
-                    if verbose:
-                        print(f"✅ {code}: 获取到 {len(df)} 根分钟K线")
-                else:
-                    if verbose:
-                        print(f"⚠️  {code}: 数据为空")
+            # 使用provider内部的xtdata读取数据
+            data = provider._xtdata.get_market_data(
+                field_list=['time', 'open', 'high', 'low', 'close', 'volume', 'amount'],
+                stock_list=code_list,
+                period='1m',
+                start_time=start_date,
+                end_time=end_date,
+                count=-1,
+                dividend_type='none',
+                fill_data=True
+            )
         except Exception as e:
-            if verbose:
-                print(f"❌ {code}: 数据处理失败 - {e}")
+            print(f"❌ 读取失败: {e}")
+            return {}
+        
+        # 第3步：转换和验证数据
+        if not data or 'time' not in data:
+            print("❌ 数据为空或格式错误")
+            return {}
+        
+        # 遍历每个股票代码
+        for code in code_list:
+            try:
+                # 为每只股票构建 DataFrame
+                df_dict = {}
+                for field in ['time', 'open', 'high', 'low', 'close', 'volume', 'amount']:
+                    if field in data and code in data[field].index:
+                        df_dict[field] = data[field].loc[code]
+                    else:
+                        if verbose:
+                            print(f"⚠️  {code}: 字段 '{field}' 缺失")
+                        break
+                else:
+                    # 所有字段都存在，构建 DataFrame
+                    df = pd.DataFrame(df_dict)
+                    
+                    if not df.empty:
+                        # 转换时间戳为可读时间
+                        df['time_str'] = pd.to_datetime(df['time'], unit='ms') + pd.Timedelta(hours=8)
+                        result[code] = df
+
+                        if verbose:
+                            print(f"✅ {code}: 获取到 {len(df)} 根分钟K线")
+                    else:
+                        if verbose:
+                            print(f"⚠️  {code}: 数据为空")
+            except Exception as e:
+                if verbose:
+                    print(f"❌ {code}: 数据处理失败 - {e}")
     
     if verbose:
         print()
@@ -370,12 +360,13 @@ def main():
     """主函数"""
     print()
     print("=" * 80)
-    print("🔧 MyQuantTool - 分钟K线数据拉取工具")
+    print("🔧 MyQuantTool - 分钟K线数据拉取工具 (TickProvider版)")
     print("=" * 80)
     print()
     print("✅ 无需L2权限（所有QMT用户免费）")
     print("✅ 数据可补全（解决样本丢失问题）")
     print("✅ 数据量小（5000只股票/天约20MB）")
+    print("✅ 使用TickProvider统一封装")
     print()
     
     # 🔥 动态日期：过去30天

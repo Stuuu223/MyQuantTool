@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-Per-Day Tick Runner (重构版)
+Per-Day Tick Runner (重构版 - TickProvider迁移)
 用于对单个股票的单个交易日进行Tick回放测试
 
 功能：
@@ -9,6 +9,11 @@ Per-Day Tick Runner (重构版)
 2. 接受策略接口，支持多种策略
 3. 记录信号和后续收益
 4. 生成简单的统计报告
+
+使用TickProvider统一封装类管理QMT连接
+
+Author: iFlow CLI (T4迁移)
+Date: 2026-02-19
 """
 
 import sys
@@ -25,19 +30,27 @@ from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 import numpy as np
 
+# 🔥 T4迁移：使用TickProvider管理连接，QMTHistoricalProvider使用TickProvider
+from logic.data_providers.tick_provider import TickProvider
 from logic.qmt_historical_provider import QMTHistoricalProvider
 from logic.strategies.tick_strategy_interface import ITickStrategy, TickData, Signal
 
 
 class PerDayTickRunner:
     """
-    每日Tick回放运行器 (重构版)
+    每日Tick回放运行器 (重构版 - TickProvider版)
     
     用于测试策略在单个股票单个交易日中的表现
     支持多种策略接口
     """
     
-    def __init__(self, stock_code: str, trade_date: str, strategy: ITickStrategy):
+    def __init__(
+        self, 
+        stock_code: str, 
+        trade_date: str, 
+        strategy: ITickStrategy,
+        tick_provider: TickProvider = None
+    ):
         """
         初始化
         
@@ -45,10 +58,15 @@ class PerDayTickRunner:
             stock_code: 股票代码
             trade_date: 交易日期，格式：YYYYMMDD
             strategy: 策略实例
+            tick_provider: TickProvider实例（可选，不传则自动创建）
         """
         self.stock_code = stock_code
         self.trade_date = trade_date
         self.strategy = strategy  # 策略实例
+        
+        # 🔥 T4迁移：使用TickProvider管理连接
+        self._tick_provider = tick_provider
+        self._owns_provider = tick_provider is None
         
         # 状态变量
         self.tick_count = 0  # Tick计数
@@ -56,15 +74,26 @@ class PerDayTickRunner:
         # 信号记录
         self.signals = []
         
-        # 初始化历史数据提供者
+        # 初始化历史数据提供者（传入TickProvider）
         start_time = f"{trade_date}093000"
         end_time = f"{trade_date}150000"
-        self.tick_provider = QMTHistoricalProvider(
+        self.tick_provider_hist = QMTHistoricalProvider(
             stock_code=stock_code,
             start_time=start_time,
             end_time=end_time,
-            period="tick"
+            period="tick",
+            tick_provider=self._tick_provider
         )
+    
+    def _ensure_connection(self):
+        """确保QMT连接可用"""
+        if self._tick_provider is None:
+            self._tick_provider = TickProvider()
+            self._owns_provider = True
+        
+        if not self._tick_provider.is_connected():
+            if not self._tick_provider.connect():
+                raise RuntimeError("无法连接到QMT行情服务")
     
     def run(self) -> List[Dict]:
         """
@@ -73,11 +102,14 @@ class PerDayTickRunner:
         Returns:
             List[Dict]: 所有信号及其相关信息
         """
+        # 🔥 T4迁移：确保连接
+        self._ensure_connection()
+        
         print(f"🏃 开始回放: {self.stock_code} {self.trade_date} ({self.strategy.get_strategy_name()})")
         
         # 遍历Tick数据
         self.tick_count = 0
-        for tick in self.tick_provider.iter_ticks():
+        for tick in self.tick_provider_hist.iter_ticks():
             self.tick_count += 1
             
             # 将tick数据转换为策略接口需要的格式
@@ -128,7 +160,7 @@ class PerDayTickRunner:
         
         # 重新获取价格历史用于计算收益
         price_history = []
-        for tick in self.tick_provider.iter_ticks():
+        for tick in self.tick_provider_hist.iter_ticks():
             price_history.append((tick['time'], tick['last_price']))
         
         # 按时间排序价格历史
@@ -237,6 +269,22 @@ class PerDayTickRunner:
         }
         
         return stats
+    
+    def close(self):
+        """关闭连接"""
+        # 🔥 T4迁移：如果owns_provider，则关闭连接
+        if self._owns_provider and self._tick_provider:
+            self._tick_provider.close()
+            self._tick_provider = None
+    
+    def __enter__(self):
+        """上下文管理器入口"""
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """上下文管理器出口"""
+        self.close()
+        return False
 
 
 def run_sample_test():
@@ -244,8 +292,9 @@ def run_sample_test():
     运行样本测试
     """
     print("=" * 80)
-    print("🧪 Per-Day Tick Runner 样本测试 (重构版)")
+    print("🧪 Per-Day Tick Runner 样本测试 (TickProvider版)")
     print("=" * 80)
+    print("🔧 使用TickProvider统一封装类管理QMT连接")
     
     # 导入Halfway策略
     from logic.strategies.halfway_tick_strategy import HalfwayTickStrategy
@@ -266,41 +315,46 @@ def run_sample_test():
     
     all_results = []
     
-    for trade_date in test_dates:
-        print(f"\n📊 测试 {test_stock} {trade_date}")
-        print("-" * 60)
+    # 🔥 T4迁移：使用TickProvider上下文管理器
+    with TickProvider() as tick_provider:
+        print(f"\n✅ QMT连接成功")
         
-        runner = PerDayTickRunner(
-            stock_code=test_stock,
-            trade_date=trade_date,
-            strategy=strategy
-        )
-        
-        # 运行回放
-        signals = runner.run()
-        
-        # 获取统计信息
-        stats = runner.get_statistics()
-        
-        print(f"📈 信号统计:")
-        print(f"   总信号数: {stats['total_signals']}")
-        print(f"   1分钟胜率: {stats['win_rate']['1min']:.2%} ({stats['winning_counts']['1min']}/{stats['total_returns']['1min']})")
-        print(f"   5分钟胜率: {stats['win_rate']['5min']:.2%} ({stats['winning_counts']['5min']}/{stats['total_returns']['5min']})")
-        print(f"   10分钟胜率: {stats['win_rate']['10min']:.2%} ({stats['winning_counts']['10min']}/{stats['total_returns']['10min']})")
-        print(f"   1分钟平均收益率: {stats['avg_return']['1min']:.4f}")
-        print(f"   5分钟平均收益率: {stats['avg_return']['5min']:.4f}")
-        print(f"   10分钟平均收益率: {stats['avg_return']['10min']:.4f}")
-        
-        # 记录结果
-        result = {
-            'stock': test_stock,
-            'date': trade_date,
-            'strategy': strategy.get_strategy_name(),
-            'params': test_params,
-            'signals': signals,
-            'stats': stats
-        }
-        all_results.append(result)
+        for trade_date in test_dates:
+            print(f"\n📊 测试 {test_stock} {trade_date}")
+            print("-" * 60)
+            
+            runner = PerDayTickRunner(
+                stock_code=test_stock,
+                trade_date=trade_date,
+                strategy=strategy,
+                tick_provider=tick_provider  # 共享TickProvider
+            )
+            
+            # 运行回放
+            signals = runner.run()
+            
+            # 获取统计信息
+            stats = runner.get_statistics()
+            
+            print(f"📈 信号统计:")
+            print(f"   总信号数: {stats['total_signals']}")
+            print(f"   1分钟胜率: {stats['win_rate']['1min']:.2%} ({stats['winning_counts']['1min']}/{stats['total_returns']['1min']})")
+            print(f"   5分钟胜率: {stats['win_rate']['5min']:.2%} ({stats['winning_counts']['5min']}/{stats['total_returns']['5min']})")
+            print(f"   10分钟胜率: {stats['win_rate']['10min']:.2%} ({stats['winning_counts']['10min']}/{stats['total_returns']['10min']})")
+            print(f"   1分钟平均收益率: {stats['avg_return']['1min']:.4f}")
+            print(f"   5分钟平均收益率: {stats['avg_return']['5min']:.4f}")
+            print(f"   10分钟平均收益率: {stats['avg_return']['10min']:.4f}")
+            
+            # 记录结果
+            result = {
+                'stock': test_stock,
+                'date': trade_date,
+                'strategy': strategy.get_strategy_name(),
+                'params': test_params,
+                'signals': signals,
+                'stats': stats
+            }
+            all_results.append(result)
     
     print("\n" + "=" * 80)
     print("📋 综合测试结果")

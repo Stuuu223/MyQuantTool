@@ -10,9 +10,11 @@ from datetime import datetime, timedelta
 import sys
 import os
 import json
+from pathlib import Path
 
-# 添加项目路径
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# 添加项目根目录到路径
+project_root = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(project_root))
 
 # 导入速率限制器
 from logic.core.rate_limiter import get_rate_limiter, safe_request

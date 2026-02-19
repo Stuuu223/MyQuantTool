@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-顽主杯Top 150股票Tick数据下载
+顽主杯Top 150股票Tick数据下载（迁移到TickProvider）
 下载2025-11-21至2026-02-13的Tick数据
 
-使用xtdatacenter本地服务+Token方式
+使用TickProvider统一封装类，不再直接导入xtdata
 
 环境要求:
 1. 需要安装xtquant模块 (通常在venv_qmt虚拟环境中)
@@ -24,54 +24,13 @@ from datetime import datetime, timedelta
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-# 检查是否在QMT虚拟环境中
-IN_VENV_QMT = os.path.exists(PROJECT_ROOT / 'venv_qmt')
-
-try:
-    from xtquant import xtdatacenter as xtdc
-    from xtquant import xtdata
-    QMT_AVAILABLE = True
-except ImportError:
-    QMT_AVAILABLE = False
-    print("⚠️  警告: xtquant模块未安装")
-    print("💡 请确保:")
-    print("   1. 安装了QMT客户端")
-    print("   2. 激活QMT虚拟环境: venv_qmt\\Scripts\\activate")
-    print("   3. 安装了xtquant: pip install xtquant")
-    print()
-
+# 🔥 T4迁移：不再直接导入xtdata，改用TickProvider
+# from xtquant import xtdatacenter as xtdc
+# from xtquant import xtdata
+from logic.data_providers.tick_provider import TickProvider, DownloadStatus
 from logic.utils.logger import get_logger
 
 logger = get_logger(__name__)
-
-# VIP Token
-VIP_TOKEN = "6b1446e317ed67596f13d2e808291a01e0dd9839"
-
-
-def start_token_service():
-    """启动 xtdatacenter 行情服务 (Token 模式)"""
-    if not QMT_AVAILABLE:
-        raise RuntimeError("xtquant模块不可用，无法启动Token服务")
-
-    # 1. 设置数据目录
-    data_dir = PROJECT_ROOT / 'data' / 'qmt_data'
-    data_dir.mkdir(parents=True, exist_ok=True)
-    xtdc.set_data_home_dir(str(data_dir))
-    logger.info(f"📂 数据目录: {data_dir}")
-    print(f"📂 数据目录: {data_dir}")
-
-    # 2. 设置Token
-    xtdc.set_token(VIP_TOKEN)
-    logger.info(f"🔑 Token: {VIP_TOKEN[:6]}...{VIP_TOKEN[-4:]}")
-    print(f"🔑 Token: {VIP_TOKEN[:6]}...{VIP_TOKEN[-4:]}")
-
-    # 3. 初始化并监听端口（使用动态端口避免冲突）
-    xtdc.init()
-    listen_port = xtdc.listen(port=(58800, 58850))
-    logger.info(f"🚀 行情服务已启动，监听端口: {listen_port}")
-    print(f"🚀 行情服务已启动，监听端口: {listen_port}")
-
-    return listen_port
 
 
 def determine_market(code_str: str) -> str:
@@ -135,157 +94,100 @@ def load_stock_list(csv_path: Path) -> list:
     return stocks
 
 
-def download_tick_with_retry(xtdata, qmt_code: str, start_date: str, end_date: str, max_retries: int = 3) -> bool:
-    """带重试机制的tick下载
-    
-    Args:
-        xtdata: xtdata模块
-        qmt_code: QMT格式的股票代码(如000001.SZ)
-        start_date: 开始日期(YYYYMMDD格式)
-        end_date: 结束日期(YYYYMMDD格式)
-        max_retries: 最大重试次数
-    """
-    for attempt in range(max_retries):
-        try:
-            # 下载Tick数据 - 使用完整的日期范围
-            start_time = f'{start_date}000000'
-            end_time = f'{end_date}150000'  # 收盘时间
-            
-            xtdata.download_history_data(
-                stock_code=qmt_code,
-                period='tick',
-                start_time=start_time,
-                end_time=end_time
-            )
-            return True
-        except Exception as e:
-            logger.warning(f"下载失败 (尝试 {attempt + 1}/{max_retries}): {qmt_code} - {e}")
-            if attempt < max_retries - 1:
-                time.sleep(2 ** attempt)  # 指数退避
-            else:
-                logger.error(f"下载彻底失败: {qmt_code}")
-                return False
+def progress_callback(current: int, total: int, stock_code: str, result):
+    """进度回调函数"""
+    progress = current / total * 100
+    status_icon = "✅" if result.status == DownloadStatus.SUCCESS else "❌"
+    print(f"\r[{current}/{total}] {progress:.1f}% | {stock_code} {status_icon}", end='', flush=True)
 
 
 def download_tick_batch(stocks: list, start_date: str, end_date: str):
-    """批量下载Tick数据"""
-    if not QMT_AVAILABLE:
-        print("\n" + "=" * 80)
-        print("❌ 错误: QMT不可用")
-        print("=" * 80)
-        print("\n无法启动下载任务，原因:")
-        print("1. xtquant模块未安装")
-        print("2. 请按以下步骤操作:")
-        print("   - 激活QMT虚拟环境: venv_qmt\\Scripts\\activate")
-        print("   - 或安装xtquant: pip install xtquant")
-        print("\n" + "=" * 80)
-        return
-
+    """批量下载Tick数据（使用TickProvider）"""
+    
     print(f"=" * 80)
     print(f"📥 下载顽主杯Top 150股票Tick数据")
     print(f"=" * 80)
     print(f"\n股票数: {len(stocks)}")
     print(f"日期范围: {start_date} 至 {end_date}")
+    print(f"\n🔧 使用TickProvider统一封装类")
 
     logger.info(f"开始下载Top 150股票Tick数据，共{len(stocks)}只")
 
-    # 1. 启动Token服务
-    print(f"\n🌐 启动Token服务...")
+    # 🔥 T4迁移：使用TickProvider上下文管理器
     try:
-        listen_port = start_token_service()
+        with TickProvider() as provider:
+            if not provider.is_connected():
+                print("❌ 连接失败，请检查QMT环境")
+                logger.error("TickProvider连接失败")
+                return
+            
+            print("✅ 成功连接到行情服务！")
+            logger.info("成功连接到行情服务")
+            
+            # 转换股票代码为QMT格式
+            qmt_codes = [f"{stock['code']}.{stock['market']}" for stock in stocks]
+            
+            # 标准化日期格式
+            start = start_date.replace('-', '')
+            end = end_date.replace('-', '')
+            
+            print(f"\n{'=' * 80}")
+            print(f"🚀 开始下载Tick数据...")
+            print(f"{'=' * 80}\n")
+            
+            start_time_total = time.time()
+            
+            # 使用TickProvider批量下载
+            result = provider.download_ticks(
+                stock_codes=qmt_codes,
+                start_date=start,
+                end_date=end,
+                progress_callback=progress_callback
+            )
+            
+            print()  # 换行
+            
+            # 统计失败的股票
+            fail_stocks = []
+            for r in result.results:
+                if r.status != DownloadStatus.SUCCESS:
+                    # 找到对应的股票信息
+                    for stock in stocks:
+                        if f"{stock['code']}.{stock['market']}" == r.stock_code:
+                            fail_stocks.append(stock)
+                            break
+            
+            # 打印统计
+            print(f"\n{'=' * 80}")
+            print(f"📊 下载完成统计")
+            print(f"{'=' * 80}")
+            print(f"总股票数: {len(stocks)}")
+            print(f"成功: {result.success} 只 ({result.success/len(stocks)*100:.1f}%)")
+            print(f"失败: {result.failed} 只 ({result.failed/len(stocks)*100:.1f}%)")
+            print(f"总耗时: {(time.time() - start_time_total)/60:.1f} 分钟")
+
+            if fail_stocks:
+                print(f"\n❌ 失败股票列表:")
+                for stock in fail_stocks:
+                    qmt_code = f"{stock['code']}.{stock['market']}"
+                    print(f"  - {stock['name']} ({qmt_code})")
+
+                # 保存失败列表
+                fail_list_path = PROJECT_ROOT / 'logs' / 'tick_download_failures_150.txt'
+                fail_list_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(fail_list_path, 'w', encoding='utf-8') as f:
+                    for stock in fail_stocks:
+                        qmt_code = f"{stock['code']}.{stock['market']}"
+                        f.write(f"{stock['name']},{qmt_code}\n")
+                print(f"\n📝 失败列表已保存: {fail_list_path}")
+            
+            logger.info(f"下载完成: 成功{result.success}只, 失败{result.failed}只")
+            
     except Exception as e:
-        logger.error(f"启动Token服务失败: {e}")
-        print(f"❌ 启动Token服务失败: {e}")
-        print("\n可能的原因:")
-        print("1. VIP Token已过期")
-        print("2. 网络连接问题")
-        print("3. QMT服务未启动")
+        logger.error(f"下载过程出错: {e}")
+        print(f"\n❌ 下载过程出错: {e}")
         return
-
-    # 2. 连接到行情服务
-    _, port = listen_port
-    xtdata.connect(ip='127.0.0.1', port=port, remember_if_success=False)
-
-    # 等待连接成功
-    print(f"\n⏳ 连接行情服务...")
-    for i in range(10):
-        try:
-            if xtdata.get_market_data(['close'], ['600519.SH'], count=1):
-                print("✅ 成功连接到行情服务！")
-                logger.info("成功连接到行情服务")
-                break
-        except Exception as e:
-            pass
-        time.sleep(1)
-        print(f"  等待中... {i+1}/10")
-    else:
-        print("❌ 连接失败")
-        logger.error("连接行情服务失败")
-        return
-
-    # 3. 转换日期格式
-    start = start_date.replace('-', '')
-    end = end_date.replace('-', '')
-    start_time = f'{start}000000'
-    end_time_fmt = f'{end}150000'
-
-    # 4. 下载每只股票的数据
-    print(f"\n{'=' * 80}")
-    print(f"🚀 开始下载Tick数据...")
-    print(f"{'=' * 80}\n")
-
-    success_count = 0
-    fail_count = 0
-    fail_stocks = []
-
-    start_time_total = time.time()
-
-    for i, stock in enumerate(stocks, 1):
-        qmt_code = f"{stock['code']}.{stock['market']}"
-
-        # 计算进度
-        progress = i / len(stocks) * 100
-        elapsed = time.time() - start_time_total
-        remaining = elapsed / i * (len(stocks) - i) if i > 0 else 0
-
-        print(f"\r[{i}/{len(stocks)}] {progress:.1f}% | {stock['name']} ({qmt_code}) | "
-              f"✅{success_count} ❌{fail_count} | ETA: {remaining/60:.1f}min", end='', flush=True)
-
-        # 尝试下载
-        if download_tick_with_retry(xtdata, qmt_code, start, end_date.replace('-', ''), max_retries=3):
-            success_count += 1
-            logger.info(f"[{i}/{len(stocks)}] 下载成功: {stock['name']} ({qmt_code})")
-        else:
-            fail_count += 1
-            fail_stocks.append(stock)
-            logger.error(f"[{i}/{len(stocks)}] 下载失败: {stock['name']} ({qmt_code})")
-
-        # 避免请求过快
-        time.sleep(0.3)
-
-    print(f"\n\n{'=' * 80}")
-    print(f"📊 下载完成统计")
-    print(f"{'=' * 80}")
-    print(f"总股票数: {len(stocks)}")
-    print(f"成功: {success_count} 只 ({success_count/len(stocks)*100:.1f}%)")
-    print(f"失败: {fail_count} 只 ({fail_count/len(stocks)*100:.1f}%)")
-    print(f"总耗时: {(time.time() - start_time_total)/60:.1f} 分钟")
-
-    if fail_stocks:
-        print(f"\n❌ 失败股票列表:")
-        for stock in fail_stocks:
-            qmt_code = f"{stock['code']}.{stock['market']}"
-            print(f"  - {stock['name']} ({qmt_code})")
-
-        # 保存失败列表
-        fail_list_path = PROJECT_ROOT / 'logs' / 'tick_download_failures_150.txt'
-        with open(fail_list_path, 'w', encoding='utf-8') as f:
-            for stock in fail_stocks:
-                qmt_code = f"{stock['code']}.{stock['market']}"
-                f.write(f"{stock['name']},{qmt_code}\n")
-        print(f"\n📝 失败列表已保存: {fail_list_path}")
-
-    logger.info(f"下载完成: 成功{success_count}只, 失败{fail_count}只")
+    
     print(f"\n{'=' * 80}")
     print(f"🎉 任务完成！数据已保存到本地。")
     print(f"{'=' * 80}")
@@ -313,21 +215,12 @@ def main():
     print(f"上海市场: {sum(1 for s in stocks if s['market'] == 'SH')} 只")
     print(f"深圳市场: {sum(1 for s in stocks if s['market'] == 'SZ')} 只")
     print(f"北京市场: {sum(1 for s in stocks if s['market'] == 'BJ')} 只")
-
-    # 检查QMT可用性
-    if not QMT_AVAILABLE:
-        print("\n" + "=" * 80)
-        print("⚠️  环境检查警告")
-        print("=" * 80)
-        print("\n当前环境未安装xtquant模块，无法使用QMT下载Tick数据")
-        print("\n请选择以下方案之一:")
-        print("\n方案1: 使用QMT虚拟环境（推荐）")
-        print("  venv_qmt\\Scripts\\activate")
-        print("  python scripts/download_wanzhu_top150_tick.py")
-        print("\n方案2: 使用AkShare下载K线数据（替代方案）")
-        print("  python scripts/download_wanzhu_top150_kline.py")
-        print("\n" + "=" * 80)
-        return
+    
+    # 显示使用的下载方式
+    print(f"\n🔧 下载方式: TickProvider统一封装类")
+    print(f"   - 自动管理xtdata连接")
+    print(f"   - 内置重试机制")
+    print(f"   - 自动限流控制")
 
     # 开始下载 - 日期范围: 2025-11-15 至 2026-02-13
     download_tick_batch(

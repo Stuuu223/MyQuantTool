@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-QMT历史数据提供者
+QMT历史数据提供者（迁移到TickProvider）
 
 功能：
 1. 从QMT本地datadir读取历史Tick数据
@@ -9,17 +9,21 @@ QMT历史数据提供者
 3. 作为QmtTickProvider的底层入口
 4. 支持Tick→主力净流推断算法
 
-Author: CTO
-Date: 2026-02-16
-Version: V1.0
+使用TickProvider统一封装类，不再直接导入xtdata
+
+Author: CTO (T4迁移)
+Date: 2026-02-19
+Version: V1.1 (TickProvider版)
 """
 
 from typing import Iterator, Dict, Any, List, Optional
-from xtquant import xtdata
 import pandas as pd
 import numpy as np
 from datetime import datetime
 from logic.data_providers.base import ICapitalFlowProvider, CapitalFlowSignal
+
+# 🔥 T4迁移：不再直接导入xtdata，通过TickProvider获取
+# from xtquant import xtdata
 
 
 class QMTHistoricalProvider:
@@ -32,7 +36,14 @@ class QMTHistoricalProvider:
     3. 支持Tick数据的时间序列处理
     """
 
-    def __init__(self, stock_code: str, start_time: str, end_time: str, period: str = "tick") -> None:
+    def __init__(
+        self, 
+        stock_code: str, 
+        start_time: str, 
+        end_time: str, 
+        period: str = "tick",
+        tick_provider=None
+    ) -> None:
         """
         初始化QMT历史数据提供者
 
@@ -41,6 +52,7 @@ class QMTHistoricalProvider:
             start_time: 开始时间（格式：YYYYMMDDhhmmss 或 YYYYMMDD hh:mm:ss）
             end_time: 结束时间（格式：YYYYMMDDhhmmss 或 YYYYMMDD hh:mm:ss）
             period: 数据周期，默认为"tick"
+            tick_provider: TickProvider实例（可选，不传则自动创建）
         """
         self.stock_code = stock_code
         # 标准化时间格式为YYYYMMDDhhmmss
@@ -48,8 +60,22 @@ class QMTHistoricalProvider:
         self.end_time = self._normalize_time_format(end_time)
         self.period = period
         
-        # 确保数据目录已设置
+        # 🔥 T4迁移：使用TickProvider管理xtdata
+        self._tick_provider = tick_provider
+        self._xtdata = None
         self._ensure_data_dir()
+
+    def _get_xtdata(self):
+        """获取xtdata实例（通过TickProvider）"""
+        if self._xtdata is None:
+            if self._tick_provider is None:
+                # 延迟导入TickProvider
+                from logic.data_providers.tick_provider import TickProvider
+                self._tick_provider = TickProvider()
+                if not self._tick_provider.is_connected():
+                    self._tick_provider.connect()
+            self._xtdata = self._tick_provider._xtdata
+        return self._xtdata
 
     def _normalize_time_format(self, time_str: str) -> str:
         """
@@ -77,15 +103,16 @@ class QMTHistoricalProvider:
         """
         确保QMT数据目录已设置
         """
-        # 复用qmt_manager中的逻辑，确保data_dir被设置
-        from logic.data_providers.qmt_manager import init_qmt_data_dir
-        init_qmt_data_dir()
+        # 🔥 T4迁移：复用TickProvider的数据目录设置
+        # 延迟初始化，在需要时再设置
+        pass
 
     def _ensure_local_history(self) -> None:
         """
         确保本地历史数据存在
         """
         try:
+            xtdata = self._get_xtdata()
             # 下载本地缺失的历史Tick数据
             xtdata.download_history_data(
                 stock_code=self.stock_code,
@@ -107,24 +134,29 @@ class QMTHistoricalProvider:
         # 确保数据存在
         self._ensure_local_history()
 
-        # 读取Tick数据
-        df = xtdata.get_local_data(
-            field_list=[
-                "time", "lastPrice", "open", "high", "low",
-                "volume", "amount", "bidPrice", "askPrice",
-                "bidVol", "askVol",
-            ],
-            stock_list=[self.stock_code],
-            period=self.period,
-            start_time=self.start_time,
-            end_time=self.end_time
-        )
+        try:
+            xtdata = self._get_xtdata()
+            # 读取Tick数据
+            df = xtdata.get_local_data(
+                field_list=[
+                    "time", "lastPrice", "open", "high", "low",
+                    "volume", "amount", "bidPrice", "askPrice",
+                    "bidVol", "askVol",
+                ],
+                stock_list=[self.stock_code],
+                period=self.period,
+                start_time=self.start_time,
+                end_time=self.end_time
+            )
 
-        if self.stock_code not in df or df[self.stock_code] is None:
+            if self.stock_code not in df or df[self.stock_code] is None:
+                return pd.DataFrame()
+
+            tick_df = df[self.stock_code]
+            return tick_df.sort_values("time")
+        except Exception as e:
+            print(f"❌ 获取Tick数据失败: {e}")
             return pd.DataFrame()
-
-        tick_df = df[self.stock_code]
-        return tick_df.sort_values("time")
 
     def iter_ticks(self) -> Iterator[Dict[str, Any]]:
         """
@@ -249,14 +281,28 @@ class QmtTickCapitalFlowProvider(ICapitalFlowProvider):
     注意：此提供者返回的是基于窗口时间的估算资金流，不是实时逐笔数据
     """
 
-    def __init__(self, window_minutes: int = 30):
+    def __init__(self, window_minutes: int = 30, tick_provider=None):
         """
         初始化
 
         Args:
             window_minutes: 计算资金流的时间窗口（分钟）
+            tick_provider: TickProvider实例（可选）
         """
         self.window_minutes = window_minutes
+        self._tick_provider = tick_provider
+        self._xtdata = None
+
+    def _get_xtdata(self):
+        """获取xtdata实例（通过TickProvider）"""
+        if self._xtdata is None:
+            if self._tick_provider is None:
+                from logic.data_providers.tick_provider import TickProvider
+                self._tick_provider = TickProvider()
+                if not self._tick_provider.is_connected():
+                    self._tick_provider.connect()
+            self._xtdata = self._tick_provider._xtdata
+        return self._xtdata
 
     def get_realtime_flow(self, code: str) -> Optional[CapitalFlowSignal]:
         """
@@ -287,7 +333,8 @@ class QmtTickCapitalFlowProvider(ICapitalFlowProvider):
                 stock_code=code,
                 start_time=start_str,
                 end_time=end_str,
-                period="tick"
+                period="tick",
+                tick_provider=self._tick_provider
             )
 
             # 获取Tick数据并推断资金流
@@ -361,6 +408,7 @@ class QmtTickCapitalFlowProvider(ICapitalFlowProvider):
         """
         # 从QMT获取K线数据
         try:
+            xtdata = self._get_xtdata()
             result = {}
             for code in code_list:
                 data = xtdata.get_local_data(
@@ -388,6 +436,7 @@ class QmtTickCapitalFlowProvider(ICapitalFlowProvider):
             List[str]: 股票代码列表
         """
         try:
+            xtdata = self._get_xtdata()
             return xtdata.get_stock_list_in_sector(sector_name)
         except Exception as e:
             print(f"❌ 获取板块成分股失败: {e}")
@@ -420,7 +469,8 @@ class QmtTickCapitalFlowProvider(ICapitalFlowProvider):
                 stock_code=code,
                 start_time=start_str,
                 end_time=end_str,
-                period="tick"
+                period="tick",
+                tick_provider=self._tick_provider
             )
 
             # 获取资金流数据
@@ -461,6 +511,7 @@ class QmtTickCapitalFlowProvider(ICapitalFlowProvider):
             Dict: 市场数据
         """
         try:
+            xtdata = self._get_xtdata()
             return xtdata.get_local_data(
                 field_list=field_list,
                 stock_list=stock_list,
@@ -502,6 +553,7 @@ class QmtTickCapitalFlowProvider(ICapitalFlowProvider):
             Dict: 下载结果
         """
         try:
+            xtdata = self._get_xtdata()
             result = xtdata.download_history_data(
                 stock_code=code,
                 period=period,
@@ -527,7 +579,7 @@ class QmtTickCapitalFlowProvider(ICapitalFlowProvider):
 if __name__ == "__main__":
     # 测试代码
     print("=" * 60)
-    print("🧪 QMTHistoricalProvider 测试")
+    print("🧪 QMTHistoricalProvider 测试 (TickProvider版)")
     print("=" * 60)
 
     # 测试读取300997.SZ的Tick数据
