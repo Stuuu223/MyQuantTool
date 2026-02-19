@@ -50,23 +50,16 @@ class HotCasesSuite:
         }
 
     def load_wanzhu_codes(self) -> List[str]:
-        """加载顽主榜单代码（V2.0: 修复字典格式）"""
-        wanzhu_path = PROJECT_ROOT / 'config' / 'wanzhu_top50_usable.json'
-        if not wanzhu_path.exists():
-            print(f"⚠️  找不到顽主榜单: {wanzhu_path}")
+        """加载顽主榜单代码（V3.0: 统一使用wanzhu_selected_150.csv）"""
+        csv_path = PROJECT_ROOT / 'data' / 'wanzhu_data' / 'processed' / 'wanzhu_selected_150.csv'
+        if not csv_path.exists():
+            print(f"⚠️  找不到顽主榜单: {csv_path}")
             return []
 
-        with open(wanzhu_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-
-            # 🔥 V2.0: 修复字典格式处理
-            if isinstance(data, dict):
-                codes = list(data.keys())
-            else:
-                codes = [item['code'] for item in data.get('stocks', [])]
-
-            print(f"✅ 加载顽主榜单: {len(codes)} 只")
-            return codes
+        df = pd.read_csv(csv_path)
+        codes = df['code'].tolist()
+        print(f"✅ 加载顽主榜单: {len(codes)} 只")
+        return codes
 
     def run_single_stock_backtest(
         self,

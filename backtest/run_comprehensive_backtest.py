@@ -82,9 +82,15 @@ def load_stock_list():
     with open(PROJECT_ROOT / 'config' / 'active_stocks.json', 'r', encoding='utf-8') as f:
         base_pool = json.load(f)
     
-    # 加载顽主杯
-    with open(PROJECT_ROOT / 'config' / 'wanzhu_top_120.json', 'r', encoding='utf-8') as f:
-        wanzhu_pool = [s['code'] for s in json.load(f)]
+    # 加载顽主杯（统一使用wanzhu_selected_150.csv）
+    wanzhu_csv = PROJECT_ROOT / 'data' / 'wanzhu_data' / 'processed' / 'wanzhu_selected_150.csv'
+    if wanzhu_csv.exists():
+        import pandas as pd
+        wanzhu_df = pd.read_csv(wanzhu_csv)
+        wanzhu_pool = wanzhu_df['code'].tolist()
+    else:
+        wanzhu_pool = []
+        logger.warning(f"顽主榜单文件不存在: {wanzhu_csv}")
     
     # 合并去重
     all_stocks = list(set(base_pool + wanzhu_pool))

@@ -38,8 +38,8 @@ class Logger:
             return
         
         self._initialized = True
-        self.log_dir = Path("logs")
-        self.log_dir.mkdir(exist_ok=True)
+        self.log_dir = Path("logs/application")
+        self.log_dir.mkdir(parents=True, exist_ok=True)
         
         # 配置日志系统
         # FileHandler: 保持 INFO 级别（用于事后排查）
@@ -63,7 +63,7 @@ class Logger:
         self.performance_logger = logging.getLogger('performance')
         self.performance_logger.setLevel(logging.INFO)
         performance_handler = logging.FileHandler(
-            self.log_dir / f'performance_{datetime.now().strftime("%Y%m%d")}.log',
+            Path("logs/performance") / f'performance_{datetime.now().strftime("%Y%m%d")}.log',
             encoding='utf-8'
         )
         performance_handler.setFormatter(

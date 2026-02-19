@@ -195,7 +195,7 @@ def run_download_monitor():
         import time
         from pathlib import Path
         
-        STATUS_FILE = PROJECT_ROOT / 'logs' / 'download_manager_status.json'
+        STATUS_FILE = PROJECT_ROOT / 'logs' / 'download' / 'download_manager_status.json'
         
         if not STATUS_FILE.exists():
             print("❌ 没有下载状态文件")

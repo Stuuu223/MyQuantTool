@@ -37,9 +37,9 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 # 状态文件
-PID_FILE = PROJECT_ROOT / 'logs' / 'download_manager.pid'
-STATUS_FILE = PROJECT_ROOT / 'logs' / 'download_manager_status.json'
-RESUME_FILE = PROJECT_ROOT / 'logs' / 'download_manager_resume.json'
+PID_FILE = PROJECT_ROOT / 'logs' / 'download' / 'download_manager.pid'
+STATUS_FILE = PROJECT_ROOT / 'logs' / 'download' / 'download_manager_status.json'
+RESUME_FILE = PROJECT_ROOT / 'logs' / 'download' / 'download_manager_resume.json'
 
 # 尝试导入Rich
 HAS_RICH = False

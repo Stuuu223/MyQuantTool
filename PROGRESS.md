@@ -753,3 +753,84 @@ class TickProvider:
 - [ ] 创建logic/portfolio目录结构
 - [ ] 创建portfolio_config.json
 - [ ] 开始实现CapitalAllocator核心类
+
+---
+
+## 11. 技术债务清理报告 (2026-02-19)
+
+### 11.1 清理摘要
+
+| 类别 | 清理前 | 清理后 | 减少 |
+|------|--------|--------|------|
+| docs/ | 15个md | 13个md | -2 |
+| logic/子目录 | 30个 | 25个 | -5 |
+| config/配置 | 27个 | 17个 | -10 |
+| data/主目录 | 5个wanzhu | 0个 | -5 |
+
+### 11.2 已删除文件清单
+
+**docs/ (2个过时文档)**：
+- BACKTEST_SYSTEM_V2_ARCHITECTURE.md - 包含V14过时内容
+- NAMING_CONVENTIONS.md - 包含过时标记
+
+**logic/ (5个孤立目录)**：
+- data/ - 空目录
+- exp/ - 空目录
+- adjustment/ - 无引用（online_parameter_adjustment.py）
+- mobile/ - 无引用（mobile_adapter.py）
+- recommenders/ - 无引用（smart_recommender.py）
+
+**config/ (10个配置)**：
+- phase1_config.yaml - 未引用
+- phase2_config.yaml - 未引用
+- wanzhu_top50_tick_download.json - 已被wanzhu_selected_150.csv替代
+- wanzhu_name_to_code_mapping.json - 未引用
+- wanzhu_top_120.json - 已迁移到CSV
+- wanzhu_top50_usable.json - 已迁移到CSV
+- wanzhu_big_movers.json - 已迁移到CSV
+- wanzhu_top150_tick_download.json - 已迁移到CSV
+- active_stocks_detail.json - 未引用
+- auction_sample_config.json - 未引用
+- balanced_monitor_list.json - 未引用
+- halfway_sample_dates.json - 未引用
+- hot_stocks_detail.json - 未引用
+
+**data/ (5个重复/未引用文件)**：
+- wanzhu_first_rank_cleaned.json
+- wanzhu_history_cleaned.csv
+- wanzhu_history_from_api.csv
+- wanzhu_history_mapped.csv
+- wanzhu_history_mock.csv
+- wanzhu_data/processed/wanzhu_history_fixed.csv (重复)
+
+### 11.3 代码修改
+
+**修改文件**：
+- logic/services/config_service.py - 移除wanzhu json映射，统一使用CSV
+- backtest/run_hot_cases_suite.py - 改用wanzhu_selected_150.csv
+- backtest/run_comprehensive_backtest.py - 改用wanzhu_selected_150.csv
+- backtest/exp_capital_attack_backtest.py - 改用wanzhu_selected_150.csv
+
+### 11.4 .gitignore更新
+
+新增忽略规则：
+```
+xtquant/  # QMT SDK，通过pip安装
+```
+
+### 11.5 验证结果
+
+```
+✅ ConfigService.get_stock_universe(): 150只股票
+✅ backtest/run_hot_cases_suite.py 语法正确
+✅ backtest/run_comprehensive_backtest.py 语法正确
+✅ backtest/exp_capital_attack_backtest.py 语法正确
+✅ wanzhu_selected_150.csv: 150只股票
+```
+
+### 11.6 清理原则
+
+1. **复现难度优先**：可从上游数据重建的派生数据直接删除，不进legacy
+2. **引用检查**：无引用的文件直接删除
+3. **统一数据源**：wanzhu股票池统一使用wanzhu_selected_150.csv，后续迁移到远程DB
+4. **小目录合并**：孤立小目录（<=2文件）检查引用后决定删除或保留

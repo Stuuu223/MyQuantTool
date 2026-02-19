@@ -25,7 +25,16 @@ REFERENCE_DIR = DATA_DIR / "reference"        # 参考数据（静态）
 AUCTION_DIR = DATA_DIR / "auction"            # 竞价数据
 
 # 日志目录
-LOGS_DIR = PROJECT_ROOT / "logs"
+LOGS_DIR = PROJECT_ROOT / "logs" / "application"  # 默认应用程序日志目录
+APP_LOGS_DIR = PROJECT_ROOT / "logs" / "application"  # 应用日志目录
+PERFORMANCE_LOGS_DIR = PROJECT_ROOT / "logs" / "performance"  # 性能日志目录
+BACKTEST_LOGS_DIR = PROJECT_ROOT / "logs" / "backtest"  # 回测日志目录
+MONITOR_LOGS_DIR = PROJECT_ROOT / "logs" / "monitor"  # 监控日志目录
+SCAN_LOGS_DIR = PROJECT_ROOT / "logs" / "scan"  # 扫描日志目录
+AUCTION_LOGS_DIR = PROJECT_ROOT / "logs" / "auction"  # 竞价日志目录
+DOWNLOAD_LOGS_DIR = PROJECT_ROOT / "logs" / "download"  # 下载日志目录
+CLEANUP_LOGS_DIR = PROJECT_ROOT / "logs" / "cleanup"  # 清理日志目录
+DEBUG_LOGS_DIR = PROJECT_ROOT / "logs" / "debug"  # 调试日志目录
 
 # 配置目录
 CONFIG_DIR = PROJECT_ROOT / "config"
@@ -45,7 +54,15 @@ def ensure_directories():
     SECTOR_MAP_DIR.mkdir(parents=True, exist_ok=True)
     REFERENCE_DIR.mkdir(parents=True, exist_ok=True)
     AUCTION_DIR.mkdir(parents=True, exist_ok=True)
-    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    APP_LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    PERFORMANCE_LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    BACKTEST_LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    MONITOR_LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    SCAN_LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    AUCTION_LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    DOWNLOAD_LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    CLEANUP_LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    DEBUG_LOGS_DIR.mkdir(parents=True, exist_ok=True)
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 

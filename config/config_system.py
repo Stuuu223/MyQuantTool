@@ -132,7 +132,7 @@ REFRESH_INTERVAL = 30             # 自动刷新间隔（秒）
 # 日志设置
 # ==========================================
 LOG_LEVEL = 'INFO'                 # 日志级别
-LOG_FILE = 'logs/app.log'          # 日志文件路径
+LOG_FILE = 'logs/application/app.log'  # 日志文件路径
 LOG_MAX_SIZE = 10 * 1024 * 1024    # 日志文件最大大小（10MB）
 LOG_BACKUP_COUNT = 5               # 日志备份数量
 

@@ -85,29 +85,21 @@ class ConfigService:
         )
     
     def get_stock_universe(self, name: str = 'wanzhu_selected') -> list:
-        """获取股票池（整合所有wanzhu_*.json）"""
-        mapping = {
-            'wanzhu_top150': 'wanzhu_top150_tick_download.json',
-            'wanzhu_selected': 'wanzhu_selected_150.csv',  # 特殊处理CSV
-            'wanzhu_top50': 'wanzhu_top50_usable.json',
-            'wanzhu_big_movers': 'wanzhu_big_movers.json'
-        }
+        """
+        获取股票池
         
-        filename = mapping.get(name, f'{name}.json')
+        统一使用 wanzhu_selected_150.csv 作为唯一数据源
+        旧版 wanzhu_*.json 已废弃删除
+        """
+        import pandas as pd
         
-        if filename.endswith('.csv'):
-            import pandas as pd
-            df = pd.read_csv(CONFIG_DIR.parent / 'data' / 'wanzhu_data' / 'processed' / filename)
-            return df['code'].tolist()
-        else:
-            data = self._load_json(filename)
-            # 处理两种格式：列表 或 字典{'stocks': [...]}
-            if isinstance(data, list):
-                return [item.get('qmt_code', item.get('code', '')) for item in data]
-            elif isinstance(data, dict):
-                return data.get('stocks', [])
-            else:
-                return []
+        csv_path = CONFIG_DIR.parent / 'data' / 'wanzhu_data' / 'processed' / 'wanzhu_selected_150.csv'
+        
+        if not csv_path.exists():
+            raise FileNotFoundError(f"股票池数据文件不存在: {csv_path}")
+        
+        df = pd.read_csv(csv_path)
+        return df['code'].tolist()
     
     def get_module_config(self, module: str) -> Dict:
         """获取模块配置（通用接口）"""

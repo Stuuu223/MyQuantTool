@@ -239,29 +239,28 @@ def run_wanzhu_test():
     config = load_config()
     experiment = CapitalAttackExperiment(config)
     
-    # 加载顽主票列表
-    wanzhu_path = Path("config/wanzhu_top50_usable.json")
-    if not wanzhu_path.exists():
-        logger.error(f"❌ 找不到顽主票列表: {wanzhu_path}")
+    # 加载顽主票列表（统一使用wanzhu_selected_150.csv）
+    wanzhu_csv = Path("data/wanzhu_data/processed/wanzhu_selected_150.csv")
+    if not wanzhu_csv.exists():
+        logger.error(f"❌ 找不到顽主票列表: {wanzhu_csv}")
         return pd.DataFrame()
     
-    with open(wanzhu_path, 'r', encoding='utf-8') as f:
-        wanzhu_data = json.load(f)
+    import pandas as pd
+    wanzhu_df = pd.read_csv(wanzhu_csv)
+    wanzhu_codes = wanzhu_df['code'].tolist()
     
     # 构建测试用例（2月4-13日真实数据区间）
     test_cases = []
     dates = ['20260204', '20260205', '20260206', '20260207', 
              '20260210', '20260211', '20260212', '20260213']
     
-    for item in wanzhu_data.get('stocks', [])[:20]:  # 先测前20只
-        code = item.get('code')
-        if code:
-            for date in dates:
-                test_cases.append({
-                    'code': code,
-                    'date': date,
-                    'expected': '看实际表现'
-                })
+    for code in wanzhu_codes[:20]:  # 先测前20只
+        for date in dates:
+            test_cases.append({
+                'code': code,
+                'date': date,
+                'expected': '看实际表现'
+            })
     
     logger.info(f"🎯 顽主杯测试: {len(test_cases)} 个样本")
     df = experiment.run_experiment(test_cases)
