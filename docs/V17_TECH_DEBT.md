@@ -25,6 +25,65 @@
 ## 待优化 ⚠️
 
 ### 1. V12.1.0过滤器硬编码与失效（2026-02-18发现）🔥
+
+### 2. T+1 Tick Backtester资金管理重写或废弃（2026-02-19发现）🔥
+**当前状态**: 已标记EXPERIMENTAL/V12 DEMO
+**问题严重性**: 🔴 高（资金管理完全违规）
+
+**具体缺陷：**
+| 模块 | V12硬编码 | V17架构要求 | 冲突状态 |
+|-----|----------|------------|---------|
+| 手续费 | commission_rate=0.0003（硬编码） | 集中配置StrategyService | ❌ 冲突 |
+| 仓位控制 | position_size=0.3（硬编码） | Portfolio层决策 | ❌ 冲突 |
+| 止损 | stop_loss=-0.08（硬编码） | RiskService统一管理 | ❌ 冲突 |
+| 止盈 | take_profit=0.25（硬编码） | RiskService统一管理 | ❌ 冲突 |
+| 资金计算 | capital * position_size（自定义逻辑） | Portfolio标准模块 | ❌ 冲突 |
+
+**证据：**
+- 网宿科技58天回测：资金从100K莫名掉到50，持仓逻辑完全偏离
+- 交易判断"资金不足，跳过买入"：脚本内部if条件，非架构定义规则
+
+**根本原因：**
+- V12时代的实验脚本，自带一套资金/风控硬编码
+- 未通过StrategyService + Portfolio + RiskService统一栈
+- 与V17架构铁律"禁止硬编码阈值"直接冲突
+
+**决策（2026-02-19 CTO）：**
+- ✅ 允许用途：Tick数据加载验证、信号触发行为验证、TrapDetector诱多检测
+- ❌ 禁止用途：资金收益率评估、最大回撤/胜率统计、任何资金相关指标验收
+
+**修复方案：**
+- 短期：标记EXPERIMENTAL，禁止用于资金验收
+- 中期：重写资金管理模块，走Portfolio统一栈
+- 长期：废弃此脚本，使用V17官方回测链路
+
+### 3. Tick/分K回放链路重写（2026-02-19规划）🔥
+**当前状态**: 规划中
+**优先级**: 🔴 高（核心验收工具缺失）
+
+**目标：**
+- 构建合规的Tick事件回放链 + 单独的资金/Portfolio回测链
+- Tick回放：只验证行为（哪几天标机会、TrapDetector是否挡住诱多）
+- 资金回测：走日K/分K级别，使用Portfolio模块和风控规则
+
+**技术要求：**
+- 通过StrategyService统一调用策略（HALFWAY/TRUE_ATTACK/LEADER/TRAP）
+- 通过Portfolio层统一管理仓位（断层优势、持仓vs候选PK、小资金1-3只）
+- 通过RiskService统一管理风控（最大回撤、单票风控、机会成本约束）
+- 禁止策略脚本私自写止盈止损数字
+
+**实现路径：**
+1. 创建 backtest/run_v17_replay_suite.py（V17官方回测脚本）
+2. 确认/创建 logic/services/{strategy,capital,risk}_service.py
+3. 确认/创建 logic/portfolio/* 统一模块
+4. 所有回测路径走统一入口，禁止绕过Service/Portfolio
+
+**验收标准：**
+- 顽主150只58天Tick：只验证行为（机会标记/诱多过滤）
+- 资金回测：走StrategyService + Portfolio + RiskService统一栈
+- 所有资金/回撤类指标：基于Portfolio回测主线
+
+### 4. V12.1.0过滤器硬编码与失效（2026-02-18发现）🔥
 **当前状态**: 已标记EXPERIMENTAL，默认禁用
 **问题严重性**: 🔴 高（实际数据严重失效）
 

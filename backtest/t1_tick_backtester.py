@@ -3,11 +3,39 @@ T+1 Tick数据回测引擎（A股交易规则）
 - T日买入，T+1日才能卖出
 - 支持止损止盈
 - 支持三大过滤器（板块共振、动态阈值、竞价校验）
+
+⚠️  EXPERIMENTAL / V12 DEMO
+===============================================
+【重要声明】本脚本是V12时代的实验性回测引擎
+
+资金管理与风控逻辑限制：
+- 资金管理：使用自定义硬编码逻辑，不符合V17 Portfolio框架
+- 风控参数：手续费/止盈止损/仓位均为硬编码，违反V17架构铁律
+- 验收资格：**不得用于正式资金回测验收**
+
+允许用途：
+- ✅ Tick数据加载验证
+- ✅ 信号触发行为验证（哪几天标机会）
+- ✅ TrapDetector诱多检测
+- ✅ 策略逻辑快速测试
+
+禁止用途：
+- ❌ 资金收益率评估
+- ❌ 最大回撤/胜率统计
+- ❌ 任何资金相关指标验收
+
+【正确做法】资金验收请走V17主线路：
+- Tick事件回放：只验证行为（机会标记/诱多过滤）
+- 资金回测：走StrategyService + Portfolio + RiskService统一栈
+
+【技术债】详见 docs/V17_TECH_DEBT.md - "T+1 Tick Backtester资金管理重写或废弃"
+===============================================
 """
 import sys
 import json
 import pandas as pd
 import numpy as np
+import argparse
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List
@@ -557,6 +585,22 @@ class T1TickBacktester:
 
 def main():
     """主函数"""
+    parser = argparse.ArgumentParser(description='T+1 Tick数据回测引擎')
+    parser.add_argument('--stocks', nargs='+', help='指定股票代码列表（如：300017.SZ 000547.SZ）')
+    parser.add_argument('--start-date', type=str, help='开始日期（YYYY-MM-DD）')
+    parser.add_argument('--end-date', type=str, help='结束日期（YYYY-MM-DD）')
+    parser.add_argument('--initial-capital', type=float, help='初始资金')
+    parser.add_argument('--max-stocks', type=int, default=50, help='最大股票数量（默认50）')
+    args = parser.parse_args()
+
+    # 更新配置
+    if args.start_date:
+        BACKTEST_CONFIG['start_date'] = args.start_date
+    if args.end_date:
+        BACKTEST_CONFIG['end_date'] = args.end_date
+    if args.initial_capital:
+        BACKTEST_CONFIG['initial_capital'] = args.initial_capital
+
     logger.info("=" * 60)
     logger.info("🚀 T+1 Tick数据回测引擎")
     logger.info("=" * 60)
@@ -567,14 +611,19 @@ def main():
         return
 
     # 加载股票列表
-    stock_codes = load_stock_list()
+    if args.stocks:
+        stock_codes = args.stocks
+        logger.info(f"使用指定的股票列表: {len(stock_codes)} 只")
+    else:
+        stock_codes = load_stock_list()
+        logger.info(f"从Tick数据目录扫描股票: {len(stock_codes)} 只")
 
     if not stock_codes:
         logger.error("没有找到有Tick数据的股票")
         return
 
-    # 限制股票数量（全量回测）
-    max_stocks = 50  # 全量回测：50只股票
+    # 限制股票数量
+    max_stocks = args.max_stocks
     if len(stock_codes) > max_stocks:
         stock_codes = stock_codes[:max_stocks]
         logger.info(f"限制回测股票数量为 {max_stocks} 只")
