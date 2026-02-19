@@ -834,3 +834,63 @@ xtquant/  # QMT SDK，通过pip安装
 2. **引用检查**：无引用的文件直接删除
 3. **统一数据源**：wanzhu股票池统一使用wanzhu_selected_150.csv，后续迁移到远程DB
 4. **小目录合并**：孤立小目录（<=2文件）检查引用后决定删除或保留
+
+---
+
+## 12. 文档精简报告 (2026-02-19)
+
+### 12.1 老板决策
+
+1. **资金流长期路线A**：QMT Tick推断为主，AkShare DDE T+1为辅
+2. **架构以知识库为最高权威**：冲突时以KNOWLEDGE_BASE为准
+3. **文档精简**：从13份减少到5份核心文档
+
+### 12.2 资金流抽象验证
+
+**结论**：ICapitalFlowProvider抽象已完整实现
+
+```
+✅ logic/data_providers/base.py - ICapitalFlowProvider接口
+✅ logic/data_providers/level2_provider.py - Level2TickProvider
+✅ logic/data_providers/level1_provider.py - Level1InferenceProvider
+✅ logic/data_providers/dongcai_provider.py - DongCaiT1Provider
+✅ logic/qmt_historical_provider.py - QmtTickCapitalFlowProvider
+✅ logic/data_providers/factory.py - 工厂模式 + 自动降级链
+```
+
+**降级链**：level2 → level1 → qmt_tick → dongcai
+
+### 12.3 文档变更
+
+| 变更类型 | 文件 |
+|----------|------|
+| 新建 | KNOWLEDGE_BASE_V17.md（唯一权威知识库） |
+| 新建 | CORE_ARCHITECTURE_V17.md（技术架构总览） |
+| 新建 | OPERATION_GUIDE.md（运维指南） |
+| 新建 | RUNTIME_AND_BACKTEST_GUIDE.md（运行时与回测） |
+| 保留 | V17_TECH_DEBT.md（技术债记录） |
+| 保留 | docs/dev/（开发附录） |
+| 删除 | KNOWLEDGE_BASE_V12_1_0.md（V12过时规则） |
+| 删除 | CORE_ARCHITECTURE.md（与新知识库冲突） |
+| 删除 | 10份冗余/合并文档 |
+
+### 12.4 最终文档结构
+
+```
+docs/
+├── KNOWLEDGE_BASE_V17.md      # 最高权威
+├── CORE_ARCHITECTURE_V17.md   # 技术架构
+├── OPERATION_GUIDE.md         # 运维指南
+├── RUNTIME_AND_BACKTEST_GUIDE.md  # 运行时
+├── V17_TECH_DEBT.md           # 技术债
+└── dev/                       # 开发附录
+```
+
+### 12.5 关键裁决记录
+
+| 裁决 | 内容 |
+|------|------|
+| 资金流路线A | QMT Tick实时推断为主，AkShare DDE T+1为辅 |
+| 文档权威 | 知识库为最高权威，架构文档对齐 |
+| V12过滤器 | EXPERIMENTAL，默认禁用，通过率仅0.11% |
+| 硬编码阈值 | 禁止，统一使用相对分位数 |
