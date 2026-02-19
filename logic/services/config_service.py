@@ -121,6 +121,18 @@ class ConfigService:
         filename = config_files.get(module, f'{module}_config.json')
         return self._load_json(filename)
     
+    def get_strategy_params(self) -> Dict[str, Any]:
+        """获取策略参数配置（整合所有策略阈值）
+        
+        Returns:
+            策略参数字典，包含leader/halfway/true_attack等所有策略的配置
+        
+        Note:
+            从config/strategy_params.json读取，支持分位数模式配置
+            取代硬编码阈值（如>7%，>2倍量比）
+        """
+        return self._load_json('strategy_params.json')
+    
     def clear_cache(self):
         """清除配置缓存（配置热更新时用）"""
         self._cache.clear()

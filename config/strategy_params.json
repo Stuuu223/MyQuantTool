@@ -1,0 +1,64 @@
+{
+  "_comment": "策略参数配置 - 所有阈值使用分位数而非绝对值，禁止硬编码",
+  "version": "1.0",
+  "last_updated": "2026-02-19",
+  
+  "leader": {
+    "_description": "龙头候选策略参数",
+    "use_percentile": true,
+    "change_pct_percentile": 0.92,
+    "volume_ratio_percentile": 0.90,
+    "max_confidence_change_pct": 0.10,
+    "min_circ_mv_billion": 50,
+    "notes": "涨幅>市场92分位，量比>市场90分位，而非绝对7%/2倍"
+  },
+  
+  "halfway": {
+    "_description": "半路突破策略参数",
+    "use_percentile": true,
+    "price_momentum_percentile": 0.85,
+    "volume_surge_percentile": 0.88,
+    "breakout_threshold_percentile": 0.80,
+    "timing_window_minutes": 30,
+    "max_entry_change_pct": 0.06,
+    "notes": "基于分位数的动态阈值，适应不同市场环境"
+  },
+  
+  "true_attack": {
+    "_description": "真资金攻击策略参数",
+    "use_percentile": true,
+    "inflow_ratio_percentile": 0.99,
+    "price_strength_percentile": 0.95,
+    "volume_price_coordination_threshold": 0.80,
+    "sustained_inflow_minutes": 5,
+    "notes": "资金强度相对分位数，非绝对金额"
+  },
+  
+  "trap": {
+    "_description": "诱多检测策略参数",
+    "use_percentile": true,
+    "volume_spike_percentile": 0.95,
+    "price_stall_threshold": 0.02,
+    "divergence_minutes": 3,
+    "notes": "量价背离检测"
+  },
+  
+  "portfolio": {
+    "_description": "Portfolio层风控参数",
+    "max_positions": 3,
+    "dominance_ratio_threshold": 1.5,
+    "max_drawdown_pct": 0.03,
+    "min_advantage_score": 0.70,
+    "notes": "断层优势倍数、回撤控制"
+  },
+  
+  "_experimental": {
+    "_description": "实验性参数（仅用于exp目录）",
+    "warning": "这些参数只供研究使用，不得用于生产",
+    "hardcoded_thresholds": {
+      "change_pct_absolute": 0.07,
+      "volume_ratio_absolute": 2.0,
+      "notes": "仅用于烟雾测试，生产环境必须使用分位数"
+    }
+  }
+}

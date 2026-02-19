@@ -8,6 +8,11 @@
 - TRUE_ATTACK (资金攻击)
 - TRAP (诱多检测)
 
+设计原则：
+1. 所有阈值从config/strategy_params.json读取，禁止硬编码
+2. 使用分位数而非绝对值（如>92分位，而非>7%）
+3. 依赖上游已计算的标准化因子
+
 禁止直接访问logic.strategies.*，必须通过此服务。
 """
 
@@ -17,6 +22,7 @@ import pandas as pd
 from logic.strategies.unified_warfare_core import UnifiedWarfareCore
 from logic.strategies.true_attack_detector import TrueAttackDetector
 from logic.utils.logger import get_logger
+from .config_service import ConfigService
 
 logger = get_logger(__name__)
 
@@ -29,13 +35,24 @@ class StrategyService:
         service = StrategyService()
         events = service.detect_events(tick_data, context)
         
-        # 或检测特定策略
-        halfway_signal = service.check_halfway(stock_code, tick_data)
+        # 或检测特定策略（使用分位数）
+        leader_signal = service.check_leader(stock_code, {
+            'change_pct_percentile': 0.95,  # 涨幅95分位
+            'volume_ratio_percentile': 0.93  # 量比分位
+        })
     """
     
     def __init__(self):
         self._warfare_core = None
         self._attack_detector = None
+        self._config_service = ConfigService()
+        self._strategy_params = None
+    
+    def _load_strategy_params(self) -> Dict:
+        """懒加载策略参数（从配置文件）"""
+        if self._strategy_params is None:
+            self._strategy_params = self._config_service.get_strategy_params()
+        return self._strategy_params
     
     def _get_warfare_core(self) -> UnifiedWarfareCore:
         """懒加载UnifiedWarfareCore"""
@@ -76,54 +93,132 @@ class StrategyService:
     def check_halfway(
         self,
         stock_code: str,
-        price_history: pd.DataFrame,
-        volume_history: pd.DataFrame
+        factors: Dict[str, float]
     ) -> Optional[Dict]:
         """
-        检查HALFWAY信号
+        检查HALFWAY信号（半路突破）
         
         Args:
             stock_code: 股票代码
-            price_history: 价格历史
-            volume_history: 成交量历史
+            factors: 标准化因子字典，必须包含：
+                - price_momentum_percentile: 价格动量分位 (0-1)
+                - volume_surge_percentile: 成交量突增分位 (0-1)
+                - breakout_threshold_percentile: 突破阈值分位 (0-1)
+                - timing_window_percentile: 时间窗口内的位置 (0-1)
         
         Returns:
             HALFWAY信号或None
+        
+        Note:
+            所有阈值从config/strategy_params.json的halfway部分读取
+            禁止使用绝对值（如>6%），必须使用分位数
         """
         logger.info(f"检查{stock_code} HALFWAY信号")
         
-        # TODO: 调用HALFWAY检测逻辑
+        params = self._load_strategy_params().get('halfway', {})
+        
+        # 检查是否使用分位数模式
+        if not params.get('use_percentile', True):
+            logger.warning("HALFWAY策略配置错误：必须启用分位数模式")
+            return None
+        
+        # 从配置读取分位阈值
+        price_momentum_threshold = params.get('price_momentum_percentile', 0.85)
+        volume_surge_threshold = params.get('volume_surge_percentile', 0.88)
+        
+        # 使用分位数进行判断（而非绝对值）
+        price_momentum_pct = factors.get('price_momentum_percentile', 0)
+        volume_surge_pct = factors.get('volume_surge_percentile', 0)
+        
+        # HALFWAY条件：价格动量>85分位 且 成交量突增>88分位
+        if price_momentum_pct >= price_momentum_threshold and \
+           volume_surge_pct >= volume_surge_threshold:
+            
+            # 计算置信度（基于分位数）
+            avg_percentile = (price_momentum_pct + volume_surge_pct) / 2
+            confidence = min(avg_percentile / 0.95, 1.0)  # 95分位作为100%置信度
+            
+            return {
+                'stock_code': stock_code,
+                'signal_type': 'HALFWAY',
+                'confidence': confidence,
+                'factors': {
+                    'price_momentum_percentile': price_momentum_pct,
+                    'volume_surge_percentile': volume_surge_pct,
+                    'threshold_price': price_momentum_threshold,
+                    'threshold_volume': volume_surge_threshold
+                }
+            }
         
         return None
     
     def check_leader(
         self,
         stock_code: str,
-        change_pct: float,
-        volume_ratio: float
+        factors: Dict[str, float]
     ) -> Optional[Dict]:
         """
         检查龙头候选信号
         
         Args:
             stock_code: 股票代码
-            change_pct: 涨幅
-            volume_ratio: 量比
+            factors: 标准化因子字典，必须包含：
+                - change_pct_percentile: 涨幅分位 (0-1)，如0.92表示92分位
+                - volume_ratio_percentile: 量比分位 (0-1)
+                - circ_mv_billion: 流通市值（亿元），用于过滤小票
         
         Returns:
             龙头信号或None
+        
+        Note:
+            龙头条件：涨幅>市场92分位，量比>市场90分位
+            市值要求：>50亿（防止小票噪音）
+            
+            历史教训：V12.1使用绝对值7%/2倍量比，导致小票误触发
+            现改用相对分位数，适应不同市场环境
         """
         logger.info(f"检查{stock_code} 龙头信号")
         
-        # 龙头条件：涨幅>7%，量比>2
-        if change_pct > 7.0 and volume_ratio > 2.0:
+        params = self._load_strategy_params().get('leader', {})
+        
+        # 检查是否使用分位数模式
+        if not params.get('use_percentile', True):
+            logger.warning("LEADER策略配置错误：必须启用分位数模式")
+            return None
+        
+        # 从配置读取分位阈值
+        change_pct_threshold = params.get('change_pct_percentile', 0.92)
+        volume_ratio_threshold = params.get('volume_ratio_percentile', 0.90)
+        min_circ_mv = params.get('min_circ_mv_billion', 50)
+        max_confidence_pct = params.get('max_confidence_change_pct', 0.10)
+        
+        # 市值过滤
+        circ_mv = factors.get('circ_mv_billion', 0)
+        if circ_mv < min_circ_mv:
+            return None
+        
+        # 使用分位数进行判断
+        change_pct_pct = factors.get('change_pct_percentile', 0)
+        volume_ratio_pct = factors.get('volume_ratio_percentile', 0)
+        
+        # 龙头条件：涨幅分位>92% 且 量比分位>90%
+        if change_pct_pct >= change_pct_threshold and \
+           volume_ratio_pct >= volume_ratio_threshold:
+            
+            # 计算置信度（基于分位数，而非绝对涨幅）
+            # 达到max_confidence_pct分位时置信度=1.0
+            confidence = min(change_pct_pct / max_confidence_pct, 1.0)
+            
             return {
                 'stock_code': stock_code,
                 'signal_type': 'LEADER_CANDIDATE',
-                'confidence': min(change_pct / 10.0, 1.0),
+                'confidence': confidence,
                 'factors': {
-                    'change_pct': change_pct,
-                    'volume_ratio': volume_ratio
+                    'change_pct_percentile': change_pct_pct,
+                    'volume_ratio_percentile': volume_ratio_pct,
+                    'circ_mv_billion': circ_mv,
+                    'threshold_change': change_pct_threshold,
+                    'threshold_volume': volume_ratio_threshold
                 }
             }
         
@@ -132,40 +227,61 @@ class StrategyService:
     def check_true_attack(
         self,
         stock_code: str,
-        main_inflow: float,
-        circ_mv: float,
-        price_strength: float
+        factors: Dict[str, float]
     ) -> Optional[Dict]:
         """
         检查真资金攻击信号
         
         Args:
             stock_code: 股票代码
-            main_inflow: 主力净流入
-            circ_mv: 流通市值
-            price_strength: 价格强度
+            factors: 标准化因子字典，必须包含：
+                - inflow_ratio_percentile: 资金流入强度分位 (0-1)
+                - price_strength_percentile: 价格强度分位 (0-1)
+                - volume_price_coordination: 量价协调度 (0-1)
         
         Returns:
             攻击信号或None
+        
+        Note:
+            资金强度是相对概念，必须基于分位数而非绝对金额
+            参考：网宿科技实验，资金分位>99%且价格强度>95%才触发
         """
         try:
-            detector = self._get_attack_detector()
+            params = self._load_strategy_params().get('true_attack', {})
             
-            # 构建flow_data
-            flow_data = {
-                'main_inflow': main_inflow,
-                'circ_mv': circ_mv,
-                'price_strength': price_strength
-            }
+            if not params.get('use_percentile', True):
+                logger.warning("TRUE_ATTACK策略配置错误：必须启用分位数模式")
+                return None
             
-            is_attack = detector.is_true_attack(stock_code, flow_data)
+            # 从配置读取分位阈值
+            inflow_threshold = params.get('inflow_ratio_percentile', 0.99)
+            price_strength_threshold = params.get('price_strength_percentile', 0.95)
+            vp_coordination_threshold = params.get('volume_price_coordination_threshold', 0.80)
             
-            if is_attack:
+            # 获取因子分位数
+            inflow_pct = factors.get('inflow_ratio_percentile', 0)
+            price_strength_pct = factors.get('price_strength_percentile', 0)
+            vp_coordination = factors.get('volume_price_coordination', 0)
+            
+            # 资金攻击条件：资金分位>99% 且 价格强度>95% 且 量价协调>80%
+            if inflow_pct >= inflow_threshold and \
+               price_strength_pct >= price_strength_threshold and \
+               vp_coordination >= vp_coordination_threshold:
+                
+                # 置信度基于多重因子综合
+                confidence = (inflow_pct + price_strength_pct + vp_coordination) / 3
+                
                 return {
                     'stock_code': stock_code,
                     'signal_type': 'TRUE_ATTACK',
-                    'confidence': detector.calculate_score(main_inflow, price_strength),
-                    'factors': flow_data
+                    'confidence': confidence,
+                    'factors': {
+                        'inflow_ratio_percentile': inflow_pct,
+                        'price_strength_percentile': price_strength_pct,
+                        'volume_price_coordination': vp_coordination,
+                        'threshold_inflow': inflow_threshold,
+                        'threshold_price': price_strength_threshold
+                    }
                 }
             
             return None
