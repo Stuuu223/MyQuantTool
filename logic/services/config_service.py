@@ -101,7 +101,13 @@ class ConfigService:
             return df['code'].tolist()
         else:
             data = self._load_json(filename)
-            return data.get('stocks', [])
+            # 处理两种格式：列表 或 字典{'stocks': [...]}
+            if isinstance(data, list):
+                return [item.get('qmt_code', item.get('code', '')) for item in data]
+            elif isinstance(data, dict):
+                return data.get('stocks', [])
+            else:
+                return []
     
     def get_module_config(self, module: str) -> Dict:
         """获取模块配置（通用接口）"""
