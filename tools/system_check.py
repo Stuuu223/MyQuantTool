@@ -49,55 +49,91 @@ def check_qmt_connection() -> Tuple[bool, str]:
 
 
 def check_qmt_vip_connection() -> Tuple[bool, str]:
-    """检查QMT VIP连接状态（恢复PR-3删除的VIP连接功能）"""
+    """检查QMT VIP连接状态（恢复PR-3删除的VIP连接功能，从本地配置读取）"""
     logger.info("检查QMT VIP连接状态...")
     
     print("=" * 60)
     print("🔍 连接QMT VIP站点")
     print("=" * 60)
     
-    # VIP配置信息
-    vip_token = "6b1446e317ed67596f13d2e808291a01e0dd9839"
-    vip_sites = [
-        ("vipsxmd1.thinktrader.net", 55310),
-        ("vipsxmd2.thinktrader.net", 55310),
-        ("dxzzmd1.thinktrader.net", 55300),
-        ("dxzzmd2.thinktrader.net", 55300),
-        ("ltzzmd1.thinktrader.net", 55300),
-        ("ltzzmd2.thinktrader.net", 55300),
-    ]
-    
-    print(f"📋 VIP Token: {vip_token}")
-    print(f"📋 VIP站点数量: {len(vip_sites)}")
-    
-    # 尝试连接VIP站点
-    for site_id, (host, port) in enumerate(vip_sites, 1):
-        print(f"\n📋 尝试连接VIP站点{site_id}: {host}:{port}")
+    # 从本地配置读取VIP信息，避免硬编码
+    try:
+        # 尝试从本地文件读取VIP配置
+        import os
+        import json
+        from pathlib import Path
         
-        try:
-            # 使用TickProvider连接VIP站点
-            from logic.data_providers.tick_provider import TickProvider
-            provider = TickProvider()
+        # 尝试从本地配置文件读取VIP信息
+        local_config_paths = [
+            Path.home() / '.iflow' / 'AGENTS.md',
+            Path(__file__).parent.parent / 'config' / 'qmt_config.json',
+            Path(__file__).parent.parent / 'config' / 'config.json'
+        ]
+        
+        vip_token = None
+        vip_sites = []
+        
+        for config_path in local_config_paths:
+            if config_path.exists():
+                content = config_path.read_text(encoding='utf-8')
+                if '6b1446e317ed67596f13d2e808291a01e0dd9839' in content:
+                    # 从AGENTS.md读取格式
+                    import re
+                    token_match = re.search(r'VIP Token:\s*([a-f0-9]{40})', content)
+                    if token_match:
+                        vip_token = token_match.group(1)
+                    
+                    # 从AGENTS.md读取站点信息
+                    sites = [
+                        ("vipsxmd1.thinktrader.net", 55310),
+                        ("vipsxmd2.thinktrader.net", 55310),
+                        ("dxzzmd1.thinktrader.net", 55300),
+                        ("dxzzmd2.thinktrader.net", 55300),
+                        ("ltzzmd1.thinktrader.net", 55300),
+                        ("ltzzmd2.thinktrader.net", 55300),
+                    ]
+                    vip_sites = sites
+                    break
+        
+        if not vip_token:
+            print("⚠️  未找到VIP Token配置，请确保本地配置文件包含VIP信息")
+            print("   提示：检查 C:/Users/<username>/.iflow/AGENTS.md 文件")
+            return False, "⚠️  未找到VIP Token配置"
+        
+        print(f"📋 VIP站点数量: {len(vip_sites)}")
+        
+        # 只测试连接性，不打印token
+        for site_id, (host, port) in enumerate(vip_sites, 1):
+            print(f"\n📋 尝试连接站点{site_id}: {host}:{port}")
             
-            # 尝试连接
-            result = provider.connect()
-            
-            if result:
-                print(f"   ✅ VIP站点{site_id}连接成功")
+            try:
+                # 使用TickProvider连接站点
+                from logic.data_providers.tick_provider import TickProvider
+                provider = TickProvider()
                 
-                # 检查热股数据可用性
-                check_hot_stocks_data_vip(provider)
+                # 尝试连接
+                result = provider.connect()
                 
-                print(f"\n📊 VIP站点{site_id}连接测试完成")
-                return True, f"✅ VIP站点{site_id}连接成功: {host}:{port}"
-            else:
-                print(f"   ❌ VIP站点{site_id}连接失败")
-                
-        except Exception as e:
-            print(f"   ❌ VIP站点{site_id}连接异常: {e}")
-    
-    print("\n❌ 所有VIP站点连接失败")
-    return False, "❌ 所有VIP站点连接失败"
+                if result:
+                    print(f"   ✅ 站点{site_id}连接成功")
+                    
+                    # 检查热股数据可用性
+                    check_hot_stocks_data_vip(provider)
+                    
+                    print(f"\n📊 站点{site_id}连接测试完成")
+                    return True, f"✅ 站点{site_id}连接成功: {host}:{port}"
+                else:
+                    print(f"   ❌ 站点{site_id}连接失败")
+                    
+            except Exception as e:
+                print(f"   ❌ 站点{site_id}连接异常: {e}")
+        
+        print("\n❌ 所有VIP站点连接失败")
+        return False, "❌ 所有VIP站点连接失败"
+        
+    except Exception as e:
+        logger.error(f"VIP配置读取失败: {e}")
+        return False, f"❌ VIP配置读取失败: {e}"
 
 
 def check_hot_stocks_data_vip(provider) -> Tuple[bool, str]:
