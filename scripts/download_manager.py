@@ -168,24 +168,34 @@ class QMTProvider(DataProvider):
     
     def disconnect(self):
         if self._provider:
-            self._provider.disconnect()
+            # TickProvider没有disconnect方法，但有__exit__
+            if hasattr(self._provider, 'disconnect'):
+                self._provider.disconnect()
+            # 否则使用上下文管理器的方式清理
+            self._provider = None
     
     def download(self, stock_code: str, data_type: DataType,
                  start_date: str, end_date: str) -> Dict:
         try:
             if data_type == DataType.TICK:
-                result = self._provider.download_tick_data(stock_code, start_date, end_date)
+                # 使用download_ticks方法（返回BatchDownloadResult对象）
+                batch_result = self._provider.download_ticks([stock_code], start_date, end_date)
+                # 转换为字典格式
+                return {
+                    'success': batch_result.success > 0,
+                    'message': f'成功{batch_result.success}只, 失败{batch_result.failed}只',
+                    'records': batch_result.success
+                }
             elif data_type in [DataType.MINUTE_1, DataType.MINUTE_5]:
                 period = '1m' if data_type == DataType.MINUTE_1 else '5m'
                 result = self._provider.download_minute_data([stock_code], start_date, end_date, period)
+                return {
+                    'success': result.get('success', False),
+                    'message': result.get('message', ''),
+                    'records': result.get('records', 0)
+                }
             else:
                 return {'success': False, 'message': f'QMT不支持{data_type}', 'records': 0}
-            
-            return {
-                'success': result.get('success', False),
-                'message': result.get('message', ''),
-                'records': result.get('records', 0)
-            }
         except Exception as e:
             return {'success': False, 'message': str(e), 'records': 0}
     
