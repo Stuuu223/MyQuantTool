@@ -48,6 +48,95 @@ def check_qmt_connection() -> Tuple[bool, str]:
         return False, f"❌ QMT连接异常: {e}"
 
 
+def check_qmt_vip_connection() -> Tuple[bool, str]:
+    """检查QMT VIP连接状态（恢复PR-3删除的VIP连接功能）"""
+    logger.info("检查QMT VIP连接状态...")
+    
+    print("=" * 60)
+    print("🔍 连接QMT VIP站点")
+    print("=" * 60)
+    
+    # VIP配置信息
+    vip_token = "6b1446e317ed67596f13d2e808291a01e0dd9839"
+    vip_sites = [
+        ("vipsxmd1.thinktrader.net", 55310),
+        ("vipsxmd2.thinktrader.net", 55310),
+        ("dxzzmd1.thinktrader.net", 55300),
+        ("dxzzmd2.thinktrader.net", 55300),
+        ("ltzzmd1.thinktrader.net", 55300),
+        ("ltzzmd2.thinktrader.net", 55300),
+    ]
+    
+    print(f"📋 VIP Token: {vip_token}")
+    print(f"📋 VIP站点数量: {len(vip_sites)}")
+    
+    # 尝试连接VIP站点
+    for site_id, (host, port) in enumerate(vip_sites, 1):
+        print(f"\n📋 尝试连接VIP站点{site_id}: {host}:{port}")
+        
+        try:
+            # 使用TickProvider连接VIP站点
+            from logic.data_providers.tick_provider import TickProvider
+            provider = TickProvider()
+            
+            # 尝试连接
+            result = provider.connect()
+            
+            if result:
+                print(f"   ✅ VIP站点{site_id}连接成功")
+                
+                # 检查热股数据可用性
+                check_hot_stocks_data_vip(provider)
+                
+                print(f"\n📊 VIP站点{site_id}连接测试完成")
+                return True, f"✅ VIP站点{site_id}连接成功: {host}:{port}"
+            else:
+                print(f"   ❌ VIP站点{site_id}连接失败")
+                
+        except Exception as e:
+            print(f"   ❌ VIP站点{site_id}连接异常: {e}")
+    
+    print("\n❌ 所有VIP站点连接失败")
+    return False, "❌ 所有VIP站点连接失败"
+
+
+def check_hot_stocks_data_vip(provider) -> Tuple[bool, str]:
+    """检查热股数据可用性（VIP连接模式）"""
+    print("\n📋 检查热门股Tick数据...")
+    
+    hot_stocks = [
+        '300997.SZ',  # 欢乐家
+        '603697.SH',  # 有友食品
+        '000001.SZ',  # 平安银行
+        '600519.SH',  # 贵州茅台
+        '300750.SZ',  # 宁德时代
+    ]
+    
+    success_count = 0
+    for stock in hot_stocks:
+        try:
+            # 使用provider检查数据可用性
+            results = provider.check_coverage([stock])
+            stock_result = results.get(stock, {})
+            
+            if stock_result.get('exists', False):
+                tick_count = stock_result.get('count', 0)
+                print(f"   ✅ {stock}: 数据可用 (记录数: {tick_count})")
+                success_count += 1
+            else:
+                print(f"   ❌ {stock}: 无数据")
+                
+        except Exception as e:
+            print(f"   ⚠️  {stock}: 读取失败 ({e})")
+    
+    if success_count > 0:
+        print(f"\n📊 VIP数据检查: {success_count}/{len(hot_stocks)} 只股票数据可用")
+        return True, f"✅ VIP数据检查: {success_count}/{len(hot_stocks)} 只股票数据可用"
+    else:
+        print(f"\n❌ VIP数据检查: 无股票数据可用")
+        return False, "❌ VIP数据检查: 无股票数据可用"
+
+
 def check_data_integrity() -> Tuple[bool, str]:
     """检查数据完整性"""
     logger.info("检查数据完整性...")
@@ -150,6 +239,7 @@ def run_all_checks() -> Dict[str, Tuple[bool, str]]:
     
     checks = [
         ('QMT连接', check_qmt_connection),
+        ('QMT VIP连接', check_qmt_vip_connection),
         ('数据完整性', check_data_integrity),
         ('配置一致性', check_config_consistency),
         ('Tick数据覆盖', check_tick_coverage),
@@ -180,13 +270,16 @@ def main():
   # 只检查QMT连接
   python tools/system_check.py --type connection
   
+  # 检查QMT VIP连接
+  python tools/system_check.py --type vip
+  
   # 检查数据和配置
   python tools/system_check.py --type data --type config
         """
     )
     
     parser.add_argument('--type', type=str, action='append',
-                       choices=['connection', 'data', 'config', 'coverage', 'all'],
+                       choices=['connection', 'vip', 'data', 'config', 'coverage', 'all'],
                        default=['all'],
                        help='检查类型，可多次指定')
     
@@ -194,7 +287,7 @@ def main():
     
     # 确定检查列表
     if 'all' in args.type:
-        check_types = ['connection', 'data', 'config', 'coverage']
+        check_types = ['connection', 'vip', 'data', 'config', 'coverage']
     else:
         check_types = args.type
     
@@ -210,6 +303,8 @@ def main():
         
         if check_type == 'connection':
             success, message = check_qmt_connection()
+        elif check_type == 'vip':
+            success, message = check_qmt_vip_connection()
         elif check_type == 'data':
             success, message = check_data_integrity()
         elif check_type == 'config':
