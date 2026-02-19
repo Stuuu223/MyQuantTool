@@ -42,7 +42,13 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 from logic.monitors.intraday_monitor import IntraDayMonitor
 from tools.intraday_decision import IntraDayDecisionTool
-from tools.enhanced_stock_analyzer import EnhancedStockAnalyzer
+
+# TODO: enhanced_stock_analyzer 模块不存在，需要创建或修复导入
+# from tools.enhanced_stock_analyzer import EnhancedStockAnalyzer
+class EnhancedStockAnalyzer:
+    """占位符 - 增强股票分析器"""
+    def analyze(self, stock_code: str):
+        return {"stock_code": stock_code, "status": "placeholder"}
 
 
 class UnifiedStockAnalyzer:
