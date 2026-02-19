@@ -157,16 +157,16 @@ def main():
         epilog="""
 示例:
   # 启动事件驱动监控（实盘）
-  python scripts/monitor_runner.py --mode event
+  python tools/monitor_runner.py --mode event
   
   # 启动集合竞价监控
-  python scripts/monitor_runner.py --mode auction
+  python tools/monitor_runner.py --mode auction
   
   # 监控下载进度
-  python scripts/monitor_runner.py --mode download
+  python tools/monitor_runner.py --mode download
   
   # 监控Tick数据接收
-  python scripts/monitor_runner.py --mode tick
+  python tools/monitor_runner.py --mode tick
         """
     )
     
