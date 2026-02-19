@@ -29,7 +29,6 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from logic.analyzers.universe_builder import (
-    build_wanzhu_top150,
     build_wanzhu_selected,
     save_universe,
     get_universe_summary
@@ -40,7 +39,7 @@ def generate_universe(profile: str, output: Optional[Path] = None, format: str =
     """生成股票池
     
     Args:
-        profile: 股票池类型 (wanzhu_top150, wanzhu_selected)
+        profile: 股票池类型 (wanzhu_selected)
         output: 输出路径，默认使用标准路径
         format: 输出格式 (json, csv)
     """
@@ -49,15 +48,12 @@ def generate_universe(profile: str, output: Optional[Path] = None, format: str =
     print(f"{'='*60}\n")
     
     # 根据profile构建股票池
-    if profile == 'wanzhu_top150':
-        universe = build_wanzhu_top150()
-        default_output = PROJECT_ROOT / 'config' / 'wanzhu_top150_tick_download.json'
-    elif profile == 'wanzhu_selected':
+    if profile == 'wanzhu_selected':
         universe = build_wanzhu_selected()
         default_output = PROJECT_ROOT / 'config' / 'wanzhu_selected_tick_download.json'
     else:
         print(f"❌ 未知的股票池类型: {profile}")
-        print(f"   支持的类型: wanzhu_top150, wanzhu_selected")
+        print(f"   支持的类型: wanzhu_selected")
         return False
     
     # 显示统计
@@ -89,9 +85,7 @@ def show_stats(profile: str):
     print(f"股票池统计: {profile}")
     print(f"{'='*60}\n")
     
-    if profile == 'wanzhu_top150':
-        universe = build_wanzhu_top150()
-    elif profile == 'wanzhu_selected':
+    if profile == 'wanzhu_selected':
         universe = build_wanzhu_selected()
     else:
         print(f"❌ 未知的股票池类型: {profile}")
@@ -128,9 +122,7 @@ def validate_universe(profile: str):
     print(f"验证股票池: {profile}")
     print(f"{'='*60}\n")
     
-    if profile == 'wanzhu_top150':
-        universe = build_wanzhu_top150()
-    elif profile == 'wanzhu_selected':
+    if profile == 'wanzhu_selected':
         universe = build_wanzhu_selected()
     else:
         print(f"❌ 未知的股票池类型: {profile}")
@@ -175,17 +167,17 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 使用示例:
-  # 生成顽主Top150股票池
-  python tasks/manage_universe.py --action generate --profile wanzhu_top150
+  # 生成顽主精选150（从CSV）
+  python tasks/manage_universe.py --action generate --profile wanzhu_selected
   
   # 生成并保存为CSV格式
-  python tasks/manage_universe.py --action generate --profile wanzhu_top150 --format csv
+  python tasks/manage_universe.py --action generate --profile wanzhu_selected --format csv
   
   # 查看统计信息
-  python tasks/manage_universe.py --action stats --profile wanzhu_top150
+  python tasks/manage_universe.py --action stats --profile wanzhu_selected
   
   # 验证股票池
-  python tasks/manage_universe.py --action validate --profile wanzhu_top150
+  python tasks/manage_universe.py --action validate --profile wanzhu_selected
         """
     )
     
@@ -193,7 +185,7 @@ def main():
                        choices=['generate', 'stats', 'validate'],
                        help='操作类型')
     parser.add_argument('--profile', type=str, required=True,
-                       choices=['wanzhu_top150', 'wanzhu_selected'],
+                       choices=['wanzhu_selected'],
                        help='股票池配置')
     parser.add_argument('--output', type=str,
                        help='输出文件路径（默认使用标准路径）')
