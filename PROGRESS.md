@@ -894,3 +894,59 @@ docs/
 | 文档权威 | 知识库为最高权威，架构文档对齐 |
 | V12过滤器 | EXPERIMENTAL，默认禁用，通过率仅0.11% |
 | 硬编码阈值 | 禁止，统一使用相对分位数 |
+## 13. ML依赖清理报告 (2026-02-19)
+
+### 13.1 问题发现
+
+**过度设计警报**：
+- logic/ml/ 目录下17个ML模块，全部未被核心系统引用
+- XGBoost/LightGBM/CatBoost/LSTM/强化学习/联邦学习等多套并行方案
+- 与核心系统（资金流、三漏斗、Portfolio）完全脱节
+
+### 13.2 清理行动
+
+**删除目录**：
+- logic/ml/ （17个文件，~11k行代码）
+
+**删除模块清单**：
+- ml_predictor (XGBoost/LightGBM/CatBoost)
+- lstm_predictor, lstm_enhanced (LSTM预测)
+- rl_agent, gymnasium (强化学习)
+- federated_learning_system (联邦学习)
+- multi_agent_system (多智能体)
+- autonomous_learning_system (自主学习)
+- meta_learning_system (元学习)
+- multimodal_fusion_system (多模态融合)
+- multi_strategy_fusion (多策略融合)
+- feature_engineer (特征工程)
+- limit_up_predictor (涨停预测)
+- opportunity_predictor (机会预测)
+- intelligent_trading_system (智能交易)
+- feedback_learning (反馈学习)
+
+**依赖清理**（requirements.txt）：
+- 删除：xgboost, lightgbm, catboost, textblob, gymnasium
+- 保留：scikit-learn（真实使用3处：KMeans/RandomForest/TF-IDF）
+- 保留：optuna, jieba（真实使用）
+
+### 13.3 验证结果
+
+`
+✅ 17个ML模块全部删除
+✅ requirements.txt更新完成
+✅ scikit-learn真实引用已保留
+✅ 核心系统功能无影响
+`
+
+### 13.4 iFlow配置
+
+**新增文件**：
+- .iflow/iflow_config.yaml - iFlow CLI启动配置
+- .iflow/DEVELOPMENT_PARADIGM.md - 开发范式文档
+
+### 13.5 清理原则
+
+1. **引用检查优先**：无引用的模块直接删除
+2. **保留真实依赖**：scikit-learn等真实使用的保留
+3. **实验性代码移除**：过度设计的实验性代码直接删除
+4. **git历史保留**：删除的代码可从git历史恢复
