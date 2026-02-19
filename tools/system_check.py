@@ -243,5 +243,27 @@ def main():
         return 1
 
 
+class SystemCheck:
+    """系统检查类 - 面向对象包装"""
+    
+    def __init__(self):
+        self.results = {}
+    
+    def check_all(self) -> Dict[str, Tuple[bool, str]]:
+        """执行所有检查"""
+        self.results = {
+            'connection': check_qmt_connection(),
+            'data': check_data_integrity(),
+            'config': check_config_consistency()
+        }
+        return self.results
+    
+    def is_healthy(self) -> bool:
+        """检查系统是否健康"""
+        if not self.results:
+            self.check_all()
+        return all(result[0] for result in self.results.values())
+
+
 if __name__ == '__main__':
     sys.exit(main())
