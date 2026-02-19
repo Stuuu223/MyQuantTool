@@ -83,6 +83,123 @@ def scheduled_collection():
     return collect_snapshot()
 
 
+def export_snapshot(date: str = None, auto: bool = False):
+    """导出竞价快照到文件
+    
+    Args:
+        date: 日期 (YYYYMMDD)，默认今天
+        auto: 是否自动模式（减少输出）
+    """
+    if date is None:
+        date = datetime.now().strftime('%Y%m%d')
+    
+    logger.info(f"导出竞价快照: {date}")
+    if not auto:
+        print(f"\n{'='*60}")
+        print(f"📤 导出竞价快照 ({date})")
+        print(f"{'='*60}")
+    
+    try:
+        from logic.data_providers.database_manager import DatabaseManager
+        import json
+        import csv
+        
+        db_manager = DatabaseManager()
+        db_manager._init_redis()
+        
+        pattern = f'auction:{date}:*'
+        keys = db_manager._redis_client.keys(pattern)
+        
+        if not keys:
+            if not auto:
+                print('❌ Redis中没有找到竞价快照数据')
+            return False
+        
+        # 读取所有数据
+        all_data = []
+        for key in keys:
+            if isinstance(key, bytes):
+                stock_code = key.decode('utf-8').split(':')[-1]
+            else:
+                stock_code = str(key).split(':')[-1]
+            
+            raw_data = db_manager._redis_client.get(key)
+            if raw_data:
+                try:
+                    data = json.loads(raw_data)
+                    data['stock_code'] = stock_code
+                    all_data.append(data)
+                except:
+                    pass
+        
+        if not all_data:
+            if not auto:
+                print('❌ 无有效数据')
+            return False
+        
+        # 计算统计
+        total_volume = sum(item.get('auction_volume', 0) for item in all_data)
+        total_amount = sum(item.get('auction_amount', 0) for item in all_data)
+        sorted_data = sorted(all_data, key=lambda x: x.get('auction_volume', 0), reverse=True)
+        
+        # 导出目录
+        output_dir = Path('data/scan_results')
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # 导出JSON
+        json_file = output_dir / f'auction_snapshot_{date}.json'
+        with open(json_file, 'w', encoding='utf-8') as f:
+            json.dump({
+                'export_time': datetime.now().isoformat(),
+                'date': date,
+                'total_stocks': len(all_data),
+                'total_volume': total_volume,
+                'total_amount': total_amount,
+                'data': sorted_data
+            }, f, ensure_ascii=False, indent=2)
+        
+        # 导出CSV
+        csv_file = output_dir / f'auction_snapshot_{date}.csv'
+        with open(csv_file, 'w', encoding='utf-8-sig', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(['排名', '股票代码', '最新价', '昨收价', '涨跌幅(%)', 
+                           '竞价量', '竞价额', '时间'])
+            for i, item in enumerate(sorted_data, 1):
+                writer.writerow([
+                    i, item['stock_code'],
+                    item.get('last_price', 0),
+                    item.get('last_close', 0),
+                    f"{(item.get('last_price', 0) - item.get('last_close', 1)) / item.get('last_close', 1) * 100:.2f}",
+                    item.get('auction_volume', 0),
+                    f"{item.get('auction_amount', 0):.2f}",
+                    datetime.fromtimestamp(item.get('timestamp', 0)).strftime('%H:%M:%S') if item.get('timestamp') else 'N/A'
+                ])
+        
+        if not auto:
+            print(f'✅ 导出完成: {len(all_data)}只股票')
+            print(f'   JSON: {json_file}')
+            print(f'   CSV: {csv_file}')
+            print(f'   总竞价量: {total_volume:,}')
+            print(f'   总竞价额: {total_amount:,.2f}')
+            
+            # 显示TOP10
+            print(f'\n📊 竞价量TOP10:')
+            for i, item in enumerate(sorted_data[:10], 1):
+                change = (item.get('last_price', 0) - item.get('last_close', 1)) / item.get('last_close', 1) * 100
+                emoji = '🔴' if change > 0 else '🟢'
+                print(f"{i:2d}. {item['stock_code']} | 量:{item.get('auction_volume', 0):,} | 涨跌:{emoji}{change:+.2f}%")
+        else:
+            logger.info(f'导出完成: {len(all_data)}只股票 -> {json_file}')
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f'导出失败: {e}')
+        if not auto:
+            print(f'❌ 导出失败: {e}')
+        return False
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='竞价管理器 - 统一入口',
@@ -92,8 +209,12 @@ def main():
   # 扫描竞价
   python tasks/auction_manager.py --action scan
   
-  # 收集快照
+  # 收集快照（自动导出到文件）
   python tasks/auction_manager.py --action collect
+  
+  # 导出竞价数据到文件
+  python tasks/auction_manager.py --action export
+  python tasks/auction_manager.py --action export --date 20250218
   
   # 回放指定日期
   python tasks/auction_manager.py --action replay --date 20250115
@@ -104,10 +225,12 @@ def main():
     )
     
     parser.add_argument('--action', type=str, required=True,
-                       choices=['scan', 'collect', 'replay', 'scheduled'],
+                       choices=['scan', 'collect', 'replay', 'export', 'scheduled'],
                        help='操作类型')
     parser.add_argument('--date', type=str,
-                       help='日期 (YYYYMMDD，用于replay)')
+                       help='日期 (YYYYMMDD，用于replay/export)')
+    parser.add_argument('--auto', action='store_true',
+                       help='自动模式（减少输出，用于计划任务）')
     
     args = parser.parse_args()
     
@@ -120,8 +243,13 @@ def main():
         success = scan_auction()
     elif args.action == 'collect':
         success = collect_snapshot()
+        # 收集后自动导出
+        if success:
+            export_snapshot(auto=True)
     elif args.action == 'replay':
         success = replay_snapshot(args.date)
+    elif args.action == 'export':
+        success = export_snapshot(args.date, auto=args.auto)
     elif args.action == 'scheduled':
         success = scheduled_collection()
     else:
