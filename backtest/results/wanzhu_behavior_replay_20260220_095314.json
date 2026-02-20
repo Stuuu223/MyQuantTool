@@ -1,0 +1,25 @@
+{
+  "meta": {
+    "version": "V1.0 (Level1-only)",
+    "generated_at": "2026-02-20T09:53:03.452164",
+    "total_stocks": 5,
+    "start_date": "2025-11-21",
+    "end_date": "2026-02-13",
+    "max_stocks": 5,
+    "max_days": 5,
+    "note": "Level1-only proxy, no real capital flow numbers"
+  },
+  "summary": {
+    "total_days": 85,
+    "total_signals": 0,
+    "strong_attack_days": 0,
+    "medium_attack_days": 0,
+    "weak_attack_days": 0,
+    "trap_days": 0
+  },
+  "daily_records": [],
+  "stock_records": {},
+  "stock_stats": {},
+  "top_stocks": [],
+  "junk_stocks": []
+}
