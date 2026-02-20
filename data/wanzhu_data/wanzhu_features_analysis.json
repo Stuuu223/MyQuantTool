@@ -1,0 +1,80 @@
+[
+  {
+    "code": "000547",
+    "name": "航天发展",
+    "date": "2026-01-21",
+    "total_ticks": 4762,
+    "total_events": 0,
+    "total_net_inflow": -222509760.8361997,
+    "final_price": 25.88,
+    "final_change_pct": -3.6126629422718897,
+    "key_moments": []
+  },
+  {
+    "code": "300058",
+    "name": "蓝色光标",
+    "date": "2026-01-21",
+    "total_ticks": 4762,
+    "total_events": 0,
+    "total_net_inflow": 1664738.6925128102,
+    "final_price": 18.64,
+    "final_change_pct": 6.029579067121743,
+    "key_moments": [
+      {
+        "time": "10:15:18",
+        "event_type": "KEY_LEVEL_BULK_FLOW",
+        "price": 18.48,
+        "price_change_pct": 5.119453924914688,
+        "instant_flow": -33594110.7372973,
+        "total_flow": 115184353.19038606,
+        "volume": 2599133.0,
+        "confidence": 0.47192487402656896,
+        "description": "涨幅5.12%关键点资金异动"
+      },
+      {
+        "time": "14:43:06",
+        "event_type": "KEY_LEVEL_BULK_FLOW",
+        "price": 18.5,
+        "price_change_pct": 5.2332195676905675,
+        "instant_flow": 32725919.05793178,
+        "total_flow": 225775204.02855855,
+        "volume": 5930965.0,
+        "confidence": 0.49650029969820275,
+        "description": "涨幅5.23%关键点资金异动"
+      }
+    ]
+  },
+  {
+    "code": "000592",
+    "name": "平潭发展",
+    "date": "2026-01-21",
+    "total_ticks": 4762,
+    "total_events": 0,
+    "total_net_inflow": -54432963.706118874,
+    "final_price": 9.68,
+    "final_change_pct": -5.190989226248786,
+    "key_moments": []
+  },
+  {
+    "code": "002792",
+    "name": "通宇通讯",
+    "date": "2026-01-21",
+    "total_ticks": 4762,
+    "total_events": 0,
+    "total_net_inflow": 107255765.39234975,
+    "final_price": 45.3,
+    "final_change_pct": -1.820546163849162,
+    "key_moments": []
+  },
+  {
+    "code": "603778",
+    "name": "国晟科技",
+    "date": "2026-01-21",
+    "total_ticks": 4758,
+    "total_events": 0,
+    "total_net_inflow": -3073631.200000048,
+    "final_price": 16.37,
+    "final_change_pct": 0.0,
+    "key_moments": []
+  }
+]

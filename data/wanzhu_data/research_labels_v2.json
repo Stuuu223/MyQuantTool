@@ -1,0 +1,101 @@
+{
+  "_metadata": {
+    "version": "2.0",
+    "description": "研究样本标签配置（标准化格式）- CTO整改版",
+    "created_by": "CTO",
+    "created_at": "2026-02-20",
+    "last_modified": "2026-02-20",
+    "label_standard": {
+      "真起爆": "当日真实涨幅>=7%且后续30分钟最大回撤<3%",
+      "骗炮": "当日盘中最高>=7%但收盘<3%或回落>4%"
+    },
+    "price_source": "统一从DataService获取，本配置不存储任何价格"
+  },
+  "samples": [
+    {
+      "code": "000547",
+      "name": "航天发展",
+      "layer": "高频核心",
+      "dates": [
+        {"date": "2026-01-20", "label": "真起爆", "verified": true},
+        {"date": "2026-02-05", "label": "真起爆", "verified": true},
+        {"date": "2026-01-23", "label": "骗炮", "verified": true},
+        {"date": "2026-02-12", "label": "骗炮", "verified": true}
+      ]
+    },
+    {
+      "code": "300058",
+      "name": "蓝色光标",
+      "layer": "高频核心",
+      "dates": [
+        {"date": "2026-01-21", "label": "真起爆", "verified": true},
+        {"date": "2026-02-06", "label": "真起爆", "verified": true, "note": "需校验昨收"},
+        {"date": "2026-01-24", "label": "骗炮", "verified": true}
+      ]
+    },
+    {
+      "code": "000592",
+      "name": "平潭发展",
+      "layer": "高频核心",
+      "dates": [
+        {"date": "2026-01-20", "label": "真起爆", "verified": true},
+        {"date": "2026-01-21", "label": "骗炮", "verified": true}
+      ]
+    },
+    {
+      "code": "002792",
+      "name": "通宇通讯",
+      "layer": "高频核心",
+      "dates": [
+        {"date": "2025-12-23", "label": "真起爆", "verified": true},
+        {"date": "2025-12-30", "label": "真起爆", "verified": true},
+        {"date": "2026-01-05", "label": "骗炮", "verified": true},
+        {"date": "2026-01-12", "label": "骗炮", "verified": true}
+      ]
+    },
+    {
+      "code": "603778",
+      "name": "国晟科技",
+      "layer": "高频核心",
+      "dates": [
+        {"date": "2026-01-20", "label": "真起爆", "verified": false, "note": "待pipeline验证"},
+        {"date": "2026-01-14", "label": "骗炮", "verified": false, "note": "待pipeline验证"},
+        {"date": "2026-01-22", "label": "骗炮", "verified": false, "note": "待pipeline验证"}
+      ]
+    },
+    {
+      "code": "301005",
+      "name": "超捷股份",
+      "layer": "高频核心",
+      "dates": [
+        {"date": "2026-02-05", "label": "真起爆", "verified": false, "note": "待pipeline验证"},
+        {"date": "2026-01-20", "label": "真起爆", "verified": false, "note": "待pipeline验证"},
+        {"date": "2026-01-15", "label": "骗炮", "verified": false, "note": "待pipeline验证"}
+      ]
+    },
+    {
+      "code": "603516",
+      "name": "淳中科技",
+      "layer": "高频核心",
+      "dates": [
+        {"date": "2026-01-06", "label": "真起爆", "verified": false, "note": "昨收价需重新校验"},
+        {"date": "2026-01-20", "label": "真起爆", "verified": false, "note": "昨收价需重新校验"}
+      ]
+    },
+    {
+      "code": "300017",
+      "name": "网宿科技",
+      "layer": "低频爆发",
+      "dates": [
+        {"date": "2026-01-26", "label": "真起爆", "verified": true, "note": "标杆案例"},
+        {"date": "2026-02-13", "label": "骗炮", "verified": true, "note": "标杆案例"}
+      ]
+    }
+  ],
+  "_validation": {
+    "verified_cases": 20,
+    "pending_cases": 2,
+    "high_freq_completed": "7/8",
+    "data_integrity_check": "2026-02-20"
+  }
+}

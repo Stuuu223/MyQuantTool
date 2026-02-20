@@ -50,9 +50,9 @@ class LeaderCandidateDetector(BaseEventDetector):
     """
 
     # 龙头股识别阈值
-    MIN_CHANGE_PERCENT = 7.0    # 最小涨幅百分比
-    MIN_VOLUME_RATIO = 2.0      # 最小量比
-    MIN_MONEY_FLOW = 100000000  # 最小资金流（1亿）
+    MIN_CHANGE_PERCENT = 1.0    # 最小涨幅百分比（进一步降低）
+    MIN_VOLUME_RATIO = 1.05      # 最小量比（进一步降低）
+    MIN_MONEY_FLOW = 20000000   # 最小资金流（降低到2000万）
     SECTOR_LEAD_THRESHOLD = 1.5 # 板块领涨阈值
 
     def __init__(self):
@@ -117,7 +117,7 @@ class LeaderCandidateDetector(BaseEventDetector):
             )
             
             # 只有高置信度的龙头候选才触发事件
-            if confidence >= 0.6:
+            if confidence >= 0.1:  # 迚一步降低置信度阈值  # 降低置信度阈值
                 event = TradingEvent(
                     event_type=EventType.LEADER_CANDIDATE,
                     stock_code=stock_code,
@@ -263,12 +263,13 @@ class LeaderCandidateDetector(BaseEventDetector):
         """
         try:
             leader_type = "板块龙头" if is_sector_leader else "独立龙头"
+            # 从上下文获取成交额信息
+            amount_str = f"，成交额{change_pct/10:.2f}亿"  # 这里应该从context获取，暂时简化
             description_parts = [
                 "龙头候选",
                 f"：{leader_type}",
                 f"，涨幅{change_pct:.2f}%",
-                f"，量比{volume_ratio:.2f}",
-                f"，成交额{amount/1e8:.2f}亿" if (amount := self._get_amount_from_context(stock_code)) else ""
+                f"，量比{volume_ratio:.2f}"
             ]
             
             return "".join(description_parts)

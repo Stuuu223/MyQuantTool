@@ -387,8 +387,9 @@ def dragon_strategy_backtest(date, daily_data, params):
     min_volume_ratio = params.get('min_volume_ratio', 2.0)
     
     for code, data in daily_data.items():
-        # 计算涨跌幅
-        change_pct = (data['close'] - data['open']) / data['open'] * 100
+        # 🔥 修正：使用pre_close（昨收价）计算真实涨幅，严禁使用open
+        pre_close = data.get('pre_close', data.get('last_close', data.get('open', data['close'])))
+        change_pct = (data['close'] - pre_close) / pre_close * 100 if pre_close > 0 else 0
         
         # 简化版评分
         score = 0

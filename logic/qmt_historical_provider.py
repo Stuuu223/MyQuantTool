@@ -168,23 +168,45 @@ class QMTHistoricalProvider:
         tick_df = self.get_raw_ticks()
         
         for _, row in tick_df.iterrows():
-            yield {
-                "time": row["time"],
-                "last_price": row["lastPrice"],
-                "open": row["open"],
-                "high": row["high"],
-                "low": row["low"],
-                "volume": row["volume"],
-                "amount": row["amount"],
-                "bid_price": row["bidPrice"][0] if isinstance(row["bidPrice"], list) and len(row["bidPrice"]) > 0 else 0,
-                "ask_price": row["askPrice"][0] if isinstance(row["askPrice"], list) and len(row["askPrice"]) > 0 else 0,
-                "bid_vol": row["bidVol"][0] if isinstance(row["bidVol"], list) and len(row["bidVol"]) > 0 else 0,
-                "ask_vol": row["askVol"][0] if isinstance(row["askVol"], list) and len(row["askVol"]) > 0 else 0,
-                "bid_price_list": row["bidPrice"] if isinstance(row["bidPrice"], list) else [],
-                "ask_price_list": row["askPrice"] if isinstance(row["askPrice"], list) else [],
-                "bid_vol_list": row["bidVol"] if isinstance(row["bidVol"], list) else [],
-                "ask_vol_list": row["askVol"] if isinstance(row["askVol"], list) else [],
-            }
+            # 格式化为实盘Tick格式，确保与UnifiedWarfareCore兼容
+            tick_dict = self._format_to_realtime_tick(row)
+            yield tick_dict
+    
+    def _format_to_realtime_tick(self, row):
+        """
+        强制将QMT本地的DataFrame格式，1:1精准映射为实盘字典格式
+        解决五档数据丢失导致的静默失败问题
+        """
+        # QMT历史数据中，bidPrice, askPrice, bidVol, askVol已经是数组格式
+        bid_price_list = row.get("bidPrice", [0.0, 0.0, 0.0, 0.0, 0.0])
+        ask_price_list = row.get("askPrice", [0.0, 0.0, 0.0, 0.0, 0.0])
+        bid_vol_list = row.get("bidVol", [0, 0, 0, 0, 0])
+        ask_vol_list = row.get("askVol", [0, 0, 0, 0, 0])
+        
+        # 确保是5档数据
+        if not isinstance(bid_price_list, list) or len(bid_price_list) == 0:
+            bid_price_list = [0.0, 0.0, 0.0, 0.0, 0.0]
+        if not isinstance(ask_price_list, list) or len(ask_price_list) == 0:
+            ask_price_list = [0.0, 0.0, 0.0, 0.0, 0.0]
+        if not isinstance(bid_vol_list, list) or len(bid_vol_list) == 0:
+            bid_vol_list = [0, 0, 0, 0, 0]
+        if not isinstance(ask_vol_list, list) or len(ask_vol_list) == 0:
+            ask_vol_list = [0, 0, 0, 0, 0]
+
+        return {
+            "time": str(row["time"]),
+            "lastPrice": float(row.get("lastPrice", 0)),
+            "open": float(row.get("open", 0)),
+            "high": float(row.get("high", 0)),
+            "low": float(row.get("low", 0)),
+            "volume": float(row.get("volume", 0)),
+            "amount": float(row.get("amount", 0)),
+            "bidPrice": bid_price_list,
+            "askPrice": ask_price_list,
+            "bidVol": bid_vol_list,
+            "askVol": ask_vol_list,
+            "preClose": float(row.get("preClose", 0))
+        }
 
     def get_tick_count(self) -> int:
         """
