@@ -304,39 +304,89 @@ class WangsuExtremeAnalyzer:
         if not sentiment_loaded:
             print(f"   市场情绪: [数据缺失]")
         
-        # 2. 集成WindFilter获取板块共振分数
+        # 2. 获取板块共振分数（优先使用手工回填数据）
         resonance_loaded = False
-        try:
-            # 延迟导入，避免循环依赖
-            from logic.strategies.wind_filter import WindFilter
-            
-            wind_filter = WindFilter()
-            resonance_result = wind_filter.check_sector_resonance(self.code)
-            
-            environment['resonance_score'] = resonance_result.get('resonance_score', 0)
-            environment['resonance_details'] = {
-                'is_resonance': resonance_result.get('is_resonance', False),
-                'limit_up_count': resonance_result.get('limit_up_count', 0),
-                'breadth': resonance_result.get('breadth', 0),
-                'passed_conditions': resonance_result.get('passed_conditions', [])
-            }
-            
-            resonance_score = environment['resonance_score']
-            limit_up_count = environment['resonance_details']['limit_up_count']
-            breadth_pct = environment['resonance_details']['breadth'] * 100
-            passed_conditions = environment['resonance_details']['passed_conditions']
-            
-            print(f"   板块共振: {resonance_score:.2f} [涨停={limit_up_count}, 上涨={breadth_pct:.1f}%, 条件={','.join(passed_conditions) if passed_conditions else '无'}]")
-            resonance_loaded = True
-            
-        except ImportError as e:
-            print(f"   ⚠️ WindFilter导入失败: {e}")
-        except Exception as e:
-            print(f"   ⚠️ WindFilter计算失败: {e}")
         
+        # 2.1 首先尝试从event_environment.json加载手工回填数据
+        env_path = PROJECT_ROOT / "config" / "event_environment.json"
+        if env_path.exists():
+            try:
+                with open(env_path, 'r', encoding='utf-8') as f:
+                    env_data = json.load(f)
+                
+                # 检查是否有该日期的环境数据
+                env_data_dict = env_data.get('environment_data', {})
+                
+                # 尝试多种日期格式匹配
+                date_formats = [date, date.replace('-', ''), f"{date.replace('-', '')[:8]}"]
+                
+                for date_fmt in date_formats:
+                    if date_fmt in env_data_dict:
+                        env_info = env_data_dict[date_fmt]
+                        environment['resonance_score'] = env_info.get('resonance_score', 0.5)
+                        environment['resonance_details'] = {
+                            'is_resonance': environment['resonance_score'] > 0.6,  # 阈值0.6
+                            'limit_up_count': env_info.get('limit_up_count', 0),
+                            'breadth': env_info.get('sector_active_stocks', 0) / max(env_info.get('sector_total_stocks', 45), 1),
+                            'passed_conditions': ['手工回填数据'],
+                            'data_source': 'event_environment.json'
+                        }
+                        
+                        resonance_score = environment['resonance_score']
+                        limit_up_count = env_info.get('limit_up_count', 0)
+                        active_stocks = env_info.get('sector_active_stocks', 0)
+                        total_stocks = env_info.get('sector_total_stocks', 45)
+                        breadth_pct = (active_stocks / max(total_stocks, 1)) * 100
+                        
+                        print(f"   板块共振: {resonance_score:.2f} [涨停={limit_up_count}, 活跃={active_stocks}/{total_stocks}({breadth_pct:.1f}%), 来源=手工回填]")
+                        resonance_loaded = True
+                        break
+                
+            except Exception as e:
+                print(f"   ⚠️ event_environment.json加载失败: {e}")
+        
+        # 2.2 如果手工回填数据未找到，回退到WindFilter实时计算
+        if not resonance_loaded:
+            try:
+                # 延迟导入，避免循环依赖
+                from logic.strategies.wind_filter import WindFilter
+                
+                wind_filter = WindFilter()
+                resonance_result = wind_filter.check_sector_resonance(self.code)
+                
+                environment['resonance_score'] = resonance_result.get('resonance_score', 0)
+                environment['resonance_details'] = {
+                    'is_resonance': resonance_result.get('is_resonance', False),
+                    'limit_up_count': resonance_result.get('limit_up_count', 0),
+                    'breadth': resonance_result.get('breadth', 0),
+                    'passed_conditions': resonance_result.get('passed_conditions', []),
+                    'data_source': 'WindFilter实时'
+                }
+                
+                resonance_score = environment['resonance_score']
+                limit_up_count = environment['resonance_details']['limit_up_count']
+                breadth_pct = environment['resonance_details']['breadth'] * 100
+                passed_conditions = environment['resonance_details']['passed_conditions']
+                
+                print(f"   板块共振: {resonance_score:.2f} [涨停={limit_up_count}, 上涨={breadth_pct:.1f}%, 条件={','.join(passed_conditions) if passed_conditions else '无'}, 来源=实时]")
+                resonance_loaded = True
+                
+            except ImportError as e:
+                print(f"   ⚠️ WindFilter导入失败: {e}")
+            except Exception as e:
+                print(f"   ⚠️ WindFilter计算失败: {e}")
+        
+        # 2.3 如果都失败，使用占位值
         if not resonance_loaded:
             print(f"   板块共振: [计算失败，使用占位值0.5]")
             environment['resonance_score'] = 0.5
+            environment['resonance_details'] = {
+                'is_resonance': False,
+                'limit_up_count': 0,
+                'breadth': 0,
+                'passed_conditions': ['数据缺失'],
+                'data_source': '占位值'
+            }
         
         # 3. 风险评分（占位实现）
         # TODO: 集成RiskService或TrapDetector
