@@ -69,7 +69,11 @@ class WangsuExtremeAnalyzer:
         environment = self._analyze_environment(date)
         result['environment'] = environment
         
-        # 5. 事件后走势分析
+        # 5. 维持能力分析 (Phase 1核心)
+        sustain_ability = self._analyze_sustain_ability(df_ticks, lifecycle)
+        result['sustain_ability'] = sustain_ability
+        
+        # 6. 事件后走势分析
         post_event = self._analyze_post_event(date)
         result['post_event'] = post_event
         
@@ -251,35 +255,366 @@ class WangsuExtremeAnalyzer:
         return tradable
     
     def _analyze_environment(self, date: str) -> dict:
-        """分析环境条件"""
-        print(f"\n🌍 环境条件分析:")
+        """分析环境条件 - Phase 1增强版"""
+        print(f"\n🌍 环境条件分析 (Phase 1增强版):")
         
         environment = {
             'date': date,
             'resonance_score': None,
             'market_sentiment': None,
             'risk_score': None,
+            'environment_score': 0.0,  # 综合环境评分
         }
         
-        # 尝试加载market_sentiment
+        # 1. 加载市场情绪数据（支持多种日期格式）
+        sentiment_loaded = False
         sentiment_path = PROJECT_ROOT / "config" / "market_sentiment.json"
         if sentiment_path.exists():
             try:
                 with open(sentiment_path, 'r', encoding='utf-8') as f:
                     sentiment_data = json.load(f)
-                # 查找对应日期的情绪数据
-                if date in sentiment_data:
-                    environment['market_sentiment'] = sentiment_data[date]
-                    print(f"   市场情绪: {sentiment_data[date]}")
-            except:
-                pass
+                
+                # 尝试多种日期格式匹配
+                date_formats = [date, date.replace('-', ''), f"{date.replace('-', '')[:8]}"]
+                
+                for date_fmt in date_formats:
+                    if date_fmt in sentiment_data:
+                        environment['market_sentiment'] = sentiment_data[date_fmt]
+                        sentiment_info = sentiment_data[date_fmt]
+                        sentiment_score = sentiment_info.get('sentiment_score', 0)
+                        limit_up = sentiment_info.get('limit_up_count', 0)
+                        limit_down = sentiment_info.get('limit_down_count', 0)
+                        
+                        print(f"   市场情绪: {sentiment_score:.2f} [涨停={limit_up}, 跌停={limit_down}]")
+                        sentiment_loaded = True
+                        break
+                
+                if not sentiment_loaded:
+                    # 使用最近日期的情绪数据作为回退
+                    available_dates = list(sentiment_data.keys())
+                    if available_dates:
+                        latest_date = max(available_dates)
+                        environment['market_sentiment'] = sentiment_data[latest_date]
+                        print(f"   市场情绪(最近): {sentiment_data[latest_date].get('sentiment_score', 0):.2f} (日期: {latest_date})")
+                        sentiment_loaded = True
+                        
+            except Exception as e:
+                print(f"   ⚠️ 市场情绪加载失败: {e}")
         
-        # 这里可以扩展加载WindFilter的resonance_score
-        # 目前先占位
-        print(f"   板块共振: [待从WindFilter获取]")
-        print(f"   风险评分: [待从TrapDetector获取]")
+        if not sentiment_loaded:
+            print(f"   市场情绪: [数据缺失]")
+        
+        # 2. 集成WindFilter获取板块共振分数
+        resonance_loaded = False
+        try:
+            # 延迟导入，避免循环依赖
+            from logic.strategies.wind_filter import WindFilter
+            
+            wind_filter = WindFilter()
+            resonance_result = wind_filter.check_sector_resonance(self.code)
+            
+            environment['resonance_score'] = resonance_result.get('resonance_score', 0)
+            environment['resonance_details'] = {
+                'is_resonance': resonance_result.get('is_resonance', False),
+                'limit_up_count': resonance_result.get('limit_up_count', 0),
+                'breadth': resonance_result.get('breadth', 0),
+                'passed_conditions': resonance_result.get('passed_conditions', [])
+            }
+            
+            resonance_score = environment['resonance_score']
+            limit_up_count = environment['resonance_details']['limit_up_count']
+            breadth_pct = environment['resonance_details']['breadth'] * 100
+            passed_conditions = environment['resonance_details']['passed_conditions']
+            
+            print(f"   板块共振: {resonance_score:.2f} [涨停={limit_up_count}, 上涨={breadth_pct:.1f}%, 条件={','.join(passed_conditions) if passed_conditions else '无'}]")
+            resonance_loaded = True
+            
+        except ImportError as e:
+            print(f"   ⚠️ WindFilter导入失败: {e}")
+        except Exception as e:
+            print(f"   ⚠️ WindFilter计算失败: {e}")
+        
+        if not resonance_loaded:
+            print(f"   板块共振: [计算失败，使用占位值0.5]")
+            environment['resonance_score'] = 0.5
+        
+        # 3. 风险评分（占位实现）
+        # TODO: 集成RiskService或TrapDetector
+        environment['risk_score'] = 0.5  # 默认中等风险
+        print(f"   风险评分: {environment['risk_score']:.2f} [占位实现]")
+        
+        # 4. 计算综合环境评分（0-1）
+        # 权重：共振分数40%，市场情绪40%，风险评分20%（风险越高分数越低）
+        sentiment_score = 0
+        if environment['market_sentiment'] and 'sentiment_score' in environment['market_sentiment']:
+            sentiment_score = environment['market_sentiment']['sentiment_score']
+        elif environment['market_sentiment'] and isinstance(environment['market_sentiment'], dict):
+            # 尝试其他可能的键名
+            for key in ['score', 'value', 'rating']:
+                if key in environment['market_sentiment']:
+                    sentiment_score = environment['market_sentiment'][key]
+                    break
+        
+        resonance_score = environment['resonance_score'] or 0.5
+        risk_score = environment['risk_score'] or 0.5
+        
+        # 风险分数需要反转：风险越高，环境分越低
+        risk_adjusted = 1.0 - abs(risk_score - 0.5) * 2  # 0.5风险得1分，0或1风险得0分
+        
+        environment['environment_score'] = (
+            resonance_score * 0.4 + 
+            sentiment_score * 0.4 + 
+            risk_adjusted * 0.2
+        )
+        
+        print(f"   综合环境分: {environment['environment_score']:.2f}")
         
         return environment
+    
+    def _analyze_sustain_ability(self, df: pd.DataFrame, lifecycle: dict) -> dict:
+        """
+        分析维持能力指标 - Phase 1核心功能
+        
+        核心指标：
+        1. 时间维度：高位维持时长（价格保持在推升结束价-2%以上的时间）
+        2. 强度维度：维持期间平均资金流入（亿元/5min）
+        3. 稳定性维度：价格波动率（维持期间价格标准差）
+        4. 综合得分：加权维持能力评分（0-1）
+        
+        Args:
+            df: Tick数据DataFrame
+            lifecycle: 事件生命周期分析结果
+        
+        Returns:
+            dict: 维持能力分析结果
+        """
+        print(f"\n📊 维持能力分析 (Phase 1核心):")
+        
+        sustain = {
+            'high_level_duration_minutes': 0,  # 高位维持时长（分钟）
+            'sustain_strength': 0,  # 维持强度（亿元/5min）
+            'price_volatility': 0,  # 价格波动率（%）
+            'composite_score': 0,  # 综合维持得分（0-1）
+            'sustain_grade': 'Unknown',  # 维持等级
+            'details': {},  # 详细分析数据
+        }
+        
+        # 1. 识别事件类型并计算维持能力
+        t_breakout = lifecycle.get('breakout', {})
+        t_trap = lifecycle.get('trap', {})
+        
+        if t_breakout:
+            # 真起爆：基于推升结束点计算维持能力
+            sustain_result = self._calculate_true_breakout_sustain(df, t_breakout)
+            sustain.update(sustain_result)
+            sustain['sustain_type'] = 'TrueBreakout'
+            
+        elif t_trap:
+            # 骗炮：基于欺骗高点计算维持能力（通常很短）
+            sustain_result = self._calculate_trap_sustain(df, t_trap)
+            sustain.update(sustain_result)
+            sustain['sustain_type'] = 'Trap'
+        else:
+            print(f"   ⚠️ 未识别到明确事件类型")
+            sustain['sustain_type'] = 'Unknown'
+        
+        # 2. 输出分析结果
+        if sustain['high_level_duration_minutes'] > 0:
+            print(f"   高位维持时长: {sustain['high_level_duration_minutes']:.1f}分钟")
+            print(f"   维持强度: {sustain['sustain_strength']:.3f}亿元/5min")
+            print(f"   价格波动率: {sustain['price_volatility']:.2f}%")
+            print(f"   综合维持得分: {sustain['composite_score']:.2f}")
+            print(f"   维持等级: {sustain['sustain_grade']}")
+        else:
+            print(f"   ⚠️ 维持能力分析失败或无维持阶段")
+        
+        return sustain
+    
+    def _calculate_true_breakout_sustain(self, df: pd.DataFrame, breakout_info: dict) -> dict:
+        """计算真起爆维持能力"""
+        sustain = {
+            'high_level_duration_minutes': 0,
+            'sustain_strength': 0,
+            'price_volatility': 0,
+            'composite_score': 0,
+            'sustain_grade': 'Poor',
+        }
+        
+        # 获取推升结束时间点
+        push_end_time = breakout_info.get('t_end', '')
+        if not push_end_time:
+            return sustain
+        
+        # 找到推升结束点在df中的索引
+        push_end_idx = self._find_time_index(df, push_end_time)
+        if push_end_idx >= len(df) - 1:
+            return sustain
+        
+        # 推升结束价格（作为维持起点）
+        push_end_price = df.loc[push_end_idx, 'price']
+        sustain_threshold = push_end_price * 0.98  # -2%阈值
+        
+        # 提取维持阶段数据（推升结束后）
+        sustain_df = df.iloc[push_end_idx:]
+        
+        # 计算高位维持时长：价格保持在阈值以上的时长
+        above_threshold = sustain_df[sustain_df['price'] >= sustain_threshold]
+        if len(above_threshold) == 0:
+            return sustain
+        
+        # 时间维度：高位维持时长（分钟）
+        # 假设Tick数据约3秒一条（实际可能不同）
+        tick_interval_seconds = 3  # 保守估计
+        sustain_minutes = len(above_threshold) * tick_interval_seconds / 60
+        
+        # 强度维度：维持期间平均资金流入（亿元/5min）
+        avg_flow = above_threshold['flow_5min'].mean() / 1e8  # 转换为亿元
+        
+        # 稳定性维度：价格波动率（维持期间价格标准差，%）
+        price_volatility = above_threshold['price'].std() / above_threshold['price'].mean() * 100
+        
+        # 计算综合得分（0-1）
+        # 权重：时长50%，强度30%，稳定性20%
+        duration_score = min(sustain_minutes / 60, 1.0)  # 60分钟为满分
+        strength_score = min(avg_flow / 0.5, 1.0)  # 0.5亿元/5min为满分
+        stability_score = 1.0 - min(price_volatility / 10.0, 1.0)  # 波动率<10%为满分
+        
+        composite_score = (
+            duration_score * 0.5 + 
+            strength_score * 0.3 + 
+            stability_score * 0.2
+        )
+        
+        # 确定维持等级
+        if composite_score >= 0.8:
+            sustain_grade = 'Excellent'
+        elif composite_score >= 0.6:
+            sustain_grade = 'Good'
+        elif composite_score >= 0.4:
+            sustain_grade = 'Fair'
+        else:
+            sustain_grade = 'Poor'
+        
+        sustain.update({
+            'high_level_duration_minutes': sustain_minutes,
+            'sustain_strength': avg_flow,
+            'price_volatility': price_volatility,
+            'composite_score': composite_score,
+            'sustain_grade': sustain_grade,
+            'details': {
+                'push_end_price': push_end_price,
+                'sustain_threshold': sustain_threshold,
+                'sustain_start_time': df.loc[push_end_idx, 'time'].strftime('%H:%M:%S'),
+                'sustain_end_time': df.loc[above_threshold.index[-1], 'time'].strftime('%H:%M:%S'),
+                'duration_score': duration_score,
+                'strength_score': strength_score,
+                'stability_score': stability_score,
+            }
+        })
+        
+        return sustain
+    
+    def _calculate_trap_sustain(self, df: pd.DataFrame, trap_info: dict) -> dict:
+        """计算骗炮维持能力（通常很短）"""
+        sustain = {
+            'high_level_duration_minutes': 0,
+            'sustain_strength': 0,
+            'price_volatility': 0,
+            'composite_score': 0,
+            'sustain_grade': 'Poor',
+        }
+        
+        # 骗炮通常没有真正的维持阶段，但我们可以计算"虚假维持"
+        # 找到价格高点
+        peak_price = df['price'].max()
+        peak_idx = df[df['price'] == peak_price].index[0]
+        
+        if peak_idx >= len(df) - 1:
+            return sustain
+        
+        # 高点后-2%阈值
+        sustain_threshold = peak_price * 0.98
+        
+        # 高点后的数据
+        after_peak_df = df.iloc[peak_idx:]
+        
+        # 计算"虚假维持"时长
+        above_threshold = after_peak_df[after_peak_df['price'] >= sustain_threshold]
+        if len(above_threshold) == 0:
+            return sustain
+        
+        tick_interval_seconds = 3
+        sustain_minutes = len(above_threshold) * tick_interval_seconds / 60
+        
+        # 骗炮的维持通常很短，强度低，波动大
+        avg_flow = above_threshold['flow_5min'].mean() / 1e8
+        price_volatility = above_threshold['price'].std() / above_threshold['price'].mean() * 100
+        
+        # 骗炮的综合得分通常很低
+        duration_score = min(sustain_minutes / 30, 1.0)  # 30分钟为满分（对骗炮更宽松）
+        strength_score = min(avg_flow / 0.2, 1.0)  # 0.2亿元/5min为满分
+        stability_score = 1.0 - min(price_volatility / 15.0, 1.0)  # 波动率<15%为满分
+        
+        composite_score = (
+            duration_score * 0.4 + 
+            strength_score * 0.3 + 
+            stability_score * 0.3
+        )
+        
+        # 骗炮的维持等级通常为Poor
+        if composite_score >= 0.5:
+            sustain_grade = 'Fair'  # 罕见的"强骗炮"
+        elif composite_score >= 0.3:
+            sustain_grade = 'Weak'
+        else:
+            sustain_grade = 'Poor'
+        
+        sustain.update({
+            'high_level_duration_minutes': sustain_minutes,
+            'sustain_strength': avg_flow,
+            'price_volatility': price_volatility,
+            'composite_score': composite_score,
+            'sustain_grade': sustain_grade,
+            'details': {
+                'peak_price': peak_price,
+                'sustain_threshold': sustain_threshold,
+                'peak_time': df.loc[peak_idx, 'time'].strftime('%H:%M:%S'),
+                'sustain_end_time': df.loc[above_threshold.index[-1], 'time'].strftime('%H:%M:%S'),
+                'is_trap': True,
+            }
+        })
+        
+        return sustain
+    
+    def _find_time_index(self, df: pd.DataFrame, target_time: str) -> int:
+        """在DataFrame中查找时间点索引"""
+        if not target_time or 'time' not in df.columns:
+            return 0
+        
+        # 标准化时间格式
+        if ':' in target_time:
+            # 已经是HH:MM:SS格式
+            time_str = target_time
+        else:
+            # 可能是其他格式，尝试转换
+            try:
+                time_obj = datetime.strptime(target_time, '%H%M%S')
+                time_str = time_obj.strftime('%H:%M:%S')
+            except:
+                return 0
+        
+        # 在df中查找
+        for idx, row in df.iterrows():
+            if row['time'].strftime('%H:%M:%S') == time_str:
+                return idx
+        
+        # 如果找不到精确匹配，找最接近的时间
+        for idx, row in df.iterrows():
+            df_time_str = row['time'].strftime('%H:%M:%S')
+            if df_time_str >= time_str:
+                return idx
+        
+        return 0
     
     def _analyze_post_event(self, date: str) -> dict:
         """分析事件后T+1/T+2/T+3走势"""

@@ -401,15 +401,21 @@ class DownloadManager:
             self.state.current_stock = stock_code
             
             # 显示进度
-            if i % 10 == 0 or i == len(stock_codes) - 1:
+            if i % 5 == 0 or i == len(stock_codes) - 1:
                 elapsed = time.time() - start_time
                 speed = (i + 1) / elapsed * 60 if elapsed > 0 else 0
                 remaining = len(stock_codes) - i - 1
                 eta = remaining / (speed / 60) if speed > 0 else 0
                 
-                print(f"[{i+1}/{len(stock_codes)}] {stock_code} "
-                      f"| 速度: {speed:.1f}只/分 "
-                      f"| 剩余: {self._format_duration(eta)}")
+                # 百分比进度条
+                progress = (i + 1) / len(stock_codes)
+                bar_length = 30
+                filled = int(bar_length * progress)
+                bar = '█' * filled + '░' * (bar_length - filled)
+                percent = int(progress * 100)
+                
+                print(f"[{percent}%] {bar} {i+1}/{len(stock_codes)} | {stock_code} "
+                      f"| 速度: {speed:.1f}只/分 | 剩余: {self._format_duration(eta)}")
             
             # 下载
             try:
@@ -479,7 +485,7 @@ def main():
     args = parser.parse_args()
     
     # 映射参数
-    source = DataSource(args.source.upper())
+    source = DataSource(args.source)
     data_type = DataType(args.type)
     universe = UniverseType(args.universe)
     

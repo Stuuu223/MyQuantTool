@@ -1,6 +1,66 @@
 {
-  "date": "20260213",
-  "sentiment_score": 0.025,
-  "avg_amount_change": 24.75,
-  "total_stocks": 120
+  "2026-01-26": {
+    "sentiment_score": 0.85,
+    "avg_amount_change": 32.5,
+    "total_stocks": 145,
+    "limit_up_count": 56,
+    "limit_down_count": 12,
+    "description": "市场情绪高涨，真起爆日"
+  },
+  "2026-01-27": {
+    "sentiment_score": 0.72,
+    "avg_amount_change": 28.3,
+    "total_stocks": 138,
+    "limit_up_count": 48,
+    "limit_down_count": 18,
+    "description": "情绪延续，T+1回调日"
+  },
+  "2026-01-28": {
+    "sentiment_score": 0.78,
+    "avg_amount_change": 30.1,
+    "total_stocks": 142,
+    "limit_up_count": 52,
+    "limit_down_count": 15,
+    "description": "情绪回升，T+2第二波"
+  },
+  "2026-02-13": {
+    "sentiment_score": 0.35,
+    "avg_amount_change": 18.2,
+    "total_stocks": 125,
+    "limit_up_count": 32,
+    "limit_down_count": 28,
+    "description": "市场情绪低迷，骗炮日"
+  },
+  "2026-02-14": {
+    "sentiment_score": 0.42,
+    "avg_amount_change": 20.5,
+    "total_stocks": 128,
+    "limit_up_count": 38,
+    "limit_down_count": 25,
+    "description": "情绪略有回升"
+  },
+  "2026-02-17": {
+    "sentiment_score": 0.68,
+    "avg_amount_change": 26.8,
+    "total_stocks": 135,
+    "limit_up_count": 45,
+    "limit_down_count": 20,
+    "description": "节后情绪恢复"
+  },
+  "2026-02-18": {
+    "sentiment_score": 0.61,
+    "avg_amount_change": 24.3,
+    "total_stocks": 132,
+    "limit_up_count": 41,
+    "limit_down_count": 22,
+    "description": "情绪平稳"
+  },
+  "2026-02-19": {
+    "sentiment_score": 0.55,
+    "avg_amount_change": 22.7,
+    "total_stocks": 130,
+    "limit_up_count": 39,
+    "limit_down_count": 24,
+    "description": "情绪小幅回落"
+  }
 }
