@@ -40,8 +40,58 @@ class HistoricalSimulator:
         print(f"输出目录: {self.output_dir}")
         print(f"{'='*80}\n")
     
+    def load_samples_from_csv(self) -> list:
+        """加载顽主杯150样本池（from CSV）"""
+        csv_path = PROJECT_ROOT / "data" / "wanzhu_data" / "processed" / "wanzhu_selected_150.csv"
+        
+        if not csv_path.exists():
+            print(f"❌ 找不到顽主杯150文件: {csv_path}")
+            return []
+        
+        df = pd.read_csv(csv_path)
+        samples = []
+        
+        # 取前150只（如果不够则全取）
+        for _, row in df.head(150).iterrows():
+            code = str(row['code']).zfill(6)  # 补齐6位
+            name = row['name']
+            layer = row.get('layer', 'unknown')
+            
+            # 为每只票生成测试日期（使用历史日期2026年1月，确保有数据）
+            import datetime
+            
+            # 使用2026年1月的历史数据（已知有数据的日期）
+            if layer == 'high_freq':
+                # 高频票：1月20-31日
+                test_dates = ['2026-01-20', '2026-01-21', '2026-01-23']
+            elif layer == 'mid_freq':
+                # 中频票：1月中旬
+                test_dates = ['2026-01-15', '2026-01-20', '2026-01-24']
+            else:
+                # 低频票：1月初和1月底
+                test_dates = ['2026-01-06', '2026-01-26', '2026-01-31']
+            
+            # 每只票取3个测试日
+            for date_str in test_dates:
+                samples.append({
+                    'code': code,
+                    'name': name,
+                    'layer': layer,
+                    'date': date_str,
+                    'label': '待检测'  # 由EventLifecycleService判定
+                })
+        
+        print(f"📊 加载顽主杯150样本池: {len(samples)} 个测试点")
+        return samples
+    
     def load_samples(self) -> list:
-        """加载verified=true样本（扩充到50个）"""
+        """加载verified=true样本（保留兼容）"""
+        # 优先使用顽主杯150
+        wanzhu_samples = self.load_samples_from_csv()
+        if wanzhu_samples:
+            return wanzhu_samples
+        
+        # 回退到JSON
         labels_path = PROJECT_ROOT / "data" / "wanzhu_data" / "research_labels_v2.json"
         
         with open(labels_path, 'r', encoding='utf-8') as f:

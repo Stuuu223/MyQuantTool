@@ -23,6 +23,25 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from logic.qmt_historical_provider import QMTHistoricalProvider
 from logic.strategies.unified_warfare_core import UnifiedWarfareCore
 from logic.data_providers.dongcai_provider import DongCaiT1Provider
+from logic.services.event_lifecycle_service import EventLifecycleService
+from logic.services.data_service import data_service
+
+# QMT连接检查
+def check_qmt_connection():
+    """检查QMT连接状态"""
+    try:
+        from xtquant import xtdata
+        # 尝试获取市场数据，验证连接
+        test_data = xtdata.get_stock_list('沪深A股')
+        if test_data and len(test_data) > 0:
+            print("✅ QMT连接正常")
+            return True
+        else:
+            print("❌ QMT未连接或数据异常")
+            return False
+    except Exception as e:
+        print(f"❌ QMT连接检查失败: {e}")
+        return False
 
 
 def infer_flow_from_historical_tick(tick_data, base_signal, last_tick_data=None):
@@ -97,12 +116,16 @@ def infer_flow_from_historical_tick(tick_data, base_signal, last_tick_data=None)
 
 def extract_wanzhu_features():
     """
-    批量提取顽主票特征
+    批量提取顽主票特征（Phase 0.6: 集成EventLifecycleService过滤器）
     """
     print("="*80)
-    print("顽主杯150票池批量特征提取")
-    print("CTO指令：提取右侧起爆点资金+结构+情绪共性特征")
+    print("顽主杯150票池批量特征提取 - Phase 0.6")
+    print("新增：EventLifecycleService过滤器（sustain≥0.5, env≥0.6）")
     print("="*80)
+    
+    # 检查QMT连接
+    if not check_qmt_connection():
+        print("⚠️  QMT未连接，尝试继续运行（可能使用离线数据）")
     
     # 加载顽主票池
     wanzhu_file = Path(PROJECT_ROOT) / "data" / "wanzhu_data" / "processed" / "wanzhu_selected_150.csv"
@@ -113,29 +136,63 @@ def extract_wanzhu_features():
     df = pd.read_csv(wanzhu_file)
     print(f"📊 加载顽主票池: {len(df)} 只股票")
     
-    # 只处理前5只股票进行测试
-    sample_stocks = df.head(5)  # 先测试5只
+    # 初始化EventLifecycleService
+    lifecycle_service = EventLifecycleService()
+    print("✅ EventLifecycleService过滤器已启用")
+    print("   过滤阈值: sustain≥0.5, env≥0.6")
+    print()
+    
+    # 处理150只全量
+    sample_stocks = df.head(150)
     
     # 存储特征结果
     all_features = []
+    filtered_count = 0
+    passed_count = 0
     
     for idx, row in sample_stocks.iterrows():
         code = str(row['code']).zfill(6)  # 补齐6位
         name = row['name']
         print(f"\n🔍 处理第 {idx+1} 只: {code} - {name}")
         
-        # 尝试获取近期数据（用最近一个月作为示例）
+        # 使用CSV中的真实起爆日（CTO建议：唯一event_date保证样本纯度）
         import datetime
-        today = datetime.date.today()
-        one_month_ago = today - datetime.timedelta(days=30)
-        
-        # 格式化为日期字符串
-        date_str = one_month_ago.strftime("%Y-%m-%d")
+        date_str = str(row.get('event_date', '2026-01-20'))  # 优先使用event_date列
         formatted_date = date_str.replace('-', '')
         
         try:
             # 格式化股票代码
             formatted_code = f"{code}.SH" if code.startswith(('60', '68')) else f"{code}.SZ"
+            
+            # 获取pre_close（CTO建议：从xtdata.get_local_data(period='1d')获取前日收盘）
+            try:
+                from xtquant import xtdata
+                pre_close_data = xtdata.get_local_data(
+                    field_list=['close'],
+                    stock_list=[formatted_code],
+                    period='1d',
+                    start_time=formatted_date,
+                    end_time=formatted_date,
+                    count=2  # 获取2天数据，取前一天的close
+                )
+                if pre_close_data and 'close' in pre_close_data and formatted_code in pre_close_data['close'].index:
+                    close_series = pre_close_data['close'].loc[formatted_code]
+                    if len(close_series) >= 2:
+                        pre_close = float(close_series.iloc[-2])  # 前一日收盘价
+                    else:
+                        pre_close = float(close_series.iloc[-1])  # 只有一天数据则用当日
+                    print(f"   📊 昨收价: {pre_close} (from xtdata 1d)")
+                else:
+                    # fallback到DataService
+                    pre_close = data_service.get_pre_close(code, date_str)
+                    if pre_close <= 0:
+                        pre_close = 10.0
+                        print(f"   ⚠️  无法获取昨收，使用默认值10.0")
+                    else:
+                        print(f"   📊 昨收价: {pre_close} (from DataService)")
+            except Exception as e:
+                pre_close = 10.0
+                print(f"   ⚠️  获取昨收失败: {e}，使用默认值10.0")
             
             # 创建历史数据提供者
             start_time = f"{formatted_date}093000"
@@ -149,18 +206,26 @@ def extract_wanzhu_features():
                 period='tick'
             )
             
-            # 创建统一战法核心
+            # 创建统一战法核心（CTO建议：顽主杯核心战法是Leader+TrueAttack，不用Halfway/Opening）
             print(f"   ⚔️ 初始化UnifiedWarfareCore...")
             warfare_core = UnifiedWarfareCore()
             
-            # 暴力放宽参数，适应各种票的特征
-            for detector in warfare_core.get_active_detectors():
-                if hasattr(detector, 'breakout_strength'):
-                    detector.breakout_strength = 0.001  # 万分之一的推升就报警
-                if hasattr(detector, 'volume_surge'):
-                    detector.volume_surge = 1.05        # 只要微开放量就报警
-                if hasattr(detector, 'confidence_threshold'):
-                    detector.confidence_threshold = 0.01 # 取消置信度拦截
+            # 禁用非顽主杯策略（Halfway和Opening），使用正确API
+            warfare_core.disable_warfare('halfway_breakout')
+            warfare_core.disable_warfare('opening_weak_to_strong')
+            print(f"   🎯 启用策略: Leader + TrueAttack (顽主杯核心，已禁用Halfway/Opening)")
+            print(f"   📋 当前激活检测器: {warfare_core.get_active_detectors()}")
+            
+            # 适度放宽参数，确保能检测到事件但不要过于宽松
+            for detector_name in warfare_core.get_active_detectors():
+                detector = warfare_core.event_manager.detectors.get(detector_name)
+                if detector:
+                    if hasattr(detector, 'breakout_strength'):
+                        detector.breakout_strength = 0.005  # 0.5%推升
+                    if hasattr(detector, 'volume_surge'):
+                        detector.volume_surge = 1.2         # 20%放量
+                    if hasattr(detector, 'confidence_threshold'):
+                        detector.confidence_threshold = 0.3  # 30%置信度
             
             # 创建基础资金流提供者
             dongcai_provider = DongCaiT1Provider()
@@ -203,9 +268,9 @@ def extract_wanzhu_features():
                 # 累加资金流
                 total_net_inflow += inferred_flow['main_net_inflow']
                 
-                # 获取开盘价用于计算涨幅（假设开盘价是当天第一个tick的价格）
+                # 使用前面获取的pre_close计算涨幅
                 if prev_close == 0:
-                    prev_close = tick.get('open', tick['lastPrice'] * 0.95)
+                    prev_close = pre_close  # 使用从DataService获取的昨收价
                 
                 # 计算当日涨幅
                 current_price = tick['lastPrice']
@@ -271,7 +336,32 @@ def extract_wanzhu_features():
             
             print(f"   ✅ 处理完成: {tick_count} 个tick, {event_count} 个事件")
             
-            # 记录这只股票的特征
+            # ========== 新增：EventLifecycleService过滤器 ==========
+            if event_count > 0:
+                print(f"   🔍 运行EventLifecycleService分析...")
+                lifecycle = lifecycle_service.analyze(code, date_str)
+                
+                sustain_score = lifecycle.get('sustain_score', 0)
+                env_score = lifecycle.get('env_score', 0)
+                is_true_breakout = lifecycle.get('is_true_breakout', False)
+                
+                print(f"   📊 维持分: {sustain_score:.2f}, 环境分: {env_score:.2f}, 预测: {is_true_breakout}")
+                
+                # 过滤器检查
+                if sustain_score < 0.5 or env_score < 0.6:
+                    print(f"   ⚠️  过滤器：跳过（维持分={sustain_score:.2f}<0.5 或 环境分={env_score:.2f}<0.6）")
+                    filtered_count += 1
+                    continue
+                
+                print(f"   ✅ 过滤器通过")
+                passed_count += 1
+            else:
+                sustain_score = 0
+                env_score = 0
+                is_true_breakout = False
+            # ========== 过滤器结束 ==========
+            
+            # 记录这只股票的特征（包含过滤器结果）
             stock_features = {
                 'code': code,
                 'name': name,
@@ -281,6 +371,9 @@ def extract_wanzhu_features():
                 'total_net_inflow': total_net_inflow,
                 'final_price': current_price if 'current_price' in locals() else 0,
                 'final_change_pct': price_change_pct if 'price_change_pct' in locals() else 0,
+                'sustain_score': sustain_score,      # 新增
+                'env_score': env_score,              # 新增
+                'is_true_breakout': is_true_breakout, # 新增
                 'key_moments': key_moments
             }
             
@@ -295,23 +388,37 @@ def extract_wanzhu_features():
     
     # 保存特征结果
     if all_features:
-        output_file = Path(PROJECT_ROOT) / "data" / "wanzhu_data" / "wanzhu_features_analysis.json"
+        output_file = Path(PROJECT_ROOT) / "data" / "wanzhu_data" / "wanzhu_features_analysis_phase06.json"
         output_file.parent.mkdir(parents=True, exist_ok=True)
         
         with open(output_file, 'w', encoding='utf-8') as f:
             json.dump(all_features, f, ensure_ascii=False, indent=2, default=str)
         
-        print(f"\n✅ 批量特征提取完成")
+        print(f"\n" + "="*80)
+        print("Phase 0.6 顽主杯回测完成")
+        print("="*80)
         print(f"📊 处理股票: {len(all_features)} 只")
+        print(f"📊 过滤前信号: {filtered_count + passed_count} 个")
+        print(f"📊 过滤后信号: {passed_count} 个")
+        print(f"📊 过滤率: {filtered_count/(filtered_count + passed_count)*100:.1f}%" if (filtered_count + passed_count) > 0 else "📊 过滤率: N/A")
         print(f"📁 结果保存: {output_file}")
         
         # 汇总报告
         total_events = sum([stock['total_events'] for stock in all_features])
-        avg_net_flow = sum([stock['total_net_inflow'] for stock in all_features]) / len(all_features) if all_features else 0
-        print(f"📈 总事件数: {total_events}, 平均累计净流入: {avg_net_flow:.0f}")
+        avg_sustain = sum([stock.get('sustain_score', 0) for stock in all_features]) / len(all_features) if all_features else 0
+        avg_env = sum([stock.get('env_score', 0) for stock in all_features]) / len(all_features) if all_features else 0
+        
+        print(f"\n【特征统计】")
+        print(f"📈 总事件数: {total_events}")
+        print(f"📈 平均维持分: {avg_sustain:.2f}")
+        print(f"📈 平均环境分: {avg_env:.2f}")
+        
+        # 分层统计
+        true_breakouts = [s for s in all_features if s.get('is_true_breakout', False)]
+        print(f"📈 真起爆预测: {len(true_breakouts)} 只 ({len(true_breakouts)/len(all_features)*100:.1f}%)")
+    else:
+        print(f"\n⚠️ 无通过过滤器的样本")
     
-    print("="*80)
-    print("顽主杯批量特征提取完成")
     print("="*80)
 
 

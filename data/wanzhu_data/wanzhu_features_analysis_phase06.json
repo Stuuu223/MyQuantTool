@@ -1,0 +1,84 @@
+[
+  {
+    "code": "000547",
+    "name": "航天发展",
+    "date": "2026-01-20",
+    "total_ticks": 4761,
+    "total_events": 0,
+    "total_net_inflow": -544840781.6986489,
+    "final_price": 26.92,
+    "final_change_pct": -6.851211072664349,
+    "sustain_score": 0,
+    "env_score": 0,
+    "is_true_breakout": false,
+    "key_moments": []
+  },
+  {
+    "code": "300058",
+    "name": "蓝色光标",
+    "date": "2026-01-20",
+    "total_ticks": 4761,
+    "total_events": 0,
+    "total_net_inflow": 74115126.10843454,
+    "final_price": 17.78,
+    "final_change_pct": 5.144884683619166,
+    "sustain_score": 0,
+    "env_score": 0,
+    "is_true_breakout": false,
+    "key_moments": [
+      {
+        "time": "10:46:12",
+        "event_type": "KEY_LEVEL_BULK_FLOW",
+        "price": 18.25,
+        "price_change_pct": 7.924305144884683,
+        "instant_flow": -34620398.75547046,
+        "total_flow": 195737239.10764542,
+        "volume": 4251393.0,
+        "confidence": 0.5167288980717218,
+        "description": "涨幅7.92%关键点资金异动"
+      }
+    ]
+  },
+  {
+    "code": "000592",
+    "name": "平潭发展",
+    "date": "2026-01-20",
+    "total_ticks": 4761,
+    "total_events": 0,
+    "total_net_inflow": -152867852.017217,
+    "final_price": 10.63,
+    "final_change_pct": -5.845881310894583,
+    "sustain_score": 0,
+    "env_score": 0,
+    "is_true_breakout": false,
+    "key_moments": []
+  },
+  {
+    "code": "002792",
+    "name": "通宇通讯",
+    "date": "2026-01-20",
+    "total_ticks": 4757,
+    "total_events": 0,
+    "total_net_inflow": -376956714.65983593,
+    "final_price": 46.14,
+    "final_change_pct": -10.005851375073146,
+    "sustain_score": 0,
+    "env_score": 0,
+    "is_true_breakout": false,
+    "key_moments": []
+  },
+  {
+    "code": "603778",
+    "name": "国晟科技",
+    "date": "2026-01-20",
+    "total_ticks": 4784,
+    "total_events": 0,
+    "total_net_inflow": -8856529.100000156,
+    "final_price": 18.19,
+    "final_change_pct": -9.99505195447798,
+    "sustain_score": 0,
+    "env_score": 0,
+    "is_true_breakout": false,
+    "key_moments": []
+  }
+]
