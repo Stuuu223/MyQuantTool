@@ -103,16 +103,56 @@ class TrapEvent:
 class EventLifecycleAnalyzer:
     """事件生命周期分析器"""
     
-    def __init__(self, 
-                 breakout_threshold: float = 5.0,      # 起爆阈值：涨幅>5%
-                 trap_reversal_threshold: float = -3.0, # 骗炮反转阈值：回撤>3%
-                 max_drawdown_threshold: float = 5.0,   # 最大回撤阈值
-                 sustain_duration: int = 15):           # 持续性观察时长（分钟）
-        self.breakout_threshold = breakout_threshold
-        self.trap_reversal_threshold = trap_reversal_threshold
-        self.max_drawdown_threshold = max_drawdown_threshold
+    def __init__(self,
+                 stock_code: str = None,                # 新增：股票代码用于ratio化
+                 breakout_threshold: float = 4.0,       # 基础阈值从5.0降到4.0
+                 trap_reversal_threshold: float = -1.5, # 基础阈值从-3.0降到-1.5
+                 max_drawdown_threshold: float = 3.0,   # 基础阈值从5.0降到3.0
+                 sustain_duration: int = 15):
+
+        # 基础阈值
+        base_breakout = breakout_threshold
+        base_trap = trap_reversal_threshold
+        base_max_dd = max_drawdown_threshold
+
+        # ratio化：按流通市值动态调整（小盘波动大，阈值降低；大盘波动小，阈值提高）
+        if stock_code:
+            try:
+                circ_mv = self._get_circ_mv(stock_code)
+                if circ_mv < 30e9:       # 小盘<30亿
+                    multiplier = 0.8
+                elif circ_mv < 80e9:     # 中盘30-80亿
+                    multiplier = 1.0
+                else:                    # 大盘>80亿
+                    multiplier = 1.2
+            except:
+                multiplier = 1.0
+        else:
+            multiplier = 1.0
+
+        self.breakout_threshold = base_breakout * multiplier
+        self.trap_reversal_threshold = base_trap * multiplier
+        self.max_drawdown_threshold = base_max_dd * multiplier
         self.sustain_duration = sustain_duration
-    
+        self.multiplier = multiplier  # 保存用于调试
+
+    def _get_circ_mv(self, stock_code: str) -> float:
+        """获取流通市值（亿元）"""
+        try:
+            from logic.services.data_service import data_service
+            # 尝试获取流通市值
+            daily_data = data_service.get_daily_data(stock_code, datetime.now().strftime('%Y-%m-%d'))
+            if daily_data is not None and len(daily_data) > 0:
+                # 流通市值字段可能在不同数据源中名称不同
+                for col in ['circ_mv', 'mktcap', '流通市值', '总市值']:
+                    if col in daily_data.columns:
+                        return float(daily_data[col].iloc[0]) * 1e8  # 转换为元
+            # 如果获取失败，返回默认值（中盘）
+            return 50e9
+        except Exception as e:
+            print(f"获取流通市值失败 {stock_code}: {e}")
+            return 50e9  # 默认中盘
+
     def analyze_day(self, df: pd.DataFrame, pre_close: float) -> dict:
         """
         分析单日数据，提取所有事件
@@ -154,14 +194,14 @@ class EventLifecycleAnalyzer:
     def _find_breakout_points(self, df: pd.DataFrame) -> List[int]:
         """寻找所有潜在起爆点"""
         breakout_indices = []
-        
+
         # 条件：涨幅首次突破阈值，且5分钟流为正
         for i in range(1, len(df)):
             if (df.loc[i, 'true_change_pct'] >= self.breakout_threshold and
                 df.loc[i-1, 'true_change_pct'] < self.breakout_threshold and
-                df.loc[i, 'flow_5min'] > 0):
+                df.loc[i, 'flow_5min'] > -5e5):  # ← 放宽：允许轻微负流-50万
                 breakout_indices.append(i)
-        
+
         return breakout_indices
     
     def _classify_event(self, df: pd.DataFrame, start_idx: int, pre_close: float):
@@ -206,11 +246,11 @@ class EventLifecycleAnalyzer:
             # 骗炮判定：回撤>阈值 且 收盘涨幅明显低于高点（至少回撤一半以上）
             final_change = df_slice['true_change_pct'].iloc[-1]
             pullback_ratio = (peak_change - final_change) / drawdown_from_peak if drawdown_from_peak > 0 else 0
-            
+
             # 条件：回撤>3% 且 收盘相对于高点的回撤比例>50% 且 最终涨幅<5%
-            if (drawdown_from_peak >= self.trap_reversal_threshold * -1 and 
-                pullback_ratio > 0.5 and 
-                final_change < 5.0):
+            if (drawdown_from_peak >= abs(self.trap_reversal_threshold) and
+                pullback_ratio > 0.3 and   # ← 从0.5降到0.3
+                final_change < 8.0):       # ← 从5.0升到8.0
                 is_trap = True
                 fail_idx = after_peak['true_change_pct'].idxmin()
                 fail_time = after_peak.loc[fail_idx, 'time']

@@ -128,12 +128,16 @@ class WangsuExtremeAnalyzer:
         return pd.DataFrame(results)
     
     def _analyze_lifecycle(self, df: pd.DataFrame, pre_close: float) -> dict:
-        """分析事件生命周期"""
+        """分析事件生命周期 - Phase 2.1优化：ratio化阈值"""
         analyzer = EventLifecycleAnalyzer(
-            breakout_threshold=5.0,
-            trap_reversal_threshold=3.0,
-            max_drawdown_threshold=5.0
+            stock_code=self.code,  # 传入股票代码启用ratio化
+            breakout_threshold=4.0,       # 从5.0降到4.0
+            trap_reversal_threshold=-1.5, # 从-3.0降到-1.5
+            max_drawdown_threshold=3.0    # 从5.0降到3.0
         )
+        print(f"   阈值乘数: {getattr(analyzer, 'multiplier', 1.0):.1f}x "
+              f"( breakout={analyzer.breakout_threshold:.1f}%, "
+              f"trap={analyzer.trap_reversal_threshold:.1f}% )")
         
         events = analyzer.analyze_day(df, pre_close)
         
@@ -198,21 +202,23 @@ class WangsuExtremeAnalyzer:
         
         tradable = {
             'entry_points': [],
-            'pnl_distribution': {}
+            'pnl_distribution': {},
+            'best_window': None  # 最佳交易窗口
         }
         
-        # 模拟不同入场时机的收益
-        # 以突破5%为信号起点
+        # 确定信号起点（突破阈值的时间点）
         signal_points = df[df['true_change_pct'] >= 5.0].index.tolist()
-        
         if not signal_points:
             return tradable
         
         signal_idx = signal_points[0]
         signal_price = df.loc[signal_idx, 'price']
         
-        # 模拟在信号后1min/3min/5min/10min入场
+        # 模拟不同入场时机的收益
         entry_delays = [1, 3, 5, 10]  # 分钟
+        
+        best_pnl = -999
+        best_window = None
         
         for delay in entry_delays:
             entry_idx = signal_idx + delay * 20  # 约20个tick/分钟
@@ -222,8 +228,11 @@ class WangsuExtremeAnalyzer:
             entry_price = df.loc[entry_idx, 'price']
             entry_time = df.loc[entry_idx, 'time'].strftime('%H:%M:%S')
             
-            # 计算持有到收盘的收益
+            # 出场时机：当日收盘
             exit_price = df['price'].iloc[-1]
+            exit_time = df['time'].iloc[-1].strftime('%H:%M:%S')
+            
+            # ✅ 修复：正确计算收益率
             pnl_pct = (exit_price - entry_price) / entry_price * 100
             
             # 计算期间最大回撤
@@ -232,16 +241,28 @@ class WangsuExtremeAnalyzer:
             drawdowns = (cummax - hold_df['price']) / cummax * 100
             max_drawdown = drawdowns.max()
             
-            tradable['entry_points'].append({
+            window_data = {
                 'delay_minutes': delay,
                 'entry_time': entry_time,
                 'entry_price': entry_price,
-                'pnl_pct': pnl_pct,
+                'exit_time': exit_time,
+                'exit_price': exit_price,
+                'pnl_pct': pnl_pct,  # ✅ 确保这个字段被正确设置
                 'max_drawdown_pct': max_drawdown,
-            })
+            }
+            
+            tradable['entry_points'].append(window_data)
+            
+            # 记录最佳窗口
+            if pnl_pct > best_pnl:
+                best_pnl = pnl_pct
+                best_window = window_data
             
             print(f"   信号后{delay}分钟入场 ({entry_time}):")
             print(f"      入场价: {entry_price:.2f}, 收盘收益: {pnl_pct:+.2f}%, 最大回撤: {max_drawdown:.2f}%")
+        
+        # ✅ 修复：确保best_window被正确设置
+        tradable['best_window'] = best_window
         
         # 收益分布统计
         if tradable['entry_points']:
@@ -251,6 +272,11 @@ class WangsuExtremeAnalyzer:
                 'max': max(pnls),
                 'mean': np.mean(pnls),
             }
+            # ✅ 调试输出，确认best_window不为None
+            if best_window:
+                print(f"   最佳窗口: 信号后{best_window['delay_minutes']}分钟入场, 收益{best_pnl:+.2f}%")
+            else:
+                print(f"   ⚠️ 警告: best_window为None")
         
         return tradable
     
