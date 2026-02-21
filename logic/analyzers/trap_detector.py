@@ -21,6 +21,8 @@ class TrapDetector:
 
     def __init__(self):
         """初始化检测器"""
+        self.name = "TrapDetector"
+        self.enabled = True
         self.detected_traps = []
 
     def _is_cross_non_trading_day(self, date1: str, date2: str) -> bool:
