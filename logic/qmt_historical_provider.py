@@ -191,7 +191,7 @@ class QMTHistoricalProvider:
             ask_vol_list = [0, 0, 0, 0, 0]
 
         return {
-            "time": str(row["time"]),
+            "time": int(str(row["time"]).replace(',', '') or 0),
             "lastPrice": float(row.get("lastPrice", 0)),
             "open": float(row.get("open", 0)),
             "high": float(row.get("high", 0)),
@@ -202,7 +202,7 @@ class QMTHistoricalProvider:
             "askPrice": ask_price_list,
             "bidVol": bid_vol_list,
             "askVol": ask_vol_list,
-            "preClose": float(row.get("preClose", 0))
+            "preClose": float(str(row.get("preClose", 0)).replace(',', ''))
         }
 
     def get_tick_count(self) -> int:

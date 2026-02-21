@@ -395,7 +395,7 @@ def get_hist_5min_median(self, stock_code: str, days: int = 60) -> float:
             if isinstance(float_volume, str):
                 float_volume = float(float_volume)
             circ_mv = float_volume * 10000  # 股数×股价估算
-            return circ_mv * 0.01  # 1%估算
+            return max(circ_mv * 0.01, 1e6)  # 1%估算，最小100万
     except:
         pass
     

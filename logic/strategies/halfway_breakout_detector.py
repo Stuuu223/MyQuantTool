@@ -211,8 +211,8 @@ class HalfwayBreakoutDetector(BaseEventDetector):
             # 条件C: V12换手纯净 - 换手率主导（ratio_stock>15, ratio_day>10, sustain>1.2）
             try:
                 # 获取流通市值（十亿元转元）
-                circ_mv_bn = intensity_result.get('circ_mv_bn', 0)
-                circ_mv = circ_mv_bn * 1e9 if circ_mv_bn > 0 else 1e9  # 默认10亿
+                circ_mv_bn = intensity_result.get('circ_mv_bn', 5)  # 默认50亿
+                circ_mv = circ_mv_bn * 1e9 if circ_mv_bn > 0 else 5e9  # 默认50亿
                 
                 # 使用RollingFlowCalculator计算换手率ratio
                 ratio_stock, ratio_day = calc.get_turnover_ratio(stock_code, vol_5min, circ_mv)
@@ -226,7 +226,7 @@ class HalfwayBreakoutDetector(BaseEventDetector):
                     print(f"   [V12调试] {stock_code}: ratio_stock={ratio_stock:.1f}, ratio_day={ratio_day:.1f}, sustain={sustain:.2f}, condition_c={condition_c}")
             except Exception as e:
                 print(f"   [V12错误] 换手率计算失败: {e}")
-                condition_c = False  # 计算失败时保守过滤
+                condition_c = False  # 计算失败时保守过滤，TODO: 需要实现降级策略
             
             # 综合判断（强度+持续性双保险）
             is_true_breakout = condition_a and condition_b and condition_c
@@ -281,14 +281,15 @@ class HalfwayBreakoutDetector(BaseEventDetector):
                 
                 return event
             else:
-                # 记录未触发原因（调试用）
-                if true_change_pct >= 2.0:  # V12废除：原self.TRIGGER_PCT_LEVEL_1，使用固定值用于调试
-                    reasons = []
-                    if not condition_a:
-                        # 🔥 Phase 1: 使用资金强度评分描述
-                        reasons.append(f"资金强度不足({intensity_score:.2f}<{self.MIN_INTENSITY_SCORE})")
-                    if not condition_b:
-                        reasons.append(f"持续性不足({flow_ratio:.2f}x<{self.FLOW_SUSTAINABILITY_MIN:.1f}x)")
+                # 记录未触发原因（简化版）
+                reasons = []
+                if not condition_a:
+                    reasons.append(f"资金强度不足({intensity_score:.2f}<{self.MIN_INTENSITY_SCORE})")
+                if not condition_b:
+                    reasons.append(f"持续性不足({flow_ratio:.2f}x<{self.FLOW_SUSTAINABILITY_MIN:.1f}x)")
+                if not condition_c:
+                    reasons.append(f"换手率条件不满足")
+                if reasons:
                     logger.debug(f"❌ [半路起爆V2] 未触发: {stock_code} @ {true_change_pct:.2f}%, {', '.join(reasons)}")
                 
         except Exception as e:
