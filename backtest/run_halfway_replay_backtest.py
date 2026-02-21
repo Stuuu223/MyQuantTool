@@ -286,6 +286,7 @@ class HalfwayReplayBacktester:
                 'volume_history': volume_history,
                 'ma5': sum(price_history[-5:]) / 5,
                 'ma20': sum(price_history) / len(price_history),
+                'pre_close': current_tick.get('preClose', current_tick.get('last_price', 0)),  # 🔥 V11.0修复：添加pre_close
             }
             
             # 检查是否有持仓需要处理
