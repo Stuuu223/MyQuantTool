@@ -28,6 +28,23 @@ logger = get_logger(__name__)
 
 class HalfwayBreakoutDetector(BaseEventDetector):
     """
+    半路起爆事件检测器 V2.1 - Phase 1 Ratio化资金强度
+    
+    核心变革：
+    - V2.0: 固定阈值FLOW_5MIN_THRESHOLD=5M
+    - V2.1: Ratio化动态阈值（flow_5min/流通市值 > 15%为强信号）
+    - 新增：intensity_score 0-1综合评分
+    
+    触发逻辑（根据网宿A/B测试铁证）：
+    1. 真实涨幅突破阈值（2%或5%）- 基于pre_close
+    2. 资金强度评分 >= 0.6（flow_5min/流通市值综合评分）
+    3. 15分钟流/5分钟流 > 1.0（资金持续性）
+    """
+
+    # 🔥 Phase 1: Ratio化阈值参数（调整后）
+    MIN_INTENSITY_SCORE = 0.35  # 资金强度最小评分（0-1），网宿约0.3-0.4
+    RATIO_STOCK_MIN = 0.01      # flow_5min/流通市值最小1%（网宿587M/510亿≈1.15%）
+    """
     半路起爆事件检测器 V2.0
     
     核心变革：
@@ -128,18 +145,40 @@ class HalfwayBreakoutDetector(BaseEventDetector):
                 flow_sustainability = tick_data.get('flow_sustainability', 1.0)
                 flow_15min = flow_5min * flow_sustainability
             
-            # ===== 步骤5: 核心判断 - 真突破条件（CTO指令） =====
-            # 条件A: 5分钟资金流 > 阈值（爆发力）
-            condition_a = flow_5min >= self.FLOW_5MIN_THRESHOLD
+            # ===== 步骤5: 核心判断 - 真突破条件（Phase 1 Ratio化） =====
+            # 🔥 新增：计算资金强度评分（0-1）
+            try:
+                from logic.scoring.flow_intensity_scorer import FlowIntensityScorer
+                from logic.services.data_service import data_service
+                
+                intensity_scorer = FlowIntensityScorer(data_service)
+                intensity_result = intensity_scorer.score(
+                    flow_5min=flow_5min,
+                    stock_code=stock_code,
+                    trade_date=context.get('date', datetime.now().strftime('%Y-%m-%d')),
+                    flow_15min=flow_15min
+                )
+                intensity_score = intensity_result['intensity_score']
+                ratio_stock = intensity_result['ratio_stock']
+                circ_mv_bn = intensity_result['circ_mv_bn']
+            except Exception as e:
+                # Fallback：如果强度计算失败，使用固定阈值
+                intensity_score = min(1.0, flow_5min / (self.FLOW_5MIN_THRESHOLD * 3))
+                ratio_stock = 0
+                circ_mv_bn = 0
+                intensity_result = {}
             
-            # 条件B: 15分钟流/5分钟流 > 1.2（持续性，非骗炮）
+            # 条件A: 资金强度评分 >= 阈值（Ratio化爆发力）
+            condition_a = intensity_score >= self.MIN_INTENSITY_SCORE
+            
+            # 条件B: 15分钟流/5分钟流 > 1.0（持续性，非骗炮）
             flow_ratio = flow_15min / flow_5min if abs(flow_5min) > 0 else 0
             condition_b = flow_ratio >= self.FLOW_SUSTAINABILITY_MIN
             
-            # 条件C: 处于半路区间（5%-20%，已过早盘杂毛期，未封板）
+            # 条件C: 处于半路区间（2%-20%，已过早盘杂毛期，未封板）
             condition_c = self.TRIGGER_PCT_LEVEL_1 <= true_change_pct <= 20.0
             
-            # 综合判断
+            # 综合判断（强度+持续性双保险）
             is_true_breakout = condition_a and condition_b and condition_c
             
             # 🔥 调试条件判断
@@ -172,11 +211,17 @@ class HalfwayBreakoutDetector(BaseEventDetector):
                         'flow_sustainability': flow_ratio,       # 资金持续性
                         'current_price': current_price,
                         'pre_close': pre_close,
-                        'confidence': confidence
+                        'confidence': confidence,
+                        # 🔥 Phase 1: 新增资金强度评分
+                        'intensity_score': intensity_score,
+                        'ratio_stock': ratio_stock,
+                        'circ_mv_bn': circ_mv_bn,
+                        **intensity_result  # 展开所有强度相关字段
                     },
                     confidence=confidence,
                     description=self._build_description(
-                        stock_code, true_change_pct, flow_5min, flow_ratio, current_price
+                        stock_code, true_change_pct, flow_5min, flow_ratio, current_price,
+                        intensity_score, ratio_stock
                     )
                 )
                 
@@ -190,7 +235,8 @@ class HalfwayBreakoutDetector(BaseEventDetector):
                 if true_change_pct >= self.TRIGGER_PCT_LEVEL_1:
                     reasons = []
                     if not condition_a:
-                        reasons.append(f"5min流不足({flow_5min/1e6:.1f}M<{self.FLOW_5MIN_THRESHOLD/1e6:.0f}M)")
+                        # 🔥 Phase 1: 使用资金强度评分描述
+                        reasons.append(f"资金强度不足({intensity_score:.2f}<{self.MIN_INTENSITY_SCORE})")
                     if not condition_b:
                         reasons.append(f"持续性不足({flow_ratio:.2f}x<{self.FLOW_SUSTAINABILITY_MIN:.1f}x)")
                     logger.debug(f"❌ [半路起爆V2] 未触发: {stock_code} @ {true_change_pct:.2f}%, {', '.join(reasons)}")
@@ -224,18 +270,25 @@ class HalfwayBreakoutDetector(BaseEventDetector):
         return min(1.0, max(0.3, confidence))
     
     def _build_description(self, stock_code: str, change_pct: float, 
-                          flow_5min: float, flow_ratio: float, price: float) -> str:
-        """构建事件描述"""
-        # 判断突破强度
-        if flow_5min >= 100e6 and flow_ratio >= 1.5:
-            strength = "强势真突破"
+                          flow_5min: float, flow_ratio: float, price: float,
+                          intensity_score: float = 0, ratio_stock: float = 0) -> str:
+        """构建事件描述（Phase 1: 新增强度评分）"""
+        # 判断突破强度（基于intensity_score）
+        if intensity_score >= 0.8:
+            strength = "🔥极度强势"
+        elif intensity_score >= 0.6:
+            strength = "💪标准强势"
         elif flow_5min >= 50e6:
-            strength = "标准真突破"
+            strength = "📈标准突破"
         else:
-            strength = "温和突破"
+            strength = "📊温和突破"
+        
+        # Phase 1: 添加ratio_stock到描述
+        ratio_str = f", 资金比{ratio_stock*100:.2f}%" if ratio_stock > 0 else ""
+        intensity_str = f", 强度{intensity_score:.2f}"
         
         return (f"{strength}: {stock_code} 涨幅{change_pct:.2f}%, "
-                f"5min流{flow_5min/1e6:.1f}M, 持续性{flow_ratio:.2f}x, 价{price:.2f}")
+                f"5min流{flow_5min/1e6:.1f}M, 持续性{flow_ratio:.2f}x{ratio_str}{intensity_str}, 价{price:.2f}")
     
     def get_detection_stats(self) -> Dict[str, Any]:
         """获取检测统计信息"""

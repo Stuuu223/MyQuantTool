@@ -1,7 +1,7 @@
 {
-  "_comment": "策略参数配置 - 所有阈值使用分位数而非绝对值，禁止硬编码",
-  "version": "1.0",
-  "last_updated": "2026-02-19",
+  "_comment": "策略参数配置 - Phase 1 Ratio化资金强度系统",
+  "version": "1.1",
+  "last_updated": "2026-02-21",
   
   "leader": {
     "_description": "龙头候选策略参数",
@@ -14,14 +14,18 @@
   },
   
   "halfway": {
-    "_description": "半路突破策略参数",
+    "_description": "半路突破策略参数 - Phase 1 Ratio化",
     "use_percentile": true,
+    "use_intensity_score": true,
+    "min_intensity_score": 0.35,
+    "ratio_stock_min": 0.01,
+    "sustain_min": 1.0,
     "price_momentum_percentile": 0.85,
     "volume_surge_percentile": 0.88,
     "breakout_threshold_percentile": 0.80,
     "timing_window_minutes": 30,
     "max_entry_change_pct": 0.06,
-    "notes": "基于分位数的动态阈值，适应不同市场环境"
+    "notes": "Phase 1: intensity>=0.35, ratio_stock>=1%, sustain>=1.0"
   },
   
   "true_attack": {

@@ -38,6 +38,11 @@ class DataService:
         self._data_root = DATA_CONFIG['qmt_data_root']
         self._env_check_passed = False
         self._env_info = {}
+        
+        # 🔥 Phase 1: 加载股票流通市值缓存
+        self.equity_cache = {}
+        self._equity_cache_loaded = False
+        self.load_equity_cache()
     
     def env_check(self) -> Tuple[bool, Dict]:
         """
@@ -199,6 +204,93 @@ class DataService:
     def get_env_info(self) -> Dict:
         """获取环境信息（用于日志记录）"""
         return self._env_info.copy()
+    
+    def load_equity_cache(self) -> bool:
+        """
+        加载股票流通市值缓存（equity_info_tushare.json）
+        
+        Returns:
+            是否加载成功
+        """
+        try:
+            equity_path = Path(__file__).resolve().parent.parent.parent / "data" / "equity_info" / "equity_info_tushare.json"
+            
+            if not equity_path.exists():
+                print(f"⚠️ 未找到流通市值文件: {equity_path}")
+                return False
+            
+            with open(equity_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            # 解析嵌套结构: {date: {code: {float_mv, total_mv, ...}}}
+            for date_str, stocks in data.get('data', {}).items():
+                self.equity_cache[date_str] = {}
+                for code, info in stocks.items():
+                    # float_mv单位是万元，转换为亿元
+                    float_mv = info.get('float_mv', 0)
+                    self.equity_cache[date_str][code] = float_mv / 1e4  # 转为亿元
+            
+            self._equity_cache_loaded = True
+            print(f"✅ 流通市值缓存加载完成: {len(self.equity_cache)} 个交易日")
+            return True
+            
+        except Exception as e:
+            print(f"❌ 加载流通市值缓存失败: {e}")
+            return False
+    
+    def get_circ_mv(self, stock_code: str, trade_date: str = None) -> float:
+        """
+        获取股票流通市值（亿元）
+        
+        Args:
+            stock_code: 股票代码（如'300017.SZ'或'300017'）
+            trade_date: 交易日期（如'2026-01-26'），None则使用最新
+            
+        Returns:
+            流通市值（亿元），未找到返回50.0（默认值）
+        """
+        if not self._equity_cache_loaded or not self.equity_cache:
+            return 50.0  # 默认50亿
+        
+        # 格式化代码
+        pure_code = stock_code.split('.')[0]
+        
+        # 确定市场后缀
+        if stock_code.endswith('.SH') or stock_code.endswith('.SZ') or stock_code.endswith('.BJ'):
+            formatted_code = stock_code
+        else:
+            # 根据代码前缀判断
+            if pure_code.startswith(('60', '68', '69')):
+                formatted_code = f"{pure_code}.SH"
+            elif pure_code.startswith('8'):
+                formatted_code = f"{pure_code}.BJ"
+            else:
+                formatted_code = f"{pure_code}.SZ"
+        
+        # 🔥 修复：如果没有精确日期匹配，使用最近的有效日期
+        if trade_date:
+            date_key = trade_date.replace('-', '')
+            if date_key not in self.equity_cache:
+                # 查找最近的日期（模糊匹配）
+                sorted_dates = sorted(self.equity_cache.keys())
+                date_key = sorted_dates[-1]  # 使用最新日期
+        else:
+            # 使用最新日期
+            date_key = max(self.equity_cache.keys()) if self.equity_cache else None
+        
+        if not date_key:
+            return 50.0
+        
+        circ_mv = self.equity_cache[date_key].get(formatted_code, 0)
+        
+        # 如果当前日期没有，尝试所有日期
+        if circ_mv <= 0:
+            for d in sorted(self.equity_cache.keys(), reverse=True):
+                circ_mv = self.equity_cache[d].get(formatted_code, 0)
+                if circ_mv > 0:
+                    break
+        
+        return circ_mv if circ_mv > 0 else 50.0
 
 
 # 全局单例
