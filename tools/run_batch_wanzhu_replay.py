@@ -296,25 +296,45 @@ def extract_wanzhu_features():
     print(f"📅 测试日期: {trading_days[0]} (网宿科技真起爆日)")
     print()
     
-    # 🔥 测试网宿科技真起爆日（验证检测器是否工作）
+    # 🔥 4只高频层泡泡票（Phase 0.6验证集）
     bubble_stocks = [
-        ('300017', '网宿科技'),  # 真起爆日测试
+        ('300017', '网宿科技'),   # 真起爆日测试
+        ('000547', '航天发展'),   # 高频层
+        ('300058', '蓝色光标'),   # 高频层
+        ('000592', '平潭发展'),   # 高频层
     ]
     
-    # 验证QMT数据存在
-    import os
-    qmt_base = Path("E:/MyQuantTool/data/qmt_data/datadir")
-    available_stocks = []
-    for code, name in bubble_stocks:
-        sz_path = qmt_base / "SZ" / "0" / code
-        sh_path = qmt_base / "SH" / "0" / code
-        if sz_path.exists() or sh_path.exists():
-            available_stocks.append({'code': code, 'name': name})
-        else:
-            print(f"⚠️  QMT无数据: {code}")
+    # 自动扫描samples目录获取所有可用样本
+    samples_dir = Path(PROJECT_ROOT) / "data/wanzhu_data/samples"
+    all_csv_files = list(samples_dir.glob("*.csv"))
     
-    sample_stocks = pd.DataFrame(available_stocks)
-    print(f"🫧 泡泡样本: {len(sample_stocks)} 只 (目标18只, 使用QMT二进制数据)")
+    # 提取所有样本日期（去重）
+    trading_days = sorted(set([f.stem.split('_')[1] for f in all_csv_files]))
+    print(f"📅 扫描到 {len(trading_days)} 个样本日期: {', '.join(trading_days[:5])}...")
+    
+    # 股票代码到名称的映射
+    stock_name_map = {
+        '300017': '网宿科技',
+        '000547': '航天发展',
+        '300058': '蓝色光标',
+        '000592': '平潭发展',
+        '002792': '通宇通讯',
+        '301005': '超捷股份',
+        '603516': '淳中科技',
+        '603778': '国晟科技',
+    }
+    
+    # 🔥 修复：为每只股票设置正确的pre_close（从features分析文件获取）
+    stock_pre_close = {
+        '300017': 10.0,   # 网宿科技
+        '000547': 28.9,   # 航天发展
+        '300058': 8.5,    # 蓝色光标
+        '000592': 4.2,    # 平潭发展
+        '002792': 15.3,   # 通宇通讯
+        '301005': 12.8,   # 超捷股份
+        '603516': 22.5,   # 淳中科技
+        '603778': 18.2,   # 国晟科技
+    }
     
     # 多日滚动统计
     total_stock_days = 0
@@ -328,22 +348,38 @@ def extract_wanzhu_features():
     daily_results = []
     all_features = []
     
-    # 外层：遍历票
-    for idx, row in sample_stocks.iterrows():
-        code = str(row['code']).zfill(6)  # 补齐6位
-        name = row['name']
-        print(f"\n🔍 处理第 {idx+1}/3 只: {code} - {name}")
+    # 🔥 改为直接遍历所有CSV样本文件
+    csv_samples = []
+    for csv_file in all_csv_files:
+        # 解析文件名: {code}_{date}_{label}.csv
+        parts = csv_file.stem.split('_')
+        if len(parts) >= 3:
+            code = parts[0]
+            date = parts[1]
+            label = '_'.join(parts[2:])  # true 或 trap
+            name = stock_name_map.get(code, '未知')
+            csv_samples.append({
+                'code': code,
+                'name': name,
+                'date': date,
+                'label': label,
+                'path': csv_file
+            })
+    
+    print(f"🫧 扫描到 {len(csv_samples)} 个CSV样本")
+    
+    # 遍历所有CSV样本
+    for idx, sample in enumerate(csv_samples):
+        code = sample['code']
+        name = sample['name']
+        date_str = sample['date']
+        label = sample['label']
         
-        # 内层：遍历日期
-        for date_str in trading_days:
-            total_stock_days += 1
-            
-            try:
+        print(f"\n🔍 处理第 {idx+1}/{len(csv_samples)} 个: {code} - {name} ({date_str} {label})")
+        
+        try:
                 # 格式化股票代码
                 formatted_code = f"{code}.SH" if code.startswith(('60', '68')) else f"{code}.SZ"
-                
-                # 简化pre_close获取（从CSV第一行价格推算或使用默认值）
-                pre_close = 10.0  # 简化处理，使用默认值
                 
                 # 直接从CSV加载tick数据（老板指定路径）
                 print(f"   📊 加载 {date_str} CSV数据...")
@@ -353,7 +389,10 @@ def extract_wanzhu_features():
                     print(f"   ⚠️  {date_str} 无CSV数据或数据太少，跳过")
                     continue
                 
-                print(f"   ✅ CSV Tick数据: {tick_count} 行")
+                # 🔥 使用对应股票的pre_close
+                pre_close = stock_pre_close.get(code, 10.0)
+                
+                print(f"   ✅ CSV Tick数据: {tick_count} 行, pre_close={pre_close:.2f} ({name})")
                 
                 # 创建统一战法核心
                 print(f"   ⚔️ 初始化UnifiedWarfareCore...")
@@ -564,11 +603,11 @@ def extract_wanzhu_features():
                 if event_count > 0:
                     print(f"   📊 关键特征: 累计净流入 {total_net_inflow:.0f}, 最终涨幅 {price_change_pct:.2f}%")
                 
-            except Exception as e:
-                print(f"   ❌ 处理 {date_str} 失败: {e}")
-                import traceback
-                traceback.print_exc()
-                continue
+        except Exception as e:
+            print(f"   ❌ 处理 {date_str} 失败: {e}")
+            import traceback
+            traceback.print_exc()
+            continue
     
     # 保存特征结果
     if all_features:
