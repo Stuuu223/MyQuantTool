@@ -38,6 +38,10 @@ import numpy as np
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from logic.utils.logger import get_logger
+
+logger = get_logger(__name__)
+
 from logic.event_lifecycle_analyzer import EventLifecycleAnalyzer, TrueBreakoutEvent, TrapEvent
 from logic.services.data_service import data_service
 from logic.qmt_historical_provider import QMTHistoricalProvider
@@ -523,8 +527,9 @@ class EventLifecycleService:
                 env_details['resonance_score'] = resonance_score
                 env_details['resonance_source'] = 'WindFilter'
                 env_details['resonance_info'] = resonance_result
-            except Exception:
-                pass
+                logger.info(f"[env_score] {date} {code}: 使用WindFilter计算resonance_score={resonance_score:.2f}")
+            except Exception as e:
+                logger.warning(f"[env_score] {date} {code}: WindFilter失败，使用默认resonance_score=0.5 ({e})")
         
         # 2. 加载市场情绪数据
         sentiment_score = 0.5
@@ -559,9 +564,12 @@ class EventLifecycleService:
                         env_details['sentiment_source'] = f'market_sentiment.json({latest_date})'
                         env_details['sentiment_info'] = sentiment_info
                         sentiment_loaded = True
+                        logger.info(f"[env_score] {date} {code}: 使用最近日期{latest_date}的sentiment数据={sentiment_score:.2f}")
                         
             except Exception as e:
-                pass
+                logger.warning(f"[env_score] {date} {code}: market_sentiment.json加载失败，使用默认sentiment_score=0.5 ({e})")
+        else:
+            logger.warning(f"[env_score] {date} {code}: market_sentiment.json不存在，使用默认sentiment_score=0.5")
         
         # 3. 风险评分（占位实现）
         risk_score = 0.5  # 默认中等风险

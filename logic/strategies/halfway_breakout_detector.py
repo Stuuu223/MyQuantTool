@@ -52,18 +52,22 @@ class HalfwayBreakoutDetector(BaseEventDetector):
     - 新增：多周期资金持续性判断
     - 基准：pre_close（昨收价）为涨幅计算唯一锚点
     
-    触发逻辑（根据网宿A/B测试铁证）：
-    1. 真实涨幅突破阈值（5%或8%）- 基于pre_close
-    2. 5分钟滚动资金流 > 阈值（3000万）
-    3. 15分钟流/5分钟流 > 1.2（资金持续性）
+    触发逻辑（Phase 1 Ratio化演进后）：
+    1. 真实涨幅突破阈值（2%或5%）- 基于pre_close
+    2. 资金强度分数 >= 0.35（ratio化，按流通市值动态调整）
+    3. 资金持续性比率 >= 1.0（15min/5min）
+    
+    Note: 已废弃固定3000万绝对值阈值，改用流通市值ratio化阈值
     """
 
-    # 🔥 回灌ratio化策略：实盘阈值（Level 1: 1% ratio）
+    # 🔥 Phase 1 Ratio化策略：按流通市值动态调整
     TRIGGER_PCT_LEVEL_1 = 2.0   # 第一触发点：+2% (ratio化放宽)
     TRIGGER_PCT_LEVEL_2 = 5.0   # 第二触发点：+5% (ratio化放宽)
     
-    FLOW_5MIN_THRESHOLD = 5e6    # 5分钟资金流阈值：500万 (ratio化，小票适用)
+    # 废弃固定阈值，改用MIN_INTENSITY_SCORE ratio化判断
+    FLOW_5MIN_THRESHOLD = 5e6    # 兼容保留，实际使用intensity_score
     FLOW_SUSTAINABILITY_MIN = 1.0  # 资金持续性最小比率（15min/5min >= 1.0）
+    MIN_INTENSITY_SCORE = 0.35   # 资金强度分数阈值（ratio化核心）
     
     def __init__(self):
         """初始化半路起爆检测器"""

@@ -65,11 +65,13 @@ class RollingFlowMetrics:
             return (self.current_price - self.pre_close) / self.pre_close * 100
         return 0.0
     
-    @property
-    def band_gain_pct(self, daily_low: float = 0) -> float:
+    def get_band_gain_pct(self, daily_low: float = 0) -> float:
         """
         波段涨幅（从日内低点起算）
         作为辅助指标，反映资金承接力度
+        
+        Args:
+            daily_low: 日内低点价格，默认为0表示使用true_change_pct
         """
         if daily_low > 0:
             return (self.current_price - daily_low) / daily_low * 100

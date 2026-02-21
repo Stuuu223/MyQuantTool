@@ -15,6 +15,9 @@ import numpy as np
 from dataclasses import dataclass
 from typing import Optional, Tuple, List
 from datetime import datetime
+from logic.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -134,7 +137,29 @@ class EventLifecycleAnalyzer:
         self.breakout_threshold = base_breakout * multiplier
         self.trap_reversal_threshold = base_trap * multiplier
         self.max_drawdown_threshold = base_max_dd * multiplier
-        self.trap_final_change_threshold = trap_final_change_threshold  # 🔥 P1: 骗炮最终涨幅阈值
+        
+        # 🔥 P1: 骗炮最终涨幅阈值 - 根据板块动态调整
+        # 主板/中小板(10%): 8.0 | 创业板/科创板(20%): 16.0 | 北交所(30%): 24.0
+        if stock_code:
+            if stock_code.startswith('300') or stock_code.startswith('301'):
+                # 创业板 - 20CM
+                self.trap_final_change_threshold = 16.0
+                logger.debug(f"[trap_threshold] {stock_code}: 创业板20CM，阈值16.0")
+            elif stock_code.startswith('688') or stock_code.startswith('689'):
+                # 科创板 - 20CM
+                self.trap_final_change_threshold = 16.0
+                logger.debug(f"[trap_threshold] {stock_code}: 科创板20CM，阈值16.0")
+            elif stock_code.startswith('8') or stock_code.startswith('4'):
+                # 北交所 - 30CM
+                self.trap_final_change_threshold = 24.0
+                logger.debug(f"[trap_threshold] {stock_code}: 北交所30CM，阈值24.0")
+            else:
+                # 主板/中小板 - 10CM
+                self.trap_final_change_threshold = trap_final_change_threshold
+                logger.debug(f"[trap_threshold] {stock_code}: 主板10CM，阈值{trap_final_change_threshold}")
+        else:
+            self.trap_final_change_threshold = trap_final_change_threshold
+        
         self.sustain_duration = sustain_duration
         self.multiplier = multiplier  # 保存用于调试
 
@@ -148,11 +173,21 @@ class EventLifecycleAnalyzer:
                 # 流通市值字段可能在不同数据源中名称不同
                 for col in ['circ_mv', 'mktcap', '流通市值', '总市值']:
                     if col in daily_data.columns:
-                        return float(daily_data[col].iloc[0]) * 1e8  # 转换为元
-            # 如果获取失败，返回默认值（中盘）
+                        circ_mv = float(daily_data[col].iloc[0]) * 1e8  # 转换为元
+                        logger.debug(f"[circ_mv] {stock_code}: {circ_mv/1e8:.2f}亿元 ({col})")
+                        return circ_mv
+                # 数据存在但没有目标字段
+                logger.warning(f"[circ_mv] {stock_code}: 数据存在但缺少circ_mv字段，使用默认50亿")
+                return 50e9
+            else:
+                # 数据不存在
+                logger.warning(f"[circ_mv] {stock_code}: 无日线数据，使用默认50亿")
+                return 50e9
+        except ImportError as e:
+            logger.error(f"[circ_mv] {stock_code}: data_service导入失败: {e}")
             return 50e9
         except Exception as e:
-            print(f"获取流通市值失败 {stock_code}: {e}")
+            logger.error(f"[circ_mv] {stock_code}: 获取异常: {e}")
             return 50e9  # 默认中盘
 
     def analyze_day(self, df: pd.DataFrame, pre_close: float) -> dict:
