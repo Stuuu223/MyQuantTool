@@ -368,7 +368,12 @@ def get_hist_5min_median(self, stock_code: str, days: int = 60) -> float:
             flow_values = []
             for i in range(1, len(hist_data)):
                 if 'amount' in hist_data[i]:
-                    flow_values.append(hist_data[i]['amount'])
+                    # 🔥 V11.0修复：确保amount为数值类型
+                    amount = hist_data[i]['amount']
+                    if isinstance(amount, (int, float)):
+                        flow_values.append(float(amount))
+                    elif isinstance(amount, str) and amount.replace('.', '').isdigit():
+                        flow_values.append(float(amount))
             
             if flow_values:
                 return float(np.median(flow_values))
@@ -380,7 +385,11 @@ def get_hist_5min_median(self, stock_code: str, days: int = 60) -> float:
         from xtdata import xtdata
         detail = xtdata.get_instrument_detail(stock_code)
         if detail and 'FloatVolume' in detail:
-            circ_mv = detail['FloatVolume'] * 10000  # 股数×股价估算
+            # 🔥 V11.0修复：确保FloatVolume为数值类型
+            float_volume = detail['FloatVolume']
+            if isinstance(float_volume, str):
+                float_volume = float(float_volume)
+            circ_mv = float_volume * 10000  # 股数×股价估算
             return circ_mv * 0.01  # 1%估算
     except:
         pass
