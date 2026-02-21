@@ -77,48 +77,42 @@ def handle_errors(func: Callable = None, *, show_user_message: bool = True) -> C
                 # 应用自定义异常
                 logger.error(f"{f.__name__} 失败: {e.message}", exc_info=True)
                 if show_user_message:
-                    import streamlit as st
-                    st.error(f"❌ {e.user_message}")
+                    logger.error(f"❌ {e.user_message}")
                 return None
                 
             except ValueError as e:
                 # 参数错误
                 logger.error(f"{f.__name__} 参数错误: {e}", exc_info=True)
                 if show_user_message:
-                    import streamlit as st
-                    st.error(f"❌ 参数错误: {str(e)}")
+                    logger.error(f"❌ 参数错误: {str(e)}")
                 return None
                 
             except ConnectionError as e:
                 # 网络连接错误
                 logger.error(f"{f.__name__} 网络错误: {e}", exc_info=True)
                 if show_user_message:
-                    import streamlit as st
-                    st.error("❌ 网络连接失败，请检查网络连接")
+                    logger.error("❌ 网络连接失败，请检查网络连接")
                 return None
                 
             except TimeoutError as e:
                 # 超时错误
                 logger.error(f"{f.__name__} 超时: {e}", exc_info=True)
                 if show_user_message:
-                    import streamlit as st
-                    st.warning("⏱️ 请求超时，请稍后重试")
+                    logger.warning("⏱️ 请求超时，请稍后重试")
                 return None
                 
             except KeyError as e:
                 # 键错误
                 logger.error(f"{f.__name__} 键错误: {e}", exc_info=True)
                 if show_user_message:
-                    import streamlit as st
-                    st.error(f"❌ 数据格式错误: {str(e)}")
+                    logger.error(f"❌ 数据格式错误: {str(e)}")
                 return None
                 
             except Exception as e:
                 # 未知错误
                 logger.error(f"{f.__name__} 未知错误: {type(e).__name__}: {e}", exc_info=True)
                 if show_user_message:
-                    import streamlit as st
-                    st.error(f"❌ 操作失败，请稍后重试")
+                    logger.error(f"❌ 操作失败，请稍后重试")
                 return None
                 
         return wrapper

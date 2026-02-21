@@ -8,7 +8,6 @@ V14.4 Signal Generator - 龙虎榜反制 (LHB Counter-Strike)
 
 import numpy as np
 import pandas as pd
-import streamlit as st
 from typing import Optional, Dict, Union, Any
 from logic.utils.logger import get_logger
 import config.config_system as config
@@ -20,7 +19,6 @@ class SignalGeneratorVectorized:
     """向量化信号生成器 (保留用于基础技术指标计算)"""
     
     @staticmethod
-    @st.cache_data(ttl=3600)
     def generate_ma_signals(close, fast_window=5, slow_window=20):
         close_array = close.values if isinstance(close, pd.Series) else close
         sma_fast = pd.Series(close_array).rolling(window=fast_window).mean().values
