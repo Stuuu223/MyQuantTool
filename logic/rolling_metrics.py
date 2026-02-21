@@ -336,3 +336,84 @@ if __name__ == "__main__":
     print("=" * 80)
     print("✅ Rolling Metrics 模块测试完成")
     print("=" * 80)
+
+# ==================== V11.0 历史中位基准API ====================
+def get_hist_5min_median(self, stock_code: str, days: int = 60) -> float:
+    """
+    获取股票5分钟流历史中位（QMT优先）
+    
+    Args:
+        stock_code: 股票代码（格式：000001.SZ）
+        days: 历史天数，默认60天
+    
+    Returns:
+        float: 历史5分钟流中位值（元）
+    """
+    try:
+        from xtdata import xtdata
+        # 使用QMT获取历史flow数据
+        end_date = datetime.now().strftime('%Y%m%d')
+        start_date = (datetime.now() - timedelta(days=days)).strftime('%Y%m%d')
+        
+        # 尝试获取历史5分钟数据
+        hist_data = xtdata.get_market_data(
+            stock_code, 
+            period='5m', 
+            start_time=start_date, 
+            end_time=end_date
+        )
+        
+        if hist_data is not None and len(hist_data) > 0:
+            # 计算每5分钟的净流入（假设有amount字段）
+            flow_values = []
+            for i in range(1, len(hist_data)):
+                if 'amount' in hist_data[i]:
+                    flow_values.append(hist_data[i]['amount'])
+            
+            if flow_values:
+                return float(np.median(flow_values))
+    except Exception as e:
+        print(f"[hist_median] {stock_code} 获取失败: {e}")
+    
+    # 回退估算：流通市值的1%（网宿510亿→5.1亿）
+    try:
+        from xtdata import xtdata
+        detail = xtdata.get_instrument_detail(stock_code)
+        if detail and 'FloatVolume' in detail:
+            circ_mv = detail['FloatVolume'] * 10000  # 股数×股价估算
+            return circ_mv * 0.01  # 1%估算
+    except:
+        pass
+    
+    return 1e8  # 默认1亿元
+
+def get_flow_ratios(self, stock_code: str) -> dict:
+    """
+    V11.0 三层无量纲计算（短线一日精华）
+    
+    Returns:
+        dict: {
+            'ratio_stock': 自历史60日中位倍数,
+            'sustain': 15min/5min维持比,
+            'response_eff': 单位资金位移效率
+        }
+    """
+    # 1. 自标准化：vs历史60日中位
+    hist_median = self.get_hist_5min_median(stock_code, days=60)
+    ratio_stock = self.flow_5min.total_flow / hist_median if hist_median > 0 else 1.0
+    
+    # 2. 维持比
+    sustain = self.flow_15min.total_flow / self.flow_5min.total_flow if self.flow_5min.total_flow != 0 else 0
+    
+    # 3. 响应效率：单位资金位移效率
+    pct_gain = (self.current_price - self.pre_close) / self.pre_close if self.pre_close > 0 else 0
+    flow_ratio = self.flow_5min.total_flow / (self.pre_close * 1e8) if self.pre_close > 0 else 0
+    response_eff = pct_gain / flow_ratio if flow_ratio > 0 else 0
+    
+    return {
+        'ratio_stock': ratio_stock,
+        'sustain': sustain,
+        'response_eff': response_eff
+    }
+
+# 将新方法添加到文件末尾

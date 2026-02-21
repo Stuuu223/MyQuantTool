@@ -86,8 +86,8 @@ class HalfwayBreakoutDetector(BaseEventDetector):
         self._success_count = 0
         
         logger.info("✅ [半路起爆检测器V2] 初始化完成")
-        logger.info(f"   - 触发阈值: +{self.TRIGGER_PCT_LEVEL_1}% / +{self.TRIGGER_PCT_LEVEL_2}%")
-        logger.info(f"   - 5分钟资金流阈值: {self.FLOW_5MIN_THRESHOLD/1e6:.0f}M")
+        logger.info("   - V11.0 全Ratio化：分层ratio_stock + response_eff + big_ratio")
+        logger.info("   - 资金持续性要求: 1.0x")
         logger.info(f"   - 资金持续性要求: {self.FLOW_SUSTAINABILITY_MIN:.1f}x")
     
     def _get_flow_calculator(self, stock_code: str, pre_close: float) -> RollingFlowCalculator:
@@ -132,11 +132,30 @@ class HalfwayBreakoutDetector(BaseEventDetector):
             #     print(f"   [DEBUG] {stock_code} @ {current_time}: 涨幅={true_change_pct:.2f}%, 价格={current_price}, pre_close={pre_close}")
             #     print(f"   [DEBUG] context main_net_inflow={context.get('main_net_inflow', 'N/A')}, threshold={self.FLOW_5MIN_THRESHOLD}")
             
-            # ===== 步骤3: 快速过滤 - 涨幅未达触发阈值 =====
-            if true_change_pct < self.TRIGGER_PCT_LEVEL_1:
-                if self._detection_count < 10:
-                    print(f"   [DEBUG] 涨幅不足: {true_change_pct:.2f}% < {self.TRIGGER_PCT_LEVEL_1}%")
-                return None  # 涨幅不足2%，不进入资金判断
+            # ===== 步骤3: 快速过滤 - 分层ratio检查 =====
+            # 🔥 V11.0: 用换手率分层ratio阈值替代固定2%/5%
+            turnover = context.get('turnover', 0.05)  # 假设日换手率
+            if turnover > 0.10:  # 高频>10%
+                ratio_thresh = 3.0
+            elif turnover > 0.05:  # 中频5-10%
+                ratio_thresh = 2.0
+            else:  # 低频<5%
+                ratio_thresh = 1.5
+            
+            # 🔥 V11.0: 计算flow_ratios（需要扩展rolling_metrics.py）
+            try:
+                calc = self._get_flow_calculator(stock_code, pre_close)
+                ratios = calc.get_flow_ratios()
+            except:
+                ratios = {'ratio_stock': 1.0, 'sustain': 1.0, 'response_eff': 0.01}
+            
+            # 🔥 V11.0: 分层ratio触发检查
+            if ratios['ratio_stock'] < ratio_thresh:
+                return None  # ratio不达标
+            if ratios['sustain'] < 1.0:
+                return None  # 持续性不达标
+            if ratios['response_eff'] < 0.05:
+                return None  # 响应效率不达标  # 涨幅不足2%，不进入资金判断
             
             # ===== 步骤4: 获取资金流（优先使用context传入的值）=====
             # 🔥 优先使用context中的main_net_inflow（CSV已计算好）
