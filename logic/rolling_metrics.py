@@ -140,7 +140,17 @@ class RollingFlowCalculator:
         Returns:
             RollingFlowMetrics: 滚动指标集合
         """
-        timestamp = int(tick_data.get('time', 0))
+        # 🔥 修复时间格式：支持字符串(如'09:30:00')和整数时间戳
+        time_val = tick_data.get('time', 0)
+        if isinstance(time_val, str):
+            # 将'09:30:00'转换为秒数（从0点开始）
+            try:
+                parts = time_val.split(':')
+                timestamp = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+            except:
+                timestamp = 0
+        else:
+            timestamp = int(time_val)
         price = tick_data.get('lastPrice', 0)
         volume = tick_data.get('volume', 0)
         

@@ -66,15 +66,12 @@ class QMTHistoricalProvider:
         self._ensure_data_dir()
 
     def _get_xtdata(self):
-        """获取xtdata实例（通过TickProvider）"""
+        """获取xtdata实例（纯本地模式，无订阅端口）"""
         if self._xtdata is None:
-            if self._tick_provider is None:
-                # 延迟导入TickProvider
-                from logic.data_providers.tick_provider import TickProvider
-                self._tick_provider = TickProvider()
-                if not self._tick_provider.is_connected():
-                    self._tick_provider.connect()
-            self._xtdata = self._tick_provider._xtdata
+            # 🔥 历史模式：直接导入xtdata，不通过TickProvider（避免订阅端口58609）
+            import xtquant.xtdata as xtdata
+            self._xtdata = xtdata
+            print("   🔥 历史模式：直连xtdata.get_local_data()")
         return self._xtdata
 
     def _normalize_time_format(self, time_str: str) -> str:

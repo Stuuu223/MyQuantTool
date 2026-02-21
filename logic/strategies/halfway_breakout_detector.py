@@ -41,12 +41,12 @@ class HalfwayBreakoutDetector(BaseEventDetector):
     3. 15分钟流/5分钟流 > 1.2（资金持续性）
     """
 
-    # CTO指令：基于A/B测试优化的阈值
-    TRIGGER_PCT_LEVEL_1 = 5.0   # 第一触发点：+5%
-    TRIGGER_PCT_LEVEL_2 = 8.0   # 第二触发点：+8%
+    # 🔥 回灌ratio化策略：实盘阈值（Level 1: 1% ratio）
+    TRIGGER_PCT_LEVEL_1 = 2.0   # 第一触发点：+2% (ratio化放宽)
+    TRIGGER_PCT_LEVEL_2 = 5.0   # 第二触发点：+5% (ratio化放宽)
     
-    FLOW_5MIN_THRESHOLD = 30e6   # 5分钟资金流阈值：3000万
-    FLOW_SUSTAINABILITY_MIN = 1.2  # 资金持续性最小比率（15min/5min）
+    FLOW_5MIN_THRESHOLD = 5e6    # 5分钟资金流阈值：500万 (ratio化，小票适用)
+    FLOW_SUSTAINABILITY_MIN = 1.0  # 资金持续性最小比率（15min/5min >= 1.0）
     
     def __init__(self):
         """初始化半路起爆检测器"""
@@ -101,17 +101,32 @@ class HalfwayBreakoutDetector(BaseEventDetector):
             # ===== 步骤2: 计算真实涨幅（基于pre_close） =====
             true_change_pct = calculate_true_change_pct(current_price, pre_close)
             
+            # 🔥 调试打印（前10个tick）
+            # if self._detection_count < 10:
+            #     print(f"   [DEBUG] {stock_code} @ {current_time}: 涨幅={true_change_pct:.2f}%, 价格={current_price}, pre_close={pre_close}")
+            #     print(f"   [DEBUG] context main_net_inflow={context.get('main_net_inflow', 'N/A')}, threshold={self.FLOW_5MIN_THRESHOLD}")
+            
             # ===== 步骤3: 快速过滤 - 涨幅未达触发阈值 =====
             if true_change_pct < self.TRIGGER_PCT_LEVEL_1:
-                return None  # 涨幅不足5%，不进入资金判断
+                if self._detection_count < 10:
+                    print(f"   [DEBUG] 涨幅不足: {true_change_pct:.2f}% < {self.TRIGGER_PCT_LEVEL_1}%")
+                return None  # 涨幅不足2%，不进入资金判断
             
-            # ===== 步骤4: 计算多周期资金流 =====
-            calc = self._get_flow_calculator(stock_code, pre_close)
-            last_tick = context.get('last_tick')
-            metrics = calc.add_tick(tick_data, last_tick)
+            # ===== 步骤4: 获取资金流（优先使用context传入的值）=====
+            # 🔥 优先使用context中的main_net_inflow（CSV已计算好）
+            flow_5min = context.get('main_net_inflow', 0)
             
-            flow_5min = metrics.flow_5min.total_flow
-            flow_15min = metrics.flow_15min.total_flow
+            if flow_5min == 0:
+                # 回退：使用RollingFlowCalculator计算
+                calc = self._get_flow_calculator(stock_code, pre_close)
+                last_tick = context.get('last_tick')
+                metrics = calc.add_tick(tick_data, last_tick)
+                flow_5min = metrics.flow_5min.total_flow
+                flow_15min = metrics.flow_15min.total_flow
+            else:
+                # 使用CSV的flow_sustainability作为15min/5min比率
+                flow_sustainability = tick_data.get('flow_sustainability', 1.0)
+                flow_15min = flow_5min * flow_sustainability
             
             # ===== 步骤5: 核心判断 - 真突破条件（CTO指令） =====
             # 条件A: 5分钟资金流 > 阈值（爆发力）
@@ -127,9 +142,23 @@ class HalfwayBreakoutDetector(BaseEventDetector):
             # 综合判断
             is_true_breakout = condition_a and condition_b and condition_c
             
+            # 🔥 调试条件判断
+            # if self._detection_count < 10:
+            #     print(f"   [DEBUG] 条件A(5min流): {flow_5min:.0f} >= {self.FLOW_5MIN_THRESHOLD} = {condition_a}")
+            #     print(f"   [DEBUG] 条件B(持续性): {flow_ratio:.2f} >= {self.FLOW_SUSTAINABILITY_MIN} = {condition_b}")
+            #     print(f"   [DEBUG] 条件C(涨幅): {true_change_pct:.2f}% 在 2%-20% = {condition_c}")
+            #     print(f"   [DEBUG] 综合结果: {is_true_breakout}")
+            
             # ===== 步骤6: 生成事件 =====
             if is_true_breakout:
+                # print(f"   [DEBUG] 🎯 生成事件! {stock_code} @ {true_change_pct:.2f}%")
                 confidence = self._calculate_confidence(true_change_pct, flow_5min, flow_ratio)
+                
+                # 🔥 修复：获取flow_1min（从metrics或tick_data）
+                if flow_5min == 0:
+                    flow_1min = metrics.flow_1min.total_flow
+                else:
+                    flow_1min = tick_data.get('flow_1min', flow_5min / 5)  # 用5min/5估算
                 
                 event = TradingEvent(
                     event_type=EventType.HALFWAY_BREAKOUT,
@@ -137,7 +166,7 @@ class HalfwayBreakoutDetector(BaseEventDetector):
                     timestamp=current_time,
                     data={
                         'true_change_pct': true_change_pct,      # 真实涨幅
-                        'flow_1min': metrics.flow_1min.total_flow,
+                        'flow_1min': flow_1min,
                         'flow_5min': flow_5min,                  # 5分钟流
                         'flow_15min': flow_15min,                # 15分钟流
                         'flow_sustainability': flow_ratio,       # 资金持续性
