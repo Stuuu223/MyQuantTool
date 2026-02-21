@@ -44,7 +44,8 @@
     "volume_spike_percentile": 0.95,
     "price_stall_threshold": 0.02,
     "divergence_minutes": 3,
-    "notes": "量价背离检测"
+    "final_change_threshold": 8.0,
+    "notes": "P1: final_change_threshold=8.0，涨幅低于此值才判定为骗炮"
   },
   
   "portfolio": {

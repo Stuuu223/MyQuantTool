@@ -89,7 +89,7 @@ class EventLifecycleService:
                     'code': code,
                     'date': date,
                     'sustain_score': 0.0,
-                    'env_score': 0.0,
+                    'env_score': 0.5,  # 🔥 P1: 默认0.5防0污染
                     'is_true_breakout': None,
                     'confidence': 0.0
                 }
@@ -101,7 +101,7 @@ class EventLifecycleService:
                     'code': code,
                     'date': date,
                     'sustain_score': 0.0,
-                    'env_score': 0.0,
+                    'env_score': 0.5,  # 🔥 P1: 默认0.5防0污染
                     'is_true_breakout': None,
                     'confidence': 0.0
                 }
@@ -148,7 +148,7 @@ class EventLifecycleService:
                 'code': code,
                 'date': date,
                 'sustain_score': 0.0,
-                'env_score': 0.0,
+                'env_score': 0.5,  # 🔥 P1: 默认0.5防0污染
                 'is_true_breakout': None,
                 'confidence': 0.0
             }

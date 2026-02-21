@@ -108,6 +108,7 @@ class EventLifecycleAnalyzer:
                  breakout_threshold: float = 4.0,       # 基础阈值从5.0降到4.0
                  trap_reversal_threshold: float = -1.5, # 基础阈值从-3.0降到-1.5
                  max_drawdown_threshold: float = 3.0,   # 基础阈值从5.0降到3.0
+                 trap_final_change_threshold: float = 8.0,  # 🔥 P1: 骗炮判定最终涨幅阈值
                  sustain_duration: int = 15):
 
         # 基础阈值
@@ -133,6 +134,7 @@ class EventLifecycleAnalyzer:
         self.breakout_threshold = base_breakout * multiplier
         self.trap_reversal_threshold = base_trap * multiplier
         self.max_drawdown_threshold = base_max_dd * multiplier
+        self.trap_final_change_threshold = trap_final_change_threshold  # 🔥 P1: 骗炮最终涨幅阈值
         self.sustain_duration = sustain_duration
         self.multiplier = multiplier  # 保存用于调试
 
@@ -247,10 +249,10 @@ class EventLifecycleAnalyzer:
             final_change = df_slice['true_change_pct'].iloc[-1]
             pullback_ratio = (peak_change - final_change) / drawdown_from_peak if drawdown_from_peak > 0 else 0
 
-            # 条件：回撤>3% 且 收盘相对于高点的回撤比例>50% 且 最终涨幅<5%
+            # 条件：回撤>阈值 且 收盘相对于高点的回撤比例>30% 且 最终涨幅<阈值
             if (drawdown_from_peak >= abs(self.trap_reversal_threshold) and
-                pullback_ratio > 0.3 and   # ← 从0.5降到0.3
-                final_change < 8.0):       # ← 从5.0升到8.0
+                pullback_ratio > 0.3 and   # 回撤比例阈值
+                final_change < self.trap_final_change_threshold):  # 🔥 P1: 使用参数替代硬编码
                 is_trap = True
                 fail_idx = after_peak['true_change_pct'].idxmin()
                 fail_time = after_peak.loc[fail_idx, 'time']

@@ -37,6 +37,7 @@ from logic.strategies.opening_weak_to_strong_detector import OpeningWeakToStrong
 from logic.strategies.halfway_breakout_detector import HalfwayBreakoutDetector
 from logic.strategies.leader_candidate_detector import LeaderCandidateDetector
 from logic.strategies.dip_buy_candidate_detector import DipBuyCandidateDetector
+from logic.analyzers.trap_detector import TrapDetector
 from logic.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -87,8 +88,13 @@ class UnifiedWarfareCore:
         dip_buy_detector = DipBuyCandidateDetector()
         self.event_manager.register_detector(dip_buy_detector)
         
-        # TODO: 将来可以添加其他战法检测器，如：
-        # - IntradayTurnaroundDetector (尾盘反转)
+        # 🔥 P1: 诱多陷阱检测器（veto机制）
+        try:
+            trap_detector = TrapDetector()
+            self.event_manager.register_detector(trap_detector)
+            logger.info("✅ [统一战法核心] TrapDetector注册成功")
+        except Exception as e:
+            logger.warning(f"⚠️ [统一战法核心] TrapDetector注册失败: {e}")
         
         logger.info("✅ [统一战法核心] 检测器初始化完成")
     
