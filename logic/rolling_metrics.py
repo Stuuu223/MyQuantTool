@@ -18,6 +18,10 @@ from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
 import numpy as np
+try:
+    from xtdata import xtdata
+except ImportError:
+    xtdata = None  # 回退处理
 
 
 @dataclass
@@ -126,6 +130,7 @@ class RollingFlowCalculator:
         self.pre_close = 0.0       # 昨收价
         self.daily_low = float('inf')  # 日内低点
         self.daily_high = 0.0      # 日内高点
+        self.hist_vol_mean = {}    # V12: 历史换手率均值缓存 {stock: hist_mean}
         
     def set_pre_close(self, pre_close: float):
         """设置昨收价（必须在开始计算前调用）"""
@@ -437,3 +442,97 @@ def get_flow_ratios(self, stock_code: str) -> dict:
         return {'ratio_stock': 1.0, 'sustain': 1.0, 'response_eff': 0.01}
 
 # 将新方法添加到文件末尾
+
+    # ============================================================================
+    # V12 换手纯净MVP方法 - 彻底废除涨幅锚定，换手率绝对主导
+    # ============================================================================
+    
+    def get_turnover_ratio(self, stock: str, vol_5min: float, circ_mv: float) -> tuple:
+        """
+        换手ratio_stock/day计算，无价！
+        
+        Args:
+            stock: 股票代码
+            vol_5min: 5分钟成交量（股）
+            circ_mv: 流通市值（元）
+            
+        Returns:
+            tuple: (ratio_stock, ratio_day) 换手率倍数
+        """
+        try:
+            # 计算5分钟换手率
+            turnover_5min = vol_5min / circ_mv if circ_mv > 0 else 0
+            
+            # 获取历史平均换手率（缓存）
+            hist_mean = self.hist_vol_mean.get(stock)
+            if hist_mean is None:
+                hist_mean = self._fallback_vol(stock)
+                self.hist_vol_mean[stock] = hist_mean
+            
+            # ratio_stock: 当前换手率 vs 历史均值
+            ratio_stock = turnover_5min / hist_mean if hist_mean > 0 else 0
+            
+            # ratio_day: 当前换手率 vs 当日分钟均值（简化版）
+            day_vol_mean = self.get_day_vol_mean(stock)
+            ratio_day = turnover_5min / (day_vol_mean / 288) if day_vol_mean > 0 else 0
+            
+            return ratio_stock, ratio_day
+        except Exception as e:
+            print(f"[get_turnover_ratio] 错误: {e}, stock={stock}")
+            return 0, 0
+    
+    def _fallback_vol(self, stock: str) -> float:
+        """
+        回退方法：获取股票默认换手率
+        
+        Args:
+            stock: 股票代码
+            
+        Returns:
+            float: 默认分钟换手率（假设日换手1%）
+        """
+        try:
+            if xtdata:
+                detail = xtdata.get_instrument_detail(stock)
+                if detail and 'FloatVolume' in detail:
+                    float_volume = detail['FloatVolume']
+                    if isinstance(float_volume, str):
+                        float_volume = float(float_volume)
+                    # 估算流通市值 * 1%日换手 / 240分钟
+                    return float_volume * 10000 * 0.01 / 240
+        except:
+            pass
+        return 1e8 * 0.01 / 240  # 默认1亿市值，日换1%
+    
+    def get_day_vol_mean(self, stock: str) -> float:
+        """
+        获取当日成交量均值（简化版）
+        
+        Args:
+            stock: 股票代码
+            
+        Returns:
+            float: 当日分钟平均成交量（股）
+        """
+        # 简化实现：使用iron_rule_monitor中的_get_avg_turnover方法
+        # 实际项目中应调用data_service获取当日数据
+        try:
+            from logic.monitors.iron_rule_monitor import IronRuleMonitor
+            monitor = IronRuleMonitor()
+            avg_turnover = monitor._get_avg_turnover(stock, days=20)
+            # 将换手率百分比转换为成交量
+            if avg_turnover > 0:
+                # 估算流通市值
+                if xtdata:
+                    detail = xtdata.get_instrument_detail(stock)
+                    if detail and 'FloatVolume' in detail:
+                        float_volume = detail['FloatVolume']
+                        if isinstance(float_volume, str):
+                            float_volume = float(float_volume)
+                        circ_mv = float_volume * 10000
+                        # 换手率% -> 小数，然后乘以流通市值
+                        return circ_mv * (avg_turnover / 100)
+        except Exception as e:
+            print(f"[get_day_vol_mean] 错误: {e}, stock={stock}")
+        
+        return 1e6  # 默认100万股/分钟

@@ -66,8 +66,8 @@ class HalfwayBreakoutDetector(BaseEventDetector):
     """
 
     # 🔥 Phase 1 Ratio化策略：按流通市值动态调整
-    TRIGGER_PCT_LEVEL_1 = 2.0   # 第一触发点：+2% (ratio化放宽)
-    TRIGGER_PCT_LEVEL_2 = 5.0   # 第二触发点：+5% (ratio化放宽)
+    # V12废除：TRIGGER_PCT_LEVEL_1 = 2.0   # 第一触发点：+2% (ratio化放宽) - 涨幅锚定遗毒
+    # V12废除：TRIGGER_PCT_LEVEL_2 = 5.0   # 第二触发点：+5% (ratio化放宽) - 涨幅锚定遗毒
     
     # 废弃固定阈值，改用MIN_INTENSITY_SCORE ratio化判断
     FLOW_5MIN_THRESHOLD = 5e6    # 兼容保留，实际使用intensity_score
@@ -145,7 +145,7 @@ class HalfwayBreakoutDetector(BaseEventDetector):
             # 🔥 V11.0: 计算flow_ratios（需要扩展rolling_metrics.py）
             try:
                 calc = self._get_flow_calculator(stock_code, pre_close)
-                ratios = calc.get_flow_ratios()
+                ratios = calc.get_flow_ratios(stock_code)
             except:
                 ratios = {'ratio_stock': 1.0, 'sustain': 1.0, 'response_eff': 0.01}
             
@@ -157,21 +157,26 @@ class HalfwayBreakoutDetector(BaseEventDetector):
             if ratios['response_eff'] < 0.05:
                 return None  # 响应效率不达标  # 涨幅不足2%，不进入资金判断
             
-            # ===== 步骤4: 获取资金流（优先使用context传入的值）=====
+            # ===== 步骤4: 获取资金流和成交量数据（V12换手纯净关键）=====
             # 🔥 优先使用context中的main_net_inflow（CSV已计算好）
             flow_5min = context.get('main_net_inflow', 0)
             
+            # V12关键：总是创建metrics对象，以便获取成交量数据
+            calc = self._get_flow_calculator(stock_code, pre_close)
+            last_tick = context.get('last_tick')
+            metrics = calc.add_tick(tick_data, last_tick)
+            
             if flow_5min == 0:
-                # 回退：使用RollingFlowCalculator计算
-                calc = self._get_flow_calculator(stock_code, pre_close)
-                last_tick = context.get('last_tick')
-                metrics = calc.add_tick(tick_data, last_tick)
+                # 回退：使用RollingFlowCalculator计算的资金流
                 flow_5min = metrics.flow_5min.total_flow
                 flow_15min = metrics.flow_15min.total_flow
             else:
                 # 使用CSV的flow_sustainability作为15min/5min比率
                 flow_sustainability = tick_data.get('flow_sustainability', 1.0)
                 flow_15min = flow_5min * flow_sustainability
+            
+            # V12关键数据：获取5分钟成交量（用于换手率计算）
+            vol_5min = metrics.flow_5min.total_volume
             
             # ===== 步骤5: 核心判断 - 真突破条件（Phase 1 Ratio化） =====
             # 🔥 新增：计算资金强度评分（0-1）
@@ -203,8 +208,25 @@ class HalfwayBreakoutDetector(BaseEventDetector):
             flow_ratio = flow_15min / flow_5min if abs(flow_5min) > 0 else 0
             condition_b = flow_ratio >= self.FLOW_SUSTAINABILITY_MIN
             
-            # 条件C: 处于半路区间（2%-20%，已过早盘杂毛期，未封板）
-            condition_c = self.TRIGGER_PCT_LEVEL_1 <= true_change_pct <= 20.0
+            # 条件C: V12换手纯净 - 换手率主导（ratio_stock>15, ratio_day>10, sustain>1.2）
+            try:
+                # 获取流通市值（十亿元转元）
+                circ_mv_bn = intensity_result.get('circ_mv_bn', 0)
+                circ_mv = circ_mv_bn * 1e9 if circ_mv_bn > 0 else 1e9  # 默认10亿
+                
+                # 使用RollingFlowCalculator计算换手率ratio
+                ratio_stock, ratio_day = calc.get_turnover_ratio(stock_code, vol_5min, circ_mv)
+                
+                # V12换手纯净条件：ratio_stock>15, ratio_day>10, sustain>1.2
+                sustain = flow_15min / flow_5min if flow_5min != 0 else 0
+                condition_c = (ratio_stock > 15) and (ratio_day > 10) and (sustain > 1.2)
+                
+                # 调试输出
+                if self._detection_count < 5:
+                    print(f"   [V12调试] {stock_code}: ratio_stock={ratio_stock:.1f}, ratio_day={ratio_day:.1f}, sustain={sustain:.2f}, condition_c={condition_c}")
+            except Exception as e:
+                print(f"   [V12错误] 换手率计算失败: {e}")
+                condition_c = False  # 计算失败时保守过滤
             
             # 综合判断（强度+持续性双保险）
             is_true_breakout = condition_a and condition_b and condition_c
@@ -260,7 +282,7 @@ class HalfwayBreakoutDetector(BaseEventDetector):
                 return event
             else:
                 # 记录未触发原因（调试用）
-                if true_change_pct >= self.TRIGGER_PCT_LEVEL_1:
+                if true_change_pct >= 2.0:  # V12废除：原self.TRIGGER_PCT_LEVEL_1，使用固定值用于调试
                     reasons = []
                     if not condition_a:
                         # 🔥 Phase 1: 使用资金强度评分描述
@@ -364,7 +386,7 @@ if __name__ == "__main__":
     
     print(f"\n测试参数:")
     print(f"  昨收价(pre_close): {pre_close}")
-    print(f"  触发阈值: +{detector.TRIGGER_PCT_LEVEL_1}%")
+    print(f"  触发阈值: V12换手纯净 (ratio_stock>15, ratio_day>10, sustain>1.2)")
     print(f"  5分钟流阈值: {detector.FLOW_5MIN_THRESHOLD/1e6:.0f}M")
     print("-" * 80)
     
