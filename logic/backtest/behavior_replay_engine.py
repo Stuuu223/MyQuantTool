@@ -53,6 +53,9 @@ class ReplayTrade:
     pnl_pct: float = 0.0  # 盈亏百分比
     max_drawdown_pct: float = 0.0  # 最大回撤
     holding_minutes: float = 0.0  # 持仓时长
+    
+    # 数据源标记（新增）
+    data_source: str = "tick"  # "tick" 或 "kline"
 
 
 @dataclass
@@ -88,7 +91,8 @@ class ReplayResult:
             'event_type': trade.event_type,
             't_warmup': trade.t_warmup,
             'sustain_ability': trade.sustain_ability,
-            'holding_minutes': trade.holding_minutes
+            'holding_minutes': trade.holding_minutes,
+            'data_source': trade.data_source  # 新增
         }
 
 
@@ -164,24 +168,89 @@ class BehaviorReplayEngine:
         
     def replay_single_day(self, stock_code: str, stock_name: str, date: str) -> ReplayResult:
         """
-        回放单日数据
+        回放单日数据 - 支持Tick降级到1分钟K线
+        
+        降级链：
+        1. Tick数据（精确，3秒级）
+        2. 1分钟K线（降级，估算资金流）
+        3. 放弃（无数据）
         
         流程：
-        1. 加载Tick数据
+        1. 加载Tick数据（或降级到1分钟K线）
         2. 计算资金流
         3. 事件检测（HALFWAY/TRUE_ATTACK/LEADER/TRAP）
         4. 模拟交易（Portfolio逻辑）
         5. 提取特征
         """
         result = ReplayResult(stock_code=stock_code, date=date)
+        data_source = "tick"  # 默认数据源
         
         try:
-            # 1. 加载数据
+            # 1. 尝试加载Tick数据
+            df_ticks = self._load_tick_data(stock_code, date)
+            
+            if df_ticks is not None and len(df_ticks) > 0:
+                # 使用Tick数据（原有逻辑）
+                data_source = "tick"
+                df = df_ticks
+                print(f"   ✅ 使用Tick数据: {stock_code} {date}, {len(df)}条")
+            else:
+                # 2. 降级到1分钟K线
+                print(f"   ⚠️ Tick数据缺失，降级到1分钟K线: {stock_code} {date}")
+                df_kline = self._load_minute_kline(stock_code, date)
+                
+                if df_kline is not None and len(df_kline) > 0:
+                    data_source = "kline"
+                    df = df_kline
+                    print(f"   ✅ 使用1分钟K线数据: {stock_code} {date}, {len(df)}条")
+                else:
+                    # 3. 无数据可用
+                    print(f"   ❌ 无可用数据: {stock_code} {date}")
+                    return result
+            
+            # 3. 事件检测
+            pre_close = data_service.get_pre_close(stock_code, date)
+            events = self.lifecycle_analyzer.analyze_day(df, pre_close)
+            result.events_detected = len(events['breakouts']) + len(events['traps'])
+            
+            # 4. 处理真起爆事件
+            for breakout in events['breakouts']:
+                trade = self._simulate_breakout_trade(
+                    stock_code, stock_name, date, df, breakout, pre_close, data_source
+                )
+                if trade:
+                    result.trades.append(trade)
+                    self.all_trades.append(trade)
+            
+            # 5. 处理骗炮事件
+            for trap in events['traps']:
+                trade = self._simulate_trap_trade(
+                    stock_code, stock_name, date, df, trap, pre_close, data_source
+                )
+                if trade:
+                    result.trades.append(trade)
+                    self.all_trades.append(trade)
+            
+            result.trades_executed = len(result.trades)
+            
+        except Exception as e:
+            print(f"   ❌ 回放失败 {stock_code} {date}: {e}")
+        
+        return result
+    
+    def _load_tick_data(self, stock_code: str, date: str) -> Optional[pd.DataFrame]:
+        """
+        加载Tick数据（原有逻辑抽取）
+        
+        Returns:
+            DataFrame with tick data or None if failed
+        """
+        try:
             formatted_code = data_service._format_code(stock_code)
             pre_close = data_service.get_pre_close(stock_code, date)
             
             if pre_close <= 0:
-                return result
+                return None
             
             start_time = date.replace('-', '') + '093000'
             end_time = date.replace('-', '') + '150000'
@@ -194,9 +263,9 @@ class BehaviorReplayEngine:
             )
             
             if provider.get_tick_count() == 0:
-                return result
+                return None
             
-            # 2. 计算资金流
+            # 计算资金流
             calc = RollingFlowCalculator(windows=[1, 5, 15])
             tick_data = []
             last_tick = None
@@ -214,40 +283,128 @@ class BehaviorReplayEngine:
                 })
                 last_tick = tick
             
-            df = pd.DataFrame(tick_data)
-            
-            # 3. 事件检测
-            events = self.lifecycle_analyzer.analyze_day(df, pre_close)
-            result.events_detected = len(events['breakouts']) + len(events['traps'])
-            
-            # 4. 处理真起爆事件
-            for breakout in events['breakouts']:
-                trade = self._simulate_breakout_trade(
-                    stock_code, stock_name, date, df, breakout, pre_close
-                )
-                if trade:
-                    result.trades.append(trade)
-                    self.all_trades.append(trade)
-            
-            # 5. 处理骗炮事件
-            for trap in events['traps']:
-                trade = self._simulate_trap_trade(
-                    stock_code, stock_name, date, df, trap, pre_close
-                )
-                if trade:
-                    result.trades.append(trade)
-                    self.all_trades.append(trade)
-            
-            result.trades_executed = len(result.trades)
+            return pd.DataFrame(tick_data)
             
         except Exception as e:
-            print(f"回测失败 {stock_code} {date}: {e}")
+            print(f"   ⚠️ 加载Tick数据失败: {e}")
+            return None
+    
+    def _load_minute_kline(self, stock_code: str, date: str) -> Optional[pd.DataFrame]:
+        """
+        加载1分钟K线数据（Tick降级方案）
         
-        return result
+        估算逻辑：
+        - 价格：使用收盘价
+        - 涨幅：(close - pre_close) / pre_close * 100
+        - 资金流：使用成交量 × 价格变化方向估算（简化版）
+        
+        Returns:
+            DataFrame with kline data in tick-like format or None if failed
+        """
+        try:
+            formatted_code = data_service._format_code(stock_code)
+            pre_close = data_service.get_pre_close(stock_code, date)
+            
+            if pre_close <= 0:
+                return None
+            
+            # 构建时间范围（交易时间 09:30-11:30, 13:00-15:00）
+            start_time = date.replace('-', '') + '093000'
+            end_time = date.replace('-', '') + '150000'
+            
+            # 尝试从QMT获取1分钟K线
+            provider = QMTHistoricalProvider(
+                stock_code=formatted_code,
+                start_time=start_time,
+                end_time=end_time,
+                period='1m'  # 1分钟周期
+            )
+            
+            if provider.get_tick_count() == 0:
+                return None
+            
+            # 转换K线数据为Tick-like格式
+            results = []
+            flow_calc = RollingFlowCalculator(windows=[1, 5, 15])
+            
+            for kline in provider.iter_ticks():
+                # K线数据字段适配
+                time_val = kline.get('time', 0)
+                close_price = kline.get('close', kline.get('lastPrice', 0))
+                volume = kline.get('volume', 0)
+                open_price = kline.get('open', close_price)
+                high_price = kline.get('high', close_price)
+                low_price = kline.get('low', close_price)
+                
+                if close_price <= 0:
+                    continue
+                
+                # 解析时间
+                if isinstance(time_val, (int, float)):
+                    time_str = datetime.fromtimestamp(int(time_val) / 1000)
+                else:
+                    time_str = datetime.strptime(str(time_val), '%Y%m%d%H%M%S')
+                
+                # 计算涨幅
+                true_change = (close_price - pre_close) / pre_close * 100
+                
+                # 估算资金流（简化版）
+                # 价格上涨时段估算为正流入，下跌为负流入
+                price_change = close_price - open_price
+                amount = volume * close_price
+                
+                if price_change > 0:
+                    # 上涨：估算为主动买入
+                    estimated_flow = amount * 0.6
+                elif price_change < 0:
+                    # 下跌：估算为主动卖出
+                    estimated_flow = -amount * 0.6
+                else:
+                    estimated_flow = 0
+                
+                # 模拟tick数据格式
+                tick_like = {
+                    'time': time_str,
+                    'lastPrice': close_price,
+                    'volume': volume,
+                    'amount': amount
+                }
+                
+                # 使用RollingFlowCalculator计算滚动资金流
+                metrics = flow_calc.add_tick(tick_like, None)
+                
+                # 如果计算器返回有效值则使用，否则使用估算值
+                flow_5min = metrics.flow_5min.total_flow if metrics.flow_5min else estimated_flow
+                flow_15min = metrics.flow_15min.total_flow if metrics.flow_15min else estimated_flow * 3
+                
+                results.append({
+                    'time': time_str,
+                    'price': close_price,
+                    'true_change_pct': true_change,
+                    'flow_5min': flow_5min,
+                    'flow_15min': flow_15min,
+                    'volume': volume,
+                    'open': open_price,
+                    'high': high_price,
+                    'low': low_price,
+                    'is_kline': True,  # 标记为K线数据
+                })
+            
+            if not results:
+                return None
+            
+            df = pd.DataFrame(results)
+            print(f"   📊 K线数据转换完成: {len(df)}条1分钟K线")
+            return df
+            
+        except Exception as e:
+            print(f"   ❌ 加载K线数据失败: {e}")
+            return None
     
     def _simulate_breakout_trade(self, stock_code: str, stock_name: str, 
                                  date: str, df: pd.DataFrame, 
-                                 breakout_event, pre_close: float) -> Optional[ReplayTrade]:
+                                 breakout_event, pre_close: float,
+                                 data_source: str = "tick") -> Optional[ReplayTrade]:
         """模拟真起爆交易 - 集成维持能力过滤器"""
         
         if not breakout_event.push_phase:
@@ -336,12 +493,14 @@ class BehaviorReplayEngine:
             sustain_ability=sustain_ability,
             pnl_pct=pnl_pct,
             max_drawdown_pct=max_dd,
-            holding_minutes=holding_minutes
+            holding_minutes=holding_minutes,
+            data_source=data_source  # 新增：数据源标记
         )
     
     def _simulate_trap_trade(self, stock_code: str, stock_name: str,
                             date: str, df: pd.DataFrame,
-                            trap_event, pre_close: float) -> Optional[ReplayTrade]:
+                            trap_event, pre_close: float,
+                            data_source: str = "tick") -> Optional[ReplayTrade]:
         """模拟骗炮交易（用于对比分析，实际策略应过滤）"""
         if not trap_event.fake_phase:
             return None
@@ -391,7 +550,8 @@ class BehaviorReplayEngine:
             sustain_ability=sustain_ability,
             pnl_pct=pnl_pct,
             max_drawdown_pct=max_dd,
-            holding_minutes=holding_minutes
+            holding_minutes=holding_minutes,
+            data_source=data_source  # 新增：数据源标记
         )
     
     def replay_universe(self, stock_list: List[Tuple[str, str]], 

@@ -645,6 +645,142 @@ class EventLifecycleService:
         """清除缓存"""
         self._env_cache.clear()
         self._tick_cache.clear()
+    
+    def _get_market_cap_multiplier(self, code: str) -> float:
+        """
+        根据流通市值获取阈值乘数
+        
+        优先级：
+        1. Tushare实时数据（在线）
+        2. 本地equity_info/market_cap.json（离线fallback）
+        3. 默认值1.0x（中盘）
+        
+        Args:
+            code: 股票代码，如 "300017"
+            
+        Returns:
+            float: 阈值乘数 (0.8=小盘, 1.0=中盘, 1.2=大盘)
+        """
+        circ_mv = None
+        data_source = "default"
+        
+        # 1. 尝试Tushare实时获取
+        try:
+            circ_mv = self._get_circ_mv_from_tushare(code)
+            if circ_mv and circ_mv > 0:
+                data_source = "tushare"
+        except Exception as e:
+            print(f"   Tushare获取市值失败 {code}: {e}")
+        
+        # 2. 尝试本地fallback
+        if not circ_mv:
+            try:
+                circ_mv = self._get_circ_mv_from_local(code)
+                if circ_mv and circ_mv > 0:
+                    data_source = "local"
+            except Exception as e:
+                print(f"   本地市值数据失败 {code}: {e}")
+        
+        # 3. 使用默认值
+        if not circ_mv:
+            circ_mv = 50e9  # 默认50亿（中盘）
+            data_source = "default"
+        
+        # 计算乘数
+        if circ_mv < 30e9:       # 小盘<30亿
+            multiplier = 0.8
+            tier = "small"
+        elif circ_mv < 80e9:     # 中盘30-80亿
+            multiplier = 1.0
+            tier = "mid"
+        else:                    # 大盘>80亿
+            multiplier = 1.2
+            tier = "large"
+        
+        print(f"   市值分层: {code} {tier} ({circ_mv/1e9:.1f}亿) ×{multiplier} [{data_source}]")
+        return multiplier
+    
+    def _get_circ_mv_from_tushare(self, code: str) -> Optional[float]:
+        """
+        从Tushare获取流通市值
+        
+        Args:
+            code: 股票代码
+            
+        Returns:
+            Optional[float]: 流通市值（元），失败返回None
+        """
+        try:
+            # 尝试从equity_info_tushare.json读取
+            tushare_path = PROJECT_ROOT / "data" / "equity_info" / "equity_info_tushare.json"
+            if tushare_path.exists():
+                with open(tushare_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                
+                # 获取最新日期的数据
+                latest_date = data.get('latest_update', '')
+                if not latest_date:
+                    return None
+                    
+                date_data = data.get('data', {}).get(latest_date, {})
+                
+                # 尝试带后缀的代码
+                for suffix in ['.SZ', '.SH', '.BJ']:
+                    key = f"{code}{suffix}"
+                    if key in date_data:
+                        float_mv = date_data[key].get('float_mv', 0)
+                        # Tushare数据单位是万元，转换为元
+                        if float_mv > 0:
+                            return float(float_mv) * 10000
+                
+                # 尝试不带前导零
+                if code.startswith('0'):
+                    code_no_leading = code.lstrip('0')
+                    for suffix in ['.SZ', '.SH', '.BJ']:
+                        key = f"{code_no_leading}{suffix}"
+                        if key in date_data:
+                            float_mv = date_data[key].get('float_mv', 0)
+                            if float_mv > 0:
+                                return float(float_mv) * 10000
+        except Exception as e:
+            pass
+        
+        return None
+    
+    def _get_circ_mv_from_local(self, code: str) -> Optional[float]:
+        """
+        从本地JSON加载流通市值（离线fallback）
+        
+        Args:
+            code: 股票代码
+            
+        Returns:
+            Optional[float]: 流通市值（元），失败返回None
+        """
+        # 尝试多个路径
+        paths = [
+            PROJECT_ROOT / "data" / "equity_info" / "market_cap.json",
+            PROJECT_ROOT / "data" / "equity_info.json",
+            PROJECT_ROOT / "config" / "equity_info.json",
+        ]
+        
+        for path in paths:
+            if path.exists():
+                try:
+                    with open(path, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                    
+                    # 跳过metadata
+                    if code in data and not code.startswith('_'):
+                        return float(data[code].get('circ_mv', 0))
+                    
+                    # 尝试不带前导零
+                    if code.startswith('0') and code.lstrip('0') in data:
+                        return float(data[code.lstrip('0')].get('circ_mv', 0))
+                except Exception as e:
+                    continue
+        
+        return None
 
 
 # ==================== 测试代码 ====================
