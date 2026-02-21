@@ -272,13 +272,13 @@ class HalfwayReplayBacktester:
             tick_data = {
                 'stock_code': stock_code,
                 'datetime': datetime.fromtimestamp(float(current_tick['time']) / 1000),  # 🔥 V11.0修复：time字符串转float
-                'price': current_tick['last_price'],
+                'price': current_tick['lastPrice'],  # 🔥 V11.0修复：使用lastPrice而非last_price
                 'volume': current_tick['volume'],
                 'amount': current_tick.get('amount', 0),
             }
             
             # 构建上下文
-            price_history = [t['last_price'] for t in window_ticks]
+            price_history = [t['lastPrice'] for t in window_ticks]  # 🔥 V11.0修复：使用lastPrice
             volume_history = [t['volume'] for t in window_ticks]
             
             context = {
@@ -286,7 +286,7 @@ class HalfwayReplayBacktester:
                 'volume_history': volume_history,
                 'ma5': sum(price_history[-5:]) / 5,
                 'ma20': sum(price_history) / len(price_history),
-                'pre_close': current_tick.get('preClose', current_tick.get('last_price', 0)),  # 🔥 V11.0修复：添加pre_close
+                'pre_close': current_tick.get('preClose', current_tick.get('lastPrice', 0)),  # 🔥 V11.0修复：使用lastPrice
             }
             
             # 检查是否有持仓需要处理
@@ -307,7 +307,7 @@ class HalfwayReplayBacktester:
                             stock_code=stock_code,
                             entry_date=date_str,
                             entry_time=datetime.fromtimestamp(float(current_tick['time']) / 1000).strftime("%H:%M:%S"),  # 🔥 V11.0修复：time字符串转float
-                            entry_price=current_tick['last_price'],
+                            entry_price=current_tick['lastPrice'],  # 🔥 V11.0修复：使用lastPrice
                             entry_confidence=event['confidence']
                         )
                         self.open_trades[stock_code] = trade
@@ -324,7 +324,7 @@ class HalfwayReplayBacktester:
             return
         
         trade = self.open_trades[stock_code]
-        current_price = current_tick['last_price']
+        current_price = current_tick['lastPrice']  # 🔥 V11.0修复：使用lastPrice
         current_time = datetime.fromtimestamp(float(current_tick['time']) / 1000)  # 🔥 V11.0修复：time字符串转float
         entry_time = datetime.strptime(f"{trade.entry_date} {trade.entry_time}", "%Y-%m-%d %H:%M:%S")
         
