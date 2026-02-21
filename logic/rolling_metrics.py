@@ -406,8 +406,12 @@ def get_flow_ratios(self, stock_code: str) -> dict:
     sustain = self.flow_15min.total_flow / self.flow_5min.total_flow if self.flow_5min.total_flow != 0 else 0
     
     # 3. 响应效率：单位资金位移效率
-    pct_gain = (self.current_price - self.pre_close) / self.pre_close if self.pre_close > 0 else 0
-    flow_ratio = self.flow_5min.total_flow / (self.pre_close * 1e8) if self.pre_close > 0 else 0
+    # 🔥 V11.0修复：确保pre_close为数值类型，避免字符串除法错误
+    pre_close = float(self.pre_close) if self.pre_close else 0
+    current_price = float(self.current_price) if self.current_price else 0
+    
+    pct_gain = (current_price - pre_close) / pre_close if pre_close > 0 else 0
+    flow_ratio = self.flow_5min.total_flow / (pre_close * 1e8) if pre_close > 0 else 0
     response_eff = pct_gain / flow_ratio if flow_ratio > 0 else 0
     
     return {
