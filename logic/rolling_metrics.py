@@ -407,26 +407,33 @@ def get_flow_ratios(self, stock_code: str) -> dict:
             'response_eff': 单位资金位移效率
         }
     """
-    # 1. 自标准化：vs历史60日中位
-    hist_median = self.get_hist_5min_median(stock_code, days=60)
-    ratio_stock = self.flow_5min.total_flow / hist_median if hist_median > 0 else 1.0
-    
-    # 2. 维持比
-    sustain = self.flow_15min.total_flow / self.flow_5min.total_flow if self.flow_5min.total_flow != 0 else 0
-    
-    # 3. 响应效率：单位资金位移效率
-    # 🔥 V11.0修复：确保pre_close为数值类型，避免字符串除法错误
-    pre_close = float(self.pre_close) if self.pre_close else 0
-    current_price = float(self.current_price) if self.current_price else 0
-    
-    pct_gain = (current_price - pre_close) / pre_close if pre_close > 0 else 0
-    flow_ratio = self.flow_5min.total_flow / (pre_close * 1e8) if pre_close > 0 else 0
-    response_eff = pct_gain / flow_ratio if flow_ratio > 0 else 0
-    
-    return {
-        'ratio_stock': ratio_stock,
-        'sustain': sustain,
-        'response_eff': response_eff
-    }
+    try:
+        # 1. 自标准化：vs历史60日中位
+        hist_median = self.get_hist_5min_median(stock_code, days=60)
+        ratio_stock = self.flow_5min.total_flow / hist_median if hist_median > 0 else 1.0
+        
+        # 2. 维持比
+        sustain = self.flow_15min.total_flow / self.flow_5min.total_flow if self.flow_5min.total_flow != 0 else 0
+        
+        # 3. 响应效率：单位资金位移效率
+        # 🔥 V11.0修复：确保pre_close为数值类型，避免字符串除法错误
+        pre_close = float(self.pre_close) if self.pre_close else 0
+        current_price = float(self.current_price) if self.current_price else 0
+        
+        pct_gain = (current_price - pre_close) / pre_close if pre_close > 0 else 0
+        flow_ratio = self.flow_5min.total_flow / (pre_close * 1e8) if pre_close > 0 else 0
+        response_eff = pct_gain / flow_ratio if flow_ratio > 0 else 0
+        
+        return {
+            'ratio_stock': ratio_stock,
+            'sustain': sustain,
+            'response_eff': response_eff
+        }
+    except Exception as e:
+        print(f"[get_flow_ratios] 错误: {e}, stock={stock_code}")
+        print(f"  pre_close={self.pre_close} (type={type(self.pre_close)})")
+        print(f"  current_price={self.current_price} (type={type(self.current_price)})")
+        print(f"  flow_5min={self.flow_5min.total_flow} (type={type(self.flow_5min.total_flow)})")
+        return {'ratio_stock': 1.0, 'sustain': 1.0, 'response_eff': 0.01}
 
 # 将新方法添加到文件末尾
