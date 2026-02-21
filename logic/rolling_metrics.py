@@ -285,63 +285,8 @@ class RollingFlowCalculator:
         }
 
 
-class CapitalFlowService:
-    """
-    资金服务统一出口
-    CTO指令：资金因子统一出口，"资金为王"的落地实现
-    """
-    
-    def __init__(self):
-        # 每个股票一个计算器
-        self._calculators: Dict[str, RollingFlowCalculator] = {}
-        
-    def get_calculator(self, stock_code: str) -> RollingFlowCalculator:
-        """获取或创建指定股票的计算器"""
-        if stock_code not in self._calculators:
-            self._calculators[stock_code] = RollingFlowCalculator()
-        return self._calculators[stock_code]
-    
-    def process_tick(self, stock_code: str, tick_data: Dict, 
-                     last_tick_data: Optional[Dict] = None,
-                     pre_close: Optional[float] = None) -> RollingFlowMetrics:
-        """
-        处理tick数据并返回资金指标
-        
-        Args:
-            stock_code: 股票代码
-            tick_data: 当前tick
-            last_tick_data: 上一tick
-            pre_close: 昨收价（首次调用时需要）
-            
-        Returns:
-            RollingFlowMetrics: 资金指标
-        """
-        calc = self.get_calculator(stock_code)
-        
-        # 设置昨收价
-        if pre_close and calc.pre_close == 0:
-            calc.set_pre_close(pre_close)
-        
-        return calc.add_tick(tick_data, last_tick_data)
-    
-    def reset(self, stock_code: Optional[str] = None):
-        """重置计算器"""
-        if stock_code:
-            if stock_code in self._calculators:
-                del self._calculators[stock_code]
-        else:
-            self._calculators.clear()
 
-
-# 全局实例
-_capital_flow_service = CapitalFlowService()
-
-
-def get_capital_flow_service() -> CapitalFlowService:
-    """获取资金服务单例"""
-    return _capital_flow_service
-
-
+# 全局统一函数
 def calculate_true_change_pct(current_price: float, pre_close: float) -> float:
     """
     计算真实涨幅（相对昨收）
@@ -350,7 +295,6 @@ def calculate_true_change_pct(current_price: float, pre_close: float) -> float:
     if pre_close > 0:
         return (current_price - pre_close) / pre_close * 100
     return 0.0
-
 
 # ==================== 测试代码 ====================
 
