@@ -37,11 +37,14 @@ class HalfwayBreakoutDetector(BaseEventDetector):
     
     触发逻辑（根据网宿A/B测试铁证）：
     1. 真实涨幅突破阈值（2%或5%）- 基于pre_close
-    2. 资金强度评分 >= 0.6（flow_5min/流通市值综合评分）
+    2. 资金强度评分 >= 0.35（flow_5min/流通市值综合评分）
     3. 15分钟流/5分钟流 > 1.0（资金持续性）
+    
+    Note: 0.35阈值基于网宿科技样本（流通市值510亿，5分钟流587M，ratio≈1.15%，
+    对应intensity_score约0.35）。常熟气得榜样本验证此阈值可捕获有效信号。
     """
 
-    # 🔥 Phase 1: Ratio化阈值参数（调整后）
+    # 🔥 Phase 1: Ratio化阈值参数（网宿A/B测试校准后）
     MIN_INTENSITY_SCORE = 0.35  # 资金强度最小评分（0-1），网宿约0.3-0.4
     RATIO_STOCK_MIN = 0.01      # flow_5min/流通市值最小1%（网宿587M/510亿≈1.15%）
     """
