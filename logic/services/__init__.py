@@ -8,6 +8,7 @@ Logic层统一服务门面 (Services Facade)
 - StrategyService: 策略检测（Halfway/Leader/TrueAttack）
 - RiskService: 风险控制
 - ConfigService: 配置管理
+- EventLifecycleService: 事件生命周期分析（Phase 3新增）
 """
 
 from .market_service import MarketService
@@ -15,11 +16,13 @@ from .capital_service import CapitalService
 from .strategy_service import StrategyService
 from .risk_service import RiskService
 from .config_service import ConfigService
+from .event_lifecycle_service import EventLifecycleService
 
 __all__ = [
     'MarketService',
     'CapitalService', 
     'StrategyService',
     'RiskService',
-    'ConfigService'
+    'ConfigService',
+    'EventLifecycleService'
 ]

@@ -28,6 +28,7 @@ from logic.services.data_service import data_service
 from logic.qmt_historical_provider import QMTHistoricalProvider
 from logic.rolling_metrics import RollingFlowCalculator
 from logic.event_lifecycle_analyzer import EventLifecycleAnalyzer
+from logic.services.event_lifecycle_service import EventLifecycleService
 
 
 @dataclass
@@ -134,7 +135,8 @@ class BehaviorReplayEngine:
                  initial_capital: float = 1000000.0,  # 初始资金100万
                  max_positions: int = 3,  # 小资金最多3只
                  position_pct_per_trade: float = 0.3,  # 单票30%仓位
-                 sustain_threshold: float = 2.0):  # 维持能力阈值（%）
+                 sustain_threshold: float = 2.0,  # 维持能力阈值（%）
+                 use_sustain_filter: bool = True):  # 新增：是否使用维持能力过滤器
         self.initial_capital = initial_capital
         self.max_positions = max_positions
         self.position_pct_per_trade = position_pct_per_trade
@@ -146,6 +148,15 @@ class BehaviorReplayEngine:
             trap_reversal_threshold=3.0,
             max_drawdown_threshold=5.0
         )
+        
+        # 新增：维持能力服务
+        self.use_sustain_filter = use_sustain_filter
+        if use_sustain_filter:
+            self.lifecycle_service = EventLifecycleService()
+            print("✅ 维持能力过滤器已启用")
+        else:
+            self.lifecycle_service = None
+            print("⚠️ 维持能力过滤器已禁用（回退到原始逻辑）")
         
         # 统计结果
         self.all_trades: List[ReplayTrade] = []
@@ -237,9 +248,47 @@ class BehaviorReplayEngine:
     def _simulate_breakout_trade(self, stock_code: str, stock_name: str, 
                                  date: str, df: pd.DataFrame, 
                                  breakout_event, pre_close: float) -> Optional[ReplayTrade]:
-        """模拟真起爆交易"""
+        """模拟真起爆交易 - 集成维持能力过滤器"""
+        
         if not breakout_event.push_phase:
             return None
+        
+        # 新增：维持能力过滤器
+        if self.use_sustain_filter and self.lifecycle_service:
+            try:
+                lifecycle_result = self.lifecycle_service.analyze(stock_code, date)
+                
+                # 过滤器规则：
+                # 1. sustain_score < 0.5 → 跳过（维持能力不足）
+                # 2. env_score < 0.4 → 跳过（环境太差）
+                # 3. is_true_breakout is False → 跳过（预测为骗炮）
+                
+                sustain_score = lifecycle_result.get('sustain_score', 0)
+                env_score = lifecycle_result.get('env_score', 0)
+                is_true_breakout = lifecycle_result.get('is_true_breakout')
+                
+                if sustain_score < 0.5:
+                    print(f"   ⚠️ 过滤器：{stock_code} {date} sustain_score={sustain_score:.2f} < 0.5，跳过")
+                    return None
+                    
+                if env_score < 0.4:
+                    print(f"   ⚠️ 过滤器：{stock_code} {date} env_score={env_score:.2f} < 0.4，跳过")
+                    return None
+                    
+                if is_true_breakout is False:
+                    print(f"   ⚠️ 过滤器：{stock_code} {date} 预测为骗炮，跳过")
+                    return None
+                
+                print(f"   ✅ 过滤器通过：{stock_code} {date} sustain={sustain_score:.2f}, env={env_score:.2f}")
+                
+                # 将维持能力信息存入trade对象
+                sustain_ability = lifecycle_result.get('sustain_duration_min', 0)
+                
+            except Exception as e:
+                print(f"   ⚠️ 维持能力分析失败：{e}，使用原始逻辑")
+                sustain_ability = 0
+        else:
+            sustain_ability = 0
         
         push = breakout_event.push_phase
         
@@ -264,7 +313,11 @@ class BehaviorReplayEngine:
         # 计算维持能力：推升结束后，价格保持在(entry_price * 0.98)以上的时长
         sustain_price = entry_price * (1 - self.sustain_threshold / 100)
         sustain_df = hold_df[hold_df['price'] >= sustain_price]
-        sustain_ability = len(sustain_df) * 3 / 60 if len(sustain_df) > 0 else 0  # 转换为分钟
+        sustain_ability_calc = len(sustain_df) * 3 / 60 if len(sustain_df) > 0 else 0  # 转换为分钟
+        
+        # 优先使用service返回的维持能力，如果没有则使用计算的
+        if sustain_ability == 0:
+            sustain_ability = sustain_ability_calc
         
         holding_minutes = (len(df) - entry_idx) * 3 / 60  # 约3秒一个tick
         
@@ -457,7 +510,7 @@ class BehaviorReplayEngine:
         return pd.DataFrame(stats_data)
     
     def generate_report(self, output_dir: Path):
-        """生成回测报告"""
+        """生成回测报告 - 包含维持能力过滤器统计"""
         output_dir.mkdir(parents=True, exist_ok=True)
         
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -492,6 +545,22 @@ class BehaviorReplayEngine:
             print("\n特征表现统计:")
             print(stats_df.to_string(index=False))
         
+        # 新增：维持能力过滤器统计
+        if self.use_sustain_filter:
+            print("\n" + "-"*80)
+            print("维持能力过滤器统计")
+            print("-"*80)
+            
+            filtered_trades = [t for t in self.all_trades if t.sustain_ability > 0]
+            if filtered_trades:
+                avg_sustain = sum(t.sustain_ability for t in filtered_trades) / len(filtered_trades)
+                print(f"通过过滤器的交易数: {len(filtered_trades)}/{len(self.all_trades)}")
+                print(f"平均维持时长: {avg_sustain:.1f}分钟")
+                
+                # 对比有过滤器 vs 无过滤器
+                win_rate_filtered = sum(1 for t in filtered_trades if t.pnl_pct > 0) / len(filtered_trades)
+                print(f"过滤器后胜率: {win_rate_filtered:.1%}")
+        
         print("\n" + "="*80)
         print(f"报告已保存:")
         print(f"  交易记录: {trades_file}")
@@ -501,31 +570,47 @@ class BehaviorReplayEngine:
 
 # ==================== 测试代码 ====================
 if __name__ == "__main__":
-    print("行为回放引擎测试")
+    print("行为回放引擎测试 - 维持能力过滤器对比")
     print("="*80)
     
-    # 测试股票池（网宿科技 + 其他几只）
     test_stocks = [
         ("300017", "网宿科技"),
         ("000547", "航天发展"),
         ("300058", "蓝色光标"),
     ]
     
-    # 创建引擎
-    engine = BehaviorReplayEngine(
-        initial_capital=1000000.0,
-        max_positions=3,
-        position_pct_per_trade=0.3,
-        sustain_threshold=2.0
+    # 测试1：有过滤器
+    print("\n【测试1】启用维持能力过滤器")
+    engine_with_filter = BehaviorReplayEngine(
+        use_sustain_filter=True
     )
-    
-    # 运行回测
-    results = engine.replay_universe(
+    results_with = engine_with_filter.replay_universe(
         stock_list=test_stocks,
         start_date="2026-01-20",
         end_date="2026-01-31"
     )
+    engine_with_filter.generate_report(PROJECT_ROOT / "data" / "backtest_results" / "with_filter")
     
-    # 生成报告
-    output_dir = PROJECT_ROOT / "data" / "backtest_results"
-    engine.generate_report(output_dir)
+    # 测试2：无过滤器（原始逻辑）
+    print("\n【测试2】禁用维持能力过滤器（原始逻辑）")
+    engine_without_filter = BehaviorReplayEngine(
+        use_sustain_filter=False
+    )
+    results_without = engine_without_filter.replay_universe(
+        stock_list=test_stocks,
+        start_date="2026-01-20",
+        end_date="2026-01-31"
+    )
+    engine_without_filter.generate_report(PROJECT_ROOT / "data" / "backtest_results" / "without_filter")
+    
+    # 对比结果
+    print("\n" + "="*80)
+    print("对比结果")
+    print("="*80)
+    print(f"有过滤器交易数: {len(engine_with_filter.all_trades)}")
+    print(f"无过滤器交易数: {len(engine_without_filter.all_trades)}")
+    if engine_with_filter.all_trades and engine_without_filter.all_trades:
+        win_rate_with = sum(1 for t in engine_with_filter.all_trades if t.pnl_pct > 0) / len(engine_with_filter.all_trades)
+        win_rate_without = sum(1 for t in engine_without_filter.all_trades if t.pnl_pct > 0) / len(engine_without_filter.all_trades)
+        print(f"有过滤器胜率: {win_rate_with:.1%}")
+        print(f"无过滤器胜率: {win_rate_without:.1%}")
