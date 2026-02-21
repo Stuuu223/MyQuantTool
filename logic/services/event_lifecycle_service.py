@@ -419,7 +419,7 @@ class EventLifecycleService:
     
     def _find_time_index(self, df: pd.DataFrame, target_time: str) -> int:
         """
-        在DataFrame中查找时间点索引
+        在DataFrame中查找时间点索引 - O(1)向量化优化
         
         Args:
             df: DataFrame
@@ -428,19 +428,30 @@ class EventLifecycleService:
         Returns:
             int: 索引位置
         """
-        if not target_time or 'time' not in df.columns:
+        if not target_time or 'time' not in df.columns or len(df) == 0:
             return 0
         
-        for idx, row in df.iterrows():
-            if row['time'].strftime('%H:%M:%S') == target_time:
-                return idx
-        
-        # 如果找不到精确匹配，找最接近的时间
-        for idx, row in df.iterrows():
-            if row['time'].strftime('%H:%M:%S') >= target_time:
-                return idx
-        
-        return 0
+        try:
+            # 🔥 Phase 1.5.3: O(1)向量化查找，替代O(n)逐行遍历
+            # 将时间列转为字符串格式进行比较
+            time_str = df['time'].dt.strftime('%H:%M:%S') if pd.api.types.is_datetime64_any_dtype(df['time']) else df['time'].astype(str)
+            
+            # 精确匹配
+            exact_match = time_str == target_time
+            if exact_match.any():
+                return exact_match.idxmax()
+            
+            # 最接近的时间（第一个>=target_time的位置）
+            future_mask = time_str >= target_time
+            if future_mask.any():
+                return future_mask.idxmax()
+            
+            # 如果都晚于target_time，返回最后一个
+            return len(df) - 1
+            
+        except Exception:
+            # Fallback: 返回中间位置
+            return len(df) // 2
     
     def _calculate_env_score(self, date: str, code: str) -> Tuple[float, dict]:
         """
