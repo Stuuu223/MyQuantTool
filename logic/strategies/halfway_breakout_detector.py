@@ -40,8 +40,10 @@ class HalfwayBreakoutDetector(BaseEventDetector):
     2. 资金强度评分 >= 0.35（flow_5min/流通市值综合评分）
     3. 15分钟流/5分钟流 > 1.0（资金持续性）
     
-    Note: 0.35阈值基于网宿科技样本（流通市值510亿，5分钟流587M，ratio≈1.15%，
-    对应intensity_score约0.35）。常熟气得榜样本验证此阈值可捕获有效信号。
+    Note: 0.35阈值基于网宿科技2026-01-26真实样本推导：
+    - 流通市值510亿，5分钟主力净流入587M，ratio=1.15%
+    - intensity_score = 0.5*ratio_score + 0.3*sustain_score + 0.2*day_score ≈ 0.35
+    - 此为单一样本反推值，需更多样本验证后可能调整
     """
 
     # 🔥 Phase 1: Ratio化阈值参数（网宿A/B测试校准后）
