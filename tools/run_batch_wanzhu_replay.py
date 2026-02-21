@@ -607,6 +607,24 @@ def extract_wanzhu_features():
             print(f"   ❌ 处理 {date_str} 失败: {e}")
             import traceback
             traceback.print_exc()
+            
+            # 🔥 即使失败也要记录到报告（标记为失败）
+            failed_features = {
+                'code': code,
+                'name': name,
+                'date': date_str,
+                'total_ticks': 0,
+                'total_events': 0,
+                'total_net_inflow': 0,
+                'final_price': 0,
+                'final_change_pct': 0,
+                'sustain_score': 0,
+                'env_score': 0,
+                'is_true_breakout': False,
+                'key_moments': [],
+                'error': str(e)
+            }
+            all_features.append(failed_features)
             continue
     
     # 保存特征结果
