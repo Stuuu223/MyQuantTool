@@ -24,9 +24,10 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from logic.qmt_historical_provider import QMTHistoricalProvider
 
 # 测试参数
-STOCK_CODE = '000547.SZ'
+STOCK_CODE = '300017.SZ'
 TEST_DATE = '20260126'
-CIRC_MV_BN = 158.9  # 流通市值（亿元），从缓存文件读取
+# ✅ 使用xtdata正确股本：23.06亿股（FloatVolume）
+# 流通市值519.34亿仅用于验证，不参与计算
 
 def load_hist_median_cache():
     """加载hist_median缓存"""
@@ -92,76 +93,77 @@ def test_raw_calculation():
         df['datetime'] = pd.to_datetime(df['time_sec'] + 8*3600, unit='s')
         print(f"  时间范围: {df['datetime'].min()} ~ {df['datetime'].max()}")
     
-    # 4. 计算5分钟净流入（9:35-9:40）
-    print(f"\n【计算5分钟净流入】")
-    start_time_str = "2026-01-26 09:35:00"
-    end_time_str = "2026-01-26 09:40:00"
+    # 4. 计算早盘9:30-10:10的每个5分钟切片（CTO指定分析时段）
+    print(f"\n【早盘5分钟切片分析 - CTO指定时段 09:30-10:10】")
     
-    mask = (df['datetime'] >= start_time_str) & (df['datetime'] <= end_time_str)
-    window_df = df[mask].copy()
+    # CTO指定：分析9:30-10:10的每个5分钟切片
+    print(f"  数据实际时间范围: {df['datetime'].min()} ~ {df['datetime'].max()}")
     
-    print(f"  时间窗口: {start_time_str} ~ {end_time_str}")
-    print(f"  窗口内Tick数: {len(window_df)}")
+    # 确保volume_delta已计算
+    df = df.sort_values('datetime').reset_index(drop=True)
+    df['volume_delta'] = df['volume'].diff().fillna(0)
+    df['volume_delta'] = df['volume_delta'].clip(lower=0)
     
-    if len(window_df) == 0:
-        print("  ⚠️ 窗口内无数据，尝试查找其他时间段...")
-        # 打印所有可用时间段
-        print(f"  数据实际时间范围: {df['datetime'].min()} ~ {df['datetime'].max()}")
-        return
+    # 获取早盘价格基准（9:30开盘价）
+    morning_start = "2026-01-26 09:30:00"
+    morning_mask = df['datetime'] >= morning_start
+    morning_df = df[morning_mask]
     
-    # 方法A: 使用amount字段（如果存在）
-    if 'amount' in window_df.columns:
-        # 计算逐笔成交额
-        window_df = window_df.sort_values('datetime').reset_index(drop=True)
-        window_df['amount_delta'] = window_df['amount'].diff().fillna(0)
-        window_df['amount_delta'] = window_df['amount_delta'].clip(lower=0)
+    if len(morning_df) > 0:
+        open_price = morning_df['lastPrice'].iloc[0]
+        print(f"\n  早盘开盘价(9:30): {open_price:.2f}元")
+    
+    # 分析每个5分钟窗口
+    print(f"\n  【5分钟切片详细数据 - 9:30-10:10】")
+    print(f"  {'时间窗口':<20} {'成交量(万股)':<15} {'换手率(%)':<12} {'均价':<10} {'涨幅(%)':<10} {'ratio_stock'}")
+    print(f"  {'-'*90}")
+    
+    time_windows = [
+        ("09:30:00", "09:35:00"),
+        ("09:35:00", "09:40:00"),
+        ("09:40:00", "09:45:00"),
+        ("09:45:00", "09:50:00"),
+        ("09:50:00", "09:55:00"),
+        ("09:55:00", "10:00:00"),
+        ("10:00:00", "10:05:00"),
+        ("10:05:00", "10:10:00"),
+    ]
+    
+    morning_ratios = []
+    for start_str, end_str in time_windows:
+        window_mask = (df['datetime'] >= f"2026-01-26 {start_str}") & (df['datetime'] < f"2026-01-26 {end_str}")
+        window_df = df[window_mask].copy()
         
-        total_amount = window_df['amount_delta'].sum()
-        print(f"\n  【方法A: Amount字段】")
-        print(f"    5分钟总成交额: {total_amount/1e4:.2f}万元")
-    
-    # 方法B: 使用price * volume计算
-    if 'lastPrice' in window_df.columns and 'volume' in window_df.columns:
-        window_df = window_df.sort_values('datetime').reset_index(drop=True)
-        window_df['volume_delta'] = window_df['volume'].diff().fillna(0)
-        window_df['volume_delta'] = window_df['volume_delta'].clip(lower=0)
+        if len(window_df) == 0:
+            continue
         
-        # 估算成交额 = 均价 * 成交量
-        avg_price = window_df['lastPrice'].mean()
-        total_volume = window_df['volume_delta'].sum()
-        estimated_amount = avg_price * total_volume
-        
-        print(f"\n  【方法B: Price * Volume估算】")
-        print(f"    窗口均价: {avg_price:.2f}元")
-        print(f"    5分钟成交量: {total_volume/1e4:.2f}万股")
-        print(f"    估算成交额: {estimated_amount/1e4:.2f}万元")
-    
-    # 5. 计算换手率
-    print(f"\n【计算换手率】")
-    if 'volume' in window_df.columns:
-        # 5分钟成交量（股）
+        # 计算指标
         vol_5min = window_df['volume_delta'].sum()
-        # 换手率 = 成交量 / 流通股本
         turnover_5min = vol_5min / float_volume if float_volume > 0 else 0
+        avg_price = window_df['lastPrice'].mean() if len(window_df) > 0 else 0
         
-        print(f"  5分钟成交量: {vol_5min/1e4:.2f}万股")
-        print(f"  流通股本: {float_volume/1e8:.2f}亿股")
-        print(f"  5分钟换手率: {turnover_5min:.6f} ({turnover_5min*100:.4f}%)")
+        # 计算涨幅（相对昨收）
+        change_pct = ((avg_price - open_price) / open_price * 100) if open_price > 0 else 0
+        
+        # 计算ratio
+        ratio_stock = turnover_5min / hist_median if hist_median > 0 else 0
+        morning_ratios.append({
+            'window': f"{start_str}-{end_str}",
+            'vol': vol_5min,
+            'turnover': turnover_5min,
+            'price': avg_price,
+            'change': change_pct,
+            'ratio': ratio_stock
+        })
+        
+        print(f"  {start_str}-{end_str:<9} {vol_5min/1e4:>10.2f}    {turnover_5min*100:>10.4f}  {avg_price:>8.2f}   {change_pct:>+7.2f}    {ratio_stock:>8.2f}")
     
-    # 6. 计算ratio_stock
-    print(f"\n【计算ratio_stock】")
-    if hist_median > 0:
-        ratio_stock = turnover_5min / hist_median
-        print(f"  formula: ratio_stock = turnover_5min / hist_median")
-        print(f"  ratio_stock = {turnover_5min:.6f} / {hist_median:.2e}")
-        print(f"  ratio_stock = {ratio_stock:.2f}")
-        
-        if ratio_stock >= 15:
-            print(f"  ✅ 触发阈值! ratio_stock >= 15")
-        else:
-            print(f"  ❌ 未触发阈值 (需要>=15)")
-    else:
-        print(f"  ⚠️ hist_median为0，无法计算ratio")
+    # 找出最大ratio窗口
+    if morning_ratios:
+        max_ratio_window = max(morning_ratios, key=lambda x: x['ratio'])
+        print(f"\n  ✅ 早盘最大ratio窗口: {max_ratio_window['window']}")
+        print(f"     ratio_stock={max_ratio_window['ratio']:.2f}, 涨幅={max_ratio_window['change']:+.2f}%")
+        print(f"     换手率={max_ratio_window['turnover']*100:.4f}%, 成交量={max_ratio_window['vol']/1e4:.2f}万股")
     
     # 7. 单位错配排查
     print(f"\n【单位错配排查】")
