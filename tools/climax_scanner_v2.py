@@ -141,8 +141,9 @@ def scan_day(stock_code, date, top_n=5):
         if row['vol_delta'] <= 0 or row['lastPrice'] <= 0:
             continue
         
-        amount = row['vol_delta'] * row['lastPrice']
-        turnover = row['vol_delta'] / float_vol
+        # CTO紧急修复: QMT volume单位是手，需×100转股
+        amount = row['vol_delta'] * 100 * row['lastPrice']  # 成交额(元)
+        turnover = row['vol_delta'] * 100 / float_vol  # 换手率 (手→股)
         price_change = (row['lastPrice'] - prev_price) / prev_price * 100 if prev_price > 0 else 0
         
         # 强度得分 = 成交额(万) × 涨幅绝对值
