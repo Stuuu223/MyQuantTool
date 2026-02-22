@@ -34,7 +34,8 @@ from datetime import datetime
 
 from logic.strategies.event_detector import EventManager, BaseEventDetector
 from logic.strategies.opening_weak_to_strong_detector import OpeningWeakToStrongDetector
-from logic.strategies.halfway_breakout_detector import HalfwayBreakoutDetector
+# NOTE: HalfwayBreakoutDetector已归档至archive/redundant_halfway/
+# from logic.strategies.halfway_breakout_detector import HalfwayBreakoutDetector
 from logic.strategies.leader_candidate_detector import LeaderCandidateDetector
 from logic.strategies.dip_buy_candidate_detector import DipBuyCandidateDetector
 from logic.analyzers.trap_detector import TrapDetector
