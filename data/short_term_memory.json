@@ -1,0 +1,12 @@
+{
+  "300986.SZ": {
+    "stock_code": "300986.SZ",
+    "date": "20251231",
+    "close_price": 11.18,
+    "turnover_rate": 19.413658536585366,
+    "is_strong_momentum": true,
+    "max_amount_window": "15:30",
+    "max_amount": 266964984.0,
+    "score": 70.0
+  }
+}
