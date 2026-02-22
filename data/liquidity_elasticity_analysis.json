@@ -1,0 +1,42 @@
+[
+  {
+    "stock_code": "300017.SZ",
+    "date": "20260126",
+    "window_time": "11:25",
+    "amount_wan": 827.9653139999999,
+    "turnover_5min_pct": 0.029918851744556055,
+    "money_density": 0.00029918851744556056,
+    "day_change_pct": 18.181818181818173,
+    "max_change_pct": 18.181818181818173
+  },
+  {
+    "stock_code": "301005.SZ",
+    "date": "20251205",
+    "window_time": "09:30",
+    "amount_wan": 620.8332,
+    "turnover_5min_pct": 0.011421299797866139,
+    "money_density": 0.00011421299797866139,
+    "day_change_pct": 17.963057108964588,
+    "max_change_pct": 17.963057108964588
+  },
+  {
+    "stock_code": "300986.SZ",
+    "date": "20251231",
+    "window_time": "14:25",
+    "amount_wan": 35.862372,
+    "turnover_5min_pct": 0.013252909090909093,
+    "money_density": 0.00013252909090909093,
+    "day_change_pct": 8.54368932038834,
+    "max_change_pct": 9.70873786407767
+  },
+  {
+    "stock_code": "300986.SZ",
+    "date": "20260105",
+    "window_time": "09:40",
+    "amount_wan": 73.87747999999999,
+    "turnover_5min_pct": 0.027301359940872134,
+    "money_density": 0.00027301359940872134,
+    "day_change_pct": 9.017059301380986,
+    "max_change_pct": 9.017059301380986
+  }
+]
