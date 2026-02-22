@@ -67,15 +67,15 @@ class DynamicUniverseBuilder:
     
     def __init__(
         self,
-        min_float_cap: float = 20.0,  # 亿元
-        min_avg_amount: float = 5000.0,  # 万元
+        # CTO指令：删除市值门槛，只看流动性！
+        min_avg_amount: float = 3000.0,  # 万元 - 唯一底线：能容纳小资金进出
         volume_ratio_threshold: float = 3.0,
         volume_ratio_percentile: float = 0.05,  # Top 5%
         atr_ratio_threshold: float = 2.0,
         max_universe_size: int = 150
     ):
-        self.min_float_cap = min_float_cap
-        self.min_avg_amount = min_avg_amount
+        # 删除：self.min_float_cap - Magic Number已死！
+        self.min_avg_amount = min_avg_amount  # 流动性底线
         self.volume_ratio_threshold = volume_ratio_threshold
         self.volume_ratio_percentile = volume_ratio_percentile
         self.atr_ratio_threshold = atr_ratio_threshold
@@ -110,7 +110,7 @@ class DynamicUniverseBuilder:
         # 防线A：剔除微盘股和僵尸股
         candidates_a = self._defense_line_a(stock_list, date)
         print(f"   通过防线A: {len(candidates_a)} 只")
-        print(f"   过滤条件: 流通市值>{self.min_float_cap}亿, 日均成交>{self.min_avg_amount}万")
+        print(f"   过滤条件: 日均成交>{self.min_avg_amount}万 (只看流动性，不管市值！)")
         
         if len(candidates_a) == 0:
             print("   ⚠️ 防线A过滤后无候选股票")
@@ -157,24 +157,22 @@ class DynamicUniverseBuilder:
         date: str
     ) -> List[str]:
         """
-        防线A：物理隔离死水
+        防线A：物理隔离死水 - CTO最终修正：只看Real Money，不管市值！
         
-        过滤条件：
-        - 流通市值 > 20亿
-        - 5日日均成交额 > 5000万
+        删除：流通市值 > 20亿 (Magic Number已死！)
+        保留：5日日均成交 > 3000万 (流动性底线，能容纳小资金进出)
+        
+        哲学：只要有人玩（流动性），不管盘子大小！
         """
         survivors = []
         
         for stock_code in stock_list:
             try:
-                # 获取流通市值（亿元）
-                float_cap = self._get_float_cap(stock_code, date)
-                
-                # 获取5日日均成交额（万元）
+                # 获取5日日均成交额（万元）- 唯一底线
                 avg_amount = self._get_avg_amount(stock_code, date, days=5)
                 
-                # 防线A检查
-                if float_cap >= self.min_float_cap and avg_amount >= self.min_avg_amount:
+                # 防线A检查：只看流动性！不看市值！
+                if avg_amount >= self.min_avg_amount:
                     survivors.append(stock_code)
                     
             except Exception as e:
@@ -279,22 +277,25 @@ class DynamicUniverseBuilder:
     
     def _calculate_composite_score(self, metrics: StockMetrics) -> float:
         """
-        计算综合得分
+        计算综合得分 - CTO最终修正：量比霸权！
         
-        权重：
-        - 量比：40%
-        - ATR比率：30%
-        - 换手率：30%
+        权重调整：
+        - 量比：60% (CTO指令：量比是异动核心证明！)
+        - ATR比率：25% 
+        - 换手率：15%
+        
+        逻辑：只有量比能证明"平时不成交，今天突然爆天量"的游资点火！
         """
-        # 标准化各指标（使用sigmoid函数映射到0-100）
-        volume_score = min(100, metrics.volume_ratio * 10)  # 量比3分->30分
-        atr_score = min(100, metrics.atr_ratio * 25)  # ATR比2->50分
-        turnover_score = min(100, metrics.turnover_rate * 5)  # 换手2%->10分
+        # 标准化各指标
+        volume_score = min(100, metrics.volume_ratio * 12)  # 量比8.5分->100分
+        atr_score = min(100, metrics.atr_ratio * 28)  # ATR比3.5->98分
+        turnover_score = min(100, metrics.turnover_rate * 5)  # 换手19.41%->97分
         
+        # CTO指令：量比权重60%，体现异动霸权！
         composite = (
-            volume_score * 0.4 +
-            atr_score * 0.3 +
-            turnover_score * 0.3
+            volume_score * 0.60 +  # 量比霸权！
+            atr_score * 0.25 +
+            turnover_score * 0.15
         )
         
         return composite
