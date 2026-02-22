@@ -13,7 +13,8 @@ from logic.services.data_service import DataService
 from logic.scoring.flow_intensity_scorer import FlowIntensityScorer, calculate_intensity
 
 # 检测器层（事件检测）
-from logic.strategies.halfway_breakout_detector import HalfwayBreakoutDetector
+# NOTE: HalfwayBreakoutDetector已归档至archive/redundant_halfway/，使用UnifiedWarfareCore替代
+from logic.strategies.unified_warfare_core import UnifiedWarfareCore
 from logic.strategies.event_detector import BaseEventDetector, TradingEvent, EventType
 
 # 数据源层（QMT历史数据）
@@ -27,8 +28,8 @@ __all__ = [
     'FlowIntensityScorer',
     'calculate_intensity',
     
-    # 事件检测
-    'HalfwayBreakoutDetector',
+    # 事件检测 (V17: 使用UnifiedWarfareCore替代HalfwayBreakoutDetector)
+    'UnifiedWarfareCore',
     'BaseEventDetector',
     'TradingEvent',
     'EventType',
