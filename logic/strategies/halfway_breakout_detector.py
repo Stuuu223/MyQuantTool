@@ -159,7 +159,7 @@ class HalfwayBreakoutDetector(BaseEventDetector):
             # 🔥 V11.0: 分层ratio触发检查
             if ratios['ratio_stock'] < ratio_thresh:
                 return None  # ratio不达标
-            if ratios['sustain'] < 1.0:
+            if ratios['sustain_ratio'] < 1.0:
                 return None  # 持续性不达标
             if ratios['response_eff'] < 0.05:
                 return None  # 响应效率不达标  # 涨幅不足2%，不进入资金判断

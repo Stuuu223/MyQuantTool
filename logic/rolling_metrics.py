@@ -442,7 +442,7 @@ class RollingFlowCalculator:
             - flow_5min 绝对值极小（< 1e4，过滤竞价噪声）
         """
         if self.last_metrics is None:
-            return {'ratio_stock': 1.0, 'sustain': 1.0, 'response_eff': 0.1}
+            return {'ratio_stock': 1.0, 'sustain_ratio': 1.0, 'response_eff': 0.1}
 
         # 1. 从缓存读取基准（不调 xtdata，不 fallback）
         hist_median = self.get_hist_turnover_median(stock_code)
@@ -457,7 +457,7 @@ class RollingFlowCalculator:
             sustain = flow_15min / flow_5min if abs(flow_5min) > 1e4 else 0
             return {
                 'ratio_stock': ratio_stock,
-                'sustain': sustain,
+                'sustain_ratio': sustain,
                 'response_eff': 0.1
             }
 
@@ -470,18 +470,18 @@ class RollingFlowCalculator:
             sustain = flow_15min / flow_5min if abs(flow_5min) > 1e4 else 0
             return {
                 'ratio_stock': ratio_stock,
-                'sustain': sustain,
+                'sustain_ratio': sustain,
                 'response_eff': 0.1
             }
 
-        flow_5min = self.last_metrics.flow_5min.total_flow
+        flow_5min = self.last_metrics.flow_15min.total_flow
         flow_15min = self.last_metrics.flow_15min.total_flow
 
         # 2. 过滤竞价噪声（lastPrice=0 的 tick 产生的极小 flow）
         if abs(flow_5min) < 1e4:
             return {
                 'ratio_stock': 0.0,
-                'sustain': flow_15min / flow_5min if abs(flow_5min) > 1e4 else 0,
+                'sustain_ratio': flow_15min / flow_5min if abs(flow_5min) > 1e4 else 0,
                 'response_eff': 0.1
             }
 
@@ -491,7 +491,7 @@ class RollingFlowCalculator:
         if self.current_price <= 0:
             return {
                 'ratio_stock': 1.0,
-                'sustain': flow_15min / flow_5min if abs(flow_5min) > 1e4 else 0,
+                'sustain_ratio': flow_15min / flow_5min if abs(flow_5min) > 1e4 else 0,
                 'response_eff': 0.1
             }
 
@@ -510,6 +510,7 @@ class RollingFlowCalculator:
         return {
             "ratio_stock": ratio_stock,
             "sustain_ratio": sustain_ratio,
+            "response_eff": 0.1,                # 默认响应效率，与早期返回路径保持一致
             "turnover_5min": turnover_5min,    # 调试用
             "hist_median": hist_median,         # 调试用
             "flow_5min": flow_5min              # 调试用

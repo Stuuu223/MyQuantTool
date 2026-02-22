@@ -46,6 +46,9 @@ if len(tick_df) > 0:
     detector = HalfwayBreakoutDetector()
     calc = RollingFlowCalculator()
     
+    # ✅ 使用CTO定下的标准阈值（严禁修改）
+    print(f"⚙️ 标准阈值: ratio_stock>=15, intensity>={detector.MIN_INTENSITY_SCORE}")
+    
     # 设置昨收价
     if len(tick_df) > 0:
         pre_close = tick_df['lastPrice'].iloc[0] * 0.98
