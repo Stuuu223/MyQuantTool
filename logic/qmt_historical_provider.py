@@ -123,16 +123,28 @@ class QMTHistoricalProvider:
 
     def get_raw_ticks(self) -> pd.DataFrame:
         """
-        获取原始Tick数据
-
+        获取原始Tick数据 - V14路径修复版
+        
+        QMT tick文件是二进制格式，需要使用xtdata读取。
+        
         Returns:
             pd.DataFrame: 包含Tick数据的DataFrame
         """
-        # 确保数据存在
-        self._ensure_local_history()
-
         try:
+            # 先尝试配置xtdata数据目录
             xtdata = self._get_xtdata()
+            
+            # 配置数据目录 - 使用项目目录
+            from pathlib import Path
+            project_root = Path(__file__).parent.parent
+            data_dir = str(project_root / "data" / "qmt_data")
+            
+            # 设置数据目录
+            if hasattr(xtdata, 'default_data_dir'):
+                xtdata.default_data_dir = data_dir
+            if hasattr(xtdata, '__data_dir_from_server'):
+                xtdata.__data_dir_from_server = data_dir
+            
             # 读取Tick数据
             df = xtdata.get_local_data(
                 field_list=[
@@ -146,13 +158,26 @@ class QMTHistoricalProvider:
                 end_time=self.end_time
             )
 
-            if self.stock_code not in df or df[self.stock_code] is None:
+            if df is None or self.stock_code not in df:
+                print(f"❌ 未获取到数据: {self.stock_code}")
                 return pd.DataFrame()
 
             tick_df = df[self.stock_code]
-            return tick_df.sort_values("time")
+            if tick_df is None or tick_df.empty:
+                print(f"❌ 数据为空: {self.stock_code}")
+                return pd.DataFrame()
+            
+            # 添加preClose估算
+            if 'preClose' not in tick_df.columns:
+                tick_df['preClose'] = tick_df['lastPrice'].iloc[0] * 0.98 if len(tick_df) > 0 else 0
+            
+            print(f"✅ 读取Tick数据成功: {len(tick_df)}条")
+            return tick_df.sort_values("time").reset_index(drop=True)
+            
         except Exception as e:
             print(f"❌ 获取Tick数据失败: {e}")
+            import traceback
+            traceback.print_exc()
             return pd.DataFrame()
 
     def iter_ticks(self) -> Iterator[Dict[str, Any]]:

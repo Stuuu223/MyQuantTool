@@ -1,21 +1,24 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-半路起爆事件检测器 (Halfway Breakout Detector) - V2.0 重构版
+半路起爆事件检测器 (Halfway Breakout Detector) - V2.1 Ratio化重构版
 
 CTO指令重构要点：
 1. ✅ 删除所有volatility和np.std愚蠢逻辑
 2. ✅ 使用pre_close作为涨幅计算唯一基准
 3. ✅ 引入多周期资金持续性判断（5min/15min滚动流）
 4. ✅ 基于A/B测试铁证：真突破 vs 骗炮的资金断层特征
+5. ✅ V2.1: 从config/strategy_params.json读取Ratio化参数，消除样本残留
 
 系统哲学：顺势而为，抓推土机式的真突破，过滤直线骗炮
 
 Author: AI项目总监（CTO指令重构）
-Version: V2.0
-Date: 2026-02-20
+Version: V2.1 (Ratio化配置驱动)
+Date: 2026-02-22
 """
 
+import json
+from pathlib import Path
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 
@@ -26,60 +29,63 @@ from logic.utils.logger import get_logger
 logger = get_logger(__name__)
 
 
+def _load_strategy_params() -> Dict[str, Any]:
+    """从配置文件加载策略参数"""
+    config_path = Path(__file__).parent.parent.parent / "config" / "strategy_params.json"
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        logger.warning(f"⚠️ 无法加载策略配置，使用默认值: {e}")
+        return {
+            "halfway": {
+                "min_intensity_score": 0.35,
+                "ratio_stock_min": 0.01,
+                "sustain_min": 1.0
+            }
+        }
+
+
 class HalfwayBreakoutDetector(BaseEventDetector):
     """
     半路起爆事件检测器 V2.1 - Phase 1 Ratio化资金强度
     
     核心变革：
-    - V2.0: 固定阈值FLOW_5MIN_THRESHOLD=5M
-    - V2.1: Ratio化动态阈值（flow_5min/流通市值 > 15%为强信号）
+    - V2.0: 固定阈值FLOW_5MIN_THRESHOLD=5M（样本残留）
+    - V2.1: Ratio化动态阈值（从配置文件读取，消除硬编码）
     - 新增：intensity_score 0-1综合评分
     
     触发逻辑（根据网宿A/B测试铁证）：
-    1. 真实涨幅突破阈值（2%或5%）- 基于pre_close
-    2. 资金强度评分 >= 0.35（flow_5min/流通市值综合评分）
-    3. 15分钟流/5分钟流 > 1.0（资金持续性）
+    1. 真实涨幅突破阈值 - 基于pre_close
+    2. 资金强度评分 >= min_intensity_score（默认0.35）
+    3. 15分钟流/5分钟流 >= sustain_min（默认1.0）
     
-    Note: 0.35阈值基于网宿科技2026-01-26真实样本推导：
-    - 流通市值510亿，5分钟主力净流入587M，ratio=1.15%
-    - intensity_score = 0.5*ratio_score + 0.3*sustain_score + 0.2*day_score ≈ 0.35
-    - 此为单一样本反推值，需更多样本验证后可能调整
+    配置驱动：所有阈值从config/strategy_params.json读取
     """
-
-    # 🔥 Phase 1: Ratio化阈值参数（网宿A/B测试校准后）
-    MIN_INTENSITY_SCORE = 0.35  # 资金强度最小评分（0-1），网宿约0.3-0.4
-    RATIO_STOCK_MIN = 0.01      # flow_5min/流通市值最小1%（网宿587M/510亿≈1.15%）
-    """
-    半路起爆事件检测器 V2.0
     
-    核心变革：
-    - 废除：波动率(volatility)判断
-    - 新增：多周期资金持续性判断
-    - 基准：pre_close（昨收价）为涨幅计算唯一锚点
+    # 类级别加载配置（启动时一次）
+    _config = _load_strategy_params()
+    _halfway_config = _config.get("halfway", {})
     
-    触发逻辑（Phase 1 Ratio化演进后）：
-    1. 真实涨幅突破阈值（2%或5%）- 基于pre_close
-    2. 资金强度分数 >= 0.35（ratio化，按流通市值动态调整）
-    3. 资金持续性比率 >= 1.0（15min/5min）
+    # 🔥 V2.1: 从配置文件读取参数，消除样本残留硬编码
+    MIN_INTENSITY_SCORE = _halfway_config.get("min_intensity_score", 0.35)
+    RATIO_STOCK_MIN = _halfway_config.get("ratio_stock_min", 0.01)
+    FLOW_SUSTAINABILITY_MIN = _halfway_config.get("sustain_min", 1.0)
     
-    Note: 已废弃固定3000万绝对值阈值，改用流通市值ratio化阈值
-    """
-
-    # 🔥 Phase 1 Ratio化策略：按流通市值动态调整
-    # V12废除：TRIGGER_PCT_LEVEL_1 = 2.0   # 第一触发点：+2% (ratio化放宽) - 涨幅锚定遗毒
-    # V12废除：TRIGGER_PCT_LEVEL_2 = 5.0   # 第二触发点：+5% (ratio化放宽) - 涨幅锚定遗毒
-    
-    # 废弃固定阈值，改用MIN_INTENSITY_SCORE ratio化判断
-    FLOW_5MIN_THRESHOLD = 5e6    # 兼容保留，实际使用intensity_score
-    FLOW_SUSTAINABILITY_MIN = 1.0  # 资金持续性最小比率（15min/5min >= 1.0）
-    MIN_INTENSITY_SCORE = 0.35   # 资金强度分数阈值（ratio化核心）
+    # 🔥 废弃：FLOW_5MIN_THRESHOLD是样本残留，V2.1不再使用
+    # 仅保留作为保护阈值（极低流动性过滤）
+    FLOW_5MIN_MIN_ABS = 1e6  # 100万绝对值下限，避免零流动性票
     
     def __init__(self):
         """初始化半路起爆检测器"""
-        super().__init__(name="HalfwayBreakoutDetectorV2")
+        super().__init__(name="HalfwayBreakoutDetectorV2.1")
         
         # 每个股票的资金流计算器
         self._flow_calculators: Dict[str, RollingFlowCalculator] = {}
+        
+        # 日志输出当前配置
+        logger.info(f"📝 HalfwayV2.1配置: intensity>={self.MIN_INTENSITY_SCORE}, "
+                   f"ratio_stock>={self.RATIO_STOCK_MIN}, sustain>={self.FLOW_SUSTAINABILITY_MIN}")
         
         # 性能统计
         self._detection_count = 0
@@ -144,10 +150,11 @@ class HalfwayBreakoutDetector(BaseEventDetector):
             
             # 🔥 V11.0: 计算flow_ratios（需要扩展rolling_metrics.py）
             try:
-                calc = self._get_flow_calculator(stock_code, pre_close)
+                # V14修复：优先使用context中的calc对象（已有last_metrics）
+                calc = context.get('calc') or self._get_flow_calculator(stock_code, pre_close)
                 ratios = calc.get_flow_ratios(stock_code)
             except:
-                ratios = {'ratio_stock': 1.0, 'sustain': 1.0, 'response_eff': 0.01}
+                ratios = {'ratio_stock': 1.0, 'sustain': 1.0, 'response_eff': 0.1}
             
             # 🔥 V11.0: 分层ratio触发检查
             if ratios['ratio_stock'] < ratio_thresh:
@@ -176,7 +183,7 @@ class HalfwayBreakoutDetector(BaseEventDetector):
                 flow_15min = flow_5min * flow_sustainability
             
             # V12关键数据：获取5分钟成交量（用于换手率计算）
-            vol_5min = metrics.flow_5min.total_volume
+            vol_5min = metrics.flow_5min.total_volume if hasattr(metrics, 'flow_5min') and hasattr(metrics.flow_5min, 'total_volume') else 0
             
             # ===== 步骤5: 核心判断 - 真突破条件（Phase 1 Ratio化） =====
             # 🔥 新增：计算资金强度评分（0-1）
@@ -195,11 +202,12 @@ class HalfwayBreakoutDetector(BaseEventDetector):
                 ratio_stock = intensity_result['ratio_stock']
                 circ_mv_bn = intensity_result['circ_mv_bn']
             except Exception as e:
-                # Fallback：如果强度计算失败，使用固定阈值
-                intensity_score = min(1.0, flow_5min / (self.FLOW_5MIN_THRESHOLD * 3))
+                # Fallback：如果强度计算失败，使用最小保护阈值估算
+                intensity_score = min(1.0, abs(flow_5min) / (self.FLOW_5MIN_MIN_ABS * 10))
                 ratio_stock = 0
                 circ_mv_bn = 0
                 intensity_result = {}
+                logger.debug(f"⚠️ intensity_scorer失败，使用fallback: {e}")
             
             # 条件A: 资金强度评分 >= 阈值（Ratio化爆发力）
             condition_a = intensity_score >= self.MIN_INTENSITY_SCORE
@@ -209,24 +217,16 @@ class HalfwayBreakoutDetector(BaseEventDetector):
             condition_b = flow_ratio >= self.FLOW_SUSTAINABILITY_MIN
             
             # 条件C: V12换手纯净 - 换手率主导（ratio_stock>15, ratio_day>10, sustain>1.2）
-            try:
-                # 获取流通市值（十亿元转元）
-                circ_mv_bn = intensity_result.get('circ_mv_bn', 5)  # 默认50亿
-                circ_mv = circ_mv_bn * 1e9 if circ_mv_bn > 0 else 5e9  # 默认50亿
-                
-                # 使用RollingFlowCalculator计算换手率ratio
-                ratio_stock, ratio_day = calc.get_turnover_ratio(stock_code, vol_5min, circ_mv)
-                
-                # V12换手纯净条件：ratio_stock>15, ratio_day>10, sustain>1.2
-                sustain = flow_15min / flow_5min if flow_5min != 0 else 0
-                condition_c = (ratio_stock > 15) and (ratio_day > 10) and (sustain > 1.2)
-                
-                # 调试输出
-                if self._detection_count < 5:
-                    print(f"   [V12调试] {stock_code}: ratio_stock={ratio_stock:.1f}, ratio_day={ratio_day:.1f}, sustain={sustain:.2f}, condition_c={condition_c}")
-            except Exception as e:
-                print(f"   [V12错误] 换手率计算失败: {e}")
-                condition_c = False  # 计算失败时保守过滤，TODO: 需要实现降级策略
+            # 获取流通市值（十亿元转元）
+            circ_mv_bn = intensity_result.get('circ_mv_bn', 5)  # 默认50亿
+            circ_mv = circ_mv_bn * 1e9 if circ_mv_bn > 0 else 5e9  # 默认50亿
+            
+            # 使用RollingFlowCalculator计算换手率ratio
+            ratio_stock, ratio_day = calc.get_turnover_ratio(stock_code, vol_5min, circ_mv)
+            
+            # V12换手纯净条件：ratio_stock>15, ratio_day>10, sustain>1.2
+            sustain = flow_15min / flow_5min if flow_5min != 0 else 0
+            condition_c = (ratio_stock > 15) and (ratio_day > 10) and (sustain > 1.2)
             
             # 综合判断（强度+持续性双保险）
             is_true_breakout = condition_a and condition_b and condition_c
@@ -310,8 +310,8 @@ class HalfwayBreakoutDetector(BaseEventDetector):
         change_score = 1.0 - abs(change_pct - 8.0) / 8.0
         change_score = max(0.0, min(1.0, change_score))
         
-        # 资金强度得分
-        intensity_score = min(1.0, flow_5min / (self.FLOW_5MIN_THRESHOLD * 3))
+        # 资金强度得分（使用保护阈值，V2.1消除样本残留）
+        intensity_score = min(1.0, abs(flow_5min) / (self.FLOW_5MIN_MIN_ABS * 10))
         
         # 持续性得分
         sustainability_score = min(1.0, (flow_ratio - 1.0) / 1.0)
@@ -388,7 +388,8 @@ if __name__ == "__main__":
     print(f"\n测试参数:")
     print(f"  昨收价(pre_close): {pre_close}")
     print(f"  触发阈值: V12换手纯净 (ratio_stock>15, ratio_day>10, sustain>1.2)")
-    print(f"  5分钟流阈值: {detector.FLOW_5MIN_THRESHOLD/1e6:.0f}M")
+    print(f"  最小资金流: {detector.FLOW_5MIN_MIN_ABS/1e6:.0f}M (保护阈值)")
+    print(f"  强度阈值: intensity_score >= {detector.MIN_INTENSITY_SCORE}")
     print("-" * 80)
     
     last_tick = None
