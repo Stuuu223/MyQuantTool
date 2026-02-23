@@ -242,7 +242,7 @@ class TimeMachineEngine:
     
     def _get_pre_close(self, stock_code: str, date: str) -> float:
         """
-        获取昨收价
+        获取昨收价 (CTO修复: 确保VIP服务已启动)
         
         Args:
             stock_code: 股票代码
@@ -253,6 +253,10 @@ class TimeMachineEngine:
         """
         try:
             from xtquant import xtdata
+            
+            # CTO修复: 确保VIP服务已启动才能读取数据
+            if not self.data_manager._vip_initialized:
+                self.data_manager.start_vip_service()
             
             # 标准化代码
             normalized_code = self._normalize_stock_code(stock_code)
