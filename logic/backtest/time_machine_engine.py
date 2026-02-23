@@ -118,6 +118,15 @@ class TimeMachineEngine:
             print(f"  📥 向VIP节点请求 {date} Tick数据并阻塞等待...")
             from logic.data_providers.qmt_manager import QmtDataManager
             downloader = QmtDataManager()
+            
+            # CTO修复：同时下载Tick和1d日线数据（用于昨收价）
+            from xtquant import xtdata
+            for stock in stock_pool:
+                xtdata.download_history_data(stock, 'tick', date, date)
+                xtdata.download_history_data(stock, '1d', date, date)
+            import time
+            time.sleep(5)  # 等待下载完成
+            
             download_results = downloader.download_tick_data(
                 stock_list=stock_pool,  # CTO修复：下载全部88只
                 trade_date=date,
