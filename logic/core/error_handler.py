@@ -5,10 +5,10 @@
 """
 
 import functools
+import logging
 from typing import Callable, Any, Optional
-from logic.utils.logger import get_logger
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class AppError(Exception):

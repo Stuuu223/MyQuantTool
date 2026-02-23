@@ -21,7 +21,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from logic.core.metrics_utils import (
+from logic.utils.metrics_utils import (
     calc_vwap,
     calc_sustain_factor,
     calc_sustain_linear,
