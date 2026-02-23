@@ -48,6 +48,38 @@ except ImportError:
         logger.addHandler(handler)
         logger.setLevel(logging.INFO)
 
+# CTO强制: 导入配置验证器
+try:
+    from logic.core.config_validator import (
+        ConfigValidator, TradeGuardian, 
+        SystemEnv, TradeMode, validate_and_init, check_trade_permission
+    )
+    # 系统启动时执行配置验证
+    _validator = ConfigValidator()
+    _validation_result = _validator.validate_all()
+    if not _validation_result.valid:
+        logger.error("=" * 70)
+        logger.error("【系统启动失败】配置验证未通过，请检查.env文件:")
+        for error in _validation_result.errors:
+            logger.error(f"  ❌ {error}")
+        logger.error("=" * 70)
+        raise RuntimeError("配置验证失败，系统拒绝启动")
+    else:
+        if _validation_result.warnings:
+            logger.warning("【配置警告】")
+            for warning in _validation_result.warnings:
+                logger.warning(f"  ⚠️  {warning}")
+        logger.info("【系统启动】✅ 配置验证通过，所有保险栓就位")
+    
+    # 创建全局交易守卫
+    _trade_guardian = TradeGuardian()
+    if not _trade_guardian.initialize():
+        raise RuntimeError("交易守卫初始化失败")
+        
+except ImportError as e:
+    logger.warning(f"【系统启动】配置验证器未加载: {e}")
+    _trade_guardian = None
+
 
 class OrderDirection(Enum):
     """订单方向"""
@@ -489,11 +521,12 @@ class SimulatedTrading(TradeInterface):
         
         执行流程：
         1. 检查连接状态
-        2. 订单验证（价格、数量、金额限制）
-        3. 资金检查
-        4. 计算交易费用
-        5. 更新资金和持仓
-        6. 记录交易历史
+        2. CTO保险栓: 检查MAX_TRADE_AMOUNT
+        3. 订单验证（价格、数量、金额限制）
+        4. 资金检查
+        5. 计算交易费用
+        6. 更新资金和持仓
+        7. 记录交易历史
         
         Args:
             order: 买入订单
@@ -505,6 +538,21 @@ class SimulatedTrading(TradeInterface):
             raise ConnectionError("[模拟盘] 未连接，请先调用connect()")
         
         order_id = self._generate_order_id()
+        
+        # CTO强制: 检查交易权限（资金上限保险栓）
+        order_amount = order.price * order.quantity
+        if _trade_guardian:
+            allowed, reason = _trade_guardian.check_order(order_amount, order.stock_code)
+            if not allowed:
+                logger.error(f"[模拟盘] 🚫 订单被保险栓拦截: {reason}")
+                return TradeResult(
+                    order_id=order_id,
+                    status=OrderStatus.REJECTED.value,
+                    filled_quantity=0,
+                    filled_price=0,
+                    timestamp=datetime.now(),
+                    message=f'[保险栓拦截] {reason}'
+                )
         
         # 1. 订单验证
         is_valid, msg = self.validator.validate_buy_order(order)
