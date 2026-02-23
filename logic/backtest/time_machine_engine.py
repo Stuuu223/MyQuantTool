@@ -49,6 +49,9 @@ class TimeMachineEngine:
         self.results_cache: Dict[str, Dict] = {}
         self._ensure_output_dirs()
         
+        # CTO修复：启动VIP服务确保数据连接
+        self.data_manager.start_vip_service()
+        
     def _ensure_output_dirs(self):
         """确保输出目录存在"""
         output_dir = PathResolver.get_data_dir() / 'backtest_out'
@@ -348,9 +351,19 @@ class TimeMachineEngine:
                 logger.warning(f"【时间机器】{stock_code} 昨收价检查失败: {msg}")
                 return None
             
-            # 获取09:40价格
-            tick_0940 = tick_data[tick_data['time'] <= '09:40:00']
+            # CTO修复：正确处理时间戳获取09:40价格
+            # 确保time列是字符串格式 HH:MM:SS
+            if pd.api.types.is_numeric_dtype(tick_data['time']):
+                # 如果是数值（毫秒时间戳），转换
+                tick_data['time_str'] = pd.to_datetime(tick_data['time'], unit='ms') + pd.Timedelta(hours=8)
+                tick_data['time_str'] = tick_data['time_str'].dt.strftime('%H:%M:%S')
+            else:
+                tick_data['time_str'] = tick_data['time'].astype(str)
+            
+            # 截取早盘数据
+            tick_0940 = tick_data[tick_data['time_str'] <= '09:40:00']
             if tick_0940.empty:
+                logger.warning(f"【时间机器】{stock_code} 09:40前无数据")
                 return None
             
             price_0940 = float(tick_0940.iloc[-1]['price'])
