@@ -1,0 +1,155 @@
+{
+  "trade_date": "20251231",
+  "total_stocks": 66,
+  "valid_stocks": 66,
+  "top10": [
+    {
+      "rank": 1,
+      "stock_code": "002177.SZ",
+      "name": "御银股份",
+      "industry": "其他商业",
+      "base_score": 80.93,
+      "capital_share_pct": 9.13,
+      "multiplier": 1.183,
+      "final_score": 95.72,
+      "total_amount": 13361639190777.0,
+      "turnover_rate": 150373.36,
+      "is_strong_momentum": true
+    },
+    {
+      "rank": 2,
+      "stock_code": "300170.SZ",
+      "name": "汉得信息",
+      "industry": "软件服务",
+      "base_score": 80.06,
+      "capital_share_pct": 7.62,
+      "multiplier": 1.152,
+      "final_score": 92.26,
+      "total_amount": 11145335623438.0,
+      "turnover_rate": 59340.08,
+      "is_strong_momentum": true
+    },
+    {
+      "rank": 3,
+      "stock_code": "603278.SH",
+      "name": "大业股份",
+      "industry": "钢加工",
+      "base_score": 82.22,
+      "capital_share_pct": 4.92,
+      "multiplier": 1.098,
+      "final_score": 90.3,
+      "total_amount": 7191610408149.0,
+      "turnover_rate": 45908.01,
+      "is_strong_momentum": true
+    },
+    {
+      "rank": 4,
+      "stock_code": "000681.SZ",
+      "name": "视觉中国",
+      "industry": "互联网",
+      "base_score": 79.68,
+      "capital_share_pct": 6.27,
+      "multiplier": 1.125,
+      "final_score": 89.67,
+      "total_amount": 9175832980697.0,
+      "turnover_rate": 38268.36,
+      "is_strong_momentum": true
+    },
+    {
+      "rank": 5,
+      "stock_code": "300840.SZ",
+      "name": "酷特智能",
+      "industry": "服饰",
+      "base_score": 83.76,
+      "capital_share_pct": 3.04,
+      "multiplier": 1.061,
+      "final_score": 88.85,
+      "total_amount": 4446411480810.0,
+      "turnover_rate": 21901.78,
+      "is_strong_momentum": true
+    },
+    {
+      "rank": 6,
+      "stock_code": "300567.SZ",
+      "name": "精测电子",
+      "industry": "电器仪表",
+      "base_score": 77.88,
+      "capital_share_pct": 6.34,
+      "multiplier": 1.127,
+      "final_score": 87.75,
+      "total_amount": 9268649704916.0,
+      "turnover_rate": 10237.89,
+      "is_strong_momentum": true
+    },
+    {
+      "rank": 7,
+      "stock_code": "002757.SZ",
+      "name": "南兴股份",
+      "industry": "专用机械",
+      "base_score": 83.99,
+      "capital_share_pct": 2.11,
+      "multiplier": 1.042,
+      "final_score": 87.53,
+      "total_amount": 3080615593581.0,
+      "turnover_rate": 16651.6,
+      "is_strong_momentum": true
+    },
+    {
+      "rank": 8,
+      "stock_code": "301265.SZ",
+      "name": "华新环保",
+      "industry": "环境保护",
+      "base_score": 85.92,
+      "capital_share_pct": 0.85,
+      "multiplier": 1.017,
+      "final_score": 87.38,
+      "total_amount": 1247079117801.0,
+      "turnover_rate": 8703.56,
+      "is_strong_momentum": true
+    },
+    {
+      "rank": 9,
+      "stock_code": "000809.SZ",
+      "name": "和展能源",
+      "industry": "电气设备",
+      "base_score": 86.8,
+      "capital_share_pct": 0.33,
+      "multiplier": 1.007,
+      "final_score": 87.37,
+      "total_amount": 477868605509.0,
+      "turnover_rate": 13357.18,
+      "is_strong_momentum": true
+    },
+    {
+      "rank": 10,
+      "stock_code": "002969.SZ",
+      "name": "嘉美包装",
+      "industry": "广告包装",
+      "base_score": 75.07,
+      "capital_share_pct": 7.5,
+      "multiplier": 1.15,
+      "final_score": 86.34,
+      "total_amount": 10977002535362.0,
+      "turnover_rate": 84461.01,
+      "is_strong_momentum": true
+    }
+  ],
+  "zhitexincai": {
+    "rank": 47,
+    "in_top10": false,
+    "final_score": 77.9
+  },
+  "summary": {
+    "total_inflow": 146297473556690.0,
+    "avg_score": 80.54,
+    "max_score": 95.72,
+    "validation_passed": false
+  },
+  "methodology": {
+    "base_score_formula": "资金强度(40) + 换手率(30) + 价格动能(30)",
+    "multiplier_formula": "1 + (抽血占比% / 100) * 2",
+    "final_score_formula": "base_score * multiplier",
+    "volume_conversion": "手 × 100 = 股",
+    "window_size": "5分钟"
+  }
+}

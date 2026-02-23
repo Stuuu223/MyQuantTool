@@ -427,6 +427,202 @@ class UnifiedWarfareCoreV18:
             'memory_count': len(self.relay_engine.memory)
         }
 
+    def calculate_blood_sucking_score(
+        self,
+        stock_code: str,
+        windows: List[Dict],
+        all_stocks_data: Dict[str, List[Dict]]
+    ) -> Dict[str, float]:
+        """
+        计算抽血占比动态乘数得分
+
+        CTO Phase 6.2 核心公式:
+        最终得分 = 基础起爆分(满分100) * (1 + 抽血占全池的百分比 * 2)
+
+        Args:
+            stock_code: 股票代码
+            windows: 该股票的5分钟窗口数据列表
+            all_stocks_data: 全池所有股票的数据 {stock_code: windows_list}
+
+        Returns:
+            {
+                'base_score': float,          # 基础起爆分(0-100)
+                'capital_share_pct': float,   # 抽血占比(%)
+                'multiplier': float,          # 动态乘数
+                'final_score': float          # 最终得分
+            }
+        """
+        # 1. 计算该股票的净流入 (主动买入 - 主动卖出)
+        # 使用amount作为净流入近似值 (实际应该用主动买入-主动卖出)
+        stock_net_inflow = sum(w.get('amount', 0) for w in windows)
+
+        # 2. 计算全池总净流入
+        total_net_inflow = 0.0
+        for code, stock_windows in all_stocks_data.items():
+            inflow = sum(w.get('amount', 0) for w in stock_windows)
+            total_net_inflow += inflow
+
+        # 3. 计算抽血占比 (处理除以零的情况)
+        if total_net_inflow > 0:
+            capital_share_pct = (stock_net_inflow / total_net_inflow) * 100
+        else:
+            capital_share_pct = 0.0
+            logger.warning(f"⚠️ [抽血PK] {stock_code} 全池总净流入为0, 设置占比为0")
+
+        # 4. 计算基础起爆分 (满分100)
+        # 基于多个维度的综合评分
+        base_score = self._calculate_base_explosion_score(stock_code, windows)
+
+        # 5. 计算动态乘数 = 1 + 抽血占比 * 2
+        # 抽血占比是百分比形式,例如5% -> multiplier = 1 + 0.05 * 2 = 1.10
+        multiplier = 1 + (capital_share_pct / 100) * 2
+
+        # 6. 计算最终得分
+        final_score = base_score * multiplier
+
+        logger.info(f"🩸 [抽血PK] {stock_code} 动态乘数计算:")
+        logger.info(f"   净流入: {stock_net_inflow/10000:.1f}万 / 全池: {total_net_inflow/10000:.1f}万")
+        logger.info(f"   抽血占比: {capital_share_pct:.2f}%")
+        logger.info(f"   基础分: {base_score:.2f}, 乘数: {multiplier:.3f}")
+        logger.info(f"   最终得分: {final_score:.2f}")
+
+        return {
+            'base_score': round(base_score, 2),
+            'capital_share_pct': round(capital_share_pct, 2),
+            'multiplier': round(multiplier, 3),
+            'final_score': round(final_score, 2)
+        }
+
+    def _calculate_base_explosion_score(self, stock_code: str, windows: List[Dict]) -> float:
+        """
+        计算基础起爆分 (满分100)
+
+        评分维度:
+        - 资金强度 (40分)
+        - 换手率 (30分)
+        - 价格动能 (30分)
+        """
+        if not windows:
+            return 0.0
+
+        score = 0.0
+
+        # 1. 资金强度评分 (40分)
+        total_amount = sum(w.get('amount', 0) for w in windows)
+        max_window = max(windows, key=lambda x: x.get('amount', 0))
+        max_amount = max_window.get('amount', 0)
+
+        # 资金强度: 最大窗口金额分级
+        if max_amount >= 10000000:  # 1000万
+            score += 40
+        elif max_amount >= 5000000:  # 500万
+            score += 32
+        elif max_amount >= 2000000:  # 200万
+            score += 24
+        elif max_amount >= 1000000:  # 100万
+            score += 16
+        else:
+            score += max_amount / 1000000 * 16  # 线性插值
+
+        # 2. 换手率评分 (30分)
+        total_volume = sum(w.get('volume', 0) for w in windows)
+        float_volume = self._get_float_volume(stock_code)
+        turnover_rate = total_volume / float_volume * 100 if float_volume > 0 else 0
+
+        if turnover_rate >= 10:
+            score += 30
+        elif turnover_rate >= 5:
+            score += 24
+        elif turnover_rate >= 3:
+            score += 18
+        elif turnover_rate >= 1:
+            score += 12
+        else:
+            score += turnover_rate / 1 * 12
+
+        # 3. 价格动能评分 (30分)
+        # 基于涨幅和价格趋势
+        changes = [w.get('change_pct', 0) for w in windows if w.get('change_pct') is not None]
+        if changes:
+            avg_change = sum(changes) / len(changes)
+            max_change = max(changes)
+
+            # 平均涨幅评分 (15分)
+            if avg_change >= 5:
+                score += 15
+            elif avg_change >= 3:
+                score += 12
+            elif avg_change >= 1:
+                score += 9
+            else:
+                score += max(0, avg_change / 1 * 9)
+
+            # 最大涨幅评分 (15分)
+            if max_change >= 8:
+                score += 15
+            elif max_change >= 5:
+                score += 12
+            elif max_change >= 3:
+                score += 9
+            else:
+                score += max(0, max_change / 3 * 9)
+
+        return min(100.0, score)  # 确保不超过100分
+
+    def rank_by_capital_share(
+        self,
+        results_list: List[Dict]
+    ) -> List[Dict]:
+        """
+        按最终得分降序排序并添加排名
+
+        CTO Phase 6.2 横向吸血PK排序:
+        - 按final_score降序排列
+        - 添加rank字段 (1开始)
+
+        Args:
+            results_list: 所有股票的分析结果列表
+                每个元素应包含: {
+                    'stock_code': str,
+                    'base_score': float,
+                    'capital_share_pct': float,
+                    'multiplier': float,
+                    'final_score': float,
+                    ...其他字段
+                }
+
+        Returns:
+            排序后的列表, 每个元素添加'rank'字段
+        """
+        if not results_list:
+            logger.warning("⚠️ [排名排序] 输入列表为空")
+            return []
+
+        # 1. 按final_score降序排序
+        sorted_results = sorted(
+            results_list,
+            key=lambda x: x.get('final_score', 0),
+            reverse=True
+        )
+
+        # 2. 添加rank字段
+        for i, result in enumerate(sorted_results, start=1):
+            result['rank'] = i
+
+        logger.info(f"📊 [排名排序] 共 {len(sorted_results)} 只票, 按final_score排序完成")
+
+        # 3. 输出TOP5信息
+        top5 = sorted_results[:5]
+        for item in top5:
+            logger.info(
+                f"   TOP{item['rank']}: {item['stock_code']} "
+                f"得分={item['final_score']:.2f} "
+                f"(基础{item['base_score']:.1f}×乘数{item['multiplier']:.2f}) "
+                f"抽血{item['capital_share_pct']:.2f}%"
+            )
+
+        return sorted_results
+
 
 if __name__ == '__main__':
     # 测试V18核心

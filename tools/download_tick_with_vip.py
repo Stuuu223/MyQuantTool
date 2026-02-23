@@ -2,17 +2,30 @@
 # -*- coding: utf-8 -*-
 """
 使用VIP服务下载Tick数据（正确方法）
-参考：tasks/data_prefetch.py 的成功实现
+
+⚠️ 已弃用警告：此脚本已重构进 logic/data_providers/qmt_manager.py
+请使用新API：
+    >>> from logic.data_providers.qmt_manager import QmtDataManager
+    >>> manager = QmtDataManager()
+    >>> manager.start_vip_service()
+    >>> results = manager.download_tick_data(stock_list, trade_date)
+
+保留此脚本作为向后兼容的转发包装器
 """
 
+import warnings
 import sys
 from pathlib import Path
 
+# 发出弃用警告
+warnings.warn(
+    "此脚本已弃用！请使用 logic.data_providers.qmt_manager.QmtDataManager",
+    DeprecationWarning,
+    stacklevel=2
+)
+
 PROJECT_ROOT = Path('E:/MyQuantTool')
 sys.path.insert(0, str(PROJECT_ROOT))
-
-# VIP Token
-VIP_TOKEN = '6b1446e317ed67596f13d2e808291a01e0dd9839'
 
 import pandas as pd
 from datetime import datetime
@@ -20,9 +33,18 @@ from xtquant import xtdatacenter as xtdc
 from xtquant import xtdata
 import time
 
+# VIP Token
+VIP_TOKEN = '6b1446e317ed67596f13d2e808291a01e0dd9839'
+
 
 def start_vip_service():
-    """启动VIP行情服务"""
+    """
+    启动VIP行情服务
+    
+    ⚠️ 已弃用：请使用 QmtDataManager.start_vip_service()
+    """
+    warnings.warn("start_vip_service() 已弃用", DeprecationWarning, stacklevel=2)
+    
     print("="*80)
     print("【启动QMT VIP行情服务】")
     print("="*80)
@@ -47,7 +69,13 @@ def start_vip_service():
 
 
 def download_tick_with_vip(stock_list, trade_date, listen_port):
-    """使用VIP服务下载Tick数据"""
+    """
+    使用VIP服务下载Tick数据
+    
+    ⚠️ 已弃用：请使用 QmtDataManager.download_tick_data()
+    """
+    warnings.warn("download_tick_with_vip() 已弃用", DeprecationWarning, stacklevel=2)
+    
     print(f"\n{'='*80}")
     print(f"【VIP Tick数据下载】")
     print(f"{'='*80}")
@@ -117,42 +145,80 @@ def download_tick_with_vip(stock_list, trade_date, listen_port):
 
 def main():
     """主函数"""
-    # 加载候选名单
-    candidates_file = PROJECT_ROOT / 'data' / 'scan_results' / '20251231_candidates_73.csv'
-    if not candidates_file.exists():
-        print(f"❌ 候选名单不存在: {candidates_file}")
-        return
+    print("⚠️  警告：此脚本已弃用，建议使用新API")
+    print("="*80)
+    print("新API用法:")
+    print("  from logic.data_providers.qmt_manager import QmtDataManager")
+    print("  manager = QmtDataManager()")
+    print("  manager.start_vip_service()")
+    print("  results = manager.download_tick_data(stock_list, trade_date)")
+    print("="*80)
+    print()
     
-    df = pd.read_csv(candidates_file)
-    # 只下载缺失Tick数据的股票（排除已有数据的11只）
-    stock_list = df['ts_code'].tolist()[11:]  # 从第12只开始
-    
-    print(f"📋 需要下载Tick数据: {len(stock_list)}只")
-    
-    # 启动VIP服务
-    listen_port = start_vip_service()
-    
-    # 下载Tick数据
-    success_count, failed_list = download_tick_with_vip(
-        stock_list, '20251231', listen_port
-    )
-    
-    # 输出汇总
-    print(f"\n{'='*80}")
-    print("【VIP下载结果】")
-    print(f"{'='*80}")
-    print(f"总计: {len(stock_list)}只")
-    print(f"成功: {success_count}只")
-    print(f"失败: {len(failed_list)}只")
-    
-    if failed_list:
-        print(f"\n失败列表 ({len(failed_list)}只):")
-        for code in failed_list[:10]:
-            print(f"   - {code}")
-        if len(failed_list) > 10:
-            print(f"   ... 及其他 {len(failed_list)-10} 只")
-    
-    print(f"{'='*80}")
+    # 尝试使用新API
+    try:
+        from logic.data_providers.qmt_manager import QmtDataManager
+        print("🔄 正在使用新API QmtDataManager 执行下载...\n")
+        
+        # 加载候选名单
+        candidates_file = PROJECT_ROOT / 'data' / 'scan_results' / '20251231_candidates_73.csv'
+        if not candidates_file.exists():
+            print(f"❌ 候选名单不存在: {candidates_file}")
+            return
+        
+        df = pd.read_csv(candidates_file)
+        stock_list = df['ts_code'].tolist()
+        
+        # 使用新API
+        manager = QmtDataManager(use_vip=True)
+        manager.start_vip_service()
+        results = manager.download_tick_data(stock_list, '20251231')
+        
+        # 输出汇总
+        summary = manager.get_download_summary(results)
+        print(f"\n{'='*80}")
+        print("【VIP下载结果】")
+        print(f"{'='*80}")
+        print(f"总计: {summary['total']}只")
+        print(f"成功: {summary['success']}只")
+        print(f"失败: {summary['failed']}只")
+        
+        if summary['failed_stocks']:
+            print(f"\n失败列表 ({len(summary['failed_stocks'])}只):")
+            for code in summary['failed_stocks'][:10]:
+                print(f"   - {code}")
+            if len(summary['failed_stocks']) > 10:
+                print(f"   ... 及其他 {len(summary['failed_stocks'])-10} 只")
+        
+        print(f"{'='*80}")
+        
+    except Exception as e:
+        print(f"❌ 新API调用失败，回退到旧实现: {e}")
+        print("正在使用旧API...\n")
+        
+        # 旧实现
+        candidates_file = PROJECT_ROOT / 'data' / 'scan_results' / '20251231_candidates_73.csv'
+        if not candidates_file.exists():
+            print(f"❌ 候选名单不存在: {candidates_file}")
+            return
+        
+        df = pd.read_csv(candidates_file)
+        stock_list = df['ts_code'].tolist()[11:]
+        
+        print(f"📋 需要下载Tick数据: {len(stock_list)}只")
+        
+        listen_port = start_vip_service()
+        success_count, failed_list = download_tick_with_vip(
+            stock_list, '20251231', listen_port
+        )
+        
+        print(f"\n{'='*80}")
+        print("【VIP下载结果】")
+        print(f"{'='*80}")
+        print(f"总计: {len(stock_list)}只")
+        print(f"成功: {success_count}只")
+        print(f"失败: {len(failed_list)}只")
+        print(f"{'='*80}")
 
 
 if __name__ == '__main__':
