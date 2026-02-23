@@ -1,9 +1,18 @@
 # MyQuantTool - 右侧极端换手起爆时间机器
 
-**版本**: V18.0.0 (Phase 11 铁血镇压版)  
+**版本**: V18.0.0 (Phase 13 最终打磨版)  
 **核心定位**: A股右侧极端换手起爆点 + 横向资金吸血PK  
 **数据源**: QMT Tick (Level-1) + Tushare  
-**架构**: 唯一事实来源 + 常识护栏 + 统一CLI入口
+**架构**: 唯一事实来源 + 常识护栏 + 统一CLI入口 + 环境隔离
+
+---
+
+## 🎯 四大基石 (CTO最终审计)
+
+1. **环境隔离**: 敏感配置(.env)与代码分离，Token不上Git
+2. **算子收口**: 所有核心算子在`logic/core/`，禁止分散
+3. **跨日记忆**: ShortTermMemory继承，9日连贯流验证
+4. **VWAP惩罚**: 跌破均价线-20分，final_score永不为0
 
 ---
 
@@ -49,19 +58,31 @@ logic/core/
 
 ## 🚀 极简使用指南
 
-### 全息时间机器 (跨日连贯流)
+### 1. 环境配置 (首次运行)
 ```bash
-# 12月24日至1月5日跨日回测
-python main.py backtest --start_date 20251224 --end_date 20260105 --full_market
+# 复制环境变量模板
+copy .env.example .env
+
+# 编辑 .env 文件，填入Tushare Token
+TUSHARE_TOKEN=your_token_here
 ```
 
-### 单日回测
+### 2. 全息时间机器 (核心功能 - 跨日连贯流)
+```bash
+# 12月24日至1月5日跨日回测 (CTO强制: Top 20梯度观察)
+python main.py backtest --start_date 20251224 --end_date 20260105 --full_market --strategy v18 --save
+
+# 输出: data/backtest_out/time_machine/time_machine_YYYYMMDD.json (每日Top 20)
+#       data/backtest_out/time_machine/time_machine_summary_*.json (汇总报告)
+```
+
+### 3. 单日验证
 ```bash
 # 单日回测 (粗筛 + 三防线)
-python main.py backtest --date 20251231 --full_market
+python main.py backtest --date 20251231 --full_market --strategy v18
 ```
 
-### 事件驱动监控 (实盘)
+### 4. 实盘监控
 ```bash
 # 启动实时监控系统
 python main.py monitor

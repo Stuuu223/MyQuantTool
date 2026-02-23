@@ -239,6 +239,33 @@ def backtest_cmd(ctx, date, start_date, end_date, universe, full_market, strateg
             
             return
         
+        # CTODict: 单日全市场回测也使用time_machine_engine
+        if date and full_market:
+            from logic.backtest.time_machine_engine import TimeMachineEngine
+            
+            engine = TimeMachineEngine(initial_capital=20000.0)
+            results = engine.run_continuous_backtest(
+                start_date=date,
+                end_date=date,
+                stock_pool_path='TUSHARE',
+                use_tushare=True
+            )
+            
+            if results:
+                result = results[0]
+                top20 = result.get('top20', [])
+                click.echo(click.style(f"\n✅ 回测完成: {result.get('date')}", fg='green'))
+                click.echo(f"📊 粗筛股票池: {result.get('valid_stocks', 0)} 只")
+                click.echo(f"🏆 Top 20 已生成 (详见 {output}/time_machine/)")
+                
+                # 打印前5名
+                if top20:
+                    click.echo("\n前5名:")
+                    for i, item in enumerate(top20[:5], 1):
+                        click.echo(f"  {i}. {item['stock_code']} - 得分: {item['final_score']:.2f}")
+            
+            return
+        
         if strategy == 'time_machine':
             # 时间机器回测
             from tasks.run_time_machine_backtest import TimeMachineBacktest, save_results

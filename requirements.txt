@@ -25,6 +25,7 @@ xgboost>=2.0.0
 
 # CLI框架
 click>=8.1.0
+python-dotenv>=1.0.0
 
 # Optuna 可视化（可选）
 optuna-dashboard>=0.15.0

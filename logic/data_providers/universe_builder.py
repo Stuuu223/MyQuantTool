@@ -6,13 +6,18 @@ Author: iFlow CLI
 Date: 2026-02-23
 Version: 1.0.0
 """
+import os
 import pandas as pd
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict
 import logging
+from dotenv import load_dotenv
 
 from logic.core.path_resolver import PathResolver
 from logic.core.sanity_guards import SanityGuards
+
+# 加载.env文件
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -35,16 +40,36 @@ class UniverseBuilder:
         self.tushare_token = self._load_tushare_token()
         
     def _load_tushare_token(self) -> str:
-        """加载Tushare Token"""
+        """
+        加载Tushare Token - CTODict: 优先环境变量，其次配置文件
+        
+        Returns:
+            Tushare Token字符串
+        """
+        # 1. 优先从环境变量读取 (CTO: 能放env的就env)
+        env_token = os.getenv('TUSHARE_TOKEN')
+        if env_token and env_token.strip():
+            logger.info("【UniverseBuilder】从环境变量读取Tushare Token")
+            return env_token.strip()
+        
+        # 2. 从.env文件读取 (python-dotenv已加载)
+        # load_dotenv()已在模块级别调用
+        
+        # 3. 从配置文件读取 (兼容旧版本)
         try:
             config_path = PathResolver.get_config_dir() / 'config.json'
             if config_path.exists():
                 import json
                 with open(config_path, 'r', encoding='utf-8') as f:
                     config = json.load(f)
-                    return config.get('tushare_token', '')
+                    token = config.get('tushare_token', '')
+                    if token:
+                        logger.info("【UniverseBuilder】从config.json读取Tushare Token")
+                        return token
         except Exception as e:
             logger.error(f"加载Tushare配置失败: {e}")
+        
+        logger.warning("【UniverseBuilder】未找到Tushare Token，请设置TUSHARE_TOKEN环境变量或config.json")
         return ''
     
     def _init_tushare(self):

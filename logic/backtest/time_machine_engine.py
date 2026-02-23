@@ -79,7 +79,7 @@ class TimeMachineEngine:
         模拟实盘流程：
         1. 09:30 开盘前准备
         2. 09:40 计算早盘数据
-        3. 输出当日Top 3
+        3. 输出当日Top 20 (CTODict: 扩容观察梯度)
         
         Args:
             date: 交易日期 'YYYYMMDD'
@@ -95,7 +95,7 @@ class TimeMachineEngine:
         daily_result = {
             'date': date,
             'status': 'running',
-            'top3': [],
+            'top20': [],
             'signals': [],
             'errors': [],
             'total_stocks': len(stock_pool),
@@ -141,20 +141,22 @@ class TimeMachineEngine:
                     daily_result['errors'].append(error_msg)
                     logger.warning(f"  ⚠️ {error_msg}")
             
-            # 3. 排序选出Top 3
+            # 3. 排序选出Top 20 (CTODict: 扩容至Top 20观察梯度)
             stock_scores.sort(key=lambda x: x['final_score'], reverse=True)
-            top3 = stock_scores[:3]
+            top20 = stock_scores[:20]
             
-            daily_result['top3'] = top3
+            daily_result['top20'] = top20
             daily_result['status'] = 'success'
             
-            # 4. 打印结果
-            print(f"\n  🏆 当日Top 3:")
-            for i, item in enumerate(top3, 1):
+            # 4. 打印结果 (仅显示前5，但保存Top 20)
+            print(f"\n  🏆 当日Top 20 (显示前5):")
+            for i, item in enumerate(top20[:5], 1):
                 print(f"    {i}. {item['stock_code']} - 得分: {item['final_score']:.2f}")
                 print(f"       09:40涨幅: {item.get('change_0940', 0):.2f}%, 状态: {item.get('status', 'N/A')}")
+            if len(top20) > 5:
+                print(f"    ... 共 {len(top20)} 只 (详见JSON)")
             
-            logger.info(f"【时间机器】{date} 回测成功，Top3: {[s['stock_code'] for s in top3]}")
+            logger.info(f"【时间机器】{date} 回测成功，Top20: {[s['stock_code'] for s in top20[:5]]}...")
             
         except Exception as e:
             daily_result['status'] = 'error'
@@ -521,7 +523,7 @@ class TimeMachineEngine:
     
     def _generate_summary_report(self, results: List[Dict], start_date: str, end_date: str):
         """
-        生成总结报告
+        生成总结报告 - CTODict: 修复success_days统计，扩容至Top 20
         
         Args:
             results: 所有回测结果
@@ -529,16 +531,35 @@ class TimeMachineEngine:
             end_date: 结束日期
         """
         try:
+            # 统计各状态天数
+            success_results = [r for r in results if r.get('status') == 'success']
+            insufficient_results = [r for r in results if r.get('status') == 'insufficient_data']
+            error_results = [r for r in results if r.get('status') == 'error']
+            coarse_failed_results = [r for r in results if r.get('status') == 'coarse_filter_failed']
+            
             report = {
                 'start_date': start_date,
                 'end_date': end_date,
                 'total_days': len(results),
-                'success_days': len([r for r in results if r['status'] == 'success']),
-                'insufficient_data_days': len([r for r in results if r['status'] == 'insufficient_data']),
-                'error_days': len([r for r in results if r['status'] == 'error']),
-                'daily_top3': [
-                    {'date': r['date'], 'top3': r.get('top3', [])} 
-                    for r in results if r['status'] == 'success'
+                'success_days': len(success_results),
+                'insufficient_data_days': len(insufficient_results),
+                'error_days': len(error_results),
+                'coarse_filter_failed_days': len(coarse_failed_results),
+                'statistics_by_date': {
+                    r['date']: {
+                        'status': r.get('status'),
+                        'valid_stocks': r.get('valid_stocks', 0),
+                        'top1_score': r.get('top20', [{}])[0].get('final_score', 0) if r.get('top20') else 0
+                    }
+                    for r in results
+                },
+                'daily_top20': [
+                    {
+                        'date': r['date'],
+                        'top20': r.get('top20', []),
+                        'valid_stocks': r.get('valid_stocks', 0)
+                    } 
+                    for r in success_results
                 ]
             }
             
