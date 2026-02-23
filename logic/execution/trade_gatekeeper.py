@@ -422,3 +422,79 @@ class TradeGatekeeper:
                 opportunities_final.append(item)
         
         return opportunities_final, opportunities_blocked, timing_downgraded
+
+
+# =============================================================================
+# 订单级别检查（与trade_interface.py集成）
+# =============================================================================
+
+def check_buy_order(order, total_capital: float = 20000.0) -> Tuple[bool, str]:
+    """
+    检查买入订单（与TradeInterface集成）
+    
+    检查项：
+    - 价格合理性（>0）
+    - 数量合理性（100的整数倍）
+    - 单次买入金额限制（默认不超过总资金50%）
+    
+    Args:
+        order: TradeOrder对象或类似结构（有stock_code, price, quantity属性）
+        total_capital: 总资金，用于计算单笔限额
+    
+    Returns:
+        (is_valid, message)
+    """
+    # 检查1: 价格合理性
+    if order.price <= 0:
+        return False, f'买入价格异常: {order.price}'
+    
+    # 检查2: 数量合理性（A股必须是100的整数倍）
+    if order.quantity <= 0:
+        return False, f'买入数量必须大于0: {order.quantity}'
+    if order.quantity % 100 != 0:
+        return False, f'买入数量必须是100的整数倍: {order.quantity}'
+    
+    # 检查3: 单次买入金额限制
+    MAX_SINGLE_ORDER_RATIO = 0.5  # 单笔最大占总资金比例
+    order_amount = order.price * order.quantity
+    max_single_order = total_capital * MAX_SINGLE_ORDER_RATIO
+    if order_amount > max_single_order:
+        return False, (f'单笔买入金额过大: {order_amount:.2f}, '
+                      f'超过限制{max_single_order:.2f} ({MAX_SINGLE_ORDER_RATIO*100:.0f}%)')
+    
+    return True, '通过'
+
+
+def check_sell_order(order, current_position: int) -> Tuple[bool, str]:
+    """
+    检查卖出订单（与TradeInterface集成）
+    
+    检查项：
+    - 价格合理性（>0）
+    - 数量合理性（100的整数倍）
+    - 持仓检查
+    
+    Args:
+        order: TradeOrder对象或类似结构
+        current_position: 当前持仓数量
+    
+    Returns:
+        (is_valid, message)
+    """
+    # 检查1: 价格合理性
+    if order.price <= 0:
+        return False, f'卖出价格异常: {order.price}'
+    
+    # 检查2: 数量合理性
+    if order.quantity <= 0:
+        return False, f'卖出数量必须大于0: {order.quantity}'
+    if order.quantity % 100 != 0:
+        return False, f'卖出数量必须是100的整数倍: {order.quantity}'
+    
+    # 检查3: 持仓检查
+    if current_position <= 0:
+        return False, f'未持有该股票: {order.stock_code}'
+    if order.quantity > current_position:
+        return False, f'卖出数量超过持仓: 卖出{order.quantity}, 持仓{current_position}'
+    
+    return True, '通过'
