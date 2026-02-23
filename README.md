@@ -1,18 +1,19 @@
 # MyQuantTool - 右侧极端换手起爆时间机器
 
-**版本**: V18.0.0 (Phase 13 最终打磨版)  
+**版本**: V20.0.0 (Phase 16 熔断机制版)  
 **核心定位**: A股右侧极端换手起爆点 + 横向资金吸血PK  
-**数据源**: QMT Tick (Level-1) + Tushare  
-**架构**: 唯一事实来源 + 常识护栏 + 统一CLI入口 + 环境隔离
+**数据源**: QMT Tick (Level-1/Level-2 VIP) + Tushare粗筛  
+**架构**: 唯一事实来源 + 常识护栏 + 统一CLI入口 + QMT原教旨主义
 
 ---
 
-## 🎯 四大基石 (CTO最终审计)
+## 🎯 五大基石 (CTO最终审计)
 
-1. **环境隔离**: 敏感配置(.env)与代码分离，Token不上Git
+1. **QMT原教旨主义**: VIP → Local L1 → 熔断，禁止降级Tushare
 2. **算子收口**: 所有核心算子在`logic/core/`，禁止分散
-3. **跨日记忆**: ShortTermMemory继承，9日连贯流验证
+3. **跨日记忆**: 记忆衰减机制(0.5系数)，连续2日不上榜删除
 4. **VWAP惩罚**: 跌破均价线-20分，final_score永不为0
+5. **统一入口**: 所有操作必须通过`main.py`，禁止野脚本
 
 ---
 
@@ -58,31 +59,35 @@ logic/core/
 
 ## 🚀 极简使用指南
 
-### 1. 环境配置 (首次运行)
+### 1. 环境配置
 ```bash
-# 复制环境变量模板
-copy .env.example .env
-
-# 编辑 .env 文件，填入Tushare Token
-TUSHARE_TOKEN=your_token_here
+# 创建.env文件，填入Token
+echo "TUSHARE_TOKEN=your_token" > .env
+echo "QMT_VIP_TOKEN=your_vip_token" >> .env
 ```
 
-### 2. 全息时间机器 (核心功能 - 跨日连贯流)
+### 2. 数据下载
 ```bash
-# 12月24日至1月5日跨日回测 (CTO强制: Top 20梯度观察)
+# 下载Tick数据 (前台透明执行)
+python main.py download --date 20251231 --type tick
+```
+
+### 3. 全息时间机器 (核心功能 - 跨日连贯流)
+```bash
+# 12月24日至1月5日跨日回测
 python main.py backtest --start_date 20251224 --end_date 20260105 --full_market --strategy v18 --save
 
 # 输出: data/backtest_out/time_machine/time_machine_YYYYMMDD.json (每日Top 20)
 #       data/backtest_out/time_machine/time_machine_summary_*.json (汇总报告)
 ```
 
-### 3. 单日验证
+### 4. 单日验证
 ```bash
 # 单日回测 (粗筛 + 三防线)
 python main.py backtest --date 20251231 --full_market --strategy v18
 ```
 
-### 4. 实盘监控
+### 5. 实盘监控
 ```bash
 # 启动实时监控系统
 python main.py monitor
@@ -170,16 +175,19 @@ final_score = max(0, final_score)  # 永不为0
 
 ## 📊 全息时间机器 (跨日连贯流)
 
-### 跨日记忆机制
+### 跨日记忆衰减机制
 ```python
 # ShortTermMemory.json 存储强势票
+# 每日收盘后执行衰减:
+# 1. 记忆分 *= 0.5
+# 2. 连续2日不上榜 -> 删除
+# 3. 分数 < 10 -> 删除
+
 {
-  "20251231": {
-    "300875.SZ": {
-      "score": 85.5,
-      "momentum": "STRONG",
-      "carry_over": true  # 次日优先观察
-    }
+  "300875.SZ": {
+    "score": 85.5,
+    "absent_days": 0,
+    "last_decay_date": "20251231"
   }
 }
 ```
@@ -189,8 +197,8 @@ final_score = max(0, final_score)  # 永不为0
 1. Tushare粗筛 (5000→~500)
 2. 三层防线过滤 (~500→~50)
 3. V18验钞机打分
-4. 生成当日战报
-5. 保存跨日记忆
+4. 生成当日战报Top 20
+5. 执行记忆衰减
 6. 下一日继承记忆
 ```
 
@@ -218,10 +226,22 @@ pytest tests/unit/core/ -v
 |------|----------|------|
 | V11-V16 | 半路战法 + 龙头战法 | ❌ 已废弃 |
 | V17 | Portfolio层资金调度 | ❌ 已废弃 |
-| V18 | 高分辨率基础分 + VWAP惩罚 + 跨日连贯流 | ✅ 当前版本 |
+| V18 | 高分辨率基础分 + VWAP惩罚 | ✅ 核心 |
 | P9 | 架构重构 (492,542行删除) | ✅ 已合并 |
 | P9.2 | 真相隔离 (真Core vs 假Core) | ✅ 已合并 |
-| P11 | 铁血镇压 (三条死律修复) | ✅ 当前 |
+| P14 | QMTRouter熔断机制 | ✅ 已合并 |
+| P15 | 记忆衰减机制 | ✅ 当前 |
+
+---
+
+## 🔧 核心模块
+
+| 模块 | 路径 | 说明 |
+|------|------|------|
+| QMTRouter | `logic/data_providers/fallback_provider.py` | VIP→L1→熔断责任链 |
+| TimeMachine | `logic/backtest/time_machine_engine.py` | 跨日连贯流+记忆衰减 |
+| MetricDefinitions | `logic/core/metric_definitions.py` | 统一算子字典 |
+| SanityGuards | `logic/core/sanity_guards.py` | 数据护栏 |
 
 ---
 
@@ -232,18 +252,8 @@ pytest tests/unit/core/ -v
 3. ❌ **禁止** 直接运行子模块 (`python logic/xxx.py`)
 4. ❌ **禁止** 硬编码路径或魔法数字
 5. ❌ **禁止** 异常静默吞没 (必须Fail Fast)
+6. ❌ **禁止** 创建tools/目录下的新文件
 
 ---
 
-## 📞 问题排查
-
-| 问题 | 排查文档 |
-|------|----------|
-| QMT连接失败 | `docs/setup/QMT配置指南.md` |
-| 数据单位错误 | `SYSTEM_CONSTITUTION.md` 规则6-7 |
-| 路径解析错误 | `logic/core/path_resolver.py` |
-| 数据验证失败 | `logic/core/sanity_guards.py` |
-
----
-
-**最后强调**: 所有操作必须通过 `main.py` CLI入口。系统已彻底重构为工业级代码，追求极致简洁和真实数据驱动。
+**最后强调**: 所有操作必须通过 `main.py` CLI入口。QMT是唯一数据源，熔断即停机。
