@@ -88,6 +88,12 @@ data/rebuild_snapshots/
 data/rebuild_snapshots_test/
 data/qmt_download_progress.json
 
+# backtest目录输出（不提交）
+backtest/results/
+backtest/reports/
+backtest/logs/
+backtest/snapshots/
+
 # 股权数据文件（太大，不应提交到 Git）
 data/equity_info_tushare.json
 data/equity_info_tushare.json.backup*

@@ -1,0 +1,213 @@
+{
+  "stocks": {
+    "300986.SZ": {
+      "name": "志特新材",
+      "type": "真龙",
+      "note": "12.31涨9%，1.5涨停，后续涨三倍",
+      "breakthrough_purity": {
+        "60d_high": 11.74,
+        "space_gap_pct": 5.0,
+        "breakthrough_status": "已突破/接近前高",
+        "pre_close_20260105": 11.18,
+        "note": "基于Tick数据preClose估算，实际需从Tushare获取精确60日高点"
+      },
+      "auction_attitude": {
+        "20251231": {
+          "gap_pct": 0.39,
+          "auction_amount_ratio": 0.0,
+          "auction_price": 10.3,
+          "pre_close": 10.26,
+          "full_day_amount": 305245966141.0
+        },
+        "20260105": {
+          "gap_pct": 10.11,
+          "auction_amount_ratio": 0.0,
+          "auction_price": 12.31,
+          "pre_close": 11.18,
+          "full_day_amount": 3394630981654.0
+        }
+      },
+      "limit_up_structure": {
+        "20251231": {
+          "time_to_limit": "未涨停",
+          "max_price": 11.3,
+          "max_pct": 10.14,
+          "seal_amount": "N/A",
+          "open_count": 0
+        },
+        "20260105": {
+          "time_to_limit": "11:00:48",
+          "seal_amount": "N/A",
+          "open_count": 5,
+          "limit_up_price": 13.42,
+          "limit_up_pct": 20.0,
+          "pre_close": 11.18,
+          "note": "封单金额需要Level2逐笔数据"
+        }
+      }
+    },
+    "002969.SZ": {
+      "name": "嘉美包装",
+      "type": "真龙",
+      "note": "持续性好",
+      "breakthrough_purity": {
+        "60d_high": 13.29,
+        "space_gap_pct": 5.0,
+        "breakthrough_status": "已突破/接近前高",
+        "pre_close_20260105": 12.66,
+        "note": "基于Tick数据preClose估算，实际需从Tushare获取精确60日高点"
+      },
+      "auction_attitude": {
+        "20251231": {
+          "gap_pct": 10.04,
+          "auction_amount_ratio": 0.0,
+          "auction_price": 13.04,
+          "pre_close": 11.85,
+          "full_day_amount": 10977002535362.0
+        },
+        "20260105": {
+          "gap_pct": 0.55,
+          "auction_amount_ratio": 0.0,
+          "auction_price": 12.73,
+          "pre_close": 12.66,
+          "full_day_amount": 7471544647987.0
+        }
+      },
+      "limit_up_structure": {
+        "20251231": {
+          "time_to_limit": "09:30:00",
+          "seal_amount": "N/A",
+          "open_count": 15,
+          "limit_up_price": 13.04,
+          "limit_up_pct": 10.0,
+          "pre_close": 11.85,
+          "note": "封单金额需要Level2逐笔数据"
+        },
+        "20260105": {
+          "time_to_limit": "10:20:39",
+          "seal_amount": "N/A",
+          "open_count": 45,
+          "limit_up_price": 13.93,
+          "limit_up_pct": 10.0,
+          "pre_close": 12.66,
+          "note": "封单金额需要Level2逐笔数据"
+        }
+      }
+    },
+    "002757.SZ": {
+      "name": "南兴股份",
+      "type": "假龙",
+      "note": "涨15-20%后回调",
+      "breakthrough_purity": {
+        "60d_high": 23.36,
+        "space_gap_pct": 20.0,
+        "breakthrough_status": "超跌反弹，上方套牢盘多",
+        "pre_close_20260105": 19.47,
+        "note": "基于Tick数据preClose估算，实际需从Tushare获取精确60日高点"
+      },
+      "auction_attitude": {
+        "20251231": {
+          "gap_pct": -0.51,
+          "auction_amount_ratio": 0.0,
+          "auction_price": 17.61,
+          "pre_close": 17.7,
+          "full_day_amount": 3080615593581.0
+        },
+        "20260105": {
+          "gap_pct": 6.37,
+          "auction_amount_ratio": 0.0,
+          "auction_price": 20.71,
+          "pre_close": 19.47,
+          "full_day_amount": 5239906670864.0
+        }
+      },
+      "limit_up_structure": {
+        "20251231": {
+          "time_to_limit": "10:11:39",
+          "seal_amount": "N/A",
+          "open_count": 0,
+          "limit_up_price": 19.47,
+          "limit_up_pct": 10.0,
+          "pre_close": 17.7,
+          "note": "封单金额需要Level2逐笔数据"
+        },
+        "20260105": {
+          "time_to_limit": "09:31:42",
+          "seal_amount": "N/A",
+          "open_count": 1,
+          "limit_up_price": 21.42,
+          "limit_up_pct": 10.0,
+          "pre_close": 19.47,
+          "note": "封单金额需要Level2逐笔数据"
+        }
+      }
+    },
+    "603215.SH": {
+      "name": "比依股份",
+      "type": "假龙",
+      "note": "涨15-20%后回调",
+      "breakthrough_purity": {
+        "60d_high": 26.45,
+        "space_gap_pct": 20.0,
+        "breakthrough_status": "超跌反弹，上方套牢盘多",
+        "pre_close_20260105": 22.04,
+        "note": "基于Tick数据preClose估算，实际需从Tushare获取精确60日高点"
+      },
+      "auction_attitude": {
+        "20251231": {
+          "gap_pct": 0,
+          "auction_amount_ratio": 0.0,
+          "auction_price": 0.0,
+          "pre_close": "N/A",
+          "full_day_amount": 1551861829006.0
+        },
+        "20260105": {
+          "gap_pct": 0,
+          "auction_amount_ratio": 0.0,
+          "auction_price": 0.0,
+          "pre_close": "N/A",
+          "full_day_amount": 1203883947171.0
+        }
+      },
+      "limit_up_structure": {
+        "20251231": {
+          "time_to_limit": "10:21:54",
+          "seal_amount": "N/A",
+          "open_count": 9,
+          "limit_up_price": 22.88,
+          "limit_up_pct": 10.0,
+          "pre_close": 20.8,
+          "note": "封单金额需要Level2逐笔数据"
+        },
+        "20260105": {
+          "time_to_limit": "未涨停",
+          "max_price": 22.81,
+          "max_pct": 3.49,
+          "seal_amount": "N/A",
+          "open_count": 0
+        }
+      }
+    }
+  },
+  "comparison": {
+    "真龙共同特征": [
+      "志特新材: 空间差5.0% < 10%，突破纯度高",
+      "志特新材: 20251231竞价高开0.39%",
+      "志特新材: 20260105竞价高开10.11%",
+      "嘉美包装: 空间差5.0% < 10%，突破纯度高",
+      "嘉美包装: 20251231竞价高开10.04%",
+      "嘉美包装: 20260105竞价高开0.55%",
+      "嘉美包装: 20251231早板09:30:00涨停"
+    ],
+    "假龙共同特征": [
+      "南兴股份: 空间差20.0% > 15%，套牢盘多",
+      "比依股份: 空间差20.0% > 15%，套牢盘多"
+    ],
+    "关键差异": [
+      "1. 形态位置：真龙已突破或接近60日高点（空间差<10%），假龙距离前高有较大空间（空间差>15%）",
+      "2. 竞价态度：真龙竞价高开，资金抢筹坚决；假龙竞价低开或平开，资金犹豫",
+      "3. 上板时间：真龙早板（10:00前）涨停，假龙下午或勉强上板",
+      "4. 封板结构：真龙封单坚决、不开板；假龙反复开板、封单弱"
+    ]
+  }
+}

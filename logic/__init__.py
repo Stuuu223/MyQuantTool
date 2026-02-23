@@ -3,39 +3,85 @@
 MyQuantTool - 小资金专用右侧起爆本地私有化量化程序
 逻辑层统一入口
 
-Phase 1.5.3 精简后核心模块暴露
+Phase 9.2 重构后核心模块暴露
 """
 
-# 数据服务层（统一数据入口）
-from logic.services.data_service import DataService
+# Core基础设施层
+from logic.core.error_handler import (
+    AppError,
+    DataError,
+    NetworkError,
+    ValidationError,
+    ConfigError,
+    handle_errors,
+    safe_execute,
+)
+from logic.core.log_config import (
+    setup_scan_logging,
+    setup_logging_from_env,
+    setup_ultra_quiet_logging,
+    use_debug_mode,
+    use_normal_mode,
+    use_quiet_mode,
+)
+from logic.core.metric_definitions import MetricDefinitions
+from logic.core.path_resolver import PathResolver
+from logic.core.sanity_guards import SanityGuards, sanity_check
+from logic.core.version import VERSION as __version__
 
-# 评分层（Phase 1核心：资金强度评分）
-from logic.scoring.flow_intensity_scorer import FlowIntensityScorer, calculate_intensity
+# 策略层
+from logic.strategies.sentiment_engine import SentimentEngine
+from logic.strategies.strategy_config import StrategyConfig, get_strategy_config
 
-# 检测器层（事件检测）
-from logic.strategies.halfway_breakout_detector import HalfwayBreakoutDetector
-from logic.strategies.event_detector import BaseEventDetector, TradingEvent, EventType
+# 工具层
+from logic.utils.algo import QuantAlgo
+from logic.utils.failsafe import FailSafeManager
+from logic.utils.shared_config_manager import SharedConfigManager
 
-# 数据源层（QMT历史数据）
-from logic.qmt_historical_provider import QMTHistoricalProvider
+# 数据提供层
+from logic.data_providers.data_adapter import DataAdapter
+from logic.data_providers.qmt_manager import QMTManager
+
+# 交易执行层
+from logic.execution.trade_gatekeeper import TradeGatekeeper
 
 __all__ = [
-    # 数据服务
-    'DataService',
+    # Core基础设施
+    'AppError',
+    'DataError',
+    'NetworkError',
+    'ValidationError',
+    'ConfigError',
+    'handle_errors',
+    'safe_execute',
+    'setup_scan_logging',
+    'setup_logging_from_env',
+    'setup_ultra_quiet_logging',
+    'use_debug_mode',
+    'use_normal_mode',
+    'use_quiet_mode',
+    'MetricDefinitions',
+    'PathResolver',
+    'SanityGuards',
+    'sanity_check',
+    '__version__',
     
-    # 评分系统
-    'FlowIntensityScorer',
-    'calculate_intensity',
+    # 策略层
+    'SentimentEngine',
+    'StrategyConfig',
+    'get_strategy_config',
     
-    # 事件检测
-    'HalfwayBreakoutDetector',
-    'BaseEventDetector',
-    'TradingEvent',
-    'EventType',
+    # 工具层
+    'QuantAlgo',
+    'FailSafeManager',
+    'SharedConfigManager',
     
-    # 数据源
-    'QMTHistoricalProvider',
+    # 数据提供层
+    'DataAdapter',
+    'QMTManager',
+    
+    # 交易执行层
+    'TradeGatekeeper',
 ]
 
-__version__ = '10.5.0'
-__phase__ = 'Phase 1.5.3'
+__phase__ = 'Phase 9.2'

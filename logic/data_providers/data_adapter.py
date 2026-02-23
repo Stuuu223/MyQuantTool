@@ -1,237 +1,381 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-数据适配层 - 统一不同数据源的字段格式
-让战法无缝切换 QMT / AkShare / EasyQuotation
+数据适配器 (Data Adapter)
 
-Author: iFlow CLI
-Date: 2026-01-30
-Version: V1.0
+V16.0 - 统一数据获取接口
+封装现有的provider，提供统一的数据访问接口
+
+核心功能：
+1. 批量获取实时快照（支持并发优化）
+2. 获取昨日涨停池（用于情绪计算）
+3. 处理Windows编码问题
+4. 与现有provider无缝兼容
+
+Author: MyQuantTool Team
+Date: 2026-02-16
 """
 
 import pandas as pd
-from typing import List, Dict, Any, Optional
-from logic.utils.logger import get_logger
-from logic.strategies.active_stock_filter import get_active_stock_filter
+import platform
+import os
+from typing import List, Dict, Optional
+from datetime import datetime, timedelta
+import logging
 
-logger = get_logger(__name__)
+# 尝试导入 QMT，如果失败则静默降级
+try:
+    from xtquant import xtdata
+    HAS_QMT = True
+except ImportError:
+    HAS_QMT = False
+
+# 导入现有的provider（适配现有架构）
+from logic.data_providers import get_provider
+from logic.utils.code_converter import CodeConverter
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class DataAdapter:
     """
-    数据适配层
+    数据适配器（V16.0）
 
-    功能:
-    1. 统一字段名（中英文双重映射）
-    2. 统一单位（涨跌幅% vs 小数，成交额元 vs 万元）
-    3. 自动补充缺失字段（量比、换手率等）
+    职责：
+    - 封装现有的provider，提供统一的接口
+    - 处理Windows编码问题
+    - 支持批量获取数据（为并发优化做准备）
+    - 提供数据缓存和TTL管理
     """
 
-    # 字段映射表（旧字段名 -> 新字段名）
-    FIELD_MAPPING = {
-        # QMT/新格式 -> 战法常用格式
-        '最新价': 'price',
-        '昨收': 'close',
-        '今开': 'open',
-        '最高': 'high',
-        '最低': 'low',
-        '成交量': 'volume',
-        '成交额': 'amount',
-        '涨跌幅': 'change_pct',
-        '换手率': 'turnover',
-        '振幅': 'amplitude',
-        '代码': 'code',
-        '名称': 'name',
-
-        # 反向映射
-        'price': '最新价',
-        'close': '昨收',
-        'open': '今开',
-        'high': '最高',
-        'low': '最低',
-        'volume': '成交量',
-        'amount': '成交额',
-        'change_pct': '涨跌幅',
-        'turnover': '换手率',
-        'amplitude': '振幅',
-        'code': '代码',
-        'name': '名称',
-    }
-
-    @staticmethod
-    def normalize_dataframe(df: pd.DataFrame, source: str = 'qmt') -> pd.DataFrame:
+    def __init__(self, use_qmt: bool = True):
         """
-        标准化 DataFrame 字段
+        初始化数据适配器
 
         Args:
-            df: 原始 DataFrame
-            source: 数据源类型 (qmt/akshare/easyquotation)
-
-        Returns:
-            标准化后的 DataFrame（同时包含中英文字段）
+            use_qmt: 是否使用QMT数据源
         """
-        if df.empty:
-            return df
+        self.os_type = platform.system()
+        self.is_windows = self.os_type == 'Windows'
+        self.has_qmt = HAS_QMT  # 初始化has_qmt属性
+        self.use_qmt = use_qmt and self.has_qmt
 
-        df = df.copy()
+        # 初始化现有的provider（适配现有架构）
+        try:
+            self.level1_provider = get_provider('level1')
+            logger.info("✅ Level-1 提供者已初始化")
+        except Exception as e:
+            logger.warning(f"⚠️ Level-1 提供者初始化失败: {e}")
+            self.level1_provider = None
 
-        # 1. 确保同时存在中英文字段
-        for cn_field, en_field in DataAdapter.FIELD_MAPPING.items():
-            if cn_field in df.columns and en_field not in df.columns:
-                df[en_field] = df[cn_field]
-            elif en_field in df.columns and cn_field not in df.columns:
-                df[cn_field] = df[en_field]
+        # 代码转换器
+        self.converter = CodeConverter()
 
-        # 2. 统一涨跌幅单位（确保是百分比，不是小数）
-        if '涨跌幅' in df.columns:
-            # 🔥 改进判断：使用中位数而非最大值，更准确
-            sample_val = df['涨跌幅'].abs().quantile(0.5)  # 使用中位数
-            if sample_val < 1:  # 说明是小数形式
-                df['涨跌幅'] = df['涨跌幅'] * 100
-                df['change_pct'] = df['涨跌幅']
-                logger.debug(f"✅ [DataAdapter] 涨跌幅已从小数转换为百分比格式")
+        # 数据缓存（用于优化性能）
+        self.cache = {}
+        self.cache_ttl = 5  # 缓存有效期5秒
 
-        # 3. 统一成交额单位（确保是万元）
-        # QMT 已经是万元，无需转换
+        logger.info(f"✅ 数据适配器初始化成功 (OS: {self.os_type}, QMT: {HAS_QMT})")
 
-        # 4. 补充常用派生字段
-        if '最新价' in df.columns and '昨收' in df.columns:
-            # 涨跌额
-            df['涨跌额'] = df['最新价'] - df['昨收']
-            df['change'] = df['涨跌额']
-
-            # 涨跌幅（如果没有）
-            if '涨跌幅' not in df.columns:
-                df['涨跌幅'] = ((df['最新价'] - df['昨收']) / df['昨收']) * 100
-                df['change_pct'] = df['涨跌幅']
-
-        # 5. 补充其他常用字段的别名
-        if 'price' in df.columns:
-            df['now'] = df['price']  # EasyQuotation 风格
-            df['最新'] = df['price']
-
-        if 'change_pct' in df.columns:
-            df['percent'] = df['change_pct']  # EasyQuotation 风格
-
-        logger.debug(f"✅ [DataAdapter] 标准化完成，字段: {df.columns.tolist()}")
-
-        return df
-
-    @staticmethod
-    def get_active_stocks_unified(
-        limit: int = 200,
-        min_change_pct: Optional[float] = None,
-        max_change_pct: Optional[float] = None,
-        **kwargs
-    ) -> List[Dict[str, Any]]:
+    def _safe_read_csv(self, file_path: str) -> pd.DataFrame:
         """
-        获取活跃股票（统一接口）
-
-        返回的数据已标准化，可直接用于所有战法
+        [Windows编码卫士] 安全读取CSV，自动尝试 utf-8 和 gbk
 
         Args:
-            limit: 返回数量
-            min_change_pct: 最小涨幅（百分比，如 5.0 表示 5%）
-            max_change_pct: 最大涨幅
-            **kwargs: 其他参数透传给 ActiveStockFilter
+            file_path: 文件路径
 
         Returns:
-            标准化的股票列表
+            pd.DataFrame: 读取的数据
         """
-        filter_obj = get_active_stock_filter()
-
-        # 获取原始数据
-        stocks = filter_obj.get_active_stocks(
-            limit=limit,
-            min_change_pct=min_change_pct,
-            max_change_pct=max_change_pct,
-            **kwargs
-        )
-
-        if not stocks:
-            return []
-
-        # 转为 DataFrame 进行标准化
-        df = pd.DataFrame(stocks)
-        df = DataAdapter.normalize_dataframe(df, source='qmt')
-
-        # 转回字典列表
-        return df.to_dict('records')
-
-    @staticmethod
-    def get_stock_pool_for_strategy(
-        strategy_name: str,
-        **filters
-    ) -> pd.DataFrame:
-        """
-        为特定战法获取股票池
-
-        Args:
-            strategy_name: 战法名称 (longtou/dixi/banlu/weipan)
-            **filters: 过滤条件
-
-        Returns:
-            标准化的 DataFrame
-        """
-        # 根据战法类型设置默认过滤条件
-        strategy_defaults = {
-            'longtou': {  # 龙头战法
-                'min_amplitude': 1.0,  # 🔥 V20.0: 从2.0降到1.0，避免零结果
-                'min_change_pct': 0.0,  # 🔥 降低涨幅门槛
-                'only_20cm': False,
-                'limit': 100
-            },
-            'dixi': {  # 低吸战法
-                'min_change_pct': -10.0,  # 🔥 扩大跌幅范围
-                'max_change_pct': 5.0,  # 🔥 V20.0: 从3.0扩大到5.0
-                'min_amplitude': 1.0,  # 🔥 V20.0: 从2.0降到1.0，避免零结果
-                'limit': 100
-            },
-            'banlu': {  # 半路战法
-                'min_change_pct': 0.0,  # 🔥 降低涨幅门槛
-                'max_change_pct': 20.0,  # 🔥 V20.0: 从15.0扩大到20.0
-                'min_amplitude': 1.0,  # 🔥 V20.0: 从2.0降到1.0，避免零结果
-                'only_20cm': False,  # 🔥 包含主板股票
-                'limit': 50
-            },
-            'weipan': {  # 尾盘战法
-                'min_amplitude': 1.0,  # 🔥 V20.0: 从2.0降到1.0，避免零结果
-                'limit': 100
-            }
-        }
-
-        # 合并默认参数和用户参数
-        params = strategy_defaults.get(strategy_name, {})
-        params.update(filters)
-
-        logger.info(f"🎯 [DataAdapter] 为战法 '{strategy_name}' 获取股票池，参数: {params}")
-
-        # 获取标准化数据
-        stocks = DataAdapter.get_active_stocks_unified(**params)
-
-        if not stocks:
-            logger.warning(f"⚠️ [DataAdapter] 战法 '{strategy_name}' 未获取到股票")
+        if not os.path.exists(file_path):
+            logger.error(f"文件不存在: {file_path}")
             return pd.DataFrame()
 
-        df = pd.DataFrame(stocks)
-        logger.info(f"✅ [DataAdapter] 战法 '{strategy_name}' 获取到 {len(df)} 只股票")
+        try:
+            # 优先尝试 UTF-8 (标准)
+            return pd.read_csv(file_path, encoding='utf-8')
+        except UnicodeDecodeError:
+            # 降级尝试 GBK (Windows常见)
+            logger.warning(f"UTF-8读取失败，尝试GBK: {file_path}")
+            try:
+                return pd.read_csv(file_path, encoding='gbk')
+            except Exception as e:
+                logger.error(f"文件读取彻底失败 {file_path}: {e}")
+                return pd.DataFrame()
 
-        return df
+    def _safe_write_csv(self, df: pd.DataFrame, file_path: str) -> bool:
+        """
+        [Windows编码卫士] 安全写入CSV，强制使用 utf-8
+
+        Args:
+            df: 要写入的数据
+            file_path: 文件路径
+
+        Returns:
+            bool: 是否写入成功
+        """
+        try:
+            # 强制使用 UTF-8 (标准)
+            df.to_csv(file_path, index=False, encoding='utf-8')
+            return True
+        except Exception as e:
+            logger.error(f"文件写入失败 {file_path}: {e}")
+            return False
+
+    def get_realtime_snapshot(self, code_list: List[str]) -> pd.DataFrame:
+        """
+        获取实时快照（批量）
+
+        Args:
+            code_list: 股票代码列表
+
+        Returns:
+            pd.DataFrame: 实时快照数据
+        """
+        if not code_list:
+            return pd.DataFrame()
+
+        # 生成缓存键
+        cache_key = f"snapshot_{'_'.join(sorted(code_list))}"
+        cache_time = datetime.now()
+
+        # 检查缓存
+        if cache_key in self.cache:
+            cached_data, cached_time = self.cache[cache_key]
+            if (cache_time - cached_time).total_seconds() < self.cache_ttl:
+                logger.debug(f"使用缓存数据: {cache_key}")
+                return cached_data
+
+        # 获取数据（优先使用现有provider）
+        if self.level1_provider is not None:
+            try:
+                # 使用现有provider获取数据
+                df = self._fetch_via_provider(code_list)
+
+                # 缓存数据
+                self.cache[cache_key] = (df, cache_time)
+
+                return df
+            except Exception as e:
+                logger.error(f"Provider数据获取失败: {e}")
+
+        # 降级到QMT直接获取
+        if self.use_qmt:
+            try:
+                df = self._fetch_via_qmt(code_list)
+
+                # 缓存数据
+                self.cache[cache_key] = (df, cache_time)
+
+                return df
+            except Exception as e:
+                logger.error(f"QMT数据获取失败: {e}")
+
+        logger.warning("所有数据源均失败，返回空DataFrame")
+        return pd.DataFrame()
+
+    def _fetch_via_provider(self, code_list: List[str]) -> pd.DataFrame:
+        """
+        通过现有provider获取数据（适配现有架构）
+
+        Args:
+            code_list: 股票代码列表
+
+        Returns:
+            pd.DataFrame: 数据
+        """
+        # 尝试使用data_source_manager（极速层）
+        try:
+            from logic.data_providers.data_source_manager import get_data_source_manager
+
+            ds = get_data_source_manager()
+            tick_data = ds.get_realtime_price_fast(code_list)
+
+            if tick_data:
+                data_list = []
+                for code, tick in tick_data.items():
+                    # 转换为统一格式
+                    last_close = tick.get('close', 0)
+                    price = tick.get('price', 0)
+                    pct_chg = (price - last_close) / last_close if last_close > 0 else 0
+
+                    data_list.append({
+                        'code': code,
+                        'price': price,
+                        'open': tick.get('open', 0),
+                        'high': tick.get('high', 0),
+                        'low': tick.get('low', 0),
+                        'vol': tick.get('volume', 0),
+                        'amount': tick.get('turnover', 0),
+                        'last_close': last_close,
+                        'pct_chg': pct_chg,
+                        'volume_ratio': 0,  # 需要额外计算
+                        'bid1_vol': 0,  # 极速层不提供盘口数据
+                        'ask1_vol': 0,
+                    })
+
+                if data_list:
+                    return pd.DataFrame(data_list)
+        except Exception as e:
+            logger.warning(f"data_source_manager获取数据失败: {e}")
+
+        # 降级方案：返回空DataFrame
+        return pd.DataFrame()
+
+    def _fetch_via_qmt(self, code_list: List[str]) -> pd.DataFrame:
+        """
+        通过QMT直接获取数据（降级方案）
+
+        Args:
+            code_list: 股票代码列表
+
+        Returns:
+            pd.DataFrame: 数据
+        """
+        try:
+            # 批量获取 QMT 数据
+            full_tick = xtdata.get_full_tick(code_list)
+            if not full_tick:
+                return pd.DataFrame()
+
+            # 快速转换为 DataFrame
+            data_list = []
+            for code, tick in full_tick.items():
+                data_list.append({
+                    'code': code,
+                    'price': tick.get('lastPrice', 0),
+                    'open': tick.get('open', 0),
+                    'high': tick.get('high', 0),
+                    'low': tick.get('low', 0),
+                    'vol': tick.get('volume', 0),
+                    'amount': tick.get('amount', 0),
+                    'last_close': tick.get('lastClose', 0),
+                    'pct_chg': (tick.get('lastPrice', 0) - tick.get('lastClose', 0)) / tick.get('lastClose', 1) if tick.get('lastClose', 0) > 0 else 0,
+                    'volume_ratio': 0,  # 需要额外计算
+                    'bid1_vol': tick.get('bidVol', [0])[0] if isinstance(tick.get('bidVol'), list) else 0,
+                    'ask1_vol': tick.get('askVol', [0])[0] if isinstance(tick.get('askVol'), list) else 0,
+                })
+
+            return pd.DataFrame(data_list)
+        except Exception as e:
+            logger.error(f"QMT数据获取异常: {e}")
+            return pd.DataFrame()
+
+    def get_yesterday_limit_up_pool(self) -> List[str]:
+        """
+        获取昨日涨停池（用于情绪计算）
+
+        Returns:
+            List[str]: 涨停股票代码列表
+        """
+        # 尝试从本地缓存读取
+        cache_file = "data/cache/yesterday_limit_up_pool.csv"
+        if os.path.exists(cache_file):
+            df = self._safe_read_csv(cache_file)
+            if not df.empty:
+                # 检查文件日期是否是昨天
+                file_time = datetime.fromtimestamp(os.path.getmtime(cache_file))
+                if (datetime.now() - file_time).days <= 1:
+                    # 确保代码都是字符串格式
+                    codes = [str(code) for code in df['code'].tolist()]
+                    logger.info(f"从缓存读取昨日涨停池: {len(codes)} 只股票")
+                    return codes
+
+        # 尝试从AkShare获取
+        try:
+            import akshare as ak
+
+            # 获取昨天日期
+            yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y%m%d')
+
+            # 获取涨停池
+            limit_stocks = ak.stock_zt_pool_em(date=yesterday)
+
+            if not limit_stocks.empty:
+                # 确保代码都是字符串格式
+                codes = [str(code) for code in limit_stocks['代码'].tolist()]
+
+                # 缓存到本地
+                df = pd.DataFrame({'code': codes})
+                os.makedirs('data/cache', exist_ok=True)
+                self._safe_write_csv(df, cache_file)
+
+                logger.info(f"从AkShare获取昨日涨停池: {len(codes)} 只股票")
+                return codes
+        except Exception as e:
+            logger.warning(f"AkShare获取昨日涨停池失败: {e}")
+
+        # 返回空列表
+        logger.warning("无法获取昨日涨停池")
+        return []
+
+    def get_historical_data(self, code: str, period: str = '1d', start_date: str = None, end_date: str = None) -> pd.DataFrame:
+        """
+        获取历史数据（用于ATR等指标计算）
+
+        Args:
+            code: 股票代码
+            period: 周期 (1d, 1w, 1m)
+            start_date: 开始日期 (YYYYMMDD)
+            end_date: 结束日期 (YYYYMMDD)
+
+        Returns:
+            pd.DataFrame: 历史数据
+        """
+        try:
+            if self.use_qmt:
+                # 使用QMT获取历史数据
+                df = xtdata.get_market_data(
+                    stock_list=[code],
+                    period=period,
+                    start_time=start_date,
+                    end_time=end_date,
+                    count=-1
+                )
+
+                if df is not None and not df.empty:
+                    return df
+
+            # 降级到AkShare
+            import akshare as ak
+
+            df = ak.stock_zh_a_hist(
+                symbol=code.replace('.SH', '').replace('.SZ', ''),
+                period="daily" if period == '1d' else "weekly",
+                start_date=start_date,
+                end_date=end_date,
+                adjust="qfq"  # 前复权
+            )
+
+            return df
+        except Exception as e:
+            logger.error(f"获取历史数据失败 {code}: {e}")
+            return pd.DataFrame()
+
+    def clear_cache(self):
+        """
+        清空数据缓存
+        """
+        self.cache.clear()
+        logger.info("✅ 数据缓存已清空")
 
 
-# 便捷函数
-def get_stocks_for_longtou(**kwargs) -> pd.DataFrame:
-    """龙头战法专用接口"""
-    return DataAdapter.get_stock_pool_for_strategy('longtou', **kwargs)
+# 全局适配器实例（单例模式）
+_global_adapter: DataAdapter = None
 
-def get_stocks_for_dixi(**kwargs) -> pd.DataFrame:
-    """低吸战法专用接口"""
-    return DataAdapter.get_stock_pool_for_strategy('dixi', **kwargs)
 
-def get_stocks_for_banlu(**kwargs) -> pd.DataFrame:
-    """半路战法专用接口"""
-    return DataAdapter.get_stock_pool_for_strategy('banlu', **kwargs)
+def get_data_adapter(use_qmt: bool = True) -> DataAdapter:
+    """
+    获取全局数据适配器（单例模式）
 
-def get_stocks_for_weipan(**kwargs) -> pd.DataFrame:
-    """尾盘战法专用接口"""
-    return DataAdapter.get_stock_pool_for_strategy('weipan', **kwargs)
+    Args:
+        use_qmt: 是否使用QMT数据源
+
+    Returns:
+        DataAdapter: 全局适配器实例
+    """
+    global _global_adapter
+    if _global_adapter is None:
+        _global_adapter = DataAdapter(use_qmt=use_qmt)
+    return _global_adapter

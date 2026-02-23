@@ -1,0 +1,289 @@
+[
+  {
+    "code": "000025.SZ",
+    "buy_date": "20260109",
+    "buy_price": 18.13,
+    "buy_snapshot": {
+      "pool": "opportunities",
+      "decision_tag": "OPPORTUNITY",
+      "risk_score": 0.2,
+      "trap_signals": [],
+      "capital_type": "UNKNOWN",
+      "price": {
+        "close": 18.13,
+        "pct_chg": 1.2284,
+        "amount": 182432286.0,
+        "amount_yi": 1.82432286,
+        "high": 18.14,
+        "low": 17.91,
+        "vol": 0
+      },
+      "flow": {
+        "main_net_inflow": 1582110.0,
+        "main_net_inflow_wan": 158.211,
+        "super_large_net": 0,
+        "large_net": 0,
+        "medium_net": 0,
+        "small_net": 0
+      },
+      "attack_score": 54.0
+    },
+    "sell_records": [
+      {
+        "date": "20260121",
+        "price": 18.9,
+        "pnl": 76.99999999999996,
+        "pnl_pct": 4.247104247104245,
+        "holding_days": 12
+      }
+    ]
+  },
+  {
+    "code": "000010.SZ",
+    "buy_date": "20260114",
+    "buy_price": 3.73,
+    "buy_snapshot": {
+      "pool": "opportunities",
+      "decision_tag": "OPPORTUNITY",
+      "risk_score": 0.2,
+      "trap_signals": [],
+      "capital_type": "UNKNOWN",
+      "price": {
+        "close": 3.73,
+        "pct_chg": 1.6349,
+        "amount": 86103819.0,
+        "amount_yi": 0.86103819,
+        "high": 3.75,
+        "low": 3.66,
+        "vol": 0
+      },
+      "flow": {
+        "main_net_inflow": 1172590.0000000002,
+        "main_net_inflow_wan": 117.25900000000003,
+        "super_large_net": 0,
+        "large_net": 0,
+        "medium_net": 0,
+        "small_net": 0
+      },
+      "attack_score": 54.0
+    },
+    "sell_records": [
+      {
+        "date": "20260205",
+        "price": 3.76,
+        "pnl": 2.9999999999999805,
+        "pnl_pct": 0.8042895442359197,
+        "holding_days": 22
+      }
+    ]
+  },
+  {
+    "code": "000002.SZ",
+    "buy_date": "20260120",
+    "buy_price": 4.79,
+    "buy_snapshot": {
+      "pool": "opportunities",
+      "decision_tag": "OPPORTUNITY",
+      "risk_score": 0.2,
+      "trap_signals": [],
+      "capital_type": "UNKNOWN",
+      "price": {
+        "close": 4.79,
+        "pct_chg": 1.2685,
+        "amount": 1008144914.0,
+        "amount_yi": 10.08144914,
+        "high": 4.85,
+        "low": 4.7,
+        "vol": 0
+      },
+      "flow": {
+        "main_net_inflow": 9786850.000000002,
+        "main_net_inflow_wan": 978.6850000000002,
+        "super_large_net": 0,
+        "large_net": 0,
+        "medium_net": 0,
+        "small_net": 0
+      },
+      "attack_score": 54.0
+    },
+    "sell_records": [
+      {
+        "date": "20260128",
+        "price": 4.86,
+        "pnl": 7.000000000000028,
+        "pnl_pct": 1.4613778705636802,
+        "holding_days": 8
+      }
+    ]
+  },
+  {
+    "code": "000006.SZ",
+    "buy_date": "20260121",
+    "buy_price": 9.65,
+    "buy_snapshot": {
+      "pool": "opportunities",
+      "decision_tag": "OPPORTUNITY",
+      "risk_score": 0.2,
+      "trap_signals": [],
+      "capital_type": "UNKNOWN",
+      "price": {
+        "close": 9.65,
+        "pct_chg": 3.3191,
+        "amount": 811281168.0,
+        "amount_yi": 8.11281168,
+        "high": 10.04,
+        "low": 9.15,
+        "vol": 0
+      },
+      "flow": {
+        "main_net_inflow": 13769940.0,
+        "main_net_inflow_wan": 1376.994,
+        "super_large_net": 0,
+        "large_net": 0,
+        "medium_net": 0,
+        "small_net": 0
+      },
+      "attack_score": 54.0
+    },
+    "sell_records": [
+      {
+        "date": "20260120",
+        "price": 9.34,
+        "pnl": -81.00000000000006,
+        "pnl_pct": -7.980295566502468,
+        "holding_days": -1
+      },
+      {
+        "date": "20260206",
+        "price": 8.98,
+        "pnl": -67.0,
+        "pnl_pct": -6.943005181347149,
+        "holding_days": 16
+      }
+    ]
+  },
+  {
+    "code": "000009.SZ",
+    "buy_date": "20260128",
+    "buy_price": 10.12,
+    "buy_snapshot": {
+      "pool": "opportunities",
+      "decision_tag": "OPPORTUNITY",
+      "risk_score": 0.2,
+      "trap_signals": [],
+      "capital_type": "UNKNOWN",
+      "price": {
+        "close": 10.12,
+        "pct_chg": 2.0161,
+        "amount": 574541287.0,
+        "amount_yi": 5.74541287,
+        "high": 10.36,
+        "low": 9.77,
+        "vol": 0
+      },
+      "flow": {
+        "main_net_inflow": 2984760.000000001,
+        "main_net_inflow_wan": 298.4760000000001,
+        "super_large_net": 0,
+        "large_net": 0,
+        "medium_net": 0,
+        "small_net": 0
+      },
+      "attack_score": 54.0
+    },
+    "sell_records": [
+      {
+        "date": "20260114",
+        "price": 10.08,
+        "pnl": -16.999999999999993,
+        "pnl_pct": -1.6585365853658531,
+        "holding_days": -14
+      },
+      {
+        "date": "20260206",
+        "price": 9.45,
+        "pnl": -67.0,
+        "pnl_pct": -6.620553359683794,
+        "holding_days": 9
+      }
+    ]
+  },
+  {
+    "code": "000001.SZ",
+    "buy_date": "20260205",
+    "buy_price": 11.09,
+    "buy_snapshot": {
+      "pool": "opportunities",
+      "decision_tag": "OPPORTUNITY",
+      "risk_score": 0.2,
+      "trap_signals": [],
+      "capital_type": "UNKNOWN",
+      "price": {
+        "close": 11.09,
+        "pct_chg": 1.0939,
+        "amount": 1301134142.0,
+        "amount_yi": 13.01134142,
+        "high": 11.11,
+        "low": 10.96,
+        "vol": 0
+      },
+      "flow": {
+        "main_net_inflow": 14978219.999999998,
+        "main_net_inflow_wan": 1497.822,
+        "super_large_net": 0,
+        "large_net": 0,
+        "medium_net": 0,
+        "small_net": 0
+      },
+      "attack_score": 54.0
+    },
+    "sell_records": [
+      {
+        "date": "20260206",
+        "price": 11.05,
+        "pnl": -3.9999999999999147,
+        "pnl_pct": -0.3606853020739328,
+        "holding_days": 1
+      }
+    ]
+  },
+  {
+    "code": "000016.SZ",
+    "buy_date": "20260206",
+    "buy_price": 3.68,
+    "buy_snapshot": {
+      "pool": "opportunities",
+      "decision_tag": "OPPORTUNITY",
+      "risk_score": 0.2,
+      "trap_signals": [],
+      "capital_type": "UNKNOWN",
+      "price": {
+        "close": 3.68,
+        "pct_chg": 3.0812,
+        "amount": 390090920.0,
+        "amount_yi": 3.9009092,
+        "high": 3.74,
+        "low": 3.45,
+        "vol": 0
+      },
+      "flow": {
+        "main_net_inflow": 1116640.0000000012,
+        "main_net_inflow_wan": 111.66400000000012,
+        "super_large_net": 0,
+        "large_net": 0,
+        "medium_net": 0,
+        "small_net": 0
+      },
+      "attack_score": 54.0
+    },
+    "sell_records": [
+      {
+        "date": "20260206",
+        "price": 3.68,
+        "pnl": 0.0,
+        "pnl_pct": 0.0,
+        "holding_days": 0
+      }
+    ]
+  }
+]

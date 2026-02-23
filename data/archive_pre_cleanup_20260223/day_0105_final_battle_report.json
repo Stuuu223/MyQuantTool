@@ -1,0 +1,182 @@
+{
+  "trade_date": "20260105",
+  "total_stocks": 66,
+  "available_stocks": 11,
+  "valid_stocks": 11,
+  "top10": [
+    {
+      "stock_code": "002969.SZ",
+      "name": "嘉美包装",
+      "base_score": 30.0,
+      "capital_share_pct": 15.74,
+      "multiplier": 1.315,
+      "final_score": 0.0
+    },
+    {
+      "stock_code": "002757.SZ",
+      "name": "南兴股份",
+      "base_score": 30.0,
+      "capital_share_pct": 24.67,
+      "multiplier": 1.493,
+      "final_score": 0.0
+    },
+    {
+      "stock_code": "603215.SH",
+      "name": "比依股份",
+      "base_score": 30.0,
+      "capital_share_pct": 2.47,
+      "multiplier": 1.049,
+      "final_score": 0.0
+    },
+    {
+      "stock_code": "300986.SZ",
+      "name": "志特新材",
+      "base_score": 30.0,
+      "capital_share_pct": 5.71,
+      "multiplier": 1.114,
+      "final_score": 0.0
+    },
+    {
+      "stock_code": "002945.SZ",
+      "name": "华林证券",
+      "base_score": 23.78,
+      "capital_share_pct": 1.99,
+      "multiplier": 1.04,
+      "final_score": 0.0
+    },
+    {
+      "stock_code": "603533.SH",
+      "name": "掌阅科技",
+      "base_score": 30.0,
+      "capital_share_pct": 9.33,
+      "multiplier": 1.187,
+      "final_score": 0.0
+    },
+    {
+      "stock_code": "300612.SZ",
+      "name": "宣亚国际",
+      "base_score": 30.0,
+      "capital_share_pct": 5.25,
+      "multiplier": 1.105,
+      "final_score": 0.0
+    },
+    {
+      "stock_code": "603278.SH",
+      "name": "大业股份",
+      "base_score": 30.0,
+      "capital_share_pct": 13.47,
+      "multiplier": 1.269,
+      "final_score": 0.0
+    },
+    {
+      "stock_code": "300364.SZ",
+      "name": "中文在线",
+      "base_score": 30.0,
+      "capital_share_pct": 5.23,
+      "multiplier": 1.105,
+      "final_score": 0.0
+    },
+    {
+      "stock_code": "002228.SZ",
+      "name": "合兴包装",
+      "base_score": 30.0,
+      "capital_share_pct": 3.54,
+      "multiplier": 1.071,
+      "final_score": 0.0
+    }
+  ],
+  "zhitexincai": {
+    "rank": 4,
+    "in_top10": true
+  },
+  "all_results": [
+    {
+      "stock_code": "002969.SZ",
+      "name": "嘉美包装",
+      "base_score": 30.0,
+      "capital_share_pct": 15.74,
+      "multiplier": 1.315,
+      "final_score": 0.0
+    },
+    {
+      "stock_code": "002757.SZ",
+      "name": "南兴股份",
+      "base_score": 30.0,
+      "capital_share_pct": 24.67,
+      "multiplier": 1.493,
+      "final_score": 0.0
+    },
+    {
+      "stock_code": "603215.SH",
+      "name": "比依股份",
+      "base_score": 30.0,
+      "capital_share_pct": 2.47,
+      "multiplier": 1.049,
+      "final_score": 0.0
+    },
+    {
+      "stock_code": "300986.SZ",
+      "name": "志特新材",
+      "base_score": 30.0,
+      "capital_share_pct": 5.71,
+      "multiplier": 1.114,
+      "final_score": 0.0
+    },
+    {
+      "stock_code": "002945.SZ",
+      "name": "华林证券",
+      "base_score": 23.78,
+      "capital_share_pct": 1.99,
+      "multiplier": 1.04,
+      "final_score": 0.0
+    },
+    {
+      "stock_code": "603533.SH",
+      "name": "掌阅科技",
+      "base_score": 30.0,
+      "capital_share_pct": 9.33,
+      "multiplier": 1.187,
+      "final_score": 0.0
+    },
+    {
+      "stock_code": "300612.SZ",
+      "name": "宣亚国际",
+      "base_score": 30.0,
+      "capital_share_pct": 5.25,
+      "multiplier": 1.105,
+      "final_score": 0.0
+    },
+    {
+      "stock_code": "603278.SH",
+      "name": "大业股份",
+      "base_score": 30.0,
+      "capital_share_pct": 13.47,
+      "multiplier": 1.269,
+      "final_score": 0.0
+    },
+    {
+      "stock_code": "300364.SZ",
+      "name": "中文在线",
+      "base_score": 30.0,
+      "capital_share_pct": 5.23,
+      "multiplier": 1.105,
+      "final_score": 0.0
+    },
+    {
+      "stock_code": "002228.SZ",
+      "name": "合兴包装",
+      "base_score": 30.0,
+      "capital_share_pct": 3.54,
+      "multiplier": 1.071,
+      "final_score": 0.0
+    },
+    {
+      "stock_code": "000681.SZ",
+      "name": "视觉中国",
+      "base_score": 30.0,
+      "capital_share_pct": 12.61,
+      "multiplier": 1.252,
+      "final_score": 0.0
+    }
+  ]
+}

@@ -1,17 +1,18 @@
-akshare>=1.12.0
+# ⚠️ Phase 6.1.1: AkShare已弃用，建议使用Tushare Pro
+# akshare>=1.12.0
+
+# Tushare Pro (推荐)
+tushare>=1.4.0
 redis>=5.0.0
 pymongo>=4.6.0
 pandas>=2.0.0
 scikit-learn>=1.3.0
 rich>=13.7.0
-# streamlit>=1.28.0  # 已移除 - 使用Rich CLI替代
-# plotly>=5.18.0  # 已移除 - Streamlit依赖
 openai>=1.0.0
 sqlalchemy>=2.0.0
 ta-lib>=0.4.0
 diskcache>=5.6.0
 pyecharts>=2.0.0
-# streamlit-aggrid>=0.3.4  # 已移除 - Streamlit依赖
 fuzzywuzzy>=0.18.0
 python-Levenshtein>=0.20.0
 networkx>=3.0
@@ -21,6 +22,9 @@ scipy>=1.10.0
 optuna>=3.0.0
 jieba>=0.42.0
 xgboost>=2.0.0
+
+# CLI框架
+click>=8.1.0
 
 # Optuna 可视化（可选）
 optuna-dashboard>=0.15.0
@@ -37,8 +41,6 @@ efinance>=0.5.5
 # QMT 量化交易（迅投）
 xtquant>=1.0.0
 
-# 🆕 V9.11.1: 自动刷新（已移除 - Streamlit依赖）
-# streamlit-autorefresh>=1.0.1
 
 # 🆕 V19.1: 定时任务
 schedule>=1.2.0
