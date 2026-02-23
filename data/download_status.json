@@ -1,0 +1,49 @@
+{
+  "created_at": "2026-02-24 01:00:29.133220",
+  "total_dates": 7,
+  "completed_dates": 7,
+  "dates": {
+    "20251224": {
+      "status": "SUCCESS",
+      "tick_downloaded": true,
+      "daily_downloaded": true,
+      "stock_count": 75
+    },
+    "20251225": {
+      "status": "SUCCESS",
+      "tick_downloaded": true,
+      "daily_downloaded": true,
+      "stock_count": 108
+    },
+    "20251226": {
+      "status": "SUCCESS",
+      "tick_downloaded": true,
+      "daily_downloaded": true,
+      "stock_count": 92
+    },
+    "20251229": {
+      "status": "SUCCESS",
+      "tick_downloaded": true,
+      "daily_downloaded": true,
+      "stock_count": 107
+    },
+    "20251230": {
+      "status": "SUCCESS",
+      "tick_downloaded": true,
+      "daily_downloaded": true,
+      "stock_count": 88
+    },
+    "20251231": {
+      "status": "SUCCESS",
+      "tick_downloaded": true,
+      "daily_downloaded": true,
+      "stock_count": 88
+    },
+    "20260105": {
+      "status": "SUCCESS",
+      "tick_downloaded": true,
+      "daily_downloaded": true,
+      "stock_count": 168
+    }
+  }
+}

@@ -461,14 +461,24 @@ class TimeMachineEngine:
                     stock_pool = self._load_stock_pool('TUSHARE', date)
                     print(f"  📊 当日粗筛: {len(stock_pool)} 只")
                 except Exception as e:
-                    logger.error(f"【时间机器】{date} 粗筛失败: {e}")
-                    print(f"  ❌ {date} 粗筛失败: {e}")
-                    # 记录失败并继续下一日
-                    all_results.append({
-                        'date': date,
-                        'status': 'coarse_filter_failed',
-                        'error': str(e)
-                    })
+                    error_msg = str(e)
+                    # CTO修复：检测是否为节假日（Tushare返回空）
+                    if '粗筛返回空股票池' in error_msg or 'Empty' in error_msg:
+                        logger.warning(f"【时间机器】{date} 可能是节假日，跳过")
+                        print(f"  ⏭️  {date} 节假日/非交易日，跳过")
+                        all_results.append({
+                            'date': date,
+                            'status': 'holiday_skipped',
+                            'error': '节假日或非交易日'
+                        })
+                    else:
+                        logger.error(f"【时间机器】{date} 粗筛失败: {e}")
+                        print(f"  ❌ {date} 粗筛失败: {e}")
+                        all_results.append({
+                            'date': date,
+                            'status': 'coarse_filter_failed',
+                            'error': error_msg
+                        })
                     continue
             
             daily_result = self.run_daily_backtest(date, stock_pool)
