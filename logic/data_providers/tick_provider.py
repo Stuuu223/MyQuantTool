@@ -118,8 +118,8 @@ class TickProvider:
     # 默认VIP Token
     DEFAULT_VIP_TOKEN = "6b1446e317ed67596f13d2e808291a01e0dd9839"
     
-    # 默认数据目录
-    DEFAULT_DATA_DIR = PROJECT_ROOT / 'data' / 'qmt_data'
+    # 默认数据目录为QMT客户端目录（不得下载到项目内）
+    DEFAULT_DATA_DIR = Path('E:/qmt/userdata_mini/datadir')
     
     # 默认重试配置
     DEFAULT_MAX_RETRIES = 3

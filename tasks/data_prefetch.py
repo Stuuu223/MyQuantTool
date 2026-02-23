@@ -49,11 +49,12 @@ def start_token_service():
     from xtquant import xtdatacenter as xtdc
     from xtquant import xtdata
     
-    # 1. 设置数据目录 (项目下的 data/qmt_data)
-    data_dir = PROJECT_ROOT / 'data' / 'qmt_data'
+    # 1. 设置数据目录为QMT客户端目录（不得下载到项目内）
+    from pathlib import Path
+    data_dir = Path('E:/qmt/userdata_mini/datadir')
     data_dir.mkdir(parents=True, exist_ok=True)
     xtdc.set_data_home_dir(str(data_dir))
-    logger.info(f"📂 数据目录: {data_dir}")
+    logger.info(f"📂 QMT数据目录: {data_dir}")
     
     # 2. 设置 Token
     xtdc.set_token(VIP_TOKEN)

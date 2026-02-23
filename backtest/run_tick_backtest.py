@@ -61,10 +61,9 @@ def init_qmt():
 
         # 设置VIP Token
         VIP_TOKEN = '6b1446e317ed67596f13d2e808291a01e0dd9839'
-        DATA_DIR = PROJECT_ROOT / 'data' / 'qmt_data'
+        # 🔥 关键修复：数据目录必须为QMT客户端目录（不得下载到项目内）
+        DATA_DIR = Path('E:/qmt/userdata_mini/datadir')
         DATA_DIR.mkdir(parents=True, exist_ok=True)
-
-        # 🔥 关键修复：设置数据目录
         xtdc.set_data_home_dir(str(DATA_DIR))
         xtdc.set_token(VIP_TOKEN)
 
