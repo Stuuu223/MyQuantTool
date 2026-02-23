@@ -110,7 +110,7 @@ class QmtDataManager:
         vip_token: Optional[str] = None,
         data_dir: Optional[str] = None,
         use_vip: bool = True,
-        port_range: Tuple[int, int] = (58620, 58630)
+        port_range: Tuple[int, int] = (58700, 58750)  # CTO修复: 扩大端口范围避免冲突
     ):
         """
         初始化QMT数据管理器
