@@ -114,9 +114,19 @@ def scan_day(stock_code, date, top_n=5):
     df_sorted = df.sort_values('dt').copy()
     day_open = df_sorted['lastPrice'].iloc[0]
     day_close = df_sorted['lastPrice'].iloc[-1]
-    day_change = (day_close - day_open) / day_open * 100
     
-    print(f"开盘: {day_open:.2f}, 收盘: {day_close:.2f}, 日内涨幅: {day_change:.2f}%")
+    # 🔥 P6.3修复：获取昨收价计算真实涨幅
+    from logic.services.data_service import data_service
+    date_fmt = f"{date[:4]}-{date[4:6]}-{date[6:8]}"
+    pre_close = data_service.get_pre_close(stock_code, date_fmt)
+    if pre_close <= 0:
+        pre_close = day_open * 0.97  # 备用估算
+    
+    true_change = (day_close - pre_close) / pre_close * 100  # 真实涨幅（相对昨收）
+    intraday_change = (day_close - day_open) / day_open * 100  # 日内涨幅（相对开盘）
+    
+    print(f"昨收: {pre_close:.2f}, 开盘: {day_open:.2f}, 收盘: {day_close:.2f}")
+    print(f"真实涨幅: {true_change:.2f}%（相对昨收）✅, 日内涨幅: {intraday_change:.2f}%（相对开盘）")
     
     # 计算成交量增量
     df_sorted.loc[:, 'vol_delta'] = df_sorted['volume'].diff().fillna(df_sorted['volume'].iloc[0])

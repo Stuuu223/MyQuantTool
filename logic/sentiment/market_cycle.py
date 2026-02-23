@@ -519,9 +519,9 @@ class MarketCycleManager:
                 symbol = stock['code']
                 
                 # 🆕 V9.2 修复：使用正确的算法计算连续涨停天数
-                # 查询该股票最近10天的数据
+                # 🔥 P6.3紧急修复：添加pre_close字段，用于正确计算真实涨幅
                 query = f"""
-                SELECT date, open, close, high, low
+                SELECT date, open, close, high, low, pre_close
                 FROM daily_bars
                 WHERE symbol = '{symbol}'
                 ORDER BY date DESC
@@ -542,15 +542,20 @@ class MarketCycleManager:
                     close_price = row['close']
                     high_price = row['high']
                     low_price = row['low']
+                    pre_close = row.get('pre_close', 0)  # 🔥 P6.3修复：获取昨收价
                     date = row['date']
                     
                     # 记录数据库中的最新日期
                     if last_db_date is None:
                         last_db_date = date
                     
-                    # 判断是否涨停（使用开盘价和收盘价计算涨幅）
+                    # 🔥 P6.3紧急修复：使用真实涨幅（相对昨收）判断涨停
                     # 涨停判断：涨幅 >= 9.5%（主板）或 >= 19.5%（创业板/科创板）
-                    if open_price > 0:
+                    # 正确公式：(close - pre_close) / pre_close * 100
+                    if pre_close > 0:
+                        change_pct = (close_price - pre_close) / pre_close * 100
+                    elif open_price > 0:
+                        # 备用：如果pre_close不可用，使用日内涨幅（近似）
                         change_pct = (close_price - open_price) / open_price * 100
                         
                         # 更准确的涨停判断：需要考虑涨跌停板限制

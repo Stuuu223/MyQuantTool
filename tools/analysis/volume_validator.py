@@ -68,12 +68,24 @@ def get_qmt_tick_volume(stock_code, date):
     high_price = df['lastPrice'].max()
     low_price = df['lastPrice'].min()
     
+    # 🔥 P6.3修复：使用data_service获取昨收价计算真实涨幅
+    from logic.services.data_service import data_service
+    date_fmt = f"{date[:4]}-{date[4:6]}-{date[6:8]}"
+    pre_close = data_service.get_pre_close(stock_code, date_fmt)
+    if pre_close <= 0:
+        pre_close = open_price * 0.97  # 备用估算
+    
+    true_change_pct = (close_price - pre_close) / pre_close * 100  # 真实涨幅（相对昨收）
+    intraday_change_pct = (close_price - open_price) / open_price * 100  # 日内涨幅（相对开盘）
+    
     print(f"\n价格统计:")
+    print(f"  昨收: {pre_close:.2f}")
     print(f"  开盘: {open_price:.2f}")
     print(f"  收盘: {close_price:.2f}")
     print(f"  最高: {high_price:.2f}")
     print(f"  最低: {low_price:.2f}")
-    print(f"  涨幅: {(close_price - open_price) / open_price * 100:.2f}%")
+    print(f"  真实涨幅: {true_change_pct:.2f}%（相对昨收）✅")
+    print(f"  日内涨幅: {intraday_change_pct:.2f}%（相对开盘）")
     
     print(f"\n成交统计:")
     print(f"  总成交量: {total_volume:,.0f}股")

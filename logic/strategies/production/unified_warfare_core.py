@@ -477,95 +477,133 @@ class UnifiedWarfareCoreV18:
         # 抽血占比是百分比形式,例如5% -> multiplier = 1 + 0.05 * 2 = 1.10
         multiplier = 1 + (capital_share_pct / 100) * 2
 
-        # 6. 计算最终得分
-        final_score = base_score * multiplier
+        # 6. 计算Sustain承接因子 (防骗炮防线)
+        sustain_factor = self._calculate_sustain_factor(windows)
+
+        # 7. 计算最终得分 = 基础分 × 动态乘数 × 承接因子
+        final_score = base_score * multiplier * sustain_factor
 
         logger.info(f"🩸 [抽血PK] {stock_code} 动态乘数计算:")
         logger.info(f"   净流入: {stock_net_inflow/10000:.1f}万 / 全池: {total_net_inflow/10000:.1f}万")
         logger.info(f"   抽血占比: {capital_share_pct:.2f}%")
-        logger.info(f"   基础分: {base_score:.2f}, 乘数: {multiplier:.3f}")
+        logger.info(f"   基础分: {base_score:.2f}, 乘数: {multiplier:.3f}, 承接因子: {sustain_factor:.3f}")
         logger.info(f"   最终得分: {final_score:.2f}")
 
         return {
             'base_score': round(base_score, 2),
             'capital_share_pct': round(capital_share_pct, 2),
             'multiplier': round(multiplier, 3),
+            'sustain_factor': round(sustain_factor, 3),  # 新增: 承接因子
             'final_score': round(final_score, 2)
         }
 
+    def _calculate_sustain_factor(self, windows: List[Dict]) -> float:
+        """
+        计算承接力度因子(Sustain Factor) - 防骗炮防线
+        
+        用于识别冲高回落的骗炮票（如御银股份12月31日）:
+        - 如果当前价格在VWAP之上 → 主力在吸筹，加分
+        - 如果当前价格在VWAP之下 → 主力在派发，分数腰斩
+        
+        Args:
+            windows: 5分钟窗口数据列表
+            
+        Returns:
+            sustain_factor: 0.0-1.0，1.0表示承接最强
+        """
+        if not windows:
+            return 0.0
+        
+        # 计算VWAP（成交量加权平均价）
+        total_amount = sum(w.get('amount', 0) for w in windows)
+        total_volume = sum(w.get('volume', 0) for w in windows)
+        
+        if total_volume <= 0:
+            return 0.0
+        
+        vwap = total_amount / total_volume
+        
+        # 获取当前价格（最后一个窗口的收盘价）
+        current_price = windows[-1].get('price', 0)
+        
+        if current_price <= 0 or vwap <= 0:
+            return 0.0
+        
+        # 计算价格与VWAP的关系
+        # 当前价格 > VWAP → 在均价之上，承接好
+        # 当前价格 < VWAP → 在均价之下，主力派发
+        if current_price >= vwap:
+            # 在均价之上，线性映射到0.5-1.0
+            ratio = (current_price - vwap) / vwap
+            sustain_factor = 0.5 + min(ratio * 5, 0.5)  # 最多加0.5
+        else:
+            # 在均价之下，分数腰斩（0.0-0.5）
+            ratio = (vwap - current_price) / vwap
+            sustain_factor = max(0.5 - ratio * 5, 0.0)  # 最多减0.5
+        
+        logger.debug(f"[Sustain] 当前价={current_price:.2f}, VWAP={vwap:.2f}, "
+                    f"比例={(current_price-vwap)/vwap*100:+.2f}%, 因子={sustain_factor:.3f}")
+        
+        return sustain_factor
+
     def _calculate_base_explosion_score(self, stock_code: str, windows: List[Dict]) -> float:
         """
-        计算基础起爆分 (满分100)
+        计算基础起爆分 (满分100) - CTO Phase 6.3 线性极值映射版
+
+        修复: 从静态阶梯评分改为线性极值映射,恢复分辨率!
+        换手20%就是要比换手5%拿更高的分!
 
         评分维度:
-        - 资金强度 (40分)
-        - 换手率 (30分)
-        - 价格动能 (30分)
+        - 换手率 (40分) - 线性映射 0%~30% -> 0~40分
+        - 价格动能 (30分) - 基于昨收的真实涨幅,0%~20% -> 0~30分
+        - 资金强度 (30分) - 线性映射 0~5000万 -> 0~30分
         """
         if not windows:
             return 0.0
 
         score = 0.0
 
-        # 1. 资金强度评分 (40分)
-        total_amount = sum(w.get('amount', 0) for w in windows)
+        # 获取窗口统计
         max_window = max(windows, key=lambda x: x.get('amount', 0))
         max_amount = max_window.get('amount', 0)
-
-        # 资金强度: 最大窗口金额分级
-        if max_amount >= 10000000:  # 1000万
-            score += 40
-        elif max_amount >= 5000000:  # 500万
-            score += 32
-        elif max_amount >= 2000000:  # 200万
-            score += 24
-        elif max_amount >= 1000000:  # 100万
-            score += 16
-        else:
-            score += max_amount / 1000000 * 16  # 线性插值
-
-        # 2. 换手率评分 (30分)
         total_volume = sum(w.get('volume', 0) for w in windows)
         float_volume = self._get_float_volume(stock_code)
         turnover_rate = total_volume / float_volume * 100 if float_volume > 0 else 0
 
-        if turnover_rate >= 10:
-            score += 30
-        elif turnover_rate >= 5:
-            score += 24
-        elif turnover_rate >= 3:
-            score += 18
-        elif turnover_rate >= 1:
-            score += 12
+        # 获取昨收价和当前价计算真实涨幅
+        last_close = windows[0].get('last_close', 0) if windows else 0
+        current_price = windows[-1].get('price', 0) if windows else 0
+        
+        # 维度1: 换手率评分 (40分) - 线性极值映射
+        # 假设历史最大换手30%,最小1%,线性映射到0-40分
+        # 换手20%得 20/30*40 = 26.7分, 换手5%得 5/30*40 = 6.7分
+        turnover_normalized = min(max(turnover_rate, 0) / 30.0, 1.0)  # 归一化到0-1
+        turnover_score = turnover_normalized * 40.0  # 线性映射到40分
+        score += turnover_score
+
+        # 维度2: 价格动能评分 (30分) - 基于昨收的真实涨幅
+        # 涨停20%得满分,0%得0分,线性映射
+        if last_close > 0 and current_price > 0:
+            day_change = (current_price - last_close) / last_close * 100  # 基于昨收的真实涨幅
         else:
-            score += turnover_rate / 1 * 12
+            # 备选: 使用窗口中的change_pct
+            changes = [w.get('change_pct', 0) for w in windows if w.get('change_pct') is not None]
+            day_change = max(changes) if changes else 0
+        
+        change_normalized = min(max(day_change, 0) / 20.0, 1.0)  # 归一化到0-1(涨停20%)
+        change_score = change_normalized * 30.0  # 线性映射到30分
+        score += change_score
 
-        # 3. 价格动能评分 (30分)
-        # 基于涨幅和价格趋势
-        changes = [w.get('change_pct', 0) for w in windows if w.get('change_pct') is not None]
-        if changes:
-            avg_change = sum(changes) / len(changes)
-            max_change = max(changes)
+        # 维度3: 资金强度评分 (30分) - 线性极值映射
+        # 基于最大窗口金额,假设历史最大5000万,线性映射到0-30分
+        amount_normalized = min(max_amount / 50000000, 1.0)  # 归一化到0-1
+        amount_score = amount_normalized * 30.0  # 线性映射到30分
+        score += amount_score
 
-            # 平均涨幅评分 (15分)
-            if avg_change >= 5:
-                score += 15
-            elif avg_change >= 3:
-                score += 12
-            elif avg_change >= 1:
-                score += 9
-            else:
-                score += max(0, avg_change / 1 * 9)
-
-            # 最大涨幅评分 (15分)
-            if max_change >= 8:
-                score += 15
-            elif max_change >= 5:
-                score += 12
-            elif max_change >= 3:
-                score += 9
-            else:
-                score += max(0, max_change / 3 * 9)
+        logger.debug(f"[基础分] {stock_code}: 换手={turnover_rate:.2f}%({turnover_score:.1f}分) "
+                    f"涨幅={day_change:.2f}%({change_score:.1f}分) "
+                    f"资金={max_amount/10000:.1f}万({amount_score:.1f}分) "
+                    f"总分={min(score, 100.0):.1f}")
 
         return min(100.0, score)  # 确保不超过100分
 

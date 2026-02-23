@@ -104,6 +104,12 @@ def test_raw_calculation():
     df['volume_delta'] = df['volume'].diff().fillna(0)
     df['volume_delta'] = df['volume_delta'].clip(lower=0)
     
+    # 🔥 P6.3修复：获取昨收价作为涨幅计算基准
+    from logic.services.data_service import data_service
+    pre_close = data_service.get_pre_close(STOCK_CODE, '2026-01-26')
+    if pre_close <= 0:
+        pre_close = 10.0  # 默认备用值
+    
     # 获取早盘价格基准（9:30开盘价）
     morning_start = "2026-01-26 09:30:00"
     morning_mask = df['datetime'] >= morning_start
@@ -111,7 +117,10 @@ def test_raw_calculation():
     
     if len(morning_df) > 0:
         open_price = morning_df['lastPrice'].iloc[0]
-        print(f"\n  早盘开盘价(9:30): {open_price:.2f}元")
+        open_gap = (open_price - pre_close) / pre_close * 100
+        print(f"\n  昨收价: {pre_close:.2f}元")
+        print(f"  早盘开盘价(9:30): {open_price:.2f}元")
+        print(f"  高开溢价: {open_gap:+.2f}%")
     
     # 分析每个5分钟窗口
     print(f"\n  【5分钟切片详细数据 - 9:30-10:10】")
@@ -142,8 +151,8 @@ def test_raw_calculation():
         turnover_5min = vol_5min / float_volume if float_volume > 0 else 0
         avg_price = window_df['lastPrice'].mean() if len(window_df) > 0 else 0
         
-        # 计算涨幅（相对昨收）
-        change_pct = ((avg_price - open_price) / open_price * 100) if open_price > 0 else 0
+        # 🔥 P6.3修复：使用昨收价计算真实涨幅（不是开盘价）
+        change_pct = ((avg_price - pre_close) / pre_close * 100) if pre_close > 0 else 0
         
         # 计算ratio
         ratio_stock = turnover_5min / hist_median if hist_median > 0 else 0
