@@ -23,6 +23,9 @@ optuna>=3.0.0
 jieba>=0.42.0
 xgboost>=2.0.0
 
+# CLI框架
+click>=8.1.0
+
 # Optuna 可视化（可选）
 optuna-dashboard>=0.15.0
 
