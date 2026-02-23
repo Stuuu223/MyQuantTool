@@ -1,34 +1,170 @@
 {
   "date": "20251224",
   "status": "success",
-  "top3": [
+  "top20": [
     {
-      "stock_code": "002969.SZ",
-      "final_score": 50.34013605442179,
-      "change_0940": 10.068027210884358,
-      "price_0940": 8.09,
-      "pre_close": 7.35,
+      "stock_code": "300730.SZ",
+      "final_score": 77.59999999999997,
+      "change_0940": 15.519999999999994,
+      "price_0940": 14.44,
+      "pre_close": 12.5,
       "status": "strong"
     },
     {
-      "stock_code": "002228.SZ",
-      "final_score": 49.90757855822551,
-      "change_0940": 9.981515711645102,
-      "price_0940": 5.95,
-      "pre_close": 5.41,
+      "stock_code": "301268.SZ",
+      "final_score": 64.39820022497184,
+      "change_0940": 12.87964004499437,
+      "price_0940": 20.07,
+      "pre_close": 17.78,
       "status": "strong"
     },
     {
-      "stock_code": "300986.SZ",
-      "final_score": 5.42406311637078,
-      "change_0940": 1.084812623274156,
-      "price_0940": 10.25,
-      "pre_close": 10.14,
+      "stock_code": "300351.SZ",
+      "final_score": 60.48387096774198,
+      "change_0940": 12.096774193548395,
+      "price_0940": 19.46,
+      "pre_close": 17.36,
+      "status": "strong"
+    },
+    {
+      "stock_code": "301248.SZ",
+      "final_score": 56.925675675675635,
+      "change_0940": 11.385135135135126,
+      "price_0940": 32.97,
+      "pre_close": 29.6,
+      "status": "strong"
+    },
+    {
+      "stock_code": "002426.SZ",
+      "final_score": 50.3048780487805,
+      "change_0940": 10.0609756097561,
+      "price_0940": 3.61,
+      "pre_close": 3.28,
+      "status": "strong"
+    },
+    {
+      "stock_code": "001331.SZ",
+      "final_score": 49.95257666772052,
+      "change_0940": 9.990515333544105,
+      "price_0940": 34.79,
+      "pre_close": 31.63,
+      "status": "strong"
+    },
+    {
+      "stock_code": "603311.SH",
+      "final_score": 49.15003695491501,
+      "change_0940": 9.830007390983003,
+      "price_0940": 14.86,
+      "pre_close": 13.53,
+      "status": "strong"
+    },
+    {
+      "stock_code": "600800.SH",
+      "final_score": 47.560975609756056,
+      "change_0940": -9.512195121951212,
+      "price_0940": 3.71,
+      "pre_close": 4.1,
       "status": "weak"
+    },
+    {
+      "stock_code": "600730.SH",
+      "final_score": 43.05663304887514,
+      "change_0940": -8.611326609775029,
+      "price_0940": 11.78,
+      "pre_close": 12.89,
+      "status": "weak"
+    },
+    {
+      "stock_code": "300709.SZ",
+      "final_score": 38.530465949820766,
+      "change_0940": 7.706093189964153,
+      "price_0940": 48.08,
+      "pre_close": 44.64,
+      "status": "strong"
+    },
+    {
+      "stock_code": "600807.SH",
+      "final_score": 36.74121405750799,
+      "change_0940": 7.348242811501597,
+      "price_0940": 3.36,
+      "pre_close": 3.13,
+      "status": "strong"
+    },
+    {
+      "stock_code": "000032.SZ",
+      "final_score": 32.664609053497934,
+      "change_0940": 6.5329218106995866,
+      "price_0940": 20.71,
+      "pre_close": 19.44,
+      "status": "strong"
+    },
+    {
+      "stock_code": "002571.SZ",
+      "final_score": 31.760435571687815,
+      "change_0940": -6.352087114337563,
+      "price_0940": 10.32,
+      "pre_close": 11.02,
+      "status": "weak"
+    },
+    {
+      "stock_code": "300877.SZ",
+      "final_score": 31.511009870918762,
+      "change_0940": 6.3022019741837525,
+      "price_0940": 28.0,
+      "pre_close": 26.34,
+      "status": "strong"
+    },
+    {
+      "stock_code": "603069.SH",
+      "final_score": 28.047091412742397,
+      "change_0940": 5.6094182825484795,
+      "price_0940": 30.5,
+      "pre_close": 28.88,
+      "status": "strong"
+    },
+    {
+      "stock_code": "603203.SH",
+      "final_score": 25.32885530366642,
+      "change_0940": 5.065771060733284,
+      "price_0940": 37.54,
+      "pre_close": 35.73,
+      "status": "strong"
+    },
+    {
+      "stock_code": "301399.SZ",
+      "final_score": 24.519716885743147,
+      "change_0940": 4.90394337714863,
+      "price_0940": 20.75,
+      "pre_close": 19.78,
+      "status": "normal"
+    },
+    {
+      "stock_code": "600179.SH",
+      "final_score": 23.373983739837442,
+      "change_0940": 4.674796747967489,
+      "price_0940": 5.15,
+      "pre_close": 4.92,
+      "status": "normal"
+    },
+    {
+      "stock_code": "002827.SZ",
+      "final_score": 22.24245577523414,
+      "change_0940": 4.4484911550468285,
+      "price_0940": 40.15,
+      "pre_close": 38.44,
+      "status": "normal"
+    },
+    {
+      "stock_code": "603890.SH",
+      "final_score": 21.236727045596492,
+      "change_0940": 4.247345409119299,
+      "price_0940": 16.69,
+      "pre_close": 16.01,
+      "status": "normal"
     }
   ],
   "signals": [],
   "errors": [],
-  "total_stocks": 11,
-  "valid_stocks": 11
+  "total_stocks": 75,
+  "valid_stocks": 73
 }

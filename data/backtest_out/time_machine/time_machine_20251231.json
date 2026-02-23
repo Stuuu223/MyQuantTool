@@ -1,13 +1,45 @@
 {
   "date": "20251231",
   "status": "success",
-  "top3": [
+  "top20": [
+    {
+      "stock_code": "301265.SZ",
+      "final_score": 69.58174904942966,
+      "change_0940": 13.916349809885931,
+      "price_0940": 14.98,
+      "pre_close": 13.15,
+      "status": "strong"
+    },
+    {
+      "stock_code": "001299.SZ",
+      "final_score": 50.11219147344808,
+      "change_0940": 10.022438294689616,
+      "price_0940": 14.71,
+      "pre_close": 13.37,
+      "status": "strong"
+    },
+    {
+      "stock_code": "002591.SZ",
+      "final_score": 49.889135254988936,
+      "change_0940": -9.977827050997787,
+      "price_0940": 8.12,
+      "pre_close": 9.02,
+      "status": "weak"
+    },
     {
       "stock_code": "002969.SZ",
       "final_score": 49.78902953586497,
       "change_0940": 9.957805907172993,
       "price_0940": 13.03,
       "pre_close": 11.85,
+      "status": "strong"
+    },
+    {
+      "stock_code": "002659.SZ",
+      "final_score": 49.71857410881803,
+      "change_0940": 9.943714821763606,
+      "price_0940": 5.86,
+      "pre_close": 5.33,
       "status": "strong"
     },
     {
@@ -25,10 +57,114 @@
       "price_0940": 17.97,
       "pre_close": 16.46,
       "status": "strong"
+    },
+    {
+      "stock_code": "002908.SZ",
+      "final_score": 39.18495297805642,
+      "change_0940": 7.836990595611285,
+      "price_0940": 10.32,
+      "pre_close": 9.57,
+      "status": "strong"
+    },
+    {
+      "stock_code": "600681.SH",
+      "final_score": 36.76470588235292,
+      "change_0940": 7.352941176470584,
+      "price_0940": 4.38,
+      "pre_close": 4.08,
+      "status": "strong"
+    },
+    {
+      "stock_code": "002932.SZ",
+      "final_score": 35.91470258136928,
+      "change_0940": 7.182940516273856,
+      "price_0940": 19.1,
+      "pre_close": 17.82,
+      "status": "strong"
+    },
+    {
+      "stock_code": "300840.SZ",
+      "final_score": 33.997955010225,
+      "change_0940": 6.799591002044999,
+      "price_0940": 20.89,
+      "pre_close": 19.56,
+      "status": "strong"
+    },
+    {
+      "stock_code": "301212.SZ",
+      "final_score": 33.37783711615487,
+      "change_0940": -6.675567423230974,
+      "price_0940": 27.96,
+      "pre_close": 29.96,
+      "status": "weak"
+    },
+    {
+      "stock_code": "002652.SZ",
+      "final_score": 33.18077803203661,
+      "change_0940": -6.636155606407323,
+      "price_0940": 4.08,
+      "pre_close": 4.37,
+      "status": "weak"
+    },
+    {
+      "stock_code": "301239.SZ",
+      "final_score": 29.231266149870837,
+      "change_0940": 5.846253229974168,
+      "price_0940": 32.77,
+      "pre_close": 30.96,
+      "status": "strong"
+    },
+    {
+      "stock_code": "002094.SZ",
+      "final_score": 28.198074277854207,
+      "change_0940": 5.639614855570842,
+      "price_0940": 7.68,
+      "pre_close": 7.27,
+      "status": "strong"
+    },
+    {
+      "stock_code": "300170.SZ",
+      "final_score": 26.07709750566888,
+      "change_0940": 5.215419501133776,
+      "price_0940": 18.56,
+      "pre_close": 17.64,
+      "status": "strong"
+    },
+    {
+      "stock_code": "603156.SH",
+      "final_score": 25.248661055853102,
+      "change_0940": 5.04973221117062,
+      "price_0940": 27.46,
+      "pre_close": 26.14,
+      "status": "strong"
+    },
+    {
+      "stock_code": "605028.SH",
+      "final_score": 25.07374631268432,
+      "change_0940": 5.014749262536864,
+      "price_0940": 32.04,
+      "pre_close": 30.51,
+      "status": "strong"
+    },
+    {
+      "stock_code": "603533.SH",
+      "final_score": 24.614619592242715,
+      "change_0940": 4.922923918448543,
+      "price_0940": 21.1,
+      "pre_close": 20.11,
+      "status": "normal"
+    },
+    {
+      "stock_code": "301229.SZ",
+      "final_score": 24.280999528524223,
+      "change_0940": 4.856199905704845,
+      "price_0940": 22.24,
+      "pre_close": 21.21,
+      "status": "normal"
     }
   ],
   "signals": [],
   "errors": [],
-  "total_stocks": 11,
-  "valid_stocks": 11
+  "total_stocks": 88,
+  "valid_stocks": 77
 }

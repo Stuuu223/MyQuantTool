@@ -1,0 +1,23 @@
+{
+  "start_date": "20251230",
+  "end_date": "20251230",
+  "total_days": 1,
+  "success_days": 1,
+  "insufficient_data_days": 0,
+  "error_days": 0,
+  "coarse_filter_failed_days": 0,
+  "statistics_by_date": {
+    "20251230": {
+      "status": "success",
+      "valid_stocks": 18,
+      "top1_score": 0
+    }
+  },
+  "daily_top20": [
+    {
+      "date": "20251230",
+      "top20": [],
+      "valid_stocks": 18
+    }
+  ]
+}
