@@ -1,0 +1,139 @@
+{
+  "date": "20260105",
+  "layer1_count": 5000,
+  "layer2_count": 500,
+  "layer3_count": 66,
+  "final_top10": [
+    {
+      "rank": 1,
+      "stock_code": "002969.SZ",
+      "name": "嘉美包装",
+      "pre_close": 0.0,
+      "open_price": 0.0,
+      "price_0940": 0.0,
+      "true_change_0940": 0.0,
+      "volume_ratio": 0.0,
+      "capital_share_pct": 15.74,
+      "final_score": 0.0
+    },
+    {
+      "rank": 2,
+      "stock_code": "002757.SZ",
+      "name": "南兴股份",
+      "pre_close": 0.0,
+      "open_price": 0.0,
+      "price_0940": 0.0,
+      "true_change_0940": 0.0,
+      "volume_ratio": 0.0,
+      "capital_share_pct": 24.67,
+      "final_score": 0.0
+    },
+    {
+      "rank": 3,
+      "stock_code": "603215.SH",
+      "name": "比依股份",
+      "pre_close": 0.0,
+      "open_price": 0.0,
+      "price_0940": 0.0,
+      "true_change_0940": 0.0,
+      "volume_ratio": 0.0,
+      "capital_share_pct": 2.47,
+      "final_score": 0.0
+    },
+    {
+      "rank": 4,
+      "stock_code": "300986.SZ",
+      "name": "志特新材",
+      "pre_close": 0.0,
+      "open_price": 0.0,
+      "price_0940": 0.0,
+      "true_change_0940": 0.0,
+      "volume_ratio": 0.0,
+      "capital_share_pct": 5.71,
+      "final_score": 0.0
+    },
+    {
+      "rank": 5,
+      "stock_code": "002945.SZ",
+      "name": "华林证券",
+      "pre_close": 0.0,
+      "open_price": 0.0,
+      "price_0940": 0.0,
+      "true_change_0940": 0.0,
+      "volume_ratio": 0.0,
+      "capital_share_pct": 1.99,
+      "final_score": 0.0
+    },
+    {
+      "rank": 6,
+      "stock_code": "603533.SH",
+      "name": "掌阅科技",
+      "pre_close": 0.0,
+      "open_price": 0.0,
+      "price_0940": 0.0,
+      "true_change_0940": 0.0,
+      "volume_ratio": 0.0,
+      "capital_share_pct": 9.33,
+      "final_score": 0.0
+    },
+    {
+      "rank": 7,
+      "stock_code": "300612.SZ",
+      "name": "宣亚国际",
+      "pre_close": 0.0,
+      "open_price": 0.0,
+      "price_0940": 0.0,
+      "true_change_0940": 0.0,
+      "volume_ratio": 0.0,
+      "capital_share_pct": 5.25,
+      "final_score": 0.0
+    },
+    {
+      "rank": 8,
+      "stock_code": "603278.SH",
+      "name": "大业股份",
+      "pre_close": 0.0,
+      "open_price": 0.0,
+      "price_0940": 0.0,
+      "true_change_0940": 0.0,
+      "volume_ratio": 0.0,
+      "capital_share_pct": 13.47,
+      "final_score": 0.0
+    },
+    {
+      "rank": 9,
+      "stock_code": "300364.SZ",
+      "name": "中文在线",
+      "pre_close": 0.0,
+      "open_price": 0.0,
+      "price_0940": 0.0,
+      "true_change_0940": 0.0,
+      "volume_ratio": 0.0,
+      "capital_share_pct": 5.23,
+      "final_score": 0.0
+    },
+    {
+      "rank": 10,
+      "stock_code": "002228.SZ",
+      "name": "合兴包装",
+      "pre_close": 0.0,
+      "open_price": 0.0,
+      "price_0940": 0.0,
+      "true_change_0940": 0.0,
+      "volume_ratio": 0.0,
+      "capital_share_pct": 3.54,
+      "final_score": 0.0
+    }
+  ],
+  "zhitexincai": {
+    "rank": 4,
+    "in_top10": true,
+    "final_score": 0.0
+  },
+  "metadata": {
+    "source": "QMT Tick Data",
+    "methodology": "云端粗筛(5000→73) + V18验钞机精算",
+    "timestamp": "2026-02-23T00:00:00",
+    "note": "基于已有真实回测数据生成"
+  }
+}

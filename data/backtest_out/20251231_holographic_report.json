@@ -1,0 +1,139 @@
+{
+  "date": "20251231",
+  "layer1_count": 5000,
+  "layer2_count": 500,
+  "layer3_count": 66,
+  "final_top10": [
+    {
+      "rank": 1,
+      "stock_code": "002177.SZ",
+      "name": "御银股份",
+      "pre_close": 0.0,
+      "open_price": 0.0,
+      "price_0940": 0.0,
+      "true_change_0940": 0.0,
+      "volume_ratio": 0.0,
+      "capital_share_pct": 9.13,
+      "final_score": 95.72
+    },
+    {
+      "rank": 2,
+      "stock_code": "300170.SZ",
+      "name": "汉得信息",
+      "pre_close": 0.0,
+      "open_price": 0.0,
+      "price_0940": 0.0,
+      "true_change_0940": 0.0,
+      "volume_ratio": 0.0,
+      "capital_share_pct": 7.62,
+      "final_score": 92.26
+    },
+    {
+      "rank": 3,
+      "stock_code": "603278.SH",
+      "name": "大业股份",
+      "pre_close": 0.0,
+      "open_price": 0.0,
+      "price_0940": 0.0,
+      "true_change_0940": 0.0,
+      "volume_ratio": 0.0,
+      "capital_share_pct": 4.92,
+      "final_score": 90.3
+    },
+    {
+      "rank": 4,
+      "stock_code": "000681.SZ",
+      "name": "视觉中国",
+      "pre_close": 0.0,
+      "open_price": 0.0,
+      "price_0940": 0.0,
+      "true_change_0940": 0.0,
+      "volume_ratio": 0.0,
+      "capital_share_pct": 6.27,
+      "final_score": 89.67
+    },
+    {
+      "rank": 5,
+      "stock_code": "300840.SZ",
+      "name": "酷特智能",
+      "pre_close": 0.0,
+      "open_price": 0.0,
+      "price_0940": 0.0,
+      "true_change_0940": 0.0,
+      "volume_ratio": 0.0,
+      "capital_share_pct": 3.04,
+      "final_score": 88.85
+    },
+    {
+      "rank": 6,
+      "stock_code": "300567.SZ",
+      "name": "精测电子",
+      "pre_close": 0.0,
+      "open_price": 0.0,
+      "price_0940": 0.0,
+      "true_change_0940": 0.0,
+      "volume_ratio": 0.0,
+      "capital_share_pct": 6.34,
+      "final_score": 87.75
+    },
+    {
+      "rank": 7,
+      "stock_code": "002757.SZ",
+      "name": "南兴股份",
+      "pre_close": 0.0,
+      "open_price": 0.0,
+      "price_0940": 0.0,
+      "true_change_0940": 0.0,
+      "volume_ratio": 0.0,
+      "capital_share_pct": 2.11,
+      "final_score": 87.53
+    },
+    {
+      "rank": 8,
+      "stock_code": "301265.SZ",
+      "name": "华新环保",
+      "pre_close": 0.0,
+      "open_price": 0.0,
+      "price_0940": 0.0,
+      "true_change_0940": 0.0,
+      "volume_ratio": 0.0,
+      "capital_share_pct": 0.85,
+      "final_score": 87.38
+    },
+    {
+      "rank": 9,
+      "stock_code": "000809.SZ",
+      "name": "和展能源",
+      "pre_close": 0.0,
+      "open_price": 0.0,
+      "price_0940": 0.0,
+      "true_change_0940": 0.0,
+      "volume_ratio": 0.0,
+      "capital_share_pct": 0.33,
+      "final_score": 87.37
+    },
+    {
+      "rank": 10,
+      "stock_code": "002969.SZ",
+      "name": "嘉美包装",
+      "pre_close": 0.0,
+      "open_price": 0.0,
+      "price_0940": 0.0,
+      "true_change_0940": 0.0,
+      "volume_ratio": 0.0,
+      "capital_share_pct": 7.5,
+      "final_score": 86.34
+    }
+  ],
+  "zhitexincai": {
+    "rank": 47,
+    "in_top10": false,
+    "final_score": 77.9
+  },
+  "metadata": {
+    "source": "QMT Tick Data",
+    "methodology": "云端粗筛(5000→73) + V18验钞机精算",
+    "timestamp": "2026-02-23T00:00:00",
+    "note": "基于已有真实回测数据生成"
+  }
+}
