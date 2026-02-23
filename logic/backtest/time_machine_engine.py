@@ -116,19 +116,19 @@ class TimeMachineEngine:
             from logic.data_providers.qmt_manager import QmtDataManager
             downloader = QmtDataManager()
             download_results = downloader.download_tick_data(
-                stock_list=stock_pool[:20],  # 先测前20只
+                stock_list=stock_pool,  # CTO修复：下载全部88只
                 trade_date=date,
                 use_vip=True,
                 check_existing=True
             )
             success_downloads = sum(1 for r in download_results.values() if r.success)
-            print(f"  ✅ 下载完成: {success_downloads}/{len(stock_pool[:20])} 只")
+            print(f"  ✅ 下载完成: {success_downloads}/{len(stock_pool)} 只")
             
             # 2. 获取当日股票池数据
             print(f"  📊 获取 {len(stock_pool)} 只股票数据...")
             
             valid_stocks = []
-            for stock in stock_pool[:20]:  # 先测前20只加快速度
+            for stock in stock_pool:  # CTO修复：检查全部88只
                 try:
                     # 检查数据完整性
                     tick_data = self._get_tick_data(stock, date)

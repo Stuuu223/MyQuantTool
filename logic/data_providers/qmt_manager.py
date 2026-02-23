@@ -105,6 +105,11 @@ class QmtDataManager:
     DEFAULT_VIP_TOKEN = '6b1446e317ed67596f13d2e808291a01e0dd9839'
     # CTO修复：删除硬编码路径，改为从环境变量读取
     
+    # CTO修复：类级别静态变量实现单例连接
+    _vip_global_initialized = False
+    _vip_global_port = None
+    _vip_global_lock = False
+    
     def __init__(
         self,
         vip_token: Optional[str] = None,
@@ -172,17 +177,40 @@ class QmtDataManager:
     
     def start_vip_service(self) -> Optional[Tuple[str, int]]:
         """
-        启动VIP行情服务
+        启动VIP行情服务 (CTO修复: 单例模式)
         
         Returns:
             监听地址和端口元组，启动失败返回None
         """
+        # CTO修复：检查全局单例状态
+        if QmtDataManager._vip_global_initialized and QmtDataManager._vip_global_port:
+            logger.info("[QmtDataManager] VIP服务已在运行，复用现有连接")
+            self._vip_initialized = True
+            self.listen_port = QmtDataManager._vip_global_port
+            return self.listen_port
+        
+        # 防止并发启动
+        if QmtDataManager._vip_global_lock:
+            logger.info("[QmtDataManager] VIP服务正在启动中，等待...")
+            import time
+            for _ in range(30):  # 最多等30秒
+                time.sleep(1)
+                if QmtDataManager._vip_global_initialized:
+                    self._vip_initialized = True
+                    self.listen_port = QmtDataManager._vip_global_port
+                    return self.listen_port
+            logger.error("[QmtDataManager] 等待VIP服务启动超时")
+            return None
+        
+        QmtDataManager._vip_global_lock = True
+        
         if not XT_AVAILABLE or not self.use_vip:
             logger.warning("[QmtDataManager] VIP服务不可用或已禁用")
+            QmtDataManager._vip_global_lock = False
             return None
         
         if self._vip_initialized:
-            logger.info("[QmtDataManager] VIP服务已启动")
+            QmtDataManager._vip_global_lock = False
             return self.listen_port
         
         try:
@@ -211,6 +239,11 @@ class QmtDataManager:
                 self.listen_port = ('127.0.0.1', int(listen_result))
             self._vip_initialized = True
             
+            # CTO修复：设置全局单例状态
+            QmtDataManager._vip_global_initialized = True
+            QmtDataManager._vip_global_port = self.listen_port
+            QmtDataManager._vip_global_lock = False
+            
             logger.info(f"🚀 VIP行情服务已启动，监听端口: {port}")
             logger.info("=" * 60)
             
@@ -219,7 +252,9 @@ class QmtDataManager:
         except Exception as e:
             logger.error(f"[QmtDataManager] 启动VIP服务失败: {e}")
             self._vip_initialized = False
-            return None
+            QmtDataManager._vip_global_lock = False
+            # CTO修复：VIP失败直接熔断，不降级
+            raise RuntimeError(f"VIP服务启动失败，熔断: {e}")
     
     def stop_vip_service(self) -> bool:
         """
@@ -443,7 +478,8 @@ class QmtDataManager:
         # 如果需要VIP服务，确保服务已启动
         if use_vip and self.use_vip:
             if not self._ensure_vip_connection():
-                logger.warning("[QmtDataManager] VIP服务不可用，降级到普通下载")
+                # CTO修复：VIP不可用直接熔断，禁止降级
+                raise RuntimeError("[QmtDataManager] VIP服务不可用，直接熔断！禁止降级到普通下载")
         
         results = {}
         logger.info(f"【下载Tick数据】{trade_date} | {len(stock_list)}只股票 | VIP: {use_vip}")
