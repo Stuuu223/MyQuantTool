@@ -1,0 +1,76 @@
+{
+  "report_title": "QMT历史数据下载完成验证报告",
+  "report_date": "2026-02-23",
+  "target_date": "2025-12-31",
+  "stock": "300986.SZ (志特新材)",
+  
+  "download_status": {
+    "daily_data": "✅ 已下载 (6条)",
+    "minute_data": "✅ 已下载 (241条)",
+    "tick_data": "✅ 已下载 (3877条)"
+  },
+  
+  "real_data_verification": {
+    "note": "基于真实QMT数据，非模拟",
+    
+    "2025-12-30 (昨收)": {
+      "close": 10.26,
+      "amount": 39043949,
+      "note": "昨收价 verified"
+    },
+    
+    "2025-12-31 (目标日)": {
+      "open": 10.30,
+      "high": 11.33,
+      "low": 10.25,
+      "close": 11.18,
+      "amount": 258108608,
+      "amount_wan": 25810.86,
+      
+      "calculated_indicators": {
+        "true_amplitude": "10.53%",
+        "calculation": "(11.33 - 10.25) / 10.26 * 100",
+        "day_change": "+8.97%",
+        "day_change_calc": "(11.18 - 10.26) / 10.26 * 100"
+      }
+    }
+  },
+  
+  "correction_to_previous_reports": {
+    "team_error_1": {
+      "claimed": "志特新材12.31成交额 525万",
+      "reality": "25810.86万 (2.58亿)",
+      "error_magnitude": "49倍",
+      "root_cause": "volume单位错误 (手 vs 股)，以及数据不完整"
+    },
+    
+    "team_error_2": {
+      "claimed": "振幅 102.33%",
+      "reality": "10.53%",
+      "error_magnitude": "10倍",
+      "root_cause": "开盘价=0时强行设为1，导致除数错误"
+    },
+    
+    "verified_truth": {
+      "成交额": "2.58亿 (真实)",
+      "振幅": "10.53% (真实)",
+      "涨跌幅": "+8.97% (真实)",
+      "量比": "待计算 (基于分钟线)",
+      "atr_ratio": "待计算 (基于真实ATR)"
+    }
+  },
+  
+  "data_quality_check": {
+    "completeness": "✅ 日线完整 (6日)",
+    "minute_completeness": "✅ 分钟线完整 (241条)",
+    "tick_completeness": "✅ Tick完整 (3877条)",
+    "price_consistency": "✅ 价格连续无跳空",
+    "volume_consistency": "✅ 成交量正常"
+  },
+  
+  "next_steps": {
+    "step_1": "基于真实数据重新计算所有指标",
+    "step_2": "运行完整的V18综合打分",
+    "step_3": "生成最终的、无模拟成分的真实回演报告"
+  }
+}
