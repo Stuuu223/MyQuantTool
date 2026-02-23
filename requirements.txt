@@ -1,4 +1,8 @@
-akshare>=1.12.0
+# ⚠️ Phase 6.1.1: AkShare已弃用，建议使用Tushare Pro
+# akshare>=1.12.0
+
+# Tushare Pro (推荐)
+tushare>=1.4.0
 redis>=5.0.0
 pymongo>=4.6.0
 pandas>=2.0.0

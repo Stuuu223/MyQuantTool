@@ -1,6 +1,11 @@
 """
 多数据源适配器 - 统一 akshare / tushare / baostock / demo 数据接口
 支持自动降级、缓存、性能优化
+
+⚠️ Phase 6.1.1 更新:
+- AkShare数据源已弃用，建议切换到Tushare
+- 推荐使用 TushareProvider 替代 AkshareDataSource
+- 保留AkshareDataSource用于兼容性，不再维护
 """
 
 import pandas as pd
@@ -118,9 +123,20 @@ class BaseDataSource(ABC):
 
 
 class AkshareDataSource(BaseDataSource):
-    """Akshare 数据源"""
+    """
+    ⚠️ [已弃用] Akshare 数据源
+    
+    本数据源已在Phase 6.1.1中弃用，请使用TushareProvider替代。
+    保留用于兼容性，不再维护。
+    """
     
     def __init__(self):
+        import warnings
+        warnings.warn(
+            "AkshareDataSource 已在Phase 6.1.1中弃用，请使用 TushareProvider 替代",
+            DeprecationWarning,
+            stacklevel=2
+        )
         super().__init__("akshare")
     
     def get_market_overview(self) -> Dict[str, Any]:

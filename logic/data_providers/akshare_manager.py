@@ -1,7 +1,49 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
+⚠️ [已弃用] AkShare数据管理器 - DEPRECATED in Phase 6.1.1
+===========================================================
+
+本模块已在Phase 6.1.1中弃用，原因：
+1. AkShare接口不稳定，存在被封禁风险
+2. Tushare Pro已接入（老板有8000积分），数据更可靠
+3. 统一使用TushareProvider作为基础数据源
+
+替代方案：
+- 基础数据: logic/data_providers/tushare_provider.py
+- 日线数据: TushareProvider.get_daily_all()
+- 股本数据: TushareProvider.get_daily_basic_all()
+- 财务数据: TushareProvider.get_stock_basic()
+
+保留原因：
+- 兼容性考虑，避免直接删除导致其他模块报错
+- 某些历史数据可能需要参考实现
+
+警告：
+- 本模块不再维护，可能在后续版本中删除
+- 新代码请勿依赖此模块
+
+Author: MyQuantTool Team
+Date: 2026-02-16
+Status: DEPRECATED (since 2026-02-23 Phase 6.1.1)
+"""
+
+# ============================================================================
+# 弃用警告
+# ============================================================================
+import warnings
+warnings.warn(
+    "akshare_manager.py 已在Phase 6.1.1中弃用，请使用 tushare_provider.py 替代",
+    DeprecationWarning,
+    stacklevel=2
+)
+
+# ============================================================================
+# 原实现（保留但不再维护）
+# ============================================================================
+"""
 AkShare数据管理器 (V16.2 - 缓存+预热架构)
+[已弃用] 以下实现保留供参考，不再维护
 
 核心功能：
 1. 强制缓存：所有接口调用前先查磁盘缓存
@@ -31,10 +73,6 @@ Architecture:
     盘前预热（08:30-09:25）: 允许联网拉数据 → 写入缓存
     盘中扫描（09:30-15:00）: 只读缓存，绝不联网
     盘后复盘（17:00-20:00）: 允许联网拉数据 → 更新缓存
-
-Author: MyQuantTool Team
-Date: 2026-02-16
-Version: V16.2
 """
 
 import sys
