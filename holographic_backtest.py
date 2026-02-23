@@ -291,20 +291,84 @@ class HolographicBacktestEngine:
             logger.error(f"第三层筛选失败: {e}", exc_info=True)
             return []
     
+    def calculate_base_score_v18(self, volume_ratio: float, true_change: float, 
+                                   amount: float, max_amount_in_pool: float = 500000) -> float:
+        """
+        V18高分辨率基础分计算 - 线性极值映射 (P11-A3修复)
+        
+        废除一刀切40分，实现高分辨率评分
+        20%换手票的得分显著高于5%换手票
+        
+        Args:
+            volume_ratio: 量比
+            true_change: 真实涨幅(%)
+            amount: 当日成交额(元)
+            max_amount_in_pool: 当日池内最大成交额，用于归一化
+            
+        Returns:
+            float: 基础分(0-100)
+        """
+        # 1. 量比维度 (0-40分)
+        turnover_score = min(volume_ratio / 20.0, 1.0) * 40.0
+        
+        # 2. 涨幅维度 (0-30分)
+        change_score = min(abs(true_change) / 20.0, 1.0) * 30.0
+        
+        # 3. 资金强度维度 (0-30分)
+        if max_amount_in_pool > 0:
+            capital_score = min(amount / max_amount_in_pool, 1.0) * 30.0
+        else:
+            capital_score = 15.0
+        
+        return turnover_score + change_score + capital_score
+    
+    def apply_vwap_penalty(self, score: float, current_price: float, vwap: float) -> tuple[float, float]:
+        """
+        VWAP惩罚扣分制 - P11-A4修复
+        废除乘数制，改为扣分制
+        """
+        penalty = 0.0
+        
+        if current_price < vwap:
+            deviation = (vwap - current_price) / vwap
+            penalty = min(deviation * 100, 30)
+            score -= penalty
+            logger.warning(f"🚨 VWAP惩罚: 价格{current_price:.2f}低于均价{vwap:.2f}, 扣分{penalty:.1f}")
+        else:
+            deviation = (current_price - vwap) / vwap
+            bonus = min(deviation * 50, 5)
+            score += bonus
+        
+        return max(0, score), penalty
+    
+    def apply_sustain_penalty(self, score: float, sustain_factor: float) -> tuple[float, float]:
+        """
+        Sustain惩罚扣分制 - P11-A2修复
+        废除乘数制，避免final_score=0.0
+        """
+        penalty = 0.0
+        
+        if sustain_factor < 50:
+            penalty = (50 - sustain_factor) / 2
+            score -= penalty
+            logger.warning(f"🚨 Sustain惩罚: 持续性{sustain_factor:.1f}%过低, 扣分{penalty:.1f}")
+        elif sustain_factor > 80:
+            bonus = (sustain_factor - 80) / 4
+            score += bonus
+        
+        return max(0, score), penalty
+    
     def v18_precise_calculation(self) -> List[Dict]:
         """
-        V18验钞机精算
+        V18验钞机精算 - P11修复版
         
-        使用QMT Tick数据：
-        1. 计算09:40真实涨幅（基于昨收价）
-        2. 计算VWAP、Sustain因子
-        3. 计算横向吸血PK排名
-        
-        Returns:
-            List[Dict]: V18精算后的Top 10
+        修复内容:
+        1. P11-A2: Sustain从乘数改为扣分制，避免final_score=0.0
+        2. P11-A3: 基础分从高分辨率线性映射计算
+        3. P11-A4: VWAP从乘数改为扣分制
         """
         logger.info("=" * 80)
-        logger.info("V18验钞机精算")
+        logger.info("V18验钞机精算 (P11修复版)")
         logger.info("=" * 80)
         
         if not HAS_QMT:
@@ -314,23 +378,22 @@ class HolographicBacktestEngine:
         try:
             results = []
             
+            # 计算池内最大成交额
+            max_amount_in_pool = max([s.get('amount', 0) for s in self.layer3_stocks]) if self.layer3_stocks else 0
+            logger.info(f"池内最大成交额: {max_amount_in_pool/10000:.0f}万")
+            
             for stock in self.layer3_stocks:
                 try:
                     ts_code = stock['ts_code']
                     code = stock['code']
                     name = stock['name']
+                    amount = float(stock.get('amount', 0))
                     
                     # 标准化代码格式
-                    if ts_code.endswith('.SZ'):
-                        qmt_code = ts_code
-                    elif ts_code.endswith('.SH'):
-                        qmt_code = ts_code
+                    if code.startswith('6'):
+                        qmt_code = f"{code}.SH"
                     else:
-                        # 根据代码前缀判断
-                        if code.startswith('6'):
-                            qmt_code = f"{code}.SH"
-                        else:
-                            qmt_code = f"{code}.SZ"
+                        qmt_code = f"{code}.SZ"
                     
                     logger.info(f"处理: {qmt_code} {name}")
                     
@@ -343,7 +406,7 @@ class HolographicBacktestEngine:
                     
                     # 下载Tick数据
                     start_time = f"{self.date}093000"
-                    end_time = f"{self.date}094500"  # 获取到09:45的数据
+                    end_time = f"{self.date}094500"
                     
                     xtdata.download_history_data(
                         stock_code=qmt_code,
@@ -352,7 +415,6 @@ class HolographicBacktestEngine:
                         end_time=end_time
                     )
                     
-                    # 获取Tick数据
                     ticks = xtdata.get_local_data(
                         field_list=['time', 'lastPrice', 'volume', 'amount'],
                         stock_code_list=[qmt_code],
@@ -367,69 +429,82 @@ class HolographicBacktestEngine:
                     
                     df_ticks = ticks[qmt_code]
                     
-                    # 找到09:40的数据点
+                    # 找到09:40的价格
                     target_time = f"{self.date}094000"
                     target_ts = datetime.strptime(target_time, "%Y%m%d%H%M%S").timestamp() * 1000
                     
-                    # 找到最接近09:40的tick
                     df_ticks['time_diff'] = abs(df_ticks['time'] - target_ts)
                     nearest_idx = df_ticks['time_diff'].idxmin()
-                    price_0940 = df_ticks.loc[nearest_idx, 'lastPrice']
+                    price_0940 = float(df_ticks.loc[nearest_idx, 'lastPrice'])
                     
-                    # 获取开盘价（09:30的成交价）
+                    # 获取开盘价
                     open_time = f"{self.date}093000"
                     open_ts = datetime.strptime(open_time, "%Y%m%d%H%M%S").timestamp() * 1000
                     df_ticks['open_diff'] = abs(df_ticks['time'] - open_ts)
                     open_idx = df_ticks['open_diff'].idxmin()
-                    open_price = df_ticks.loc[open_idx, 'lastPrice']
+                    open_price = float(df_ticks.loc[open_idx, 'lastPrice'])
                     
-                    # 计算真实涨幅（基于昨收价）
+                    # 计算真实涨幅
                     true_change_0940 = MetricDefinitions.TRUE_CHANGE(price_0940, pre_close)
                     
-                    # 计算VWAP（09:30-09:40）
+                    # 计算VWAP
                     df_morning = df_ticks[df_ticks['time'] <= target_ts]
+                    vwap = price_0940
                     if len(df_morning) > 0:
-                        # 计算价格*成交量的总和
-                        df_morning['price_x_vol'] = df_morning['lastPrice'] * df_morning['volume'].diff().fillna(0)
-                        total_amount = df_morning['price_x_vol'].sum()
-                        total_volume = df_morning['volume'].diff().fillna(0).sum()
-                        
+                        vol_diff = df_morning['volume'].diff().fillna(0)
+                        price_x_vol = df_morning['lastPrice'] * vol_diff
+                        total_amount = price_x_vol.sum()
+                        total_volume = vol_diff.sum()
                         if total_volume > 0:
-                            vwap = total_amount / total_volume
-                        else:
-                            vwap = price_0940
-                    else:
-                        vwap = price_0940
+                            vwap = float(total_amount / total_volume)
                     
-                    # Sustain因子：计算价格维持在高位的能力
-                    # 定义：09:35-09:40期间，价格维持在开盘价98%以上的时间比例
+                    # Sustain因子
                     time_0935 = f"{self.date}093500"
                     ts_0935 = datetime.strptime(time_0935, "%Y%m%d%H%M%S").timestamp() * 1000
                     df_sustain = df_ticks[(df_ticks['time'] >= ts_0935) & (df_ticks['time'] <= target_ts)]
                     
+                    sustain_factor = 100.0
                     if len(df_sustain) > 0:
                         sustain_threshold = open_price * 0.98
                         sustain_count = len(df_sustain[df_sustain['lastPrice'] >= sustain_threshold])
                         sustain_factor = sustain_count / len(df_sustain) * 100
-                    else:
-                        sustain_factor = 0
                     
-                    # 计算资金占比（简化版，使用成交额估算）
-                    # 实际应该获取板块总成交额进行对比
-                    capital_share_pct = stock.get('amount', 0) / 10000  # 转换为万元
+                    # 资金占比
+                    capital_share_pct = amount / 10000
                     
-                    # 综合得分（基于量比、涨幅、Sustain因子）
+                    # ==================== V18评分计算（修复版） ====================
                     volume_ratio = stock.get('volume_ratio', 1)
-                    base_score = min(30, volume_ratio * 5)  # 量比基础分
-                    multiplier = 1 + (true_change_0940 / 100)  # 涨幅乘数
-                    final_score = base_score * multiplier * (sustain_factor / 100)
+                    
+                    # 1. 高分辨率基础分
+                    base_score = self.calculate_base_score_v18(
+                        volume_ratio, true_change_0940, amount, max_amount_in_pool
+                    )
+                    
+                    # 2. 涨幅乘数
+                    multiplier = 1.0 + (true_change_0940 / 200)
+                    
+                    # 3. 初步得分
+                    preliminary_score = base_score * multiplier
+                    
+                    # 4. VWAP惩罚
+                    score_after_vwap, vwap_penalty = self.apply_vwap_penalty(
+                        preliminary_score, price_0940, vwap
+                    )
+                    
+                    # 5. Sustain惩罚
+                    final_score, sustain_penalty = self.apply_sustain_penalty(
+                        score_after_vwap, sustain_factor
+                    )
+                    
+                    # 6. 封顶
+                    final_score = min(final_score, 100.0)
                     
                     result = {
                         'stock_code': qmt_code,
                         'name': name,
-                        'pre_close': pre_close,
-                        'open_price': open_price,
-                        'price_0940': price_0940,
+                        'pre_close': float(pre_close),
+                        'open_price': float(open_price),
+                        'price_0940': float(price_0940),
                         'true_change_0940': round(true_change_0940, 2),
                         'volume_ratio': round(volume_ratio, 2),
                         'vwap': round(vwap, 2),
@@ -437,19 +512,26 @@ class HolographicBacktestEngine:
                         'capital_share_pct': round(capital_share_pct, 2),
                         'base_score': round(base_score, 2),
                         'multiplier': round(multiplier, 3),
-                        'final_score': round(final_score, 2)
+                        'vwap_penalty': round(vwap_penalty, 2),
+                        'sustain_penalty': round(sustain_penalty, 2),
+                        'final_score': round(final_score, 2),
+                        'scoring_formula': 'base_score * multiplier - vwap_penalty - sustain_penalty'
                     }
                     
                     results.append(result)
-                    logger.info(f"  ✅ {qmt_code} 09:40涨幅={true_change_0940:.2f}% VWAP={vwap:.2f} Sustain={sustain_factor:.1f}%")
+                    logger.info(f"  ✅ {qmt_code} 涨幅={true_change_0940:.2f}% 基础分={base_score:.1f} 最终得分={final_score:.1f}")
                     
                 except Exception as e:
                     logger.error(f"V18精算失败 {stock['ts_code']}: {e}")
                     continue
             
-            # 按综合得分排序，取Top 10
+            # 排序取Top 10
             results_sorted = sorted(results, key=lambda x: x['final_score'], reverse=True)
             self.final_top10 = results_sorted[:10]
+            
+            # 验证修复效果
+            non_zero_scores = [r for r in results if r['final_score'] > 0]
+            logger.info(f"✅ 修复验证: {len(non_zero_scores)}/{len(results)} 只股票final_score>0")
             
             logger.info(f"V18精算完成: {len(self.final_top10)} 只股票")
             return self.final_top10
