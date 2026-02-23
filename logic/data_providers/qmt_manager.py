@@ -37,6 +37,9 @@ except ImportError:
     xtdata = None
     xttrader = None
 
+# 导入QMTRouter - 接入熔断机制
+from logic.data_providers.fallback_provider import QMTRouter, CircuitBreakerError
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -411,6 +414,9 @@ class QmtDataManager:
         results = {}
         logger.info(f"【下载Tick数据】{trade_date} | {len(stock_list)}只股票 | VIP: {use_vip}")
         
+        # 初始化QMTRouter - 接入熔断机制
+        router = QMTRouter()
+        
         for i, stock_code in enumerate(stock_list, 1):
             try:
                 # 检查是否已有数据
@@ -443,33 +449,41 @@ class QmtDataManager:
                     end_time=trade_date
                 )
                 
-                # 验证下载
-                data = xtdata.get_local_data(
-                    field_list=['time', 'lastPrice', 'volume'],
-                    stock_list=[stock_code],
-                    period='tick',
-                    start_time=trade_date,
-                    end_time=trade_date
-                )
-                
-                if data and stock_code in data and len(data[stock_code]) > 100:
-                    tick_count = len(data[stock_code])
-                    results[stock_code] = DownloadResult(
-                        success=True,
-                        stock_code=stock_code,
-                        period='tick',
-                        record_count=tick_count,
-                        message=f"成功 ({tick_count}条)"
-                    )
-                    logger.debug(f"[{i}/{len(stock_list)}] {stock_code} 下载成功 ({tick_count}条)")
-                else:
+                # 使用QMTRouter验证下载 - 触发熔断机制
+                try:
+                    response = router.get_tick_data(stock_code, trade_date)
+                    
+                    if response.success:
+                        tick_count = response.tick_count
+                        source_info = f" [{response.source.value}]"
+                        inference_info = " + L1推断" if response.use_inference else ""
+                        
+                        results[stock_code] = DownloadResult(
+                            success=True,
+                            stock_code=stock_code,
+                            period='tick',
+                            record_count=tick_count,
+                            message=f"成功 ({tick_count}条){source_info}{inference_info}"
+                        )
+                        logger.debug(f"[{i}/{len(stock_list)}] {stock_code} 下载成功 ({tick_count}条){source_info}{inference_info}")
+                    else:
+                        results[stock_code] = DownloadResult(
+                            success=False,
+                            stock_code=stock_code,
+                            period='tick',
+                            message=f"验证失败: {response.error_msg}"
+                        )
+                        logger.warning(f"[{i}/{len(stock_list)}] {stock_code} 验证失败: {response.error_msg}")
+                        
+                except CircuitBreakerError as e:
+                    # 熔断触发 - 记录失败结果
                     results[stock_code] = DownloadResult(
                         success=False,
                         stock_code=stock_code,
                         period='tick',
-                        message="数据不足"
+                        error=f"【熔断】{str(e)}"
                     )
-                    logger.warning(f"[{i}/{len(stock_list)}] {stock_code} 数据不足")
+                    logger.error(f"[{i}/{len(stock_list)}] {stock_code} 触发熔断")
                     
             except Exception as e:
                 logger.error(f"[{i}/{len(stock_list)}] {stock_code} 下载失败: {e}")
@@ -483,7 +497,8 @@ class QmtDataManager:
             time.sleep(delay)
         
         success_count = sum(1 for r in results.values() if r.success)
-        logger.info(f"Tick数据下载完成: {success_count}/{len(stock_list)}")
+        circuit_breaker_count = sum(1 for r in results.values() if r.error and "熔断" in r.error)
+        logger.info(f"Tick数据下载完成: {success_count}/{len(stock_list)} | 熔断: {circuit_breaker_count}")
         return results
     
     def verify_data_integrity(

@@ -4,16 +4,21 @@
 
 Author: iFlow CLI
 Date: 2026-02-23
-Version: 1.0.0
+Version: 1.1.0 - 添加记忆衰减机制
 """
 import pandas as pd
 from datetime import datetime, timedelta
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Set
 from pathlib import Path
 import json
 import logging
 
 from logic.core.path_resolver import PathResolver
+
+# 记忆衰减参数
+MEMORY_DECAY_FACTOR = 0.5      # 衰减系数
+MEMORY_MIN_SCORE = 10.0        # 最低分数阈值
+MEMORY_MAX_ABSENCE_DAYS = 2    # 连续不上榜最大天数
 from logic.core.metric_definitions import MetricDefinitions
 from logic.core.sanity_guards import SanityGuards
 from logic.data_providers.qmt_manager import QmtDataManager
@@ -34,6 +39,9 @@ class TimeMachineEngine:
             stock_pool='data/cleaned_candidates_66.csv'
         )
     """
+    
+    # 记忆文件路径
+    MEMORY_FILE = Path(__file__).parent.parent.parent / 'data' / 'memory' / 'ShortTermMemory.json'
     
     def __init__(self, initial_capital: float = 20000.0):
         self.initial_capital = initial_capital
@@ -148,7 +156,10 @@ class TimeMachineEngine:
             daily_result['top20'] = top20
             daily_result['status'] = 'success'
             
-            # 4. 打印结果 (仅显示前5，但保存Top 20)
+            # 5. 执行记忆衰减
+            self._apply_memory_decay(date, top20)
+            
+            # 6. 打印结果 (仅显示前5，但保存Top 20)
             print(f"\n  🏆 当日Top 20 (显示前5):")
             for i, item in enumerate(top20[:5], 1):
                 print(f"    {i}. {item['stock_code']} - 得分: {item['final_score']:.2f}")
@@ -602,6 +613,155 @@ class TimeMachineEngine:
         except Exception as e:
             logger.error(f"读取总结报告失败: {e}")
             return None
+    
+    # ==================== 记忆衰减机制 ====================
+    
+    def _load_memory(self) -> Dict[str, Dict]:
+        """
+        加载短期记忆 - 自动补充缺失字段
+        
+        Returns:
+            记忆字典 {stock_code: memory_item}
+        """
+        try:
+            if self.MEMORY_FILE.exists():
+                with open(self.MEMORY_FILE, 'r', encoding='utf-8') as f:
+                    memory = json.load(f)
+                
+                # 自动补充缺失的字段（向后兼容旧数据结构）
+                for stock_code, mem_item in memory.items():
+                    if 'absent_days' not in mem_item:
+                        mem_item['absent_days'] = 0
+                        logger.debug(f"【记忆衰减】{stock_code} 补充 absent_days=0")
+                    if 'last_decay_date' not in mem_item:
+                        mem_item['last_decay_date'] = mem_item.get('date', '')
+                        logger.debug(f"【记忆衰减】{stock_code} 补充 last_decay_date")
+                
+                return memory
+            return {}
+        except Exception as e:
+            logger.error(f"【记忆衰减】加载记忆失败: {e}")
+            return {}
+    
+    def _save_memory(self, memory: Dict[str, Dict]) -> bool:
+        """
+        保存短期记忆
+        
+        Args:
+            memory: 记忆字典
+        
+        Returns:
+            是否保存成功
+        """
+        try:
+            # 确保目录存在
+            self.MEMORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+            
+            with open(self.MEMORY_FILE, 'w', encoding='utf-8') as f:
+                json.dump(memory, f, ensure_ascii=False, indent=2)
+            
+            logger.info(f"【记忆衰减】记忆已保存: {len(memory)} 条")
+            return True
+        except Exception as e:
+            logger.error(f"【记忆衰减】保存记忆失败: {e}")
+            return False
+    
+    def _apply_memory_decay(self, current_date: str, today_top20: List[Dict]) -> Dict[str, Dict]:
+        """
+        执行记忆衰减 - 核心逻辑
+        
+        规则:
+        1. 新记忆分 = 老记忆分 * 0.5
+        2. 连续2日不上榜 -> 删除
+        3. 衰减后score < 10 -> 删除
+        
+        Args:
+            current_date: 当前日期 'YYYYMMDD'
+            today_top20: 今日Top20列表 [{'stock_code': str, 'final_score': float, ...}]
+        
+        Returns:
+            更新后的记忆字典
+        """
+        # 1. 加载旧记忆
+        memory = self._load_memory()
+        
+        # 2. 获取今日上榜股票代码
+        today_top_codes: Set[str] = {item['stock_code'] for item in today_top20}
+        
+        # 3. 更新记忆中每只股票
+        new_memory = {}
+        decay_stats = {'decayed': 0, 'removed_absent': 0, 'removed_low_score': 0, 'new_added': 0}
+        
+        for stock_code, mem_item in memory.items():
+            # 获取当前分数
+            old_score = mem_item.get('score', 0)
+            
+            # 衰减分数
+            new_score = old_score * MEMORY_DECAY_FACTOR
+            
+            # 检查是否在今日Top20中
+            if stock_code in today_top_codes:
+                # 今日上榜，重置缺席天数
+                mem_item['absent_days'] = 0
+                decay_stats['decayed'] += 1
+                logger.debug(f"【记忆衰减】{stock_code} 今日上榜，重置缺席天数")
+            else:
+                # 未上榜，增加缺席天数
+                absent_days = mem_item.get('absent_days', 0) + 1
+                mem_item['absent_days'] = absent_days
+                
+                # 检查是否连续缺席超过阈值
+                if absent_days >= MEMORY_MAX_ABSENCE_DAYS:
+                    decay_stats['removed_absent'] += 1
+                    logger.info(f"【记忆衰减】{stock_code} 连续{absent_days}日不上榜，删除")
+                    continue
+            
+            # 检查分数是否低于阈值
+            if new_score < MEMORY_MIN_SCORE:
+                decay_stats['removed_low_score'] += 1
+                logger.info(f"【记忆衰减】{stock_code} 分数{new_score:.1f} < {MEMORY_MIN_SCORE}，删除")
+                continue
+            
+            # 更新分数和日期
+            mem_item['score'] = round(new_score, 2)
+            mem_item['last_decay_date'] = current_date
+            new_memory[stock_code] = mem_item
+            decay_stats['decayed'] += 1
+        
+        # 4. 添加今日新上榜股票（不在记忆中的）
+        for item in today_top20:
+            stock_code = item['stock_code']
+            if stock_code not in new_memory:
+                new_memory[stock_code] = {
+                    'stock_code': stock_code,
+                    'date': current_date,
+                    'score': item.get('final_score', 70.0),
+                    'absent_days': 0,
+                    'last_decay_date': current_date,
+                    'close_price': item.get('price_0940', 0),
+                    'change_pct': item.get('change_0940', 0),
+                    'status': item.get('status', 'unknown')
+                }
+                decay_stats['new_added'] += 1
+                logger.debug(f"【记忆衰减】{stock_code} 新上榜，加入记忆")
+        
+        # 5. 保存更新后的记忆
+        self._save_memory(new_memory)
+        
+        # 6. 打印统计
+        print(f"\n  📉 记忆衰减统计:")
+        print(f"     原有记忆: {len(memory)} 条")
+        print(f"     衰减保留: {decay_stats['decayed']} 条")
+        print(f"     新增记忆: {decay_stats['new_added']} 条")
+        print(f"     删除(缺席): {decay_stats['removed_absent']} 条")
+        print(f"     删除(低分): {decay_stats['removed_low_score']} 条")
+        print(f"     当前记忆: {len(new_memory)} 条")
+        
+        logger.info(f"【记忆衰减】统计: 原有{len(memory)}, 保留{decay_stats['decayed']}, "
+                   f"新增{decay_stats['new_added']}, 删除缺席{decay_stats['removed_absent']}, "
+                   f"删除低分{decay_stats['removed_low_score']}, 当前{len(new_memory)}")
+        
+        return new_memory
 
 
 # CLI入口
