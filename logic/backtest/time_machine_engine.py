@@ -111,7 +111,20 @@ class TimeMachineEngine:
         }
         
         try:
-            # 1. 获取当日股票池数据
+            # CTO修复：第一步 - VIP阻塞下载数据（打通任督二脉！）
+            print(f"  📥 向VIP节点请求 {date} Tick数据并阻塞等待...")
+            from logic.data_providers.qmt_manager import QmtDataManager
+            downloader = QmtDataManager()
+            download_results = downloader.download_tick_data(
+                stock_list=stock_pool[:20],  # 先测前20只
+                trade_date=date,
+                use_vip=True,
+                check_existing=True
+            )
+            success_downloads = sum(1 for r in download_results.values() if r.success)
+            print(f"  ✅ 下载完成: {success_downloads}/{len(stock_pool[:20])} 只")
+            
+            # 2. 获取当日股票池数据
             print(f"  📊 获取 {len(stock_pool)} 只股票数据...")
             
             valid_stocks = []
