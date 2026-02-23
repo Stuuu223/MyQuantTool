@@ -402,13 +402,17 @@ class MarketFilter:
         # 3. 剔除已退市（仅Tushare支持delist_date字段）
         delist_count = 0
         if self.CONFIG['exclude_delisted'] and source == "Tushare":
-            delist_mask = df_basic['delist_date'].notna() & (df_basic['delist_date'] != '')
-            # 只剔除那些还没有被标记为排除的
-            delist_mask = delist_mask & (~df_basic['excluded'])
-            df_basic.loc[delist_mask, 'excluded'] = True
-            df_basic.loc[delist_mask, 'exclude_reason'] = '已退市'
-            delist_count = delist_mask.sum()
-            print(f"   ❌ 已退市股票: {delist_count}只")
+            # 检查是否存在delist_date字段
+            if 'delist_date' in df_basic.columns:
+                delist_mask = df_basic['delist_date'].notna() & (df_basic['delist_date'] != '')
+                # 只剔除那些还没有被标记为排除的
+                delist_mask = delist_mask & (~df_basic['excluded'])
+                df_basic.loc[delist_mask, 'excluded'] = True
+                df_basic.loc[delist_mask, 'exclude_reason'] = '已退市'
+                delist_count = delist_mask.sum()
+                print(f"   ❌ 已退市股票: {delist_count}只")
+            else:
+                print(f"   ⚠️  Tushare未返回delist_date字段，跳过退市检查")
         
         # 获取停牌股票列表（从每日指标获取，仅Tushare支持）
         suspended_count = 0

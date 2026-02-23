@@ -20,7 +20,7 @@ from xtquant import xtdata
 import time
 
 # 配置
-CANDIDATES_FILE = Path('E:/MyQuantTool/data/scan_results/20251231_candidates_200.csv')
+CANDIDATES_FILE = Path('E:/MyQuantTool/data/scan_results/20251231_candidates_73.csv')
 TRADE_DATE = '20251231'
 DOWNLOAD_PERIOD = 'tick'  # 下载Tick级别数据
 
