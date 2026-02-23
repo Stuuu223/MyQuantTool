@@ -334,13 +334,7 @@ class DynamicUniverseBuilder:
     
     def _calculate_volume_ratio(self, stock_code: str, date: str) -> float:
         """计算早盘30分钟量比"""
-        if not QMT_AVAILABLE:
-            # 模拟数据：志特新材12.31有异常高量比
-            if stock_code == '300986.SZ' and date == '20251231':
-                return 8.5  # 异常高量比
-            return 2.0
-        
-        # 实际实现：从QMT获取数据计算
+        # 从QMT获取数据计算真实量比
         try:
             # 获取当日早盘数据
             today_volume = self._get_morning_volume(stock_code, date)
@@ -355,15 +349,21 @@ class DynamicUniverseBuilder:
     
     def _calculate_turnover_rate(self, stock_code: str, date: str) -> float:
         """计算早盘换手率"""
-        if stock_code == '300986.SZ' and date == '20251231':
-            return 19.41  # 志特新材实际换手率
-        return 2.0
+        # 从QMT获取真实数据计算
+        try:
+            # TODO: 从QMT获取早盘成交量和流通股本计算
+            return 0.0  # 真实数据未获取时返回0
+        except:
+            return 0.0
     
     def _calculate_amplitude(self, stock_code: str, date: str) -> float:
         """计算早盘振幅"""
-        if stock_code == '300986.SZ' and date == '20251231':
-            return 10.53  # 志特新材实际振幅
-        return 3.0
+        # 从QMT获取真实数据计算
+        try:
+            # TODO: 从QMT获取早盘最高最低价计算
+            return 0.0  # 真实数据未获取时返回0
+        except:
+            return 0.0
     
     def _calculate_price_position(self, stock_code: str, date: str) -> float:
         """计算价格在均线上方的位置（百分比）"""
@@ -371,9 +371,12 @@ class DynamicUniverseBuilder:
     
     def _calculate_atr_ratio(self, stock_code: str, date: str) -> float:
         """计算ATR比率"""
-        if stock_code == '300986.SZ' and date == '20251231':
-            return 3.5  # 高ATR比率
-        return 2.5
+        # 从QMT获取真实数据计算
+        try:
+            # TODO: 从QMT获取20日ATR数据计算
+            return 0.0  # 真实数据未获取时返回0
+        except:
+            return 0.0
     
     def _get_morning_volume(self, stock_code: str, date: str) -> float:
         """获取早盘成交量"""

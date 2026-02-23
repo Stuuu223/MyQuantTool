@@ -172,7 +172,7 @@ class MarketFilter:
         'morning_end': '1000',           # 早盘结束
         
         # 演示模式（当无QMT数据时使用模拟数据）
-        'demo_mode': True,               # 启用演示模式
+        'demo_mode': False,              # 关闭演示模式，使用真实数据
     }
     
     def __init__(self, token: str = None):
