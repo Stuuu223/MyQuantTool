@@ -461,7 +461,12 @@ class BacktestEngine:
                 # 如果快照里找不到，从Tushare获取当日价格
                 try:
                     import tushare as ts
-                    api = ts.pro_api('1430dca9cc3419b91928e162935065bcd3531fa82976fee8355d550b')
+                    from logic.utils.shared_config_manager import SharedConfigManager
+                    token = SharedConfigManager.get('tushare_token')
+                    if not token:
+                        raise ValueError("Tushare token未配置")
+                    ts.set_token(token)
+                    api = ts.pro_api()
                     df = api.daily(ts_code=pos.code, trade_date=last_date)
                     if len(df) > 0:
                         current_price = df.iloc[0]['close']

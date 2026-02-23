@@ -1,0 +1,34 @@
+{
+  "date": "20251225",
+  "status": "success",
+  "top3": [
+    {
+      "stock_code": "002228.SZ",
+      "final_score": 50.420168067226854,
+      "change_0940": 10.08403361344537,
+      "price_0940": 6.55,
+      "pre_close": 5.95,
+      "status": "strong"
+    },
+    {
+      "stock_code": "002969.SZ",
+      "final_score": 50.061804697157015,
+      "change_0940": 10.012360939431403,
+      "price_0940": 8.9,
+      "pre_close": 8.09,
+      "status": "strong"
+    },
+    {
+      "stock_code": "300364.SZ",
+      "final_score": 5.254308532997058,
+      "change_0940": 1.0508617065994117,
+      "price_0940": 24.04,
+      "pre_close": 23.79,
+      "status": "weak"
+    }
+  ],
+  "signals": [],
+  "errors": [],
+  "total_stocks": 11,
+  "valid_stocks": 11
+}

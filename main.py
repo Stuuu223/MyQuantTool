@@ -156,10 +156,16 @@ def cli(ctx, version):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @cli.command(name='backtest')
-@click.option('--date', '-d', required=True, callback=validate_date,
-              help='交易日期 (YYYYMMDD格式, 如 20260105)')
+@click.option('--date', '-d', callback=validate_date,
+              help='交易日期 (YYYYMMDD格式, 如 20260105)。与--start_date/--end_date互斥')
+@click.option('--start_date', callback=validate_date,
+              help='开始日期 (YYYYMMDD格式)，用于连续回测')
+@click.option('--end_date', callback=validate_date,
+              help='结束日期 (YYYYMMDD格式)，用于连续回测')
 @click.option('--universe', '-u', 
-              help='股票池: 单只股票如300986.SZ，或CSV文件路径如data/cleaned_candidates_66.csv')
+              help='股票池: 单只股票、CSV文件路径，或使用"TUSHARE"实时粗筛')
+@click.option('--full_market', is_flag=True,
+              help='全市场模式: 使用Tushare每日动态粗筛 (CTO强制)')
 @click.option('--strategy', '-s', default='right_side_breakout',
               type=click.Choice(['right_side_breakout', 'v18', 'time_machine', 'behavior_replay']),
               help='策略名称 (默认: right_side_breakout)')
@@ -168,7 +174,7 @@ def cli(ctx, version):
 @click.option('--save', is_flag=True, help='保存结果到文件')
 @click.option('--target', help='目标股票代码（用于验证，如300986）')
 @click.pass_context
-def backtest_cmd(ctx, date, universe, strategy, output, save, target):
+def backtest_cmd(ctx, date, start_date, end_date, universe, full_market, strategy, output, save, target):
     """
     执行回测
     
@@ -180,18 +186,59 @@ def backtest_cmd(ctx, date, universe, strategy, output, save, target):
         # V18策略回测
         python main.py backtest --date 20260105 --universe data/cleaned_candidates_66.csv --strategy v18
         
+        # 全息时间机器 - 跨日连贯流 (CTO强制)
+        python main.py backtest --start_date 20251224 --end_date 20260105 --full_market --strategy v18
+        
         # 时间机器回测（两段式筛选）
         python main.py backtest --date 20260105 --strategy time_machine --target 300986
         
         # 行为回测并保存结果
         python main.py backtest --date 20260105 --universe 300986.SZ --save --output data/results
     """
-    click.echo(click.style(f"\n🚀 启动回测: {strategy}", fg='green', bold=True))
-    click.echo(f"📅 日期: {date}")
-    click.echo(f"🎯 股票池: {universe or '默认全市场'}")
-    click.echo(f"💾 输出: {output}")
+    # 参数验证
+    if start_date and end_date:
+        # 连续回测模式
+        click.echo(click.style(f"\n🚀 启动全息时间机器: {strategy}", fg='green', bold=True))
+        click.echo(f"📅 区间: {start_date} ~ {end_date}")
+        click.echo(f"🎯 模式: {'全市场Tushare粗筛' if full_market else 'CSV文件'}")
+        click.echo(f"💾 输出: {output}")
+    elif date:
+        # 单日回测模式
+        click.echo(click.style(f"\n🚀 启动回测: {strategy}", fg='green', bold=True))
+        click.echo(f"📅 日期: {date}")
+        click.echo(f"🎯 股票池: {universe or '默认全市场'}")
+        click.echo(f"💾 输出: {output}")
+    else:
+        click.echo(click.style("❌ 错误: 必须指定 --date 或 --start_date/--end_date", fg='red'))
+        ctx.exit(1)
     
     try:
+        # CTODict: 全息时间机器跨日回测
+        if start_date and end_date and full_market:
+            from logic.backtest.time_machine_engine import TimeMachineEngine
+            
+            engine = TimeMachineEngine(initial_capital=20000.0)
+            results = engine.run_continuous_backtest(
+                start_date=start_date,
+                end_date=end_date,
+                stock_pool_path='TUSHARE',
+                use_tushare=True
+            )
+            
+            # 输出结果
+            success_count = len([r for r in results if r.get('status') == 'success'])
+            click.echo(click.style(f"\n✅ 跨日回测完成: {success_count}/{len(results)} 个交易日成功", fg='green'))
+            
+            if save:
+                import json
+                output_path = Path(output) / f'time_machine_{start_date}_{end_date}.json'
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(output_path, 'w', encoding='utf-8') as f:
+                    json.dump(results, f, ensure_ascii=False, indent=2)
+                click.echo(f"💾 结果已保存: {output_path}")
+            
+            return
+        
         if strategy == 'time_machine':
             # 时间机器回测
             from tasks.run_time_machine_backtest import TimeMachineBacktest, save_results

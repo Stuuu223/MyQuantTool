@@ -17,6 +17,7 @@ from logic.core.path_resolver import PathResolver
 from logic.core.metric_definitions import MetricDefinitions
 from logic.core.sanity_guards import SanityGuards
 from logic.data_providers.qmt_manager import QmtDataManager
+from logic.data_providers.universe_builder import UniverseBuilder
 
 logger = logging.getLogger(__name__)
 
@@ -366,14 +367,17 @@ class TimeMachineEngine:
             return None
     
     def run_continuous_backtest(self, start_date: str, end_date: str, 
-                                 stock_pool_path: str) -> List[Dict]:
+                                 stock_pool_path: str = 'TUSHARE',
+                                 use_tushare: bool = True) -> List[Dict]:
         """
         连续多日回测 - 全息时间机器核心
+        CTODict: 强制使用真实Tushare粗筛，禁止模拟数据
         
         Args:
             start_date: 开始日期 'YYYYMMDD'
             end_date: 结束日期 'YYYYMMDD'
-            stock_pool_path: 股票池文件路径
+            stock_pool_path: 股票池文件路径，默认'TUSHARE'表示实时粗筛
+            use_tushare: 是否使用Tushare每日动态粗筛
         
         Returns:
             每日回测结果列表
@@ -382,14 +386,11 @@ class TimeMachineEngine:
         print(f"# 全息时间机器启动")
         print(f"# 回测区间: {start_date} ~ {end_date}")
         print(f"# 初始资金: {self.initial_capital}元")
+        print(f"# 数据源: {'Tushare实时粗筛' if use_tushare else 'CSV文件'}")
         print(f"{'#'*80}\n")
         
         logger.info(f"【时间机器】启动连续回测: {start_date} ~ {end_date}")
-        
-        # 1. 加载股票池
-        stock_pool = self._load_stock_pool(stock_pool_path)
-        print(f"📊 股票池: {len(stock_pool)} 只股票")
-        logger.info(f"股票池加载完成: {len(stock_pool)} 只股票")
+        logger.info(f"【时间机器】数据源: {'Tushare实时粗筛' if use_tushare else 'CSV文件'}")
         
         # 2. 获取交易日
         trade_dates = self.get_trade_dates(start_date, end_date)
@@ -401,6 +402,23 @@ class TimeMachineEngine:
         
         for i, date in enumerate(trade_dates, 1):
             print(f"\n📌 进度: [{i}/{len(trade_dates)}] {date}")
+            
+            # CTODict: 每日动态粗筛 (Tushare模式)
+            if use_tushare:
+                try:
+                    stock_pool = self._load_stock_pool('TUSHARE', date)
+                    print(f"  📊 当日粗筛: {len(stock_pool)} 只")
+                except Exception as e:
+                    logger.error(f"【时间机器】{date} 粗筛失败: {e}")
+                    print(f"  ❌ {date} 粗筛失败: {e}")
+                    # 记录失败并继续下一日
+                    all_results.append({
+                        'date': date,
+                        'status': 'coarse_filter_failed',
+                        'error': str(e)
+                    })
+                    continue
+            
             daily_result = self.run_daily_backtest(date, stock_pool)
             all_results.append(daily_result)
             
@@ -425,27 +443,46 @@ class TimeMachineEngine:
         
         return all_results
     
-    def _load_stock_pool(self, path: str) -> List[str]:
+    def _load_stock_pool(self, path: str, date: str = None) -> List[str]:
         """
-        加载股票池
+        加载股票池 - CTODict: 禁止模拟数据，强制真实粗筛
         
         Args:
-            path: 股票池文件路径
+            path: 股票池文件路径 或 'TUSHARE' 表示实时粗筛
+            date: 日期 'YYYYMMDD' (用于Tushare粗筛)
         
         Returns:
-            股票代码列表
+            股票代码列表 (约500只)
+        
+        Raises:
+            RuntimeError: 无法获取真实数据时抛出致命异常 (Fail Fast)
         """
+        # 如果使用Tushare实时粗筛
+        if path.upper() == 'TUSHARE' or path == '':
+            if not date:
+                raise ValueError("使用Tushare粗筛时必须提供date参数")
+            
+            logger.info(f"【时间机器】使用Tushare实时粗筛: {date}")
+            try:
+                builder = UniverseBuilder()
+                stock_pool = builder.get_daily_universe(date)
+                
+                if not stock_pool:
+                    raise RuntimeError(f"Tushare粗筛返回空股票池: {date}")
+                
+                logger.info(f"【时间机器】Tushare粗筛完成: {len(stock_pool)} 只")
+                return stock_pool
+                
+            except Exception as e:
+                logger.error(f"【时间机器】Tushare粗筛失败: {e}")
+                raise RuntimeError(f"无法获取真实股票池: {e}") from e
+        
+        # 如果提供CSV文件路径
         full_path = PathResolver.resolve_path(path)
         
-        # 如果文件不存在，返回默认测试池
         if not full_path.exists():
-            logger.warning(f"股票池文件不存在: {path}，使用默认测试池")
-            # 返回1.5日有数据的股票
-            return [
-                '002969.SZ', '002757.SZ', '603215.SH', '300986.SZ',
-                '002945.SZ', '603533.SH', '300612.SZ', '603278.SH',
-                '300364.SZ', '002228.SZ', '000681.SZ'
-            ]
+            logger.error(f"【时间机器】股票池文件不存在: {path}")
+            raise FileNotFoundError(f"股票池文件不存在: {path}。请提供有效CSV文件或使用'TUSHARE'进行实时粗筛")
         
         try:
             df = pd.read_csv(full_path)
@@ -459,13 +496,8 @@ class TimeMachineEngine:
                 # 假设第一列是股票代码
                 return df.iloc[:, 0].tolist()
         except Exception as e:
-            logger.error(f"加载股票池失败: {e}")
-            # 返回默认测试池
-            return [
-                '002969.SZ', '002757.SZ', '603215.SH', '300986.SZ',
-                '002945.SZ', '603533.SH', '300612.SZ', '603278.SH',
-                '300364.SZ', '002228.SZ', '000681.SZ'
-            ]
+            logger.error(f"【时间机器】加载股票池失败: {e}")
+            raise RuntimeError(f"无法加载股票池文件: {e}") from e
     
     def _save_daily_result(self, date: str, result: Dict):
         """
