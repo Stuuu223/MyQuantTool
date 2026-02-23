@@ -554,22 +554,47 @@ def download_cmd(ctx, date, data_type, universe, workers):
         # 加载股票池
         stock_list = []
         if universe and Path(universe).exists():
-            import pandas as pd
-            df = pd.read_csv(universe)
-            stock_list = df.iloc[:, 0].tolist() if len(df.columns) == 1 else df['code'].tolist()
-            click.echo(f"📋 加载 {len(stock_list)} 只股票")
+            # CTO修复：支持JSON和CSV两种格式
+            if universe.endswith('.json'):
+                import json
+                with open(universe, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    # 支持多种JSON格式
+                    stock_list = data.get('stocks', data.get('target', []))
+                    if not stock_list and isinstance(data, list):
+                        stock_list = data
+                click.echo(f"📋 从JSON加载 {len(stock_list)} 只股票")
+            else:
+                # CSV格式
+                import pandas as pd
+                df = pd.read_csv(universe)
+                stock_list = df.iloc[:, 0].tolist() if len(df.columns) == 1 else df['code'].tolist()
+                click.echo(f"📋 从CSV加载 {len(stock_list)} 只股票")
         
-        # 执行下载
-        from tasks.download_tick_200 import download_tick_data
+        # 执行下载 - 使用QmtDataManager
+        from logic.data_providers.qmt_manager import QmtDataManager
+        
+        manager = QmtDataManager()
         
         if stock_list:
-            # 下载指定股票池
-            for stock in stock_list[:200]:  # 限制最多200只
-                try:
-                    download_tick_data(stock, date)
-                    click.echo(f"  ✅ {stock}")
-                except Exception as e:
-                    click.echo(f"  ❌ {stock}: {e}")
+            click.echo(f"开始下载 {len(stock_list)} 只股票的Tick数据...")
+            results = manager.download_tick_data(
+                stock_list=stock_list[:200],  # 限制最多200只
+                trade_date=date,
+                use_vip=True,
+                check_existing=True
+            )
+            
+            success = sum(1 for r in results.values() if r.success)
+            failed = sum(1 for r in results.values() if not r.success)
+            
+            for stock, result in results.items():
+                if result.success:
+                    click.echo(f"  ✅ {stock}: {result.record_count}条")
+                else:
+                    click.echo(f"  ❌ {stock}: {result.message or result.error}")
+            
+            click.echo(f"\n下载完成: 成功={success}, 失败={failed}")
         else:
             click.echo(click.style("⚠️ 未指定股票池，使用默认列表", fg='yellow'))
             # 使用默认下载逻辑

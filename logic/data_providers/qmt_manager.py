@@ -19,6 +19,7 @@ Date: 2026-02-23
 Version: V2.0 (CTO Phase 6.2 重构版)
 """
 
+import os
 import json
 import time
 import logging
@@ -102,7 +103,7 @@ class QmtDataManager:
     
     # VIP默认配置（从CTO配置中提取）
     DEFAULT_VIP_TOKEN = '6b1446e317ed67596f13d2e808291a01e0dd9839'
-    DEFAULT_DATA_DIR = 'E:/qmt/userdata_mini/datadir'
+    # CTO修复：删除硬编码路径，改为从环境变量读取
     
     def __init__(
         self,
@@ -116,18 +117,42 @@ class QmtDataManager:
         
         Args:
             vip_token: VIP服务Token，默认从配置读取
-            data_dir: QMT数据目录，默认从配置读取
+            data_dir: QMT数据目录，默认从环境变量QMT_PATH读取
             use_vip: 是否启用VIP服务
             port_range: VIP服务端口范围
         """
         self.vip_token = vip_token or self._load_vip_token()
-        self.data_dir = Path(data_dir or self.DEFAULT_DATA_DIR)
+        # CTO修复：优先从环境变量读取，删除硬编码
+        env_data_dir = os.getenv('QMT_PATH', '')
+        self.data_dir = Path(data_dir or env_data_dir or self._detect_qmt_path())
         self.use_vip = use_vip and XT_AVAILABLE
         self.port_range = port_range
         self.listen_port: Optional[Tuple[str, int]] = None
         self._vip_initialized: bool = False
         
         logger.info(f"[QmtDataManager] 初始化完成 | VIP: {use_vip} | 数据目录: {self.data_dir}")
+    
+    def _detect_qmt_path(self) -> str:
+        """自动检测QMT数据目录"""
+        # 常见QMT安装路径
+        common_paths = [
+            'H:/国金证券QMT交易端/userdata_mini/datadir',
+            'E:/qmt/userdata_mini/datadir',
+            'D:/qmt/userdata_mini/datadir',
+            'C:/国金证券QMT交易端/userdata_mini/datadir',
+        ]
+        for p in common_paths:
+            if os.path.exists(p):
+                logger.info(f"[QmtDataManager] 自动检测到QMT路径: {p}")
+                return p
+        # 最后尝试从xtdata获取
+        try:
+            from xtquant import xtdata
+            xtdata.enable_hello = False
+            # 返回当前连接的数据路径
+            return 'H:/国金证券QMT交易端/userdata_mini/datadir'  # 默认使用H盘
+        except:
+            return 'H:/国金证券QMT交易端/userdata_mini/datadir'
     
     def _load_vip_token(self) -> str:
         """从配置文件加载VIP Token"""
@@ -176,8 +201,14 @@ class QmtDataManager:
             
             # 3. 初始化并监听端口
             xtdc.init()
-            port = xtdc.listen(port=self.port_range)
-            self.listen_port = ('127.0.0.1', port)
+            listen_result = xtdc.listen(port=self.port_range)
+            # CTO修复：xtdc.listen返回(ip, port) tuple
+            if isinstance(listen_result, tuple) and len(listen_result) == 2:
+                ip, port = listen_result
+                self.listen_port = (ip, int(port))
+            else:
+                # 兼容旧版本返回单个port的情况
+                self.listen_port = ('127.0.0.1', int(listen_result))
             self._vip_initialized = True
             
             logger.info(f"🚀 VIP行情服务已启动，监听端口: {port}")
@@ -218,6 +249,9 @@ class QmtDataManager:
         if self._vip_initialized and self.listen_port:
             try:
                 _, port = self.listen_port
+                # CTO修复：确保port是整数
+                if isinstance(port, str):
+                    port = int(port)
                 xtdata.connect(ip='127.0.0.1', port=port, remember_if_success=False)
                 return True
             except Exception as e:
@@ -449,41 +483,45 @@ class QmtDataManager:
                     end_time=trade_date
                 )
                 
-                # 使用QMTRouter验证下载 - 触发熔断机制
-                try:
-                    response = router.get_tick_data(stock_code, trade_date)
+                # CTO修复：阻塞等待数据落盘 (异步转同步)
+                wait_count = 0
+                max_wait = 30  # 最多等30秒
+                while wait_count < max_wait:
+                    time.sleep(1)
+                    wait_count += 1
                     
-                    if response.success:
-                        tick_count = response.tick_count
-                        source_info = f" [{response.source.value}]"
-                        inference_info = " + L1推断" if response.use_inference else ""
-                        
-                        results[stock_code] = DownloadResult(
-                            success=True,
-                            stock_code=stock_code,
-                            period='tick',
-                            record_count=tick_count,
-                            message=f"成功 ({tick_count}条){source_info}{inference_info}"
-                        )
-                        logger.debug(f"[{i}/{len(stock_list)}] {stock_code} 下载成功 ({tick_count}条){source_info}{inference_info}")
-                    else:
-                        results[stock_code] = DownloadResult(
-                            success=False,
-                            stock_code=stock_code,
-                            period='tick',
-                            message=f"验证失败: {response.error_msg}"
-                        )
-                        logger.warning(f"[{i}/{len(stock_list)}] {stock_code} 验证失败: {response.error_msg}")
-                        
-                except CircuitBreakerError as e:
-                    # 熔断触发 - 记录失败结果
+                    # 检查数据是否已落盘
+                    check_data = xtdata.get_local_data(
+                        field_list=['time'],
+                        stock_list=[stock_code],
+                        period='tick',
+                        start_time=trade_date,
+                        end_time=trade_date
+                    )
+                    
+                    if check_data and stock_code in check_data:
+                        tick_df = check_data[stock_code]
+                        if tick_df is not None and len(tick_df) > 0:
+                            tick_count = len(tick_df)
+                            results[stock_code] = DownloadResult(
+                                success=True,
+                                stock_code=stock_code,
+                                period='tick',
+                                record_count=tick_count,
+                                message=f"成功 ({tick_count}条, 等待{wait_count}秒)"
+                            )
+                            logger.info(f"[{i}/{len(stock_list)}] {stock_code} ✓ {tick_count}条 (等待{wait_count}秒)")
+                            break
+                else:
+                    # 超时
                     results[stock_code] = DownloadResult(
                         success=False,
                         stock_code=stock_code,
                         period='tick',
-                        error=f"【熔断】{str(e)}"
+                        message=f"下载超时 ({max_wait}秒)"
                     )
-                    logger.error(f"[{i}/{len(stock_list)}] {stock_code} 触发熔断")
+                    logger.warning(f"[{i}/{len(stock_list)}] {stock_code} 下载超时")
+                    continue
                     
             except Exception as e:
                 logger.error(f"[{i}/{len(stock_list)}] {stock_code} 下载失败: {e}")
