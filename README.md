@@ -48,20 +48,20 @@ logic/core/
 第三层: 量比过滤 (量比 > 3.0)
 ```
 
-### V18 验钞机 (三层防线)
+### V18 验证机 (三层防线)
 ```
-第一层: 高分辨率基础分 (线性极值映射 0-100分)
+第一层: 高分率基础分 (线性极值映射0-100分)
 第二层: 横向吸血乘数 (资金净流入占比排名)
-第三层: VWAP惩罚扣分 (跌破均价线-20分)
+第三层: VWAP惩罚打分 (跌破均价线-20分)
 ```
 
 ---
 
-## 🚀 极简使用指南
+## 🛠️ 极简使用指南
 
 ### 1. 环境配置
 ```bash
-# 创建.env文件，填入Token
+# 创建.env文件，填入token
 echo "TUSHARE_TOKEN=your_token" > .env
 echo "QMT_VIP_TOKEN=your_vip_token" >> .env
 ```
@@ -95,56 +95,238 @@ python main.py monitor
 
 ---
 
-## 📂 项目架构
+## 📋 CLI 使用手册
+
+### 快速开始
+```bash
+# 显示帮助
+python main.py --help
+
+# 显示版本
+python main.py --version
+
+# 查看具体命令帮助
+python main.py backtest --help
+python main.py scan --help
+```
+
+### 命令概览
+
+| 命令 | 功能 | 常用场景 |
+|------|------|----------|
+| `backtest` | 执行回测 | 策略验证、历史回演 |
+| `scan` | 全市场扫描 | 盘前/盘中/盘后扫描 |
+| `analyze` | 单股分析 | 个股诊断、信号验证 |
+| `download` | 数据下载 | 批量获取Tick/K线数据 |
+| `verify` | 数据验证 | 检查数据完整性 |
+| `monitor` | 实时监控 | 启动事件驱动监控 |
+| `simulate` | 历史模拟 | Phase 0.5/3 测试 |
+
+### 详细命令说明
+
+#### 1. backtest - 回测
+```bash
+python main.py backtest --date 20260105 --universe 300986.SZ
+```
+
+**参数**:
+- `--date`, `-d`: 交易日期 (YYYYMMDD, 必需)
+- `--universe`, `-u`: 股票池: 单只或CSV文件路径
+- `--strategy`, `-s`: 策略: right_side_breakout/v18/time_machine
+- `--output`, `-o`: 输出目录
+- `--save`: 保存结果到文件
+- `--target`: 目标股票代码（验证用）
+
+**示例**:
+```bash
+# 基础回测 - 单只股票
+python main.py backtest --date 20260105 --universe 300986.SZ
+
+# V18策略回测
+python main.py backtest --date 20260105 --universe data/candidates.csv --strategy v18
+
+# 时间机器回测（两段式筛选）
+python main.py backtest --date 20260105 --strategy time_machine --target 300986 --save
+```
+
+#### 2. scan - 市场扫描
+```bash
+python main.py scan --mode premarket
+```
+
+**参数**:
+- `--date`, `-d`: 交易日期 (默认今天)
+- `--mode`, `-m`: 模式: premarket/intraday/postmarket/full/triple_funnel
+- `--max-stocks`: 最大扫描股票数 (默认100)
+- `--output`, `-o`: 输出目录
+- `--source`: 数据源: qmt/tushare (默认qmt)
+
+**示例**:
+```bash
+# 盘前扫描
+python main.py scan --mode premarket
+
+# 盘中扫描
+python main.py scan --mode intraday
+
+# 盘后扫描指定日期
+python main.py scan --date 20260105 --mode postmarket
+```
+
+#### 3. analyze - 股票分析
+```bash
+python main.py analyze --stock 300986.SZ --date 20260105
+```
+
+**参数**:
+- `--stock`, `-s`: 股票代码 (如 300986.SZ 或 300986, 必需)
+- `--date`, `-d`: 分析单个日期
+- `--start-date`: 开始日期 (与--date互斥)
+- `--end-date`: 结束日期 (与--date互斥)
+- `--detail`: 显示详细分析
+
+**示例**:
+```bash
+# 分析单日
+python main.py analyze --stock 300986.SZ --date 20260105
+
+# 分析日期范围
+python main.py analyze --stock 300986.SZ --start-date 20251231 --end-date 20260105
+
+# 详细分析
+python main.py analyze --stock 300986.SZ --date 20260105 --detail
+```
+
+#### 4. download - 数据下载
+```bash
+python main.py download --date 20260105 --type tick
+```
+
+**参数**:
+- `--date`, `-d`: 交易日期 (默认今天)
+- `--type`: 数据类型: tick/kline/all (默认all)
+- `--universe`, `-u`: 股票池CSV文件路径
+- `--workers`, `-w`: 并发workers (默认4)
+
+**示例**:
+```bash
+# 下载今日所有数据
+python main.py download
+
+# 下载指定日期Tick数据
+python main.py download --date 20260105 --type tick
+
+# 下载指定股票池数据
+python main.py download --date 20260105 --universe data/candidates.csv
+
+# 高并发下载
+python main.py download --date 20260105 --workers 8
+```
+
+#### 5. verify - 数据验证
+```bash
+python main.py verify --date 20260105
+```
+
+**参数**:
+- `--date`, `-d`: 交易日期 (默认今天)
+- `--type`: 验证类型: tick/kline/all (默认all)
+- `--fix`: 自动修复缺失数据
+
+**示例**:
+```bash
+# 验证今日数据
+python main.py verify
+
+# 验证指定日期
+python main.py verify --date 20260105
+
+# 验证并修复
+python main.py verify --date 20260105 --fix
+```
+
+#### 6. monitor - 实时监控
+```bash
+python main.py monitor --mode event
+```
+
+**参数**:
+- `--mode`, `-m`: 模式: event/cli/auction (默认event)
+- `--interval`, `-i`: 监控间隔秒数 (默认3)
+
+**示例**:
+```bash
+# 启动事件驱动监控（推荐）
+python main.py monitor
+
+# 或明确指定
+python main.py monitor --mode event
+
+# 启动CLI监控终端
+python main.py monitor --mode cli
+
+# 启动集合竞价监控
+python main.py monitor --mode auction
+```
+
+#### 7. simulate - 历史模拟
+```bash
+python main.py simulate --start-date 20260224 --end-date 20260228
+```
+
+**参数**:
+- `--start-date`: 开始日期 (YYYYMMDD, 必需)
+- `--end-date`: 结束日期 (YYYYMMDD, 必需)
+- `--watchlist`: 关注列表CSV文件
+- `--phase`: Phase版本: 0.5/3 (默认0.5)
+
+**示例**:
+```bash
+# Phase 0.5: 50样本历史回测
+python main.py simulate --start-date 20260224 --end-date 20260228
+
+# Phase 3: 实盘测试
+python main.py simulate --phase 3 --watchlist data/watchlist.csv
+```
+
+---
+
+## 🏗️ 项目架构
 
 ```
 MyQuantTool/
 ├── main.py                     # 🎯 唯一CLI入口
-├── SYSTEM_CONSTITUTION.md      # 📜 系统宪法
-│
+├── SYSTEM_CONSTITUTION.md      # ⚖️ 系统宪法
 ├── logic/                      # 核心业务逻辑
 │   ├── core/                   # 唯一事实来源 (SSOT)
 │   │   ├── metric_definitions.py
 │   │   ├── path_resolver.py
 │   │   └── sanity_guards.py
-│   │
 │   ├── strategies/             # 策略引擎
-│   │   ├── unified_warfare_core.py      # V18验钞机
+│   │   ├── unified_warfare_core.py      # V18验证机
 │   │   └── unified_warfare_scanner_adapter.py
-│   │
 │   ├── backtest/               # 回测引擎
 │   │   ├── time_machine_engine.py       # 跨日连贯流
 │   │   └── trade_interface.py           # 模拟/QMT交易
-│   │
-│   ├── data_providers/         # 数据抽象层
-│   │   └── qmt_manager.py
-│   │
-│   └── utils/                  # 工具函数
-│       └── algo_capital.py     # 资金吸血算法
-│
+│   └── data_providers/         # 数据抽象层
+│       └── qmt_manager.py
 ├── config/                     # 配置文件
-├── data/                       # 数据湖
+├── data/                       # 数据池
 │   ├── cache/                  # 原始数据缓存
-│   ├── backtest_out/           # 回测输出
+│   └── backtest_out/           # 回测输出
 │   └── memory/                 # 跨日记忆 (ShortTermMemory)
-│
 ├── tests/                      # 单元测试
 │   └── unit/core/              # 核心算法测试
-│
-└── docs/                       # 文档
-    ├── CLI_USAGE.md
-    └── P9_2_CORE_REFACTOR_REPORT.md
 ```
 
 ---
 
-## 🔬 V18 核心特性
-
-### 高分辨率基础分 (线性极值映射)
+## 🧠 V18 核心特性
+### 高分率基础分 (线性极值映射)
 ```python
 # 换手率和涨幅的二维插值
 base_score = interpolate2d(
-    turnover=[5, 10, 15, 20],      # 换手率档位
+    turnover=[5, 10, 15, 20],      # 换手档位
     change=[5, 8, 10],             # 涨幅档位
     score_matrix=[[10,20,30],      # 5%换手
                   [25,35,45],      # 10%换手
@@ -160,26 +342,26 @@ base_score = interpolate2d(
 multiplier = cross_sectional_ranking(ratio_stock, percentile_map)
 ```
 
-### VWAP 惩罚扣分制
+### VWAP 惩罚打分制
 ```python
-# 修复前 (Bug): final_score = base_score × multiplier × (sustain/100)  # 导致0.0
-# 修复后 (正确): final_score = base_score × multiplier - penalty
+# 修复前(Bug): final_score = base_score × multiplier × (sustain/100)  # 导致0.0
+# 修复后(正确): final_score = base_score × multiplier - penalty
 
 final_score = base_score * multiplier
 if current_price < vwap:
-    final_score -= 20  # 扣分，不是乘数
+    final_score -= 20  # 惩分，不是乘数
 final_score = max(0, final_score)  # 永不为0
 ```
 
 ---
 
-## 📊 全息时间机器 (跨日连贯流)
+## ⏰ 全息时间机器 (跨日连贯流)
 
 ### 跨日记忆衰减机制
 ```python
-# ShortTermMemory.json 存储强势票
-# 每日收盘后执行衰减:
-# 1. 记忆分 *= 0.5
+# ShortTermMemory.json 存储强势股
+# 每日收盘后执行衰减
+# 1. 记忆值*= 0.5
 # 2. 连续2日不上榜 -> 删除
 # 3. 分数 < 10 -> 删除
 
@@ -194,12 +376,12 @@ final_score = max(0, final_score)  # 永不为0
 
 ### 每日回测流程
 ```
-1. Tushare粗筛 (5000→~500)
-2. 三层防线过滤 (~500→~50)
-3. V18验钞机打分
+1. Tushare粗筛 (5000→约500)
+2. 三防线过滤 (~500→约50)
+3. V18验证机打分
 4. 生成当日战报Top 20
 5. 执行记忆衰减
-6. 下一日继承记忆
+6. 次日继承记忆
 ```
 
 ---
@@ -212,22 +394,22 @@ pytest tests/unit/core/ -v
 
 # 测试内容包括:
 # - Test 01: Sustain惩罚制测试
-# - Test 02: 高分辨率基础分测试
-# - Test 03: VWAP惩罚扣分制测试
+# - Test 02: 高分率基础分测试
+# - Test 03: VWAP惩罚打分制测试
 # - Test 04: final_score永不为0测试
-# - Test 05: 优质票vs垃圾票区分度测试
+# - Test 05: 优质股vs垃圾股区分度测试
 ```
 
 ---
 
-## 📈 历史版本演进
+## 📊 历史版本演进
 
 | 版本 | 核心特性 | 状态 |
 |------|----------|------|
-| V11-V16 | 半路战法 + 龙头战法 | ❌ 已废弃 |
-| V17 | Portfolio层资金调度 | ❌ 已废弃 |
-| V18 | 高分辨率基础分 + VWAP惩罚 | ✅ 核心 |
-| P9 | 架构重构 (492,542行删除) | ✅ 已合并 |
+| V11-V16 | 半路战法 + 龙头战法 | 🗑️ 已废弃 |
+| V17 | Portfolio层资金调度 | 🗑️ 已废弃 |
+| V18 | 高分率基础分 + VWAP惩罚 | ✅ 核心 |
+| P9 | 架构重造 (492,542行删除) | ✅ 已合并 |
 | P9.2 | 真相隔离 (真Core vs 假Core) | ✅ 已合并 |
 | P14 | QMTRouter熔断机制 | ✅ 已合并 |
 | P15 | 记忆衰减机制 | ✅ 当前 |
@@ -238,22 +420,22 @@ pytest tests/unit/core/ -v
 
 | 模块 | 路径 | 说明 |
 |------|------|------|
-| QMTRouter | `logic/data_providers/fallback_provider.py` | VIP→L1→熔断责任链 |
+| QMTRouter | `logic/data_providers/fallback_provider.py` | VIP→L1→熔断责任制链 |
 | TimeMachine | `logic/backtest/time_machine_engine.py` | 跨日连贯流+记忆衰减 |
 | MetricDefinitions | `logic/core/metric_definitions.py` | 统一算子字典 |
 | SanityGuards | `logic/core/sanity_guards.py` | 数据护栏 |
 
 ---
 
-## 🚨 禁止事项
+## ❌ 禁止事项
 
-1. ❌ **禁止** 在主目录创建 `.py` 文件 (野脚本)
-2. ❌ **禁止** 使用模拟数据 (必须真实Tushare/QMT)
-3. ❌ **禁止** 直接运行子模块 (`python logic/xxx.py`)
-4. ❌ **禁止** 硬编码路径或魔法数字
-5. ❌ **禁止** 异常静默吞没 (必须Fail Fast)
-6. ❌ **禁止** 创建tools/目录下的新文件
+1. 🗑️**禁止** 在主目录创建 `.py` 文件 (野脚本)
+2. 🗑️**禁止** 使用模拟数据 (必须真实Tushare/QMT)
+3. 🗑️**禁止** 直接运行子模块 (`python logic/xxx.py`)
+4. 🗑️**禁止** 硬编码路径或魔法数字
+5. 🗑️**禁止** 异常静默吞没 (必须Fail Fast)
+6. 🗑️**禁止** 创建tools/目录下的新文件
 
 ---
 
-**最后强调**: 所有操作必须通过 `main.py` CLI入口。QMT是唯一数据源，熔断即停机。
+**最终强调**: 所有操作必须通过 `main.py` CLI入口。QMT是唯一数据源，熔断即停止。
