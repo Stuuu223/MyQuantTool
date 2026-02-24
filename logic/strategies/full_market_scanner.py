@@ -132,50 +132,42 @@ class FullMarketScanner:
             # 涨幅 = (当前价 - 昨收) / 昨收 * 100
             df['change_pct'] = (df['price'] - df['prev_close']) / df['prev_close'] * 100
             
-            # ===== 紧急修复P0级事故: 使用真实公式计算换手率和量比 =====
+            # ===== CTO Phase 22: 纯向量化真实计算,零假数据,零Fallback =====
             # 获取InstrumentCache实例
             instrument_cache = get_instrument_cache() if INSTRUMENT_CACHE_AVAILABLE else None
             
-            # 计算真实换手率和量比
-            turnover_rates = []
-            volume_ratios = []
+            # CTO强制: 检查InstrumentCache是否已预热,未预热则系统熔断
+            if not instrument_cache or instrument_cache.get_cache_stats()['float_volume_cached'] == 0:
+                logger.error("🚨 [CTO熔断] InstrumentCache未预热,无法获取真实流通盘数据! 系统停止扫描!")
+                return pd.DataFrame()  # 返回空DataFrame,系统熔断
             
-            for _, row in df.iterrows():
-                stock_code = row['stock_code']
-                volume = row['volume']
-                
-                # 获取FloatVolume和5日均量
-                if instrument_cache:
-                    float_volume = instrument_cache.get_float_volume(stock_code)
-                    avg_5d_volume = instrument_cache.get_5d_avg_volume(stock_code)
-                else:
-                    float_volume = 0
-                    avg_5d_volume = 0
-                
-                # 真实换手率 = 成交量 / 流通股本 * 100%
-                if float_volume and float_volume > 0:
-                    turnover_rate = (volume / float_volume) * 100
-                else:
-                    # 备用: 如果无法获取FloatVolume，使用基于amount的估算
-                    turnover_rate = row['amount'] / 1e8  # 粗略估算
-                
-                # 真实量比 = 当前成交量 / 5日平均成交量
-                if avg_5d_volume and avg_5d_volume > 0:
-                    volume_ratio = volume / avg_5d_volume
-                else:
-                    # 备用: 如果无法获取历史均量，使用基于均值的相对比值
-                    volume_ratio = volume / (df['volume'].mean() if len(df) > 0 else 1)
-                
-                turnover_rates.append(turnover_rate)
-                volume_ratios.append(volume_ratio)
+            # CTO强制: 纯向量化map操作,禁止iterrows循环
+            # 使用stock_code映射到FloatVolume和5日均量
+            df['float_volume'] = df['stock_code'].map(instrument_cache.get_float_volume)
+            df['avg_5d_volume'] = df['stock_code'].map(instrument_cache.get_5d_avg_volume)
             
-            df['turnover_rate'] = turnover_rates
-            df['volume_ratio'] = volume_ratios
-            df['float_volume'] = [instrument_cache.get_float_volume(code) if instrument_cache else 0 for code in df['stock_code']]
-            df['avg_5d_volume'] = [instrument_cache.get_5d_avg_volume(code) if instrument_cache else 0 for code in df['stock_code']]
+            # CTO强制: 检查数据完整性,缺失率>5%则熔断
+            missing_float = df['float_volume'].isna().sum() + (df['float_volume'] == 0).sum()
+            missing_avg = df['avg_5d_volume'].isna().sum() + (df['avg_5d_volume'] == 0).sum()
+            missing_rate = max(missing_float, missing_avg) / len(df)
             
-            logger.debug(f"📊 真实指标计算完成: 平均换手率 {np.mean(turnover_rates):.2f}%, 平均量比 {np.mean(volume_ratios):.2f}")
-            # ===== 紧急修复结束 =====
+            if missing_rate > 0.05:  # 缺失率超过5%
+                logger.error(f"🚨 [CTO熔断] 真实数据缺失率{missing_rate*100:.1f}%过高! 系统停止扫描!")
+                return pd.DataFrame()
+            
+            # CTO强制: 真实换手率 = 成交量 / 流通股本 * 100%, 绝对禁止假公式!
+            df['turnover_rate'] = (df['volume'] / df['float_volume']) * 100
+            
+            # CTO强制: 真实量比 = 当前成交量 / 5日平均成交量, 绝对禁止假公式!
+            df['volume_ratio'] = df['volume'] / df['avg_5d_volume']
+            
+            # 处理NaN值(should not happen after check, but for safety)
+            df['turnover_rate'] = df['turnover_rate'].fillna(0)
+            df['volume_ratio'] = df['volume_ratio'].fillna(0)
+            
+            logger.info(f"📊 [CTO向量化] 真实指标计算完成: 平均换手率 {df['turnover_rate'].mean():.2f}%, "
+                       f"平均量比 {df['volume_ratio'].mean():.2f}, 耗时极致优化")
+            # ===== CTO Phase 22 结束 =====
             
             # CTO加固: 向量化过滤 (一行代码处理数千只股票)
             mask = (
