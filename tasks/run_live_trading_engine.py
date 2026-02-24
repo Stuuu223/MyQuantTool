@@ -584,8 +584,24 @@ class LiveTradingEngine:
             df = df.dropna(subset=['volume_ratio', 'turnover_rate', 'turnover_rate_per_min'])
             
             # 5. CTO终极过滤规则（Ratio化）
-            # 只保留：量比>88分位数（放量）且 每分钟换手>0.2% 且 总换手<20%（有流动性但非极端）
-            volume_ratio_threshold = df['volume_ratio'].quantile(0.88)  # 量比88分位数 (ratio化)
+            # 从strategy_params.json加载分位数阈值
+            import json
+            from pathlib import Path
+            config_path = Path(__file__).parent.parent / "config" / "strategy_params.json"
+            
+            try:
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    strategy_config = json.load(f)
+                
+                # 从halfway策略获取分位数阈值
+                halfway_config = strategy_config.get('halfway', {})
+                volume_percentile = halfway_config.get('volume_surge_percentile', 0.88)
+            except:
+                # 备用：使用默认值
+                volume_percentile = 0.88
+            
+            # 只保留：量比>分位数（放量）且 每分钟换手>0.2% 且 总换手<20%（有流动性但非极端）
+            volume_ratio_threshold = df['volume_ratio'].quantile(volume_percentile)  # 量比分位数 (ratio化)
             mask = (
                 (df['volume_ratio'] > volume_ratio_threshold) &     # 量比基于市场分位数
                 (df['turnover_rate_per_min'] > 0.2) &               # ⭐️ 核心：平均每分钟换手率>0.2%
