@@ -836,9 +836,11 @@ def simulate_cmd(ctx, start_date, end_date, watchlist, phase):
               help='交易模式: paper=模拟盘, real=实盘')
 @click.option('--max-positions', default=3, help='最大持仓数量')
 @click.option('--cutoff-time', default='09:35:00', help='截停时间(不开新仓)')
+@click.option('--volume_percentile', default=0.88, type=float,
+              help='量比分位数阈值 (默认: 0.88)')
 @click.option('--dry-run', is_flag=True, help='干运行(不实际下单)')
 @click.pass_context
-def live_cmd(ctx, mode, max_positions, cutoff_time, dry_run):
+def live_cmd(ctx, mode, max_positions, cutoff_time, volume_percentile, dry_run):
     """
     🚀 实盘猎杀系统 - CTO终极架构版 (EventDriven事件驱动)
     
@@ -859,6 +861,7 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, dry_run):
     click.echo(f"📅 日期: {datetime.now().strftime('%Y-%m-%d')}")
     click.echo(f"📊 模式: {'模拟盘' if mode == 'paper' else '实盘交易'}")
     click.echo(f"💰 最大持仓: {max_positions}")
+    click.echo(f"📊 量比分位数: {volume_percentile}")
     click.echo(f"⏰ 截停时间: {cutoff_time}")
     if dry_run:
         click.echo(click.style("🧪 干运行模式(不实际下单)", fg='yellow'))
@@ -912,6 +915,7 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, dry_run):
         from tasks.run_live_trading_engine import LiveTradingEngine
         
         engine = LiveTradingEngine()
+        # 可以考虑将volume_percentile传递给引擎，用于内部的粗筛逻辑
         
         # 启动引擎（09:25第一斩 → 09:30第二斩 → 火控雷达）
         engine.start_session()
