@@ -143,10 +143,18 @@ class UniverseBuilder:
         df_filtered = df_filtered[df_filtered['volume_ratio'] >= volume_ratio_threshold]
         logger.info(f"【UniverseBuilder】第二层(量比>{volume_ratio_threshold:.1f}, 右侧起爆): {len(df_filtered)} 只")
         
-        # 第三层: 剔除科创板(688)和北交所(8开头/4开头)
+        # 第三层: 换手率过滤 (双Ratio化核心成果)
+        # 换手率 > 1% (确保有流动性) 且 < 20% (过滤过度爆炒)
+        df_filtered = df_filtered[
+            (df_filtered['turnover_rate'] > 1.0) & 
+            (df_filtered['turnover_rate'] < 20.0)
+        ]
+        logger.info(f"【UniverseBuilder】第三层(换手率1%-20%): {len(df_filtered)} 只")
+        
+        # 第四层: 剔除科创板(688)和北交所(8开头/4开头)
         df_filtered = df_filtered[~df_filtered['ts_code'].str.startswith('688')]
         df_filtered = df_filtered[~df_filtered['ts_code'].str.match(r'^[84]\d{5}\.(SZ|SH|BJ)')]
-        logger.info(f"【UniverseBuilder】第三层(剔除科创/北交): {len(df_filtered)} 只")
+        logger.info(f"【UniverseBuilder】第四层(剔除科创/北交): {len(df_filtered)} 只")
         
         # 转换为标准格式
         result = [self._to_standard_code(code) for code in df_filtered['ts_code'].tolist()]
