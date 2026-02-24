@@ -208,26 +208,15 @@ class QmtDataManager:
         return "H:/QMT/userdata_mini"  # 这个路径在.env文件中有配置
 
     def _load_vip_token(self) -> str:
-        """从配置文件加载VIP Token - 优先环境变量，其次主配置文件"""
-        # 1. 优先从环境变量读取
+        """从配置文件加载VIP Token - 严格使用环境变量"""
+        # 从环境变量读取（唯一正确的方式）
         env_token = os.getenv('QMT_VIP_TOKEN')
         if env_token and env_token.strip():
             logger.info("[QmtDataManager] 从环境变量读取VIP Token")
             return env_token.strip()
         
-        # 2. 从主配置文件读取
-        try:
-            config_path = Path(__file__).parent.parent.parent / "config" / "config.json"
-            if config_path.exists():
-                with open(config_path, "r", encoding="utf-8") as f:
-                    config = json.load(f)
-                    token = config.get("qmt_vip_token", "")  # 使用新的字段名
-                    if token:
-                        logger.info("[QmtDataManager] 从config.json读取VIP Token")
-                        return token
-        except Exception as e:
-            logger.warning(f"[QmtDataManager] 从config.json加载VIP Token失败: {e}")
-
+        # 如果环境变量未设置，提醒用户
+        logger.warning("[QmtDataManager] QMT_VIP_TOKEN环境变量未设置，请检查.env文件")
         logger.info(f"[QmtDataManager] 使用默认VIP Token")
         return self.DEFAULT_VIP_TOKEN
 
@@ -951,7 +940,7 @@ class QMTManager:
     def _load_config(self, config_path: Optional[str]) -> Dict:
         """加载配置文件 - 优先使用主配置文件"""
         if config_path is None:
-            # 优先使用主配置文件
+            # 使用主配置文件
             config_path = Path(__file__).parent.parent.parent / "config" / "config.json"
 
         config_file = Path(config_path)
@@ -963,7 +952,6 @@ class QMTManager:
             return {
                 "qmt_data": {"enabled": True, "ip": "127.0.0.1", "port": 58610},
                 "qmt_trader": {"enabled": False},
-                "qmt_vip_token": self.DEFAULT_VIP_TOKEN,  # 添加VIP token默认值
             }
 
     def _init_data_interface(self):
