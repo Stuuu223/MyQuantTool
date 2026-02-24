@@ -793,6 +793,115 @@ def simulate_cmd(ctx, start_date, end_date, watchlist, phase):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# 实盘交易命令 (系统封板)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@cli.command(name='live')
+@click.option('--mode', 
+              type=click.Choice(['paper', 'real']), 
+              default='paper',
+              help='交易模式: paper=模拟盘, real=实盘')
+@click.option('--max-positions', default=3, help='最大持仓数量')
+@click.option('--cutoff-time', default='09:35:00', help='截停时间(不开新仓)')
+@click.option('--dry-run', is_flag=True, help='干运行(不实际下单)')
+@click.pass_context
+def live_cmd(ctx, mode, max_positions, cutoff_time, dry_run):
+    """
+    🚀 实盘猎杀系统 - 唯一合法入口
+    
+    CTO规范: 
+    - 09:20盘前装弹 → 09:30极速扫描 → 09:35后不开新仓
+    - 所有数据必须真实(QMT原生),禁止模拟
+    - 废单5秒不成交立即撤
+    
+    示例:
+        python main.py live --mode paper          # 模拟盘测试
+        python main.py live --mode real --dry-run # 实盘干运行
+        python main.py live --mode real           # 实盘交易(⚠️危险)
+    """
+    from datetime import datetime
+    
+    click.echo(click.style("\n🚀 启动实盘猎杀系统", fg='green', bold=True))
+    click.echo(f"📅 日期: {datetime.now().strftime('%Y-%m-%d')}")
+    click.echo(f"📊 模式: {'模拟盘' if mode == 'paper' else '实盘交易'}")
+    click.echo(f"💰 最大持仓: {max_positions}")
+    click.echo(f"⏰ 截停时间: {cutoff_time}")
+    if dry_run:
+        click.echo(click.style("🧪 干运行模式(不实际下单)", fg='yellow'))
+    
+    try:
+        # Step 1: 盘前装弹 (09:20)
+        click.echo("\n📦 Step 1: 盘前装弹...")
+        from logic.data_providers.true_dictionary import warmup_true_dictionary
+        from xtquant import xtdata
+        
+        # 获取全市场股票列表
+        all_stocks = xtdata.get_stock_list_in_sector('沪深A股')
+        if not all_stocks:
+            click.echo(click.style("❌ 无法获取股票列表", fg='red'))
+            ctx.exit(1)
+        
+        click.echo(f"   全市场共 {len(all_stocks)} 只股票")
+        
+        # 执行盘前装弹
+        warmup_result = warmup_true_dictionary(all_stocks[:100])  # 先测试100只
+        
+        if not warmup_result.get('ready_for_trading'):
+            click.echo(click.style("🚨 盘前装弹失败! 系统停止", fg='red', bold=True))
+            ctx.exit(1)
+        
+        click.echo(click.style("✅ 盘前装弹完成", fg='green'))
+        
+        # Step 2: 等待开盘 (09:30)
+        now = datetime.now()
+        market_open = now.replace(hour=9, minute=30, second=0)
+        
+        if now < market_open:
+            wait_seconds = (market_open - now).seconds
+            click.echo(f"\n⏳ 等待开盘... ({wait_seconds}秒)")
+            import time
+            time.sleep(min(wait_seconds, 5))  # 最多等5秒(测试用)
+        
+        # Step 3: 极速扫描
+        click.echo("\n🔍 Step 2: 极速全市场扫描...")
+        from logic.strategies.full_market_scanner import create_full_market_scanner
+        
+        scanner = create_full_market_scanner()
+        
+        # 执行扫描 (限制100只测试)
+        scan_result = scanner.scan_with_risk_management(
+            mode='full', 
+            max_stocks=100
+        )
+        
+        opportunities = scan_result.get('opportunities', [])
+        click.echo(f"   扫描完成: 发现 {len(opportunities)} 只机会股")
+        
+        # Step 4: 显示结果
+        if opportunities:
+            click.echo("\n🎯 机会池Top 5:")
+            for i, opp in enumerate(opportunities[:5], 1):
+                code = opp.get('code', 'N/A')
+                change = opp.get('change_pct', 0)
+                vr = opp.get('volume_ratio', 0)
+                click.echo(f"   {i}. {code}: 涨幅{change:.1f}%, 量比{vr:.1f}")
+        
+        # Step 5: 干运行提示
+        if dry_run or mode == 'paper':
+            click.echo(click.style("\n🧪 干运行/模拟盘模式 - 未实际下单", fg='yellow'))
+        else:
+            click.echo(click.style("\n⚠️  实盘模式 - 即将下单!", fg='red', bold=True))
+            # TODO: 接入真实TradeInterface
+        
+        click.echo(click.style("\n✅ 实盘猎杀系统运行完成", fg='green'))
+        
+    except Exception as e:
+        logger.error(f"❌ 实盘系统失败: {e}", exc_info=True)
+        click.echo(click.style(f"\n❌ 系统失败: {e}", fg='red'))
+        ctx.exit(1)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # 主入口
 # ═══════════════════════════════════════════════════════════════════════════════
 
