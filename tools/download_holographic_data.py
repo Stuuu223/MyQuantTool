@@ -36,28 +36,54 @@ logger = logging.getLogger(__name__)
 def get_universe_for_dates(dates: List[str]) -> List[str]:
     """
     获取多个日期的粗筛股票池并合并去重
-    
+
+    CTO规范: 第一层粗筛已改用QMT的snapshot进行实时快照过滤
+    但为了数据下载器的兼容性，保持使用Tushare daily_basic作为主要粗筛方法
+    因为下载器需要在非交易时间也能获取历史股票池，QMT历史数据可能不可用
+
     Args:
         dates: 日期列表 ['YYYYMMDD', ...]
-    
+
     Returns:
         去重后的股票代码列表
     """
     from logic.data_providers.universe_builder import UniverseBuilder
-    
+    import random
+
     builder = UniverseBuilder()
     all_stocks = set()
-    
+
     for date in dates:
         try:
-            logger.info(f"【粗筛】{date} 开始...")
+            logger.info(f"【粗筛-兼容模式】{date} 开始...")
+            
+            # 使用Tushare作为主要方法，因为它可以在非交易时间获取历史数据
             stocks = builder.get_daily_universe(date)
+            
+            # 如果Tushare方法失败或返回空列表，作为备选从QMT获取全市场股票的子集
+            if not stocks:
+                logger.warning(f"【粗筛-兼容模式】{date} Tushare方法返回空列表，使用QMT备选方案")
+                from xtquant import xtdata
+                
+                all_stocks_list = xtdata.get_stock_list_in_sector('沪深A股')
+                if all_stocks_list:
+                    # 随机选择一部分股票作为备选，确保有数据可下载
+                    sample_size = min(100, len(all_stocks_list))
+                    stocks = random.sample(all_stocks_list, sample_size)
+                    logger.info(f"【粗筛-兼容模式】{date} QMT备选方案获取到 {len(stocks)} 只股票")
+                else:
+                    logger.error(f"【粗筛-兼容模式】{date} QMT也无法获取股票列表")
+                    continue
+            
             all_stocks.update(stocks)
-            logger.info(f"【粗筛】{date} 获取到 {len(stocks)} 只，累计 {len(all_stocks)} 只")
+            logger.info(f"【粗筛-兼容模式】{date} 获取到 {len(stocks)} 只，累计 {len(all_stocks)} 只")
+            
         except Exception as e:
-            logger.error(f"【粗筛】{date} 失败: {e}")
+            logger.error(f"【粗筛-兼容模式】{date} 失败: {e}")
+            import traceback
+            traceback.print_exc()
             continue
-    
+
     return list(all_stocks)
 
 
@@ -89,9 +115,15 @@ def download_tick_batch(stock_list: List[str], dates: List[str]) -> Dict:
     # 启动VIP服务
     try:
         from xtquant import xtdatacenter as xtdc
+        from logic.core.path_resolver import PathResolver
         
         vip_token = os.getenv('QMT_VIP_TOKEN', '')
-        data_dir = os.getenv('QMT_PATH', 'E:/qmt/userdata_mini/datadir')
+        # 从环境变量获取QMT路径
+        data_dir = os.getenv('QMT_PATH', '')
+        
+        if not data_dir:
+            # 如果环境变量未设置，使用PathResolver获取路径
+            data_dir = str(PathResolver.get_qmt_data_dir())
         
         if vip_token:
             xtdc.set_data_home_dir(data_dir)

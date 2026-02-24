@@ -1,32 +1,24 @@
 {
-  "_comment": "极简配置 - 右侧起爆猎杀系统",
   "version": "2.0.0",
-  
-  "tushare_token": "1430dca9cc3419b91928e162935065bcd3531fa82976fee8355d550b",
-  
-  "qmt": {
-    "vip_token": "6b1446e317ed67596f13d2e808291a01e0dd9839",
-    "vip_servers": [
-      "vipsxmd1.thinktrader.net:55310",
-      "vipsxmd2.thinktrader.net:55310"
-    ]
-  },
-  
   "trading": {
     "max_positions": 3,
     "max_single_position_value": 20000,
     "cutoff_time": "09:35:00",
     "order_timeout_seconds": 5
   },
-  
   "risk": {
     "max_daily_loss_pct": 0.05,
     "circuit_breaker_missing_data_rate": 0.05
   },
-  
   "paths": {
     "data": "data",
     "logs": "logs/system.log",
     "cache": "data/cache"
+  },
+  "qmt": {
+    "vip_servers": [
+      "vipsxmd1.thinktrader.net:55310",
+      "vipsxmd2.thinktrader.net:55310"
+    ]
   }
 }

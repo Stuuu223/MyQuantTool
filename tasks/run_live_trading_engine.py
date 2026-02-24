@@ -584,9 +584,10 @@ class LiveTradingEngine:
             df = df.dropna(subset=['volume_ratio', 'turnover_rate', 'turnover_rate_per_min'])
             
             # 5. CTO终极过滤规则（Ratio化）
-            # 只保留：量比>3（放量）且 每分钟换手>0.2% 且 总换手<20%（有流动性但非极端）
+            # 只保留：量比>88分位数（放量）且 每分钟换手>0.2% 且 总换手<20%（有流动性但非极端）
+            volume_ratio_threshold = df['volume_ratio'].quantile(0.88)  # 量比88分位数 (ratio化)
             mask = (
-                (df['volume_ratio'] > 3) &                          # 量比依然要高
+                (df['volume_ratio'] > volume_ratio_threshold) &     # 量比基于市场分位数
                 (df['turnover_rate_per_min'] > 0.2) &               # ⭐️ 核心：平均每分钟换手率>0.2%
                 (df['turnover_rate'] < 20)                          # 过滤过度爆炒（>20%）
             )

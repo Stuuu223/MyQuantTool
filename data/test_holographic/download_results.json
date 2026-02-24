@@ -1,0 +1,16 @@
+{
+  "config": {
+    "start_date": "20260101",
+    "end_date": "20260105",
+    "dates_count": 3,
+    "stocks_count": 363
+  },
+  "results": {
+    "total": 1089,
+    "success": 0,
+    "failed": 1089,
+    "skipped": 0,
+    "errors": []
+  },
+  "completed_at": "2026-02-24T22:07:24.658564"
+}

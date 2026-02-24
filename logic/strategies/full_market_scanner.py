@@ -170,11 +170,15 @@ class FullMarketScanner:
             # ===== CTO Phase 22 结束 =====
             
             # CTO加固: 向量化过滤 (一行代码处理数千只股票)
+            # CTO Phase 23: ratio化过滤 (基于市场分位数而非硬编码阈值)
+            volume_ratio_threshold = df['volume_ratio'].quantile(0.88)  # 量比88分位数
+            change_pct_threshold = df['change_pct'].quantile(0.85)     # 涨幅85分位数
+            
             mask = (
                 (df['price'] > 0) &  # 价格有效性
                 (df['prev_close'] > 0) &  # 昨收有效性
-                (df['change_pct'] >= 2.0) &  # 涨幅过滤
-                (df['volume_ratio'] >= 3.0) &  # 量比过滤
+                (df['change_pct'] >= change_pct_threshold) &  # 涨幅过滤 (ratio化)
+                (df['volume_ratio'] >= volume_ratio_threshold) &  # 量比过滤 (ratio化)
                 (df['amount'] >= 30000000)  # 成交额过滤 (3000万)
             )
             

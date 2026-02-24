@@ -8,8 +8,8 @@
 - 6000次请求 10分钟 → 1次请求 0.5秒
 
 Author: iFlow CLI
-Date: 2026-02-23
-Version: 2.0.0 (CTO强制重构)
+Date: 2026-02-24
+Version: 3.0.0 (CTO强制重构 - ratio化)
 """
 import os
 import pandas as pd
@@ -34,12 +34,12 @@ class UniverseBuilder:
     三漏斗粗筛 (全市场5000 → ~500):
     1. 静态过滤: 剔除ST、退市、北交所
     2. 金额过滤: 5日平均成交额 > 3000万
-    3. 量比过滤: 当日量比 > 3.0
+    3. 量比过滤: 当日量比 > 市场88分位数 (ratio化)
     """
     
     # 过滤阈值
     MIN_AMOUNT = 30000000  # 3000万
-    MIN_VOLUME_RATIO = 3.0  # 量比3.0
+    VOLUME_RATIO_PERCENTILE = 0.88  # 量比分位数阈值 (ratio化)
     
     def __init__(self):
         self.tushare_token = self._load_tushare_token()
@@ -125,9 +125,10 @@ class UniverseBuilder:
         df_filtered = df_basic[df_basic['volume_ratio'].notna()].copy()
         logger.info(f"【UniverseBuilder】第一层(有效量比): {len(df_filtered)} 只")
         
-        # 第二层: 量比 > 3.0
-        df_filtered = df_filtered[df_filtered['volume_ratio'] >= self.MIN_VOLUME_RATIO]
-        logger.info(f"【UniverseBuilder】第二层(量比>{self.MIN_VOLUME_RATIO}): {len(df_filtered)} 只")
+        # 第二层: 量比 > 市场88分位数 (ratio化)
+        volume_ratio_threshold = df_filtered['volume_ratio'].quantile(self.VOLUME_RATIO_PERCENTILE)
+        df_filtered = df_filtered[df_filtered['volume_ratio'] >= volume_ratio_threshold]
+        logger.info(f"【UniverseBuilder】第二层(量比>{volume_ratio_threshold:.3f}, {self.VOLUME_RATIO_PERCENTILE*100}分位数): {len(df_filtered)} 只")
         
         # 第三层: 剔除科创板(688)和北交所(8开头/4开头)
         df_filtered = df_filtered[~df_filtered['ts_code'].str.startswith('688')]
