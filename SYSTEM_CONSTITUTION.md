@@ -93,6 +93,7 @@ MyQuantTool/           # 根目录
 - ❌ 禁止股票代码硬编码
 - ❌ 禁止日期硬编码
 - ✅ 所有参数必须从config读取或从CLI传入
+- ✅ 支持命令行参数，提供灵活性
 
 ### 3.2 零异常吞没原则
 - ❌ 禁止`try-except-pass`
@@ -159,6 +160,7 @@ main.py -> logic/strategies/ -> logic/core/ -> logic/data_providers/ -> xtdata
 ### 绝对禁止的技术债务
 | 禁止项 | 后果 | 替代方案 |
 |--------|------|----------|
+| ❌ 随意创建文件（除非绝对必要） | 项目混乱 | 优先编辑现有文件 |
 | ❌ 在tools/目录创建新文件 | 屎山+1 | 使用main.py CLI |
 | ❌ 在tasks/目录创建新文件 | 屎山+1 | 使用main.py CLI |
 | ❌ 使用Tushare作为数据源 | 数据污染 | 使用QMT本地数据 |
@@ -179,6 +181,8 @@ main.py -> logic/strategies/ -> logic/core/ -> logic/data_providers/ -> xtdata
 1. 阅读本宪法（SYSTEM_CONSTITUTION.md）
 2. 检查是否已有封装好的算子（logic/core/）
 3. 检查是否已有类似功能（禁止重复造轮子）
+4. 优先编辑现有文件而非创建新文件
+5. 为现有工具添加参数支持以提高灵活性
 
 ### 6.2 代码提交前自检
 提交前必须确认：
