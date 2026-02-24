@@ -203,14 +203,24 @@ def download_tick_batch(stock_list: List[str], dates: List[str]) -> Dict:
 
 def main():
     """主函数"""
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='全息时间机器数据下载器')
+    parser.add_argument('--start-date', type=str, default='20251220', help='开始日期 (YYYYMMDD)')
+    parser.add_argument('--end-date', type=str, default='20260110', help='结束日期 (YYYYMMDD)')
+    parser.add_argument('--output', type=str, default='data/holographic_universe.json', help='输出文件路径')
+    parser.add_argument('--workers', type=int, default=4, help='并发数')
+    parser.add_argument('--type', type=str, choices=['tick', 'kline', 'all'], default='tick', help='数据类型')
+    
+    args = parser.parse_args()
+    
     print("=" * 60)
     print("【全息时间机器数据下载器】")
     print("=" * 60)
     
-    # 目标日期区间: 2025-12-24 到 2026-01-05 (9个交易日)
-    # 扩展到15天确保覆盖
-    start_date = datetime(2025, 12, 20)
-    end_date = datetime(2026, 1, 10)
+    # 解析日期区间
+    start_date = datetime.strptime(args.start_date, '%Y%m%d')
+    end_date = datetime.strptime(args.end_date, '%Y%m%d')
     
     # 生成日期列表（只保留工作日）
     dates = []
@@ -237,7 +247,7 @@ def main():
     
     # 保存股票池
     import json
-    output_path = PROJECT_ROOT / 'data' / 'holographic_universe.json'
+    output_path = PROJECT_ROOT / args.output
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, 'w', encoding='utf-8') as f:
         json.dump({
