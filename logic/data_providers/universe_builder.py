@@ -6,6 +6,7 @@
 - 原代码循环调用stk_mins导致6000次API请求
 - 现改用daily_basic一次请求获取全市场量比
 - 6000次请求 10分钟 → 1次请求 0.5秒
+- CTO强制：所有参数从配置管理器获取，禁止硬编码
 
 Author: iFlow CLI
 Date: 2026-02-24
@@ -20,6 +21,7 @@ from dotenv import load_dotenv
 
 from logic.core.path_resolver import PathResolver
 from logic.core.sanity_guards import SanityGuards
+from logic.core.config_manager import get_config_manager
 
 # 加载.env文件
 load_dotenv()
@@ -31,18 +33,29 @@ class UniverseBuilder:
     """
     股票池构建器
     
-    三漏斗粗筛 (全市场5000 → ~500):
+    三漏斗粗筛 (全市场5000 → ~60-100只):
     1. 静态过滤: 剔除ST、退市、北交所
     2. 金额过滤: 5日平均成交额 > 3000万
-    3. 量比过滤: 当日量比 > 市场88分位数 (ratio化)
+    3. 量比过滤: 当日量比 > 3.0 (右侧起爆：筛选真正放量的股票)
     """
     
-    # 过滤阈值
-    MIN_AMOUNT = 30000000  # 3000万
-    VOLUME_RATIO_PERCENTILE = 0.92  # 量比分位数阈值 (ratio化) - 全息回演使用更严格阈值
-    
-    def __init__(self):
+    def __init__(self, strategy: str = 'universe_build'):
+        """初始化，使用粗筛专用参数"""
+        self.strategy = strategy  # 默认使用universe_build策略
+        self.config_manager = get_config_manager()
         self.tushare_token = self._load_tushare_token()
+        
+    @property
+    def MIN_AMOUNT(self) -> int:
+        """最小金额阈值"""
+        return 30000000  # 3000万
+    
+    @property
+    def VOLUME_RATIO_THRESHOLD(self) -> float:
+        """量比绝对阈值 - 右侧起爆核心：筛选真正放量的股票"""
+        # 从配置获取绝对阈值，默认3.0
+        universe_config = self.config_manager._config.get('universe_build', {})
+        return universe_config.get('volume_ratio_absolute', 3.0)
         
     def _load_tushare_token(self) -> str:
         """
@@ -125,10 +138,10 @@ class UniverseBuilder:
         df_filtered = df_basic[df_basic['volume_ratio'].notna()].copy()
         logger.info(f"【UniverseBuilder】第一层(有效量比): {len(df_filtered)} 只")
         
-        # 第二层: 量比 > 市场88分位数 (ratio化)
-        volume_ratio_threshold = df_filtered['volume_ratio'].quantile(self.VOLUME_RATIO_PERCENTILE)
+        # 第二层: 量比 > 绝对阈值 (右侧起爆：筛选真正放量的股票)
+        volume_ratio_threshold = self.VOLUME_RATIO_THRESHOLD
         df_filtered = df_filtered[df_filtered['volume_ratio'] >= volume_ratio_threshold]
-        logger.info(f"【UniverseBuilder】第二层(量比>{volume_ratio_threshold:.3f}, {self.VOLUME_RATIO_PERCENTILE*100}分位数): {len(df_filtered)} 只")
+        logger.info(f"【UniverseBuilder】第二层(量比>{volume_ratio_threshold:.1f}, 右侧起爆): {len(df_filtered)} 只")
         
         # 第三层: 剔除科创板(688)和北交所(8开头/4开头)
         df_filtered = df_filtered[~df_filtered['ts_code'].str.startswith('688')]

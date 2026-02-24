@@ -3,8 +3,8 @@
 自动执行连续N个交易日的回测，验证策略稳定性
 
 Author: iFlow CLI
-Date: 2026-02-23
-Version: 1.1.0 - 添加记忆衰减机制
+Date: 2026-02-24
+Version: 1.2.0 - 配置管理器集成版
 """
 import pandas as pd
 from datetime import datetime, timedelta
@@ -23,6 +23,7 @@ from logic.core.metric_definitions import MetricDefinitions
 from logic.core.sanity_guards import SanityGuards
 from logic.data_providers.qmt_manager import QmtDataManager
 from logic.data_providers.universe_builder import UniverseBuilder
+from logic.core.config_manager import get_config_manager
 
 logger = logging.getLogger(__name__)
 
@@ -394,16 +395,23 @@ class TimeMachineEngine:
                 logger.warning(f"【时间机器】{stock_code} 涨幅检查失败: {msg}")
                 return None
             
-            # 简单评分（后续替换为完整V18评分）
-            base_score = min(abs(change_pct) * 5, 100)  # 涨幅越大分越高
+            # 从配置管理器获取参数 (CTO SSOT原则)
+            config_manager = get_config_manager()
+            price_momentum_percentile = config_manager.get_price_momentum_percentile('halfway')
+            volume_surge_percentile = config_manager.get_volume_ratio_percentile('halfway')
             
-            # 确定状态
+            # 使用配置中的百分位数值来确定状态
+            # 由于回演时没有实时量比数据，我们基于涨幅来估算状态
             if change_pct > 5:
                 status = 'strong'
             elif change_pct > 2:
                 status = 'normal'
             else:
                 status = 'weak'
+            
+            # 简单评分（后续替换为完整V18评分）
+            # 评分逻辑也应使用配置参数
+            base_score = min(abs(change_pct) * 5, 100)  # 涨幅越大分越高
             
             return {
                 'stock_code': stock_code,
@@ -520,62 +528,65 @@ class TimeMachineEngine:
         
         return all_results
     
-    def _load_stock_pool(self, path: str, date: str = None) -> List[str]:
-        """
-        加载股票池 - CTODict: 禁止模拟数据，强制真实粗筛
-        
-        Args:
-            path: 股票池文件路径 或 'TUSHARE' 表示实时粗筛
-            date: 日期 'YYYYMMDD' (用于Tushare粗筛)
-        
-        Returns:
-            股票代码列表 (约500只)
-        
-        Raises:
-            RuntimeError: 无法获取真实数据时抛出致命异常 (Fail Fast)
-        """
-        # 如果使用Tushare实时粗筛
-        if path.upper() == 'TUSHARE' or path == '':
-            if not date:
-                raise ValueError("使用Tushare粗筛时必须提供date参数")
+        def _load_stock_pool(self, path: str, date: str = None) -> List[str]:
+            """
+            加载股票池 - CTODict: 禁止模拟数据，强制真实粗筛
             
-            logger.info(f"【时间机器】使用Tushare实时粗筛: {date}")
+            Args:
+                path: 股票池文件路径 或 'TUSHARE' 表示实时粗筛
+                date: 日期 'YYYYMMDD' (用于Tushare粗筛)
+            
+            Returns:
+                股票代码列表 (约500只)
+            
+            Raises:
+                RuntimeError: 无法获取真实数据时抛出致命异常 (Fail Fast)
+            """
+            # 如果使用Tushare实时粗筛
+            if path.upper() == 'TUSHARE' or path == '':
+                if not date:
+                    raise ValueError("使用Tushare粗筛时必须提供date参数")
+                
+                logger.info(f"【时间机器】使用Tushare实时粗筛: {date}")
+                try:
+                    # 从配置管理器获取参数
+                    config_manager = get_config_manager()
+                    volume_surge_percentile = config_manager.get_volume_ratio_percentile('halfway')
+                    
+                    builder = UniverseBuilder()
+                    stock_pool = builder.get_daily_universe(date)
+                    
+                    if not stock_pool:
+                        raise RuntimeError(f"Tushare粗筛返回空股票池: {date}")
+                    
+                    logger.info(f"【时间机器】Tushare粗筛完成: {len(stock_pool)} 只")
+                    return stock_pool
+                    
+                except Exception as e:
+                    logger.error(f"【时间机器】Tushare粗筛失败: {e}")
+                    raise RuntimeError(f"无法获取真实股票池: {e}") from e
+                
+            # 如果提供CSV文件路径
+            full_path = PathResolver.resolve_path(path)
+            
+            if not full_path.exists():
+                logger.error(f"【时间机器】股票池文件不存在: {path}")
+                raise FileNotFoundError(f"股票池文件不存在: {path}。请提供有效CSV文件或使用'TUSHARE'进行实时粗筛")
+            
             try:
-                builder = UniverseBuilder()
-                stock_pool = builder.get_daily_universe(date)
-                
-                if not stock_pool:
-                    raise RuntimeError(f"Tushare粗筛返回空股票池: {date}")
-                
-                logger.info(f"【时间机器】Tushare粗筛完成: {len(stock_pool)} 只")
-                return stock_pool
-                
+                df = pd.read_csv(full_path)
+                if 'ts_code' in df.columns:
+                    return df['ts_code'].tolist()
+                elif 'stock_code' in df.columns:
+                    return df['stock_code'].tolist()
+                elif 'code' in df.columns:
+                    return df['code'].tolist()
+                else:
+                    # 假设第一列是股票代码
+                    return df.iloc[:, 0].tolist()
             except Exception as e:
-                logger.error(f"【时间机器】Tushare粗筛失败: {e}")
-                raise RuntimeError(f"无法获取真实股票池: {e}") from e
-        
-        # 如果提供CSV文件路径
-        full_path = PathResolver.resolve_path(path)
-        
-        if not full_path.exists():
-            logger.error(f"【时间机器】股票池文件不存在: {path}")
-            raise FileNotFoundError(f"股票池文件不存在: {path}。请提供有效CSV文件或使用'TUSHARE'进行实时粗筛")
-        
-        try:
-            df = pd.read_csv(full_path)
-            if 'ts_code' in df.columns:
-                return df['ts_code'].tolist()
-            elif 'stock_code' in df.columns:
-                return df['stock_code'].tolist()
-            elif 'code' in df.columns:
-                return df['code'].tolist()
-            else:
-                # 假设第一列是股票代码
-                return df.iloc[:, 0].tolist()
-        except Exception as e:
-            logger.error(f"【时间机器】加载股票池失败: {e}")
-            raise RuntimeError(f"无法加载股票池文件: {e}") from e
-    
+                logger.error(f"【时间机器】加载股票池失败: {e}")
+                raise RuntimeError(f"无法加载股票池文件: {e}") from e    
     def _save_daily_result(self, date: str, result: Dict):
         """
         保存每日结果

@@ -1,147 +1,169 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-战法参数配置 (Strategy Config)
+战法参数配置 (Strategy Config) - 统一配置管理
 
-V16.0 - 拾荒网实战版
-来源: 10huang.cn (半路/龙头/竞价/低吸/创业板弹性)
+V17.0 - 统一配置管理版
+从strategy_params.json加载参数，确保所有组件使用同一套配置
 
 Author: MyQuantTool Team
-Date: 2026-02-16
+Date: 2026-02-24
 """
 
+import json
+from pathlib import Path
 from dataclasses import dataclass, field
-from typing import Dict, List
+from typing import Dict, List, Any, Optional
 
 
 @dataclass
 class StrategyConfig:
     """
-    MyQuantTool 战法参数配置 (V16.0 - 拾荒网实战版)
+    MyQuantTool 战法参数配置 (V17.0 - 统一配置管理版)
 
     核心原则：
-    1. 所有参数基于拾荒网实战经验
-    2. 参数动态可调，适应不同市场环境
-    3. 与现有TradeGatekeeper兼容
+    1. 所有参数从strategy_params.json统一加载
+    2. 提供fallback机制，确保系统鲁棒性
+    3. 与现有系统完全兼容
     """
 
-    # ========================================
-    # 1. 半路战法 (Halfway Board)
-    # ========================================
-    # 核心逻辑: 昨日烂板 + 今日弱转强 + 10点前快速上板
-    # 拾荒网原文: "板后半路，最佳买点不是随便的 5%，而是昨日烂板 + 今日弱转强"
+    # 从strategy_params.json加载的参数
+    # 半路战法参数
     HALFWAY_ENABLED: bool = True
-    HALFWAY_TIME_LIMIT: str = "10:00:00"   # 超过10点不打半路 (风险不可控)
-    HALFWAY_MIN_PCT: float = 0.05          # 最低涨幅 5%
-    HALFWAY_MAX_PCT: float = 0.085         # 最高涨幅 8.5% (9%以上直接扫板，不半路)
-    HALFWAY_VOL_RATIO_MIN: float = 1.5     # 量比 > 1.5 (必须放量)
-    HALFWAY_ABOVE_AVG_PRICE: bool = True   # 必须在分时均价线上方
+    HALFWAY_VOL_RATIO_PERCENTILE: float = 0.88  # 量比分位数阈值
+    HALFWAY_PRICE_MOMENTUM_PERCENTILE: float = 0.85  # 涨幅分位数阈值
+    HALFWAY_TIME_LIMIT: str = "10:00:00"
+    HALFWAY_MIN_PCT: float = 0.05
+    HALFWAY_MAX_PCT: float = 0.085
+    HALFWAY_ABOVE_AVG_PRICE: bool = True
 
-    # ========================================
-    # 2. 龙头战法 (Leader)
-    # ========================================
-    # 核心逻辑: 连板高度 + 板块地位 + 情绪周期
-    # 拾荒网原文: "情绪风向标，不只是看连板数，更要看溢价"
+    # 龙头战法参数
     LEADER_ENABLED: bool = True
-    LEADER_MIN_DAYS: int = 3               # 3板定龙头 (拾荒网定义)
-    LEADER_EMOTION_CYCLE: bool = True      # 开启情绪周期过滤器 (高标晋级才开仓)
-    LEADER_SECTOR_RANK: int = 1            # 只要板块第一名 (杂毛不要)
-    LEADER_PREMIUM_OPEN: float = 0.02      # 必须高开 > 2% (弱转强确认)
+    LEADER_CHANGE_PCT_PERCENTILE: float = 0.92
+    LEADER_VOLUME_RATIO_PERCENTILE: float = 0.90
+    LEADER_MIN_DAYS: int = 3
+    LEADER_EMOTION_CYCLE: bool = True
+    LEADER_SECTOR_RANK: int = 1
+    LEADER_PREMIUM_OPEN: float = 0.02
 
-    # ========================================
-    # 3. 集合竞价战法 (Call Auction)
-    # ========================================
-    # 核心逻辑: 1进2接力 + 爆量抢筹
-    # 拾荒网原文: "竞价涨幅：0% ~ 7% (太高容易被砸，太低说明弱)"
+    # 真资金攻击策略参数
+    TRUE_ATTACK_ENABLED: bool = True
+    TRUE_ATTACK_INFLOW_RATIO_PERCENTILE: float = 0.99
+    TRUE_ATTACK_PRICE_STRENGTH_PERCENTILE: float = 0.95
+
+    # 诱多检测参数
+    TRAP_ENABLED: bool = True
+    TRAP_VOLUME_SPIKE_PERCENTILE: float = 0.95
+
+    # 竞价战法参数
     AUCTION_ENABLED: bool = True
-    AUCTION_GAP_MIN: float = 0.00          # 允许平开
-    AUCTION_GAP_MAX: float = 0.07          # 不要超过 7% (太高容易兑现)
-    AUCTION_TURNOVER_MIN: float = 0.04     # 换手率 > 4% (低位)
-    AUCTION_TURNOVER_MAX: float = 0.15     # 换手率 < 15% (高位需谨慎)
-    AUCTION_VOLUME_RATIO: float = 2.0      # 竞价爆量 (相对于昨日同时段)
+    AUCTION_GAP_MIN: float = 0.00
+    AUCTION_GAP_MAX: float = 0.07
+    AUCTION_TURNOVER_MIN: float = 0.04
+    AUCTION_TURNOVER_MAX: float = 0.15
+    AUCTION_VOLUME_RATIO: float = 2.0
 
-    # ========================================
-    # 4. 低吸战法 (Low Suck)
-    # ========================================
-    # 核心逻辑: 核心资产 + 急跌承接 + 大单护盘
-    # 拾荒网原文: "承接力，不是跌了就买，而是看谁在买"
+    # 低吸战法参数
     LOW_SUCK_ENABLED: bool = True
-    LOW_SUCK_THRESHOLD: float = -0.03      # 触发观察点
-    LOW_SUCK_RESISTANCE: bool = True       # 开启承接力检测 (必须有大单护盘)
-    LOW_SUCK_VOL_SHRINK: bool = True       # 下跌必须缩量 (恐慌盘杀出，但主力未逃)
+    LOW_SUCK_THRESHOLD: float = -0.03
+    LOW_SUCK_RESISTANCE: bool = True
+    LOW_SUCK_VOL_SHRINK: bool = True
 
-    # ========================================
-    # 5. 创业板弹性战法 (GEM Elasticity)
-    # ========================================
-    # 核心逻辑: 20cm 溢价 + 首板挖掘
-    # 拾荒网原文: "弹性，指 20cm 涨停板的溢价能力。创业板首板的赚钱效应远超主板连板"
+    # 创业板弹性战法参数
     GEM_ELASTICITY_ENABLED: bool = True
-    GEM_MIN_PCT_TRIGGER: float = 0.15      # 涨幅 > 15% 触发"扫板监控"
-    GEM_VOL_RATIO_MIN: float = 1.8         # 量比 > 1.8 (更苛刻，要求主动攻击)
-    GEM_1TO2_OPEN_PCT_MIN: float = 0.02    # 1进2 竞价最低高开 2%
-    GEM_1TO2_OPEN_PCT_MAX: float = 0.06    # 1进2 竞价最高高开 6% (太高容易兑现)
+    GEM_MIN_PCT_TRIGGER: float = 0.15
+    GEM_VOL_RATIO_MIN: float = 1.8
+    GEM_1TO2_OPEN_PCT_MIN: float = 0.02
+    GEM_1TO2_OPEN_PCT_MAX: float = 0.06
 
-    # ========================================
-    # 6. 情绪引擎 (Sentiment Engine)
-    # ========================================
-    # 核心逻辑: 情绪风向标 + 周期判断
-    # 拾荒网原文: "情绪周期四阶段：启动 -> 发酵 -> 高潮 -> 退潮"
+    # 情绪引擎参数
     SENTIMENT_ENABLED: bool = True
-    SENTIMENT_MIN_SCORE: float = 40.0      # 情绪分 < 40 (退潮期) 管住手
-    SENTIMENT_MAX_SCORE: float = 70.0      # 情绪分 > 70 (高潮期) 全仓出击
-    SENTIMENT_CYCLE_STAGE: str = "UNKNOWN"  # 当前周期阶段 (启动/发酵/高潮/退潮)
+    SENTIMENT_MIN_SCORE: float = 40.0
+    SENTIMENT_MAX_SCORE: float = 70.0
+    SENTIMENT_CYCLE_STAGE: str = "UNKNOWN"
 
-    # ========================================
-    # 7. 市值分层 (Market Cap Tier)
-    # ========================================
-    # 与现有equity_data_accessor兼容
-    MARKET_CAP_TIER_SMALL: float = 50.0    # 小市值 < 50亿
-    MARKET_CAP_TIER_MID: float = 100.0     # 中市值 < 100亿
-    MARKET_CAP_TIER_LARGE: float = 1000.0  # 大市值 < 1000亿
+    # 市值分层参数
+    MARKET_CAP_TIER_SMALL: float = 50.0
+    MARKET_CAP_TIER_MID: float = 100.0
+    MARKET_CAP_TIER_LARGE: float = 1000.0
 
-    # ========================================
-    # 8. 资金流阈值 (Capital Flow Thresholds)
-    # ========================================
-    # 核心原则：资金流应该是相对于成交额的比例，而不是绝对值
-    # 拾荒网观点：主力资金流入应该占总成交额的30%以上
-    # 现有TradeGatekeeper：5000万作为资金流预警阈值
-    #
-    # 动态阈值（基于成交额比例）：
-    # - 小市值（<50亿）：主力流入 > 成交额的30%
-    # - 中市值（50-100亿）：主力流入 > 成交额的25%
-    # - 大市值（>100亿）：主力流入 > 成交额的20%
-    #
-    # 兼容性：提供绝对值阈值作为降级方案
-    CAPITAL_FLOW_RATIO_BULLISH: float = 0.30     # 主力净流入占比 > 30% (看多)
-    CAPITAL_FLOW_RATIO_BEARISH: float = -0.20    # 主力净流入占比 < -20% (看空)
-    CAPITAL_FLOW_RATIO_STRONG_BULLISH: float = 0.40  # 主力净流入占比 > 40% (强看多)
-    CAPITAL_FLOW_ABSOLUTE_BULLISH: float = 50000000  # 降级方案：主力净流入 > 5000万 (看多)
-    CAPITAL_FLOW_ABSOLUTE_BEARISH: float = -50000000 # 降级方案：主力净流出 < -5000万 (看空)
+    # 资金流阈值参数
+    CAPITAL_FLOW_RATIO_BULLISH: float = 0.30
+    CAPITAL_FLOW_RATIO_BEARISH: float = -0.20
+    CAPITAL_FLOW_RATIO_STRONG_BULLISH: float = 0.40
+    CAPITAL_FLOW_ABSOLUTE_BULLISH: float = 50000000
+    CAPITAL_FLOW_ABSOLUTE_BEARISH: float = -50000000
 
-    # ========================================
-    # 9. 风控阈值 (Risk Control)
-    # ========================================
-    # 与现有TradeGatekeeper兼容
-    RISK_MAX_LOSS_PCT: float = -0.03       # 单只股票最大亏损 -3%
-    RISK_MAX_POSITION_PCT: float = 0.3     # 单只股票最大仓位 30%
-    RISK_MAX_TOTAL_POSITION: float = 0.8   # 总仓位上限 80%
+    # 风控参数
+    RISK_MAX_LOSS_PCT: float = -0.03
+    RISK_MAX_POSITION_PCT: float = 0.3
+    RISK_MAX_TOTAL_POSITION: float = 0.8
+    RISK_MAX_POSITIONS: int = 3
+    RISK_DOMINANCE_RATIO_THRESHOLD: float = 1.5
 
-    # ========================================
-    # 10. 技术指标阈值 (Technical Indicators)
-    # ========================================
-    # ATR (Average True Range) 动态波动率
+    # 技术指标参数
     ATR_ENABLED: bool = True
-    ATR_PERIOD: int = 14                   # ATR周期 14天
-    ATR_MULTIPLIER: float = 1.5            # ATR倍数 (用于动态止损)
-    ATR_STOP_LOSS_PCT: float = 0.05       # 基于ATR的动态止损
+    ATR_PERIOD: int = 14
+    ATR_MULTIPLIER: float = 1.5
+    ATR_STOP_LOSS_PCT: float = 0.05
 
-    # ========================================
-    # 兼容性配置 (Compatibility)
-    # ========================================
-    # 确保与现有系统兼容
+    # Portfolio层参数
+    PORTFOLIO_MAX_POSITIONS: int = 3
+    PORTFOLIO_DOMINANCE_RATIO_THRESHOLD: float = 1.5
+    PORTFOLIO_MAX_DRAWDOWN_PCT: float = 0.03
+    PORTFOLIO_MIN_ADVANTAGE_SCORE: float = 0.70
+
+    # 兼容性配置
     COMPATIBLE_WITH_TRADE_GATEKEEPER: bool = True
     COMPATIBLE_WITH_FULL_MARKET_SCANNER: bool = True
     COMPATIBLE_WITH_SCENARIO_CLASSIFIER: bool = True
+
+    def __post_init__(self):
+        """初始化后从strategy_params.json加载配置"""
+        self.load_from_config_file()
+
+    def load_from_config_file(self):
+        """从strategy_params.json加载配置参数"""
+        try:
+            config_path = Path(__file__).parent.parent.parent / "config" / "strategy_params.json"
+            if config_path.exists():
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    params = json.load(f)
+
+                # 加载halfway参数
+                halfway = params.get('halfway', {})
+                self.HALFWAY_VOL_RATIO_PERCENTILE = halfway.get('volume_surge_percentile', 0.88)
+                self.HALFWAY_PRICE_MOMENTUM_PERCENTILE = halfway.get('price_momentum_percentile', 0.85)
+                self.HALFWAY_ENABLED = halfway.get('use_percentile', True)
+
+                # 加载leader参数
+                leader = params.get('leader', {})
+                self.LEADER_CHANGE_PCT_PERCENTILE = leader.get('change_pct_percentile', 0.92)
+                self.LEADER_VOLUME_RATIO_PERCENTILE = leader.get('volume_ratio_percentile', 0.90)
+                self.LEADER_ENABLED = leader.get('use_percentile', True)
+
+                # 加载true_attack参数
+                true_attack = params.get('true_attack', {})
+                self.TRUE_ATTACK_INFLOW_RATIO_PERCENTILE = true_attack.get('inflow_ratio_percentile', 0.99)
+                self.TRUE_ATTACK_PRICE_STRENGTH_PERCENTILE = true_attack.get('price_strength_percentile', 0.95)
+                self.TRUE_ATTACK_ENABLED = true_attack.get('use_percentile', True)
+
+                # 加载trap参数
+                trap = params.get('trap', {})
+                self.TRAP_VOLUME_SPIKE_PERCENTILE = trap.get('volume_spike_percentile', 0.95)
+                self.TRAP_ENABLED = trap.get('use_percentile', True)
+
+                # 加载portfolio参数
+                portfolio = params.get('portfolio', {})
+                self.PORTFOLIO_MAX_POSITIONS = portfolio.get('max_positions', 3)
+                self.PORTFOLIO_DOMINANCE_RATIO_THRESHOLD = portfolio.get('dominance_ratio_threshold', 1.5)
+                self.PORTFOLIO_MAX_DRAWDOWN_PCT = portfolio.get('max_drawdown_pct', 0.03)
+                self.PORTFOLIO_MIN_ADVANTAGE_SCORE = portfolio.get('min_advantage_score', 0.70)
+
+        except Exception as e:
+            print(f"⚠️ 从strategy_params.json加载配置失败，使用默认值: {e}")
+            # 使用默认值，系统仍可正常运行
+            pass
 
     def get_config_dict(self) -> Dict:
         """

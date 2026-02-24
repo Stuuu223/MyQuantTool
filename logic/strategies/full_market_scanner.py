@@ -171,25 +171,12 @@ class FullMarketScanner:
             
             # CTO加固: 向量化过滤 (一行代码处理数千只股票)
             # CTO Phase 23: ratio化过滤 (基于市场分位数而非硬编码阈值)
-            # 从strategy_params.json加载分位数阈值
-            import json
-            from pathlib import Path
+            # 从配置管理器获取分位数阈值 (SSOT标准)
+            from logic.core.config_manager import get_config_manager
             
-            # 获取配置文件路径
-            config_path = Path(__file__).parent.parent.parent / "config" / "strategy_params.json"
-            
-            try:
-                with open(config_path, 'r', encoding='utf-8') as f:
-                    strategy_config = json.load(f)
-                
-                # 从halfway策略获取分位数阈值
-                halfway_config = strategy_config.get('halfway', {})
-                volume_percentile = halfway_config.get('volume_surge_percentile', 0.88)
-                change_percentile = halfway_config.get('price_momentum_percentile', 0.85)
-            except:
-                # 备用：使用默认值
-                volume_percentile = 0.88
-                change_percentile = 0.85
+            config_manager = get_config_manager()
+            volume_percentile = config_manager.get_volume_ratio_percentile('halfway')
+            change_percentile = config_manager.get_price_momentum_percentile('halfway')
             
             volume_ratio_threshold = df['volume_ratio'].quantile(volume_percentile)  # 量比分位数
             change_pct_threshold = df['change_pct'].quantile(change_percentile)     # 涨幅分位数

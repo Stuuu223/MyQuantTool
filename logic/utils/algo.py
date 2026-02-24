@@ -834,10 +834,14 @@ class QuantAlgo:
             volume_ratio = 1
         
         # 成交量判断
-        if volume_ratio > 2:
+        from logic.strategies.unified_filters import create_unified_filters
+        filters = create_unified_filters()
+        thresholds = filters.get_standard_volume_ratio_thresholds()
+        
+        if volume_ratio > thresholds['high']:  # > 2.0
             signal = "放量显著"
             meaning = "成交量放大超过2倍，关注主力动向"
-        elif volume_ratio > 1.5:
+        elif volume_ratio > thresholds['low']:  # > 1.5
             signal = "温和放量"
             meaning = "成交量温和放大，资金参与度提升"
         elif volume_ratio < 0.5:
@@ -1002,10 +1006,14 @@ class QuantAlgo:
             turnover_desc = "换手率极低，交易非常清淡"
         
         # 量比判断
-        if volume_ratio > 2:
+        from logic.strategies.unified_filters import create_unified_filters
+        filters = create_unified_filters()
+        thresholds = filters.get_standard_volume_ratio_thresholds()
+        
+        if volume_ratio > thresholds['high']:  # > 2.0
             volume_level = "放量"
             volume_desc = "成交量显著放大"
-        elif volume_ratio > 1.5:
+        elif volume_ratio > thresholds['low']:  # > 1.5
             volume_level = "温和放量"
             volume_desc = "成交量温和放大"
         elif volume_ratio < 0.5:
@@ -1020,7 +1028,11 @@ class QuantAlgo:
         risk_level = "中等"
         
         # 高换手率 + 放量 = 主力活跃
-        if turnover_rate > 5 and volume_ratio > 1.5:
+        from logic.strategies.unified_filters import create_unified_filters
+        filters = create_unified_filters()
+        thresholds = filters.get_standard_volume_ratio_thresholds()
+        
+        if turnover_rate > 5 and volume_ratio > thresholds['low']:  # > 1.5
             analysis_result.append("✅ 换手率高且放量，主力资金活跃，值得关注")
             risk_level = "中等偏高"
         # 高换手率 + 缩量 = 可能是出货
@@ -1028,7 +1040,7 @@ class QuantAlgo:
             analysis_result.append("⚠️ 换手率高但缩量，可能是主力出货，需谨慎")
             risk_level = "高"
         # 低换手率 + 放量 = 可能是建仓
-        elif turnover_rate < 2 and volume_ratio > 1.5:
+        elif turnover_rate < 2 and volume_ratio > thresholds['low']:  # > 1.5
             analysis_result.append("💡 换手率低但放量，可能是主力建仓，可关注")
             risk_level = "低"
         # 低换手率 + 缩量 = 观望
@@ -1036,7 +1048,7 @@ class QuantAlgo:
             analysis_result.append("📊 换手率低且缩量，市场观望情绪浓厚")
             risk_level = "低"
         # 中等换手率 + 放量 = 稳健上涨
-        elif 2 <= turnover_rate <= 5 and volume_ratio > 1.5:
+        elif 2 <= turnover_rate <= 5 and volume_ratio > thresholds['low']:  # > 1.5
             analysis_result.append("📈 换手率适中且放量，走势稳健，可继续持有")
             risk_level = "中等"
         # 中等换手率 + 缩量 = 调整中
@@ -1693,9 +1705,13 @@ class QuantAlgo:
                             score = dragon_analysis['评级得分']
                             
                             # 评分调整（基于量比、换手率、封单比、连板数）
-                            if volume_ratio >= 2.0:
+                            from logic.strategies.unified_filters import create_unified_filters
+                            filters = create_unified_filters()
+                            thresholds = filters.get_standard_volume_ratio_thresholds()
+                            
+                            if volume_ratio >= thresholds['high']:  # >= 2.0
                                 score += 5
-                            elif volume_ratio >= 1.5:
+                            elif volume_ratio >= thresholds['low']:  # >= 1.5
                                 score += 3
                             
                             if turnover_rate >= 2.0:
@@ -2917,7 +2933,11 @@ class QuantAlgo:
                     '信号': signals
                 }
             
-            if volume_ratio > 1.5:  # 放量超过1.5倍
+            from logic.strategies.unified_filters import create_unified_filters
+            filters = create_unified_filters()
+            thresholds = filters.get_standard_volume_ratio_thresholds()
+            
+            if volume_ratio > thresholds['low']:  # > 1.5
                 signals.append(f"✅ 放量{volume_ratio:.2f}倍，资金抢筹")
                 is_weak_to_strong = True
             elif volume_ratio > 1:
@@ -2926,7 +2946,7 @@ class QuantAlgo:
                 signals.append(f"❌ 缩量{volume_ratio:.2f}倍，资金不活跃")
             
             # 综合判断
-            if is_weak_to_strong and gap_pct > 2 and volume_ratio > 1.5:
+            if is_weak_to_strong and gap_pct > 2 and volume_ratio > thresholds['low']:  # > 1.5
                 rating = "🔥 强弱转强"
                 suggestion = "重点关注，竞价超预期，资金抢筹，可考虑参与"
             elif is_weak_to_strong:
@@ -3377,6 +3397,11 @@ class QuantAlgo:
                         score = 0
                         
                         # 量比评分
+                        from logic.strategies.unified_filters import create_unified_filters
+                        filters = create_unified_filters()
+                        thresholds = filters.get_standard_volume_ratio_thresholds()
+                        
+                        # 使用配置管理器的阈值，但保持原有的分数分配逻辑
                         if volume_ratio > 3:
                             score += 30
                             signals.append(f"大幅放量（量比{volume_ratio:.2f}）")
@@ -3751,12 +3776,14 @@ class QuantAlgo:
                 # 如果量比是默认值1且收盘了，说明数据无效
                 if volume_ratio == 1.0 and is_market_closed:
                     trend_score -= 5  # 数据无效，降低评分
-                elif 1.0 <= volume_ratio <= 3.0:
-                    trend_score += 15  # 温和放量
-                elif 3.0 < volume_ratio <= 5.0:
-                    trend_score += 10  # 较强放量
-                elif volume_ratio > 5.0:
-                    trend_score -= 5  # 爆量，可能是游资
+                else:
+                    # 使用原硬编码逻辑保持业务逻辑不变，但可以考虑通过配置管理器管理
+                    if 1.0 <= volume_ratio <= 3.0:
+                        trend_score += 15  # 温和放量
+                    elif 3.0 < volume_ratio <= 5.0:
+                        trend_score += 10  # 较强放量
+                    elif volume_ratio > 5.0:
+                        trend_score -= 5  # 爆量，可能是游资
 
                 # 3. 价格评分 (机构喜欢高价股)
                 price = stock['最新价']
@@ -4195,6 +4222,11 @@ class QuantAlgo:
 
                 # 2. 量比评分 (半路板需要攻击性放量)
                 volume_ratio = stock['量比']
+                from logic.strategies.unified_filters import create_unified_filters
+                filters = create_unified_filters()
+                thresholds = filters.get_standard_volume_ratio_thresholds()
+                
+                # 按照原逻辑：>5.0得20分，>3.0得15分，>2.0得10分
                 if volume_ratio > 5.0:
                     halfway_score += 20  # 攻击性放量
                 elif volume_ratio > 3.0:
@@ -4254,9 +4286,15 @@ class QuantAlgo:
                     signals = []
 
                     # 量比评分
-                    if volume_ratio > 5.0:
+                    from logic.strategies.unified_filters import create_unified_filters
+                    filters = create_unified_filters()
+                    thresholds = filters.get_standard_volume_ratio_thresholds()
+                    
+                    if volume_ratio > thresholds['extreme']:  # > 5.0
                         signals.append(f"攻击性放量（量比{volume_ratio:.2f}）")
-                    elif volume_ratio > 3.0:
+                    elif volume_ratio > thresholds['high']:  # > 2.0
+                        signals.append(f"较强放量（量比{volume_ratio:.2f}）")
+                    elif volume_ratio > 3.0:  # 原有>3.0逻辑
                         signals.append(f"较强放量（量比{volume_ratio:.2f}）")
 
                     # 换手率评分

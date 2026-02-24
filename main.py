@@ -226,9 +226,12 @@ def backtest_cmd(ctx, date, start_date, end_date, universe, full_market, volume_
         if start_date and end_date and full_market:
             from logic.backtest.time_machine_engine import TimeMachineEngine
             from logic.data_providers.universe_builder import UniverseBuilder
+            from logic.core.config_manager import get_config_manager
             
-            # 更新universe_builder的量比阈值
-            UniverseBuilder.VOLUME_RATIO_PERCENTILE = volume_percentile
+            # 配置管理器统一参数管理 (CTO SSOT原则)
+            config_manager = get_config_manager()
+            # 更新配置文件中的量比阈值
+            config_manager._config['halfway']['volume_surge_percentile'] = volume_percentile
             click.echo(f"📊 量比分位数阈值设置为: {volume_percentile}")
             
             engine = TimeMachineEngine(initial_capital=20000.0)
@@ -257,9 +260,12 @@ def backtest_cmd(ctx, date, start_date, end_date, universe, full_market, volume_
         if date and full_market:
             from logic.backtest.time_machine_engine import TimeMachineEngine
             from logic.data_providers.universe_builder import UniverseBuilder
+            from logic.core.config_manager import get_config_manager
             
-            # 更新universe_builder的量比阈值
-            UniverseBuilder.VOLUME_RATIO_PERCENTILE = volume_percentile
+            # 配置管理器统一参数管理 (CTO SSOT原则)
+            config_manager = get_config_manager()
+            # 更新配置文件中的量比阈值
+            config_manager._config['halfway']['volume_surge_percentile'] = volume_percentile
             click.echo(f"📊 量比分位数阈值设置为: {volume_percentile}")
             
             engine = TimeMachineEngine(initial_capital=20000.0)
@@ -595,10 +601,12 @@ def download_cmd(ctx, date, data_type, universe, volume_percentile, workers):
             # 如果未指定股票池但设置了分位数，则使用粗筛获取股票池
             from logic.data_providers.universe_builder import UniverseBuilder
             from logic.data_providers.universe_builder import get_daily_universe
+            from logic.core.config_manager import get_config_manager
             
-            # 动态更新universe_builder的量比阈值
-            builder = UniverseBuilder()
-            builder.VOLUME_RATIO_PERCENTILE = volume_percentile
+            # 配置管理器统一参数管理 (CTO SSOT原则)
+            config_manager = get_config_manager()
+            # 更新配置文件中的量比阈值
+            config_manager._config['halfway']['volume_surge_percentile'] = volume_percentile
             click.echo(f"📊 使用 {volume_percentile} 分位数进行粗筛")
             
             stock_list = get_daily_universe(date)
@@ -913,9 +921,15 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, volume_percentile, dry_run):
         # ==========================================
         click.echo("\n⚡ Step 2: 挂载 EventDriven 引擎...")
         from tasks.run_live_trading_engine import LiveTradingEngine
+        from logic.core.config_manager import get_config_manager
+        
+        # 配置管理器统一参数管理 (CTO SSOT原则)
+        config_manager = get_config_manager()
+        # 更新配置文件中的量比阈值
+        config_manager._config['halfway']['volume_surge_percentile'] = volume_percentile
+        click.echo(f"📊 实盘引擎量比分位数阈值设置为: {volume_percentile}")
         
         engine = LiveTradingEngine()
-        # 可以考虑将volume_percentile传递给引擎，用于内部的粗筛逻辑
         
         # 启动引擎（09:25第一斩 → 09:30第二斩 → 火控雷达）
         engine.start_session()
