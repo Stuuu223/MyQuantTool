@@ -20,8 +20,6 @@ import pandas as pd
 import numpy as np
 from typing import Dict, List, Tuple
 from datetime import datetime, timedelta
-# 导入现有的情绪分析器（适配现有架构）
-from logic.utils.algo_sentiment import MarketSentimentAnalyzer
 from logic.data_providers.data_adapter import DataAdapter
 from logic.strategies.strategy_config import StrategyConfig, get_strategy_config
 import logging
@@ -70,9 +68,6 @@ class SentimentEngine:
 
         # 情绪预警标志
         self.sentiment_warning = False
-
-        # 初始化现有的情绪分析器（适配现有架构）
-        self.legacy_analyzer = MarketSentimentAnalyzer()
 
         logger.info("✅ 情绪引擎初始化成功")
 

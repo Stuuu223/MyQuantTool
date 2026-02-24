@@ -941,8 +941,9 @@ class BacktestEngine:
     def _get_stock_name(self, symbol):
         """获取股票名称"""
         try:
-            from logic.utils.algo import QuantAlgo
-            return QuantAlgo.get_stock_name(symbol)
+            
+            # TODO: 实现股票名称获取功能，使用QMT数据源
+        return symbol  # 临时返回symbol
         except:
             return symbol
     

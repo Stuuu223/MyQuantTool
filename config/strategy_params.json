@@ -69,7 +69,9 @@
     "use_percentile": true,
     "volume_ratio_percentile": 0.88,
     "turnover_rate_per_min_min": 0.2,
-    "turnover_rate_max": 20.0,
+    "turnover_rate_max": 70.0,
+    "min_active_turnover_rate": 3.0,
+    "death_turnover_rate": 70.0,
     "time_decay_ratios": {
       "early_morning_rush": 1.2,
       "morning_confirm": 1.0,
