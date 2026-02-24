@@ -87,13 +87,14 @@ def get_universe_for_dates(dates: List[str]) -> List[str]:
     return list(all_stocks)
 
 
-def download_tick_batch(stock_list: List[str], dates: List[str]) -> Dict:
+def download_tick_batch(stock_list: List[str], dates: List[str], timeout: int = 3600) -> Dict:
     """
     批量下载Tick数据
     
     Args:
         stock_list: 股票代码列表
         dates: 日期列表
+        timeout: 总体超时时间（秒）
     
     Returns:
         下载结果统计
@@ -135,22 +136,74 @@ def download_tick_batch(stock_list: List[str], dates: List[str]) -> Dict:
         logger.warning(f"【VIP服务】启动失败: {e}，使用普通模式")
     
     logger.info(f"【下载任务】股票: {len(stock_list)} 只，日期: {len(dates)} 天，总计: {results['total']} 个任务")
+    logger.info(f"【下载任务】超时设置: {timeout} 秒")
     
     start_date = dates[0]
     end_date = dates[-1]
     
-    for i, stock in enumerate(stock_list, 1):
-        try:
-            # 标准化代码
-            if '.' not in stock:
-                if stock.startswith('6'):
-                    stock = f"{stock}.SH"
-                else:
-                    stock = f"{stock}.SZ"
-            
-            # 检查是否已有数据
+    import signal
+    import sys
+    
+    def timeout_handler(signum, frame):
+        logger.info(f"【下载任务】超时 {timeout} 秒，保存当前进度并退出")
+        raise TimeoutError(f"下载任务超时 {timeout} 秒")
+    
+    # 设置超时信号（仅在支持的系统上）
+    timeout_set = False
+    try:
+        signal.signal(signal.SIGALRM, timeout_handler)
+        signal.alarm(timeout)
+        timeout_set = True
+    except AttributeError:
+        # Windows不支持SIGALRM，使用时间跟踪
+        logger.warning("【下载任务】系统不支持SIGALRM，使用时间跟踪")
+        import time
+        start_time = time.time()
+    
+    try:
+        for i, stock in enumerate(stock_list, 1):
             try:
-                existing = xtdata.get_local_data(
+                # 检查是否超时（Windows）
+                if not timeout_set:
+                    elapsed = time.time() - start_time
+                    if elapsed > timeout:
+                        logger.info(f"【下载任务】超时 {timeout} 秒，保存当前进度并退出")
+                        break
+                
+                # 标准化代码
+                if '.' not in stock:
+                    if stock.startswith('6'):
+                        stock = f"{stock}.SH"
+                    else:
+                        stock = f"{stock}.SZ"
+                
+                # 检查是否已有数据
+                try:
+                    existing = xtdata.get_local_data(
+                        field_list=['time'],
+                        stock_list=[stock],
+                        period='tick',
+                        start_time=start_date,
+                        end_time=end_date
+                    )
+                    
+                    if existing and stock in existing and len(existing[stock]) > 1000:
+                        results['skipped'] += len(dates)
+                        logger.debug(f"[{i}/{len(stock_list)}] {stock} 已有数据，跳过")
+                        continue
+                except:
+                    pass
+                
+                # 下载
+                xtdata.download_history_data(
+                    stock_code=stock,
+                    period='tick',
+                    start_time=start_date,
+                    end_time=end_date
+                )
+                
+                # 验证
+                data = xtdata.get_local_data(
                     field_list=['time'],
                     stock_list=[stock],
                     period='tick',
@@ -158,45 +211,29 @@ def download_tick_batch(stock_list: List[str], dates: List[str]) -> Dict:
                     end_time=end_date
                 )
                 
-                if existing and stock in existing and len(existing[stock]) > 1000:
-                    results['skipped'] += len(dates)
-                    logger.debug(f"[{i}/{len(stock_list)}] {stock} 已有数据，跳过")
-                    continue
-            except:
-                pass
-            
-            # 下载
-            xtdata.download_history_data(
-                stock_code=stock,
-                period='tick',
-                start_time=start_date,
-                end_time=end_date
-            )
-            
-            # 验证
-            data = xtdata.get_local_data(
-                field_list=['time'],
-                stock_list=[stock],
-                period='tick',
-                start_time=start_date,
-                end_time=end_date
-            )
-            
-            if data and stock in data and len(data[stock]) > 100:
-                results['success'] += len(dates)
-                logger.info(f"[{i}/{len(stock_list)}] {stock} ✅ ({len(data[stock])} ticks)")
-            else:
+                if data and stock in data and len(data[stock]) > 100:
+                    results['success'] += len(dates)
+                    logger.info(f"[{i}/{len(stock_list)}] {stock} ✅ ({len(data[stock])} ticks)")
+                else:
+                    results['failed'] += len(dates)
+                    logger.warning(f"[{i}/{len(stock_list)}] {stock} ❌ 数据不足")
+                    
+            except Exception as e:
+                if isinstance(e, TimeoutError):
+                    raise e
                 results['failed'] += len(dates)
-                logger.warning(f"[{i}/{len(stock_list)}] {stock} ❌ 数据不足")
-                
-        except Exception as e:
-            results['failed'] += len(dates)
-            error_msg = f"{stock}: {str(e)}"
-            results['errors'].append(error_msg)
-            logger.error(f"[{i}/{len(stock_list)}] {stock} ❌ {e}")
-        
-        # 间隔避免限流
-        time.sleep(0.1)
+                error_msg = f"{stock}: {str(e)}"
+                results['errors'].append(error_msg)
+                logger.error(f"[{i}/{len(stock_list)}] {stock} ❌ {e}")
+            
+            # 间隔避免限流
+            time.sleep(0.1)
+    
+    except TimeoutError:
+        pass  # 超时处理，正常退出
+    finally:
+        if timeout_set:
+            signal.alarm(0)  # 取消超时
     
     return results
 
@@ -211,6 +248,7 @@ def main():
     parser.add_argument('--output', type=str, default='data/holographic_universe.json', help='输出文件路径')
     parser.add_argument('--workers', type=int, default=4, help='并发数')
     parser.add_argument('--type', type=str, choices=['tick', 'kline', 'all'], default='tick', help='数据类型')
+    parser.add_argument('--timeout', type=int, default=3600, help='下载超时时间（秒，默认3600秒/1小时）')
     
     args = parser.parse_args()
     
@@ -232,6 +270,7 @@ def main():
     
     logger.info(f"【日期区间】{dates[0]} ~ {dates[-1]} ({len(dates)} 天)")
     print(f"📅 日期区间: {dates[0]} ~ {dates[-1]} ({len(dates)} 天)")
+    print(f"⚡ 超时设置: {args.timeout} 秒")
     
     # Step 1: 获取粗筛股票池
     print("\n📊 Step 1: 获取粗筛股票池...")
@@ -260,7 +299,7 @@ def main():
     
     # Step 2: 下载Tick数据
     print(f"\n📥 Step 2: 下载Tick数据 ({len(stock_list)} 只 × {len(dates)} 天)...")
-    results = download_tick_batch(stock_list, dates)
+    results = download_tick_batch(stock_list, dates, timeout=args.timeout)
     
     # 输出结果
     print("\n" + "=" * 60)
