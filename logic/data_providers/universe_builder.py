@@ -50,12 +50,53 @@ class UniverseBuilder:
         """最小金额阈值"""
         return 30000000  # 3000万
     
-    @property
-    def VOLUME_RATIO_THRESHOLD(self) -> float:
-        """量比绝对阈值 - 右侧起爆核心：筛选真正放量的股票"""
-        # 从配置获取绝对阈值，默认3.0
-        universe_config = self.config_manager._config.get('universe_build', {})
-        return universe_config.get('volume_ratio_absolute', 3.0)
+    def _get_volume_ratio_percentile_threshold(self, date: str) -> float:
+        """获取基于分位数的量比阈值 - CTO裁决：统一使用分位数标准
+        
+        Args:
+            date: 日期 'YYYYMMDD'
+            
+        Returns:
+            量比阈值
+        """
+        # 从配置获取分位数阈值，默认使用live_sniper的0.95分位数
+        live_sniper_config = self.config_manager._config.get('live_sniper', {})
+        volume_percentile = live_sniper_config.get('volume_ratio_percentile', 0.95)
+        
+        # 获取全市场量比数据，计算对应分位数的绝对值
+        try:
+            import tushare as ts
+            if not self.tushare_token:
+                # 如果无法获取实时分位数，回退到配置的绝对值
+                universe_config = self.config_manager._config.get('universe_build', {})
+                return universe_config.get('volume_ratio_absolute', 3.0)
+            
+            ts.set_token(self.tushare_token)
+            pro = ts.pro_api()
+            
+            # 获取当日全市场量比数据
+            df_basic = pro.daily_basic(
+                trade_date=date,
+                fields='ts_code,volume_ratio'
+            )
+            
+            if df_basic is not None and not df_basic.empty:
+                # 过滤掉无效数据
+                valid_ratios = df_basic['volume_ratio'].dropna()
+                if len(valid_ratios) > 0:
+                    # 计算指定分位数对应的量比值
+                    threshold_value = valid_ratios.quantile(volume_percentile)
+                    # 确保阈值不低于安全下限
+                    return max(threshold_value, 1.5)  # 设置最低阈值为1.5，确保真正放量
+            
+            # 如果Tushare获取失败，回退到配置的绝对值
+            universe_config = self.config_manager._config.get('universe_build', {})
+            return universe_config.get('volume_ratio_absolute', 3.0)
+            
+        except Exception as e:
+            logger.warning(f"获取分位数阈值失败，使用回退值: {e}")
+            universe_config = self.config_manager._config.get('universe_build', {})
+            return universe_config.get('volume_ratio_absolute', 3.0)
         
     @property
     def MIN_ACTIVE_TURNOVER_RATE(self) -> float:
@@ -152,10 +193,10 @@ class UniverseBuilder:
         df_filtered = df_basic[df_basic['volume_ratio'].notna()].copy()
         logger.info(f"【UniverseBuilder】第一层(有效量比): {len(df_filtered)} 只")
         
-        # 第二层: 量比 > 绝对阈值 (右侧起爆：筛选真正放量的股票)
-        volume_ratio_threshold = self.VOLUME_RATIO_THRESHOLD
+        # 第二层: 量比 > 分位数阈值 (右侧起爆：筛选真正放量的股票，CTO裁决：统一使用分位数标准)
+        volume_ratio_threshold = self._get_volume_ratio_percentile_threshold(date)
         df_filtered = df_filtered[df_filtered['volume_ratio'] >= volume_ratio_threshold]
-        logger.info(f"【UniverseBuilder】第二层(量比>{volume_ratio_threshold:.1f}, 右侧起爆): {len(df_filtered)} 只")
+        logger.info(f"【UniverseBuilder】第二层(量比>{volume_ratio_threshold:.2f}, 右侧起爆): {len(df_filtered)} 只")
         
         # 第三层: 换手率过滤 (CTO换手率纠偏裁决)
         # 换手率 > 最低活跃阈值 (拒绝死水) 且 < 死亡换手率 (防范极端爆炒陷阱)
