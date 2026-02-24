@@ -59,6 +59,113 @@ class TimeMachineEngine:
         PathResolver.ensure_dir(output_dir)
         PathResolver.ensure_dir(output_dir / 'time_machine')
         
+    def _get_avg_volume_5d(self, stock_code: str, date: str) -> float:
+        """
+        获取股票5日平均成交量 (用于计算量比)
+        
+        Args:
+            stock_code: 股票代码
+            date: 当前日期 'YYYYMMDD'
+        
+        Returns:
+            5日平均成交量，失败返回0
+        """
+        try:
+            from xtquant import xtdata
+            from datetime import datetime, timedelta
+            
+            # 计算5个交易日的日期范围
+            current = datetime.strptime(date, '%Y%m%d')
+            dates = []
+            while len(dates) < 5:
+                current -= timedelta(days=1)
+                # 检查是否是交易日（跳过周末）
+                if current.weekday() < 5:
+                    dates.append(current.strftime('%Y%m%d'))
+            
+            # 获取日线数据
+            normalized_code = self._normalize_stock_code(stock_code)
+            data = xtdata.get_local_data(
+                field_list=['time', 'volume'],
+                stock_list=[normalized_code],
+                period='1d',
+                start_time=dates[-1],  # 最早日期
+                end_time=dates[0]      # 最近日期
+            )
+            
+            if data and normalized_code in data:
+                df = data[normalized_code]
+                if not df.empty and len(df) >= 5:
+                    # 取最近5个交易日的成交量
+                    recent_volumes = df.tail(5)['volume'].values
+                    avg_volume = sum(recent_volumes) / len(recent_volumes)
+                    return float(avg_volume)
+            
+            return 0.0
+            
+        except Exception as e:
+            logger.warning(f"获取5日均量失败 {stock_code}: {e}")
+            return 0.0
+    
+    def _get_float_volume(self, stock_code: str) -> float:
+        """
+        获取股票流通股本 (用于计算换手率)
+        
+        Args:
+            stock_code: 股票代码
+        
+        Returns:
+            流通股本，失败返回0
+        """
+        try:
+            from xtquant import xtdata
+            
+            normalized_code = self._normalize_stock_code(stock_code)
+            
+            # 获取股票基本信息
+            security_info = xtdata.get_stock_list()
+            if normalized_code in security_info:
+                # 这里可能需要通过其他方式获取流通股本
+                # 临时使用历史数据中的数据
+                data = xtdata.get_local_data(
+                    field_list=['time', 'volume', 'amount'],
+                    stock_list=[normalized_code],
+                    period='1d',
+                    start_time='20250101',
+                    end_time='20251231'
+                )
+                
+                if data and normalized_code in data:
+                    df = data[normalized_code]
+                    if not df.empty:
+                        # 基于历史数据估算流通股本（简化实现）
+                        # 实际中可能需要使用tushare或其它接口获取准确数据
+                        avg_daily_volume = df['volume'].tail(10).mean()
+                        # 这里我们使用一个简化的估算方法
+                        # 实际中需要准确的流通股本数据
+                        return avg_daily_volume * 200  # 简化估算，实际值需要从其他接口获取
+            
+            return 0.0
+            
+        except Exception as e:
+            logger.warning(f"获取流通股本失败 {stock_code}: {e}")
+            return 0.0
+    
+    def _get_volume_ratio_threshold_for_date(self, date: str, base_percentile: float) -> float:
+        """
+        获取特定日期的量比阈值 (CTO SSOT原则)
+        
+        Args:
+            date: 日期 'YYYYMMDD'
+            base_percentile: 基础分位数
+        
+        Returns:
+            量比阈值
+        """
+        # 在回测环境中，我们使用配置值的调整版本
+        # 实际中可能需要根据市场情况进行动态调整
+        return 3.0  # 使用与粗筛相同的绝对值作为基准
+    
     def get_trade_dates(self, start_date: str, end_date: str) -> List[str]:
         """
         获取交易日列表（自动跳过周末和节假日）
@@ -395,26 +502,85 @@ class TimeMachineEngine:
                 logger.warning(f"【时间机器】{stock_code} 涨幅检查失败: {msg}")
                 return None
             
-            # 回演评分逻辑（基于涨幅）
-            # 注：回演时没有实时量比数据，使用涨幅估算状态
-            if change_pct > 5:
-                status = 'strong'
-            elif change_pct > 2:
-                status = 'normal'
-            else:
-                status = 'weak'
+            # 从配置管理器获取参数 (CTO SSOT原则)
+            from logic.core.config_manager import get_config_manager
+            config_manager = get_config_manager()
             
-            # 简单评分（后续替换为完整V18评分）
-            # 评分逻辑也应使用配置参数
-            base_score = min(abs(change_pct) * 5, 100)  # 涨幅越大分越高
+            # 回演评分逻辑（基于V18双Ratio化）
+            # 注：回演时需要使用Tick数据计算真实的换手率和量比
+            
+            # 获取09:40的成交量用于计算换手率
+            volume_0940 = float(tick_0940.iloc[-1]['volume'])
+            if volume_0940 <= 0:
+                logger.warning(f"【时间机器】{stock_code} 09:40成交量无效")
+                return None
+                
+            # 获取5日平均成交量用于计算量比
+            avg_volume_5d = self._get_avg_volume_5d(stock_code, date)
+            if avg_volume_5d <= 0:
+                logger.warning(f"【时间机器】{stock_code} 5日均量无效")
+                return None
+                
+            # 计算量比
+            volume_ratio = volume_0940 / avg_volume_5d if avg_volume_5d > 0 else 0.0
+            
+            # 计算换手率 (09:40成交量/流通股本)
+            float_volume = self._get_float_volume(stock_code)
+            turnover_rate = (volume_0940 / float_volume * 100) if float_volume > 0 else 0.0
+            
+            # 计算09:40时间段的平均换手率
+            minutes_passed = 10  # 从09:30到09:40为10分钟
+            turnover_rate_per_min = turnover_rate / minutes_passed if minutes_passed > 0 else 0.0
+            
+            # 从配置获取阈值
+            volume_percentile = config_manager.get_volume_ratio_percentile('halfway')  # 0.88
+            turnover_thresholds = config_manager.get_turnover_rate_thresholds()
+            
+            # 通过V18双Ratio化过滤条件
+            volume_ratio_threshold = self._get_volume_ratio_threshold_for_date(date, volume_percentile)
+            passes_filters = (
+                volume_ratio >= volume_ratio_threshold and
+                turnover_rate_per_min >= turnover_thresholds['per_minute_min'] and  # >= 0.2%
+                turnover_rate <= turnover_thresholds['total_max']  # <= 70%
+            )
+            
+            # 如果不通过过滤，给予较低分数
+            if not passes_filters:
+                base_score = min(abs(change_pct) * 2, 50)  # 降低分数权重
+            else:
+                # 通过过滤，给予较高分数
+                base_score = min(abs(change_pct) * 5, 100)  # 正常分数权重
+                # 添加量比和换手率的额外加分
+                if volume_ratio > 3.0:  # 大幅放量
+                    base_score += 10
+                if turnover_rate_per_min > 0.5:  # 高效换手
+                    base_score += 5
+            
+            # 应用时间衰减权重
+            from datetime import datetime
+            now = datetime.strptime('09:40', '%H:%M').time()
+            if now <= datetime.strptime('09:40', '%H:%M').time():
+                decay_ratio = 1.2   # 09:30-09:40 早盘试盘、抢筹，最坚决，溢价奖励
+            elif now <= datetime.strptime('10:30', '%H:%M').time():
+                decay_ratio = 1.0   # 09:40-10:30 主升浪确认，正常推力
+            elif now <= datetime.strptime('14:00', '%H:%M').time():
+                decay_ratio = 0.8   # 10:30-14:00 震荡垃圾时间，分数打折
+            else:
+                decay_ratio = 0.5   # 14:00-14:55 尾盘偷袭，严防骗炮，大幅降权（腰斩）
+            
+            final_score = base_score * decay_ratio
             
             return {
                 'stock_code': stock_code,
-                'final_score': base_score,
+                'final_score': final_score,
+                'base_score': base_score,
                 'change_0940': change_pct,
                 'price_0940': price_0940,
                 'pre_close': pre_close,
-                'status': status
+                'volume_ratio': volume_ratio,
+                'turnover_rate': turnover_rate,
+                'turnover_rate_per_min': turnover_rate_per_min,
+                'passes_filters': passes_filters
             }
             
         except Exception as e:

@@ -57,6 +57,20 @@ class UniverseBuilder:
         universe_config = self.config_manager._config.get('universe_build', {})
         return universe_config.get('volume_ratio_absolute', 3.0)
         
+    @property
+    def MIN_ACTIVE_TURNOVER_RATE(self) -> float:
+        """最低活跃换手率 - CTO换手率纠偏裁决：拒绝死水"""
+        # 从配置获取最低活跃换手率，默认3.0%
+        live_sniper_config = self.config_manager._config.get('live_sniper', {})
+        return live_sniper_config.get('min_active_turnover_rate', 3.0)
+        
+    @property
+    def DEATH_TURNOVER_RATE(self) -> float:
+        """死亡换手率 - CTO换手率纠偏裁决：防范极端爆炒陷阱"""
+        # 从配置获取死亡换手率，默认70.0%
+        live_sniper_config = self.config_manager._config.get('live_sniper', {})
+        return live_sniper_config.get('death_turnover_rate', 70.0)
+        
     def _load_tushare_token(self) -> str:
         """
         加载Tushare Token - CTODict: 优先环境变量，其次配置文件
@@ -143,13 +157,15 @@ class UniverseBuilder:
         df_filtered = df_filtered[df_filtered['volume_ratio'] >= volume_ratio_threshold]
         logger.info(f"【UniverseBuilder】第二层(量比>{volume_ratio_threshold:.1f}, 右侧起爆): {len(df_filtered)} 只")
         
-        # 第三层: 换手率过滤 (双Ratio化核心成果)
-        # 换手率 > 1% (确保有流动性) 且 < 20% (过滤过度爆炒)
+        # 第三层: 换手率过滤 (CTO换手率纠偏裁决)
+        # 换手率 > 最低活跃阈值 (拒绝死水) 且 < 死亡换手率 (防范极端爆炒陷阱)
+        min_turnover = self.MIN_ACTIVE_TURNOVER_RATE
+        max_turnover = self.DEATH_TURNOVER_RATE
         df_filtered = df_filtered[
-            (df_filtered['turnover_rate'] > 1.0) & 
-            (df_filtered['turnover_rate'] < 20.0)
+            (df_filtered['turnover_rate'] > min_turnover) & 
+            (df_filtered['turnover_rate'] < max_turnover)
         ]
-        logger.info(f"【UniverseBuilder】第三层(换手率1%-20%): {len(df_filtered)} 只")
+        logger.info(f"【UniverseBuilder】第三层(换手率>{min_turnover}%-<{max_turnover}%): {len(df_filtered)} 只")
         
         # 第四层: 剔除科创板(688)和北交所(8开头/4开头)
         df_filtered = df_filtered[~df_filtered['ts_code'].str.startswith('688')]
