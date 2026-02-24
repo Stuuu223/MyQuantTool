@@ -171,8 +171,28 @@ class FullMarketScanner:
             
             # CTO加固: 向量化过滤 (一行代码处理数千只股票)
             # CTO Phase 23: ratio化过滤 (基于市场分位数而非硬编码阈值)
-            volume_ratio_threshold = df['volume_ratio'].quantile(0.88)  # 量比88分位数
-            change_pct_threshold = df['change_pct'].quantile(0.85)     # 涨幅85分位数
+            # 从strategy_params.json加载分位数阈值
+            import json
+            from pathlib import Path
+            
+            # 获取配置文件路径
+            config_path = Path(__file__).parent.parent.parent / "config" / "strategy_params.json"
+            
+            try:
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    strategy_config = json.load(f)
+                
+                # 从halfway策略获取分位数阈值
+                halfway_config = strategy_config.get('halfway', {})
+                volume_percentile = halfway_config.get('volume_surge_percentile', 0.88)
+                change_percentile = halfway_config.get('price_momentum_percentile', 0.85)
+            except:
+                # 备用：使用默认值
+                volume_percentile = 0.88
+                change_percentile = 0.85
+            
+            volume_ratio_threshold = df['volume_ratio'].quantile(volume_percentile)  # 量比分位数
+            change_pct_threshold = df['change_pct'].quantile(change_percentile)     # 涨幅分位数
             
             mask = (
                 (df['price'] > 0) &  # 价格有效性
