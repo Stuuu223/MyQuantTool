@@ -1,23 +1,12 @@
-"""
-异步事件总线 - 实现真正的事件驱动架构
-
-功能：
-- 使用队列模式实现发布-订阅模式
-- 防止内存爆炸的限流机制
-- 非阻塞事件处理
-
-Author: AI总监
-Date: 2026-02-24
-Version: Phase 20
-"""
 import asyncio
 import queue
 import threading
-import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Dict, Any, Optional
 from dataclasses import dataclass
 from datetime import datetime
 import logging
+import time
 
 # 获取logger
 try:
@@ -61,25 +50,28 @@ class TickEvent:
 
 class AsyncEventBus:
     """
-    异步事件总线 - 实现真正的事件驱动
+    异步事件总线 - 实现真正的事件驱动 (CTO加固版)
     
     CTO加固要点:
     - 内存爆炸防护: maxsize限制队列大小
     - 非阻塞投递: 使用put_nowait避免阻塞
     - 异常隔离: 单个处理器异常不影响其他处理器
+    - 多线程消费: 使用线程池并发处理事件
     """
     
-    def __init__(self, max_queue_size: int = 10000):
+    def __init__(self, max_queue_size: int = 10000, max_workers: int = 10):
         """
         初始化事件总线
         
         Args:
             max_queue_size: 队列最大容量，防止内存爆炸
+            max_workers: 最大工作线程数
         """
         self._tick_queue = queue.Queue(maxsize=max_queue_size)
         self._handlers: Dict[str, list] = {}
         self._running = False
         self._consumer_thread: Optional[threading.Thread] = None
+        self._executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix='EventBusWorker')
         
         # 统计信息
         self._stats = {
@@ -89,7 +81,7 @@ class AsyncEventBus:
             'start_time': time.time()
         }
         
-        logger.info(f"✅ [AsyncEventBus] 初始化完成 (max_queue_size: {max_queue_size})")
+        logger.info(f"✅ [AsyncEventBus] 初始化完成 (max_queue_size: {max_queue_size}, workers: {max_workers})")
     
     def subscribe(self, event_type: str, handler: Callable):
         """
@@ -128,8 +120,7 @@ class AsyncEventBus:
     
     def start_consumer(self):
         """
-        启动消费者线程
-        CTO加固: 使用非阻塞get避免线程卡死
+        启动消费者线程 (CTO加固: 使用线程池并发处理)
         """
         if self._running:
             logger.warning("⚠️ 事件总线消费者已在运行")
@@ -146,13 +137,11 @@ class AsyncEventBus:
                     event_type, data = self._tick_queue.get(timeout=0.1)
                     self._stats['processed'] += 1
                     
-                    # 调用所有处理器
+                    # 调用所有处理器 (CTO加固: 使用线程池并发执行)
                     if event_type in self._handlers:
                         for handler in self._handlers[event_type]:
-                            try:
-                                handler(data)
-                            except Exception as e:
-                                logger.error(f"❌ 处理事件失败 {event_type}: {e}")
+                            # 提交到线程池并发执行，避免阻塞
+                            self._executor.submit(self._safe_handler_call, handler, data)
                     
                     # 定期输出统计信息
                     current_time = time.time()
@@ -173,12 +162,29 @@ class AsyncEventBus:
         self._consumer_thread.start()
         logger.info("✅ 事件总线消费者已启动")
     
+    def _safe_handler_call(self, handler: Callable, data: Any):
+        """
+        安全调用处理器 (异常隔离)
+        
+        Args:
+            handler: 事件处理器
+            data: 事件数据
+        """
+        try:
+            handler(data)
+        except Exception as e:
+            logger.error(f"❌ 处理事件失败: {e}")
+    
     def stop(self):
         """停止事件总线"""
         logger.info("🛑 停止事件总线...")
         self._running = False
         if self._consumer_thread and self._consumer_thread.is_alive():
             self._consumer_thread.join(timeout=2.0)  # 最多等待2秒
+        
+        # 关闭线程池
+        self._executor.shutdown(wait=True, timeout=5.0)
+        
         logger.info("✅ 事件总线已停止")
     
     def _print_stats(self):
@@ -205,33 +211,36 @@ class AsyncEventBus:
 
 
 # 便捷函数
-def create_event_bus(max_queue_size: int = 10000) -> AsyncEventBus:
+def create_event_bus(max_queue_size: int = 10000, max_workers: int = 10) -> AsyncEventBus:
     """
     创建事件总线实例
     
     Args:
         max_queue_size: 队列最大容量
+        max_workers: 最大工作线程数
         
     Returns:
         AsyncEventBus: 事件总线实例
     """
-    return AsyncEventBus(max_queue_size=max_queue_size)
+    return AsyncEventBus(max_queue_size=max_queue_size, max_workers=max_workers)
 
 
 if __name__ == "__main__":
     # 测试异步事件总线
-    print("🧪 异步事件总线测试")
+    print("🧪 异步事件总线测试 (CTO加固版)")
     print("=" * 50)
     
     # 创建事件总线
-    event_bus = create_event_bus(max_queue_size=100)
+    event_bus = create_event_bus(max_queue_size=100, max_workers=5)
     
     # 定义处理器
     def price_handler(data):
+        time.sleep(0.01)  # 模拟耗时操作
         if isinstance(data, TickEvent):
             print(f"💰 价格更新: {data.stock_code} -> {data.price}")
     
     def volume_handler(data):
+        time.sleep(0.01)  # 模拟耗时操作
         if isinstance(data, TickEvent):
             if data.volume > 100000:
                 print(f"📊 大单监控: {data.stock_code} 量 {data.volume}")
@@ -248,7 +257,7 @@ if __name__ == "__main__":
     test_stocks = ['300986.SZ', '002969.SZ', '603278.SH']
     
     print("🚀 开始发布测试事件...")
-    for i in range(10):
+    for i in range(20):
         stock = random.choice(test_stocks)
         tick = TickEvent(
             stock_code=stock,
@@ -262,10 +271,10 @@ if __name__ == "__main__":
         if not success:
             print(f"❌ 事件发布失败: {tick.stock_code}")
         
-        time.sleep(0.01)  # 模拟Tick间隔
+        time.sleep(0.005)  # 快速发布事件
     
     # 等待处理完成
-    time.sleep(2)
+    time.sleep(3)
     
     # 打印统计
     stats = event_bus.get_stats()
