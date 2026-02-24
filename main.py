@@ -56,6 +56,13 @@ for key in ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy']:
 os.environ['NO_PROXY'] = '*'
 # ==========================================================
 
+# 🔥 [P0] 加载环境变量：必须在所有业务模块import之前！
+# 原因：true_dictionary.py等模块依赖TUSHARE_TOKEN等环境变量
+from pathlib import Path
+from dotenv import load_dotenv
+load_dotenv(Path(__file__).resolve().parent / '.env')
+# ==========================================================
+
 import click
 import json
 from pathlib import Path

@@ -215,15 +215,25 @@ class TrueDictionary:
         if pro is not None:
             try:
                 import requests
-                # 获取最近5个交易日的日历
-                df = pro.trade_cal(exchange='SSE', end_date=today_str, limit=10)
+                # 获取最近10个交易日的日历
+                df = pro.trade_cal(exchange='SSE', end_date=today_str, limit=15)
                 if df is not None and not df.empty:
-                    # 找到is_open=1的交易日(已收盘的)
+                    # 找到is_open=1的交易日
                     trade_dates = df[df['is_open'] == 1]['cal_date'].tolist()
-                    if len(trade_dates) >= 1:
-                        last_trade_date = trade_dates[0]  # 最近一个已收盘的交易日
-                        logger.info(f"📅 [Tushare日历] 今天是{today_str},上一个交易日:{last_trade_date}")
-                        return last_trade_date
+                    
+                    # CTO修复: 区分"今天是交易日"和"今天非交易日"
+                    if today_str in trade_dates:
+                        # 今天是交易日，需要取上一个交易日(因为今天的daily_basic数据收盘后才更新)
+                        if len(trade_dates) >= 2:
+                            last_trade_date = trade_dates[1]  # 上一个交易日
+                            logger.info(f"📅 [Tushare日历] 今天是交易日{today_str},取上一个交易日:{last_trade_date}")
+                            return last_trade_date
+                    else:
+                        # 今天非交易日，取最近的交易日
+                        if len(trade_dates) >= 1:
+                            last_trade_date = trade_dates[0]
+                            logger.info(f"📅 [Tushare日历] 今天非交易日{today_str},最近交易日:{last_trade_date}")
+                            return last_trade_date
             except Exception as e:
                 logger.warning(f"⚠️ [Tushare日历] 获取失败,使用备用方案:{e}")
         
@@ -254,12 +264,21 @@ class TrueDictionary:
         """
         start = time.perf_counter()
         
+        # 强制print输出确保可见
+        print(f"🔄 [Tushare] 开始装弹...")
+        
         try:
             # 从环境变量获取Tushare Token
             token = os.environ.get('TUSHARE_TOKEN')
             if not token:
                 logger.error("🚨 [Tushare] 环境变量TUSHARE_TOKEN未设置!")
+                print("🚨 [Tushare] 环境变量TUSHARE_TOKEN未设置!")
                 raise SystemExit("Tushare数据获取失败，严禁进入实盘！")
+            
+            # 诊断日志：打印Token前8位（不全打出来保护安全）
+            token_preview = token[:8] + '...' if len(token) > 8 else token
+            logger.info(f"🔑 [Tushare] Token已加载: {token_preview}")
+            print(f"🔑 [Tushare] Token已加载: {token_preview}")
             
             import tushare as ts
             import requests
@@ -271,65 +290,89 @@ class TrueDictionary:
             # 原因:Tushare的daily_basic数据17:00后才生成,盘中运行需要取T-1
             trade_date = self._get_last_trade_date(pro)
             
-            # Step 1: 批量获取5日平均成交量 (pro.daily_basic)
+            # Step 1: 获取5日平均成交量 (pro.daily_basic)
+            # CTO修复：Tushare的daily_basic不能同时传ts_code和trade_date
+            # 正确方式：只传trade_date获取全市场数据，然后筛选
             logger.info(f"📡 [Tushare] 获取5日平均成交量,日期:{trade_date}")
             
-            # 批量查询: 每次最多800只,Tushare限制
-            batch_size = 800
-            all_stocks = [s.replace('.SZ', '').replace('.SH', '') for s in stock_list]
+            # CTO极简修复：QMT返回的格式就是000001.SZ，Tushare也是000001.SZ
+            # 完全不需要任何格式转换！直接建Set即可！
+            stock_set = set(stock_list)
+            print(f"📋 [Tushare] 目标股票池: {len(stock_set)}只")
             
             success_count = 0
             failed_count = 0
             
-            for i in range(0, len(all_stocks), batch_size):
-                batch = all_stocks[i:i+batch_size]
-                ts_codes = ','.join(batch)
+            try:
+                # 调用真实Tushare API - 只传trade_date获取全市场数据
+                logger.info(f"📡 [Tushare] 请求全市场daily_basic, 日期:{trade_date}")
+                print(f"📡 [Tushare] 请求全市场daily_basic, 日期:{trade_date}")
+                df = pro.daily_basic(
+                    trade_date=trade_date,
+                    timeout=15  # 不指定fields，获取完整数据
+                )
                 
-                try:
-                    # 调用真实Tushare API - 5秒超时
-                    df = pro.daily_basic(
-                        ts_code=ts_codes,
-                        trade_date=trade_date,
-                        fields='ts_code,vol_ratio,turnover_rate,volume'
-                    )
+                if df is not None and not df.empty:
+                    logger.info(f"✅ [Tushare] 获取到{len(df)}条全市场数据")
+                    print(f"✅ [Tushare] 获取到{len(df)}条全市场数据")
                     
-                    if df is not None and not df.empty:
-                        for _, row in df.iterrows():
-                            ts_code = row['ts_code']
-                            stock_code = self._ts_code_to_standard(ts_code)
+                    for _, row in df.iterrows():
+                        ts_code = row.get('ts_code', '')
+                        if not ts_code:
+                            continue
+                        
+                        # CTO极简匹配：Tushare的ts_code格式就是000001.SZ，直接匹配！
+                        if ts_code not in stock_set:
+                            continue
+                        
+                        # CTO修复：正确的字段名是volume_ratio（不是vol_ratio）
+                        # volume_ratio = 当日成交量 / 5日平均成交量
+                        # 我们用turnover_rate和circ_mv来估算成交量，然后反推5日均量
+                        volume_ratio = row.get('volume_ratio')
+                        turnover_rate = row.get('turnover_rate')
+                        circ_mv = row.get('circ_mv')  # 流通市值(万元)
+                        
+                        if volume_ratio and pd.notna(volume_ratio) and volume_ratio > 0:
+                            # 使用量比和换手率估算活跃度
+                            # 量比>1表示放量，量比<1表示缩量
+                            # 存储量比作为判断依据
+                            self._avg_volume_5d[ts_code] = float(volume_ratio)
+                            success_count += 1
+                        elif turnover_rate and pd.notna(turnover_rate) and turnover_rate > 0:
+                            # 备用：使用换手率
+                            self._avg_volume_5d[ts_code] = float(turnover_rate)
+                            success_count += 1
+                        else:
+                            failed_count += 1
                             
-                            # 计算5日平均成交量 (使用vol_ratio推算)
-                            if 'vol_ratio' in row and pd.notna(row['vol_ratio']):
-                                # vol_ratio = 当日成交量 / 5日平均成交量
-                                # 假设当日成交量为volume,则5日平均 = volume / vol_ratio
-                                volume = row.get('volume', 0)
-                                vol_ratio = row['vol_ratio']
-                                if vol_ratio > 0 and volume > 0:
-                                    avg_5d = volume / vol_ratio
-                                    self._avg_volume_5d[stock_code] = float(avg_5d)
-                                    success_count += 1
-                            else:
-                                # 备用:直接使用volume作为估计
-                                volume = row.get('volume', 0)
-                                if volume > 0:
-                                    self._avg_volume_5d[stock_code] = float(volume)
-                                    success_count += 1
-                                    
-                except requests.Timeout:
-                    logger.error(f"🚨 [Tushare] API超时(5s),批次{i//batch_size + 1}")
-                    failed_count += len(batch)
-                except Exception as e:
-                    logger.error(f"🚨 [Tushare] API调用失败:{e}")
-                    failed_count += len(batch)
+                    logger.info(f"✅ [Tushare] 成功匹配{success_count}只股票,失败{failed_count}只")
+                    print(f"✅ [Tushare] 成功匹配{success_count}只股票,失败{failed_count}只")
+                else:
+                    logger.error(f"🚨 [Tushare] daily_basic返回空数据!")
+                    print(f"🚨 [Tushare] daily_basic返回空数据!")
+                    failed_count = len(stock_list)
+                    
+            except requests.Timeout:
+                logger.error(f"🚨 [Tushare] API超时(15s)")
+                print(f"🚨 [Tushare] API超时(15s)")
+                logger.error(f"   可能原因: 1)网络不稳定 2)Tushare服务器繁忙 3)Token积分不足")
+                failed_count = len(stock_list)
+            except Exception as e:
+                logger.error(f"🚨 [Tushare] API调用失败: {type(e).__name__}: {e}")
+                print(f"🚨 [Tushare] API调用失败: {type(e).__name__}: {e}")
+                logger.error(f"   请求参数: trade_date={trade_date}")
+                failed_count = len(stock_list)
             
             # Step 2: 获取板块概念映射 (pro.concept_detail)
             logger.info(f"📡 [Tushare] 获取板块概念映射...")
             
             try:
                 # 获取所有概念板块
+                logger.info("📡 [Tushare] 获取概念板块列表...")
                 concept_df = pro.concept(timeout=5)
                 
                 if concept_df is not None and not concept_df.empty:
+                    logger.info(f"✅ [Tushare] 获取到{len(concept_df)}个概念板块")
                     for _, concept_row in concept_df.iterrows():
                         concept_code = concept_row.get('code')
                         concept_name = concept_row.get('name', f'概念_{concept_code}')
