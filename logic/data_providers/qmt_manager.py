@@ -29,14 +29,21 @@ from typing import Optional, List, Dict, Any, Tuple, Union
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 
+# 导入xtquant基础模块
 try:
-    from xtquant import xtdata, xttrader, xtdatacenter as xtdc
+    from xtquant import xtdata, xttrader
     XT_AVAILABLE = True
 except ImportError:
     XT_AVAILABLE = False
-    xtdc = None
     xtdata = None
     xttrader = None
+
+# 尝试导入xtdatacenter（VIP服务模块，某些版本可能不存在）
+try:
+    from xtquant import xtdatacenter as xtdc
+except ImportError:
+    xtdc = None
+    logger.warning("[QmtDataManager] xtdatacenter模块不可用，VIP服务启动功能将被禁用")
 
 # 导入QMTRouter - 接入熔断机制
 from logic.data_providers.fallback_provider import QMTRouter, CircuitBreakerError
@@ -206,6 +213,11 @@ class QmtDataManager:
         
         if not XT_AVAILABLE or not self.use_vip:
             logger.warning("[QmtDataManager] VIP服务不可用或已禁用")
+            QmtDataManager._vip_global_lock = False
+            return None
+        
+        if xtdc is None:
+            logger.warning("[QmtDataManager] xtdatacenter模块不可用，无法启动VIP服务。请确保MiniQMT已手动启动。")
             QmtDataManager._vip_global_lock = False
             return None
         
@@ -477,7 +489,10 @@ class QmtDataManager:
         
         # 如果需要VIP服务，确保服务已启动
         if use_vip and self.use_vip:
-            if not self._ensure_vip_connection():
+            if xtdc is None:
+                # MiniQMT已启动模式：xtdatacenter不可用，但xtdata可以直接使用
+                logger.info("[QmtDataManager] xtdatacenter模块不可用，使用MiniQMT直连模式")
+            elif not self._ensure_vip_connection():
                 # CTO修复：VIP不可用直接熔断，禁止降级
                 raise RuntimeError("[QmtDataManager] VIP服务不可用，直接熔断！禁止降级到普通下载")
         
