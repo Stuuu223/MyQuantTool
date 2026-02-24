@@ -87,7 +87,7 @@ def get_universe_for_dates(dates: List[str]) -> List[str]:
     return list(all_stocks)
 
 
-def download_tick_batch(stock_list: List[str], dates: List[str], timeout: int = 3600) -> Dict:
+def download_tick_batch(stock_list: List[str], dates: List[str], timeout: int = 3600, progress_callback=None) -> Dict:
     """
     批量下载Tick数据
     
@@ -95,6 +95,7 @@ def download_tick_batch(stock_list: List[str], dates: List[str], timeout: int = 
         stock_list: 股票代码列表
         dates: 日期列表
         timeout: 总体超时时间（秒）
+        progress_callback: 进度回调函数
     
     Returns:
         下载结果统计
@@ -161,73 +162,128 @@ def download_tick_batch(stock_list: List[str], dates: List[str], timeout: int = 
         start_time = time.time()
     
     try:
-        for i, stock in enumerate(stock_list, 1):
-            try:
-                # 检查是否超时（Windows）
-                if not timeout_set:
-                    elapsed = time.time() - start_time
-                    if elapsed > timeout:
-                        logger.info(f"【下载任务】超时 {timeout} 秒，保存当前进度并退出")
-                        break
-                
-                # 标准化代码
-                if '.' not in stock:
-                    if stock.startswith('6'):
-                        stock = f"{stock}.SH"
-                    else:
-                        stock = f"{stock}.SZ"
-                
-                # 检查是否已有数据
-                try:
-                    existing = xtdata.get_local_data(
-                        field_list=['time'],
-                        stock_list=[stock],
-                        period='tick',
-                        start_time=start_date,
-                        end_time=end_date
-                    )
-                    
-                    if existing and stock in existing and len(existing[stock]) > 1000:
-                        results['skipped'] += len(dates)
-                        logger.debug(f"[{i}/{len(stock_list)}] {stock} 已有数据，跳过")
-                        continue
-                except:
-                    pass
-                
-                # 下载
-                xtdata.download_history_data(
-                    stock_code=stock,
-                    period='tick',
-                    start_time=start_date,
-                    end_time=end_date
-                )
-                
-                # 验证
-                data = xtdata.get_local_data(
-                    field_list=['time'],
-                    stock_list=[stock],
-                    period='tick',
-                    start_time=start_date,
-                    end_time=end_date
-                )
-                
-                if data and stock in data and len(data[stock]) > 100:
-                    results['success'] += len(dates)
-                    logger.info(f"[{i}/{len(stock_list)}] {stock} ✅ ({len(data[stock])} ticks)")
-                else:
-                    results['failed'] += len(dates)
-                    logger.warning(f"[{i}/{len(stock_list)}] {stock} ❌ 数据不足")
-                    
-            except Exception as e:
-                if isinstance(e, TimeoutError):
-                    raise e
-                results['failed'] += len(dates)
-                error_msg = f"{stock}: {str(e)}"
-                results['errors'].append(error_msg)
-                logger.error(f"[{i}/{len(stock_list)}] {stock} ❌ {e}")
+        from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn, TaskID
+        from rich.console import Console
+        
+        console = Console()
+        with Progress(
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TimeRemainingColumn(),
+            console=console,
+        ) as progress:
+            # 创建总进度条
+            overall_task = progress.add_task(
+                f"[cyan]下载进度 ({len(stock_list)} 只股票 × {len(dates)} 天)", 
+                total=results['total']
+            )
             
-            # 间隔避免限流
-            time.sleep(0.1)
+            for i, stock in enumerate(stock_list, 1):
+                try:
+                    # 检查是否超时（Windows）
+                    if not timeout_set:
+                        elapsed = time.time() - start_time
+                        if elapsed > timeout:
+                            logger.info(f"【下载任务】超时 {timeout} 秒，保存当前进度并退出")
+                            break
+                    
+                    # 标准化代码
+                    if '.' not in stock:
+                        if stock.startswith('6'):
+                            stock = f"{stock}.SH"
+                        else:
+                            stock = f"{stock}.SZ"
+                    
+                    # 检查是否已有数据
+                    try:
+                        existing = xtdata.get_local_data(
+                            field_list=['time'],
+                            stock_list=[stock],
+                            period='tick',
+                            start_time=start_date,
+                            end_time=end_date
+                        )
+                        
+                        if existing and stock in existing and len(existing[stock]) > 1000:
+                            results['skipped'] += len(dates)
+                            logger.debug(f"[{i}/{len(stock_list)}] {stock} 已有数据，跳过")
+                            progress.update(overall_task, advance=len(dates))
+                            continue
+                    except:
+                        pass
+                    
+                    # 下载
+                    try:
+                        xtdata.download_history_data(
+                            stock_code=stock,
+                            period='tick',
+                            start_time=start_date,
+                            end_time=end_date
+                        )
+                        
+                        # 验证
+                        data = xtdata.get_local_data(
+                            field_list=['time'],
+                            stock_list=[stock],
+                            period='tick',
+                            start_time=start_date,
+                            end_time=end_date
+                        )
+                        
+                        if data and stock in data and len(data[stock]) > 100:
+                            results['success'] += len(dates)
+                            logger.info(f"[{i}/{len(stock_list)}] {stock} ✅ ({len(data[stock])} ticks)")
+                        else:
+                            results['failed'] += len(dates)
+                            logger.warning(f"[{i}/{len(stock_list)}] {stock} ❌ 数据不足")
+                            
+                    except Exception as e:
+                        # 如果下载失败，尝试重试
+                        logger.warning(f"[{i}/{len(stock_list)}] {stock} 下载失败，尝试重试...")
+                        try:
+                            time.sleep(1)  # 等待1秒后重试
+                            xtdata.download_history_data(
+                                stock_code=stock,
+                                period='tick',
+                                start_time=start_date,
+                                end_time=end_date
+                            )
+                            
+                            # 验证
+                            data = xtdata.get_local_data(
+                                field_list=['time'],
+                                stock_list=[stock],
+                                period='tick',
+                                start_time=start_date,
+                                end_time=end_date
+                            )
+                            
+                            if data and stock in data and len(data[stock]) > 100:
+                                results['success'] += len(dates)
+                                logger.info(f"[{i}/{len(stock_list)}] {stock} ✅ ({len(data[stock])} ticks) [重试成功]")
+                            else:
+                                results['failed'] += len(dates)
+                                logger.warning(f"[{i}/{len(stock_list)}] {stock} ❌ 数据不足 [重试失败]")
+                        except Exception as retry_e:
+                            results['failed'] += len(dates)
+                            error_msg = f"{stock}: {str(retry_e)}"
+                            results['errors'].append(error_msg)
+                            logger.error(f"[{i}/{len(stock_list)}] {stock} ❌ {retry_e}")
+                    
+                except Exception as e:
+                    if isinstance(e, TimeoutError):
+                        raise e
+                    results['failed'] += len(dates)
+                    error_msg = f"{stock}: {str(e)}"
+                    results['errors'].append(error_msg)
+                    logger.error(f"[{i}/{len(stock_list)}] {stock} ❌ {e}")
+                
+                # 更新进度
+                progress.update(overall_task, advance=len(dates))
+                
+                # 间隔避免限流
+                time.sleep(0.1)
     
     except TimeoutError:
         pass  # 超时处理，正常退出
@@ -236,6 +292,60 @@ def download_tick_batch(stock_list: List[str], dates: List[str], timeout: int = 
             signal.alarm(0)  # 取消超时
     
     return results
+
+
+def create_gui_progress():
+    """创建GUI进度窗口"""
+    try:
+        import tkinter as tk
+        from tkinter import ttk
+        import threading
+        
+        root = tk.Tk()
+        root.title("全息数据下载器 - 进度监控")
+        root.geometry("600x400")
+        
+        # 标题
+        title_label = tk.Label(root, text="全息时间机器数据下载器", font=("Arial", 16, "bold"))
+        title_label.pack(pady=10)
+        
+        # 进度条
+        progress_var = tk.DoubleVar()
+        progress_bar = ttk.Progressbar(root, variable=progress_var, maximum=100, length=500)
+        progress_bar.pack(pady=10)
+        
+        # 进度标签
+        progress_label = tk.Label(root, text="准备开始下载...", font=("Arial", 12))
+        progress_label.pack(pady=5)
+        
+        # 状态信息
+        status_text = tk.Text(root, height=15, width=70)
+        status_scrollbar = tk.Scrollbar(root, command=status_text.yview)
+        status_text.configure(yscrollcommand=status_scrollbar.set)
+        
+        status_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=10, pady=5)
+        status_scrollbar.pack(side=tk.RIGHT, fill=tk.Y, pady=5)
+        
+        # 用于更新GUI的队列
+        import queue
+        update_queue = queue.Queue()
+        
+        def update_gui():
+            try:
+                while True:
+                    msg = update_queue.get_nowait()
+                    status_text.insert(tk.END, msg + "\n")
+                    status_text.see(tk.END)
+                    status_text.update_idletasks()
+            except queue.Empty:
+                pass
+            root.after(100, update_gui)  # 每100ms检查一次
+        
+        root.after(100, update_gui)
+        
+        return root, progress_var, progress_label, update_queue
+    except ImportError:
+        return None, None, None, None
 
 
 def main():
@@ -249,6 +359,7 @@ def main():
     parser.add_argument('--workers', type=int, default=4, help='并发数')
     parser.add_argument('--type', type=str, choices=['tick', 'kline', 'all'], default='tick', help='数据类型')
     parser.add_argument('--timeout', type=int, default=3600, help='下载超时时间（秒，默认3600秒/1小时）')
+    parser.add_argument('--gui', action='store_true', help='启用GUI进度窗口')
     
     args = parser.parse_args()
     
@@ -299,7 +410,31 @@ def main():
     
     # Step 2: 下载Tick数据
     print(f"\n📥 Step 2: 下载Tick数据 ({len(stock_list)} 只 × {len(dates)} 天)...")
-    results = download_tick_batch(stock_list, dates, timeout=args.timeout)
+    
+    if args.gui:
+        # 启动GUI进度窗口
+        root, progress_var, progress_label, update_queue = create_gui_progress()
+        if root:
+            import threading
+            def download_with_progress():
+                results = download_tick_batch(stock_list, dates, timeout=args.timeout)
+                print("下载完成！")
+                # 这里可以添加完成后的处理
+                return results
+            
+            # 在后台线程中运行下载
+            download_thread = threading.Thread(target=download_with_progress)
+            download_thread.daemon = True
+            download_thread.start()
+            
+            # 启动GUI主循环
+            root.mainloop()
+        else:
+            # 如果GUI不可用，使用控制台进度
+            results = download_tick_batch(stock_list, dates, timeout=args.timeout)
+    else:
+        # 使用控制台进度
+        results = download_tick_batch(stock_list, dates, timeout=args.timeout)
     
     # 输出结果
     print("\n" + "=" * 60)
