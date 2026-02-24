@@ -544,10 +544,12 @@ def analyze_cmd(ctx, stock, start_date, end_date, date, detail):
               help='数据类型 (默认: all)')
 @click.option('--universe', '-u',
               help='股票池CSV文件路径')
+@click.option('--volume_percentile', default=0.88, type=float,
+              help='量比分位数阈值 (默认: 0.88)')
 @click.option('--workers', '-w', type=int, default=4,
               help='并发 workers 数 (默认: 4)')
 @click.pass_context
-def download_cmd(ctx, date, data_type, universe, workers):
+def download_cmd(ctx, date, data_type, universe, volume_percentile, workers):
     """
     数据下载管理
     
@@ -589,6 +591,18 @@ def download_cmd(ctx, date, data_type, universe, workers):
                 df = pd.read_csv(universe)
                 stock_list = df.iloc[:, 0].tolist() if len(df.columns) == 1 else df['code'].tolist()
                 click.echo(f"📋 从CSV加载 {len(stock_list)} 只股票")
+        elif not universe and volume_percentile != 0.88:  # 只有当用户明确设置了volume_percentile时才进行粗筛
+            # 如果未指定股票池但设置了分位数，则使用粗筛获取股票池
+            from logic.data_providers.universe_builder import UniverseBuilder
+            from logic.data_providers.universe_builder import get_daily_universe
+            
+            # 动态更新universe_builder的量比阈值
+            builder = UniverseBuilder()
+            builder.VOLUME_RATIO_PERCENTILE = volume_percentile
+            click.echo(f"📊 使用 {volume_percentile} 分位数进行粗筛")
+            
+            stock_list = get_daily_universe(date)
+            click.echo(f"📊 粗筛获取到 {len(stock_list)} 只股票")
         
         # 执行下载 - 使用QmtDataManager
         from logic.data_providers.qmt_manager import QmtDataManager
