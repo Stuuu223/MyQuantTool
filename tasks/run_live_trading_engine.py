@@ -23,6 +23,13 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 import logging
 
+# 紧急修复P0级事故: InstrumentCache支持
+try:
+    from logic.data_providers.instrument_cache import get_instrument_cache
+    INSTRUMENT_CACHE_AVAILABLE = True
+except ImportError:
+    INSTRUMENT_CACHE_AVAILABLE = False
+
 # 获取logger
 try:
     from logic.utils.logger import get_logger
@@ -85,6 +92,15 @@ class LiveTradingEngine:
             logger.debug("🎯 EventBus 已加载")
         except ImportError:
             logger.warning("⚠️ EventBus 未找到")
+        
+        # 初始化InstrumentCache (紧急修复P0级事故)
+        try:
+            from logic.data_providers.instrument_cache import get_instrument_cache
+            self.instrument_cache = get_instrument_cache()
+            logger.debug("🎯 InstrumentCache 已加载")
+        except ImportError:
+            self.instrument_cache = None
+            logger.warning("⚠️ InstrumentCache 未找到")
     
     def start_session(self):
         """
@@ -177,7 +193,9 @@ class LiveTradingEngine:
             logger.error(f"❌ QMT回调设置失败: {e}")
     
     def _premarket_scan(self):
-        """盘前扫描 - 获取粗筛池"""
+        """
+        盘前扫描 - 获取粗筛池 + InstrumentCache盘前装弹 (紧急修复P0级事故)
+        """
         if not self.scanner:
             logger.error("❌ 扫描器未初始化")
             return
@@ -189,6 +207,102 @@ class LiveTradingEngine:
         universe = UniverseBuilder().get_daily_universe(today)
         self.watchlist = universe[:100]  # 限制数量
         logger.info(f"📊 盘前扫描完成: {len(self.watchlist)} 只候选")
+        
+        # ===== 紧急修复P0级事故: InstrumentCache盘前装弹 =====
+        # 09:25前预热全市场数据，确保真实换手率和量比计算
+        if self.instrument_cache:
+            logger.info("🔥 启动InstrumentCache盘前装弹...")
+            try:
+                # 获取扩展股票池用于缓存 (包含watchlist及额外股票)
+                extended_pool = self._get_extended_stock_pool(universe)
+                
+                # 预热缓存
+                warmup_result = self.instrument_cache.warmup_cache(extended_pool)
+                
+                if warmup_result['success']:
+                    logger.info(
+                        f"✅ 盘前装弹完成: "
+                        f"FloatVolume缓存 {warmup_result.get('cached_count', 0)} 只, "
+                        f"5日均量缓存 {warmup_result.get('avg_volume_cached', 0)} 只, "
+                        f"耗时 {warmup_result.get('elapsed_time', 0):.2f}秒"
+                    )
+                else:
+                    logger.warning("⚠️ 盘前装弹未完成，将使用实时获取模式")
+                    
+            except Exception as e:
+                logger.error(f"❌ 盘前装弹失败: {e}")
+        else:
+            logger.warning("⚠️ InstrumentCache未初始化，无法执行盘前装弹")
+        # ===== 紧急修复结束 =====
+    
+    def _get_extended_stock_pool(self, universe: List[str]) -> List[str]:
+        """
+        获取扩展股票池用于InstrumentCache预热
+        
+        Args:
+            universe: 基础股票池
+            
+        Returns:
+            List[str]: 扩展后的股票池 (约500-1000只)
+        """
+        # 从基础池开始
+        extended = set(universe)
+        
+        # 添加沪深A股主要股票
+        try:
+            from xtquant import xtdata
+            
+            # 获取沪深A股列表 (前1000只用于缓存预热)
+            all_a_shares = xtdata.get_stock_list_in_sector('沪深A股')
+            
+            # 优先添加watchlist中的股票
+            for code in self.watchlist:
+                normalized = self._normalize_stock_code(code)
+                if normalized:
+                    extended.add(normalized)
+            
+            # 添加额外的股票 (限制总数约800只，平衡性能和覆盖)
+            remaining_slots = 800 - len(extended)
+            if remaining_slots > 0 and all_a_shares:
+                for code in all_a_shares[:remaining_slots]:
+                    normalized = self._normalize_stock_code(code)
+                    if normalized:
+                        extended.add(normalized)
+                        
+        except Exception as e:
+            logger.debug(f"获取扩展股票池失败: {e}")
+        
+        result = list(extended)
+        logger.info(f"📦 扩展股票池: {len(result)} 只 (基础池 {len(universe)} 只)")
+        return result
+    
+    def _normalize_stock_code(self, code: str) -> Optional[str]:
+        """
+        标准化股票代码格式
+        
+        Args:
+            code: 原始股票代码
+            
+        Returns:
+            Optional[str]: 标准化后的代码或None
+        """
+        if not isinstance(code, str):
+            return None
+        
+        # 如果已经有后缀，直接返回
+        if '.' in code:
+            return code
+        
+        # 根据前缀判断交易所
+        if code.startswith('6'):
+            return f"{code}.SH"
+        elif code.startswith('0') or code.startswith('3'):
+            return f"{code}.SZ"
+        elif code.startswith('8') or code.startswith('4'):
+            # 北交所/新三板，暂不处理
+            return None
+        
+        return code
     
     def _snapshot_filter(self):
         """快照过滤 - 三防线精筛 (CTO: 使用事件定时器)"""

@@ -17,6 +17,14 @@ except ImportError:
     handler.setFormatter(log_mod.Formatter('%(levelname)s: %(message)s'))
     logger.addHandler(handler)
 
+# 导入InstrumentCache (紧急修复P0级事故)
+try:
+    from logic.data_providers.instrument_cache import get_instrument_cache
+    INSTRUMENT_CACHE_AVAILABLE = True
+except ImportError:
+    INSTRUMENT_CACHE_AVAILABLE = False
+    logger.warning("⚠️ InstrumentCache未找到，将使用备用计算方式")
+
 
 class FullMarketScanner:
     """
@@ -124,11 +132,50 @@ class FullMarketScanner:
             # 涨幅 = (当前价 - 昨收) / 昨收 * 100
             df['change_pct'] = (df['price'] - df['prev_close']) / df['prev_close'] * 100
             
-            # 简化换手率（实际需结合流通市值）
-            df['turnover_rate'] = df['amount'] / 1e6
+            # ===== 紧急修复P0级事故: 使用真实公式计算换手率和量比 =====
+            # 获取InstrumentCache实例
+            instrument_cache = get_instrument_cache() if INSTRUMENT_CACHE_AVAILABLE else None
             
-            # 量比 = 当前成交量 / 历史均量 (这里简化为基于当前数据的计算)
-            df['volume_ratio'] = df['volume'] / (df['volume'].mean() if len(df) > 0 else 1)
+            # 计算真实换手率和量比
+            turnover_rates = []
+            volume_ratios = []
+            
+            for _, row in df.iterrows():
+                stock_code = row['stock_code']
+                volume = row['volume']
+                
+                # 获取FloatVolume和5日均量
+                if instrument_cache:
+                    float_volume = instrument_cache.get_float_volume(stock_code)
+                    avg_5d_volume = instrument_cache.get_5d_avg_volume(stock_code)
+                else:
+                    float_volume = 0
+                    avg_5d_volume = 0
+                
+                # 真实换手率 = 成交量 / 流通股本 * 100%
+                if float_volume and float_volume > 0:
+                    turnover_rate = (volume / float_volume) * 100
+                else:
+                    # 备用: 如果无法获取FloatVolume，使用基于amount的估算
+                    turnover_rate = row['amount'] / 1e8  # 粗略估算
+                
+                # 真实量比 = 当前成交量 / 5日平均成交量
+                if avg_5d_volume and avg_5d_volume > 0:
+                    volume_ratio = volume / avg_5d_volume
+                else:
+                    # 备用: 如果无法获取历史均量，使用基于均值的相对比值
+                    volume_ratio = volume / (df['volume'].mean() if len(df) > 0 else 1)
+                
+                turnover_rates.append(turnover_rate)
+                volume_ratios.append(volume_ratio)
+            
+            df['turnover_rate'] = turnover_rates
+            df['volume_ratio'] = volume_ratios
+            df['float_volume'] = [instrument_cache.get_float_volume(code) if instrument_cache else 0 for code in df['stock_code']]
+            df['avg_5d_volume'] = [instrument_cache.get_5d_avg_volume(code) if instrument_cache else 0 for code in df['stock_code']]
+            
+            logger.debug(f"📊 真实指标计算完成: 平均换手率 {np.mean(turnover_rates):.2f}%, 平均量比 {np.mean(volume_ratios):.2f}")
+            # ===== 紧急修复结束 =====
             
             # CTO加固: 向量化过滤 (一行代码处理数千只股票)
             mask = (
