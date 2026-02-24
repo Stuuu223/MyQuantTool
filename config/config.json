@@ -20,5 +20,6 @@
       "vipsxmd1.thinktrader.net:55310",
       "vipsxmd2.thinktrader.net:55310"
     ]
-  }
+  },
+  "_comment": "QMT VIP Token should be set via QMT_VIP_TOKEN environment variable for security"
 }

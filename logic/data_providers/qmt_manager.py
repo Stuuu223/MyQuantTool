@@ -208,19 +208,25 @@ class QmtDataManager:
         return "H:/QMT/userdata_mini"  # 这个路径在.env文件中有配置
 
     def _load_vip_token(self) -> str:
-        """从配置文件加载VIP Token"""
+        """从配置文件加载VIP Token - 优先环境变量，其次主配置文件"""
+        # 1. 优先从环境变量读取
+        env_token = os.getenv('QMT_VIP_TOKEN')
+        if env_token and env_token.strip():
+            logger.info("[QmtDataManager] 从环境变量读取VIP Token")
+            return env_token.strip()
+        
+        # 2. 从主配置文件读取
         try:
-            config_path = (
-                Path(__file__).parent.parent.parent / "config" / "qmt_config.json"
-            )
+            config_path = Path(__file__).parent.parent.parent / "config" / "config.json"
             if config_path.exists():
                 with open(config_path, "r", encoding="utf-8") as f:
                     config = json.load(f)
-                    token = config.get("vip_token", "")
+                    token = config.get("qmt_vip_token", "")  # 使用新的字段名
                     if token:
+                        logger.info("[QmtDataManager] 从config.json读取VIP Token")
                         return token
         except Exception as e:
-            logger.warning(f"[QmtDataManager] 加载VIP Token失败: {e}")
+            logger.warning(f"[QmtDataManager] 从config.json加载VIP Token失败: {e}")
 
         logger.info(f"[QmtDataManager] 使用默认VIP Token")
         return self.DEFAULT_VIP_TOKEN
@@ -890,7 +896,7 @@ def init_qmt_data_dir() -> None:
 
         if not qmt_dir:
             raise RuntimeError(
-                "Config.qmt_data_dir is empty, please set it in config/qmt_config.json"
+                "Config.qmt_data_dir is empty, please set it in config/config.json"
             )
 
         # 设置 QMT 数据目录
@@ -925,7 +931,7 @@ class QMTManager:
         初始化 QMT 管理器
 
         Args:
-            config_path: 配置文件路径，默认为 config/qmt_config.json
+            config_path: 配置文件路径，默认为 config/config.json
         """
         self.config = self._load_config(config_path)
         self.data_connected = False
@@ -943,19 +949,21 @@ class QMTManager:
         self._init_subscription()
 
     def _load_config(self, config_path: Optional[str]) -> Dict:
-        """加载配置文件"""
+        """加载配置文件 - 优先使用主配置文件"""
         if config_path is None:
-            project_root = Path(__file__).parent.parent
-            config_path = project_root / "config" / "qmt_config.json"
+            # 优先使用主配置文件
+            config_path = Path(__file__).parent.parent.parent / "config" / "config.json"
 
         config_file = Path(config_path)
         if config_file.exists():
             with open(config_file, "r", encoding="utf-8") as f:
                 return json.load(f)
         else:
+            # 如果主配置文件不存在，返回默认配置
             return {
                 "qmt_data": {"enabled": True, "ip": "127.0.0.1", "port": 58610},
                 "qmt_trader": {"enabled": False},
+                "qmt_vip_token": self.DEFAULT_VIP_TOKEN,  # 添加VIP token默认值
             }
 
     def _init_data_interface(self):
