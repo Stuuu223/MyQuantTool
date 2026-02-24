@@ -29,6 +29,9 @@ from typing import Optional, List, Dict, Any, Tuple, Union
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 
+# 先初始化logger
+logger = logging.getLogger(__name__)
+
 # 导入xtquant基础模块
 try:
     from xtquant import xtdata, xttrader
@@ -47,10 +50,6 @@ except ImportError:
 
 # 导入QMTRouter - 接入熔断机制
 from logic.data_providers.fallback_provider import QMTRouter, CircuitBreakerError
-
-import logging
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass
