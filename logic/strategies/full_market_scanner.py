@@ -300,10 +300,9 @@ class FullMarketScanner:
             from logic.strategies.unified_warfare_scanner_adapter import integrate_with_fullmarket_scanner
             from logic.strategies.unified_warfare_core import get_unified_warfare_core
             
-            # 转换为适配器期望的格式
-            scanner_results = []
-            for _, row in snapshot_df.iterrows():
-                scanner_results.append({
+            # 转换为适配器期望的格式 (CTO强制: 使用to_dict代替iterrows)
+            scanner_results = [
+                {
                     'code': row['stock_code'],
                     'price': row['price'],
                     'volume': row['volume'],
@@ -312,7 +311,9 @@ class FullMarketScanner:
                     'high': row['high'],
                     'low': row['low'],
                     'prev_close': row['prev_close'],
-                })
+                }
+                for row in snapshot_df.to_dict('records')
+            ]
             
             # 调用战法检测器
             enhanced_results = integrate_with_fullmarket_scanner(scanner_results)
@@ -322,7 +323,7 @@ class FullMarketScanner:
             
         except ImportError as e:
             logger.warning(f"⚠️ 战法检测器未找到，返回原始结果: {e}")
-            # 返回原始快照数据
+            # 返回原始快照数据 (CTO强制: 使用to_dict代替iterrows)
             return [
                 {
                     'code': row['stock_code'],
@@ -333,10 +334,11 @@ class FullMarketScanner:
                     'warfare_events': [],
                     'warfare_confidence': 0.0
                 }
-                for _, row in snapshot_df.iterrows()
+                for row in snapshot_df.to_dict('records')
             ]
         except Exception as e:
             logger.error(f"❌ 战法检测失败: {e}")
+            # CTO强制: 使用to_dict代替iterrows
             return [
                 {
                     'code': row['stock_code'],
@@ -348,7 +350,7 @@ class FullMarketScanner:
                     'warfare_confidence': 0.0,
                     'error': str(e)
                 }
-                for _, row in snapshot_df.iterrows()
+                for row in snapshot_df.to_dict('records')
             ]
 
 
@@ -383,7 +385,8 @@ if __name__ == "__main__":
         
         if not results.empty:
             print("\n前5只股票:")
-            for i, (_, row) in enumerate(results.head(5).iterrows()):
+            # CTO强制: 使用to_dict代替iterrows
+            for i, row in enumerate(results.head(5).to_dict('records')):
                 print(f"  {i+1}. {row['stock_code']} - {row['price']:.2f} ({row['change_pct']:+.2f}%)")
         
     except Exception as e:

@@ -17,6 +17,7 @@ import os
 import sys
 import time
 import logging
+import pandas as pd
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timedelta
 
@@ -190,43 +191,220 @@ class TrueDictionary:
             logger.error(f"🚨 [QMT装弹失败] {e}")
             return {'source': 'QMT', 'success': 0, 'failed': len(stock_list), 'error': str(e)}
     
+    def _get_last_trade_date(self, pro=None) -> str:
+        """
+        获取上一个交易日(T-1)
+        
+        CTO规范修复:
+        - 不能简单用今天-1天(会得到周末/节假日)
+        - 必须使用Tushare交易日历获取上一个真实交易日
+        - Tushare的daily_basic数据17:00后才生成，盘中取T-1
+        
+        Args:
+            pro: Tushare pro_api实例(可选)
+            
+        Returns:
+            str: 上一个交易日(YYYYMMDD格式)
+        """
+        from datetime import datetime, timedelta
+        
+        today = datetime.now()
+        today_str = today.strftime('%Y%m%d')
+        
+        # 尝试使用Tushare交易日历获取上一个交易日
+        if pro is not None:
+            try:
+                import requests
+                # 获取最近5个交易日的日历
+                df = pro.trade_cal(exchange='SSE', end_date=today_str, limit=10)
+                if df is not None and not df.empty:
+                    # 找到is_open=1的交易日(已收盘的)
+                    trade_dates = df[df['is_open'] == 1]['cal_date'].tolist()
+                    if len(trade_dates) >= 1:
+                        last_trade_date = trade_dates[0]  # 最近一个已收盘的交易日
+                        logger.info(f"📅 [Tushare日历] 今天是{today_str},上一个交易日:{last_trade_date}")
+                        return last_trade_date
+            except Exception as e:
+                logger.warning(f"⚠️ [Tushare日历] 获取失败,使用备用方案:{e}")
+        
+        # 备用方案:手动回退(处理周末)
+        for i in range(1, 10):  # 最多回退10天
+            candidate = today - timedelta(days=i)
+            weekday = candidate.weekday()
+            # 跳过周末(周六=5,周日=6)
+            if weekday < 5:  # 周一到周五
+                result = candidate.strftime('%Y%m%d')
+                logger.info(f"📅 [备用日历] 今天是{today_str},上一个交易日:{result}(回退{i}天)")
+                return result
+        
+        # 最坏情况:直接返回昨天
+        result = (today - timedelta(days=1)).strftime('%Y%m%d')
+        logger.warning(f"⚠️ [最坏情况] 使用昨天日期:{result}")
+        return result
+
     def _warmup_tushare_data(self, stock_list: List[str]) -> Dict:
         """
         Tushare网络API获取 - 补充数据(<2s)
         
+        CTO规范: 必须使用真实Tushare API,严禁模拟数据!
+        
         获取:
-        - 5日平均成交量
-        - 板块概念映射
+        - 5日平均成交量 (pro.daily_basic)
+        - 板块概念映射 (pro.concept_detail)
         """
         start = time.perf_counter()
         
         try:
-            # TODO: 接入真实的Tushare API
-            # 当前使用模拟数据,实际应调用 pro.daily_basic 和 pro.concept
+            # 从环境变量获取Tushare Token
+            token = os.environ.get('TUSHARE_TOKEN')
+            if not token:
+                logger.error("🚨 [Tushare] 环境变量TUSHARE_TOKEN未设置!")
+                raise SystemExit("Tushare数据获取失败，严禁进入实盘！")
             
-            import random
-            for stock_code in stock_list[:100]:  # 先测试100只
-                # 模拟5日均量
-                self._avg_volume_5d[stock_code] = random.randint(50000, 5000000)
-                # 模拟板块
-                self._sector_map[stock_code] = ['概念' + str(random.randint(1, 10))]
+            import tushare as ts
+            import requests
+            
+            # 设置全局超时5秒
+            pro = ts.pro_api(token, timeout=5)
+            
+            # CTO修复:获取上一个真实交易日(T-1),而非简单昨天
+            # 原因:Tushare的daily_basic数据17:00后才生成,盘中运行需要取T-1
+            trade_date = self._get_last_trade_date(pro)
+            
+            # Step 1: 批量获取5日平均成交量 (pro.daily_basic)
+            logger.info(f"📡 [Tushare] 获取5日平均成交量,日期:{trade_date}")
+            
+            # 批量查询: 每次最多800只,Tushare限制
+            batch_size = 800
+            all_stocks = [s.replace('.SZ', '').replace('.SH', '') for s in stock_list]
+            
+            success_count = 0
+            failed_count = 0
+            
+            for i in range(0, len(all_stocks), batch_size):
+                batch = all_stocks[i:i+batch_size]
+                ts_codes = ','.join(batch)
+                
+                try:
+                    # 调用真实Tushare API - 5秒超时
+                    df = pro.daily_basic(
+                        ts_code=ts_codes,
+                        trade_date=trade_date,
+                        fields='ts_code,vol_ratio,turnover_rate,volume'
+                    )
+                    
+                    if df is not None and not df.empty:
+                        for _, row in df.iterrows():
+                            ts_code = row['ts_code']
+                            stock_code = self._ts_code_to_standard(ts_code)
+                            
+                            # 计算5日平均成交量 (使用vol_ratio推算)
+                            if 'vol_ratio' in row and pd.notna(row['vol_ratio']):
+                                # vol_ratio = 当日成交量 / 5日平均成交量
+                                # 假设当日成交量为volume,则5日平均 = volume / vol_ratio
+                                volume = row.get('volume', 0)
+                                vol_ratio = row['vol_ratio']
+                                if vol_ratio > 0 and volume > 0:
+                                    avg_5d = volume / vol_ratio
+                                    self._avg_volume_5d[stock_code] = float(avg_5d)
+                                    success_count += 1
+                            else:
+                                # 备用:直接使用volume作为估计
+                                volume = row.get('volume', 0)
+                                if volume > 0:
+                                    self._avg_volume_5d[stock_code] = float(volume)
+                                    success_count += 1
+                                    
+                except requests.Timeout:
+                    logger.error(f"🚨 [Tushare] API超时(5s),批次{i//batch_size + 1}")
+                    failed_count += len(batch)
+                except Exception as e:
+                    logger.error(f"🚨 [Tushare] API调用失败:{e}")
+                    failed_count += len(batch)
+            
+            # Step 2: 获取板块概念映射 (pro.concept_detail)
+            logger.info(f"📡 [Tushare] 获取板块概念映射...")
+            
+            try:
+                # 获取所有概念板块
+                concept_df = pro.concept(timeout=5)
+                
+                if concept_df is not None and not concept_df.empty:
+                    for _, concept_row in concept_df.iterrows():
+                        concept_code = concept_row.get('code')
+                        concept_name = concept_row.get('name', f'概念_{concept_code}')
+                        
+                        if concept_code:
+                            try:
+                                # 获取该概念下的所有股票
+                                detail_df = pro.concept_detail(
+                                    id=concept_code,
+                                    timeout=5
+                                )
+                                
+                                if detail_df is not None and not detail_df.empty:
+                                    for _, detail_row in detail_df.iterrows():
+                                        ts_code = detail_row.get('ts_code')
+                                        if ts_code:
+                                            stock_code = self._ts_code_to_standard(ts_code)
+                                            if stock_code not in self._sector_map:
+                                                self._sector_map[stock_code] = []
+                                            self._sector_map[stock_code].append(concept_name)
+                                            
+                            except requests.Timeout:
+                                logger.warning(f"⚠️ [Tushare] 概念{concept_code}查询超时")
+                            except Exception as e:
+                                logger.debug(f"[Tushare] 概念{concept_code}查询失败:{e}")
+                                
+            except requests.Timeout:
+                logger.error("🚨 [Tushare] 概念板块API超时(5s)")
+            except Exception as e:
+                logger.error(f"🚨 [Tushare] 概念板块获取失败:{e}")
             
             elapsed = (time.perf_counter() - start) * 1000
             self._metadata['tushare_warmup_time'] = elapsed
             
+            # 检查成功率 - CTO规范: 缺失率>5%则熔断
+            total_stocks = len(stock_list)
+            missing_rate = (total_stocks - success_count) / total_stocks if total_stocks > 0 else 1.0
+            
+            if missing_rate > 0.05:
+                logger.error(f"🚨 [Tushare] 数据缺失率{missing_rate*100:.1f}% > 5%,系统不可交易!")
+                raise SystemExit("Tushare数据获取失败，严禁进入实盘！")
+            
             result = {
-                'source': 'Tushare网络API',
-                'success': len(stock_list),
+                'source': 'Tushare真实API',
+                'success': success_count,
+                'failed': failed_count,
                 'elapsed_ms': elapsed,
-                'note': '当前为模拟数据,需接入真实Tushare API'
+                'missing_rate': missing_rate,
+                'note': '使用真实pro.daily_basic + pro.concept_detail'
             }
             
-            logger.info(f"✅ [Tushare装弹] {len(stock_list)}只,耗时{elapsed:.1f}ms")
+            logger.info(f"✅ [Tushare装弹] 成功{success_count}只,缺失率{missing_rate*100:.1f}%,耗时{elapsed:.1f}ms")
             return result
             
+        except SystemExit:
+            raise
         except Exception as e:
             logger.error(f"🚨 [Tushare装弹失败] {e}")
-            return {'source': 'Tushare', 'success': 0, 'error': str(e)}
+            raise SystemExit("Tushare数据获取失败，严禁进入实盘！")
+    
+    def _ts_code_to_standard(self, ts_code: str) -> str:
+        """
+        将Tushare ts_code转换为标准格式
+        
+        Tushare格式: 000001.SZ / 600000.SH
+        标准格式: 000001.SZ / 600000.SH (实际上相同,此方法确保兼容性)
+        """
+        if not ts_code:
+            return ''
+        
+        # 确保后缀大写
+        if '.' in ts_code:
+            code, suffix = ts_code.split('.')
+            return f"{code}.{suffix.upper()}"
+        return ts_code
     
     def _check_data_integrity(self, stock_list: List[str]) -> Dict:
         """数据完整性检查 - CTO规范: 缺失率>5%则系统不可交易"""

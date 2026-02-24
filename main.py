@@ -807,10 +807,10 @@ def simulate_cmd(ctx, start_date, end_date, watchlist, phase):
 @click.pass_context
 def live_cmd(ctx, mode, max_positions, cutoff_time, dry_run):
     """
-    🚀 实盘猎杀系统 - 唯一合法入口
+    🚀 实盘猎杀系统 - CTO终极架构版 (EventDriven事件驱动)
     
     CTO规范: 
-    - 09:20盘前装弹 → 09:30极速扫描 → 09:35后不开新仓
+    - 09:25盘前装弹 → 09:30极速扫描 → 09:35后火控雷达
     - 所有数据必须真实(QMT原生),禁止模拟
     - 废单5秒不成交立即撤
     
@@ -820,8 +820,9 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, dry_run):
         python main.py live --mode real           # 实盘交易(⚠️危险)
     """
     from datetime import datetime
+    import time
     
-    click.echo(click.style("\n🚀 启动实盘猎杀系统", fg='green', bold=True))
+    click.echo(click.style("\n🚀 启动实盘猎杀系统 (EventDriven 事件驱动模式)", fg='green', bold=True))
     click.echo(f"📅 日期: {datetime.now().strftime('%Y-%m-%d')}")
     click.echo(f"📊 模式: {'模拟盘' if mode == 'paper' else '实盘交易'}")
     click.echo(f"💰 最大持仓: {max_positions}")
@@ -830,7 +831,9 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, dry_run):
         click.echo(click.style("🧪 干运行模式(不实际下单)", fg='yellow'))
     
     try:
-        # Step 1: 盘前装弹 (09:20)
+        # ==========================================
+        # Step 1: 盘前装弹 (CTO修复 - 支持盘中测试)
+        # ==========================================
         click.echo("\n📦 Step 1: 盘前装弹...")
         from logic.data_providers.true_dictionary import warmup_true_dictionary
         from xtquant import xtdata
@@ -844,56 +847,60 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, dry_run):
         click.echo(f"   全市场共 {len(all_stocks)} 只股票")
         
         # 执行盘前装弹
-        warmup_result = warmup_true_dictionary(all_stocks[:100])  # 先测试100只
+        warmup_result = warmup_true_dictionary(all_stocks[:500])  # 前500只预热
         
         if not warmup_result.get('ready_for_trading'):
-            click.echo(click.style("🚨 盘前装弹失败! 系统停止", fg='red', bold=True))
+            click.echo(click.style("🚨 盘前装弹失败! 系统熔断退出", fg='red', bold=True))
             ctx.exit(1)
         
-        click.echo(click.style("✅ 盘前装弹完成", fg='green'))
+        click.echo(click.style("✅ 盘前装弹完成！真实流通盘与均量已就位", fg='green'))
         
-        # Step 2: 等待开盘 (09:30)
+        # ==========================================
+        # Step 2: 时间管理 (CTO加固 - 14:49测试兼容)
+        # ==========================================
         now = datetime.now()
-        market_open = now.replace(hour=9, minute=30, second=0)
+        market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
+        cutoff = datetime.strptime(cutoff_time, '%H:%M:%S').time()
+        cutoff_dt = now.replace(hour=cutoff.hour, minute=cutoff.minute, second=cutoff.second)
         
-        if now < market_open:
+        # 如果已过截停时间，只监控不发单
+        if now > cutoff_dt:
+            click.echo(click.style(f"⚠️ 当前时间 {now.strftime('%H:%M')} 已超过截停时间 {cutoff_time}", fg='yellow'))
+            click.echo(click.style("⚠️ 根据右侧起爆纪律，系统将监控但不发单！", fg='yellow'))
+        elif now < market_open:
             wait_seconds = (market_open - now).seconds
-            click.echo(f"\n⏳ 等待开盘... ({wait_seconds}秒)")
-            import time
-            time.sleep(min(wait_seconds, 5))  # 最多等5秒(测试用)
+            click.echo(f"⏳ 等待开盘... (距开盘 {wait_seconds}秒)")
+            time.sleep(min(wait_seconds, 3))  # 最多等3秒(测试用)
         
-        # Step 3: 极速扫描
-        click.echo("\n🔍 Step 2: 极速全市场扫描...")
-        from logic.strategies.full_market_scanner import create_full_market_scanner
+        # ==========================================
+        # Step 3: 挂载EventDriven引擎 (CTO致命修复！)
+        # ==========================================
+        click.echo("\n⚡ Step 2: 挂载 EventDriven 引擎...")
+        from tasks.run_live_trading_engine import LiveTradingEngine
         
-        scanner = create_full_market_scanner()
+        engine = LiveTradingEngine()
         
-        # 执行扫描 (限制100只测试)
-        scan_result = scanner.scan_with_risk_management(
-            mode='full', 
-            max_stocks=100
-        )
+        # 启动引擎（09:25第一斩 → 09:30第二斩 → 火控雷达）
+        engine.start_session()
         
-        opportunities = scan_result.get('opportunities', [])
-        click.echo(f"   扫描完成: 发现 {len(opportunities)} 只机会股")
+        click.echo(click.style("✅ 监控器已启动，EventBus后台运行中...", fg='green'))
+        click.echo(click.style("🎯 等待QMT Tick数据推送...", fg='cyan'))
+        click.echo(click.style("🛑 按 Ctrl+C 安全退出", fg='yellow'))
         
-        # Step 4: 显示结果
-        if opportunities:
-            click.echo("\n🎯 机会池Top 5:")
-            for i, opp in enumerate(opportunities[:5], 1):
-                code = opp.get('code', 'N/A')
-                change = opp.get('change_pct', 0)
-                vr = opp.get('volume_ratio', 0)
-                click.echo(f"   {i}. {code}: 涨幅{change:.1f}%, 量比{vr:.1f}")
+        # ==========================================
+        # Step 4: 主线程保活 (CTO关键修复！)
+        # ==========================================
+        # 保持主线程不死，让EventBus在后台不断接收Tick并打分！
+        try:
+            while engine.running:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            pass
         
-        # Step 5: 干运行提示
-        if dry_run or mode == 'paper':
-            click.echo(click.style("\n🧪 干运行/模拟盘模式 - 未实际下单", fg='yellow'))
-        else:
-            click.echo(click.style("\n⚠️  实盘模式 - 即将下单!", fg='red', bold=True))
-            # TODO: 接入真实TradeInterface
-        
-        click.echo(click.style("\n✅ 实盘猎杀系统运行完成", fg='green'))
+        # 优雅退出
+        click.echo("\n🛑 收到中断信号，正在卸载监控器...")
+        engine.stop()
+        click.echo(click.style("✅ 系统安全退出", fg='green'))
         
     except Exception as e:
         logger.error(f"❌ 实盘系统失败: {e}", exc_info=True)

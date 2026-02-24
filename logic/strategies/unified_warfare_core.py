@@ -77,10 +77,6 @@ class UnifiedWarfareCore:
         opening_detector = OpeningWeakToStrongDetector()
         self.event_manager.register_detector(opening_detector)
         
-        # 半路突破检测器
-        halfway_detector = HalfwayBreakoutDetector()
-        self.event_manager.register_detector(halfway_detector)
-        
         # 龙头候选检测器
         leader_detector = LeaderCandidateDetector()
         self.event_manager.register_detector(leader_detector)
@@ -99,16 +95,64 @@ class UnifiedWarfareCore:
         
         logger.info("✅ [统一战法核心] 检测器初始化完成")
     
+    def calculate_score(self, stock_data: Dict[str, Any]) -> float:
+        """
+        计算V18动能分数（含时间衰减Ratio）
+        
+        CTO注入：老板的时间坚决度Ratio化
+        A股T+1机制下，资金干得越早越坚决，需规避尾盘骗炮
+        
+        Args:
+            stock_data: 股票数据字典，包含基础分和事件信息
+            
+        Returns:
+            float: 最终得分（含时间衰减权重）
+        """
+        # 1. 获取基础动能分（从stock_data中获取原始confidence或计算基础分）
+        base_score = stock_data.get('confidence', 0.0) * 100  # 转换为百分制
+        
+        # 如果没有基础分，返回0
+        if base_score <= 0:
+            return 0.0
+        
+        # 2. ⭐️ CTO注入：老板的时间坚决度Ratio
+        # 时间段权重配置（根据CTO裁决）
+        now = datetime.now().time()
+        
+        if now <= datetime.time(9, 40):
+            decay_ratio = 1.2   # 09:30-09:40 早盘试盘、抢筹，最坚决，溢价奖励
+        elif now <= datetime.time(10, 30):
+            decay_ratio = 1.0   # 09:40-10:30 主升浪确认，正常推力
+        elif now <= datetime.time(14, 0):
+            decay_ratio = 0.8   # 10:30-14:00 震荡垃圾时间，分数打折
+        else:
+            decay_ratio = 0.5   # 14:00-14:55 尾盘偷袭，严防骗炮，大幅降权（腰斩）
+        
+        # 3. 最终实际得分 = 基础分 * 时间坚决度比率
+        final_score = base_score * decay_ratio
+        
+        # 4. 记录日志（CTO要求）
+        stock_code = stock_data.get('stock_code', 'Unknown')
+        time_str = now.strftime('%H:%M')
+        logger.info(
+            f"⏰ [V18时间衰减] {stock_code} | "
+            f"时间权重: {decay_ratio:.1f}x ({time_str}) | "
+            f"基础分: {base_score:.1f} | "
+            f"最终分: {final_score:.1f}"
+        )
+        
+        return final_score
+    
     def process_tick(self, tick_data: Dict[str, Any], context: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
-        处理单个Tick数据，检测多战法事件
+        处理单个Tick数据，检测多战法事件（V18时间衰减Ratio增强版）
         
         Args:
             tick_data: Tick数据字典
             context: 上下文信息
             
         Returns:
-            检测到的事件列表
+            检测到的事件列表（含时间衰减后的分数）
         """
         try:
             # 更新总tick计数
@@ -120,24 +164,40 @@ class UnifiedWarfareCore:
             # 更新事件计数
             self._total_events += len(detected_events)
             
-            # 转换事件为字典格式（便于后续处理）
+            # 转换事件为字典格式（便于后续处理）并应用V18时间衰减Ratio
             event_dicts = []
             for event in detected_events:
+                # 构造stock_data用于计算时间衰减分数
+                stock_data = {
+                    'stock_code': event.stock_code,
+                    'confidence': event.confidence,
+                    'timestamp': event.timestamp,
+                    'event_type': event.event_type.value
+                }
+                
+                # ⭐️ 应用V18时间衰减Ratio计算最终分数
+                final_score = self.calculate_score(stock_data)
+                
                 event_dict = {
                     'event_type': event.event_type.value,
                     'stock_code': event.stock_code,
                     'timestamp': event.timestamp,
                     'data': event.data,
                     'confidence': event.confidence,
+                    'final_score': final_score,  # ⭐️ 新增：时间衰减后的最终分数
                     'description': event.description
                 }
                 event_dicts.append(event_dict)
                 
-                # 记录检测到的事件
-                logger.debug(f"📊 [统一战法] 检测事件: {event.event_type.value} - {event.stock_code} @ {event.confidence:.2f}")
+                # 记录检测到的事件（含时间衰减信息）
+                logger.debug(
+                    f"📊 [统一战法V18] 检测事件: {event.event_type.value} - "
+                    f"{event.stock_code} @ 原始置信度:{event.confidence:.2f}, "
+                    f"时间衰减后:{final_score:.1f}"
+                )
             
             if detected_events:
-                logger.info(f"🎯 [统一战法] 本tick检测到 {len(detected_events)} 个事件")
+                logger.info(f"🎯 [统一战法V18] 本tick检测到 {len(detected_events)} 个事件")
             
             return event_dicts
             
