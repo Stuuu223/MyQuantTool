@@ -548,14 +548,14 @@ class TimeMachineEngine:
             if not passes_filters:
                 base_score = min(abs(change_pct) * 2, 50)  # 降低分数权重
             else:
-                # 通过过滤，给予较高分数
-                base_score = min(abs(change_pct) * 5, 100)  # 正常分数权重
-                # 添加量比和换手率的额外加分
-                if volume_ratio > 3.0:  # 大幅放量
-                    base_score += 10
-                if turnover_rate_per_min > 0.5:  # 高效换手
-                    base_score += 5
-            
+                            # 通过过滤，给予较高分数
+                            base_score = min(abs(change_pct) * 5, 100)  # 正常分数权重
+                            # 添加量比和换手率的额外加分 (CTO SSOT原则：从配置获取)
+                            bonus_config = config_manager.get('live_sniper.scoring_bonuses')
+                            if volume_ratio > bonus_config['extreme_volume_ratio']:
+                                base_score += bonus_config['extreme_vol_bonus']
+                            if turnover_rate_per_min > bonus_config['high_efficiency_turnover_min']:
+                                base_score += bonus_config['high_turnover_bonus']            
             # 应用时间衰减权重
             from datetime import datetime
             now = datetime.strptime('09:40', '%H:%M').time()
