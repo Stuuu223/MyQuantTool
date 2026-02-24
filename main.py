@@ -173,6 +173,8 @@ def cli(ctx, version):
               help='股票池: 单只股票、CSV文件路径，或使用"TUSHARE"实时粗筛')
 @click.option('--full_market', is_flag=True,
               help='全市场模式: 使用Tushare每日动态粗筛 (CTO强制)')
+@click.option('--volume_percentile', default=0.88, type=float,
+              help='量比分位数阈值 (默认: 0.88)')
 @click.option('--strategy', '-s', default='right_side_breakout',
               type=click.Choice(['right_side_breakout', 'v18', 'time_machine', 'behavior_replay']),
               help='策略名称 (默认: right_side_breakout)')
@@ -181,7 +183,7 @@ def cli(ctx, version):
 @click.option('--save', is_flag=True, help='保存结果到文件')
 @click.option('--target', help='目标股票代码（用于验证，如300986）')
 @click.pass_context
-def backtest_cmd(ctx, date, start_date, end_date, universe, full_market, strategy, output, save, target):
+def backtest_cmd(ctx, date, start_date, end_date, universe, full_market, volume_percentile, strategy, output, save, target):
     """
     执行回测
     
@@ -223,6 +225,11 @@ def backtest_cmd(ctx, date, start_date, end_date, universe, full_market, strateg
         # CTODict: 全息时间机器跨日回测
         if start_date and end_date and full_market:
             from logic.backtest.time_machine_engine import TimeMachineEngine
+            from logic.data_providers.universe_builder import UniverseBuilder
+            
+            # 更新universe_builder的量比阈值
+            UniverseBuilder.VOLUME_RATIO_PERCENTILE = volume_percentile
+            click.echo(f"📊 量比分位数阈值设置为: {volume_percentile}")
             
             engine = TimeMachineEngine(initial_capital=20000.0)
             results = engine.run_continuous_backtest(
@@ -249,6 +256,11 @@ def backtest_cmd(ctx, date, start_date, end_date, universe, full_market, strateg
         # CTODict: 单日全市场回测也使用time_machine_engine
         if date and full_market:
             from logic.backtest.time_machine_engine import TimeMachineEngine
+            from logic.data_providers.universe_builder import UniverseBuilder
+            
+            # 更新universe_builder的量比阈值
+            UniverseBuilder.VOLUME_RATIO_PERCENTILE = volume_percentile
+            click.echo(f"📊 量比分位数阈值设置为: {volume_percentile}")
             
             engine = TimeMachineEngine(initial_capital=20000.0)
             results = engine.run_continuous_backtest(
