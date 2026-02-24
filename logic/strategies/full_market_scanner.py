@@ -17,13 +17,13 @@ except ImportError:
     handler.setFormatter(log_mod.Formatter('%(levelname)s: %(message)s'))
     logger.addHandler(handler)
 
-# 导入InstrumentCache (紧急修复P0级事故)
+# CTO规范: 导入TrueDictionary (替代InstrumentCache)
 try:
-    from logic.data_providers.instrument_cache import get_instrument_cache
-    INSTRUMENT_CACHE_AVAILABLE = True
+    from logic.data_providers.true_dictionary import get_true_dictionary
+    TRUE_DICTIONARY_AVAILABLE = True
 except ImportError:
-    INSTRUMENT_CACHE_AVAILABLE = False
-    logger.warning("⚠️ InstrumentCache未找到，将使用备用计算方式")
+    TRUE_DICTIONARY_AVAILABLE = False
+    logger.warning("⚠️ TrueDictionary未找到，系统将无法计算真实换手率")
 
 
 class FullMarketScanner:
@@ -133,18 +133,18 @@ class FullMarketScanner:
             df['change_pct'] = (df['price'] - df['prev_close']) / df['prev_close'] * 100
             
             # ===== CTO Phase 22: 纯向量化真实计算,零假数据,零Fallback =====
-            # 获取InstrumentCache实例
-            instrument_cache = get_instrument_cache() if INSTRUMENT_CACHE_AVAILABLE else None
+            # CTO规范: 使用TrueDictionary(替代InstrumentCache)
+            true_dict = get_true_dictionary() if TRUE_DICTIONARY_AVAILABLE else None
             
-            # CTO强制: 检查InstrumentCache是否已预热,未预热则系统熔断
-            if not instrument_cache or instrument_cache.get_cache_stats()['float_volume_cached'] == 0:
-                logger.error("🚨 [CTO熔断] InstrumentCache未预热,无法获取真实流通盘数据! 系统停止扫描!")
+            # CTO强制: 检查TrueDictionary是否已预热,未预热则系统熔断
+            if not true_dict or not true_dict.is_ready_for_trading():
+                logger.error("🚨 [CTO熔断] TrueDictionary未预热,无法获取真实流通盘数据! 系统停止扫描!")
                 return pd.DataFrame()  # 返回空DataFrame,系统熔断
             
             # CTO强制: 纯向量化map操作,禁止iterrows循环
-            # 使用stock_code映射到FloatVolume和5日均量
-            df['float_volume'] = df['stock_code'].map(instrument_cache.get_float_volume)
-            df['avg_5d_volume'] = df['stock_code'].map(instrument_cache.get_5d_avg_volume)
+            # 使用stock_code映射到FloatVolume和5日均量(内存O(1)查询)
+            df['float_volume'] = df['stock_code'].map(true_dict.get_float_volume)
+            df['avg_5d_volume'] = df['stock_code'].map(true_dict.get_avg_volume_5d)
             
             # CTO强制: 检查数据完整性,缺失率>5%则熔断
             missing_float = df['float_volume'].isna().sum() + (df['float_volume'] == 0).sum()
