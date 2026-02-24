@@ -395,13 +395,8 @@ class TimeMachineEngine:
                 logger.warning(f"【时间机器】{stock_code} 涨幅检查失败: {msg}")
                 return None
             
-            # 从配置管理器获取参数 (CTO SSOT原则)
-            config_manager = get_config_manager()
-            price_momentum_percentile = config_manager.get_price_momentum_percentile('halfway')
-            volume_surge_percentile = config_manager.get_volume_ratio_percentile('halfway')
-            
-            # 使用配置中的百分位数值来确定状态
-            # 由于回演时没有实时量比数据，我们基于涨幅来估算状态
+            # 回演评分逻辑（基于涨幅）
+            # 注：回演时没有实时量比数据，使用涨幅估算状态
             if change_pct > 5:
                 status = 'strong'
             elif change_pct > 2:
@@ -549,10 +544,7 @@ class TimeMachineEngine:
                 
                 logger.info(f"【时间机器】使用Tushare实时粗筛: {date}")
                 try:
-                    # 从配置管理器获取参数
-                    config_manager = get_config_manager()
-                    volume_surge_percentile = config_manager.get_volume_ratio_percentile('halfway')
-                    
+                    # UniverseBuilder内部使用正确的绝对阈值3.0
                     builder = UniverseBuilder()
                     stock_pool = builder.get_daily_universe(date)
                     
