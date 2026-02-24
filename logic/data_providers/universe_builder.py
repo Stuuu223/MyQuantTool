@@ -39,7 +39,7 @@ class UniverseBuilder:
     
     # 过滤阈值
     MIN_AMOUNT = 30000000  # 3000万
-    VOLUME_RATIO_PERCENTILE = 0.88  # 量比分位数阈值 (ratio化)
+    VOLUME_RATIO_PERCENTILE = 0.92  # 量比分位数阈值 (ratio化) - 全息回演使用更严格阈值
     
     def __init__(self):
         self.tushare_token = self._load_tushare_token()
