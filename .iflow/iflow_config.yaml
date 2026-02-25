@@ -36,7 +36,7 @@ prohibited_actions:
 
 # 项目路径
 project_paths:
-  root: E:\MyQuantTool
+  root: MyQuantTool
   core_logic: logic/
   config: config/
   data: data/
