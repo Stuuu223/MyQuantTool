@@ -1,40 +1,335 @@
-# iFlow CLI 启动配置
-# 此文件定义iFlow CLI会话启动时的行为
+# iFlow CLI V20.0 - AI-Native终极开发形态配置
+# 此文件定义iFlow CLI会话启动时的行为与黑科技特性
+# 
+# 角色分工链:
+#   Boss(战略定调) → CTO(架构审计) → iFlow(AI项目总监) → Sub-Agents(开发专家)
+#
+# 版本: V20.0 - 极致全息架构版
+# 更新: 2026-02-26
 
+# =============================================================================
+# 黑科技1: 记忆钩子(Memory Hooks) - 治愈AI失忆症
+# =============================================================================
+memory_persistence:
+  enabled: true
+  short_term_memory: data/memory/ShortTermMemory.json
+  auto_save_on_phase_complete: true
+  
+  # 每次会话启动时强制加载的关键记忆
+  bootstrap_memories:
+    - key: architecture_version
+      value: "V20.0 - 极致全息架构"
+      echo: true  # 启动时高亮显示
+      
+    - key: data_source_policy
+      value: "100% QMT本地架构，Tushare已物理死亡"
+      echo: true
+      
+    - key: zero_magic_number_rule
+      value: "严禁硬编码！所有阈值必须从ConfigManager读取live_sniper配置"
+      echo: true
+      
+    - key: holographic_architecture
+      value: "两段式: Pandas向量化秒定位 + Tick级事件驱动微观模拟"
+      echo: true
+      
+    - key: current_phase
+      value: "Phase A2-A4: 全息下载器+微观防线+回测引擎"
+      echo: true
+
+  # 阶段完成时自动记录
+  phase_completion_hooks:
+    - trigger: phase_complete
+      action: append_to_memory
+      fields:
+        - timestamp
+        - phase_name
+        - key_decisions
+        - next_phase_ready
+
+# =============================================================================
+# 黑科技2: 自愈断言(Self-Healing Assertions) - 红线强制拦截
+# =============================================================================
+redline_hooks:
+  enabled: true
+  audit_script: .iflow/audit_rules.py
+  
+  # 代码提交前强制检查
+  pre_commit_checks:
+    - name: magic_number_scan
+      description: "扫描魔法数字硬编码"
+      pattern: "(?<![a-zA-Z_])(0\.8[0-9]|0\.9[0-9]|3\.0|5\.0)(?![0-9])"
+      forbidden_contexts:
+        - "volume_ratio"
+        - "turnover"
+        - "change_pct"
+        - "threshold"
+      severity: error
+      auto_reject: true
+      message: "检测到魔法数字硬编码！必须从ConfigManager读取配置"
+      
+    - name: tushare_residue_scan
+      description: "扫描Tushare残留"
+      pattern: "(?i)(tushare|ts\.pro_api|daily_basic|ts_code)"
+      severity: error
+      auto_reject: true
+      message: "检测到Tushare残留！必须使用QMT本地数据"
+      
+    - name: hardcoded_path_scan
+      description: "扫描硬编码路径"
+      pattern: "[C-Z]:\\\\[^\"'\s]+|/home/[^\"'\s]+|/Users/[^\"'\s]+"
+      allowed_paths:
+        - "__file__"
+        - "PathResolver"
+        - "get_root"
+      severity: warning
+      message: "检测到可疑硬编码路径，请使用PathResolver"
+      
+    - name: for_loop_tick_scan
+      description: "扫描Tick逐行遍历"
+      pattern: "for.*tick.*in.*ticks|for.*row.*in.*df\."
+      allowed_contexts:
+        - "event_driven_simulation"
+        - "micro_defense_check"
+      severity: error
+      auto_reject: true
+      message: "严禁For循环遍历Tick数据！必须使用Pandas向量化"
+      
+    - name: config_manager_check
+      description: "验证ConfigManager使用"
+      required_patterns:
+        - "get_config_manager"
+        - "config\.get"
+      forbidden_patterns:
+        - "volume_ratio.*=.*0\.[0-9]+"
+        - "turnover.*=.*[0-9]+\.[0-9]+"
+      severity: error
+      message: "必须使用ConfigManager读取配置，严禁硬编码阈值"
+
+# =============================================================================
+# 黑科技3: Agent角色扮演沙盒(Multi-Persona Sandboxing)
+# =============================================================================
+expert_routing:
+  enabled: true
+  default_agent: general_coder
+  
+  # 专家Agent定义
+  expert_agents:
+    - name: quant_strategist
+      description: "量化策略专家 - 负责V18算法、向量化计算、时间衰减"
+      triggers:
+        - tags: ["strategy", "v18", "vectorization", "scoring"]
+        - keywords: ["volume_ratio", "time_decay", "momentum", "breakout"]
+      system_prompt: |
+        你是顶级量化策略研究员，专精短线右侧起爆战法。
+        核心能力：
+        1. Pandas向量化计算（严禁For循环遍历Tick）
+        2. V18双Ratio算法实现（量比+换手率时间衰减）
+        3. 动态分位数阈值计算
+        4. 微观盘口特征识别
+        
+        铁律：
+        - 所有阈值从ConfigManager读取
+        - 零硬编码，零Magic Number
+        - 必须用cumsum/apply等向量化操作
+        
+    - name: data_engineer
+      description: "数据工程师 - 负责下载器、数据管道、QMT接口"
+      triggers:
+        - tags: ["data", "downloader", "qmt", "tick"]
+        - keywords: ["download", "get_local_data", "xtdata", "holographic"]
+      system_prompt: |
+        你是量化数据工程师，专精高频数据管道建设。
+        核心能力：
+        1. QMT本地数据接口优化
+        2. 大规模Tick数据下载与管理
+        3. 日期区间计算与去重
+        4. 差集下载算法（避免重复I/O）
+        
+        铁律：
+        - 100% QMT本地，零Tushare
+        - 必须维护下载注册表避免重复
+        - 上下文切片：前30后30天
+        
+    - name: microstructure_specialist
+      description: "微观结构专家 - 负责盘口防线、诱多检测、撮合模拟"
+      triggers:
+        - tags: ["microstructure", "defense", "orderbook", "trap"]
+        - keywords: ["bid1", "ask1", "fake_support", "order_withdraw"]
+      system_prompt: |
+        你是市场微观结构专家，专精盘口语言解读。
+        核心能力：
+        1. 买卖五档数据分析
+        2. 诱多诱空陷阱识别
+        3. 大单小单行为区分
+        4. 封单衰减监测
+        
+        铁律：
+        - 使用滑动窗口（15秒=5个Tick）而非固定点
+        - 检测断崖式变化（>70%）而非绝对值
+        - 结合价格行为综合判定
+        
+    - name: backtest_architect
+      description: "回测架构师 - 负责两段式引擎、事件驱动、撮合模拟"
+      triggers:
+        - tags: ["backtest", "replay", "simulation", "time_machine"]
+        - keywords: ["vectorized", "event_driven", "tick_replay", "match_engine"]
+      system_prompt: |
+        你是回测系统架构师，专精高频交易回测引擎。
+        核心能力：
+        1. 两段式混合架构（向量化+事件驱动）
+        2. 逐笔撮合模拟
+        3. 滑点与排队位置计算
+        4. 废单与成交概率模拟
+        
+        铁律：
+        - 阶段1: Pandas向量化O(n)定位起爆点
+        - 阶段2: 事件驱动逐笔模拟（仅限起爆后30秒）
+        - 严禁全局For循环遍历4800个Tick
+        
+    - name: code_auditor
+      description: "代码审计员 - 负责静态检查、规范验证、红线扫描"
+      triggers:
+        - tags: ["audit", "review", "check", "validate"]
+        - action: pre_commit
+      system_prompt: |
+        你是代码审计专家，专精量化代码质量控制。
+        核心能力：
+        1. 静态代码分析
+        2. 架构规范验证
+        3. 红线规则扫描
+        4. 性能瓶颈识别
+        
+        铁律：
+        - 零宽容：Magic Number直接打回
+        - 零宽容：Tushare残留直接打回
+        - 零宽容：硬编码路径警告
+        - 必须验证：ConfigManager读取、向量化实现
+
+  # 路由决策树
+  routing_rules:
+    - condition: "tags contains 'strategy' or 'v18'"
+      target: quant_strategist
+      
+    - condition: "tags contains 'data' or 'download'"
+      target: data_engineer
+      
+    - condition: "tags contains 'microstructure' or 'defense' or 'bid1'"
+      target: microstructure_specialist
+      
+    - condition: "tags contains 'backtest' or 'replay' or 'simulation'"
+      target: backtest_architect
+      
+    - condition: "action == 'pre_commit' or tags contains 'audit'"
+      target: code_auditor
+
+# =============================================================================
+# 黑科技4: 零人工干预夜间基建(Nightly Cron Jobs)
+# =============================================================================
+nightly_tasks:
+  enabled: true
+  schedule: "0 2 * * *"  # 每天凌晨2点
+  log_dir: logs/nightly
+  
+  tasks:
+    - name: daily_k_completeness_check
+      description: "日K完整性巡检"
+      script: tools/check_daily_k_completeness.py
+      action_if_missing: auto_download
+      notify_on_error: true
+      
+    - name: holographic_download_queue
+      description: "全息Tick数据下载队列"
+      script: tools/unified_downloader.py
+      args: ["--type", "holographic", "--context", "30"]
+      only_if: "market_closed and data_incomplete"
+      max_runtime: 3600  # 最多跑1小时
+      
+    - name: data_integrity_audit
+      description: "数据完整性审计"
+      script: .iflow/audit_data_integrity.py
+      generate_report: true
+      report_path: data/audit/nightly_audit_YYYYMMDD.json
+      
+    - name: memory_compaction
+      description: "内存与缓存压缩"
+      script: tools/compact_memory_cache.py
+      vacuum_old_data: true
+      keep_days: 90
+
+  # 巡检报告生成
+  morning_report:
+    enabled: true
+    generate_at: "08:00"
+    format: markdown
+    include:
+      - task_completion_status
+      - data_completeness_rate
+      - error_summary
+      - recommendations
+    delivery: terminal_echo  # 启动时显示
+
+# =============================================================================
 # 必读文档（按优先级排序）
-# 这些文档会在每次会话开始时被加载到上下文中
+# =============================================================================
 required_docs:
   - path: .iflow/DEVELOPMENT_PARADIGM.md
     priority: 1
     description: "开发范式 - 角色分工与流程规范"
     required: true
     
-  - path: docs/KNOWLEDGE_BASE_V17.md
+  - path: SYSTEM_CONSTITUTION.md
     priority: 2
-    description: "知识库 - 业务与策略总纲"
+    description: "系统宪法 - 绝对铁律与红线"
     required: true
     
-  - path: docs/V17_TECH_DEBT.md
+  - path: data/memory/ShortTermMemory.json
     priority: 3
-    description: "技术债 - 未决问题记录"
-    required: false
+    description: "短期记忆 - 当前阶段关键决策"
+    required: true
+    auto_reload: true  # 会话中自动重载
 
+# =============================================================================
 # 核心规则摘要（启动时显示）
+# =============================================================================
 startup_rules:
-  - "角色分工：老板定战略，CTO定架构，iFlow拆任务，AI写代码"
-  - "流水线：需求卡 → 设计卡 → 实现+自测 → CTO审计"
-  - "红线：修改core抽象需CTO批准，删除模块需老板确认"
-  - "资金流：QMT Tick为主，AkShare DDE T+1为辅"
-  - "阈值：禁止硬编码，统一用相对分位数"
+  - "🎯 角色链: Boss定战略 → CTO定架构 → iFlow拆任务 → AI写代码"
+  - "📋 流水线: 需求卡 → 设计卡 → 实现+自测 → 红线审计 → CTO审计"
+  - "🚫 绝对红线: 零Tushare | 零硬编码 | 零For循环遍历Tick"
+  - "⚡ 两段式: 向量化O(n)定位 + 事件驱动微观模拟"
+  - "🧠 记忆锚定: V20架构 | QMT本地 | Config驱动 | 前后30天上下文"
 
-# 禁止行为（启动时警告）
+# =============================================================================
+# 禁止行为（启动时警告+运行时拦截）
+# =============================================================================
 prohibited_actions:
-  - "不得在没有设计卡的情况下修改核心抽象"
-  - "不得跳过自测直接声称任务完成"
-  - "不得绕过ICapitalFlowProvider直接调用QMT/AkShare"
-  - "不得在策略层硬编码绝对阈值"
+  - action: use_tushare
+    severity: fatal
+    message: "Tushare已物理死亡！必须使用QMT本地数据"
+    
+  - action: hardcode_threshold
+    severity: fatal
+    message: "严禁魔法数字！必须从ConfigManager读取live_sniper配置"
+    
+  - action: for_loop_tick_iteration
+    severity: fatal
+    message: "严禁For循环遍历Tick！必须使用Pandas向量化(cumsum/apply)"
+    
+  - action: modify_core_without_design_card
+    severity: error
+    message: "修改core抽象必须先有CTO批准的设计卡"
+    
+  - action: skip_self_test
+    severity: error
+    message: "严禁跳过自测！必须提供真实数据验证报告"
+    
+  - action: bypass_icapitalflowprovider
+    severity: error
+    message: "严禁绕过ICapitalFlowProvider直接调用QMT/AkShare"
 
-# 项目路径
+# =============================================================================
+# 项目路径配置
+# =============================================================================
 project_paths:
   root: MyQuantTool
   core_logic: logic/
@@ -43,9 +338,40 @@ project_paths:
   docs: docs/
   tasks: tasks/
   tools: tools/
+  memory: data/memory/
+  audit: .iflow/
 
-# Python环境
+# =============================================================================
+# Python环境配置
+# =============================================================================
 python:
   venv_path: venv_qmt
   executable: venv_qmt/Scripts/python.exe
   version: "3.10"
+  required_packages:
+    - xtquant
+    - pandas>=1.5.0
+    - numpy>=1.21.0
+    - click>=8.0.0
+    - rich>=12.0.0
+
+# =============================================================================
+# 当前阶段状态（自动更新）
+# =============================================================================
+current_phase:
+  version: "V20.0"
+  name: "极致全息架构"
+  status: "Phase A2-A4并行开发"
+  completed:
+    - "Phase A1: 肃清Tushare文档幽灵 ✓"
+  in_progress:
+    - "Phase A2: 全息下载器(上下文切片)"
+    - "Phase A3: 微观盘口三道防线"
+    - "Phase A4: 两段式混合回测引擎"
+  key_decisions:
+    - "量比: 实盘0.95 → 下载0.90 (降维0.05)"
+    - "换手: 直接使用min_active_turnover_rate(3.0%)"
+    - "价格: high > pre_close (只要最高价红过)"
+    - "上下文: 前30后30天(共60个交易日)"
+    - "日K: 全市场自动补全"
+    - "Tick: 每天100-150只靶向下载"

@@ -1,1 +1,119 @@
-{"date": "19700101", "memory": {}}
+{
+  "version": "V20.0",
+  "last_updated": "2026-02-26T01:30:00",
+  "architecture": {
+    "name": "极致全息架构",
+    "status": "Phase A2-A4并行开发",
+    "completed_phases": [
+      {
+        "phase": "A1",
+        "name": "肃清Tushare文档幽灵",
+        "status": "completed",
+        "commit": "9c46774",
+        "key_changes": [
+          "删除_warmup_tushare_data()等3个Tushare方法",
+          "更新所有注释为100% QMT本地架构",
+          "元数据字段更名: tushare_warmup_time → avg_volume_warmup_time"
+        ]
+      }
+    ],
+    "current_phases": [
+      {
+        "phase": "A2",
+        "name": "重构全息下载器(上下文切片)",
+        "status": "pending",
+        "key_requirements": [
+          "镜像降维过滤: 量比0.90分位(实盘0.95-0.05)",
+          "换手率直接使用3.0%",
+          "价格条件: high > pre_close",
+          "上下文切片: 前30后30天(共60个交易日)",
+          "生成target_pool_YYYYMMDD.json记录"
+        ]
+      },
+      {
+        "phase": "A3",
+        "name": "升级三道防线(微观盘口级)",
+        "status": "pending",
+        "key_requirements": [
+          "诱多撤单防线: 15秒滑动窗口, bid1_vol断崖>70%",
+          "散户跟风防线: 小单占比>80%判定",
+          "封单衰减防线: 1分钟封单衰减>50%预警"
+        ]
+      },
+      {
+        "phase": "A4",
+        "name": "重构TimeMachineEngine(两段式混合)",
+        "status": "pending",
+        "key_requirements": [
+          "阶段1: Pandas向量化极速定位起爆点",
+          "阶段2: 事件驱动逐笔微观模拟",
+          "严禁全局For循环遍历4800个Tick"
+        ]
+      }
+    ]
+  },
+  "key_decisions": {
+    "data_strategy": {
+      "daily_k": "全市场下载，自动补全，几年没问题",
+      "tick": "精准靶向，每天100-150只，绝不浪费在杂毛"
+    },
+    "download_criteria": {
+      "volume_ratio_percentile": {
+        "live_value": 0.95,
+        "download_value": 0.90,
+        "rationale": "降维0.05捕获准真龙和陷阱股"
+      },
+      "turnover_rate": {
+        "source": "live_sniper.min_active_turnover_rate",
+        "value": 3.0,
+        "rationale": "直接使用实盘配置，不拍脑袋"
+      },
+      "price_condition": {
+        "rule": "high > pre_close",
+        "rationale": "只要最高价红过，包含诱多和真龙"
+      },
+      "context_days": {
+        "before": 30,
+        "after": 30,
+        "total": 60,
+        "rationale": "完整生命周期研究"
+      }
+    },
+    "architecture_principles": {
+      "zero_tushare": "100% QMT本地，物理死亡",
+      "zero_magic_number": "所有阈值ConfigManager读取",
+      "zero_for_loop_tick": "Pandas向量化，严禁逐行遍历",
+      "two_stage_backtest": "向量化定位+事件驱动模拟"
+    }
+  },
+  "active_constraints": [
+    "严禁使用Tushare或任何外网API",
+    "严禁硬编码0.85/0.90/3.0/5.0等魔法数字",
+    "严禁For循环遍历Tick数据",
+    "所有阈值必须从ConfigManager读取live_sniper配置",
+    "必须使用Pandas向量化(cumsum/apply)",
+    "必须维护下载注册表避免重复I/O",
+    "必须生成target_pool记录文件"
+  ],
+  "expert_routing": {
+    "quant_strategist": "V18算法、向量化计算、时间衰减",
+    "data_engineer": "下载器、数据管道、QMT接口",
+    "microstructure_specialist": "盘口防线、诱多检测、撮合模拟",
+    "backtest_architect": "两段式引擎、事件驱动",
+    "code_auditor": "静态检查、红线扫描"
+  },
+  "iflow_blacktech": {
+    "memory_hooks": "自动加载关键记忆，治愈AI失忆症",
+    "self_healing_assertions": "红线强制拦截，自动打回违规代码",
+    "multi_persona_sandboxing": "专家Agent路由，各司其职",
+    "nightly_cron_jobs": "零人工干预夜间基建"
+  },
+  "next_actions": [
+    "派遣quant_strategist设计V18向量化算法",
+    "派遣data_engineer实现上下文切片下载器",
+    "派遣microstructure_specialist设计微观防线",
+    "派遣backtest_architect设计两段式引擎架构",
+    "所有代码必须通过code_auditor红线审计"
+  ],
+  "notes": "这是V20.0极致全息架构的核心记忆文件，每次会话自动加载"
+}
