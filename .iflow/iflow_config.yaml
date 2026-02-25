@@ -6,6 +6,28 @@
 #
 # 版本: V20.0 - 极致全息架构版
 # 更新: 2026-02-26
+#
+# =============================================================================
+# CTO铁血四律（强制执行）
+# =============================================================================
+# 【铁律一：阅后即焚】过程文档自动化清理
+#   - 所有思考/分析/推演性质的中间文档（Phase_*.md, 调研报告.md等）标记为【阅后即焚】
+#   - 当Phase开发、测试并Commit完毕后，必须物理删除该Phase产生的所有过程文档
+#   - 仓库里绝对不准留下任何草稿纸
+#
+# 【铁律二：文档即代码】Doc-as-Code强制同步
+#   - 代码重构如果没有体现到主文档中，视为任务未完成
+#   - 每次提交核心功能前，必须执行【文档对齐审查】
+#   - 强制更新: SYSTEM_CONSTITUTION.md, TRADING_PHILOSOPHY.md, README.md
+#
+# 【铁律三：严禁甩锅】禁止废话请示
+#   - CTO和Boss已确定的架构参数（0.90降维、60天上下文、3.0%换手）立即执行
+#   - 不准再发起所谓的"参数确认"，不准抛出0.92等魔法数字让老板做选择题
+#
+# 【铁律四：记忆收敛】统一JSON源
+#   - 所有状态进度、当前所处阶段，统一且唯一地写入ShortTermMemory.json
+#   - 严禁在外面乱建Markdown记录进度
+# =============================================================================
 
 # =============================================================================
 # 黑科技1: 记忆钩子(Memory Hooks) - 治愈AI失忆症
@@ -364,6 +386,7 @@ current_phase:
   status: "Phase A2-A4并行开发"
   completed:
     - "Phase A1: 肃清Tushare文档幽灵 ✓"
+    - "iFlow黑科技升级: AI-Native终极形态 ✓"
   in_progress:
     - "Phase A2: 全息下载器(上下文切片)"
     - "Phase A3: 微观盘口三道防线"
@@ -375,3 +398,156 @@ current_phase:
     - "上下文: 前30后30天(共60个交易日)"
     - "日K: 全市场自动补全"
     - "Tick: 每天100-150只靶向下载"
+
+# =============================================================================
+# CTO铁血四律 - 工作流强制执行
+# =============================================================================
+workflow_constraints:
+  # 【铁律一：阅后即焚】过程文档自动化清理
+  burn_after_reading:
+    enabled: true
+    description: "过程文档阅后即焚，不准留草稿纸"
+    ephemeral_patterns:
+      - "PHASE*.md"
+      - "*任务书.md"
+      - "*调研报告*.md"
+      - "*分析*.md"
+      - "*确认与执行计划*.md"
+    auto_cleanup_trigger: "phase_complete"
+    cleanup_command: "git rm {file} && git commit -m '阅后即焚: 清理已完成Phase的过程文档'"
+    exceptions:
+      - "DEVELOPMENT_PARADIGM.md"
+      - "V20_极致全息架构重构任务书.md"  # 当前进行中的总纲保留
+    
+  # 【铁律二：文档即代码】Doc-as-Code强制同步
+  doc_as_code:
+    enabled: true
+    description: "代码重构必须同步到主文档，否则任务未完成"
+    required_docs_sync:
+      - file: "SYSTEM_CONSTITUTION.md"
+        required_sections:
+          - "数据架构"
+          - "下载策略"
+          - "红线规范"
+        auto_check: true
+        
+      - file: "TRADING_PHILOSOPHY.md"
+        required_sections:
+          - "右侧起爆哲学"
+          - "V18算法"
+        auto_check: true
+        
+      - file: "README.md"
+        required_sections:
+          - "快速开始"
+          - "架构概览"
+          - "使用说明"
+        auto_check: true
+        
+    sync_validation:
+      pre_commit_hook: true
+      check_keywords:
+        - "V20"
+        - "全息"
+        - "两段式"
+        - "降维下载"
+      fail_if_missing: true
+      
+  # 【铁律三：严禁甩锅】禁止废话请示
+  no_buck_passing:
+    enabled: true
+    description: "已确定参数立即执行，禁止让老板做选择题"
+    frozen_parameters:
+      - name: "volume_ratio_download"
+        value: "live_sniper.volume_ratio_percentile - 0.05"
+        source: "CTO架构决策"
+        allow_questions: false
+        
+      - name: "turnover_rate"
+        value: "live_sniper.min_active_turnover_rate"
+        source: "直接使用实盘配置"
+        allow_questions: false
+        
+      - name: "price_condition"
+        value: "high > pre_close"
+        source: "CTO架构决策"
+        allow_questions: false
+        
+      - name: "context_days"
+        value: "60"
+        source: "前30后30天"
+        allow_questions: false
+        
+    prohibited_actions:
+      - "抛出备选参数让老板选择(如'0.90还是0.92?')"
+      - "重复请示已确定的架构参数"
+      - "用疑问句替代执行(如'是否合适?')"
+      
+    enforcement:
+      auto_reject_question_patterns:
+        - ".*是否合适.*"
+        - ".*确认.*"
+        - ".*还是.*"
+      severity: error
+      
+  # 【铁律四：记忆收敛】统一JSON源
+  memory_convergence:
+    enabled: true
+    description: "所有状态统一写入ShortTermMemory.json，严禁乱建Markdown"
+    single_source_of_truth: "data/memory/ShortTermMemory.json"
+    
+    prohibited:
+      - "在.iflow/外创建*进度*.md"
+      - "在docs/创建*临时*.md"
+      - "在根目录创建*计划*.md"
+      
+    required_fields:
+      - "version"
+      - "current_phase"
+      - "completed_phases"
+      - "key_decisions"
+      - "active_constraints"
+      
+    auto_sync:
+      on_phase_complete: true
+      on_commit: true
+      
+    validation:
+      check_duplication: true
+      fail_if_multiple_sources: true
+
+# =============================================================================
+# 工作流执行检查清单（每个Phase结束时自检）
+# =============================================================================
+phase_completion_checklist:
+  - item: "代码功能完整并通过测试"
+    required: true
+    
+  - item: "阅后即焚：清理该Phase的过程文档"
+    required: true
+    command: "python .iflow/cleanup_ephemeral_docs.py --phase {phase_name}"
+    
+  - item: "文档即代码：更新SYSTEM_CONSTITUTION.md"
+    required: true
+    validator: "python .iflow/validate_doc_sync.py --file SYSTEM_CONSTITUTION.md"
+    
+  - item: "文档即代码：更新TRADING_PHILOSOPHY.md"
+    required: true
+    validator: "python .iflow/validate_doc_sync.py --file TRADING_PHILOSOPHY.md"
+    
+  - item: "文档即代码：更新README.md"
+    required: false
+    validator: "python .iflow/validate_doc_sync.py --file README.md"
+    
+  - item: "记忆收敛：更新ShortTermMemory.json"
+    required: true
+    command: "python .iflow/update_memory.py --phase {phase_name} --status completed"
+    
+  - item: "红线审计：通过audit_rules.py检查"
+    required: true
+    command: "python .iflow/audit_rules.py --path logic/ --json"
+    fail_on_error: true
+    
+  - item: "Git提交：包含代码+文档+记忆更新"
+    required: true
+    commit_message_template: "V20.0 {phase_name}: {brief_description}\n\n- 功能实现: {details}\n- 文档同步: SYSTEM_CONSTITUTION.md等\n- 阅后即焚: 清理过程文档\n- 记忆收敛: ShortTermMemory.json"
