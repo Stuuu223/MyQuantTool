@@ -277,9 +277,26 @@ df[df['volume_ratio'] >= VOLUME_RATIO_THRESHOLD]
 
 ### 9.5 今日核心成果（必须保留）
 ```python
-# 双Ratio化（核心创新）
+# 双Ratio化（核心创新）- CTO新标准
+from logic.core.config_manager import get_config_manager
+config_manager = get_config_manager()
+
+# 从配置获取参数（SSOT原则）
+turnover_thresholds = config_manager.get_turnover_rate_thresholds()
+volume_ratio_percentile = config_manager.get_volume_ratio_percentile('live_sniper')
+
+# 计算动态量比阈值（基于市场实际情况）
+if len(df) > 0 and 'volume_ratio' in df.columns:
+    volume_ratio_threshold = df['volume_ratio'].quantile(volume_ratio_percentile)
+    volume_ratio_threshold = max(volume_ratio_threshold, 1.5)  # 最小保护阈值
+else:
+    volume_ratio_threshold = 1.5
+
+# 应用过滤（使用动态阈值而非硬编码）
 turnover_rate_per_min = turnover_rate / minutes_passed
-mask = (volume_ratio > 3.0) & (turnover_rate_per_min > 0.2) & (turnover_rate < 20)
+mask = (df['volume_ratio'] > volume_ratio_threshold) & \
+       (df['turnover_rate_per_min'] > turnover_thresholds['per_minute_min']) & \
+       (df['turnover_rate'] < turnover_thresholds['total_max'])
 
 # V18时间衰减
 09:30-09:40 → decay_ratio = 1.2  # 早盘冲刺，加权20%

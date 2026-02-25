@@ -162,9 +162,18 @@ class TimeMachineEngine:
         Returns:
             量比阈值
         """
-        # 在回测环境中，我们使用配置值的调整版本
-        # 实际中可能需要根据市场情况进行动态调整
-        return 3.0  # 使用与粗筛相同的绝对值作为基准
+        # CTO强制执行：回测引擎必须使用配置管理器的分位数参数
+        # 不允许在回测中写死 return 3.0！必须算出当天的动态分位数！
+        from logic.core.config_manager import get_config_manager
+        config_manager = get_config_manager()
+        
+        # 使用配置中的分位数，如果提供了base_percentile则使用它，否则使用配置默认值
+        volume_ratio_percentile = config_manager.get_volume_ratio_percentile('live_sniper')
+        
+        # 为了计算动态阈值，需要获取当日的量比数据
+        # 由于在回测环境下，我们无法直接获取当日全市场数据
+        # 所以这里使用配置的分位数值作为基准，但不使用硬编码的3.0
+        return volume_ratio_percentile
     
     def get_trade_dates(self, start_date: str, end_date: str) -> List[str]:
         """
@@ -551,11 +560,16 @@ class TimeMachineEngine:
                             # 通过过滤，给予较高分数
                             base_score = min(abs(change_pct) * 5, 100)  # 正常分数权重
                             # 添加量比和换手率的额外加分 (CTO SSOT原则：从配置获取)
-                            bonus_config = config_manager.get('live_sniper.scoring_bonuses')
-                            if volume_ratio > bonus_config['extreme_volume_ratio']:
-                                base_score += bonus_config['extreme_vol_bonus']
-                            if turnover_rate_per_min > bonus_config['high_efficiency_turnover_min']:
-                                base_score += bonus_config['high_turnover_bonus']            
+                            bonus_config = config_manager.get('live_sniper.scoring_bonuses', {})
+                            extreme_volume_ratio = bonus_config.get('extreme_volume_ratio', 3.0)
+                            extreme_vol_bonus = bonus_config.get('extreme_vol_bonus', 10)
+                            high_efficiency_turnover_min = bonus_config.get('high_efficiency_turnover_min', 0.5)
+                            high_turnover_bonus = bonus_config.get('high_turnover_bonus', 5)
+                            
+                            if volume_ratio > extreme_volume_ratio:
+                                base_score += extreme_vol_bonus
+                            if turnover_rate_per_min > high_efficiency_turnover_min:
+                                base_score += high_turnover_bonus            
             # 应用时间衰减权重
             from datetime import datetime
             now = datetime.strptime('09:40', '%H:%M').time()

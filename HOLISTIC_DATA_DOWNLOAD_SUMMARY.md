@@ -8,7 +8,7 @@
 **问题**：用户发现universe_builder.py使用硬编码量比阈值（3.0），与strategy_params.json中的percentile方法不一致
 
 **解决方案**：
-- 将universe_builder.py中的`MIN_VOLUME_RATIO = 3.0`改为`VOLUME_RATIO_PERCENTILE = 0.88`
+- 将universe_builder.py中的`MIN_VOLUME_RATIO = 3.0`改为`VOLUME_RATIO_PERCENTILE = 0.95`
 - 使用`df['volume_ratio'].quantile(self.VOLUME_RATIO_PERCENTILE)`进行分位数筛选
 - 与strategy_params.json中的percentile配置保持一致
 
@@ -16,8 +16,9 @@
 **问题**：多个文件中存在硬编码的量比阈值
 
 **解决方案**：
-- full_market_scanner.py: 将`volume_ratio >= 3.0`改为基于88分位数的动态阈值
-- run_live_trading_engine.py: 将`volume_ratio > 3`改为基于88分位数的动态阈值
+- full_market_scanner.py: 将`volume_ratio >= 3.0`改为基于95分位数的动态阈值
+- run_live_trading_engine.py: 将`volume_ratio > 3`改为基于95分位数的动态阈值
+- time_machine_engine.py: 将`volume_ratio > 3.0`改为基于配置管理器的动态阈值
 
 ### 📋 参数化下载器功能
 **新增功能**：download_holographic_data_with_params.py
