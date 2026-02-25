@@ -933,7 +933,7 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, volume_percentile, dry_run, 
         click.echo(click.style("✅ 盘前装弹完成！QMT本地数据已就位（0外网请求）", fg='green'))
         
         # ==========================================
-        # Step 2: 时间管理 (CTO加固 - 14:49测试兼容)
+        # Step 2: 时间管理 (CTO加固 - 修正If-Else遮蔽效应)
         # ==========================================
         now = datetime.now()
         market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
@@ -990,14 +990,12 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, volume_percentile, dry_run, 
             # 程序退出，不进入死循环
             click.echo(click.style("✅ 系统安全退出", fg='green'))
             return
-        # 如果已过截停时间，只监控不发单
-        elif now > cutoff_dt:
-            click.echo(click.style(f"⚠️ 当前时间 {now.strftime('%H:%M')} 已超过截停时间 {cutoff_time}，等待下一交易日", fg='yellow'))
-            click.echo(click.style("⚠️ 系统进入收盘后监控模式，等待下一交易日", fg='yellow'))
+        
+        # CTO修复：将大的时间判断条件放在前面，避免逻辑遮蔽
+        # 收盘后：执行今日历史信号回放
         elif now > market_close:
             # 收盘后运行，执行历史信号回放
-            click.echo(click.style(f"📊 当前时间 {now.strftime('%H:%M')} 已超过收盘时间 15:05", fg='green'))
-            click.echo(click.style("🎯 启动今日历史信号回放...", fg='green'))
+            click.echo(click.style(f"🛑 股市已收盘，自动为您生成今日右侧起爆战报...", fg='green'))
             
             # ==========================================
             # Step 3: 挂载EventDriven引擎 (CTO依赖注入！)
@@ -1041,10 +1039,21 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, volume_percentile, dry_run, 
             # 程序退出，不进入死循环
             click.echo(click.style("✅ 系统安全退出", fg='green'))
             return
+        
+        # 截停时间后到收盘前：不进行交易，等待收盘
+        elif now > cutoff_dt:
+            click.echo(click.style(f"⚠️ 已进入尾盘垃圾时间，停止盯盘，等待收盘出战报...", fg='yellow'))
+            click.echo(click.style("💡 提示：系统将在收盘后自动生成今日战报", fg='yellow'))
+            time.sleep(3)
+            return
+        
+        # 开盘前：等待开盘
         elif now < market_open:
             wait_seconds = (market_open - now).seconds
-            click.echo(f"⏳ 非交易时间，等待开盘... (距9:30开盘 {wait_seconds}秒)")
+            click.echo(f"⏳ 等待 09:30 开盘，雷达预热中... (距开盘 {wait_seconds}秒)")
             time.sleep(min(wait_seconds, 3))  # 最多等3秒(测试用)
+        
+        # 交易时间内：启动实时监控模式
         else:
             # 交易时间内，启动实时监控模式
             # ==========================================
@@ -1078,10 +1087,11 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, volume_percentile, dry_run, 
             # 启动引擎（09:25第一斩 → 09:30第二斩 → 火控雷达）
             engine.start_session()
         
+            click.echo(click.style("🎯 进入高频盯盘雷达模式...", fg='green'))
             click.echo(click.style("✅ 监控器已启动，EventBus后台运行中...", fg='green'))
             click.echo(click.style("🎯 等待QMT Tick数据推送...", fg='cyan'))
             click.echo(click.style("🛑 按 Ctrl+C 安全退出", fg='yellow'))
-        
+
         # ==========================================
         # Step 4: 主线程保活 (CTO关键修复！)
         # ==========================================
