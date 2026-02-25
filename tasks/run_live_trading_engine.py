@@ -68,6 +68,15 @@ class LiveTradingEngine:
         self.trade_gatekeeper = None
         self.trader = None
         
+        # CTO致命断言：实盘引擎必须有QMT连接，否则立即崩溃
+        if self.qmt_manager is None:
+            logger.error("❌ [LiveTradingEngine] 致命错误：QMT Manager缺失，实盘引擎拒绝启动！")
+            raise RuntimeError("致命错误：QMT Manager缺失，实盘引擎拒绝启动！")
+        
+        if self.event_bus is None:
+            logger.error("❌ [LiveTradingEngine] 致命错误：EventBus缺失，实盘引擎拒绝启动！")
+            raise RuntimeError("致命错误：EventBus缺失，实盘引擎拒绝启动！")
+        
         logger.info("✅ [LiveTradingEngine] 初始化完成")
     
     def _init_components(self):
@@ -77,13 +86,15 @@ class LiveTradingEngine:
             self.qmt_manager = QmtManager()
             logger.debug("🎯 QMT Manager 已加载")
         except ImportError:
-            logger.warning("⚠️ QMT Manager 未找到")
+            self.qmt_manager = None
+            logger.error("❌ QMT Manager 加载失败")
         
         try:
             from logic.strategies.full_market_scanner import create_full_market_scanner
             self.scanner = create_full_market_scanner()
             logger.debug("🎯 FullMarketScanner 已加载")
         except ImportError:
+            self.scanner = None
             logger.warning("⚠️ FullMarketScanner 未找到")
         
         try:
@@ -91,7 +102,8 @@ class LiveTradingEngine:
             self.event_bus = create_event_bus(max_queue_size=20000, max_workers=10)  # 扩大队列容量和工作线程
             logger.debug("🎯 EventBus 已加载")
         except ImportError:
-            logger.warning("⚠️ EventBus 未找到")
+            self.event_bus = None
+            logger.error("❌ EventBus 加载失败")
         
         # 初始化InstrumentCache (紧急修复P0级事故)
         try:
@@ -109,13 +121,22 @@ class LiveTradingEngine:
         CTO加固: 接通QMT真实回调，实现快照初筛漏斗
         """
         logger.info("🚀 启动实盘总控引擎 (CTO第一斩版)")
+        
+        # CTO致命断言：在启动会话时再次确认核心组件存在
+        if self.qmt_manager is None:
+            logger.error("❌ [LiveTradingEngine] 致命错误：QMT Manager缺失，会话启动失败！")
+            raise RuntimeError("致命错误：QMT Manager缺失，会话启动失败！")
+        
+        if self.event_bus is None:
+            logger.error("❌ [LiveTradingEngine] 致命错误：EventBus缺失，会话启动失败！")
+            raise RuntimeError("致命错误：EventBus缺失，会话启动失败！")
+        
         self.running = True
         
         # 启动事件总线消费者
-        if self.event_bus:
-            self.event_bus.start_consumer()
-            # 绑定Tick事件处理器
-            self.event_bus.subscribe('tick', self._on_tick_data)
+        self.event_bus.start_consumer()
+        # 绑定Tick事件处理器
+        self.event_bus.subscribe('tick', self._on_tick_data)
         
         # CTO加固: 接通QMT真实回调，确保Tick数据能传到事件总线
         self._setup_qmt_callbacks()

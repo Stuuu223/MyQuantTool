@@ -843,9 +843,9 @@ def simulate_cmd(ctx, start_date, end_date, watchlist, phase):
               default='paper',
               help='交易模式: paper=模拟盘, real=实盘')
 @click.option('--max-positions', default=3, help='最大持仓数量')
-@click.option('--cutoff-time', default='09:35:00', help='截停时间(不开新仓)')
-@click.option('--volume_percentile', default=0.88, type=float,
-              help='量比分位数阈值 (默认: 0.88)')
+@click.option('--cutoff-time', default='14:50:00', help='截停时间(不开新仓)')
+@click.option('--volume_percentile', default=0.95, type=float,
+              help='量比分位数阈值 (默认: 0.95)')
 @click.option('--dry-run', is_flag=True, help='干运行(不实际下单)')
 @click.pass_context
 def live_cmd(ctx, mode, max_positions, cutoff_time, volume_percentile, dry_run):
