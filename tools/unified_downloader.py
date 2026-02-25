@@ -69,6 +69,35 @@ def generate_dates(start_date: str, end_date: str) -> List[str]:
     return dates
 
 
+def get_last_n_trading_days(n: int = 60) -> tuple:
+    """获取最近N个交易日的起止日期 - CTO指令：智能默认60天黄金周期
+    
+    Returns:
+        (start_date, end_date) 格式: YYYYMMDD
+    """
+    from xtquant import xtdata
+    
+    # 获取今天是周几，计算往前推多久能拿到N个交易日
+    # 保守估计：N个交易日约等于N*7/5个自然日（考虑周末）
+    search_days = int(n * 7 / 5) + 10  # 加10天缓冲
+    
+    end_date = datetime.now()
+    start_search = end_date - timedelta(days=search_days)
+    
+    # 生成候选日期（工作日）
+    dates = []
+    current = start_search
+    while current <= end_date:
+        if current.weekday() < 5:  # 周一到周五
+            dates.append(current.strftime("%Y%m%d"))
+        current += timedelta(days=1)
+    
+    # 取最后N个
+    trading_days = dates[-n:] if len(dates) >= n else dates
+    
+    return trading_days[0], trading_days[-1], trading_days
+
+
 def download_daily_k(days: int = 365, resume: bool = True):
     """下载全市场日K数据"""
     from xtquant import xtdata
@@ -673,6 +702,12 @@ def main(download_type, start_date, end_date, date, days, timeout, no_resume):
         python tools/unified_downloader.py --type tick --start-date 20250101 --end-date 20260225
         python tools/unified_downloader.py --type holographic --date 20260224
         python tools/unified_downloader.py --type holographic --start-date 20250101 --end-date 20260225
+        python tools/unified_downloader.py --type holographic  # 智能默认最近60个交易日
+    
+    CTO战略说明:
+        全息数据默认下载最近60个交易日 - 这是超短线策略的黄金回测周期
+        涵盖当下市场最核心的情绪周期（冰点->高潮->退潮的完整轮回）
+        数据量适中(~10-20GB)，下载时间可控(1-2小时)，样本有效性最佳
     """
     resume = not no_resume
     
@@ -697,10 +732,11 @@ def main(download_type, start_date, end_date, date, days, timeout, no_resume):
             # 单日全息下载
             download_holographic(date, resume=resume, timeout=timeout)
         else:
-            # 默认今天
-            date = datetime.now().strftime("%Y%m%d")
-            click.echo(f"💡 未指定日期，使用今天: {date}")
-            download_holographic(date, resume=resume, timeout=timeout)
+            # CTO指令：智能默认最近60个交易日（黄金回测周期）
+            click.echo("💡 未指定日期，基于超短线系统特性，自动设定为【最近60个交易日】的黄金回测周期...")
+            start_date, end_date, trading_days = get_last_n_trading_days(60)
+            click.echo(f"📅 自动计算日期范围: {start_date} ~ {end_date} (共{len(trading_days)}个交易日)")
+            download_holographic_range(start_date, end_date, resume=resume, timeout=timeout)
 
 
 if __name__ == "__main__":
