@@ -469,6 +469,190 @@ def download_holographic(date: str, resume: bool = True, timeout: int = 3600):
     console.print(f"   跳过: {skipped_count} 只")
 
 
+def download_holographic_range(start_date: str, end_date: str, resume: bool = True, timeout: int = 3600):
+    """日期范围全息数据下载 - CTO对齐集大成系统
+    
+    遍历每个交易日，执行V18筛选后下载tick数据
+    
+    用法:
+        python tools/unified_downloader.py --type holographic --start-date 20250101 --end-date 20260225
+    """
+    from xtquant import xtdata
+    from rich.console import Console
+    from logic.core.config_manager import get_config_manager
+    
+    console = Console()
+    config_manager = get_config_manager()
+    
+    # 获取实盘参数
+    live_sniper_config = config_manager._config.get('live_sniper', {})
+    volume_percentile = live_sniper_config.get('volume_ratio_percentile', 0.95)
+    min_turnover = live_sniper_config.get('min_active_turnover_rate', 3.0)
+    max_turnover = live_sniper_config.get('death_turnover_rate', 70.0)
+    
+    # 生成交易日列表
+    dates = generate_dates(start_date, end_date)
+    
+    console.print(f"\n[bold cyan]📊 全息数据批量下载器 (日期范围)[/bold cyan]")
+    console.print(f"📅 日期范围: {start_date} ~ {end_date}")
+    console.print(f"📅 交易日数: {len(dates)} 天")
+    console.print(f"📐 筛选参数: 量比分位数={volume_percentile}, 换手率={min_turnover}%-{max_turnover}%")
+    console.print(f"⏱️ 每日超时: {timeout}秒")
+    
+    # 启动VIP服务
+    vip_started, vip_result = start_vip_service()
+    if vip_started:
+        console.print(f"[green]✅ VIP服务已启动，端口: {vip_result}[/green]")
+    else:
+        console.print(f"[yellow]⚠️ VIP服务未启动: {vip_result}[/yellow]")
+    
+    # 统计
+    total_stats = {
+        "total_days": len(dates),
+        "success_days": 0,
+        "skip_days": 0,
+        "error_days": 0,
+        "total_stocks": 0,
+        "total_downloaded": 0,
+        "total_skipped": 0
+    }
+    
+    # 遍历每个交易日
+    for i, date in enumerate(dates, 1):
+        console.print(f"\n[bold]━━━ [{i}/{len(dates)}] {date} ━━━[/bold]")
+        
+        try:
+            # 获取粗筛股票池
+            from logic.data_providers.universe_builder import UniverseBuilder
+            builder = UniverseBuilder()
+            stock_list = builder.get_daily_universe(date)
+            
+            if not stock_list:
+                console.print(f"[yellow]⏭️  {date} 无符合条件的股票（可能是非交易日）[/yellow]")
+                total_stats["skip_days"] += 1
+                continue
+            
+            console.print(f"📊 粗筛股票数: {len(stock_list)} 只")
+            total_stats["total_stocks"] += len(stock_list)
+            
+            # 加载当日断点状态
+            state_key = f"holographic_{date}"
+            state = load_state(state_key) if resume else {"completed": [], "failed": []}
+            completed_set = set(state.get("completed", []))
+            
+            # 过滤已完成的
+            pending_stocks = [s for s in stock_list if s not in completed_set]
+            
+            if not pending_stocks:
+                console.print(f"[green]✅ {date} 所有数据已下载，跳过[/green]")
+                total_stats["skip_days"] += 1
+                total_stats["total_skipped"] += len(stock_list)
+                continue
+            
+            console.print(f"⏭️  待下载: {len(pending_stocks)} 只")
+            
+            # 下载当日tick
+            day_start = time.time()
+            day_success = 0
+            day_skip = 0
+            day_failed = 0
+            
+            for stock in pending_stocks:
+                # 超时检查
+                if time.time() - day_start > timeout:
+                    console.print(f"[yellow]⏰ {date} 超时，保存进度[/yellow]")
+                    break
+                
+                try:
+                    # 标准化代码
+                    if "." not in stock:
+                        if stock.startswith("6"):
+                            stock = f"{stock}.SH"
+                        else:
+                            stock = f"{stock}.SZ"
+                    
+                    # 检查是否已有数据
+                    try:
+                        existing = xtdata.get_local_data(
+                            field_list=["time"],
+                            stock_list=[stock],
+                            period="tick",
+                            start_time=date,
+                            end_time=date
+                        )
+                        if existing and stock in existing and len(existing[stock]) > 1000:
+                            state["completed"].append(stock)
+                            day_skip += 1
+                            continue
+                    except:
+                        pass
+                    
+                    # 下载
+                    download_success = False
+                    for retry in range(2):
+                        try:
+                            xtdata.download_history_data(
+                                stock_code=stock,
+                                period="tick",
+                                start_time=date,
+                                end_time=date
+                            )
+                            
+                            # 验证
+                            data = xtdata.get_local_data(
+                                field_list=["time"],
+                                stock_list=[stock],
+                                period="tick",
+                                start_time=date,
+                                end_time=date
+                            )
+                            
+                            if data and stock in data and len(data[stock]) > 100:
+                                download_success = True
+                                break
+                        except:
+                            time.sleep(0.5)
+                    
+                    if download_success:
+                        state["completed"].append(stock)
+                        day_success += 1
+                    else:
+                        state["failed"].append(stock)
+                        day_failed += 1
+                    
+                except Exception as e:
+                    state["failed"].append(stock)
+                    day_failed += 1
+                
+                time.sleep(0.05)
+            
+            # 保存状态
+            save_state(state_key, state)
+            
+            total_stats["success_days"] += 1
+            total_stats["total_downloaded"] += day_success
+            total_stats["total_skipped"] += day_skip
+            
+            console.print(f"✅ {date} 完成: 下载{day_success}只, 跳过{day_skip}只, 失败{day_failed}只")
+            
+        except Exception as e:
+            console.print(f"[red]❌ {date} 处理失败: {e}[/red]")
+            total_stats["error_days"] += 1
+    
+    # 汇总报告
+    console.print(f"\n{'='*60}")
+    console.print(f"[bold green]📊 全息数据批量下载完成[/bold green]")
+    console.print(f"{'='*60}")
+    console.print(f"📅 总交易日: {total_stats['total_days']} 天")
+    console.print(f"✅ 成功天数: {total_stats['success_days']} 天")
+    console.print(f"⏭️  跳过天数: {total_stats['skip_days']} 天")
+    console.print(f"❌ 错误天数: {total_stats['error_days']} 天")
+    console.print(f"📊 累计股票: {total_stats['total_stocks']} 只")
+    console.print(f"📥 累计下载: {total_stats['total_downloaded']} 只")
+    console.print(f"⏭️  累计跳过: {total_stats['total_skipped']} 只")
+    console.print(f"{'='*60}")
+
+
 @click.command()
 @click.option('--type', 'download_type', 
               type=click.Choice(['daily_k', 'tick', 'holographic']),
@@ -488,7 +672,7 @@ def main(download_type, start_date, end_date, date, days, timeout, no_resume):
         python tools/unified_downloader.py --type daily_k --days 365
         python tools/unified_downloader.py --type tick --start-date 20250101 --end-date 20260225
         python tools/unified_downloader.py --type holographic --date 20260224
-        python tools/unified_downloader.py --type holographic --date 20260224 --timeout 7200
+        python tools/unified_downloader.py --type holographic --start-date 20250101 --end-date 20260225
     """
     resume = not no_resume
     
@@ -506,10 +690,17 @@ def main(download_type, start_date, end_date, date, days, timeout, no_resume):
         download_tick_data(start_date, end_date, resume=resume)
     
     elif download_type == 'holographic':
-        if not date:
+        if start_date and end_date:
+            # 日期范围全息下载
+            download_holographic_range(start_date, end_date, resume=resume, timeout=timeout)
+        elif date:
+            # 单日全息下载
+            download_holographic(date, resume=resume, timeout=timeout)
+        else:
+            # 默认今天
             date = datetime.now().strftime("%Y%m%d")
             click.echo(f"💡 未指定日期，使用今天: {date}")
-        download_holographic(date, resume=resume, timeout=timeout)
+            download_holographic(date, resume=resume, timeout=timeout)
 
 
 if __name__ == "__main__":
