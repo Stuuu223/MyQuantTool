@@ -1,15 +1,13 @@
-{
+﻿{
   "_comment": "策略参数配置 - 右侧起爆哲学：资金为王、顺势而为、追随市场短线大哥",
   "version": "2.1",
   "last_updated": "2026-02-24",
-  
   "universe_build": {
     "_description": "粗筛参数 - 右侧起爆核心：筛选真正放量的股票",
     "use_percentile": false,
     "volume_ratio_absolute": 3.0,
     "notes": "量比绝对阈值3.0，确保真正放量，符合右侧起爆哲学"
   },
-  
   "leader": {
     "_description": "龙头候选策略参数",
     "use_percentile": true,
@@ -19,7 +17,6 @@
     "min_circ_mv_billion": 50,
     "notes": "涨幅>市场92分位，量比>市场90分位"
   },
-  
   "halfway": {
     "_description": "半路突破策略参数",
     "use_percentile": true,
@@ -33,7 +30,6 @@
     "timing_window_minutes": 30,
     "max_entry_change_pct": 0.06
   },
-  
   "true_attack": {
     "_description": "真资金攻击策略参数",
     "use_percentile": true,
@@ -43,7 +39,6 @@
     "sustained_inflow_minutes": 5,
     "notes": "资金强度相对分位数，非绝对金额"
   },
-  
   "trap": {
     "_description": "诱多检测策略参数",
     "use_percentile": true,
@@ -53,7 +48,6 @@
     "final_change_threshold": 8.0,
     "notes": "P1: final_change_threshold=8.0，涨幅低于此值才判定为骗炮"
   },
-  
   "portfolio": {
     "_description": "Portfolio层风控参数",
     "max_positions": 3,
@@ -62,7 +56,6 @@
     "min_advantage_score": 0.70,
     "notes": "断层优势倍数、回撤控制"
   },
-  
   "_CTO_ADDED": "下面是我们今天(2月24日)打磨出来的极限狙击参数！",
   "live_sniper": {
     "_description": "实盘极速快照双斩与时间加权参数",
@@ -85,7 +78,20 @@
       "high_turnover_bonus": 5
     }
   },
-  
+  "holographic_download": {
+    "_description": "全息数据下载靶向参数 - V20极致全息架构",
+    "_CTO_NOTE": "严禁Magic Number硬编码！所有下载阈值必须从这里读取",
+    "volume_ratio_percentile_live": 0.95,
+    "volume_ratio_buffer": -0.05,
+    "volume_ratio_download": 0.90,
+    "min_turnover_rate": 3.0,
+    "price_condition": "high > pre_close",
+    "context_days_before": 30,
+    "context_days_after": 30,
+    "context_days_total": 60,
+    "target_stocks_per_day": "100-150",
+    "notes": "镜像降维法: 实盘0.95分位 → 下载0.90分位(降维0.05), 捕获准真龙+陷阱股"
+  },
   "_experimental": {
     "_description": "实验性参数（仅用于exp目录）",
     "warning": "这些参数只供研究使用，不得用于生产",
