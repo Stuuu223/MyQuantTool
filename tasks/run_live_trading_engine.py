@@ -583,23 +583,30 @@ class LiveTradingEngine:
             # 清理无效数据
             df = df.dropna(subset=['volume_ratio', 'turnover_rate', 'turnover_rate_per_min'])
             
-            # 5. CTO终极过滤规则（双Ratio化：绝对阈值+动态换手）
+            # 5. CTO终极过滤规则（双Ratio化：分位数阈值+动态换手）
             # 从配置管理器获取参数 (SSOT标准)
             from logic.core.config_manager import get_config_manager
             
             config_manager = get_config_manager()
             turnover_thresholds = config_manager.get_turnover_rate_thresholds()
             
-            # 获取粗筛专用的绝对阈值
-            universe_config = config_manager._config.get('universe_build', {})
-            volume_ratio_threshold = universe_config.get('volume_ratio_absolute', 3.0)
+            # 获取实盘专用的分位数阈值 (CTO新标准)
+            volume_ratio_percentile = config_manager.get_volume_ratio_percentile('live_sniper')
             
-            # 只保留：量比>绝对阈值（真正放量）且 每分钟换手>阈值 且 总换手<阈值
+            # 计算动态量比阈值 - 基于当前市场情况的0.95分位数
+            if len(df) > 0 and 'volume_ratio' in df.columns:
+                volume_ratio_threshold = df['volume_ratio'].quantile(volume_ratio_percentile)
+                # 确保阈值不低于绝对最小值
+                volume_ratio_threshold = max(volume_ratio_threshold, 1.5)
+            else:
+                volume_ratio_threshold = 1.5  # 默认值
+            
+            # 只保留：量比>分位数阈值（真正放量）且 每分钟换手>阈值 且 总换手<阈值
             # 右侧起爆哲学：资金为王，筛选真正有资金流入的股票
             mask = (
-                (df['volume_ratio'] > volume_ratio_threshold) &                         # ⭐️ 绝对阈值3.0，真正放量
+                (df['volume_ratio'] > volume_ratio_threshold) &                         # ⭐️ 分位数动态阈值，真正放量
                 (df['turnover_rate_per_min'] > turnover_thresholds['per_minute_min']) & # ⭐️ 核心：每分钟换手率>0.2%
-                (df['turnover_rate'] < turnover_thresholds['total_max'])                # 过滤过度爆炒（<20%）
+                (df['turnover_rate'] < turnover_thresholds['total_max'])                # 过滤过度爆炒（<70%）
             )
             
             filtered_df = df[mask].sort_values('volume_ratio', ascending=False)
@@ -611,7 +618,7 @@ class LiveTradingEngine:
             
             # ⭐️ 记录Ratio化参数（CTO封板要求）
             logger.info(f"🔪 CTO第二斩完成: {original_count}只 → {len(self.watchlist)}只，耗时{elapsed:.2f}ms")
-            logger.info(f"   ⏱️ 开盘已运行: {minutes_passed:.1f}分钟 | 量比阈值: {volume_ratio_threshold:.1f}x绝对阈值")
+            logger.info(f"   ⏱️ 开盘已运行: {minutes_passed:.1f}分钟 | 量比阈值: {volume_ratio_threshold:.2f}x (0.95分位数)")
             logger.info(f"   📊 每分钟换手阈值: {turnover_thresholds['per_minute_min']:.2f}% | 总换手上限: {turnover_thresholds['total_max']:.1f}%")
             
             # 7. 记录详细日志（Top5）
