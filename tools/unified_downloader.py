@@ -251,35 +251,56 @@ def download_tick_data(start_date: str, end_date: str, stock_list: List[str] = N
 
 
 def download_holographic(date: str, resume: bool = True):
-    """下载全息数据（当天量比突破股票的Tick）"""
+    """下载全息数据（V18双Ratio筛选后的股票Tick）
+    
+    筛选条件（对齐实盘live_sniper参数）：
+    - 量比分位数: 0.95
+    - 换手率范围: 3% - 70%
+    - 剔除: 科创板、北交所
+    """
     from xtquant import xtdata
     from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn
     from rich.console import Console
+    from logic.core.config_manager import get_config_manager
     
     console = Console()
+    config_manager = get_config_manager()
     
-    console.print(f"\n[bold cyan]📊 全息数据下载器[/bold cyan]")
+    # 获取实盘参数
+    live_sniper_config = config_manager._config.get('live_sniper', {})
+    volume_percentile = live_sniper_config.get('volume_ratio_percentile', 0.95)
+    min_turnover = live_sniper_config.get('min_active_turnover_rate', 3.0)
+    max_turnover = live_sniper_config.get('death_turnover_rate', 70.0)
+    
+    console.print(f"\n[bold cyan]📊 全息数据下载器 (V18双Ratio筛选)[/bold cyan]")
     console.print(f"📅 目标日期: {date}")
+    console.print(f"📐 筛选参数:")
+    console.print(f"   量比分位数: {volume_percentile}")
+    console.print(f"   换手率范围: {min_turnover}% - {max_turnover}%")
     
     # 加载断点状态
     state_key = f"holographic_{date}"
     state = load_state(state_key) if resume else {"completed": [], "failed": []}
     completed_set = set(state.get("completed", []))
     
-    # 获取粗筛股票池
-    console.print("🔍 获取粗筛股票池...")
+    # 获取粗筛股票池 - CTO强制：禁止回退到全市场
+    console.print("\n🔍 执行V18双Ratio粗筛...")
     try:
         from logic.data_providers.universe_builder import UniverseBuilder
         builder = UniverseBuilder()
         stock_list = builder.get_daily_universe(date)
+        
         if not stock_list:
-            # 备选方案
-            stock_list = xtdata.get_stock_list_in_sector('沪深A股')[:500]
+            console.print(f"[red]❌ 粗筛返回空股票池，可能是非交易日或数据问题[/red]")
+            console.print(f"[yellow]💡 提示: 请检查日期是否为交易日，或Tushare Token是否配置[/yellow]")
+            return
+            
     except Exception as e:
-        console.print(f"[yellow]⚠️ 粗筛失败，使用全市场: {e}[/yellow]")
-        stock_list = xtdata.get_stock_list_in_sector('沪深A股')[:500]
+        console.print(f"[red]❌ 粗筛失败: {e}[/red]")
+        console.print(f"[yellow]💡 提示: 请确保TUSHARE_TOKEN环境变量已设置[/yellow]")
+        return
     
-    console.print(f"📈 股票数量: {len(stock_list)} 只")
+    console.print(f"\n✅ 粗筛完成: {len(stock_list)} 只股票")
     
     # 过滤已完成的
     pending_stocks = [s for s in stock_list if s not in completed_set]

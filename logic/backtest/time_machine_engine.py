@@ -541,8 +541,8 @@ class TimeMachineEngine:
             minutes_passed = 10  # 从09:30到09:40为10分钟
             turnover_rate_per_min = turnover_rate / minutes_passed if minutes_passed > 0 else 0.0
             
-            # 从配置获取阈值
-            volume_percentile = config_manager.get_volume_ratio_percentile('halfway')  # 0.88
+            # 从配置获取阈值 - CTO修复：使用live_sniper对齐实盘
+            volume_percentile = config_manager.get_volume_ratio_percentile('live_sniper')  # 0.95
             turnover_thresholds = config_manager.get_turnover_rate_thresholds()
             
             # 通过V18双Ratio化过滤条件
