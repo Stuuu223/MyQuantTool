@@ -250,13 +250,42 @@ def download_tick_data(start_date: str, end_date: str, stock_list: List[str] = N
     console.print(f"   失败: {failed_count} 只")
 
 
-def download_holographic(date: str, resume: bool = True):
+def start_vip_service():
+    """启动VIP服务 - CTO补充：加速数据下载"""
+    try:
+        from xtquant import xtdatacenter as xtdc
+        from logic.core.path_resolver import PathResolver
+        
+        vip_token = os.getenv("QMT_VIP_TOKEN", "")
+        data_dir = os.getenv("QMT_PATH", "")
+        
+        if not data_dir:
+            data_dir = str(PathResolver.get_qmt_data_dir())
+        
+        if vip_token:
+            xtdc.set_data_home_dir(data_dir)
+            xtdc.set_token(vip_token)
+            xtdc.init()
+            port = xtdc.listen(port=(58620, 58630))
+            return True, port
+        return False, None
+    except Exception as e:
+        return False, str(e)
+
+
+def download_holographic(date: str, resume: bool = True, timeout: int = 3600):
     """下载全息数据（V18双Ratio筛选后的股票Tick）
     
     筛选条件（对齐实盘live_sniper参数）：
     - 量比分位数: 0.95
     - 换手率范围: 3% - 70%
     - 剔除: 科创板、北交所
+    
+    新增功能（CTO补充）：
+    - VIP服务加速
+    - 超时控制
+    - 重试机制
+    - 跳过已有数据
     """
     from xtquant import xtdata
     from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn
@@ -277,6 +306,14 @@ def download_holographic(date: str, resume: bool = True):
     console.print(f"📐 筛选参数:")
     console.print(f"   量比分位数: {volume_percentile}")
     console.print(f"   换手率范围: {min_turnover}% - {max_turnover}%")
+    console.print(f"⏱️ 超时设置: {timeout}秒")
+    
+    # 启动VIP服务 - CTO补充
+    vip_started, vip_result = start_vip_service()
+    if vip_started:
+        console.print(f"[green]✅ VIP服务已启动，端口: {vip_result}[/green]")
+    else:
+        console.print(f"[yellow]⚠️ VIP服务未启动: {vip_result}[/yellow]")
     
     # 加载断点状态
     state_key = f"holographic_{date}"
@@ -302,6 +339,22 @@ def download_holographic(date: str, resume: bool = True):
     
     console.print(f"\n✅ 粗筛完成: {len(stock_list)} 只股票")
     
+    # 保存股票池 - CTO补充
+    universe_file = STATE_DIR / f"holographic_universe_{date}.json"
+    with open(universe_file, 'w', encoding='utf-8') as f:
+        json.dump({
+            "date": date,
+            "stocks": stock_list,
+            "count": len(stock_list),
+            "created_at": datetime.now().isoformat(),
+            "params": {
+                "volume_percentile": volume_percentile,
+                "min_turnover": min_turnover,
+                "max_turnover": max_turnover
+            }
+        }, f, ensure_ascii=False, indent=2)
+    console.print(f"💾 股票池已保存: {universe_file}")
+    
     # 过滤已完成的
     pending_stocks = [s for s in stock_list if s not in completed_set]
     console.print(f"⏭️  待下载: {len(pending_stocks)} 只 (已完成: {len(completed_set)})")
@@ -312,6 +365,10 @@ def download_holographic(date: str, resume: bool = True):
     
     success_count = len(completed_set)
     failed_count = len(state.get("failed", []))
+    skipped_count = 0
+    
+    # 超时控制
+    start_time = time.time()
     
     with Progress(
         TextColumn("[progress.description]{task.description}"),
@@ -323,6 +380,11 @@ def download_holographic(date: str, resume: bool = True):
         task = progress.add_task("[cyan]下载进度", total=len(pending_stocks))
         
         for i, stock in enumerate(pending_stocks):
+            # 超时检查
+            if time.time() - start_time > timeout:
+                console.print(f"\n[yellow]⏰ 超时 {timeout}秒，保存进度并退出[/yellow]")
+                break
+            
             try:
                 # 标准化代码
                 if "." not in stock:
@@ -331,24 +393,54 @@ def download_holographic(date: str, resume: bool = True):
                     else:
                         stock = f"{stock}.SZ"
                 
+                # 检查是否已有数据 - CTO补充：跳过已下载
+                try:
+                    existing = xtdata.get_local_data(
+                        field_list=["time"],
+                        stock_list=[stock],
+                        period="tick",
+                        start_time=date,
+                        end_time=date
+                    )
+                    if existing and stock in existing and len(existing[stock]) > 1000:
+                        state["completed"].append(stock)
+                        completed_set.add(stock)
+                        skipped_count += 1
+                        progress.update(task, advance=1)
+                        continue
+                except:
+                    pass
+                
                 # 下载
-                xtdata.download_history_data(
-                    stock_code=stock,
-                    period="tick",
-                    start_time=date,
-                    end_time=date
-                )
+                download_success = False
+                for retry in range(2):  # CTO补充：重试机制
+                    try:
+                        xtdata.download_history_data(
+                            stock_code=stock,
+                            period="tick",
+                            start_time=date,
+                            end_time=date
+                        )
+                        
+                        # 验证
+                        data = xtdata.get_local_data(
+                            field_list=["time"],
+                            stock_list=[stock],
+                            period="tick",
+                            start_time=date,
+                            end_time=date
+                        )
+                        
+                        if data and stock in data and len(data[stock]) > 100:
+                            download_success = True
+                            break
+                        elif retry == 0:
+                            time.sleep(1)  # 重试前等待
+                    except Exception as e:
+                        if retry == 0:
+                            time.sleep(1)
                 
-                # 验证
-                data = xtdata.get_local_data(
-                    field_list=["time"],
-                    stock_list=[stock],
-                    period="tick",
-                    start_time=date,
-                    end_time=date
-                )
-                
-                if data and stock in data and len(data[stock]) > 100:
+                if download_success:
                     state["completed"].append(stock)
                     success_count += 1
                 else:
@@ -374,6 +466,7 @@ def download_holographic(date: str, resume: bool = True):
     console.print(f"\n[green]✅ 下载完成！[/green]")
     console.print(f"   成功: {success_count} 只")
     console.print(f"   失败: {failed_count} 只")
+    console.print(f"   跳过: {skipped_count} 只")
 
 
 @click.command()
@@ -385,8 +478,9 @@ def download_holographic(date: str, resume: bool = True):
 @click.option('--end-date', default=None, help='结束日期 (YYYYMMDD)')
 @click.option('--date', default=None, help='单日日期 (YYYYMMDD)，用于全息下载')
 @click.option('--days', default=365, type=int, help='下载天数 (用于日K，默认365天)')
+@click.option('--timeout', default=3600, type=int, help='下载超时时间（秒，默认3600秒/1小时）')
 @click.option('--no-resume', is_flag=True, help='禁用断点续传，从头开始')
-def main(download_type, start_date, end_date, date, days, no_resume):
+def main(download_type, start_date, end_date, date, days, timeout, no_resume):
     """
     统一下载器 - All-in-One Data Downloader
     
@@ -394,6 +488,7 @@ def main(download_type, start_date, end_date, date, days, no_resume):
         python tools/unified_downloader.py --type daily_k --days 365
         python tools/unified_downloader.py --type tick --start-date 20250101 --end-date 20260225
         python tools/unified_downloader.py --type holographic --date 20260224
+        python tools/unified_downloader.py --type holographic --date 20260224 --timeout 7200
     """
     resume = not no_resume
     
@@ -414,7 +509,7 @@ def main(download_type, start_date, end_date, date, days, no_resume):
         if not date:
             date = datetime.now().strftime("%Y%m%d")
             click.echo(f"💡 未指定日期，使用今天: {date}")
-        download_holographic(date, resume=resume)
+        download_holographic(date, resume=resume, timeout=timeout)
 
 
 if __name__ == "__main__":
