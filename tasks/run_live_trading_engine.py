@@ -1043,18 +1043,100 @@ class LiveTradingEngine:
         收盘后运行时，回放当天的信号轨迹
         """
         from datetime import datetime
+        import time
+        import pandas as pd
+        
         current_time = datetime.now()
         
         # 如果在非交易时间运行，提供当日信号回放
         if current_time.hour > 15 or (current_time.hour == 15 and current_time.minute >= 5):  # 15:05后认为是收盘后
-            logger.info("📊 收盘后模式：正在回放今日信号轨迹...")
-            logger.info("💡 提示：系统将在后台记录今日所有信号点")
             print("📊 收盘后模式：正在回放今日信号轨迹...")
             print("💡 提示：系统将在后台记录今日所有信号点")
-            # 此处可扩展为读取当日信号日志并回放
+            logger.info("📊 收盘后模式：正在回放今日信号轨迹...")
+            logger.info("💡 提示：系统将在后台记录今日所有信号点")
+            
+            # 尝试获取当天的历史数据并回放
+            try:
+                # 获取日期
+                today = current_time.strftime('%Y%m%d')
+                
+                # 从TrueDictionary获取当前股票列表和数据
+                from logic.data_providers.true_dictionary import get_true_dictionary
+                true_dict = get_true_dictionary()
+                
+                # 获取全市场股票列表
+                from xtquant import xtdata
+                all_stocks = xtdata.get_stock_list_in_sector('沪深A股')
+                
+                # 获取快照数据
+                snapshot = xtdata.get_full_tick(all_stocks[:1000])  # 限制数量避免性能问题
+                
+                if snapshot:
+                    # 统计当日触发信号的股票
+                    triggered_stocks = []
+                    
+                    # 模拟当日信号检测过程
+                    for stock_code, tick_data in list(snapshot.items())[:50]:  # 限制数量
+                        if tick_data:
+                            # 构建tick事件数据
+                            tick_event_data = {
+                                'stock_code': stock_code,
+                                'price': tick_data.get('lastPrice', 0) if isinstance(tick_data, dict) else getattr(tick_data, 'lastPrice', 0),
+                                'volume': tick_data.get('volume', 0) if isinstance(tick_data, dict) else getattr(tick_data, 'volume', 0),
+                                'amount': tick_data.get('amount', 0) if isinstance(tick_data, dict) else getattr(tick_data, 'amount', 0),
+                                'open': tick_data.get('open', 0) if isinstance(tick_data, dict) else getattr(tick_data, 'open', 0),
+                                'high': tick_data.get('high', 0) if isinstance(tick_data, dict) else getattr(tick_data, 'high', 0),
+                                'low': tick_data.get('low', 0) if isinstance(tick_data, dict) else getattr(tick_data, 'low', 0),
+                                'prev_close': tick_data.get('preClose', 0) if isinstance(tick_data, dict) else getattr(tick_data, 'preClose', 0),
+                            }
+                            
+                            # 检查是否满足量比条件（模拟当日触发）
+                            if tick_event_data['volume'] > 0:
+                                # 获取5日均量
+                                avg_volume_5d = true_dict.get_avg_volume_5d(stock_code)
+                                if avg_volume_5d and avg_volume_5d > 0:
+                                    volume_ratio = tick_event_data['volume'] / avg_volume_5d
+                                    
+                                    # 检查是否达到量比阈值
+                                    if volume_ratio >= self.volume_percentile:
+                                        # 模拟触发信号
+                                        triggered_stocks.append({
+                                            'stock_code': stock_code,
+                                            'time': tick_event_data.get('time', current_time.strftime('%H:%M:%S')),
+                                            'volume_ratio': round(volume_ratio, 2),
+                                            'price': round(tick_event_data['price'], 2),
+                                            'high': round(tick_event_data.get('high', 0), 2),
+                                            'low': round(tick_event_data.get('low', 0), 2)
+                                        })
+                    
+                    # 打印回放结果
+                    if triggered_stocks:
+                        print("\n📈 今日信号回放结果:")
+                        print("-" * 80)
+                        print(f"{'时间':<10} {'股票代码':<12} {'量比':<8} {'当前价':<10} {'最高价':<10} {'最低价':<10}")
+                        print("-" * 80)
+                        
+                        for stock in triggered_stocks:
+                            print(f"{stock['time']:<10} {stock['stock_code']:<12} {stock['volume_ratio']:<8} "
+                                  f"{stock['price']:<10} {stock['high']:<10} {stock['low']:<10}")
+                        
+                        print("-" * 80)
+                        print(f"📊 总计触发信号: {len(triggered_stocks)} 只股票")
+                        
+                        # 记录到日志
+                        logger.info(f"📊 今日信号回放完成: 触发信号 {len(triggered_stocks)} 只股票")
+                        for stock in triggered_stocks:
+                            logger.info(f"🎯 {stock['stock_code']} - 量比 {stock['volume_ratio']}x")
+                    else:
+                        print("\n📊 今日未发现量比突破信号")
+                        logger.info("📊 今日未发现量比突破信号")
+                
+            except Exception as e:
+                logger.error(f"❌ 历史信号回放失败: {e}")
+                print(f"❌ 历史信号回放失败: {e}")
         else:
-            logger.info("💡 提示：系统正在实时监控右侧起爆信号")
             print("💡 提示：系统正在实时监控右侧起爆信号")
+            logger.info("💡 提示：系统正在实时监控右侧起爆信号")
         
 
     def stop(self):

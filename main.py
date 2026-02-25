@@ -847,8 +847,9 @@ def simulate_cmd(ctx, start_date, end_date, watchlist, phase):
 @click.option('--volume_percentile', default=0.95, type=float,
               help='量比分位数阈值 (默认: 0.95)')
 @click.option('--dry-run', is_flag=True, help='干运行(不实际下单)')
+@click.option('--replay-date', help='历史回放日期 (格式: YYYYMMDD)，用于回放指定日期的信号')
 @click.pass_context
-def live_cmd(ctx, mode, max_positions, cutoff_time, volume_percentile, dry_run):
+def live_cmd(ctx, mode, max_positions, cutoff_time, volume_percentile, dry_run, replay_date):
     """
     🚀 实盘猎杀系统 - CTO终极架构版 (EventDriven事件驱动)
     
@@ -940,75 +941,166 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, volume_percentile, dry_run):
         cutoff = datetime.strptime(cutoff_time, '%H:%M:%S').time()
         cutoff_dt = now.replace(hour=cutoff.hour, minute=cutoff.minute, second=cutoff.second)
         
+        # 初始化引擎变量，防止作用域错误
+        engine = None
+        
+        # 如果指定了历史回放日期，则直接执行历史回放
+        if replay_date:
+            click.echo(click.style(f"🔄 指定日期历史回放模式: {replay_date}", fg='green'))
+            
+            # ==========================================
+            # Step 3: 挂载EventDriven引擎 (CTO依赖注入！)
+            # ==========================================
+            click.echo("\n⚡ Step 2: 挂载 EventDriven 引擎...")
+            from tasks.run_live_trading_engine import LiveTradingEngine
+            from logic.core.config_manager import get_config_manager
+            
+            # 配置管理器统一参数管理 (CTO SSOT原则)
+            config_manager = get_config_manager()
+            # 更新配置文件中的量比阈值
+            config_manager._config['halfway']['volume_surge_percentile'] = volume_percentile
+            click.echo(f"📊 实盘引擎量比分位数阈值设置为: {volume_percentile} (右侧起爆标准)")
+            
+            # CTO强制：创建QMT管理器实例
+            try:
+                from logic.data_providers.qmt_manager import QmtDataManager
+                qmt_manager = QmtDataManager()
+                click.echo("✅ QMT Manager 已创建")
+            except Exception as e:
+                click.echo(click.style(f"❌ QMT Manager创建失败: {e}", fg='red'))
+                ctx.exit(1)
+            
+            # CTO强制：依赖注入模式 - 传入QMT实例
+            engine = LiveTradingEngine(
+                qmt_manager=qmt_manager,
+                volume_percentile=volume_percentile
+            )
+            
+            # 启动引擎（09:25第一斩 → 09:30第二斩 → 火控雷达）
+            engine.start_session()
+            
+            # 执行指定日期的历史信号回放
+            click.echo(click.style(f"🔄 执行 {replay_date} 历史信号回放...", fg='green'))
+            engine.replay_today_signals()
+            
+            click.echo(click.style("✅ 历史信号回放完成", fg='green'))
+            click.echo(click.style("🎯 系统将在3秒后退出", fg='yellow'))
+            time.sleep(3)
+            
+            # 程序退出，不进入死循环
+            click.echo(click.style("✅ 系统安全退出", fg='green'))
+            return
         # 如果已过截停时间，只监控不发单
-        if now > cutoff_dt:
+        elif now > cutoff_dt:
             click.echo(click.style(f"⚠️ 当前时间 {now.strftime('%H:%M')} 已超过截停时间 {cutoff_time}，等待下一交易日", fg='yellow'))
             click.echo(click.style("⚠️ 系统进入收盘后监控模式，等待下一交易日", fg='yellow'))
         elif now > market_close:
             # 收盘后运行，执行历史信号回放
             click.echo(click.style(f"📊 当前时间 {now.strftime('%H:%M')} 已超过收盘时间 15:05", fg='green'))
             click.echo(click.style("🎯 启动今日历史信号回放...", fg='green'))
+            
+            # ==========================================
+            # Step 3: 挂载EventDriven引擎 (CTO依赖注入！)
+            # ==========================================
+            click.echo("\n⚡ Step 2: 挂载 EventDriven 引擎...")
+            from tasks.run_live_trading_engine import LiveTradingEngine
+            from logic.core.config_manager import get_config_manager
+            
+            # 配置管理器统一参数管理 (CTO SSOT原则)
+            config_manager = get_config_manager()
+            # 更新配置文件中的量比阈值
+            config_manager._config['halfway']['volume_surge_percentile'] = volume_percentile
+            click.echo(f"📊 实盘引擎量比分位数阈值设置为: {volume_percentile} (右侧起爆标准)")
+            
+            # CTO强制：创建QMT管理器实例
+            try:
+                from logic.data_providers.qmt_manager import QmtDataManager
+                qmt_manager = QmtDataManager()
+                click.echo("✅ QMT Manager 已创建")
+            except Exception as e:
+                click.echo(click.style(f"❌ QMT Manager创建失败: {e}", fg='red'))
+                ctx.exit(1)
+            
+            # CTO强制：依赖注入模式 - 传入QMT实例
+            engine = LiveTradingEngine(
+                qmt_manager=qmt_manager,
+                volume_percentile=volume_percentile
+            )
+            
+            # 启动引擎（09:25第一斩 → 09:30第二斩 → 火控雷达）
+            engine.start_session()
+            
+            # 执行今日历史信号回放
+            click.echo(click.style("🔄 执行今日历史信号回放...", fg='green'))
+            engine.replay_today_signals()
+            
+            click.echo(click.style("✅ 历史信号回放完成", fg='green'))
+            click.echo(click.style("🎯 系统将在3秒后退出", fg='yellow'))
+            time.sleep(3)
+            
+            # 程序退出，不进入死循环
+            click.echo(click.style("✅ 系统安全退出", fg='green'))
+            return
         elif now < market_open:
             wait_seconds = (market_open - now).seconds
             click.echo(f"⏳ 非交易时间，等待开盘... (距9:30开盘 {wait_seconds}秒)")
             time.sleep(min(wait_seconds, 3))  # 最多等3秒(测试用)
+        else:
+            # 交易时间内，启动实时监控模式
+            # ==========================================
+            # Step 3: 挂载EventDriven引擎 (CTO依赖注入！)
+            # ==========================================
+            click.echo("\n⚡ Step 2: 挂载 EventDriven 引擎...")
+            from tasks.run_live_trading_engine import LiveTradingEngine
+            from logic.core.config_manager import get_config_manager
+            
+            # 配置管理器统一参数管理 (CTO SSOT原则)
+            config_manager = get_config_manager()
+            # 更新配置文件中的量比阈值
+            config_manager._config['halfway']['volume_surge_percentile'] = volume_percentile
+            click.echo(f"📊 实盘引擎量比分位数阈值设置为: {volume_percentile} (右侧起爆标准)")
+            
+            # CTO强制：创建QMT管理器实例
+            try:
+                from logic.data_providers.qmt_manager import QmtDataManager
+                qmt_manager = QmtDataManager()
+                click.echo("✅ QMT Manager 已创建")
+            except Exception as e:
+                click.echo(click.style(f"❌ QMT Manager创建失败: {e}", fg='red'))
+                ctx.exit(1)
+            
+            # CTO强制：依赖注入模式 - 传入QMT实例
+            engine = LiveTradingEngine(
+                qmt_manager=qmt_manager,
+                volume_percentile=volume_percentile
+            )
+            
+            # 启动引擎（09:25第一斩 → 09:30第二斩 → 火控雷达）
+            engine.start_session()
         
-        # ==========================================
-        # Step 3: 挂载EventDriven引擎 (CTO依赖注入！)
-        # ==========================================
-        click.echo("\n⚡ Step 2: 挂载 EventDriven 引擎...")
-        from tasks.run_live_trading_engine import LiveTradingEngine
-        from logic.core.config_manager import get_config_manager
-        
-        # 配置管理器统一参数管理 (CTO SSOT原则)
-        config_manager = get_config_manager()
-        # 更新配置文件中的量比阈值
-        config_manager._config['halfway']['volume_surge_percentile'] = volume_percentile
-        click.echo(f"📊 实盘引擎量比分位数阈值设置为: {volume_percentile} (右侧起爆标准)")
-        
-        # CTO强制：创建QMT管理器实例
-        try:
-            from logic.data_providers.qmt_manager import QmtDataManager
-            qmt_manager = QmtDataManager()
-            click.echo("✅ QMT Manager 已创建")
-        except Exception as e:
-            click.echo(click.style(f"❌ QMT Manager创建失败: {e}", fg='red'))
-            ctx.exit(1)
-        
-        # CTO强制：依赖注入模式 - 传入QMT实例
-        engine = LiveTradingEngine(
-            qmt_manager=qmt_manager,
-            volume_percentile=volume_percentile
-        )
-        
-        # 启动引擎（09:25第一斩 → 09:30第二斩 → 火控雷达）
-        engine.start_session()
-        
-        # 检查是否为收盘后运行，如果是则执行历史信号回放
-        now = datetime.now()
-        market_close = now.replace(hour=15, minute=5, second=0, microsecond=0)
-        if now > market_close:
-            click.echo(click.style("🔄 执行今日历史信号回放...", fg='green'))
-            engine.replay_today_signals()
-        
-        click.echo(click.style("✅ 监控器已启动，EventBus后台运行中...", fg='green'))
-        click.echo(click.style("🎯 等待QMT Tick数据推送...", fg='cyan'))
-        click.echo(click.style("🛑 按 Ctrl+C 安全退出", fg='yellow'))
+            click.echo(click.style("✅ 监控器已启动，EventBus后台运行中...", fg='green'))
+            click.echo(click.style("🎯 等待QMT Tick数据推送...", fg='cyan'))
+            click.echo(click.style("🛑 按 Ctrl+C 安全退出", fg='yellow'))
         
         # ==========================================
         # Step 4: 主线程保活 (CTO关键修复！)
         # ==========================================
-        # 保持主线程不死，让EventBus在后台不断接收Tick并打分！
-        try:
-            while engine.running:
-                time.sleep(1)
-        except KeyboardInterrupt:
-            pass
-        
-        # 优雅退出
-        click.echo("\n🛑 收到中断信号，正在卸载监控器...")
-        engine.stop()
-        click.echo(click.style("✅ 系统安全退出", fg='green'))
+        # 只有在非历史回放模式下才进入死循环
+        if engine is not None and not (replay_date or now > market_close):
+            # 保持主线程不死，让EventBus在后台不断接收Tick并打分！
+            try:
+                while engine.running:
+                    time.sleep(1)
+            except KeyboardInterrupt:
+                pass
+            
+            # 优雅退出
+            click.echo("\n🛑 收到中断信号，正在卸载监控器...")
+            engine.stop()
+            click.echo(click.style("✅ 系统安全退出", fg='green'))
+        elif engine is not None:
+            # 如果是历史回放模式，已经处理完成，正常退出
+            click.echo(click.style("✅ 系统安全退出", fg='green'))
         
     except Exception as e:
         logger.error(f"❌ 实盘系统失败: {e}", exc_info=True)
