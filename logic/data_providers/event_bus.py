@@ -183,7 +183,7 @@ class AsyncEventBus:
             self._consumer_thread.join(timeout=2.0)  # 最多等待2秒
         
         # 关闭线程池
-        self._executor.shutdown(wait=True, timeout=5.0)
+        self._executor.shutdown(wait=True)
         
         logger.info("✅ 事件总线已停止")
     

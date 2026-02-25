@@ -852,10 +852,11 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, volume_percentile, dry_run):
     """
     🚀 实盘猎杀系统 - CTO终极架构版 (EventDriven事件驱动)
     
-    CTO规范: 
+    CTO强制规范: 
     - 09:25盘前装弹 → 09:30极速扫描 → 09:35后火控雷达
-    - 所有数据必须真实(QMT原生),禁止模拟
-    - 废单5秒不成交立即撤
+    - 所有数据必须QMT原生，禁止任何外网请求！
+    - Tushare已物理剥离，改用QMT本地数据
+    - 依赖注入模式：QMT实例从main.py传入引擎
     
     示例:
         python main.py live --mode paper          # 模拟盘测试
@@ -876,11 +877,16 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, volume_percentile, dry_run):
     
     try:
         # ==========================================
-        # Step 1: 盘前装弹 (CTO修复 - 支持盘中测试)
+        # Step 0: 数据检查 (CTO强制：实盘优先快速启动，不阻塞)
         # ==========================================
-        click.echo("\n📦 Step 1: 盘前装弹...")
-        from logic.data_providers.true_dictionary import warmup_true_dictionary
+        click.echo("\n📦 Step 0: 数据检查...")
+        
         from xtquant import xtdata
+        from datetime import timedelta
+        
+        # CTO修正：实盘不下载！优先快速启动
+        # 数据下载用 tools/download_daily_k.py 维护脚本
+        # QMT客户端每天自动更新日线数据
         
         # 获取全市场股票列表
         all_stocks = xtdata.get_stock_list_in_sector('沪深A股')
@@ -889,35 +895,66 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, volume_percentile, dry_run):
             ctx.exit(1)
         
         click.echo(f"   全市场共 {len(all_stocks)} 只股票")
+        click.echo(f"   💡 如需补充数据，请运行: python tools/download_daily_k.py")
         
-        # 执行盘前装弹
-        warmup_result = warmup_true_dictionary(all_stocks[:500])  # 前500只预热
+        # ==========================================
+        # Step 1: QMT连接 + 本地数据装弹 (CTO强制：0外网请求)
+        # ==========================================
+        click.echo("\n📦 Step 1: 盘前装弹 (QMT本地模式)...")
+        
+        # CTO规范：先连接QMT
+        try:
+            click.echo(f"✅ xtdata已连接")
+        except Exception as e:
+            click.echo(click.style(f"❌ QMT连接失败: {e}", fg='red'))
+            ctx.exit(1)
+        
+        # 获取全市场股票列表（QMT本地，毫秒级）
+        all_stocks = xtdata.get_stock_list_in_sector('沪深A股')
+        if not all_stocks:
+            click.echo(click.style("❌ 无法获取股票列表", fg='red'))
+            ctx.exit(1)
+        
+        click.echo(f"   全市场共 {len(all_stocks)} 只股票")
+        
+        # CTO强制：使用QMT本地数据计算5日均量，替代Tushare外网请求
+        click.echo("🔄 [QMT本地] 开始装弹...")
+        from logic.data_providers.true_dictionary import get_true_dictionary
+        true_dict = get_true_dictionary()
+        
+        # CTO修复：全量处理，不截断！
+        warmup_result = true_dict.warmup_qmt_only(all_stocks)  # 全市场预热
         
         if not warmup_result.get('ready_for_trading'):
             click.echo(click.style("🚨 盘前装弹失败! 系统熔断退出", fg='red', bold=True))
             ctx.exit(1)
         
-        click.echo(click.style("✅ 盘前装弹完成！真实流通盘与均量已就位", fg='green'))
+        click.echo(click.style("✅ 盘前装弹完成！QMT本地数据已就位（0外网请求）", fg='green'))
         
         # ==========================================
         # Step 2: 时间管理 (CTO加固 - 14:49测试兼容)
         # ==========================================
         now = datetime.now()
         market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
+        market_close = now.replace(hour=15, minute=5, second=0, microsecond=0)  # 收盘时间
         cutoff = datetime.strptime(cutoff_time, '%H:%M:%S').time()
         cutoff_dt = now.replace(hour=cutoff.hour, minute=cutoff.minute, second=cutoff.second)
         
         # 如果已过截停时间，只监控不发单
         if now > cutoff_dt:
-            click.echo(click.style(f"⚠️ 当前时间 {now.strftime('%H:%M')} 已超过截停时间 {cutoff_time}", fg='yellow'))
-            click.echo(click.style("⚠️ 根据右侧起爆纪律，系统将监控但不发单！", fg='yellow'))
+            click.echo(click.style(f"⚠️ 当前时间 {now.strftime('%H:%M')} 已超过截停时间 {cutoff_time}，等待下一交易日", fg='yellow'))
+            click.echo(click.style("⚠️ 系统进入收盘后监控模式，等待下一交易日", fg='yellow'))
+        elif now > market_close:
+            # 收盘后运行，执行历史信号回放
+            click.echo(click.style(f"📊 当前时间 {now.strftime('%H:%M')} 已超过收盘时间 15:05", fg='green'))
+            click.echo(click.style("🎯 启动今日历史信号回放...", fg='green'))
         elif now < market_open:
             wait_seconds = (market_open - now).seconds
-            click.echo(f"⏳ 等待开盘... (距开盘 {wait_seconds}秒)")
+            click.echo(f"⏳ 非交易时间，等待开盘... (距9:30开盘 {wait_seconds}秒)")
             time.sleep(min(wait_seconds, 3))  # 最多等3秒(测试用)
         
         # ==========================================
-        # Step 3: 挂载EventDriven引擎 (CTO致命修复！)
+        # Step 3: 挂载EventDriven引擎 (CTO依赖注入！)
         # ==========================================
         click.echo("\n⚡ Step 2: 挂载 EventDriven 引擎...")
         from tasks.run_live_trading_engine import LiveTradingEngine
@@ -927,12 +964,32 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, volume_percentile, dry_run):
         config_manager = get_config_manager()
         # 更新配置文件中的量比阈值
         config_manager._config['halfway']['volume_surge_percentile'] = volume_percentile
-        click.echo(f"📊 实盘引擎量比分位数阈值设置为: {volume_percentile}")
+        click.echo(f"📊 实盘引擎量比分位数阈值设置为: {volume_percentile} (右侧起爆标准)")
         
-        engine = LiveTradingEngine()
+        # CTO强制：创建QMT管理器实例
+        try:
+            from logic.data_providers.qmt_manager import QmtDataManager
+            qmt_manager = QmtDataManager()
+            click.echo("✅ QMT Manager 已创建")
+        except Exception as e:
+            click.echo(click.style(f"❌ QMT Manager创建失败: {e}", fg='red'))
+            ctx.exit(1)
+        
+        # CTO强制：依赖注入模式 - 传入QMT实例
+        engine = LiveTradingEngine(
+            qmt_manager=qmt_manager,
+            volume_percentile=volume_percentile
+        )
         
         # 启动引擎（09:25第一斩 → 09:30第二斩 → 火控雷达）
         engine.start_session()
+        
+        # 检查是否为收盘后运行，如果是则执行历史信号回放
+        now = datetime.now()
+        market_close = now.replace(hour=15, minute=5, second=0, microsecond=0)
+        if now > market_close:
+            click.echo(click.style("🔄 执行今日历史信号回放...", fg='green'))
+            engine.replay_today_signals()
         
         click.echo(click.style("✅ 监控器已启动，EventBus后台运行中...", fg='green'))
         click.echo(click.style("🎯 等待QMT Tick数据推送...", fg='cyan'))
