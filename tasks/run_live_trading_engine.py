@@ -83,6 +83,9 @@ class LiveTradingEngine:
         self.trade_gatekeeper = None
         self.trader = None
         
+        # 【架构解耦】初始化QMT事件适配器
+        self._init_qmt_adapter()
+        
         # 初始化EventBus（如果未传入）
         if self.event_bus is None:
             self._init_event_bus()
@@ -132,6 +135,24 @@ class LiveTradingEngine:
         except Exception as e:
             self.instrument_cache = None
             logger.error(f"❌ InstrumentCache 初始化异常: {e}")
+    
+    def _init_qmt_adapter(self):
+        """
+        【架构解耦】初始化QMT事件适配器
+        
+        将底层QMT通讯细节封装到adapter，主引擎保持纯粹
+        """
+        try:
+            from logic.data_providers.qmt_event_adapter import QMTEventAdapter
+            self.qmt_adapter = QMTEventAdapter(event_bus=self.event_bus)
+            if self.qmt_adapter.initialize():
+                logger.info("✅ [LiveTradingEngine] QMTEventAdapter 初始化成功")
+            else:
+                logger.error("❌ [LiveTradingEngine] QMTEventAdapter 初始化失败")
+                self.qmt_adapter = None
+        except Exception as e:
+            logger.error(f"❌ [LiveTradingEngine] QMTEventAdapter 创建失败: {e}")
+            self.qmt_adapter = None
     
     def start_session(self):
         """
@@ -255,95 +276,27 @@ class LiveTradingEngine:
     
     def _setup_qmt_callbacks(self):
         """
-        CTO强制修复: 使用正确的QMT订阅API
-        xtdata没有set_stock_callback！正确API是subscribe_quote
-        订阅动作必须在watchlist填充之后！
+        【架构解耦】使用QMTEventAdapter订阅Tick数据
+        
+        原有100+行的QMT底层代码已剥离至qmt_event_adapter.py
+        主引擎只负责调度，不做底层脏活！
         """
+        # CTO修复：检查watchlist是否已初始化
+        if not self.watchlist:
+            logger.warning("⚠️ watchlist未初始化，跳过Tick订阅")
+            return
+            
+        # 检查adapter是否就绪
+        if not hasattr(self, 'qmt_adapter') or self.qmt_adapter is None:
+            logger.error("❌ QMTEventAdapter未初始化，无法订阅Tick")
+            return
+            
+        # 【架构解耦】通过adapter订阅，主引擎保持纯粹
         try:
-            from xtquant import xtdata
-            
-            # CTO修复：检查watchlist是否已初始化
-            if not self.watchlist:
-                logger.warning("⚠️ watchlist未初始化，跳过Tick订阅")
-                logger.info("💡 提示：watchlist将在快照筛选后填充，然后订阅Tick")
-                return
-            
-            # 定义Tick回调函数
-            def qmt_tick_callback(datas):
-                """
-                QMT Tick回调函数
-                将QMT推送的原始数据转换为TickEvent并发布到事件总线
-                """
-                try:
-                    if not datas:
-                        return
-                    
-                    # datas是字典，key是stock_code
-                    for stock_code, tick_list in datas.items():
-                        if tick_list and len(tick_list) > 0:
-                            # tick_list是列表，取最新的tick
-                            latest_tick = tick_list[-1] if isinstance(tick_list, list) else tick_list
-                            
-                            # 【CTO终极裁决第一刀】修复参数名不匹配：time → timestamp
-                            tick_event = {
-                                'stock_code': stock_code,
-                                'price': float(latest_tick.get('lastPrice', 0)),
-                                'volume': int(latest_tick.get('volume', 0)),
-                                'amount': float(latest_tick.get('amount', 0)),
-                                'open': float(latest_tick.get('open', 0)),
-                                'high': float(latest_tick.get('high', 0)),
-                                'low': float(latest_tick.get('low', 0)),
-                                'prev_close': float(latest_tick.get('preClose', 0)),
-                                'timestamp': str(latest_tick.get('time', ''))  # 字段名对齐TickEvent
-                            }
-                            
-                            # 发布到事件总线
-                            if self.event_bus:
-                                from logic.data_providers.event_bus import TickEvent
-                                try:
-                                    # 【CTO终极裁决第二刀】安全容错：逐个字段验证
-                                    tick_event_obj = TickEvent(**tick_event)
-                                    self.event_bus.publish('tick', tick_event_obj)
-                                    # 成功日志（每10次输出一次避免刷屏）
-                                    if hasattr(self, '_tick_count'):
-                                        self._tick_count += 1
-                                    else:
-                                        self._tick_count = 1
-                                    if self._tick_count % 10 == 0:
-                                        logger.info(f"✅ 成功接收并解析 Tick: [{stock_code}] 最新价: {tick_event['price']}, 累计量: {tick_event['volume']}")
-                                except TypeError as te:
-                                    # 参数不匹配错误，记录详细字段信息
-                                    logger.error(f"❌ TickEvent字段不匹配 [{stock_code}]: {te}")
-                                    logger.debug(f"   传入字段: {list(tick_event.keys())}")
-                                except Exception as te:
-                                    logger.error(f"❌ TickEvent创建失败 [{stock_code}]: {te}")
-                                
-                except Exception as e:
-                    logger.error(f"❌ QMT Tick回调处理失败: {e}")
-            
-            # 【CTO清创第一刀】QMT subscribe_quote必须用for循环逐一订阅
-            logger.info(f"📊 开始逐一订阅 {len(self.watchlist)} 只股票的Tick数据...")
-            subscribed_count = 0
-            for code in self.watchlist:
-                try:
-                    xtdata.subscribe_quote(
-                        stock_code=code,
-                        period='tick',
-                        count=-1,
-                        callback=qmt_tick_callback
-                    )
-                    subscribed_count += 1
-                except Exception as e:
-                    logger.warning(f"⚠️ 订阅 {code} 失败: {e}")
-            logger.info(f"✅ QMT Tick订阅完成: {subscribed_count}/{len(self.watchlist)} 只股票")
-            
-        except AttributeError as e:
-            # 如果subscribe_quote也不存在，使用备用方案
-            logger.warning(f"⚠️ QMT订阅API不可用: {e}")
-            logger.info("💡 提示：将使用轮询模式获取Tick数据")
+            subscribed_count = self.qmt_adapter.subscribe_ticks(self.watchlist)
+            logger.info(f"✅ Tick订阅完成: {subscribed_count}/{len(self.watchlist)} 只股票")
         except Exception as e:
-            logger.error(f"❌ QMT Tick订阅失败: {e}")
-            logger.info("💡 提示：将使用轮询模式获取Tick数据")
+            logger.error(f"❌ Tick订阅失败: {e}")
     
     def _auction_snapshot_filter(self):
         """
