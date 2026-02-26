@@ -725,7 +725,7 @@ class LiveTradingEngine:
             
             # 【架构大一统】使用GlobalFilterGateway统一过滤逻辑
             # 无论是实盘、回放、回测，都必须走同一套Boss三维铁网！
-            from logic.core.global_filter_gateway import apply_boss_filters
+            from logic.strategies.global_filter_gateway import apply_boss_filters
             
             filtered_df, stats = apply_boss_filters(
                 df=df,
@@ -1376,7 +1376,7 @@ class LiveTradingEngine:
                                     volume_ratio = estimated_full_day_volume / avg_volume_5d
                                     
                                     # 【架构大一统】使用GlobalFilterGateway验证信号质量
-                                    from logic.core.global_filter_gateway import quick_validate
+                                    from logic.strategies.global_filter_gateway import quick_validate
                                     
                                     # 计算换手率
                                     float_volume = true_dict.get_float_volume(stock_code)
