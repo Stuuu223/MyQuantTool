@@ -753,6 +753,8 @@ class LiveTradingEngine:
             self.watchlist = filtered_df['stock_code'].tolist()[:150]  # 最多150只
             
             # ⭐️ 记录Ratio化参数（CTO封板要求）
+            # 【修复】从config读取min_volume_multiplier，而非假设变量存在
+            min_volume_multiplier = config_manager.get('live_sniper.min_volume_multiplier', 1.5)
             logger.info(f"🔪 CTO第二斩完成: {original_count}只 → {len(self.watchlist)}只，耗时{elapsed:.2f}ms")
             logger.info(f"   ⏱️ 开盘已运行: {minutes_passed:.1f}分钟 | 量比倍数门槛: {min_volume_multiplier:.2f}x (动态Ratio)")
             logger.info(f"   📊 【CTO源码清剿】观察池使用纯动态倍数（>= {min_volume_multiplier}x），Zero Magic Number！")
@@ -1320,6 +1322,10 @@ class LiveTradingEngine:
             
             # 尝试获取当天的历史数据并回放
             try:
+                # 【架构大一统修复】实例化config_manager供后续quick_validate使用
+                from logic.core.config_manager import get_config_manager
+                config_manager = get_config_manager()
+                
                 # 获取日期
                 today = current_time.strftime('%Y%m%d')
                 
