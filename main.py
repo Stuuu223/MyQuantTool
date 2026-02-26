@@ -1087,6 +1087,16 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, volume_percentile, dry_run, 
             # 启动引擎（09:25第一斩 → 09:30第二斩 → 火控雷达）
             engine.start_session()
         
+            # 【CTO暴怒扒皮第一棒】强制审计：显示观察池数量
+            watchlist_count = len(engine.watchlist) if hasattr(engine, 'watchlist') else 0
+            click.echo(click.style("=" * 60, fg='cyan'))
+            click.echo(click.style(f"🚨 [CTO强制审计] 观察池最终状态: {watchlist_count}只", fg='cyan'))
+            if watchlist_count > 0:
+                click.echo(click.style(f"📊 [CTO强制审计] 前5只: {engine.watchlist[:5]}", fg='cyan'))
+            else:
+                click.echo(click.style(f"❌ [CTO强制审计] 观察池为空！系统将进入待机模式", fg='red'))
+            click.echo(click.style("=" * 60, fg='cyan'))
+            
             click.echo(click.style("🎯 进入高频盯盘雷达模式...", fg='green'))
             click.echo(click.style("✅ 监控器已启动，EventBus后台运行中...", fg='green'))
             click.echo(click.style("🎯 等待QMT Tick数据推送...", fg='cyan'))

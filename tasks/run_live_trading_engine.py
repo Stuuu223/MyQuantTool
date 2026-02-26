@@ -194,6 +194,17 @@ class LiveTradingEngine:
             
             # Step 5: 进入高频监控模式
             logger.info(f"🎯 进入高频监控模式，锁定右侧起爆目标 {len(self.watchlist)} 只目标")
+            
+            # 【CTO暴怒扒皮第一棒】强制高亮输出Watchlist数量
+            watchlist_count = len(self.watchlist)
+            logger.info("=" * 60)
+            logger.info(f"🚨 [CTO强制审计] 盘中补网结束！当前真实观察池数量: {watchlist_count}只")
+            if watchlist_count > 0:
+                logger.info(f"📊 [CTO强制审计] 观察池前5只股票: {self.watchlist[:5]}")
+            else:
+                logger.error(f"❌ [CTO强制审计] 观察池为空！0.90分位的宽体雷达失效！")
+            logger.info("=" * 60)
+            
             self._fire_control_mode()
             return
         
