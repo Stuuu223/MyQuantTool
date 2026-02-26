@@ -656,21 +656,23 @@ class LiveTradingEngine:
             df['float_volume'] = df['stock_code'].map(true_dict.get_float_volume)
             
             # 4. 向量化计算量比和换手率（CTO规范：禁止iterrows）
-            # 量比 = 当日成交量 / 5日平均成交量
-            # 注意：这里volume是累计成交量，需要估算当前时刻的成交量
-            # 开盘第一秒，直接用volume作为当日成交量估算
-            df['volume_ratio'] = df['volume'] / df['avg_volume_5d'].replace(0, pd.NA)
+            # ⭐️ CTO裁决修复：引入时间进度加权，防止早盘量比失真
+            # 量比 = 估算全天成交量 / 5日平均成交量
+            # 其中 估算全天成交量 = 当前成交量 / 已过分钟数 * 240分钟
+            from datetime import datetime
+            now = datetime.now()
+            market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
+            minutes_passed = max(1, (now - market_open).total_seconds() / 60)  # 最小1分钟
+            
+            # 时间进度加权：估算全天成交量
+            df['estimated_full_day_volume'] = df['volume'] / minutes_passed * 240
+            df['volume_ratio'] = df['estimated_full_day_volume'] / df['avg_volume_5d'].replace(0, pd.NA)
             
             # 换手率 = 成交量 / 流通股本 * 100%
             df['turnover_rate'] = (df['volume'] / df['float_volume'].replace(0, pd.NA)) * 100
             
             # ⭐️ CTO终极Ratio化：计算每分钟换手率（老板钦定）
             # 实战意义：09:35(5分钟)需>1%，10:00(30分钟)需>6%，排除盘中偷袭假起爆
-            from datetime import datetime
-            now = datetime.now()
-            market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
-            minutes_passed = max(1, (now - market_open).total_seconds() / 60)  # 最小1分钟
-            
             df['turnover_rate_per_min'] = df['turnover_rate'] / minutes_passed
             
             # 清理无效数据
@@ -1009,8 +1011,15 @@ class LiveTradingEngine:
             # 5日均量数据
             df['avg_volume_5d'] = df['stock_code'].map(true_dict.get_avg_volume_5d)
             
-            # 计算量比（当前成交量/5日均量）
-            df['volume_ratio'] = df['volume'] / df['avg_volume_5d'].replace(0, pd.NA)
+            # ⭐️ CTO裁决修复：引入时间进度加权，防止盘中量比失真
+            # 量比 = 估算全天成交量 / 5日平均成交量
+            # 其中 估算全天成交量 = 当前成交量 / 已过分钟数 * 240分钟
+            now = datetime.now()
+            market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
+            minutes_passed = max(1, (now - market_open).total_seconds() / 60)  # 最小1分钟
+            
+            df['estimated_full_day_volume'] = df['volume'] / minutes_passed * 240
+            df['volume_ratio'] = df['estimated_full_day_volume'] / df['avg_volume_5d'].replace(0, pd.NA)
             
             # 过滤条件：非一字板、有量比数据、量比>阈值
             mask = (
@@ -1095,7 +1104,14 @@ class LiveTradingEngine:
                                 # 获取5日均量
                                 avg_volume_5d = true_dict.get_avg_volume_5d(stock_code)
                                 if avg_volume_5d and avg_volume_5d > 0:
-                                    volume_ratio = tick_event_data['volume'] / avg_volume_5d
+                                    # ⭐️ CTO裁决修复：引入时间进度加权，防止回放时量比失真
+                                    # 量比 = 估算全天成交量 / 5日平均成交量
+                                    now = datetime.now()
+                                    market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
+                                    minutes_passed = max(1, (now - market_open).total_seconds() / 60)  # 最小1分钟
+                                    
+                                    estimated_full_day_volume = tick_event_data['volume'] / minutes_passed * 240
+                                    volume_ratio = estimated_full_day_volume / avg_volume_5d
                                     
                                     # 检查是否达到量比阈值
                                     if volume_ratio >= self.volume_percentile:
