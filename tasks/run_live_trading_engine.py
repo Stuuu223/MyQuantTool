@@ -723,28 +723,19 @@ class LiveTradingEngine:
             
             config_manager = get_config_manager()
             
-            # 【CTO源码清剿】删除0.90 Magic Number，使用纯动态倍数（Ratio化）
-            # 量比本身就是动态倍数（今日估算量/5日均量），无需分位数计算
-            # 直接从配置读取最小放量倍数，Fail-Fast模式（无默认值）
-            try:
-                min_volume_multiplier = config_manager.get('live_sniper.min_volume_multiplier')
-                if min_volume_multiplier is None:
-                    raise ValueError("配置缺失: live_sniper.min_volume_multiplier")
-            except Exception as e:
-                logger.error(f"❌ [CTO强制审计] 配置读取失败: {e}")
-                raise RuntimeError("系统拒绝启动：缺少核心配置 live_sniper.min_volume_multiplier")
+            # 【架构大一统】使用GlobalFilterGateway统一过滤逻辑
+            # 无论是实盘、回放、回测，都必须走同一套Boss三维铁网！
+            from logic.core.global_filter_gateway import apply_boss_filters
             
-            # 【CTO源码清剿】纯动态倍数过滤， Zero Magic Number！
-            # 量比倍数 >= 配置值（如1.5倍表示今日放量50%以上）
-            
-            # 【CTO源码清剿】纯动态倍数过滤：量比 >= 配置倍数（如1.5倍）
-            # 删除所有0.90分位数逻辑，改用纯粹的自适应倍数
-            mask = (
-                (df['volume_ratio'] >= min_volume_multiplier) &  # ⭐️ 动态倍数：今日是5日均量的X倍
-                (df['volume'] > 0)  # 只需有成交量
+            filtered_df, stats = apply_boss_filters(
+                df=df,
+                config_manager=config_manager,
+                true_dict=true_dict,
+                context="realtime_snapshot"
             )
             
-            filtered_df = df[mask].sort_values('volume_ratio', ascending=False)
+            # 按量比排序
+            filtered_df = filtered_df.sort_values('volume_ratio', ascending=False)
             
             elapsed = (time.perf_counter() - start_time) * 1000
             
@@ -1378,28 +1369,55 @@ class LiveTradingEngine:
                                     estimated_full_day_volume = tick_event_data['volume'] / minutes_passed * 240
                                     volume_ratio = estimated_full_day_volume / avg_volume_5d
                                     
-                                    # 检查是否达到量比阈值
-                                    if volume_ratio >= self.volume_percentile:
-                                        # 模拟触发信号
+                                    # 【架构大一统】使用GlobalFilterGateway验证信号质量
+                                    from logic.core.global_filter_gateway import quick_validate
+                                    
+                                    # 计算换手率
+                                    float_volume = true_dict.get_float_volume(stock_code)
+                                    turnover_rate = (estimated_full_day_volume / float_volume * 100) if float_volume > 0 else 0
+                                    
+                                    is_valid, reason = quick_validate(
+                                        stock_code=stock_code,
+                                        volume_ratio=volume_ratio,
+                                        turnover_rate=turnover_rate,
+                                        config_manager=config_manager
+                                    )
+                                    
+                                    if is_valid:
+                                        # 【架构大一统修复】使用真实交易时间戳，而非datetime.now()
+                                        # 从tick_data获取真实时间，如没有则使用模拟的交易时间(14:30)
+                                        real_time = "14:30:00"  # 盘后回放使用模拟交易时间，避免18:00的荒谬时间
+                                        if isinstance(tick_data, dict) and 'time' in tick_data:
+                                            # QMT时间戳通常是毫秒级整数，需要转换
+                                            time_val = tick_data['time']
+                                            if isinstance(time_val, int) and time_val > 1000000000:
+                                                # 毫秒时间戳转HH:MM:SS
+                                                from datetime import datetime
+                                                real_time = datetime.fromtimestamp(time_val/1000).strftime('%H:%M:%S')
+                                        
                                         triggered_stocks.append({
                                             'stock_code': stock_code,
-                                            'time': tick_event_data.get('time', current_time.strftime('%H:%M:%S')),
+                                            'time': real_time,  # 【修复】使用真实/模拟交易时间，非current_time
                                             'volume_ratio': round(volume_ratio, 2),
+                                            'turnover_rate': round(turnover_rate, 2),  # 新增：显示换手率
                                             'price': round(tick_event_data['price'], 2),
                                             'high': round(tick_event_data.get('high', 0), 2),
                                             'low': round(tick_event_data.get('low', 0), 2)
                                         })
+                                    else:
+                                        logger.debug(f"  🚫 {stock_code} 被Boss三维铁网拦截: {reason}")
                     
                     # 打印回放结果
                     if triggered_stocks:
                         print("\n📈 今日信号回放结果:")
-                        print("-" * 80)
-                        print(f"{'时间':<10} {'股票代码':<12} {'量比':<8} {'当前价':<10} {'最高价':<10} {'最低价':<10}")
-                        print("-" * 80)
+                        print("-" * 100)
+                        print(f"{'时间':<10} {'股票代码':<12} {'量比':<8} {'换手%':<8} {'当前价':<10} {'最高价':<10} {'最低价':<10}")
+                        print("-" * 100)
                         
                         for stock in triggered_stocks:
+                            turnover_str = f"{stock.get('turnover_rate', 0):.1f}%"
                             print(f"{stock['time']:<10} {stock['stock_code']:<12} {stock['volume_ratio']:<8} "
-                                  f"{stock['price']:<10} {stock['high']:<10} {stock['low']:<10}")
+                                  f"{turnover_str:<8} {stock['price']:<10} {stock['high']:<10} {stock['low']:<10}")
                         
                         print("-" * 80)
                         print(f"📊 总计触发信号: {len(triggered_stocks)} 只股票")
