@@ -723,21 +723,24 @@ class LiveTradingEngine:
             
             config_manager = get_config_manager()
             
-            # 【CTO重塑】使用holographic_download.volume_ratio_download配置（0.90分位）
-            watchlist_threshold = config_manager.get('holographic_download.volume_ratio_download', 0.90)
+            # 【CTO源码清剿】删除0.90 Magic Number，使用纯动态倍数（Ratio化）
+            # 量比本身就是动态倍数（今日估算量/5日均量），无需分位数计算
+            # 直接从配置读取最小放量倍数，Fail-Fast模式（无默认值）
+            try:
+                min_volume_multiplier = config_manager.get('live_sniper.min_volume_multiplier')
+                if min_volume_multiplier is None:
+                    raise ValueError("配置缺失: live_sniper.min_volume_multiplier")
+            except Exception as e:
+                logger.error(f"❌ [CTO强制审计] 配置读取失败: {e}")
+                raise RuntimeError("系统拒绝启动：缺少核心配置 live_sniper.min_volume_multiplier")
             
-            # 计算动态量比阈值 - 基于当前市场情况的0.90分位数（宽松）
-            if len(df) > 0 and 'volume_ratio' in df.columns:
-                volume_ratio_threshold = df['volume_ratio'].quantile(watchlist_threshold)
-                # 确保阈值不低于绝对最小值
-                volume_ratio_threshold = max(volume_ratio_threshold, 1.5)
-            else:
-                volume_ratio_threshold = 1.5  # 默认值
+            # 【CTO源码清剿】纯动态倍数过滤， Zero Magic Number！
+            # 量比倍数 >= 配置值（如1.5倍表示今日放量50%以上）
             
-            # 【CTO重塑】宽体观察池：只卡量比>0.90分位，不卡换手率
-            # 换手率限制移到Tick开火阶段，不进池阶段
+            # 【CTO源码清剿】纯动态倍数过滤：量比 >= 配置倍数（如1.5倍）
+            # 删除所有0.90分位数逻辑，改用纯粹的自适应倍数
             mask = (
-                (df['volume_ratio'] > volume_ratio_threshold) &  # ⭐️ 0.90分位，宽松进池
+                (df['volume_ratio'] >= min_volume_multiplier) &  # ⭐️ 动态倍数：今日是5日均量的X倍
                 (df['volume'] > 0)  # 只需有成交量
             )
             
@@ -760,8 +763,8 @@ class LiveTradingEngine:
             
             # ⭐️ 记录Ratio化参数（CTO封板要求）
             logger.info(f"🔪 CTO第二斩完成: {original_count}只 → {len(self.watchlist)}只，耗时{elapsed:.2f}ms")
-            logger.info(f"   ⏱️ 开盘已运行: {minutes_passed:.1f}分钟 | 量比阈值: {volume_ratio_threshold:.2f}x (0.90分位-宽体观察池)")
-            logger.info(f"   📊 【CTO重塑】观察池门槛已放宽至0.90分位，Tick开火阶段再严格过滤")
+            logger.info(f"   ⏱️ 开盘已运行: {minutes_passed:.1f}分钟 | 量比倍数门槛: {min_volume_multiplier:.2f}x (动态Ratio)")
+            logger.info(f"   📊 【CTO源码清剿】观察池使用纯动态倍数（>= {min_volume_multiplier}x），Zero Magic Number！")
             
             # 7. 记录详细日志（Top5）
             if len(filtered_df) > 0:
@@ -1260,18 +1263,21 @@ class LiveTradingEngine:
             df['estimated_full_day_volume'] = df['volume'] / minutes_passed * 240
             df['volume_ratio'] = df['estimated_full_day_volume'] / df['avg_volume_5d'].replace(0, pd.NA)
             
-            # 【CTO Phase1重塑】宽体观察池：0.90分位门槛，移除涨停价限制
-            # 1. 从config读取0.90分位门槛（宽松进池）
+            # 【CTO源码清剿】删除0.90 Magic Number，使用纯动态倍数（Ratio化）
+            # 直接从配置读取最小放量倍数，Fail-Fast模式（无默认值）
             from logic.core.config_manager import get_config_manager
             config_manager = get_config_manager()
-            watchlist_threshold = config_manager.get('holographic_download.volume_ratio_download', 0.90)
+            try:
+                min_volume_multiplier = config_manager.get('live_sniper.min_volume_multiplier')
+                if min_volume_multiplier is None:
+                    raise ValueError("配置缺失: live_sniper.min_volume_multiplier")
+            except Exception as e:
+                logger.error(f"❌ [CTO强制审计] 配置读取失败: {e}")
+                raise RuntimeError("系统拒绝启动：缺少核心配置 live_sniper.min_volume_multiplier")
             
-            # 2. 计算0.90分位量比阈值
-            volume_ratio_threshold = df['volume_ratio'].quantile(watchlist_threshold)
-            
-            # 3. 宽体观察池：只卡量比>0.90分位，不卡其他条件
+            # 【CTO源码清剿】纯动态倍数过滤：量比 >= 配置倍数（如1.5倍）
             mask = (
-                (df['volume_ratio'] >= volume_ratio_threshold) &  # 0.90分位，宽松
+                (df['volume_ratio'] >= min_volume_multiplier) &  # ⭐️ 动态倍数：今日是5日均量的X倍
                 (df['volume'] > 0)  # 只需有成交量
             )
             

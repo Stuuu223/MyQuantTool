@@ -58,13 +58,40 @@
   },
   "_CTO_ADDED": "下面是我们今天(2月24日)打磨出来的极限狙击参数！",
   "live_sniper": {
-    "_description": "实盘极速快照双斩与时间加权参数",
+    "_description": "实盘极速快照双斩与时间加权参数 - V20.4纯动态Ratio版",
+    "_CTO_WARNING": "【反混淆规约】本配置所有参数必须带_type声明，严禁Magic Number！",
+    
+    "min_volume_multiplier": {
+      "_type": "绝对倍数（非分位数）",
+      "_description": "量比最小倍数：今日估算成交量必须是5日均量的多少倍",
+      "_unit": "倍数",
+      "_example": "1.5表示今日放量50%以上",
+      "value": 1.5,
+      "_rule": "绝对值比较：df['volume_ratio'] >= config.value"
+    },
+    
+    "turnover_rate_per_min_min": {
+      "_type": "绝对百分比（非分位数）",
+      "_description": "每分钟最小换手率",
+      "value": 0.2
+    },
+    
+    "turnover_rate_max": {
+      "_type": "绝对百分比（非分位数）",
+      "_description": "死亡换手熔断线，超过此值强制剔除",
+      "value": 60.0,
+      "_CTO_NOTE": "Boss拍板：60%是死亡换手，规避主力出货"
+    },
+    
+    "min_active_turnover_rate": {
+      "_type": "绝对百分比（非分位数）",
+      "_description": "大哥起步线：无5%不妖股",
+      "value": 5.0,
+      "_CTO_NOTE": "Boss拍板：5%起步，20%常态，60%死亡"
+    },
+    
     "use_percentile": true,
     "volume_ratio_percentile": 0.95,
-    "turnover_rate_per_min_min": 0.2,
-    "turnover_rate_max": 70.0,
-    "min_active_turnover_rate": 3.0,
-    "death_turnover_rate": 70.0,
     "time_decay_ratios": {
       "early_morning_rush": 1.2,
       "morning_confirm": 1.0,
