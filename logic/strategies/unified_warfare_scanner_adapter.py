@@ -27,7 +27,8 @@ from datetime import datetime
 from dataclasses import dataclass
 
 from logic.strategies.unified_warfare_core import get_unified_warfare_core
-from logic.strategies.event_detector import EventType
+# 【CTO P0抢修】移除不存在的event_detector依赖
+# EventType未实际使用，直接删除导入
 from logic.utils.logger import get_logger
 
 logger = get_logger(__name__)

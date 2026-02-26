@@ -29,16 +29,52 @@ Version: V12.1.0
 Date: 2026-02-17
 """
 
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Callable
 from datetime import datetime
 
-from logic.strategies.event_detector import EventManager, BaseEventDetector
+# 【CTO P0抢修】移除不存在的event_detector依赖
+# 内嵌EventManager实现，避免外部依赖
+class EventManager:
+    """内嵌事件管理器 - 替换不存在的event_detector模块"""
+    def __init__(self):
+        self.detectors: Dict[str, Any] = {}
+    
+    def register_detector(self, detector):
+        """注册检测器"""
+        if hasattr(detector, 'name'):
+            self.detectors[detector.name] = detector
+        else:
+            self.detectors[detector.__class__.__name__] = detector
+    
+    def detect_events(self, tick_data: Dict, context: Dict = None) -> List[Dict]:
+        """检测所有事件"""
+        events = []
+        for detector in self.detectors.values():
+            if getattr(detector, 'enabled', True):
+                try:
+                    result = detector.detect(tick_data, context)
+                    if result:
+                        events.append(result)
+                except Exception as e:
+                    pass
+        return events
+    
+    def enable_detector(self, name: str):
+        """启用检测器"""
+        if name in self.detectors:
+            self.detectors[name].enabled = True
+    
+    def disable_detector(self, name: str):
+        """禁用检测器"""
+        if name in self.detectors:
+            self.detectors[name].enabled = False
+
 from logic.strategies.opening_weak_to_strong_detector import OpeningWeakToStrongDetector
 # NOTE: HalfwayBreakoutDetector已归档至archive/redundant_halfway/
 # from logic.strategies.halfway_breakout_detector import HalfwayBreakoutDetector
 from logic.strategies.leader_candidate_detector import LeaderCandidateDetector
 from logic.strategies.dip_buy_candidate_detector import DipBuyCandidateDetector
-from logic.analyzers.trap_detector import TrapDetector
+# 【CTO P0抢修】TrapDetector导入移到try-except块内，避免模块缺失导致崩溃
 from logic.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -87,6 +123,8 @@ class UnifiedWarfareCore:
         
         # 🔥 P1: 诱多陷阱检测器（veto机制）
         try:
+            # 【CTO P0抢修】延迟导入，避免模块缺失影响整体运行
+            from logic.analyzers.trap_detector import TrapDetector
             trap_detector = TrapDetector()
             self.event_manager.register_detector(trap_detector)
             logger.info("✅ [统一战法核心] TrapDetector注册成功")

@@ -297,7 +297,7 @@ class LiveTradingEngine:
             # CTO修复：使用正确的subscribe_quote API
             # 注意：subscribe_quote需要在有watchlist之后调用
             xtdata.subscribe_quote(
-                stock_list=self.watchlist,
+                stock_code=self.watchlist,
                 period='tick',
                 count=-1,  # -1表示不限数量
                 callback=qmt_tick_callback
