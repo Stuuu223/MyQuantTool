@@ -201,3 +201,90 @@ def validate_percentile(func):
                     raise ValueError(f"分位点必须在0.0-1.0之间: {key}={value}")
         return func(*args, **kwargs)
     return wrapper
+
+
+# =============================================================================
+# CTO终极量纲对齐算子 - 强制单位统一 (V20.1量纲隔离墙)
+# =============================================================================
+
+SHOU_TO_GU = 100  # 1手 = 100股
+
+
+def safe_calculate_volume_ratio(current_volume_shou: float, avg_volume_5d_gu: float) -> float:
+    """
+    【量纲对齐算子】安全计算量比
+    
+    自动处理手和股的单位对齐:
+    - current_volume_shou: QMT get_full_tick返回的volume，单位是手
+    - avg_volume_5d_gu: 日K数据计算的5日均量，单位是股
+    
+    Args:
+        current_volume_shou: 当前成交量(手)
+        avg_volume_5d_gu: 5日平均成交量(股)
+        
+    Returns:
+        float: 量比倍数(如1.5表示1.5倍)
+        
+    Raises:
+        ValueError: 当avg_volume_5d_gu <= 0时
+    """
+    if avg_volume_5d_gu <= 0:
+        return 0.0
+    
+    # 将当前成交量(手)转换为股，与5日均量单位对齐
+    current_volume_gu = current_volume_shou * SHOU_TO_GU
+    
+    return current_volume_gu / avg_volume_5d_gu
+
+
+def safe_calculate_turnover_rate(current_volume_shou: float, float_volume_gu: float) -> float:
+    """
+    【量纲对齐算子】安全计算换手率
+    
+    自动对齐单位并返回百分比:
+    - current_volume_shou: QMT get_full_tick返回的volume，单位是手
+    - float_volume_gu: get_instrument_detail返回的FloatVolume，单位是股
+    
+    Args:
+        current_volume_shou: 当日成交量(手)
+        float_volume_gu: 流通股本(股)
+        
+    Returns:
+        float: 换手率百分比(如5.0表示5%)
+        
+    Raises:
+        ValueError: 当float_volume_gu <= 0时
+    """
+    if float_volume_gu <= 0:
+        return 0.0
+    
+    # 将当日成交量(手)转换为股
+    current_volume_gu = current_volume_shou * SHOU_TO_GU
+    
+    # 计算换手率并转换为百分比
+    turnover_rate = (current_volume_gu / float_volume_gu) * 100.0
+    
+    return turnover_rate
+
+
+def safe_calculate_estimated_volume(current_volume_shou: float, minutes_passed: float) -> float:
+    """
+    【量纲对齐算子】安全计算预估全天成交量
+    
+    用于盘中计算量比时使用的时间进度加权:
+    estimated_full_day_volume = current_volume / minutes_passed * 240
+    
+    Args:
+        current_volume_shou: 当前已成交数量(手)
+        minutes_passed: 开盘后经过的分钟数
+        
+    Returns:
+        float: 预估全天成交量(手)
+    """
+    if minutes_passed <= 0:
+        minutes_passed = 1.0  # 防止除0
+    
+    # 限制最大240分钟(4小时交易时间)
+    minutes_passed = min(minutes_passed, 240.0)
+    
+    return (current_volume_shou / minutes_passed) * 240.0

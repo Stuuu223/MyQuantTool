@@ -652,6 +652,9 @@ class LiveTradingEngine:
             df['float_volume'] = df['stock_code'].map(true_dict.get_float_volume)
             
             # 4. 向量化计算量比和换手率（CTO规范：禁止iterrows）
+            # 【宪法第九条】量纲对齐：tick volume(手) → 股 (×100)
+            df['volume_gu'] = df['volume'] * 100  # 手→股
+            
             # ⭐️ CTO裁决修复：引入时间进度加权，防止早盘量比失真
             # 量比 = 估算全天成交量 / 5日平均成交量
             # 其中 估算全天成交量 = 当前成交量 / 已过分钟数 * 240分钟
@@ -667,12 +670,12 @@ class LiveTradingEngine:
             else:
                 minutes_passed = min(raw_minutes, 240)  # 限制最大240分钟
             
-            # 时间进度加权：估算全天成交量
-            df['estimated_full_day_volume'] = df['volume'] / minutes_passed * 240
+            # 时间进度加权：估算全天成交量 (单位：股)
+            df['estimated_full_day_volume'] = df['volume_gu'] / minutes_passed * 240
             df['volume_ratio'] = df['estimated_full_day_volume'] / df['avg_volume_5d'].replace(0, pd.NA)
             
-            # 换手率 = 成交量 / 流通股本 * 100%
-            df['turnover_rate'] = (df['volume'] / df['float_volume'].replace(0, pd.NA)) * 100
+            # 换手率 = 成交量(股) / 流通股本(股) * 100%
+            df['turnover_rate'] = (df['volume_gu'] / df['float_volume'].replace(0, pd.NA)) * 100
             
             # ⭐️ CTO终极Ratio化：计算每分钟换手率（老板钦定）
             # 实战意义：09:35(5分钟)需>1%，10:00(30分钟)需>6%，排除盘中偷袭假起爆
@@ -1301,21 +1304,15 @@ class LiveTradingEngine:
         CTO新增：今日历史信号回放
         收盘后运行时，回放当天的信号轨迹
         """
-        print("\n" + "="*60)
-        print("🔬 【物理探针】replay_today_signals被调用！")
-        print("="*60)
-        
         from datetime import datetime
         import time
         import pandas as pd
+        import json
         
         current_time = datetime.now()
-        print(f"▶ 当前时间: {current_time}")
         
         # 如果在非交易时间运行，提供当日信号回放
         if current_time.hour > 15 or (current_time.hour == 15 and current_time.minute >= 5):  # 15:05后认为是收盘后
-            print("📊 收盘后模式：正在回放今日信号轨迹...")
-            print("💡 提示：系统将在后台记录今日所有信号点")
             logger.info("📊 收盘后模式：正在回放今日信号轨迹...")
             logger.info("💡 提示：系统将在后台记录今日所有信号点")
             
@@ -1363,7 +1360,9 @@ class LiveTradingEngine:
                     filtered_by_turnover = 0
                     
                     # 模拟当日信号检测过程
-                    for stock_code, tick_data in list(snapshot.items())[:50]:  # 限制数量
+                    # 【宪法第九条】全市场扫描，禁止限流！
+                    rejected_stocks = []  # 用于JSON报告
+                    for stock_code, tick_data in snapshot.items():
                         if tick_data:
                             # 构建tick事件数据
                             tick_event_data = {
@@ -1383,7 +1382,9 @@ class LiveTradingEngine:
                                 avg_volume_5d = true_dict.get_avg_volume_5d(stock_code)
                                 if avg_volume_5d and avg_volume_5d > 0:
                                     # ⭐️ CTO裁决修复：引入时间进度加权，防止回放时量比失真
-                                    # 量比 = 估算全天成交量 / 5日平均成交量
+                                    # 【宪法第九条】量纲对齐：tick volume(手) → 股 (×100)
+                                    volume_gu = tick_event_data['volume'] * 100  # 手→股
+                                    
                                     now = datetime.now()
                                     market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
                                     raw_minutes = (now - market_open).total_seconds() / 60
@@ -1391,13 +1392,13 @@ class LiveTradingEngine:
                                     # 【Bug修复】限制最大240分钟，防止盘后运行量比被摊薄
                                     minutes_passed = 5 if raw_minutes < 5 else min(max(1, raw_minutes), 240)
                                     
-                                    estimated_full_day_volume = tick_event_data['volume'] / minutes_passed * 240
+                                    estimated_full_day_volume = volume_gu / minutes_passed * 240
                                     volume_ratio = estimated_full_day_volume / avg_volume_5d
                                     
                                     # 【架构大一统】使用GlobalFilterGateway验证信号质量
                                     from logic.strategies.global_filter_gateway import quick_validate
                                     
-                                    # 计算换手率
+                                    # 计算换手率 (股/股 * 100%)
                                     float_volume = true_dict.get_float_volume(stock_code)
                                     turnover_rate = (estimated_full_day_volume / float_volume * 100) if float_volume > 0 else 0
                                     
@@ -1437,48 +1438,61 @@ class LiveTradingEngine:
                                             'low': round(tick_event_data.get('low', 0), 2)
                                         })
                                     else:
+                                        # 记录被淘汰的股票用于JSON报告
+                                        rejected_stocks.append({
+                                            'stock_code': stock_code,
+                                            'reason': reason,
+                                            'volume_ratio': round(volume_ratio, 2),
+                                            'turnover_rate': round(turnover_rate, 2)
+                                        })
                                         logger.debug(f"  🚫 {stock_code} 被Boss三维铁网拦截: {reason}")
                     
-                    # 【物理探针】打印回放筛选统计
-                    print(f"\n{'='*60}")
-                    print(f"📊 【物理探针】收盘后回放筛选统计")
-                    print(f"{'='*60}")
-                    print(f"▶ 扫描股票数: {scanned_count} 只")
-                    print(f"✅ 通过筛选: {len(triggered_stocks)} 只")
-                    print(f"🚫 被淘汰: {scanned_count - len(triggered_stocks)} 只")
+                    # 【物理探针】记录回放筛选统计到日志
+                    logger.info(f"{'='*60}")
+                    logger.info(f"📊 【物理探针】收盘后回放筛选统计")
+                    logger.info(f"{'='*60}")
+                    logger.info(f"▶ 扫描股票数: {scanned_count} 只")
+                    logger.info(f"✅ 通过筛选: {len(triggered_stocks)} 只")
+                    logger.info(f"🚫 被淘汰: {scanned_count - len(triggered_stocks)} 只")
                     if scanned_count > 0:
-                        print(f"   - 量比不足: {filtered_by_volume} 只")
-                        print(f"   - 换手不符: {filtered_by_turnover} 只")
-                    print(f"{'='*60}\n")
+                        logger.info(f"   - 量比不足: {filtered_by_volume} 只")
+                        logger.info(f"   - 换手不符: {filtered_by_turnover} 只")
+                    logger.info(f"{'='*60}")
                     
-                    # 打印回放结果
+                    # 【第三斩】输出JSON报告到logs目录
+                    audit_report = {
+                        'scan_time': current_time.isoformat(),
+                        'scan_type': 'replay_today_signals',
+                        'total_scanned': scanned_count,
+                        'passed': len(triggered_stocks),
+                        'rejected': scanned_count - len(triggered_stocks),
+                        'rejected_by_volume': filtered_by_volume,
+                        'rejected_by_turnover': filtered_by_turnover,
+                        'triggered_stocks': triggered_stocks,
+                        'rejected_stocks': rejected_stocks[:100]  # 只记录前100只被淘汰的
+                    }
+                    try:
+                        from pathlib import Path
+                        log_dir = Path('logs')
+                        log_dir.mkdir(exist_ok=True)
+                        report_file = log_dir / 'replay_audit_report.json'
+                        with open(report_file, 'w', encoding='utf-8') as f:
+                            json.dump(audit_report, f, ensure_ascii=False, indent=2)
+                        logger.info(f"📄 JSON报告已保存: {report_file}")
+                    except Exception as e:
+                        logger.error(f"❌ JSON报告保存失败: {e}")
+                    
+                    # 记录回放结果到日志
                     if triggered_stocks:
-                        print("\n📈 今日信号回放结果:")
-                        print("-" * 100)
-                        print(f"{'时间':<10} {'股票代码':<12} {'量比':<8} {'换手%':<8} {'当前价':<10} {'最高价':<10} {'最低价':<10}")
-                        print("-" * 100)
-                        
+                        logger.info("📈 今日信号回放结果:")
                         for stock in triggered_stocks:
-                            turnover_str = f"{stock.get('turnover_rate', 0):.1f}%"
-                            print(f"{stock['time']:<10} {stock['stock_code']:<12} {stock['volume_ratio']:<8} "
-                                  f"{turnover_str:<8} {stock['price']:<10} {stock['high']:<10} {stock['low']:<10}")
-                        
-                        print("-" * 80)
-                        print(f"📊 总计触发信号: {len(triggered_stocks)} 只股票")
-                        
-                        # 记录到日志
-                        logger.info(f"📊 今日信号回放完成: 触发信号 {len(triggered_stocks)} 只股票")
-                        for stock in triggered_stocks:
-                            logger.info(f"🎯 {stock['stock_code']} - 量比 {stock['volume_ratio']}x")
+                            logger.info(f"🎯 {stock['stock_code']} - 量比 {stock['volume_ratio']}x, 换手 {stock['turnover_rate']}%")
                     else:
-                        print("\n📊 今日未发现量比突破信号")
                         logger.info("📊 今日未发现量比突破信号")
                 
             except Exception as e:
                 logger.error(f"❌ 历史信号回放失败: {e}")
-                print(f"❌ 历史信号回放失败: {e}")
         else:
-            print("💡 提示：系统正在实时监控右侧起爆信号")
             logger.info("💡 提示：系统正在实时监控右侧起爆信号")
         
 

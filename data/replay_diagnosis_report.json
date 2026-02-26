@@ -1,0 +1,162 @@
+{
+  "scan_time": "2026-02-26T21:10:24.588301",
+  "market_data": {
+    "total_stocks": 5191,
+    "sample_size": 100
+  },
+  "thresholds": {
+    "min_volume_multiplier": 1.5,
+    "min_turnover": 5.0,
+    "max_turnover": 60.0
+  },
+  "results": {
+    "passed": 0,
+    "rejected_by_volume": 14,
+    "rejected_by_turnover": 6
+  },
+  "passed_stocks": [],
+  "rejected_by_volume_details": [
+    {
+      "stock_code": "600036.SH",
+      "volume": 593325,
+      "avg_volume_5d": 592308.2,
+      "volume_ratio": 1.0,
+      "turnover_rate": 0.0
+    },
+    {
+      "stock_code": "600051.SH",
+      "volume": 46856,
+      "avg_volume_5d": 49470.0,
+      "volume_ratio": 0.95,
+      "turnover_rate": 0.02
+    },
+    {
+      "stock_code": "600127.SH",
+      "volume": 146744,
+      "avg_volume_5d": 113731.6,
+      "volume_ratio": 1.29,
+      "turnover_rate": 0.02
+    },
+    {
+      "stock_code": "600153.SH",
+      "volume": 171816,
+      "avg_volume_5d": 127362.2,
+      "volume_ratio": 1.35,
+      "turnover_rate": 0.01
+    },
+    {
+      "stock_code": "600166.SH",
+      "volume": 1162933,
+      "avg_volume_5d": 1083047.8,
+      "volume_ratio": 1.07,
+      "turnover_rate": 0.01
+    },
+    {
+      "stock_code": "600221.SH",
+      "volume": 3628933,
+      "avg_volume_5d": 3219326.0,
+      "volume_ratio": 1.13,
+      "turnover_rate": 0.01
+    },
+    {
+      "stock_code": "600232.SH",
+      "volume": 84108,
+      "avg_volume_5d": 64575.2,
+      "volume_ratio": 1.3,
+      "turnover_rate": 0.02
+    },
+    {
+      "stock_code": "600255.SH",
+      "volume": 497251,
+      "avg_volume_5d": 448289.2,
+      "volume_ratio": 1.11,
+      "turnover_rate": 0.03
+    },
+    {
+      "stock_code": "600288.SH",
+      "volume": 78126,
+      "avg_volume_5d": 54274.0,
+      "volume_ratio": 1.44,
+      "turnover_rate": 0.02
+    },
+    {
+      "stock_code": "600323.SH",
+      "volume": 49505,
+      "avg_volume_5d": 54128.2,
+      "volume_ratio": 0.91,
+      "turnover_rate": 0.01
+    },
+    {
+      "stock_code": "600362.SH",
+      "volume": 388511,
+      "avg_volume_5d": 369763.4,
+      "volume_ratio": 1.05,
+      "turnover_rate": 0.02
+    },
+    {
+      "stock_code": "600459.SH",
+      "volume": 399699,
+      "avg_volume_5d": 280823.4,
+      "volume_ratio": 1.42,
+      "turnover_rate": 0.05
+    },
+    {
+      "stock_code": "600548.SH",
+      "volume": 49424,
+      "avg_volume_5d": 46058.6,
+      "volume_ratio": 1.07,
+      "turnover_rate": 0.0
+    },
+    {
+      "stock_code": "600595.SH",
+      "volume": 581092,
+      "avg_volume_5d": 628363.2,
+      "volume_ratio": 0.92,
+      "turnover_rate": 0.01
+    }
+  ],
+  "rejected_by_turnover_details": [
+    {
+      "stock_code": "600025.SH",
+      "volume": 235993,
+      "avg_volume_5d": 150685.2,
+      "volume_ratio": 1.57,
+      "turnover_rate": 0.0
+    },
+    {
+      "stock_code": "600246.SH",
+      "volume": 787484,
+      "avg_volume_5d": 313415.6,
+      "volume_ratio": 2.51,
+      "turnover_rate": 0.04
+    },
+    {
+      "stock_code": "600316.SH",
+      "volume": 116957,
+      "avg_volume_5d": 73870.2,
+      "volume_ratio": 1.58,
+      "turnover_rate": 0.02
+    },
+    {
+      "stock_code": "600330.SH",
+      "volume": 1562766,
+      "avg_volume_5d": 1007622.0,
+      "volume_ratio": 1.55,
+      "turnover_rate": 0.13
+    },
+    {
+      "stock_code": "600497.SH",
+      "volume": 3200317,
+      "avg_volume_5d": 1212551.8,
+      "volume_ratio": 2.64,
+      "turnover_rate": 0.06
+    },
+    {
+      "stock_code": "600509.SH",
+      "volume": 696168,
+      "avg_volume_5d": 213937.0,
+      "volume_ratio": 3.25,
+      "turnover_rate": 0.05
+    }
+  ]
+}
