@@ -62,6 +62,9 @@ class TrueDictionary:
         self._down_stop_price: Dict[str, float] = {}  # 跌停价
         self._avg_volume_5d: Dict[str, float] = {}  # 5日平均成交量(QMT本地计算)
         
+        # 【CTO第三维趋势网】MA均线数据缓存 - 盘前装弹时计算
+        self._ma_data: Dict[str, Dict] = {}  # {stock_code: {'ma5': float, 'ma10': float, 'ma20': float}}
+        
         # 板块映射 - 本地配置或QMT数据
         self._sector_map: Dict[str, List[str]] = {}  # 股票->板块列表
         
@@ -113,7 +116,10 @@ class TrueDictionary:
         # Step 2: QMT本地日K数据计算5日均量 (0外网请求!)
         avg_volume_result = self._warmup_avg_volume_from_qmt(stock_list)
         
-        # Step 3: 数据完整性检查
+        # Step 3: 【CTO第三维趋势网】计算MA5/MA10/MA20均线数据
+        ma_result = self._warmup_ma_data(stock_list)
+        
+        # Step 4: 数据完整性检查
         integrity_check = self._check_data_integrity(stock_list)
         
         self._metadata['cache_date'] = today
@@ -240,6 +246,92 @@ class TrueDictionary:
             logger.error(f"🚨 [QMT本地-5日均量] 计算失败: {e}")
             print(f"🚨 [QMT本地-5日均量] 计算失败: {e}")
             return {'source': 'QMT本地', 'success': 0, 'failed': len(stock_list), 'error': str(e)}
+    
+    def _warmup_ma_data(self, stock_list: List[str]) -> Dict:
+        """
+        【CTO第三维趋势网】计算MA5/MA10/MA20均线数据
+        
+        使用QMT本地日K数据计算均线，用于盘后回放的趋势过滤
+        """
+        start = time.perf_counter()
+        
+        print(f"📊 [QMT本地] 计算MA均线数据...")
+        logger.info(f"📊 [QMT本地] 开始计算MA5/MA10/MA20,目标{len(stock_list)}只股票")
+        
+        try:
+            from xtquant import xtdata
+            
+            success = 0
+            failed = 0
+            
+            # 获取最近30个自然日的日K数据（确保有20个交易日）
+            end_date = datetime.now().strftime('%Y%m%d')
+            start_date = (datetime.now() - timedelta(days=30)).strftime('%Y%m%d')
+            
+            all_data = xtdata.get_local_data(
+                field_list=['time', 'close'],
+                stock_list=stock_list,
+                period='1d',
+                start_time=start_date,
+                end_time=end_date
+            )
+            
+            # 【调试】检查返回数据
+            logger.info(f"[MA调试] get_local_data返回: type={type(all_data)}, is_none={all_data is None}")
+            if all_data:
+                sample_keys = list(all_data.keys())[:3]
+                for key in sample_keys:
+                    df = all_data[key]
+                    logger.info(f"[MA调试] 样本{key}: df_type={type(df)}, is_none={df is None}, len={len(df) if df is not None else 0}")
+                    if df is not None and len(df) > 0:
+                        logger.info(f"[MA调试] 样本{key} columns: {df.columns.tolist() if hasattr(df, 'columns') else 'no columns'}")
+            
+            if all_data:
+                for stock_code, df in all_data.items():
+                    if df is not None and len(df) >= 5:  # 放宽到至少5天数据
+                        # 计算MA5/MA10/MA20（根据可用数据）
+                        closes = df['close'].values if 'close' in df.columns else df.values.flatten()
+                        ma5 = closes[-5:].mean()
+                        ma10 = closes[-10:].mean() if len(closes) >= 10 else ma5
+                        ma20 = closes[-20:].mean() if len(closes) >= 20 else ma10
+                        
+                        self._ma_data[stock_code] = {
+                            'ma5': float(ma5),
+                            'ma10': float(ma10),
+                            'ma20': float(ma20),
+                            'close': float(closes[-1])  # 最新收盘价
+                        }
+                        success += 1
+                    else:
+                        failed += 1
+            else:
+                failed = len(stock_list)
+            
+            elapsed = (time.perf_counter() - start) * 1000
+            
+            print(f"✅ [QMT本地] MA均线计算完成: {success}只成功, {failed}只失败, 耗时{elapsed:.0f}ms")
+            logger.info(f"✅ [QMT本地-MA均线] {success}只成功,耗时{elapsed:.1f}ms")
+            
+            return {
+                'source': 'QMT本地日K数据',
+                'success': success,
+                'failed': failed,
+                'elapsed_ms': elapsed
+            }
+            
+        except Exception as e:
+            logger.error(f"🚨 [QMT本地-MA均线] 计算失败: {e}")
+            print(f"🚨 [QMT本地-MA均线] 计算失败: {e}")
+            return {'source': 'QMT本地', 'success': 0, 'failed': len(stock_list), 'error': str(e)}
+    
+    def get_ma_data(self, stock_code: str) -> Optional[Dict]:
+        """
+        【CTO第三维趋势网】获取股票的MA数据
+        
+        Returns:
+            Dict: {'ma5': float, 'ma10': float, 'ma20': float, 'close': float} 或 None
+        """
+        return self._ma_data.get(stock_code)
     
     def _warmup_qmt_data(self, stock_list: List[str]) -> Dict:
         """

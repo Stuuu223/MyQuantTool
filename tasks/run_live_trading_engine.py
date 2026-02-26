@@ -19,6 +19,7 @@ Version: Phase 20 - 修复版
 """
 import time
 import threading
+import os
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 import logging
@@ -1309,10 +1310,67 @@ class LiveTradingEngine:
         import pandas as pd
         import json
         
+        # 【CTO静态快照打分算法】盘后无法获取连续Tick流，用静态数据估算
+        def calculate_snapshot_score(volume_ratio, turnover_rate, price, open_price, prev_close, high, low, amount):
+            """
+            基于单点快照计算V18风格综合得分 (CTO区分度优化版)
+            
+            公式:
+            1. 资金强度(权重40): 量比对数曲线15分 + 净流入对数曲线25分
+            2. 换手率得分(权重30): 对数曲线，拉开区分度
+            3. 价格动能(权重30): (现价-最低价)/(最高价-最低价)反映日内强势度
+            4. 乘数: 固定1.1，废除吸血效应防止虚假满分
+            """
+            import math
+            
+            # 推算净流入资金 (元) - 阳线假设60%流入，阴线40%
+            net_inflow = amount * 0.6 if price >= open_price else amount * 0.4
+            net_inflow_yi = net_inflow / 100000000.0  # 转换为亿
+            
+            # 1. 资金强度 (权重40): 使用对数曲线拉开区分度
+            # 量比对数曲线: ln(量比+1)/ln(11) * 15, 10倍量比约得10分
+            volume_score = min(15, math.log(volume_ratio + 1) / math.log(11) * 10) if volume_ratio > 0 else 0
+            # 净流入对数曲线: ln(净流入+1)/ln(6) * 25, 5亿约得20分
+            inflow_score = min(25, math.log(net_inflow_yi + 1) / math.log(6) * 20) if net_inflow_yi > 0 else 0
+            capital_strength = volume_score + inflow_score
+            
+            # 2. 换手率得分 (权重30): 对数曲线
+            # ln(换手+1)/ln(16) * 30, 15%换手约得22分
+            turnover_score = min(30, math.log(turnover_rate + 1) / math.log(16) * 25)
+            
+            # 3. 价格动能 (权重30)
+            if high == low:
+                # 一字涨停或跌停
+                momentum = 30 if price > prev_close else 0
+            else:
+                # 日内收盘强势度: (现价-最低价)/(最高价-最低价)
+                day_strength = (price - low) / (high - low)
+                momentum = day_strength * 30
+            
+            base_score = capital_strength + turnover_score + momentum
+            
+            # 4. 固定乘数1.1，废除吸血效应防止虚假满分
+            multiplier = 1.1
+            
+            final_score = round(base_score * multiplier, 2)
+            
+            # 资金强度标签
+            if capital_strength >= 35:
+                strength_label = "极强"
+            elif capital_strength >= 28:
+                strength_label = "强"
+            elif capital_strength >= 20:
+                strength_label = "中"
+            else:
+                strength_label = "弱"
+            
+            return final_score, round(net_inflow_yi, 2), strength_label
+        
         current_time = datetime.now()
         
         # 如果在非交易时间运行，提供当日信号回放
-        if current_time.hour > 15 or (current_time.hour == 15 and current_time.minute >= 5):  # 15:05后认为是收盘后
+        # 【CTO】支持凌晨测试：<09:30或>15:05都触发盘后回放
+        if current_time.hour < 9 or current_time.hour > 15 or (current_time.hour == 15 and current_time.minute >= 5):
             logger.info("📊 收盘后模式：正在回放今日信号轨迹...")
             logger.info("💡 提示：系统将在后台记录今日所有信号点")
             
@@ -1360,6 +1418,7 @@ class LiveTradingEngine:
                     scanned_count = 0
                     filtered_by_volume = 0
                     filtered_by_turnover = 0
+                    filtered_by_trend = 0  # 【CTO第三维趋势网】趋势破位淘汰计数
                     
                     # 模拟当日信号检测过程
                     # 【宪法第九条】全市场扫描，禁止限流！
@@ -1383,26 +1442,26 @@ class LiveTradingEngine:
                                 # 获取5日均量
                                 avg_volume_5d = true_dict.get_avg_volume_5d(stock_code)
                                 if avg_volume_5d and avg_volume_5d > 0:
-                                    # ⭐️ CTO裁决修复：引入时间进度加权，防止回放时量比失真
-                                    # 【宪法第九条】量纲对齐：tick volume(手) → 股 (×100)
-                                    volume_gu = tick_event_data['volume'] * 100  # 手→股
+                                    # 【CTO最终裁决】智能单位探测 + 物理熔断
+                                    raw_volume = tick_event_data['volume']
                                     
-                                    now = datetime.now()
-                                    market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
-                                    raw_minutes = (now - market_open).total_seconds() / 60
-                                    # CTO重塑Phase3：开盘前5分钟使用缓冲值5，防止量比虚高
-                                    # 【Bug修复】限制最大240分钟，防止盘后运行量比被摊薄
-                                    minutes_passed = 5 if raw_minutes < 5 else min(max(1, raw_minutes), 240)
+                                    # 【智能单位探测】如果volume小于5日均量的1/10，说明volume是手，均量是股
+                                    if raw_volume < (avg_volume_5d / 10.0):
+                                        volume_ratio = (raw_volume * 100.0) / avg_volume_5d
+                                    else:
+                                        volume_ratio = raw_volume / avg_volume_5d
                                     
-                                    estimated_full_day_volume = volume_gu / minutes_passed * 240
-                                    volume_ratio = estimated_full_day_volume / avg_volume_5d
+                                    # 【物理熔断】正常A股量比极少超过30倍，>50直接熔断为0
+                                    if volume_ratio > 50:
+                                        logger.warning(f"⚠️ {stock_code} 异常量比 {volume_ratio:.1f}x 已熔断为0")
+                                        volume_ratio = 0.0
                                     
                                     # 【架构大一统】使用GlobalFilterGateway验证信号质量
                                     from logic.strategies.global_filter_gateway import quick_validate
                                     
-                                    # 计算换手率 (股/股 * 100%)
+                                    # 计算换手率 (使用原始volume，假设为全天总量)
                                     float_volume = true_dict.get_float_volume(stock_code)
-                                    turnover_rate = (estimated_full_day_volume / float_volume * 100) if float_volume > 0 else 0
+                                    turnover_rate = (raw_volume * 100 / float_volume * 100) if float_volume > 0 else 0
                                     
                                     is_valid, reason = quick_validate(
                                         stock_code=stock_code,
@@ -1419,6 +1478,24 @@ class LiveTradingEngine:
                                             filtered_by_turnover += 1
                                     
                                     if is_valid:
+                                        # 【CTO第三维趋势网】验证MA趋势：MA5>MA10且Price>MA20
+                                        ma_data = true_dict.get_ma_data(stock_code)
+                                        trend_passed = False
+                                        if ma_data:
+                                            trend_passed = (ma_data['ma5'] > ma_data['ma10']) and (tick_event_data['price'] > ma_data['ma20'])
+                                        
+                                        if not trend_passed:
+                                            # 趋势破位，记录淘汰
+                                            filtered_by_trend += 1
+                                            rejected_stocks.append({
+                                                'stock_code': stock_code,
+                                                'reason': '趋势破位: MA5<=MA10 或 Price<=MA20',
+                                                'volume_ratio': round(volume_ratio, 2),
+                                                'turnover_rate': round(turnover_rate, 2)
+                                            })
+                                            logger.debug(f"  🚫 {stock_code} 被第三维趋势网拦截: MA5<=MA10 或 Price<=MA20")
+                                            continue  # 跳过，不加入triggered_stocks
+                                        
                                         # 【架构大一统修复】使用真实交易时间戳，而非datetime.now()
                                         # 从tick_data获取真实时间，如没有则使用模拟的交易时间(14:30)
                                         real_time = "14:30:00"  # 盘后回放使用模拟交易时间，避免18:00的荒谬时间
@@ -1430,6 +1507,18 @@ class LiveTradingEngine:
                                                 from datetime import datetime
                                                 real_time = datetime.fromtimestamp(time_val/1000).strftime('%H:%M:%S')
                                         
+                                        # 【CTO静态快照打分】计算V18风格综合得分、净流入、资金强度
+                                        final_score, net_inflow_yi, strength_label = calculate_snapshot_score(
+                                            volume_ratio=volume_ratio,
+                                            turnover_rate=turnover_rate,
+                                            price=tick_event_data['price'],
+                                            open_price=tick_event_data['open'],
+                                            prev_close=tick_event_data['prev_close'],
+                                            high=tick_event_data['high'],
+                                            low=tick_event_data['low'],
+                                            amount=tick_event_data['amount']
+                                        )
+                                        
                                         triggered_stocks.append({
                                             'stock_code': stock_code,
                                             'time': real_time,  # 【修复】使用真实/模拟交易时间，非current_time
@@ -1437,7 +1526,10 @@ class LiveTradingEngine:
                                             'turnover_rate': round(turnover_rate, 2),  # 新增：显示换手率
                                             'price': round(tick_event_data['price'], 2),
                                             'high': round(tick_event_data.get('high', 0), 2),
-                                            'low': round(tick_event_data.get('low', 0), 2)
+                                            'low': round(tick_event_data.get('low', 0), 2),
+                                            'final_score': final_score,  # 【CTO】综合得分
+                                            'net_inflow_yi': net_inflow_yi,  # 【CTO】净流入（亿）
+                                            'strength_label': strength_label  # 【CTO】资金强度标签
                                         })
                                     else:
                                         # 记录被淘汰的股票用于JSON报告
@@ -1459,7 +1551,20 @@ class LiveTradingEngine:
                     if scanned_count > 0:
                         logger.info(f"   - 量比不足: {filtered_by_volume} 只")
                         logger.info(f"   - 换手不符: {filtered_by_turnover} 只")
+                        logger.info(f"   - 趋势破位: {filtered_by_trend} 只")  # 【CTO第三维趋势网】
                     logger.info(f"{'='*60}")
+                    
+                    # 记录回放结果到日志
+                    if triggered_stocks:
+                        logger.info("📈 今日信号回放结果:")
+                        for stock in triggered_stocks:
+                            logger.info(f"🎯 {stock['stock_code']} - 量比 {stock['volume_ratio']}x, 换手 {stock['turnover_rate']}%")
+                    else:
+                        logger.info("📊 今日未发现量比突破信号")
+                    
+                    # 【CTO】按final_score降序排序，高分在前
+                    if triggered_stocks:
+                        triggered_stocks.sort(key=lambda x: x.get('final_score', 0), reverse=True)
                     
                     # 【第三斩】输出JSON报告到logs目录
                     audit_report = {
@@ -1470,6 +1575,7 @@ class LiveTradingEngine:
                         'rejected': scanned_count - len(triggered_stocks),
                         'rejected_by_volume': filtered_by_volume,
                         'rejected_by_turnover': filtered_by_turnover,
+                        'rejected_by_trend': filtered_by_trend,  # 【CTO第三维趋势网】
                         'triggered_stocks': triggered_stocks,
                         'rejected_stocks': rejected_stocks[:100]  # 只记录前100只被淘汰的
                     }
@@ -1484,13 +1590,24 @@ class LiveTradingEngine:
                     except Exception as e:
                         logger.error(f"❌ JSON报告保存失败: {e}")
                     
-                    # 记录回放结果到日志
+                    # 【CTO工业级控制台战地汇总看板】使用print强制输出到控制台
+                    print(f"\n{'='*70}")
+                    print(f"🏆 今日实盘/回放战地汇总看板 (CTO吸血效应版)")
+                    print(f"{'='*70}")
+                    print(f"▶ 扫描总数: {scanned_count} 只")
+                    print(f"❌ 淘汰总数: {scanned_count - len(triggered_stocks)} 只")
+                    print(f"   - 量比不足: {filtered_by_volume} 只")
+                    print(f"   - 换手不符: {filtered_by_turnover} 只")
+                    print(f"   - 趋势破位: {filtered_by_trend} 只")
+                    print(f"✅ 成功捕获真龙: {len(triggered_stocks)} 只")
                     if triggered_stocks:
-                        logger.info("📈 今日信号回放结果:")
-                        for stock in triggered_stocks:
-                            logger.info(f"🎯 {stock['stock_code']} - 量比 {stock['volume_ratio']}x, 换手 {stock['turnover_rate']}%")
-                    else:
-                        logger.info("📊 今日未发现量比突破信号")
+                        print(f"\n🐉 前5只真龙数据 (净流入|强度|得分|量比|换手):")
+                        for i, stock in enumerate(triggered_stocks[:5], 1):
+                            print(f"   {i}. {stock['stock_code']} | 净流入: {stock.get('net_inflow_yi', 0)}亿 | "
+                                  f"强度: {stock.get('strength_label', '未知')} | 得分: {stock.get('final_score', 0)} | "
+                                  f"量比: {stock['volume_ratio']}x | 换手: {stock['turnover_rate']}%")
+                    print(f"\n📂 完整分析报告: {os.path.abspath(report_file)}")
+                    print(f"{'='*70}\n")
                 
             except Exception as e:
                 logger.error(f"❌ 历史信号回放失败: {e}")

@@ -1049,11 +1049,40 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, volume_percentile, dry_run, 
             time.sleep(3)
             return
         
-        # 开盘前：等待开盘
+        # 开盘前：如果是凌晨（<09:30），执行昨日回放；否则等待开盘
         elif now < market_open:
-            wait_seconds = (market_open - now).seconds
-            click.echo(f"⏳ 等待 09:30 开盘，雷达预热中... (距开盘 {wait_seconds}秒)")
-            time.sleep(min(wait_seconds, 3))  # 最多等3秒(测试用)
+            if now.hour < 6:  # 凌晨测试模式
+                click.echo(click.style(f"🌙 凌晨测试模式，执行昨日信号回放...", fg='cyan'))
+                # 直接调用盘后回放逻辑
+                from tasks.run_live_trading_engine import LiveTradingEngine
+                from logic.core.config_manager import get_config_manager
+                config_manager = get_config_manager()
+                config_manager._config['halfway']['volume_surge_percentile'] = volume_percentile
+                try:
+                    from logic.data_providers.qmt_manager import QmtDataManager
+                    qmt_manager = QmtDataManager()
+                    click.echo("✅ QMT Manager 已创建")
+                except Exception as e:
+                    click.echo(click.style(f"❌ QMT Manager创建失败: {e}", fg='red'))
+                    ctx.exit(1)
+                engine = LiveTradingEngine(
+                    qmt_manager=qmt_manager,
+                    volume_percentile=volume_percentile
+                )
+                engine.start_session()
+                click.echo(click.style("🔄 执行昨日历史信号回放...", fg='green'))
+                print("\n🔬 【物理探针】main.py即将调用replay_today_signals")
+                engine.replay_today_signals()
+                print("🔬 【物理探针】main.py已返回replay_today_signals")
+                click.echo(click.style("✅ 历史信号回放完成", fg='green'))
+                click.echo(click.style("🎯 系统将在3秒后退出", fg='yellow'))
+                time.sleep(3)
+                click.echo(click.style("✅ 系统安全退出", fg='green'))
+                return
+            else:
+                wait_seconds = (market_open - now).seconds
+                click.echo(f"⏳ 等待 09:30 开盘，雷达预热中... (距开盘 {wait_seconds}秒)")
+                time.sleep(min(wait_seconds, 3))  # 最多等3秒(测试用)
         
         # 交易时间内：启动实时监控模式
         else:
