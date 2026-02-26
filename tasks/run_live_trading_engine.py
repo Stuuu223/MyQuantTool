@@ -296,8 +296,11 @@ class LiveTradingEngine:
             
             # CTO修复：使用正确的subscribe_quote API
             # 注意：subscribe_quote需要在有watchlist之后调用
+            # 【P0抢修】QMT subscribe_quote需要逗号分隔字符串而非列表
+            watchlist_str = ','.join(self.watchlist) if isinstance(self.watchlist, list) else self.watchlist
+            logger.info(f"📊 订阅股票代码示例: {self.watchlist[:5]}...")  # 日志前5只
             xtdata.subscribe_quote(
-                stock_code=self.watchlist,
+                stock_code=watchlist_str,
                 period='tick',
                 count=-1,  # -1表示不限数量
                 callback=qmt_tick_callback
