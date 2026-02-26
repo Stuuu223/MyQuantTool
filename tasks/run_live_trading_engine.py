@@ -273,6 +273,7 @@ class LiveTradingEngine:
                             # tick_list是列表，取最新的tick
                             latest_tick = tick_list[-1] if isinstance(tick_list, list) else tick_list
                             
+                            # 【CTO终极裁决第一刀】修复参数名不匹配：time → timestamp
                             tick_event = {
                                 'stock_code': stock_code,
                                 'price': float(latest_tick.get('lastPrice', 0)),
@@ -282,14 +283,29 @@ class LiveTradingEngine:
                                 'high': float(latest_tick.get('high', 0)),
                                 'low': float(latest_tick.get('low', 0)),
                                 'prev_close': float(latest_tick.get('preClose', 0)),
-                                'time': str(latest_tick.get('time', ''))
+                                'timestamp': str(latest_tick.get('time', ''))  # 字段名对齐TickEvent
                             }
                             
                             # 发布到事件总线
                             if self.event_bus:
                                 from logic.data_providers.event_bus import TickEvent
-                                tick_event_obj = TickEvent(**tick_event)
-                                self.event_bus.publish('tick', tick_event_obj)
+                                try:
+                                    # 【CTO终极裁决第二刀】安全容错：逐个字段验证
+                                    tick_event_obj = TickEvent(**tick_event)
+                                    self.event_bus.publish('tick', tick_event_obj)
+                                    # 成功日志（每10次输出一次避免刷屏）
+                                    if hasattr(self, '_tick_count'):
+                                        self._tick_count += 1
+                                    else:
+                                        self._tick_count = 1
+                                    if self._tick_count % 10 == 0:
+                                        logger.info(f"✅ 成功接收并解析 Tick: [{stock_code}] 最新价: {tick_event['price']}, 累计量: {tick_event['volume']}")
+                                except TypeError as te:
+                                    # 参数不匹配错误，记录详细字段信息
+                                    logger.error(f"❌ TickEvent字段不匹配 [{stock_code}]: {te}")
+                                    logger.debug(f"   传入字段: {list(tick_event.keys())}")
+                                except Exception as te:
+                                    logger.error(f"❌ TickEvent创建失败 [{stock_code}]: {te}")
                                 
                 except Exception as e:
                     logger.error(f"❌ QMT Tick回调处理失败: {e}")
