@@ -1301,11 +1301,16 @@ class LiveTradingEngine:
         CTO新增：今日历史信号回放
         收盘后运行时，回放当天的信号轨迹
         """
+        print("\n" + "="*60)
+        print("🔬 【物理探针】replay_today_signals被调用！")
+        print("="*60)
+        
         from datetime import datetime
         import time
         import pandas as pd
         
         current_time = datetime.now()
+        print(f"▶ 当前时间: {current_time}")
         
         # 如果在非交易时间运行，提供当日信号回放
         if current_time.hour > 15 or (current_time.hour == 15 and current_time.minute >= 5):  # 15:05后认为是收盘后
@@ -1335,12 +1340,27 @@ class LiveTradingEngine:
                 # 获取全市场股票列表
                 all_stocks = self.qmt_adapter.get_all_a_shares()
                 
+                # 【物理探针】打印回放筛选统计
+                print(f"\n{'='*60}")
+                print(f"🔬 【物理探针】收盘后信号回放分析")
+                print(f"{'='*60}")
+                if all_stocks:
+                    print(f"▶ 全市场股票总数: {len(all_stocks)} 只")
+                    print(f"▶ 本次扫描样本: {len(all_stocks[:1000])} 只(限制前1000)")
+                else:
+                    print(f"🚨 无法获取全市场股票列表！")
+                
                 # 获取快照数据
                 snapshot = self.qmt_adapter.get_full_tick_snapshot(all_stocks[:1000])  # 限制数量避免性能问题
                 
                 if snapshot:
+                    print(f"✅ 成功获取快照: {len(snapshot)} 只")
+                    
                     # 统计当日触发信号的股票
                     triggered_stocks = []
+                    scanned_count = 0
+                    filtered_by_volume = 0
+                    filtered_by_turnover = 0
                     
                     # 模拟当日信号检测过程
                     for stock_code, tick_data in list(snapshot.items())[:50]:  # 限制数量
@@ -1388,6 +1408,13 @@ class LiveTradingEngine:
                                         config_manager=config_manager
                                     )
                                     
+                                    scanned_count += 1
+                                    if not is_valid:
+                                        if '量比不足' in reason:
+                                            filtered_by_volume += 1
+                                        elif '换手' in reason:
+                                            filtered_by_turnover += 1
+                                    
                                     if is_valid:
                                         # 【架构大一统修复】使用真实交易时间戳，而非datetime.now()
                                         # 从tick_data获取真实时间，如没有则使用模拟的交易时间(14:30)
@@ -1411,6 +1438,18 @@ class LiveTradingEngine:
                                         })
                                     else:
                                         logger.debug(f"  🚫 {stock_code} 被Boss三维铁网拦截: {reason}")
+                    
+                    # 【物理探针】打印回放筛选统计
+                    print(f"\n{'='*60}")
+                    print(f"📊 【物理探针】收盘后回放筛选统计")
+                    print(f"{'='*60}")
+                    print(f"▶ 扫描股票数: {scanned_count} 只")
+                    print(f"✅ 通过筛选: {len(triggered_stocks)} 只")
+                    print(f"🚫 被淘汰: {scanned_count - len(triggered_stocks)} 只")
+                    if scanned_count > 0:
+                        print(f"   - 量比不足: {filtered_by_volume} 只")
+                        print(f"   - 换手不符: {filtered_by_turnover} 只")
+                    print(f"{'='*60}\n")
                     
                     # 打印回放结果
                     if triggered_stocks:

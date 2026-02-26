@@ -1030,7 +1030,9 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, volume_percentile, dry_run, 
             
             # 执行今日历史信号回放
             click.echo(click.style("🔄 执行今日历史信号回放...", fg='green'))
+            print("\n🔬 【物理探针】main.py即将调用replay_today_signals")
             engine.replay_today_signals()
+            print("🔬 【物理探针】main.py已返回replay_today_signals")
             
             click.echo(click.style("✅ 历史信号回放完成", fg='green'))
             click.echo(click.style("🎯 系统将在3秒后退出", fg='yellow'))
