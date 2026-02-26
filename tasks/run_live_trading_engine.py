@@ -303,28 +303,31 @@ class LiveTradingEngine:
         09:25集合竞价快照初筛 - CTO第一斩 - CTO加固：容错机制
         5000只 → 500只（10:1淘汰）
         
-        使用QMT的get_full_tick()获取真实快照，向量化过滤：
+        【架构解耦】使用QMTEventAdapter获取数据，向量化过滤：
         1. open < prev_close（低开的，直接拉黑）
         2. volume < 1000（竞价连1000手都没有的，没有资金关注，拉黑）  
         3. open >= up_stop_price（开盘直接一字涨停的，买不到，拉黑）
         """
         import pandas as pd
+        import time
         
         try:
-            from xtquant import xtdata
-            import time
-            
             start_time = time.perf_counter()
             
-            # 1. 获取全市场快照（1毫秒内完成）
-            all_stocks = xtdata.get_stock_list_in_sector('沪深A股')
-            if not all_stocks:
-                logger.error("🚨 无法获取沪深A股列表")
-                # CTO加固：容错机制 - 使用回退方案
+            # 【架构解耦】使用adapter获取数据，而非直接调用xtdata
+            if not hasattr(self, 'qmt_adapter') or self.qmt_adapter is None:
+                logger.error("🚨 QMTEventAdapter未初始化")
                 self._fallback_premarket_scan()
                 return
             
-            snapshot = xtdata.get_full_tick(all_stocks)
+            # 1. 获取全市场快照（1毫秒内完成）
+            all_stocks = self.qmt_adapter.get_all_a_shares()
+            if not all_stocks:
+                logger.error("🚨 无法获取沪深A股列表")
+                self._fallback_premarket_scan()
+                return
+            
+            snapshot = self.qmt_adapter.get_full_tick_snapshot(all_stocks)
             
             if not snapshot:
                 logger.error("🚨 无法获取09:25集合竞价快照")
@@ -525,10 +528,13 @@ class LiveTradingEngine:
         
         # 添加沪深A股主要股票
         try:
-            from xtquant import xtdata
+            # 【架构解耦】使用adapter获取数据
+            if not hasattr(self, 'qmt_adapter') or self.qmt_adapter is None:
+                logger.debug("QMTEventAdapter未初始化，跳过扩展")
+                return list(extended)
             
             # 获取沪深A股列表 (前1000只用于缓存预热)
-            all_a_shares = xtdata.get_stock_list_in_sector('沪深A股')
+            all_a_shares = self.qmt_adapter.get_all_a_shares()
             
             # 优先添加watchlist中的股票
             for code in self.watchlist:
@@ -596,17 +602,21 @@ class LiveTradingEngine:
         start_time = time.perf_counter()
         
         try:
-            from xtquant import xtdata
             from logic.data_providers.true_dictionary import get_true_dictionary
+            
+            # 【架构解耦】检查adapter
+            if not hasattr(self, 'qmt_adapter') or self.qmt_adapter is None:
+                logger.error("🚨 QMTEventAdapter未初始化")
+                self._fallback_premarket_scan()
+                return
             
             # 1. 获取09:25筛选出的股票的开盘快照
             if not self.watchlist:
                 logger.error("🚨 watchlist为空，无法进行09:30二筛")
-                # CTO加固：容错机制 - 使用回退方案
                 self._fallback_premarket_scan()
                 return
             
-            snapshot = xtdata.get_full_tick(self.watchlist)
+            snapshot = self.qmt_adapter.get_full_tick_snapshot(self.watchlist)
             
             if not snapshot:
                 logger.error("🚨 无法获取09:30开盘快照")
@@ -650,11 +660,12 @@ class LiveTradingEngine:
             market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
             raw_minutes = (now - market_open).total_seconds() / 60
             # CTO重塑Phase3：开盘前5分钟使用缓冲值5，防止量比虚高
+            # 【Bug修复】限制最大240分钟，防止盘后运行量比被摊薄
             if raw_minutes < 5:
                 minutes_passed = 5  # 缓冲启动区
                 logger.info(f"⏰ 开盘缓冲期: 使用最小值5分钟计算量比")
             else:
-                minutes_passed = raw_minutes
+                minutes_passed = min(raw_minutes, 240)  # 限制最大240分钟
             
             # 时间进度加权：估算全天成交量
             df['estimated_full_day_volume'] = df['volume'] / minutes_passed * 240
@@ -680,12 +691,33 @@ class LiveTradingEngine:
             # 无论是实盘、回放、回测，都必须走同一套Boss三维铁网！
             from logic.strategies.global_filter_gateway import apply_boss_filters
             
+            # 【物理探针】记录过滤前数据
+            pre_filter_count = len(df)
+            logger.info(f"\n{'='*60}")
+            logger.info(f"🔬 【物理探针】09:30快照筛选漏斗分析")
+            logger.info(f"{'='*60}")
+            logger.info(f"▶ 初始输入池: {pre_filter_count} 只")
+            logger.info(f"   量比范围: {df['volume_ratio'].min():.2f}x ~ {df['volume_ratio'].max():.2f}x")
+            logger.info(f"   换手范围: {df['turnover_rate'].min():.2f}% ~ {df['turnover_rate'].max():.2f}%")
+            
             filtered_df, stats = apply_boss_filters(
                 df=df,
                 config_manager=config_manager,
                 true_dict=true_dict,
                 context="realtime_snapshot"
             )
+            
+            # 【物理探针】记录过滤后数据
+            post_filter_count = len(filtered_df)
+            rejection_count = pre_filter_count - post_filter_count
+            rejection_rate = rejection_count / pre_filter_count * 100 if pre_filter_count > 0 else 0
+            
+            logger.info(f"\n📊 【物理探针】过滤统计:")
+            logger.info(f"▶ 过滤后剩余: {post_filter_count} 只")
+            logger.info(f"🚫 被淘汰: {rejection_count} 只 ({rejection_rate:.1f}%)")
+            logger.info(f"✅ 通过率: {stats.get('filter_rate', 'N/A')}")
+            logger.info(f"📋 应用的过滤器: {stats.get('filters_applied', [])}")
+            logger.info(f"{'='*60}\n")
             
             # 按量比排序
             filtered_df = filtered_df.sort_values('volume_ratio', ascending=False)
@@ -1126,11 +1158,15 @@ class LiveTradingEngine:
         """
         import pandas as pd
         from datetime import datetime
-        from xtquant import xtdata
         
         try:
             today = datetime.now().strftime('%Y%m%d')
             logger.info(f"🔄 开始回溯 {today} 早盘历史...")
+            
+            # 【架构解耦】使用adapter获取数据
+            if not hasattr(self, 'qmt_adapter') or self.qmt_adapter is None:
+                logger.error("🚨 QMTEventAdapter未初始化")
+                return
             
             # 获取已有的历史数据用于参考
             # 这里可以使用time_machine_engine的逻辑来重放历史
@@ -1148,18 +1184,22 @@ class LiveTradingEngine:
         """
         import pandas as pd
         from datetime import datetime
-        from xtquant import xtdata
         
         try:
             logger.info("🔄 执行当前截面快照筛选...")
             
+            # 【架构解耦】检查adapter
+            if not hasattr(self, 'qmt_adapter') or self.qmt_adapter is None:
+                logger.error("🚨 QMTEventAdapter未初始化")
+                return
+            
             # 获取全市场快照
-            all_stocks = xtdata.get_stock_list_in_sector('沪深A股')
+            all_stocks = self.qmt_adapter.get_all_a_shares()
             if not all_stocks:
                 logger.error("🚨 无法获取股票列表")
                 return
             
-            snapshot = xtdata.get_full_tick(all_stocks)
+            snapshot = self.qmt_adapter.get_full_tick_snapshot(all_stocks)
             if not snapshot:
                 logger.error("🚨 无法获取当前快照")
                 return
@@ -1201,10 +1241,11 @@ class LiveTradingEngine:
             market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
             raw_minutes = (now - market_open).total_seconds() / 60
             # CTO重塑Phase3：开盘前5分钟使用缓冲值5，防止量比虚高
+            # 【Bug修复】限制最大240分钟，防止盘后运行量比被摊薄
             if raw_minutes < 5:
                 minutes_passed = 5  # 缓冲启动区
             else:
-                minutes_passed = max(1, raw_minutes)
+                minutes_passed = min(max(1, raw_minutes), 240)  # 限制最大240分钟
             
             df['estimated_full_day_volume'] = df['volume'] / minutes_passed * 240
             df['volume_ratio'] = df['estimated_full_day_volume'] / df['avg_volume_5d'].replace(0, pd.NA)
@@ -1286,12 +1327,16 @@ class LiveTradingEngine:
                 from logic.data_providers.true_dictionary import get_true_dictionary
                 true_dict = get_true_dictionary()
                 
+                # 【架构解耦】使用adapter获取数据
+                if not hasattr(self, 'qmt_adapter') or self.qmt_adapter is None:
+                    logger.error("🚨 QMTEventAdapter未初始化")
+                    return
+                
                 # 获取全市场股票列表
-                from xtquant import xtdata
-                all_stocks = xtdata.get_stock_list_in_sector('沪深A股')
+                all_stocks = self.qmt_adapter.get_all_a_shares()
                 
                 # 获取快照数据
-                snapshot = xtdata.get_full_tick(all_stocks[:1000])  # 限制数量避免性能问题
+                snapshot = self.qmt_adapter.get_full_tick_snapshot(all_stocks[:1000])  # 限制数量避免性能问题
                 
                 if snapshot:
                     # 统计当日触发信号的股票
@@ -1323,7 +1368,8 @@ class LiveTradingEngine:
                                     market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
                                     raw_minutes = (now - market_open).total_seconds() / 60
                                     # CTO重塑Phase3：开盘前5分钟使用缓冲值5，防止量比虚高
-                                    minutes_passed = 5 if raw_minutes < 5 else max(1, raw_minutes)
+                                    # 【Bug修复】限制最大240分钟，防止盘后运行量比被摊薄
+                                    minutes_passed = 5 if raw_minutes < 5 else min(max(1, raw_minutes), 240)
                                     
                                     estimated_full_day_volume = tick_event_data['volume'] / minutes_passed * 240
                                     volume_ratio = estimated_full_day_volume / avg_volume_5d

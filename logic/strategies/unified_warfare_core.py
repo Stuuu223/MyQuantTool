@@ -69,7 +69,8 @@ class EventManager:
         if name in self.detectors:
             self.detectors[name].enabled = False
 
-from logic.strategies.opening_weak_to_strong_detector import OpeningWeakToStrongDetector
+# NOTE: OpeningWeakToStrongDetector已物理删除（占位文件）
+# from logic.strategies.opening_weak_to_strong_detector import OpeningWeakToStrongDetector
 # NOTE: HalfwayBreakoutDetector已归档至archive/redundant_halfway/
 # from logic.strategies.halfway_breakout_detector import HalfwayBreakoutDetector
 from logic.strategies.leader_candidate_detector import LeaderCandidateDetector
@@ -108,9 +109,9 @@ class UnifiedWarfareCore:
     
     def _init_detectors(self):
         """初始化各个战法检测器"""
-        # 集合竞价弱转强检测器
-        opening_detector = OpeningWeakToStrongDetector()
-        self.event_manager.register_detector(opening_detector)
+        # 集合竞价弱转强检测器（已删除）
+        # opening_detector = OpeningWeakToStrongDetector()
+        # self.event_manager.register_detector(opening_detector)
         
         # 龙头候选检测器
         leader_detector = LeaderCandidateDetector()
@@ -256,8 +257,8 @@ class UnifiedWarfareCore:
     def enable_warfare(self, warfare_type: str):
         """启用特定战法检测器"""
         detector_map = {
-            'opening_weak_to_strong': 'OpeningWeakToStrongDetector',
-            'halfway_breakout': 'HalfwayBreakoutDetector',
+            # 'opening_weak_to_strong': 'OpeningWeakToStrongDetector',  # 已删除
+            # 'halfway_breakout': 'HalfwayBreakoutDetector',  # 已归档
             'leader_candidate': 'LeaderCandidateDetector',
             'dip_buy_candidate': 'DipBuyCandidateDetector',
         }
@@ -270,8 +271,8 @@ class UnifiedWarfareCore:
     def disable_warfare(self, warfare_type: str):
         """禁用特定战法检测器"""
         detector_map = {
-            'opening_weak_to_strong': 'OpeningWeakToStrongDetector',
-            'halfway_breakout': 'HalfwayBreakoutDetector',
+            # 'opening_weak_to_strong': 'OpeningWeakToStrongDetector',  # 已删除
+            # 'halfway_breakout': 'HalfwayBreakoutDetector',  # 已归档
             'leader_candidate': 'LeaderCandidateDetector',
             'dip_buy_candidate': 'DipBuyCandidateDetector',
         }

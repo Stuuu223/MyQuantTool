@@ -92,14 +92,28 @@ class GlobalFilterGateway:
         # ========== 第一维：量能网 ==========
         # 量比 >= 配置倍数（如1.5倍）
         if 'volume_ratio' in df.columns:
+            volume_before = len(df)
             mask_volume = df['volume_ratio'] >= min_volume_multiplier
             df = df[mask_volume].copy()
+            volume_after = len(df)
+            volume_rejected = volume_before - volume_after
             stats["filters_applied"].append(f"volume_ratio>={min_volume_multiplier}x")
-            logger.info(f"  🔹 量能网: {len(df)}/{original_count}只通过 (量比>={min_volume_multiplier}x)")
+            logger.info(f"  🔹 量能网: {volume_after}/{volume_before}只通过 (量比>={min_volume_multiplier}x)")
+            # 【物理探针】打印被淘汰的阈值边界信息
+            if volume_rejected > 0 and 'volume_ratio' in df.columns:
+                min_ratio = df['volume_ratio'].min() if len(df) > 0 else 0
+                max_ratio = df['volume_ratio'].max() if len(df) > 0 else 0
+                logger.info(f"     📊 通过者量比范围: {min_ratio:.2f}x ~ {max_ratio:.2f}x")
+                logger.info(f"     🚫 淘汰: {volume_rejected}只因量比<{min_volume_multiplier}x")
         
         # ========== 第二维：换手网 ==========
         # 5% <= 换手率 <= 60%
         if 'turnover_rate' in df.columns:
+            # 【Bug修复】换手率单位自适应：如果是小数(0.05)则转为百分比(5.0)
+            if df['turnover_rate'].max() <= 1.0:
+                logger.info(f"  🔧 检测到换手率数据为小数形式，自动转换为百分比")
+                df['turnover_rate'] = df['turnover_rate'] * 100.0
+            
             mask_turnover = (df['turnover_rate'] >= min_turnover) & (df['turnover_rate'] <= max_turnover)
             df = df[mask_turnover].copy()
             stats["filters_applied"].append(f"turnover_{min_turnover}~{max_turnover}%")
