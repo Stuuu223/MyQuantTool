@@ -662,7 +662,13 @@ class LiveTradingEngine:
             from datetime import datetime
             now = datetime.now()
             market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
-            minutes_passed = max(1, (now - market_open).total_seconds() / 60)  # 最小1分钟
+            raw_minutes = (now - market_open).total_seconds() / 60
+            # CTO重塑Phase3：开盘前5分钟使用缓冲值5，防止量比虚高
+            if raw_minutes < 5:
+                minutes_passed = 5  # 缓冲启动区
+                logger.info(f"⏰ 开盘缓冲期: 使用最小值5分钟计算量比")
+            else:
+                minutes_passed = raw_minutes
             
             # 时间进度加权：估算全天成交量
             df['estimated_full_day_volume'] = df['volume'] / minutes_passed * 240
@@ -678,43 +684,45 @@ class LiveTradingEngine:
             # 清理无效数据
             df = df.dropna(subset=['volume_ratio', 'turnover_rate', 'turnover_rate_per_min'])
             
-            # 5. CTO终极过滤规则（双Ratio化：分位数阈值+动态换手）
-            # 从配置管理器获取参数 (SSOT标准)
+            # 5. 【CTO Phase1重塑】宽体观察池：0.90分位门槛，移除换手率限制
+            # 观察池是雷达标的，不是最终买入点 - 放宽进池门槛
             from logic.core.config_manager import get_config_manager
             
             config_manager = get_config_manager()
-            turnover_thresholds = config_manager.get_turnover_rate_thresholds()
             
-            # 获取实盘专用的分位数阈值 (CTO新标准)
-            volume_ratio_percentile = config_manager.get_volume_ratio_percentile('live_sniper')
+            # 【CTO重塑】使用holographic_download.volume_ratio_download配置（0.90分位）
+            watchlist_threshold = config_manager.get('holographic_download.volume_ratio_download', 0.90)
             
-            # 计算动态量比阈值 - 基于当前市场情况的0.95分位数
+            # 计算动态量比阈值 - 基于当前市场情况的0.90分位数（宽松）
             if len(df) > 0 and 'volume_ratio' in df.columns:
-                volume_ratio_threshold = df['volume_ratio'].quantile(volume_ratio_percentile)
+                volume_ratio_threshold = df['volume_ratio'].quantile(watchlist_threshold)
                 # 确保阈值不低于绝对最小值
                 volume_ratio_threshold = max(volume_ratio_threshold, 1.5)
             else:
                 volume_ratio_threshold = 1.5  # 默认值
             
-            # 只保留：量比>分位数阈值（真正放量）且 每分钟换手>阈值 且 总换手<阈值
-            # 右侧起爆哲学：资金为王，筛选真正有资金流入的股票
+            # 【CTO重塑】宽体观察池：只卡量比>0.90分位，不卡换手率
+            # 换手率限制移到Tick开火阶段，不进池阶段
             mask = (
-                (df['volume_ratio'] > volume_ratio_threshold) &                         # ⭐️ 分位数动态阈值，真正放量
-                (df['turnover_rate_per_min'] > turnover_thresholds['per_minute_min']) & # ⭐️ 核心：每分钟换手率>0.2%
-                (df['turnover_rate'] < turnover_thresholds['total_max'])                # 过滤过度爆炒（<70%）
+                (df['volume_ratio'] > volume_ratio_threshold) &  # ⭐️ 0.90分位，宽松进池
+                (df['volume'] > 0)  # 只需有成交量
             )
             
             filtered_df = df[mask].sort_values('volume_ratio', ascending=False)
             
             elapsed = (time.perf_counter() - start_time) * 1000
             
-            # 6. 更新watchlist为最终30只候选
-            self.watchlist = filtered_df['stock_code'].tolist()[:30]
+            # 6. 【CTO重塑】放宽数量限制：50-150只观察池
+            watchlist_count = len(filtered_df)
+            if watchlist_count < 50:
+                logger.warning(f"⚠️ 观察池数量不足: {watchlist_count}只，建议检查市场活跃度")
+            
+            self.watchlist = filtered_df['stock_code'].tolist()[:150]  # 最多150只
             
             # ⭐️ 记录Ratio化参数（CTO封板要求）
             logger.info(f"🔪 CTO第二斩完成: {original_count}只 → {len(self.watchlist)}只，耗时{elapsed:.2f}ms")
-            logger.info(f"   ⏱️ 开盘已运行: {minutes_passed:.1f}分钟 | 量比阈值: {volume_ratio_threshold:.2f}x (0.95分位数)")
-            logger.info(f"   📊 每分钟换手阈值: {turnover_thresholds['per_minute_min']:.2f}% | 总换手上限: {turnover_thresholds['total_max']:.1f}%")
+            logger.info(f"   ⏱️ 开盘已运行: {minutes_passed:.1f}分钟 | 量比阈值: {volume_ratio_threshold:.2f}x (0.90分位-宽体观察池)")
+            logger.info(f"   📊 【CTO重塑】观察池门槛已放宽至0.90分位，Tick开火阶段再严格过滤")
             
             # 7. 记录详细日志（Top5）
             if len(filtered_df) > 0:
@@ -790,25 +798,90 @@ class LiveTradingEngine:
     
     def _on_tick_data(self, tick_event):
         """
-        Tick事件处理 - 实时V18算分 - CTO加固：容错机制
+        Tick事件处理 - Phase 2: Tick级开火权下放 (CTO架构重塑)
+        
+        核心逻辑:
+        1. 只在watchlist中的股票才处理 (0.90分位已进池)
+        2. 实时计算该股票的量比（时间进度加权）
+        3. 开火门槛：0.95分位（严格）
+        4. 换手率检查（开火时才检查）
+        5. 微观防线检查
+        6. V18引擎算分
+        7. 拔枪射击！
         
         Args:
             tick_event: Tick事件对象
         """
-        # CTO加固：容错机制 - 即使没有QMT Manager也能处理
+        # CTO加固：容错机制
         if not self.running:
             return
+        
+        stock_code = tick_event.stock_code
+        
+        # ============================================================
+        # Phase 2 Step 1: 只在watchlist中的股票才处理
+        # ============================================================
+        if stock_code not in self.watchlist:
+            return  # 不在观察池，直接丢弃
         
         # 如果没有V18验钞机，记录警告但不阻止处理
         if not self.warfare_core:
             logger.debug("⚠️ V18验钞机未初始化，跳过Tick数据处理")
             return
         
-        # 转换Tick事件为V18引擎所需格式
         try:
+            # ============================================================
+            # Phase 2 Step 2: 实时计算该股票的量比（时间进度加权）
+            # ============================================================
+            from logic.data_providers.true_dictionary import get_true_dictionary
+            
+            now = datetime.now()
+            market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
+            minutes_passed = max(1, (now - market_open).total_seconds() / 60)
+            
+            current_volume = tick_event.volume
+            true_dict = get_true_dictionary()
+            avg_volume_5d = true_dict.get_avg_volume_5d(stock_code)
+            
+            if avg_volume_5d <= 0:
+                logger.debug(f"⚠️ {stock_code} 5日均量无效，跳过")
+                return
+            
+            # 估算全天成交量 = 当前成交量 / 已过分钟数 * 240分钟
+            estimated_full_day_volume = current_volume / minutes_passed * 240
+            current_volume_ratio = estimated_full_day_volume / avg_volume_5d
+            
+            # ============================================================
+            # Phase 2 Step 3: 开火门槛 - 0.95分位（严格）
+            # ============================================================
+            from logic.core.config_manager import get_config_manager
+            config_manager = get_config_manager()
+            fire_threshold = self._get_current_fire_threshold(config_manager)
+            
+            # 只有当量比突破0.95分位才继续处理（开火权下放）
+            if current_volume_ratio < fire_threshold:
+                return  # 未达开火门槛，静默丢弃
+            
+            logger.info(f"🔥 {stock_code} 触发量比阈值: {current_volume_ratio:.2f}x >= {fire_threshold:.2f}x")
+            
+            # ============================================================
+            # Phase 2 Step 4: 换手率检查（开火时才检查）
+            # ============================================================
+            turnover_rate = self._calculate_turnover_rate(stock_code, tick_event, true_dict)
+            turnover_thresholds = config_manager.get_turnover_rate_thresholds()
+            
+            if turnover_rate < turnover_thresholds['per_minute_min']:
+                logger.debug(f"🚫 {stock_code} 换手率不足: {turnover_rate:.2f}% < {turnover_thresholds['per_minute_min']:.2f}%")
+                return  # 换手率不达标，放弃开火
+            
+            logger.info(f"✅ {stock_code} 换手率通过: {turnover_rate:.2f}%/min")
+            
+            # ============================================================
+            # Phase 2 Step 5: 微观防线检查
+            # ============================================================
             tick_data = {
-                'stock_code': tick_event.stock_code,
-                'datetime': datetime.now(),
+                'stock_code': stock_code,
+                'datetime': now,
                 'price': tick_event.price,
                 'volume': tick_event.volume,
                 'amount': tick_event.amount,
@@ -816,82 +889,204 @@ class LiveTradingEngine:
                 'high': tick_event.high,
                 'low': tick_event.low,
                 'prev_close': tick_event.prev_close,
+                'volume_ratio': current_volume_ratio,
+                'turnover_rate': turnover_rate,
             }
             
-            # 送入V18验钞机进行实时打分
-            score = self.warfare_core.process_tick(tick_data)
+            if not self._micro_defense_check(stock_code, tick_data):
+                logger.info(f"🚫 {stock_code} 未通过微观防线检查")
+                return  # 微观防线拦截
             
-            # 如果得分超过阈值，触发交易检查
-            if score and score > 70:  # V18阈值 (CTO: 可根据回演结果调整)
-                logger.info(f"🎯 高分信号: {tick_event.stock_code} 得分 {score:.2f}")
-                self._check_trade_signal(tick_event.stock_code, score, tick_data)
-                
+            # ============================================================
+            # Phase 2 Step 6: V18引擎算分
+            # ============================================================
+            score = self._v18_calculate_score(stock_code, tick_data)
+            
+            if score < 70:  # V18阈值
+                logger.info(f"🚫 {stock_code} V18得分不足: {score:.2f} < 70")
+                return  # 得分不足，放弃开火
+            
+            logger.info(f"🎯 {stock_code} V18高分通过: {score:.2f}")
+            
+            # ============================================================
+            # Phase 2 Step 7: 拔枪射击！
+            # ============================================================
+            self._execute_trade(stock_code, tick_data, score)
+            
         except Exception as e:
-            logger.error(f"❌ Tick事件处理失败: {e}")
+            logger.error(f"❌ Tick事件处理失败 ({stock_code}): {e}")
+            import traceback
+            logger.error(traceback.format_exc())
     
-    def _check_trade_signal(self, stock_code: str, score: float, tick_data: Dict[str, Any]):
+    def _get_current_fire_threshold(self, config_manager) -> float:
         """
-        检查交易信号 - CTO加固：容错机制
+        获取当前开火阈值 - 0.95分位严格标准
+        
+        Args:
+            config_manager: 配置管理器实例
+            
+        Returns:
+            float: 量比分位数阈值 (默认0.95)
+        """
+        # 从配置获取0.95分位阈值
+        threshold = config_manager.get_volume_ratio_percentile('live_sniper')
+        
+        # 确保不低于绝对最小值1.5
+        return max(threshold, 1.5)
+    
+    def _calculate_turnover_rate(self, stock_code: str, tick_event, true_dict) -> float:
+        """
+        计算每分钟换手率
         
         Args:
             stock_code: 股票代码
-            score: V18得分
-            tick_data: Tick数据
+            tick_event: Tick事件
+            true_dict: TrueDictionary实例
+            
+        Returns:
+            float: 每分钟换手率 (%)
         """
-        # CTO加固：容错机制 - 即使没有交易组件也能处理信号
-        if not self.trade_gatekeeper:
-            logger.warning("⚠️ TradeGatekeeper未初始化，跳过交易信号检查")
-            return
+        from datetime import datetime
         
-        if not self.trader:
-            logger.warning("⚠️ 交易接口未连接，跳过交易执行")
-            return
+        now = datetime.now()
+        market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
+        minutes_passed = max(1, (now - market_open).total_seconds() / 60)
+        
+        current_volume = tick_event.volume
+        float_volume = true_dict.get_float_volume(stock_code)
+        
+        if float_volume <= 0:
+            return 0.0
+        
+        # 总换手率 = 成交量 / 流通股本 * 100%
+        total_turnover_rate = (current_volume / float_volume) * 100
+        
+        # 每分钟换手率（实战核心指标）
+        turnover_rate_per_min = total_turnover_rate / minutes_passed
+        
+        return turnover_rate_per_min
+    
+    def _micro_defense_check(self, stock_code: str, tick_data: Dict[str, Any]) -> bool:
+        """
+        微观防线检查 - 三道防线验证
+        
+        Args:
+            stock_code: 股票代码
+            tick_data: Tick数据
+            
+        Returns:
+            bool: 是否通过微观防线
+        """
+        # 检查TradeGatekeeper是否可用
+        if not self.trade_gatekeeper:
+            logger.warning(f"⚠️ {stock_code} TradeGatekeeper未初始化，跳过微观防线")
+            return True  # 容错：未初始化时默认通过
         
         try:
-            # CTO加固: 使用真实的TradeGatekeeper方法
-            # 检查板块共振 (时机斧)
-            sector_resonance_check = True  # 这实的检查应该基于当前板块情况
-            # 检查资金流 (防守斧) 
-            capital_flow_check = True  # 这实的检查应该基于资金流数据
+            # 防守斧：资金流检查
+            capital_flow_ok = getattr(self.trade_gatekeeper, 'check_capital_flow', lambda *args: True)(
+                stock_code, tick_data.get('volume_ratio', 0), tick_data
+            )
             
-            # CTO加固: 调用真实的方法名而不是can_trade
-            # 这实的TradeGatekeeper检查逻辑
-            from logic.execution.trade_gatekeeper import TradeGatekeeper
-            # 获取真实方法并调用
-            resonance_ok = True  # 通过真实方法检查
-            flow_ok = True  # 通过真实方法检查
-            
-            # 假设真实方法为 check_resonance 和 check_flow
-            # 这实实现需要根据具体TradeGatekeeper API调整
-            resonance_ok = getattr(self.trade_gatekeeper, 'check_sector_resonance', lambda *args: True)(
+            # 时机斧：板块共振检查
+            sector_resonance_ok = getattr(self.trade_gatekeeper, 'check_sector_resonance', lambda *args: True)(
                 stock_code, tick_data
             )
             
-            flow_ok = getattr(self.trade_gatekeeper, 'check_capital_flow', lambda *args: True)(
-                stock_code, score, tick_data
+            # 资格斧：基础资格检查（涨跌停状态等）
+            from logic.data_providers.true_dictionary import get_true_dictionary
+            true_dict = get_true_dictionary()
+            
+            up_stop_price = true_dict.get_up_stop_price(stock_code)
+            down_stop_price = true_dict.get_down_stop_price(stock_code)
+            current_price = tick_data.get('price', 0)
+            
+            # 排除涨停和跌停状态
+            if up_stop_price > 0 and current_price >= up_stop_price * 0.995:
+                logger.debug(f"🚫 {stock_code} 接近涨停状态，放弃开火")
+                return False
+            
+            if down_stop_price > 0 and current_price <= down_stop_price * 1.005:
+                logger.debug(f"🚫 {stock_code} 接近跌停状态，放弃开火")
+                return False
+            
+            # 综合微观防线结果
+            micro_ok = capital_flow_ok and sector_resonance_ok
+            
+            if micro_ok:
+                logger.info(f"✅ {stock_code} 微观防线检查通过")
+            else:
+                logger.info(f"🚫 {stock_code} 微观防线拦截: 资金={capital_flow_ok}, 板块={sector_resonance_ok}")
+            
+            return micro_ok
+            
+        except Exception as e:
+            logger.error(f"❌ {stock_code} 微观防线检查异常: {e}")
+            return True  # 容错：异常时默认通过
+    
+    def _v18_calculate_score(self, stock_code: str, tick_data: Dict[str, Any]) -> float:
+        """
+        V18引擎实时算分
+        
+        Args:
+            stock_code: 股票代码
+            tick_data: Tick数据
+            
+        Returns:
+            float: V18得分 (0-100)
+        """
+        if not self.warfare_core:
+            return 0.0
+        
+        try:
+            # 送入V18验钞机进行实时打分
+            score = self.warfare_core.process_tick(tick_data)
+            return float(score) if score else 0.0
+        except Exception as e:
+            logger.error(f"❌ {stock_code} V18算分失败: {e}")
+            return 0.0
+    
+    def _execute_trade(self, stock_code: str, tick_data: Dict[str, Any], score: float):
+        """
+        执行交易 - 拔枪射击
+        
+        Args:
+            stock_code: 股票代码
+            tick_data: Tick数据
+            score: V18得分
+        """
+        if not self.trader:
+            logger.warning(f"⚠️ {stock_code} 交易接口未连接，跳过执行")
+            return
+        
+        try:
+            logger.info(f"🚨 {stock_code} 触发交易信号! 得分={score:.2f}, 价格={tick_data.get('price', 0)}")
+            
+            # 执行交易
+            from logic.execution.trade_interface import TradeOrder, OrderDirection
+            
+            order = TradeOrder(
+                stock_code=stock_code,
+                direction=OrderDirection.BUY.value,
+                quantity=100,  # 可根据资金管理调整
+                price=tick_data.get('price', 0),
+                remark=f'V18_{score:.1f}_VR_{tick_data.get("volume_ratio", 0):.1f}'
             )
             
-            # 如果风控通过
-            if resonance_ok and flow_ok:
-                logger.info(f"🚨 交易信号: {stock_code} 得分 {score:.2f} 通过风控")
-                
-                # 执行交易 (CTO: 实盘前务必先用模拟盘验证)
-                from logic.execution.trade_interface import TradeOrder, OrderDirection
-                order = TradeOrder(
-                    stock_code=stock_code,
-                    direction=OrderDirection.BUY.value,
-                    quantity=100,  # 可根据资金管理调整
-                    price=tick_data['price'],
-                    remark=f'V18_Score_{score:.2f}'
-                )
-                
-                result = self.trader.buy(order)
-                logger.info(f"💰 交易结果: {result}")
-            else:
-                logger.info(f"🚫 交易被拒绝: {stock_code} 未通过风控检查")
-                
+            result = self.trader.buy(order)
+            logger.info(f"💰 {stock_code} 交易结果: {result}")
+            
         except Exception as e:
-            logger.error(f"❌ 交易执行失败: {e}")
+            logger.error(f"❌ {stock_code} 交易执行失败: {e}")
+    
+    def _check_trade_signal(self, stock_code: str, score: float, tick_data: Dict[str, Any]):
+        """
+        [已废弃] 检查交易信号 - Phase 2后统一使用_tick级开火流程
+        
+        保留此方法用于向后兼容，新逻辑已全部迁移至_on_tick_data
+        """
+        logger.debug(f"⚠️ _check_trade_signal已废弃，请使用新的Tick级开火流程")
+        # 新逻辑已在_on_tick_data中实现，此方法不再被调用
     
 
     def _start_auto_replenishment(self):
@@ -1016,16 +1211,29 @@ class LiveTradingEngine:
             # 其中 估算全天成交量 = 当前成交量 / 已过分钟数 * 240分钟
             now = datetime.now()
             market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
-            minutes_passed = max(1, (now - market_open).total_seconds() / 60)  # 最小1分钟
+            raw_minutes = (now - market_open).total_seconds() / 60
+            # CTO重塑Phase3：开盘前5分钟使用缓冲值5，防止量比虚高
+            if raw_minutes < 5:
+                minutes_passed = 5  # 缓冲启动区
+            else:
+                minutes_passed = max(1, raw_minutes)
             
             df['estimated_full_day_volume'] = df['volume'] / minutes_passed * 240
             df['volume_ratio'] = df['estimated_full_day_volume'] / df['avg_volume_5d'].replace(0, pd.NA)
             
-            # 过滤条件：非一字板、有量比数据、量比>阈值
+            # 【CTO Phase1重塑】宽体观察池：0.90分位门槛，移除涨停价限制
+            # 1. 从config读取0.90分位门槛（宽松进池）
+            from logic.core.config_manager import get_config_manager
+            config_manager = get_config_manager()
+            watchlist_threshold = config_manager.get('holographic_download.volume_ratio_download', 0.90)
+            
+            # 2. 计算0.90分位量比阈值
+            volume_ratio_threshold = df['volume_ratio'].quantile(watchlist_threshold)
+            
+            # 3. 宽体观察池：只卡量比>0.90分位，不卡其他条件
             mask = (
-                (df['volume_ratio'] >= self.volume_percentile) &  # CTO要求：使用传入的分位数阈值
-                (df['volume'] > 0) &  # 有成交量
-                (df['up_stop_price'] > 0)  # 有涨停价数据
+                (df['volume_ratio'] >= volume_ratio_threshold) &  # 0.90分位，宽松
+                (df['volume'] > 0)  # 只需有成交量
             )
             
             filtered_df = df[mask].copy()
@@ -1033,8 +1241,12 @@ class LiveTradingEngine:
             # 按量比排序
             filtered_df = filtered_df.sort_values('volume_ratio', ascending=False)
             
-            # 更新watchlist为筛选结果
-            self.watchlist = filtered_df['stock_code'].tolist()[:30]  # 最多30只
+            # 4. 【CTO重塑】放宽数量限制：50-150只观察池
+            watchlist_count = len(filtered_df)
+            if watchlist_count < 50:
+                logger.warning(f"⚠️ 观察池数量不足: {watchlist_count}只，建议检查市场活跃度")
+            
+            self.watchlist = filtered_df['stock_code'].tolist()[:150]  # 最多150只
             
             logger.info(f"✅ 当前截面筛选完成: {len(self.watchlist)} 只目标")
             
@@ -1108,7 +1320,9 @@ class LiveTradingEngine:
                                     # 量比 = 估算全天成交量 / 5日平均成交量
                                     now = datetime.now()
                                     market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
-                                    minutes_passed = max(1, (now - market_open).total_seconds() / 60)  # 最小1分钟
+                                    raw_minutes = (now - market_open).total_seconds() / 60
+                                    # CTO重塑Phase3：开盘前5分钟使用缓冲值5，防止量比虚高
+                                    minutes_passed = 5 if raw_minutes < 5 else max(1, raw_minutes)
                                     
                                     estimated_full_day_volume = tick_event_data['volume'] / minutes_passed * 240
                                     volume_ratio = estimated_full_day_volume / avg_volume_5d
