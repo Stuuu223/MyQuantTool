@@ -183,19 +183,43 @@ class TrueDictionary:
                 end_time=end_date
             )
             
+            # 【调试日志】检查all_data返回状态
+            logger.info(f"[调试] xtdata.get_local_data返回: type={type(all_data)}, "
+                       f"is_none={all_data is None}, "
+                       f"len={len(all_data) if all_data else 0}, "
+                       f"stock_list_len={len(stock_list)}")
+            
             if all_data:
+                # 【调试日志】打印第一只股票的数据结构
+                sample_keys = list(all_data.keys())[:3]
+                for idx, sample_key in enumerate(sample_keys):
+                    sample_df = all_data[sample_key]
+                    logger.info(f"[调试] 样本股票[{idx}] {sample_key}: "
+                               f"df_type={type(sample_df)}, "
+                               f"is_none={sample_df is None}, "
+                               f"len={len(sample_df) if sample_df is not None else 'N/A'}, "
+                               f"columns={sample_df.columns.tolist() if hasattr(sample_df, 'columns') else 'N/A'}")
+                
                 for stock_code, df in all_data.items():
-                    if df is not None and len(df) >= 5:
-                        # 计算最近5日成交量均值
-                        recent_5d_volume = df['volume'].tail(5).mean()
-                        if recent_5d_volume and recent_5d_volume > 0:
-                            self._avg_volume_5d[stock_code] = float(recent_5d_volume)
+                    # 【Bug修复】原代码要求len(df)>=5过于严格，导致春节等假期后数据不足时全部失败
+                    # 修正：只要有至少1天数据就计算均值（使用所有可用数据）
+                    if df is not None and len(df) >= 1:
+                        # 计算所有可用数据的成交量均值（不限于5天）
+                        avg_volume = df['volume'].mean()
+                        if avg_volume and avg_volume > 0:
+                            self._avg_volume_5d[stock_code] = float(avg_volume)
                             success += 1
                         else:
+                            # 【调试日志】volume计算失败
+                            logger.debug(f"[调试-失败] {stock_code}: volume_mean={avg_volume}")
                             failed += 1
                     else:
+                        # 【调试日志】df为None或长度不足
+                        logger.debug(f"[调试-失败] {stock_code}: df_is_none={df is None}, "
+                                    f"df_len={len(df) if df is not None else 0}")
                         failed += 1
             else:
+                logger.error(f"[调试-致命] xtdata.get_local_data返回None或空字典!")
                 failed = len(stock_list)
             
             elapsed = (time.perf_counter() - start) * 1000

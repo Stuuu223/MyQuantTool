@@ -924,7 +924,7 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, volume_percentile, dry_run, 
         true_dict = get_true_dictionary()
         
         # CTO修复：全量处理，不截断！
-        warmup_result = true_dict.warmup_qmt_only(all_stocks)  # 全市场预热
+        warmup_result = true_dict.warmup(all_stocks)  # 全市场预热
         
         if not warmup_result.get('ready_for_trading'):
             click.echo(click.style("🚨 盘前装弹失败! 系统熔断退出", fg='red', bold=True))
