@@ -294,18 +294,21 @@ class LiveTradingEngine:
                 except Exception as e:
                     logger.error(f"❌ QMT Tick回调处理失败: {e}")
             
-            # CTO修复：使用正确的subscribe_quote API
-            # 注意：subscribe_quote需要在有watchlist之后调用
-            # 【P0抢修】QMT subscribe_quote需要逗号分隔字符串而非列表
-            watchlist_str = ','.join(self.watchlist) if isinstance(self.watchlist, list) else self.watchlist
-            logger.info(f"📊 订阅股票代码示例: {self.watchlist[:5]}...")  # 日志前5只
-            xtdata.subscribe_quote(
-                stock_code=watchlist_str,
-                period='tick',
-                count=-1,  # -1表示不限数量
-                callback=qmt_tick_callback
-            )
-            logger.info(f"✅ QMT Tick订阅成功: {len(self.watchlist)} 只股票")
+            # 【CTO清创第一刀】QMT subscribe_quote必须用for循环逐一订阅
+            logger.info(f"📊 开始逐一订阅 {len(self.watchlist)} 只股票的Tick数据...")
+            subscribed_count = 0
+            for code in self.watchlist:
+                try:
+                    xtdata.subscribe_quote(
+                        stock_code=code,
+                        period='tick',
+                        count=-1,
+                        callback=qmt_tick_callback
+                    )
+                    subscribed_count += 1
+                except Exception as e:
+                    logger.warning(f"⚠️ 订阅 {code} 失败: {e}")
+            logger.info(f"✅ QMT Tick订阅完成: {subscribed_count}/{len(self.watchlist)} 只股票")
             
         except AttributeError as e:
             # 如果subscribe_quote也不存在，使用备用方案
@@ -717,8 +720,14 @@ class LiveTradingEngine:
             
             # 6. 【CTO重塑】放宽数量限制：50-150只观察池
             watchlist_count = len(filtered_df)
-            if watchlist_count < 50:
-                logger.warning(f"⚠️ 观察池数量不足: {watchlist_count}只，建议检查市场活跃度")
+            
+            # 【CTO第三刀】消除观察池数量焦虑：只要>0就不警告
+            if watchlist_count == 0:
+                logger.warning(f"⚠️ 观察池为空，无法监控")
+            elif watchlist_count < 10:
+                logger.info(f"💡 观察池数量较少: {watchlist_count}只")
+            else:
+                logger.info(f"✅ 观察池已就绪: {watchlist_count}只")
             
             self.watchlist = filtered_df['stock_code'].tolist()[:150]  # 最多150只
             
@@ -1246,8 +1255,14 @@ class LiveTradingEngine:
             
             # 4. 【CTO重塑】放宽数量限制：50-150只观察池
             watchlist_count = len(filtered_df)
-            if watchlist_count < 50:
-                logger.warning(f"⚠️ 观察池数量不足: {watchlist_count}只，建议检查市场活跃度")
+            
+            # 【CTO第三刀】消除观察池数量焦虑：只要>0就不警告
+            if watchlist_count == 0:
+                logger.warning(f"⚠️ 观察池为空，无法监控")
+            elif watchlist_count < 10:
+                logger.info(f"💡 观察池数量较少: {watchlist_count}只")
+            else:
+                logger.info(f"✅ 观察池已就绪: {watchlist_count}只")
             
             self.watchlist = filtered_df['stock_code'].tolist()[:150]  # 最多150只
             
