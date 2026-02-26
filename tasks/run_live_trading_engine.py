@@ -1338,20 +1338,22 @@ class LiveTradingEngine:
                 all_stocks = self.qmt_adapter.get_all_a_shares()
                 
                 # 【物理探针】打印回放筛选统计
-                print(f"\n{'='*60}")
-                print(f"🔬 【物理探针】收盘后信号回放分析")
-                print(f"{'='*60}")
+                # 【宪法第九条】全市场扫描,禁止限流!
+                logger.info(f"{'='*60}")
+                logger.info(f"🔬 【物理探针】收盘后信号回放分析")
+                logger.info(f"{'='*60}")
                 if all_stocks:
-                    print(f"▶ 全市场股票总数: {len(all_stocks)} 只")
-                    print(f"▶ 本次扫描样本: {len(all_stocks[:1000])} 只(限制前1000)")
+                    logger.info(f"▶ 全市场股票总数: {len(all_stocks)} 只")
+                    logger.info(f"▶ 本次扫描样本: {len(all_stocks)} 只(全市场)")
                 else:
-                    print(f"🚨 无法获取全市场股票列表！")
+                    logger.error(f"🚨 无法获取全市场股票列表！")
+                    return
                 
-                # 获取快照数据
-                snapshot = self.qmt_adapter.get_full_tick_snapshot(all_stocks[:1000])  # 限制数量避免性能问题
+                # 获取快照数据(全市场扫描)
+                snapshot = self.qmt_adapter.get_full_tick_snapshot(all_stocks)
                 
                 if snapshot:
-                    print(f"✅ 成功获取快照: {len(snapshot)} 只")
+                    logger.info(f"✅ 成功获取快照: {len(snapshot)} 只")
                     
                     # 统计当日触发信号的股票
                     triggered_stocks = []

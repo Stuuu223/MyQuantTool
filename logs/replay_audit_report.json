@@ -1,0 +1,1810 @@
+{
+  "scan_time": "2026-02-26T21:38:49.559291",
+  "scan_type": "replay_today_signals",
+  "total_scanned": 997,
+  "passed": 133,
+  "rejected": 864,
+  "rejected_by_volume": 0,
+  "rejected_by_turnover": 864,
+  "triggered_stocks": [
+    {
+      "stock_code": "600010.SH",
+      "time": "15:01:01",
+      "volume_ratio": 295.37,
+      "turnover_rate": 9.88,
+      "price": 2.98,
+      "high": 3,
+      "low": 2.89
+    },
+    {
+      "stock_code": "600101.SH",
+      "time": "15:02:04",
+      "volume_ratio": 173.98,
+      "turnover_rate": 6.14,
+      "price": 10.57,
+      "high": 10.67,
+      "low": 10.4
+    },
+    {
+      "stock_code": "600227.SH",
+      "time": "15:00:59",
+      "volume_ratio": 406.88,
+      "turnover_rate": 18.07,
+      "price": 2.86,
+      "high": 3.09,
+      "low": 2.83
+    },
+    {
+      "stock_code": "600330.SH",
+      "time": "15:01:01",
+      "volume_ratio": 155.09,
+      "turnover_rate": 12.67,
+      "price": 17.56,
+      "high": 18.62,
+      "low": 17.35
+    },
+    {
+      "stock_code": "600392.SH",
+      "time": "15:00:58",
+      "volume_ratio": 103.38,
+      "turnover_rate": 6.54,
+      "price": 31.45,
+      "high": 31.99,
+      "low": 30.9
+    },
+    {
+      "stock_code": "600399.SH",
+      "time": "15:01:00",
+      "volume_ratio": 274.94,
+      "turnover_rate": 9.97,
+      "price": 7.52,
+      "high": 7.52,
+      "low": 6.76
+    },
+    {
+      "stock_code": "600459.SH",
+      "time": "15:02:00",
+      "volume_ratio": 142.33,
+      "turnover_rate": 5.26,
+      "price": 23.5,
+      "high": 24.3,
+      "low": 23.46
+    },
+    {
+      "stock_code": "600497.SH",
+      "time": "15:01:01",
+      "volume_ratio": 263.93,
+      "turnover_rate": 6.35,
+      "price": 10.28,
+      "high": 10.6,
+      "low": 9.83
+    },
+    {
+      "stock_code": "600509.SH",
+      "time": "15:01:01",
+      "volume_ratio": 325.41,
+      "turnover_rate": 5.07,
+      "price": 8.87,
+      "high": 9.1,
+      "low": 8.49
+    },
+    {
+      "stock_code": "600531.SH",
+      "time": "15:01:01",
+      "volume_ratio": 104.01,
+      "turnover_rate": 6.58,
+      "price": 17.52,
+      "high": 18.1,
+      "low": 17.49
+    },
+    {
+      "stock_code": "600537.SH",
+      "time": "15:00:59",
+      "volume_ratio": 222.88,
+      "turnover_rate": 13.12,
+      "price": 3.69,
+      "high": 3.73,
+      "low": 3.54
+    },
+    {
+      "stock_code": "600545.SH",
+      "time": "15:01:00",
+      "volume_ratio": 167.43,
+      "turnover_rate": 13.99,
+      "price": 3.41,
+      "high": 3.63,
+      "low": 3.22
+    },
+    {
+      "stock_code": "600550.SH",
+      "time": "15:00:59",
+      "volume_ratio": 148.41,
+      "turnover_rate": 9.43,
+      "price": 17.77,
+      "high": 17.85,
+      "low": 16.9
+    },
+    {
+      "stock_code": "600556.SH",
+      "time": "15:01:01",
+      "volume_ratio": 131.49,
+      "turnover_rate": 6.19,
+      "price": 7.21,
+      "high": 7.45,
+      "low": 7.2
+    },
+    {
+      "stock_code": "600586.SH",
+      "time": "15:01:00",
+      "volume_ratio": 84.45,
+      "turnover_rate": 5.09,
+      "price": 6.64,
+      "high": 6.81,
+      "low": 6.5
+    },
+    {
+      "stock_code": "600602.SH",
+      "time": "15:02:05",
+      "volume_ratio": 124.9,
+      "turnover_rate": 6.03,
+      "price": 20.88,
+      "high": 21.48,
+      "low": 20.22
+    },
+    {
+      "stock_code": "600759.SH",
+      "time": "15:01:01",
+      "volume_ratio": 230.12,
+      "turnover_rate": 23.19,
+      "price": 6.07,
+      "high": 6.51,
+      "low": 5.96
+    },
+    {
+      "stock_code": "600791.SH",
+      "time": "15:02:39",
+      "volume_ratio": 120.27,
+      "turnover_rate": 6.96,
+      "price": 8.31,
+      "high": 8.65,
+      "low": 8.02
+    },
+    {
+      "stock_code": "600868.SH",
+      "time": "15:00:59",
+      "volume_ratio": 124.55,
+      "turnover_rate": 5.23,
+      "price": 4.03,
+      "high": 4.14,
+      "low": 4.02
+    },
+    {
+      "stock_code": "600979.SH",
+      "time": "15:02:04",
+      "volume_ratio": 800.91,
+      "turnover_rate": 10.81,
+      "price": 5.03,
+      "high": 5.03,
+      "low": 4.55
+    },
+    {
+      "stock_code": "600984.SH",
+      "time": "15:02:31",
+      "volume_ratio": 103.82,
+      "turnover_rate": 7.59,
+      "price": 5.15,
+      "high": 5.31,
+      "low": 5.11
+    },
+    {
+      "stock_code": "601020.SH",
+      "time": "15:01:01",
+      "volume_ratio": 150.51,
+      "turnover_rate": 5.43,
+      "price": 35.56,
+      "high": 36.17,
+      "low": 35.06
+    },
+    {
+      "stock_code": "601026.SH",
+      "time": "15:02:03",
+      "volume_ratio": 98.54,
+      "turnover_rate": 5.29,
+      "price": 20.7,
+      "high": 20.83,
+      "low": 20.49
+    },
+    {
+      "stock_code": "601619.SH",
+      "time": "15:01:58",
+      "volume_ratio": 84.93,
+      "turnover_rate": 5.16,
+      "price": 6.66,
+      "high": 6.85,
+      "low": 6.51
+    },
+    {
+      "stock_code": "601890.SH",
+      "time": "15:01:00",
+      "volume_ratio": 129.33,
+      "turnover_rate": 15.16,
+      "price": 13.33,
+      "high": 13.73,
+      "low": 13
+    },
+    {
+      "stock_code": "603026.SH",
+      "time": "15:02:03",
+      "volume_ratio": 182.54,
+      "turnover_rate": 5.67,
+      "price": 66.55,
+      "high": 70.8,
+      "low": 66.08
+    },
+    {
+      "stock_code": "603082.SH",
+      "time": "15:02:45",
+      "volume_ratio": 136.04,
+      "turnover_rate": 8.04,
+      "price": 40.23,
+      "high": 40.33,
+      "low": 39.63
+    },
+    {
+      "stock_code": "603124.SH",
+      "time": "15:01:01",
+      "volume_ratio": 156.24,
+      "turnover_rate": 12.32,
+      "price": 118.08,
+      "high": 121.66,
+      "low": 114.47
+    },
+    {
+      "stock_code": "603186.SH",
+      "time": "15:02:40",
+      "volume_ratio": 153.9,
+      "turnover_rate": 10.31,
+      "price": 80.74,
+      "high": 82.31,
+      "low": 74.47
+    },
+    {
+      "stock_code": "603248.SH",
+      "time": "15:03:26",
+      "volume_ratio": 605.78,
+      "turnover_rate": 17.48,
+      "price": 23.87,
+      "high": 23.99,
+      "low": 22.86
+    },
+    {
+      "stock_code": "603315.SH",
+      "time": "15:03:17",
+      "volume_ratio": 228.56,
+      "turnover_rate": 8.48,
+      "price": 17.95,
+      "high": 17.95,
+      "low": 16.18
+    },
+    {
+      "stock_code": "603359.SH",
+      "time": "15:02:06",
+      "volume_ratio": 250.75,
+      "turnover_rate": 5.61,
+      "price": 7.19,
+      "high": 7.27,
+      "low": 7.04
+    },
+    {
+      "stock_code": "603391.SH",
+      "time": "15:02:07",
+      "volume_ratio": 91.94,
+      "turnover_rate": 6.05,
+      "price": 70.85,
+      "high": 72.2,
+      "low": 70.5
+    },
+    {
+      "stock_code": "603507.SH",
+      "time": "15:02:04",
+      "volume_ratio": 165.12,
+      "turnover_rate": 5.86,
+      "price": 32.62,
+      "high": 32.65,
+      "low": 30.88
+    },
+    {
+      "stock_code": "603601.SH",
+      "time": "15:00:59",
+      "volume_ratio": 207.03,
+      "turnover_rate": 25.28,
+      "price": 13.23,
+      "high": 13.5,
+      "low": 12.8
+    },
+    {
+      "stock_code": "603612.SH",
+      "time": "15:02:37",
+      "volume_ratio": 166.25,
+      "turnover_rate": 6.4,
+      "price": 35.15,
+      "high": 35.57,
+      "low": 32.6
+    },
+    {
+      "stock_code": "603619.SH",
+      "time": "15:01:59",
+      "volume_ratio": 159.78,
+      "turnover_rate": 8.66,
+      "price": 36.23,
+      "high": 38.31,
+      "low": 36.2
+    },
+    {
+      "stock_code": "603688.SH",
+      "time": "15:00:59",
+      "volume_ratio": 90.03,
+      "turnover_rate": 5.08,
+      "price": 49.93,
+      "high": 50.5,
+      "low": 48.72
+    },
+    {
+      "stock_code": "603757.SH",
+      "time": "15:02:34",
+      "volume_ratio": 186.42,
+      "turnover_rate": 11.5,
+      "price": 46.42,
+      "high": 47.55,
+      "low": 43.89
+    },
+    {
+      "stock_code": "603999.SH",
+      "time": "15:03:22",
+      "volume_ratio": 128.31,
+      "turnover_rate": 5.07,
+      "price": 7.82,
+      "high": 8.25,
+      "low": 7.74
+    },
+    {
+      "stock_code": "605007.SH",
+      "time": "15:01:01",
+      "volume_ratio": 165.25,
+      "turnover_rate": 7.58,
+      "price": 17.5,
+      "high": 17.98,
+      "low": 16.31
+    },
+    {
+      "stock_code": "605066.SH",
+      "time": "15:01:00",
+      "volume_ratio": 155.87,
+      "turnover_rate": 5.32,
+      "price": 8.82,
+      "high": 8.86,
+      "low": 8.51
+    },
+    {
+      "stock_code": "605287.SH",
+      "time": "15:00:59",
+      "volume_ratio": 113.72,
+      "turnover_rate": 10.11,
+      "price": 52.95,
+      "high": 56.4,
+      "low": 51.86
+    },
+    {
+      "stock_code": "605366.SH",
+      "time": "15:03:15",
+      "volume_ratio": 157.0,
+      "turnover_rate": 5.67,
+      "price": 8.91,
+      "high": 9,
+      "low": 8.52
+    },
+    {
+      "stock_code": "688031.SH",
+      "time": "15:01:01",
+      "volume_ratio": 109.48,
+      "turnover_rate": 7.2,
+      "price": 213,
+      "high": 214.06,
+      "low": 195
+    },
+    {
+      "stock_code": "688048.SH",
+      "time": "15:01:02",
+      "volume_ratio": 151.5,
+      "turnover_rate": 9.56,
+      "price": 154.1,
+      "high": 160,
+      "low": 144.55
+    },
+    {
+      "stock_code": "688226.SH",
+      "time": "15:02:41",
+      "volume_ratio": 511.15,
+      "turnover_rate": 6.11,
+      "price": 43.07,
+      "high": 43.45,
+      "low": 38.6
+    },
+    {
+      "stock_code": "688291.SH",
+      "time": "15:02:03",
+      "volume_ratio": 207.71,
+      "turnover_rate": 6.45,
+      "price": 54.36,
+      "high": 55.5,
+      "low": 47.54
+    },
+    {
+      "stock_code": "688309.SH",
+      "time": "15:03:17",
+      "volume_ratio": 205.76,
+      "turnover_rate": 5.15,
+      "price": 40.24,
+      "high": 40.82,
+      "low": 37.69
+    },
+    {
+      "stock_code": "688343.SH",
+      "time": "15:02:07",
+      "volume_ratio": 141.47,
+      "turnover_rate": 8.49,
+      "price": 91.88,
+      "high": 93.98,
+      "low": 86.01
+    },
+    {
+      "stock_code": "688380.SH",
+      "time": "15:01:00",
+      "volume_ratio": 197.13,
+      "turnover_rate": 5.3,
+      "price": 51.25,
+      "high": 51.53,
+      "low": 48.26
+    },
+    {
+      "stock_code": "688503.SH",
+      "time": "15:00:59",
+      "volume_ratio": 123.88,
+      "turnover_rate": 7.34,
+      "price": 92.69,
+      "high": 93.36,
+      "low": 85.51
+    },
+    {
+      "stock_code": "688523.SH",
+      "time": "15:03:19",
+      "volume_ratio": 153.44,
+      "turnover_rate": 7.93,
+      "price": 60.3,
+      "high": 61.02,
+      "low": 58.37
+    },
+    {
+      "stock_code": "688525.SH",
+      "time": "15:02:07",
+      "volume_ratio": 111.65,
+      "turnover_rate": 5.07,
+      "price": 167.02,
+      "high": 169.9,
+      "low": 164.2
+    },
+    {
+      "stock_code": "688530.SH",
+      "time": "15:01:00",
+      "volume_ratio": 186.4,
+      "turnover_rate": 34.69,
+      "price": 39.59,
+      "high": 39.59,
+      "low": 31.83
+    },
+    {
+      "stock_code": "688549.SH",
+      "time": "15:01:00",
+      "volume_ratio": 201.57,
+      "turnover_rate": 10.57,
+      "price": 11,
+      "high": 11.06,
+      "low": 10.44
+    },
+    {
+      "stock_code": "688603.SH",
+      "time": "15:03:18",
+      "volume_ratio": 175.58,
+      "turnover_rate": 7.21,
+      "price": 85.21,
+      "high": 86.5,
+      "low": 79.88
+    },
+    {
+      "stock_code": "688630.SH",
+      "time": "15:02:02",
+      "volume_ratio": 178.24,
+      "turnover_rate": 6.1,
+      "price": 201.5,
+      "high": 203.77,
+      "low": 188.88
+    },
+    {
+      "stock_code": "688662.SH",
+      "time": "15:03:23",
+      "volume_ratio": 158.68,
+      "turnover_rate": 6.55,
+      "price": 59.33,
+      "high": 60.37,
+      "low": 57.58
+    },
+    {
+      "stock_code": "688712.SH",
+      "time": "15:03:23",
+      "volume_ratio": 89.89,
+      "turnover_rate": 9.4,
+      "price": 40.2,
+      "high": 40.58,
+      "low": 40.07
+    },
+    {
+      "stock_code": "688721.SH",
+      "time": "15:02:05",
+      "volume_ratio": 217.39,
+      "turnover_rate": 6.69,
+      "price": 51.3,
+      "high": 52.36,
+      "low": 49.2
+    },
+    {
+      "stock_code": "688727.SH",
+      "time": "15:02:39",
+      "volume_ratio": 109.69,
+      "turnover_rate": 7.36,
+      "price": 57.24,
+      "high": 57.83,
+      "low": 56.46
+    },
+    {
+      "stock_code": "688785.SH",
+      "time": "15:00:58",
+      "volume_ratio": 184.13,
+      "turnover_rate": 16.48,
+      "price": 341,
+      "high": 354,
+      "low": 323.01
+    },
+    {
+      "stock_code": "688796.SH",
+      "time": "15:02:04",
+      "volume_ratio": 190.09,
+      "turnover_rate": 7.92,
+      "price": 77.51,
+      "high": 79.88,
+      "low": 69.03
+    },
+    {
+      "stock_code": "688805.SH",
+      "time": "15:00:59",
+      "volume_ratio": 339.49,
+      "turnover_rate": 10.4,
+      "price": 46.9,
+      "high": 46.92,
+      "low": 45.26
+    },
+    {
+      "stock_code": "688816.SH",
+      "time": "15:02:42",
+      "volume_ratio": 68.78,
+      "turnover_rate": 14.83,
+      "price": 74.6,
+      "high": 76.22,
+      "low": 73.85
+    },
+    {
+      "stock_code": "600080.SH",
+      "time": "15:02:06",
+      "volume_ratio": 140.42,
+      "turnover_rate": 5.78,
+      "price": 9,
+      "high": 9.12,
+      "low": 8.8
+    },
+    {
+      "stock_code": "600172.SH",
+      "time": "15:01:00",
+      "volume_ratio": 207.91,
+      "turnover_rate": 23.95,
+      "price": 9.37,
+      "high": 9.71,
+      "low": 8.77
+    },
+    {
+      "stock_code": "600337.SH",
+      "time": "15:01:58",
+      "volume_ratio": 321.98,
+      "turnover_rate": 7.98,
+      "price": 2.76,
+      "high": 2.87,
+      "low": 2.74
+    },
+    {
+      "stock_code": "600343.SH",
+      "time": "15:01:01",
+      "volume_ratio": 302.73,
+      "turnover_rate": 14.74,
+      "price": 36.14,
+      "high": 36.14,
+      "low": 32.43
+    },
+    {
+      "stock_code": "600505.SH",
+      "time": "15:03:22",
+      "volume_ratio": 218.59,
+      "turnover_rate": 6.67,
+      "price": 14.84,
+      "high": 15.19,
+      "low": 14.53
+    },
+    {
+      "stock_code": "600610.SH",
+      "time": "15:01:00",
+      "volume_ratio": 116.35,
+      "turnover_rate": 6.96,
+      "price": 11.93,
+      "high": 12.45,
+      "low": 11.9
+    },
+    {
+      "stock_code": "600644.SH",
+      "time": "15:01:00",
+      "volume_ratio": 291.85,
+      "turnover_rate": 11.23,
+      "price": 12.08,
+      "high": 12.15,
+      "low": 11.5
+    },
+    {
+      "stock_code": "600649.SH",
+      "time": "15:00:59",
+      "volume_ratio": 364.06,
+      "turnover_rate": 7.42,
+      "price": 5.29,
+      "high": 5.77,
+      "low": 5.23
+    },
+    {
+      "stock_code": "600727.SH",
+      "time": "15:03:09",
+      "volume_ratio": 161.85,
+      "turnover_rate": 5.99,
+      "price": 7.99,
+      "high": 8.29,
+      "low": 7.95
+    },
+    {
+      "stock_code": "600775.SH",
+      "time": "15:01:00",
+      "volume_ratio": 142.19,
+      "turnover_rate": 5.17,
+      "price": 14.58,
+      "high": 14.83,
+      "low": 14.5
+    },
+    {
+      "stock_code": "600785.SH",
+      "time": "15:00:59",
+      "volume_ratio": 139.97,
+      "turnover_rate": 9.09,
+      "price": 21.16,
+      "high": 22.38,
+      "low": 20.88
+    },
+    {
+      "stock_code": "600796.SH",
+      "time": "15:02:02",
+      "volume_ratio": 123.87,
+      "turnover_rate": 5.29,
+      "price": 7.02,
+      "high": 7.04,
+      "low": 6.89
+    },
+    {
+      "stock_code": "600797.SH",
+      "time": "15:01:00",
+      "volume_ratio": 154.39,
+      "turnover_rate": 6.72,
+      "price": 10.69,
+      "high": 10.98,
+      "low": 10.51
+    },
+    {
+      "stock_code": "600960.SH",
+      "time": "15:01:01",
+      "volume_ratio": 110.94,
+      "turnover_rate": 9.14,
+      "price": 6.34,
+      "high": 6.39,
+      "low": 5.93
+    },
+    {
+      "stock_code": "601015.SH",
+      "time": "15:02:02",
+      "volume_ratio": 92.78,
+      "turnover_rate": 5.24,
+      "price": 4.85,
+      "high": 5.03,
+      "low": 4.81
+    },
+    {
+      "stock_code": "601083.SH",
+      "time": "15:02:02",
+      "volume_ratio": 82.39,
+      "turnover_rate": 5.91,
+      "price": 12.23,
+      "high": 12.32,
+      "low": 12.06
+    },
+    {
+      "stock_code": "601096.SH",
+      "time": "15:01:01",
+      "volume_ratio": 223.78,
+      "turnover_rate": 11.16,
+      "price": 6.74,
+      "high": 7,
+      "low": 6.19
+    },
+    {
+      "stock_code": "601208.SH",
+      "time": "15:01:00",
+      "volume_ratio": 239.94,
+      "turnover_rate": 13.61,
+      "price": 33.93,
+      "high": 34.66,
+      "low": 31.35
+    },
+    {
+      "stock_code": "603078.SH",
+      "time": "15:01:58",
+      "volume_ratio": 145.42,
+      "turnover_rate": 6.99,
+      "price": 25.62,
+      "high": 26.1,
+      "low": 25.21
+    },
+    {
+      "stock_code": "603083.SH",
+      "time": "15:01:57",
+      "volume_ratio": 188.82,
+      "turnover_rate": 8.44,
+      "price": 108.33,
+      "high": 108.98,
+      "low": 104.7
+    },
+    {
+      "stock_code": "603090.SH",
+      "time": "15:01:01",
+      "volume_ratio": 96.88,
+      "turnover_rate": 5.07,
+      "price": 80.35,
+      "high": 83.95,
+      "low": 75.51
+    },
+    {
+      "stock_code": "603103.SH",
+      "time": "15:01:01",
+      "volume_ratio": 240.33,
+      "turnover_rate": 5.09,
+      "price": 26.32,
+      "high": 27.79,
+      "low": 26.1
+    },
+    {
+      "stock_code": "603108.SH",
+      "time": "15:01:57",
+      "volume_ratio": 165.73,
+      "turnover_rate": 5.72,
+      "price": 15.77,
+      "high": 16.75,
+      "low": 15.71
+    },
+    {
+      "stock_code": "603125.SH",
+      "time": "15:02:04",
+      "volume_ratio": 86.33,
+      "turnover_rate": 8.01,
+      "price": 20.32,
+      "high": 20.41,
+      "low": 19.93
+    },
+    {
+      "stock_code": "603228.SH",
+      "time": "15:01:00",
+      "volume_ratio": 255.51,
+      "turnover_rate": 5.75,
+      "price": 69.22,
+      "high": 70.77,
+      "low": 65.37
+    },
+    {
+      "stock_code": "603257.SH",
+      "time": "15:03:21",
+      "volume_ratio": 145.23,
+      "turnover_rate": 6.13,
+      "price": 60.39,
+      "high": 61.55,
+      "low": 60.12
+    },
+    {
+      "stock_code": "603269.SH",
+      "time": "15:00:59",
+      "volume_ratio": 1247.66,
+      "turnover_rate": 14.64,
+      "price": 13.63,
+      "high": 13.66,
+      "low": 12.35
+    },
+    {
+      "stock_code": "603270.SH",
+      "time": "15:01:00",
+      "volume_ratio": 147.78,
+      "turnover_rate": 5.26,
+      "price": 28.07,
+      "high": 28.1,
+      "low": 27.54
+    },
+    {
+      "stock_code": "603271.SH",
+      "time": "15:01:58",
+      "volume_ratio": 124.34,
+      "turnover_rate": 6.41,
+      "price": 46.89,
+      "high": 47.98,
+      "low": 46.66
+    },
+    {
+      "stock_code": "603373.SH",
+      "time": "15:02:45",
+      "volume_ratio": 178.96,
+      "turnover_rate": 12.19,
+      "price": 46.02,
+      "high": 47.46,
+      "low": 43.89
+    },
+    {
+      "stock_code": "603402.SH",
+      "time": "15:01:00",
+      "volume_ratio": 115.26,
+      "turnover_rate": 6.91,
+      "price": 139.62,
+      "high": 142.5,
+      "low": 139.3
+    },
+    {
+      "stock_code": "603533.SH",
+      "time": "15:01:00",
+      "volume_ratio": 290.42,
+      "turnover_rate": 23.15,
+      "price": 30.09,
+      "high": 30.39,
+      "low": 28.58
+    },
+    {
+      "stock_code": "603626.SH",
+      "time": "15:02:03",
+      "volume_ratio": 139.99,
+      "turnover_rate": 6.51,
+      "price": 27.67,
+      "high": 29.2,
+      "low": 26.22
+    },
+    {
+      "stock_code": "603667.SH",
+      "time": "15:01:01",
+      "volume_ratio": 79.8,
+      "turnover_rate": 7.98,
+      "price": 80.31,
+      "high": 82,
+      "low": 79.03
+    },
+    {
+      "stock_code": "603678.SH",
+      "time": "15:00:59",
+      "volume_ratio": 305.1,
+      "turnover_rate": 6.84,
+      "price": 43.5,
+      "high": 44.2,
+      "low": 39.91
+    },
+    {
+      "stock_code": "603679.SH",
+      "time": "15:02:04",
+      "volume_ratio": 197.83,
+      "turnover_rate": 5.72,
+      "price": 16.76,
+      "high": 17,
+      "low": 16.5
+    },
+    {
+      "stock_code": "603690.SH",
+      "time": "15:01:01",
+      "volume_ratio": 225.12,
+      "turnover_rate": 5.17,
+      "price": 29.35,
+      "high": 29.35,
+      "low": 28.33
+    },
+    {
+      "stock_code": "603729.SH",
+      "time": "15:02:39",
+      "volume_ratio": 53.17,
+      "turnover_rate": 5.1,
+      "price": 18.91,
+      "high": 18.99,
+      "low": 18.66
+    },
+    {
+      "stock_code": "603867.SH",
+      "time": "15:01:57",
+      "volume_ratio": 386.75,
+      "turnover_rate": 11.73,
+      "price": 36.48,
+      "high": 36.48,
+      "low": 33.1
+    },
+    {
+      "stock_code": "603936.SH",
+      "time": "15:01:59",
+      "volume_ratio": 225.13,
+      "turnover_rate": 9.04,
+      "price": 13.45,
+      "high": 13.54,
+      "low": 13.08
+    },
+    {
+      "stock_code": "603968.SH",
+      "time": "15:00:59",
+      "volume_ratio": 77.03,
+      "turnover_rate": 10.15,
+      "price": 16.36,
+      "high": 16.56,
+      "low": 15.62
+    },
+    {
+      "stock_code": "603980.SH",
+      "time": "15:02:05",
+      "volume_ratio": 110.01,
+      "turnover_rate": 15.13,
+      "price": 8.24,
+      "high": 8.87,
+      "low": 8.2
+    },
+    {
+      "stock_code": "605006.SH",
+      "time": "15:01:59",
+      "volume_ratio": 164.98,
+      "turnover_rate": 14.44,
+      "price": 11.1,
+      "high": 11.39,
+      "low": 10.36
+    },
+    {
+      "stock_code": "605033.SH",
+      "time": "15:01:00",
+      "volume_ratio": 230.2,
+      "turnover_rate": 13.02,
+      "price": 26.51,
+      "high": 27.8,
+      "low": 26.51
+    },
+    {
+      "stock_code": "605111.SH",
+      "time": "15:01:00",
+      "volume_ratio": 225.15,
+      "turnover_rate": 8.93,
+      "price": 48.91,
+      "high": 49,
+      "low": 47.41
+    },
+    {
+      "stock_code": "688025.SH",
+      "time": "15:02:46",
+      "volume_ratio": 108.77,
+      "turnover_rate": 6.38,
+      "price": 242.46,
+      "high": 242.46,
+      "low": 215
+    },
+    {
+      "stock_code": "688028.SH",
+      "time": "15:02:03",
+      "volume_ratio": 124.59,
+      "turnover_rate": 5.4,
+      "price": 95.11,
+      "high": 99,
+      "low": 92.72
+    },
+    {
+      "stock_code": "688158.SH",
+      "time": "15:01:59",
+      "volume_ratio": 92.93,
+      "turnover_rate": 14.19,
+      "price": 38.8,
+      "high": 40.15,
+      "low": 38.7
+    },
+    {
+      "stock_code": "688167.SH",
+      "time": "15:03:11",
+      "volume_ratio": 155.05,
+      "turnover_rate": 8.25,
+      "price": 381.24,
+      "high": 402.8,
+      "low": 366.88
+    },
+    {
+      "stock_code": "688221.SH",
+      "time": "15:02:44",
+      "volume_ratio": 131.55,
+      "turnover_rate": 5.66,
+      "price": 21.65,
+      "high": 22.5,
+      "low": 21.34
+    },
+    {
+      "stock_code": "688260.SH",
+      "time": "15:02:07",
+      "volume_ratio": 202.7,
+      "turnover_rate": 12.85,
+      "price": 34.21,
+      "high": 35.3,
+      "low": 32.79
+    },
+    {
+      "stock_code": "688308.SH",
+      "time": "15:02:42",
+      "volume_ratio": 299.3,
+      "turnover_rate": 10.95,
+      "price": 72.07,
+      "high": 78.9,
+      "low": 67.19
+    },
+    {
+      "stock_code": "688316.SH",
+      "time": "15:01:01",
+      "volume_ratio": 88.29,
+      "turnover_rate": 11.09,
+      "price": 78.55,
+      "high": 81.99,
+      "low": 77.81
+    },
+    {
+      "stock_code": "688387.SH",
+      "time": "15:01:57",
+      "volume_ratio": 232.95,
+      "turnover_rate": 6.81,
+      "price": 16.27,
+      "high": 16.55,
+      "low": 15.15
+    },
+    {
+      "stock_code": "688419.SH",
+      "time": "15:02:07",
+      "volume_ratio": 165.1,
+      "turnover_rate": 7.81,
+      "price": 53.34,
+      "high": 54.8,
+      "low": 48.66
+    },
+    {
+      "stock_code": "688435.SH",
+      "time": "15:02:00",
+      "volume_ratio": 140.49,
+      "turnover_rate": 8.15,
+      "price": 56.76,
+      "high": 59.29,
+      "low": 55.2
+    },
+    {
+      "stock_code": "688485.SH",
+      "time": "15:03:20",
+      "volume_ratio": 168.48,
+      "turnover_rate": 6.9,
+      "price": 26.61,
+      "high": 29,
+      "low": 26.32
+    },
+    {
+      "stock_code": "688543.SH",
+      "time": "15:02:39",
+      "volume_ratio": 232.49,
+      "turnover_rate": 8.59,
+      "price": 70.57,
+      "high": 72.29,
+      "low": 66.92
+    },
+    {
+      "stock_code": "688556.SH",
+      "time": "15:02:02",
+      "volume_ratio": 105.61,
+      "turnover_rate": 7.74,
+      "price": 16.51,
+      "high": 16.7,
+      "low": 15.8
+    },
+    {
+      "stock_code": "688629.SH",
+      "time": "15:02:33",
+      "volume_ratio": 166.82,
+      "turnover_rate": 19.46,
+      "price": 125.61,
+      "high": 125.61,
+      "low": 110.57
+    },
+    {
+      "stock_code": "688668.SH",
+      "time": "15:01:01",
+      "volume_ratio": 196.26,
+      "turnover_rate": 7.32,
+      "price": 154.66,
+      "high": 157.74,
+      "low": 143.56
+    },
+    {
+      "stock_code": "688700.SH",
+      "time": "15:00:59",
+      "volume_ratio": 266.87,
+      "turnover_rate": 5.37,
+      "price": 45.76,
+      "high": 46.45,
+      "low": 42.97
+    },
+    {
+      "stock_code": "688720.SH",
+      "time": "15:02:45",
+      "volume_ratio": 170.83,
+      "turnover_rate": 6.86,
+      "price": 77.1,
+      "high": 77.47,
+      "low": 74.33
+    },
+    {
+      "stock_code": "688726.SH",
+      "time": "15:02:30",
+      "volume_ratio": 108.04,
+      "turnover_rate": 9.13,
+      "price": 73.18,
+      "high": 75.6,
+      "low": 72
+    },
+    {
+      "stock_code": "688790.SH",
+      "time": "15:03:24",
+      "volume_ratio": 235.63,
+      "turnover_rate": 6.88,
+      "price": 151.3,
+      "high": 151.85,
+      "low": 147.02
+    },
+    {
+      "stock_code": "688802.SH",
+      "time": "15:03:18",
+      "volume_ratio": 252.28,
+      "turnover_rate": 9.26,
+      "price": 533.55,
+      "high": 538.69,
+      "low": 518.11
+    },
+    {
+      "stock_code": "688809.SH",
+      "time": "15:02:06",
+      "volume_ratio": 120.74,
+      "turnover_rate": 10.42,
+      "price": 370.11,
+      "high": 377,
+      "low": 347
+    }
+  ],
+  "rejected_stocks": [
+    {
+      "stock_code": "600008.SH",
+      "reason": "换手太低: 1.63% < 5.0%",
+      "volume_ratio": 152.52,
+      "turnover_rate": 1.63
+    },
+    {
+      "stock_code": "600023.SH",
+      "reason": "换手太低: 0.81% < 5.0%",
+      "volume_ratio": 170.72,
+      "turnover_rate": 0.81
+    },
+    {
+      "stock_code": "600025.SH",
+      "reason": "换手太低: 0.13% < 5.0%",
+      "volume_ratio": 156.61,
+      "turnover_rate": 0.13
+    },
+    {
+      "stock_code": "600028.SH",
+      "reason": "换手太低: 0.14% < 5.0%",
+      "volume_ratio": 75.79,
+      "turnover_rate": 0.14
+    },
+    {
+      "stock_code": "600030.SH",
+      "reason": "换手太低: 1.09% < 5.0%",
+      "volume_ratio": 169.49,
+      "turnover_rate": 1.09
+    },
+    {
+      "stock_code": "600036.SH",
+      "reason": "换手太低: 0.29% < 5.0%",
+      "volume_ratio": 100.17,
+      "turnover_rate": 0.29
+    },
+    {
+      "stock_code": "600051.SH",
+      "reason": "换手太低: 1.51% < 5.0%",
+      "volume_ratio": 94.72,
+      "turnover_rate": 1.51
+    },
+    {
+      "stock_code": "600057.SH",
+      "reason": "换手太低: 0.58% < 5.0%",
+      "volume_ratio": 110.7,
+      "turnover_rate": 0.58
+    },
+    {
+      "stock_code": "600064.SH",
+      "reason": "换手太低: 0.92% < 5.0%",
+      "volume_ratio": 108.4,
+      "turnover_rate": 0.92
+    },
+    {
+      "stock_code": "600071.SH",
+      "reason": "换手太低: 1.48% < 5.0%",
+      "volume_ratio": 171.37,
+      "turnover_rate": 1.48
+    },
+    {
+      "stock_code": "600081.SH",
+      "reason": "换手太低: 0.41% < 5.0%",
+      "volume_ratio": 115.3,
+      "turnover_rate": 0.41
+    },
+    {
+      "stock_code": "600094.SH",
+      "reason": "换手太低: 1.66% < 5.0%",
+      "volume_ratio": 237.74,
+      "turnover_rate": 1.66
+    },
+    {
+      "stock_code": "600099.SH",
+      "reason": "换手太低: 1.44% < 5.0%",
+      "volume_ratio": 112.4,
+      "turnover_rate": 1.44
+    },
+    {
+      "stock_code": "600119.SH",
+      "reason": "换手太低: 1.94% < 5.0%",
+      "volume_ratio": 143.14,
+      "turnover_rate": 1.94
+    },
+    {
+      "stock_code": "600121.SH",
+      "reason": "换手太低: 3.72% < 5.0%",
+      "volume_ratio": 138.38,
+      "turnover_rate": 3.72
+    },
+    {
+      "stock_code": "600127.SH",
+      "reason": "换手太低: 2.29% < 5.0%",
+      "volume_ratio": 129.03,
+      "turnover_rate": 2.29
+    },
+    {
+      "stock_code": "600132.SH",
+      "reason": "换手太低: 0.67% < 5.0%",
+      "volume_ratio": 151.95,
+      "turnover_rate": 0.67
+    },
+    {
+      "stock_code": "600153.SH",
+      "reason": "换手太低: 0.59% < 5.0%",
+      "volume_ratio": 134.9,
+      "turnover_rate": 0.59
+    },
+    {
+      "stock_code": "600155.SH",
+      "reason": "换手太低: 1.06% < 5.0%",
+      "volume_ratio": 133.51,
+      "turnover_rate": 1.06
+    },
+    {
+      "stock_code": "600158.SH",
+      "reason": "换手太低: 3.86% < 5.0%",
+      "volume_ratio": 133.05,
+      "turnover_rate": 3.86
+    },
+    {
+      "stock_code": "600166.SH",
+      "reason": "换手太低: 1.47% < 5.0%",
+      "volume_ratio": 107.38,
+      "turnover_rate": 1.47
+    },
+    {
+      "stock_code": "600173.SH",
+      "reason": "换手太低: 4.53% < 5.0%",
+      "volume_ratio": 224.91,
+      "turnover_rate": 4.53
+    },
+    {
+      "stock_code": "600178.SH",
+      "reason": "换手太低: 0.75% < 5.0%",
+      "volume_ratio": 91.83,
+      "turnover_rate": 0.75
+    },
+    {
+      "stock_code": "600183.SH",
+      "reason": "换手太低: 3.12% < 5.0%",
+      "volume_ratio": 234.02,
+      "turnover_rate": 3.12
+    },
+    {
+      "stock_code": "600185.SH",
+      "reason": "换手太低: 2.15% < 5.0%",
+      "volume_ratio": 109.38,
+      "turnover_rate": 2.15
+    },
+    {
+      "stock_code": "600196.SH",
+      "reason": "换手太低: 0.70% < 5.0%",
+      "volume_ratio": 115.58,
+      "turnover_rate": 0.7
+    },
+    {
+      "stock_code": "600207.SH",
+      "reason": "换手太低: 3.36% < 5.0%",
+      "volume_ratio": 100.84,
+      "turnover_rate": 3.36
+    },
+    {
+      "stock_code": "600219.SH",
+      "reason": "换手太低: 1.78% < 5.0%",
+      "volume_ratio": 114.17,
+      "turnover_rate": 1.78
+    },
+    {
+      "stock_code": "600221.SH",
+      "reason": "换手太低: 0.85% < 5.0%",
+      "volume_ratio": 112.72,
+      "turnover_rate": 0.85
+    },
+    {
+      "stock_code": "600232.SH",
+      "reason": "换手太低: 2.31% < 5.0%",
+      "volume_ratio": 130.25,
+      "turnover_rate": 2.31
+    },
+    {
+      "stock_code": "600234.SH",
+      "reason": "换手太低: 0.98% < 5.0%",
+      "volume_ratio": 102.02,
+      "turnover_rate": 0.98
+    },
+    {
+      "stock_code": "600239.SH",
+      "reason": "换手太低: 1.72% < 5.0%",
+      "volume_ratio": 143.9,
+      "turnover_rate": 1.72
+    },
+    {
+      "stock_code": "600246.SH",
+      "reason": "换手太低: 4.17% < 5.0%",
+      "volume_ratio": 251.26,
+      "turnover_rate": 4.17
+    },
+    {
+      "stock_code": "600255.SH",
+      "reason": "换手太低: 2.75% < 5.0%",
+      "volume_ratio": 110.92,
+      "turnover_rate": 2.75
+    },
+    {
+      "stock_code": "600258.SH",
+      "reason": "换手太低: 1.65% < 5.0%",
+      "volume_ratio": 132.98,
+      "turnover_rate": 1.65
+    },
+    {
+      "stock_code": "600273.SH",
+      "reason": "换手太低: 1.34% < 5.0%",
+      "volume_ratio": 111.66,
+      "turnover_rate": 1.34
+    },
+    {
+      "stock_code": "600278.SH",
+      "reason": "换手太低: 1.81% < 5.0%",
+      "volume_ratio": 312.51,
+      "turnover_rate": 1.81
+    },
+    {
+      "stock_code": "600283.SH",
+      "reason": "换手太低: 0.83% < 5.0%",
+      "volume_ratio": 155.85,
+      "turnover_rate": 0.83
+    },
+    {
+      "stock_code": "600285.SH",
+      "reason": "换手太低: 1.09% < 5.0%",
+      "volume_ratio": 143.31,
+      "turnover_rate": 1.09
+    },
+    {
+      "stock_code": "600288.SH",
+      "reason": "换手太低: 1.79% < 5.0%",
+      "volume_ratio": 143.95,
+      "turnover_rate": 1.79
+    },
+    {
+      "stock_code": "600305.SH",
+      "reason": "换手太低: 0.67% < 5.0%",
+      "volume_ratio": 74.51,
+      "turnover_rate": 0.67
+    },
+    {
+      "stock_code": "600308.SH",
+      "reason": "换手太低: 1.27% < 5.0%",
+      "volume_ratio": 86.19,
+      "turnover_rate": 1.27
+    },
+    {
+      "stock_code": "600316.SH",
+      "reason": "换手太低: 1.63% < 5.0%",
+      "volume_ratio": 158.33,
+      "turnover_rate": 1.63
+    },
+    {
+      "stock_code": "600323.SH",
+      "reason": "换手太低: 0.61% < 5.0%",
+      "volume_ratio": 91.46,
+      "turnover_rate": 0.61
+    },
+    {
+      "stock_code": "600325.SH",
+      "reason": "换手太低: 3.09% < 5.0%",
+      "volume_ratio": 184.99,
+      "turnover_rate": 3.09
+    },
+    {
+      "stock_code": "600328.SH",
+      "reason": "换手太低: 2.55% < 5.0%",
+      "volume_ratio": 161.5,
+      "turnover_rate": 2.55
+    },
+    {
+      "stock_code": "600336.SH",
+      "reason": "换手太低: 1.45% < 5.0%",
+      "volume_ratio": 133.59,
+      "turnover_rate": 1.45
+    },
+    {
+      "stock_code": "600351.SH",
+      "reason": "换手太低: 1.26% < 5.0%",
+      "volume_ratio": 115.53,
+      "turnover_rate": 1.26
+    },
+    {
+      "stock_code": "600362.SH",
+      "reason": "换手太低: 1.87% < 5.0%",
+      "volume_ratio": 105.07,
+      "turnover_rate": 1.87
+    },
+    {
+      "stock_code": "600369.SH",
+      "reason": "换手太低: 0.64% < 5.0%",
+      "volume_ratio": 125.38,
+      "turnover_rate": 0.64
+    },
+    {
+      "stock_code": "600371.SH",
+      "reason": "换手太低: 4.20% < 5.0%",
+      "volume_ratio": 136.34,
+      "turnover_rate": 4.2
+    },
+    {
+      "stock_code": "600381.SH",
+      "reason": "换手太低: 0.96% < 5.0%",
+      "volume_ratio": 105.54,
+      "turnover_rate": 0.96
+    },
+    {
+      "stock_code": "600400.SH",
+      "reason": "换手太低: 1.11% < 5.0%",
+      "volume_ratio": 99.19,
+      "turnover_rate": 1.11
+    },
+    {
+      "stock_code": "600406.SH",
+      "reason": "换手太低: 1.11% < 5.0%",
+      "volume_ratio": 112.78,
+      "turnover_rate": 1.11
+    },
+    {
+      "stock_code": "600415.SH",
+      "reason": "换手太低: 1.35% < 5.0%",
+      "volume_ratio": 153.99,
+      "turnover_rate": 1.35
+    },
+    {
+      "stock_code": "600418.SH",
+      "reason": "换手太低: 1.76% < 5.0%",
+      "volume_ratio": 101.02,
+      "turnover_rate": 1.76
+    },
+    {
+      "stock_code": "600420.SH",
+      "reason": "换手太低: 0.58% < 5.0%",
+      "volume_ratio": 127.35,
+      "turnover_rate": 0.58
+    },
+    {
+      "stock_code": "600426.SH",
+      "reason": "换手太低: 0.76% < 5.0%",
+      "volume_ratio": 108.42,
+      "turnover_rate": 0.76
+    },
+    {
+      "stock_code": "600433.SH",
+      "reason": "换手太低: 2.65% < 5.0%",
+      "volume_ratio": 146.77,
+      "turnover_rate": 2.65
+    },
+    {
+      "stock_code": "600435.SH",
+      "reason": "换手太低: 2.04% < 5.0%",
+      "volume_ratio": 112.62,
+      "turnover_rate": 2.04
+    },
+    {
+      "stock_code": "600452.SH",
+      "reason": "换手太低: 4.41% < 5.0%",
+      "volume_ratio": 203.46,
+      "turnover_rate": 4.41
+    },
+    {
+      "stock_code": "600461.SH",
+      "reason": "换手太低: 0.57% < 5.0%",
+      "volume_ratio": 102.89,
+      "turnover_rate": 0.57
+    },
+    {
+      "stock_code": "600467.SH",
+      "reason": "换手太低: 3.92% < 5.0%",
+      "volume_ratio": 113.33,
+      "turnover_rate": 3.92
+    },
+    {
+      "stock_code": "600482.SH",
+      "reason": "换手太低: 2.63% < 5.0%",
+      "volume_ratio": 122.04,
+      "turnover_rate": 2.63
+    },
+    {
+      "stock_code": "600489.SH",
+      "reason": "换手太低: 1.48% < 5.0%",
+      "volume_ratio": 99.39,
+      "turnover_rate": 1.48
+    },
+    {
+      "stock_code": "600502.SH",
+      "reason": "换手太低: 0.89% < 5.0%",
+      "volume_ratio": 105.04,
+      "turnover_rate": 0.89
+    },
+    {
+      "stock_code": "600511.SH",
+      "reason": "换手太低: 0.75% < 5.0%",
+      "volume_ratio": 154.53,
+      "turnover_rate": 0.75
+    },
+    {
+      "stock_code": "600517.SH",
+      "reason": "换手太低: 1.01% < 5.0%",
+      "volume_ratio": 135.05,
+      "turnover_rate": 1.01
+    },
+    {
+      "stock_code": "600522.SH",
+      "reason": "换手太低: 3.44% < 5.0%",
+      "volume_ratio": 106.45,
+      "turnover_rate": 3.44
+    },
+    {
+      "stock_code": "600529.SH",
+      "reason": "换手太低: 0.91% < 5.0%",
+      "volume_ratio": 119.97,
+      "turnover_rate": 0.91
+    },
+    {
+      "stock_code": "600543.SH",
+      "reason": "换手太低: 2.04% < 5.0%",
+      "volume_ratio": 114.72,
+      "turnover_rate": 2.04
+    },
+    {
+      "stock_code": "600548.SH",
+      "reason": "换手太低: 0.29% < 5.0%",
+      "volume_ratio": 107.31,
+      "turnover_rate": 0.29
+    },
+    {
+      "stock_code": "600563.SH",
+      "reason": "换手太低: 3.07% < 5.0%",
+      "volume_ratio": 199.7,
+      "turnover_rate": 3.07
+    },
+    {
+      "stock_code": "600568.SH",
+      "reason": "换手太低: 0.65% < 5.0%",
+      "volume_ratio": 105.54,
+      "turnover_rate": 0.65
+    },
+    {
+      "stock_code": "600570.SH",
+      "reason": "换手太低: 1.47% < 5.0%",
+      "volume_ratio": 152.04,
+      "turnover_rate": 1.47
+    },
+    {
+      "stock_code": "600576.SH",
+      "reason": "换手太低: 2.30% < 5.0%",
+      "volume_ratio": 107.85,
+      "turnover_rate": 2.3
+    },
+    {
+      "stock_code": "600595.SH",
+      "reason": "换手太低: 1.45% < 5.0%",
+      "volume_ratio": 92.48,
+      "turnover_rate": 1.45
+    },
+    {
+      "stock_code": "600598.SH",
+      "reason": "换手太低: 1.47% < 5.0%",
+      "volume_ratio": 119.56,
+      "turnover_rate": 1.47
+    },
+    {
+      "stock_code": "600604.SH",
+      "reason": "换手太低: 0.80% < 5.0%",
+      "volume_ratio": 103.48,
+      "turnover_rate": 0.8
+    },
+    {
+      "stock_code": "600611.SH",
+      "reason": "换手太低: 1.13% < 5.0%",
+      "volume_ratio": 139.96,
+      "turnover_rate": 1.13
+    },
+    {
+      "stock_code": "600617.SH",
+      "reason": "换手太低: 1.65% < 5.0%",
+      "volume_ratio": 102.21,
+      "turnover_rate": 1.65
+    },
+    {
+      "stock_code": "600622.SH",
+      "reason": "换手太低: 4.17% < 5.0%",
+      "volume_ratio": 176.03,
+      "turnover_rate": 4.17
+    },
+    {
+      "stock_code": "600624.SH",
+      "reason": "换手太低: 0.50% < 5.0%",
+      "volume_ratio": 88.29,
+      "turnover_rate": 0.5
+    },
+    {
+      "stock_code": "600629.SH",
+      "reason": "换手太低: 2.76% < 5.0%",
+      "volume_ratio": 98.88,
+      "turnover_rate": 2.76
+    },
+    {
+      "stock_code": "600637.SH",
+      "reason": "换手太低: 1.34% < 5.0%",
+      "volume_ratio": 90.46,
+      "turnover_rate": 1.34
+    },
+    {
+      "stock_code": "600643.SH",
+      "reason": "换手太低: 0.92% < 5.0%",
+      "volume_ratio": 134.69,
+      "turnover_rate": 0.92
+    },
+    {
+      "stock_code": "600645.SH",
+      "reason": "换手太低: 3.90% < 5.0%",
+      "volume_ratio": 316.94,
+      "turnover_rate": 3.9
+    },
+    {
+      "stock_code": "600648.SH",
+      "reason": "换手太低: 0.34% < 5.0%",
+      "volume_ratio": 125.71,
+      "turnover_rate": 0.34
+    },
+    {
+      "stock_code": "600650.SH",
+      "reason": "换手太低: 1.28% < 5.0%",
+      "volume_ratio": 126.17,
+      "turnover_rate": 1.28
+    },
+    {
+      "stock_code": "600663.SH",
+      "reason": "换手太低: 0.44% < 5.0%",
+      "volume_ratio": 168.75,
+      "turnover_rate": 0.44
+    },
+    {
+      "stock_code": "600665.SH",
+      "reason": "换手太低: 1.16% < 5.0%",
+      "volume_ratio": 113.38,
+      "turnover_rate": 1.16
+    },
+    {
+      "stock_code": "600668.SH",
+      "reason": "换手太低: 1.64% < 5.0%",
+      "volume_ratio": 123.95,
+      "turnover_rate": 1.64
+    },
+    {
+      "stock_code": "600676.SH",
+      "reason": "换手太低: 1.47% < 5.0%",
+      "volume_ratio": 126.59,
+      "turnover_rate": 1.47
+    },
+    {
+      "stock_code": "600693.SH",
+      "reason": "换手太低: 3.91% < 5.0%",
+      "volume_ratio": 95.33,
+      "turnover_rate": 3.91
+    },
+    {
+      "stock_code": "600698.SH",
+      "reason": "换手太低: 0.68% < 5.0%",
+      "volume_ratio": 86.47,
+      "turnover_rate": 0.68
+    },
+    {
+      "stock_code": "600706.SH",
+      "reason": "换手太低: 2.39% < 5.0%",
+      "volume_ratio": 98.18,
+      "turnover_rate": 2.39
+    },
+    {
+      "stock_code": "600713.SH",
+      "reason": "换手太低: 0.97% < 5.0%",
+      "volume_ratio": 132.53,
+      "turnover_rate": 0.97
+    },
+    {
+      "stock_code": "600715.SH",
+      "reason": "换手太低: 2.14% < 5.0%",
+      "volume_ratio": 82.0,
+      "turnover_rate": 2.14
+    },
+    {
+      "stock_code": "600720.SH",
+      "reason": "换手太低: 0.60% < 5.0%",
+      "volume_ratio": 101.89,
+      "turnover_rate": 0.6
+    },
+    {
+      "stock_code": "600726.SH",
+      "reason": "换手太低: 0.70% < 5.0%",
+      "volume_ratio": 112.81,
+      "turnover_rate": 0.7
+    }
+  ]
+}
