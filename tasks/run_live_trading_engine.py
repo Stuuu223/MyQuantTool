@@ -161,12 +161,15 @@ class LiveTradingEngine:
             logger.error(f"❌ [LiveTradingEngine] QMTEventAdapter 创建失败: {e}")
             self.qmt_adapter = None
     
-    def start_session(self):
+    def start_session(self, enable_dynamic_radar: bool = True):
         """
         启动交易会话 - CTO强制规范版（修复盘中启动死局）
         时间线: 09:25(CTO第一斩) -> 09:30(开盘快照二筛) -> 09:35(火控雷达)
         
         CTO修复：盘中启动时必须先执行快照筛选填充watchlist！
+        
+        Args:
+            enable_dynamic_radar: 是否启用动态雷达（盘后复盘设为False，避免卡死）
         """
         logger.info("🚀 启动实盘总控引擎 (CTO第一斩版)")
         
@@ -785,8 +788,13 @@ class LiveTradingEngine:
         # 初始化交易相关组件
         self._init_trading_components()
         
-        # 【CTO铁血整改】启动动态雷达刷新线程
-        self._start_dynamic_radar()
+        # 【CTO铁血整改】根据参数决定是否启动动态雷达
+        # 盘后复盘时enable_dynamic_radar=False，避免卡死
+        if enable_dynamic_radar:
+            logger.info("📡 启动动态雷达刷新线程...")
+            self._start_dynamic_radar()
+        else:
+            logger.info("📊 静态模式：跳过动态雷达（适用于盘后复盘）")
     
     def _init_trading_components(self):
         """初始化交易相关组件 - CTO加固：容错机制"""

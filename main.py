@@ -979,7 +979,8 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, volume_percentile, dry_run, 
             )
             
             # 启动引擎（09:25第一斩 → 09:30第二斩 → 火控雷达）
-            engine.start_session()
+            # 【CTO修复】历史回放禁用动态雷达，避免卡死
+            engine.start_session(enable_dynamic_radar=False)
             
             # 执行指定日期的历史信号回放
             click.echo(click.style(f"🔄 执行 {replay_date} 历史信号回放...", fg='green'))
@@ -1028,7 +1029,8 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, volume_percentile, dry_run, 
             )
             
             # 启动引擎（09:25第一斩 → 09:30第二斩 → 火控雷达）
-            engine.start_session()
+            # 【CTO修复】盘后复盘禁用动态雷达，避免卡死
+            engine.start_session(enable_dynamic_radar=False)
             
             # 执行今日历史信号回放
             click.echo(click.style("🔄 执行今日历史信号回放...", fg='green'))

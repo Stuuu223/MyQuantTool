@@ -143,69 +143,37 @@ class QmtDataManager:
         )
 
     def _detect_qmt_path(self) -> str:
-        """自动检测QMT数据目录"""
-        # 首先尝试从环境变量获取，这应该是最优先的
+        """
+        【Boss钦定：极简智能路径解析】
+        不穷举盘符！只看环境变量，如果没有或无效，直接在项目内建沙盒！
+        """
+        # 首先尝试从环境变量获取
         env_path = os.getenv("QMT_PATH", "")
         if env_path and os.path.exists(env_path):
             logger.info(f"[QmtDataManager] 从环境变量获取到QMT路径: {env_path}")
             return env_path
         
-        # 智能检测：通过xtdata获取实际连接的数据路径
-        try:
-            # 尝试从xtdata获取当前连接的数据路径
-            from xtquant import xtdata
-            # xtdata连接时会显示数据路径，我们可以利用这个信息
-            # 首先获取已连接的信息
-            import logging
-            # 临时降低日志级别以捕获连接信息
-            xtdata.enable_hello = False
-        except:
-            pass
-            
-        # 如果环境变量未设置，尝试智能检测常见位置
-        # 使用PathResolver获取项目配置，而不是硬编码路径
-        from logic.core.path_resolver import PathResolver
-        project_root = PathResolver.get_root()
+        # 如果环境变量配了但不存在，记录警告，降级到沙盒
+        if env_path:
+            logger.warning(f"⚠️ 环境变量 QMT_PATH [{env_path}] 不存在，系统将使用内部沙盒。")
         
-        # 尝试基于当前系统环境智能检测
-        import platform
-        import subprocess
+        # 极简智能降级：在当前运行的MyQuantTool根目录下创建沙盒
+        # 这样无论代码拷到哪个盘，永远不会报错！
+        sandbox_dir = Path.cwd() / ".qmt_userdata_sandbox"
+        
+        # Python智能创建，存在则忽略
         try:
-            # 尝试从注册表或系统信息中获取QMT安装信息（Windows）
-            if platform.system() == "Windows":
-                # 检查常见位置
-                import winreg
-                possible_paths = []
-                
-                # 检查H盘默认位置
-                h_drive_default = Path("H:/QMT/userdata_mini")
-                if h_drive_default.exists():
-                    possible_paths.append(str(h_drive_default))
-                    
-                h_drive_alt = Path("H:/国金证券QMT交易端/userdata_mini")
-                if h_drive_alt.exists():
-                    possible_paths.append(str(h_drive_alt))
-                
-                # 检查其他盘符的常见安装位置
-                for drive in ['C', 'D', 'E', 'F']:
-                    path1 = Path(f"{drive}:/qmt/userdata_mini")
-                    path2 = Path(f"{drive}:/国金证券QMT交易端/userdata_mini")
-                    if path1.exists():
-                        possible_paths.append(str(path1))
-                    if path2.exists():
-                        possible_paths.append(str(path2))
-                
-                # 返回第一个找到的路径
-                for path in possible_paths:
-                    if os.path.exists(path):
-                        logger.info(f"[QmtDataManager] 智能检测到QMT路径: {path}")
-                        return path
-                        
+            sandbox_dir.mkdir(parents=True, exist_ok=True)
+            logger.info(f"[QmtDataManager] 使用项目内沙盒路径: {sandbox_dir}")
         except Exception as e:
-            logger.debug(f"[QmtDataManager] 智能检测失败: {e}")
+            logger.error(f"❌ 无法创建沙盒目录: {e}")
+            # 最后一道防线：使用temp目录
+            import tempfile
+            sandbox_dir = Path(tempfile.gettempdir()) / "myquanttool_qmt_sandbox"
+            sandbox_dir.mkdir(parents=True, exist_ok=True)
+            logger.warning(f"[QmtDataManager] 降级到临时目录: {sandbox_dir}")
         
-        # 如果所有检测都失败，返回环境变量中配置的默认路径
-        return "H:/QMT/userdata_mini"  # 这个路径在.env文件中有配置
+        return str(sandbox_dir)
 
     def _load_vip_token(self) -> str:
         """从配置文件加载VIP Token - 严格使用环境变量"""
