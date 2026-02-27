@@ -1,14 +1,18 @@
 """
-板块情绪计算器 - 实现CTO规划的板块共振计算 (Leaders & Breadth)
+板块情绪计算器 - V20物理势能重构版 (剿灭散户基因)
+
+【CTO重构宣言】
+删除所有散户逻辑: green_stocks/red_board/change_pct等红绿盘计算
+植入微观势能判定: volume_ratio > 3 且 turnover_rate_per_min > 0.2 → kinetic_leaders
 
 功能：
 - 构建股票到板块的映射索引
-- 计算板块内涨停先锋(Leaders)数量
-- 计算板块赚钱效应(Breadth)比例
+- 计算板块动能领袖(kinetic_energy) - 基于量能微观势能
+- 计算板块势能密度(potential_energy) - kinetic_leaders占比
 
 Author: AI总监 (CTO规划)
-Date: 2026-02-24
-Version: Phase 21
+Date: 2026-02-27
+Version: V20物理势能重构
 """
 import pandas as pd
 from typing import Dict, List, Tuple, Any
@@ -30,13 +34,18 @@ except ImportError:
 
 class SectorEmotionCalculator:
     """
-    板块情绪计算器
+    板块情绪计算器 - V20物理势能重构版
     
-    CTO规划的实时运算链路:
-    1. 全市场拉取: 拿到N只股票的change_pct
-    2. 瞬间归位: 通过stock_to_sectors映射到各板块篮子
-    3. 计算Leaders: 涨幅>9.5%的票数
-    4. 计算Breadth: 红盘票占比
+    【CTO重构链路 - 剿灭散户基因】
+    1. 全市场拉取: 拿到N只股票的volume_ratio + turnover_rate_per_min
+    2. 瞬间归位: 通过stock_to_sectors映射到各板块篮子 (向量化explode)
+    3. 计算Kinetic: volume_ratio>3 且 turnover_rate_per_min>0.2 的票数 (微观势能)
+    4. 计算Potential: kinetic_leaders / total_stocks (势能密度)
+    
+    【物理术语映射】
+    - kinetic_energy: 动能领袖数 (原leaders/涨停先锋)
+    - potential_energy: 势能密度 (原breadth/红盘比例)
+    - sector_temperature: 板块温度 (kinetic_energy加权)
     """
     
     def __init__(self):
@@ -102,19 +111,22 @@ class SectorEmotionCalculator:
     
     def calculate_sector_emotion(self, market_snapshot: pd.DataFrame) -> Dict[str, Dict[str, Any]]:
         """
-        计算全市场板块情绪 (CTO规划的实时运算)
+        计算全市场板块情绪 (V20物理势能重构版)
+        
+        【CTO铁律】剿灭散户基因 - 删除所有green_stocks/red_board等红绿盘逻辑
+        【物理建模】植入微观势能 - volume_ratio + turnover_rate_per_min判定动能
         
         Args:
-            market_snapshot: 市场快照DataFrame，包含stock_code, change_pct等字段
+            market_snapshot: 市场快照DataFrame，包含stock_code, volume_ratio, turnover_rate_per_min等字段
             
         Returns:
-            Dict: 板块情绪数据
+            Dict: 板块情绪数据 (物理术语命名)
                   {
                       '固态电池': {
-                          'leaders': 3,      # 涨停先锋数
-                          'breadth': 0.6,    # 赚钱效应比例
-                          'avg_change': 3.5, # 平均涨幅
-                          'total_stocks': 20 # 总股票数
+                          'kinetic_energy': 5,      # 动能领袖数 (volume_ratio>3且turnover_rate_per_min>0.2)
+                          'potential_energy': 0.25, # 势能密度 (kinetic_energy/total_stocks)
+                          'sector_temperature': 2.5,# 板块温度 (kinetic_energy加权)
+                          'total_stocks': 20        # 总股票数
                       },
                       ...
                   }
@@ -128,60 +140,58 @@ class SectorEmotionCalculator:
             return {}
         
         start_time = time.time()
-        logger.info(f"🔄 开始计算板块情绪: {len(market_snapshot)} 只股票")
+        logger.info(f"🔄 [V20物理势能] 开始计算板块情绪: {len(market_snapshot)} 只股票")
         
-        # CTO加固: 将股票数据按板块分组
-        sector_data = {}
+        # V20重构: 向量化计算 - 严禁使用循环遍历个股
+        # 步骤1: 为market_snapshot添加板块信息 (explode展开多对多关系)
+        snapshot_with_sectors = market_snapshot.copy()
+        snapshot_with_sectors['sectors'] = snapshot_with_sectors['stock_code'].map(
+            lambda x: self.stock_to_sectors.get(x, [])
+        )
         
-        for _, row in market_snapshot.iterrows():
-            stock_code = row.get('stock_code', '')
-            change_pct = row.get('change_pct', 0)
-            
-            if stock_code in self.stock_to_sectors:
-                sectors = self.stock_to_sectors[stock_code]
-                
-                for sector in sectors:
-                    if sector not in sector_data:
-                        sector_data[sector] = {
-                            'change_pct_list': [],
-                            'leaders': 0,  # 涨停先锋(涨幅>9.5%)
-                            'green_stocks': 0,  # 红盘股票数
-                            'total_stocks': 0
-                        }
-                    
-                    sector_data[sector]['change_pct_list'].append(change_pct)
-                    sector_data[sector]['total_stocks'] += 1
-                    
-                    # 统计涨停先锋 (涨幅>9.5%)
-                    if change_pct > 9.5:
-                        sector_data[sector]['leaders'] += 1
-                    
-                    # 统计红盘股票 (涨幅>0%)
-                    if change_pct > 0:
-                        sector_data[sector]['green_stocks'] += 1
+        # 步骤2: 过滤掉没有板块信息的股票，然后explode展开
+        snapshot_with_sectors = snapshot_with_sectors[snapshot_with_sectors['sectors'].apply(len) > 0]
+        snapshot_exploded = snapshot_with_sectors.explode('sectors').rename(columns={'sectors': 'sector'})
         
-        # 计算每个板块的情绪指标
+        if snapshot_exploded.empty:
+            logger.warning("⚠️ 没有股票能映射到板块")
+            return {}
+        
+        # 步骤3: 物理势能判定 - 动能领袖 (volume_ratio > 3 且 turnover_rate_per_min > 0.2)
+        snapshot_exploded['is_kinetic_leader'] = (
+            (snapshot_exploded.get('volume_ratio', 0) > 3) & 
+            (snapshot_exploded.get('turnover_rate_per_min', 0) > 0.2)
+        ).astype(int)
+        
+        # 步骤4: 向量化聚合计算每个板块的物理指标
+        sector_grouped = snapshot_exploded.groupby('sector').agg({
+            'stock_code': 'count',           # 总股票数
+            'is_kinetic_leader': 'sum'       # 动能领袖数
+        }).rename(columns={
+            'stock_code': 'total_stocks',
+            'is_kinetic_leader': 'kinetic_energy'
+        })
+        
+        # 步骤5: 计算派生物理指标
+        sector_grouped['potential_energy'] = sector_grouped['kinetic_energy'] / sector_grouped['total_stocks']
+        sector_grouped['sector_temperature'] = sector_grouped['kinetic_energy'] * 0.5  # 温度系数
+        
+        # 步骤6: 转换为返回格式
         sector_emotions = {}
-        for sector, data in sector_data.items():
-            total_stocks = data['total_stocks']
-            if total_stocks == 0:
-                continue
-                
-            # CTO加固: 计算情绪指标
-            avg_change = sum(data['change_pct_list']) / len(data['change_pct_list']) if data['change_pct_list'] else 0
-            leaders_count = data['leaders']
-            breadth_ratio = data['green_stocks'] / total_stocks
-            
+        for sector, row in sector_grouped.iterrows():
             sector_emotions[sector] = {
-                'leaders': leaders_count,           # 涨停先锋数
-                'breadth': breadth_ratio,           # 赚钱效应比例
-                'avg_change': avg_change,           # 平均涨幅
-                'total_stocks': total_stocks,       # 总股票数
+                'kinetic_energy': int(row['kinetic_energy']),      # 动能领袖数 (原leaders)
+                'potential_energy': float(row['potential_energy']), # 势能密度 (原breadth)
+                'sector_temperature': float(row['sector_temperature']), # 板块温度
+                'total_stocks': int(row['total_stocks']),          # 总股票数
                 'timestamp': datetime.now().strftime('%H:%M:%S')
             }
         
-        logger.info(f"✅ 板块情绪计算完成: {len(sector_emotions)} 个板块")
-        logger.info(f"📊 耗时: {time.time() - start_time:.2f}s")
+        # 统计日志
+        total_kinetic = sum(e['kinetic_energy'] for e in sector_emotions.values())
+        logger.info(f"✅ [V20物理势能] 板块情绪计算完成: {len(sector_emotions)} 个板块")
+        logger.info(f"⚡ 全市场总动能领袖: {total_kinetic} 只")
+        logger.info(f"📊 耗时: {time.time() - start_time:.3f}s")
         
         return sector_emotions
     
@@ -198,14 +208,16 @@ class SectorEmotionCalculator:
         return self.stock_to_sectors.get(stock_code, [])
     
     def filter_sector_resonance(self, sector_emotions: Dict[str, Dict[str, Any]], 
-                              min_leaders: int = 3, min_breadth: float = 0.4) -> List[str]:
+                              min_kinetic_energy: int = 3, min_potential: float = 0.15) -> List[str]:
         """
-        筛选共振板块 (CTO规划的时机斧判断标准)
+        筛选共振板块 (V20物理势能版)
+        
+        【CTO铁律】使用物理术语判定共振 - kinetic_energy(动能) + potential_energy(势能)
         
         Args:
-            sector_emotions: 板块情绪数据
-            min_leaders: 最少涨停先锋数
-            min_breadth: 最少赚钱效应比例
+            sector_emotions: 板块情绪数据 (物理术语版)
+            min_kinetic_energy: 最少动能领袖数 (原min_leaders)
+            min_potential: 最少势能密度 (原min_breadth)
             
         Returns:
             List[str]: 共振板块列表
@@ -213,13 +225,23 @@ class SectorEmotionCalculator:
         resonance_sectors = []
         
         for sector, emotion in sector_emotions.items():
-            leaders = emotion.get('leaders', 0)
-            breadth = emotion.get('breadth', 0)
+            kinetic = emotion.get('kinetic_energy', 0)
+            potential = emotion.get('potential_energy', 0)
+            temperature = emotion.get('sector_temperature', 0)
             
-            # CTO加固: 使用严格的共振标准
-            if leaders >= min_leaders and breadth >= min_breadth:
+            # V20物理共振标准: 动能充足 + 势能密集
+            if kinetic >= min_kinetic_energy and potential >= min_potential:
                 resonance_sectors.append(sector)
-                logger.debug(f"🎯 共振板块: {sector} (Leaders:{leaders}, Breadth:{breadth:.2f})")
+                logger.debug(f"🎯 [V20共振板块] {sector} (动能:{kinetic}, 势能:{potential:.2f}, 温度:{temperature:.2f})")
+        
+        # 按动能排序返回
+        resonance_sectors.sort(
+            key=lambda x: sector_emotions[x].get('kinetic_energy', 0), 
+            reverse=True
+        )
+        
+        if resonance_sectors:
+            logger.info(f"🎯 [V20共振板块] 筛选完成: {len(resonance_sectors)} 个板块共振")
         
         return resonance_sectors
 
@@ -236,9 +258,9 @@ def create_sector_emotion_calculator() -> SectorEmotionCalculator:
 
 
 if __name__ == "__main__":
-    # 测试板块情绪计算器
-    print("🧪 板块情绪计算器测试")
-    print("=" * 50)
+    # V20物理势能重构版测试
+    print("🧪 [V20物理势能] 板块情绪计算器测试")
+    print("=" * 60)
     
     calc = create_sector_emotion_calculator()
     
@@ -257,22 +279,32 @@ if __name__ == "__main__":
         sectors = calc.get_sector_for_stock(test_stock)
         print(f"   {test_stock} 所属板块: {sectors}")
     
-    # 模拟市场快照数据
-    print("\n🔍 2. 模拟市场快照计算板块情绪...")
+    # 模拟市场快照数据 (V20物理势能字段)
+    print("\n🔍 2. 模拟市场快照计算板块情绪 [物理势能版]...")
+    print("   判定标准: volume_ratio > 3 且 turnover_rate_per_min > 0.2 → kinetic_leader")
+    
+    import numpy as np
+    np.random.seed(42)
+    
     mock_snapshot = pd.DataFrame({
         'stock_code': test_stocks,
-        'change_pct': [3.2, 5.1, 10.2, -1.5, 9.8, 2.3, 12.1, 8.7, -0.5, 9.6]
+        # 删除change_pct散户字段，改用物理势能字段
+        'volume_ratio': np.random.uniform(0.5, 8.0, 10),           # 量比
+        'turnover_rate_per_min': np.random.uniform(0.05, 0.5, 10)  # 每分钟换手率%
     })
     
+    print(f"   模拟数据:\n{mock_snapshot}")
+    
     emotions = calc.calculate_sector_emotion(mock_snapshot)
-    print(f"   计算情绪完成: {len(emotions)} 个板块")
+    print(f"\n   计算情绪完成: {len(emotions)} 个板块")
     
-    # 显示前几个板块情绪
+    # 显示前几个板块情绪 (物理术语)
+    print("\n   [物理指标展示]")
     for sector, data in list(emotions.items())[:5]:
-        print(f"   {sector}: Leaders={data['leaders']}, Breadth={data['breadth']:.2f}, AvgChange={data['avg_change']:.2f}%")
+        print(f"   ⚡ {sector}: 动能={data['kinetic_energy']}, 势能={data['potential_energy']:.2f}, 温度={data['sector_temperature']:.1f}")
     
-    # 测试共振板块筛选
-    resonance = calc.filter_sector_resonance(emotions, min_leaders=1, min_breadth=0.3)
-    print(f"\n🎯 共振板块: {resonance}")
+    # 测试共振板块筛选 (物理标准)
+    resonance = calc.filter_sector_resonance(emotions, min_kinetic_energy=1, min_potential=0.1)
+    print(f"\n🎯 [V20共振板块] 动能≥1 且 势能≥0.1: {resonance}")
     
-    print("\n✅ 测试完成")
+    print("\n✅ [V20物理势能] 测试完成 - 散户基因已剿灭")

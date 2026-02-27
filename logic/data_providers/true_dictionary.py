@@ -65,6 +65,9 @@ class TrueDictionary:
         # 【CTO第三维趋势网】MA均线数据缓存 - 盘前装弹时计算
         self._ma_data: Dict[str, Dict] = {}  # {stock_code: {'ma5': float, 'ma10': float, 'ma20': float}}
         
+        # 【CTO ATR股性突变雷达】20日ATR数据缓存 - 盘前装弹时计算
+        self._atr_20d_map: Dict[str, float] = {}  # {stock_code: atr_20d_value}
+        
         # 板块映射 - 本地配置或QMT数据
         self._sector_map: Dict[str, List[str]] = {}  # 股票->板块列表
         
@@ -119,7 +122,10 @@ class TrueDictionary:
         # Step 3: 【CTO第三维趋势网】计算MA5/MA10/MA20均线数据
         ma_result = self._warmup_ma_data(stock_list)
         
-        # Step 4: 数据完整性检查
+        # Step 4: 【CTO ATR股性突变雷达】计算20日ATR数据
+        atr_result = self._warmup_atr_data(stock_list)
+        
+        # Step 5: 数据完整性检查
         integrity_check = self._check_data_integrity(stock_list)
         
         self._metadata['cache_date'] = today
@@ -333,6 +339,106 @@ class TrueDictionary:
         """
         return self._ma_data.get(stock_code)
     
+    def _warmup_atr_data(self, stock_list: List[str]) -> Dict:
+        """
+        【CTO ATR股性突变雷达】计算20日ATR数据
+        
+        ATR公式: (High - Low) / Pre_Close 的20日滑动平均值
+        用于检测股性突变，识别异常波动股票
+        
+        Args:
+            stock_list: 股票代码列表
+            
+        Returns:
+            Dict: 计算结果统计
+        """
+        start = time.perf_counter()
+        
+        print(f"📊 [QMT本地] 计算ATR_20D股性雷达...")
+        logger.info(f"📊 [QMT本地] 开始计算ATR_20D,目标{len(stock_list)}只股票")
+        
+        try:
+            from xtquant import xtdata
+            
+            success = 0
+            failed = 0
+            
+            # 获取最近30个自然日的日K数据（确保有20个交易日）
+            end_date = datetime.now().strftime('%Y%m%d')
+            start_date = (datetime.now() - timedelta(days=30)).strftime('%Y%m%d')
+            
+            all_data = xtdata.get_local_data(
+                field_list=['time', 'high', 'low', 'pre_close'],
+                stock_list=stock_list,
+                period='1d',
+                start_time=start_date,
+                end_time=end_date
+            )
+            
+            if all_data:
+                for stock_code, df in all_data.items():
+                    if df is not None and len(df) >= 5:  # 至少5天数据才计算
+                        try:
+                            # 计算每日 (High - Low) / Pre_Close
+                            # 注意: 第一行的pre_close可能为0或NaN,需要处理
+                            df = df.copy()
+                            df['tr'] = (df['high'] - df['low']) / df['pre_close'].replace(0, float('nan'))
+                            
+                            # 过滤掉无效值
+                            valid_tr = df['tr'].dropna()
+                            
+                            if len(valid_tr) >= 5:  # 至少5个有效数据点
+                                # 计算20日ATR(如果数据不足20天,使用所有可用数据)
+                                atr_20d = valid_tr.mean()
+                                
+                                if pd.notna(atr_20d) and atr_20d > 0:
+                                    self._atr_20d_map[stock_code] = float(atr_20d)
+                                    success += 1
+                                else:
+                                    failed += 1
+                            else:
+                                failed += 1
+                        except Exception as e:
+                            logger.debug(f"ATR计算失败 {stock_code}: {e}")
+                            failed += 1
+                    else:
+                        failed += 1
+            else:
+                failed = len(stock_list)
+                logger.error(f"[ATR调试-致命] xtdata.get_local_data返回None或空字典!")
+            
+            elapsed = (time.perf_counter() - start) * 1000
+            
+            print(f"[QMT本地] ATR_20D计算完成: {success}只成功")
+            logger.info(f"[QMT本地] ATR_20D计算完成: {success}只成功,耗时{elapsed:.1f}ms")
+            
+            return {
+                'source': 'QMT本地日K数据',
+                'success': success,
+                'failed': failed,
+                'elapsed_ms': elapsed
+            }
+            
+        except Exception as e:
+            logger.error(f"🚨 [QMT本地-ATR_20D] 计算失败: {e}")
+            print(f"🚨 [QMT本地-ATR_20D] 计算失败: {e}")
+            return {'source': 'QMT本地', 'success': 0, 'failed': len(stock_list), 'error': str(e)}
+
+    def get_atr_20d(self, stock_code: str) -> float:
+        """
+        【CTO ATR股性突变雷达】获取股票的20日ATR值
+        
+        ATR (Average True Range) 用于衡量股票波动性
+        可用于检测股性突变 (如ATR突然增大表示波动加剧)
+        
+        Args:
+            stock_code: 股票代码
+            
+        Returns:
+            float: 20日ATR值,查不到返回默认值0.05 (表示5%的日波动)
+        """
+        return self._atr_20d_map.get(stock_code, 0.05)
+
     def _warmup_qmt_data(self, stock_list: List[str]) -> Dict:
         """
         QMT本地C++接口读取 - 极速(<100ms)

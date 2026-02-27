@@ -909,7 +909,7 @@ class LiveTradingEngine:
                             try:
                                 from logic.strategies.v18_core_engine import V18CoreEngine
                                 v18_engine = V18CoreEngine()
-                                final_score, sustain_ratio, inflow_ratio, ratio_stock = v18_engine.calculate_true_dragon_score(
+                                final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe = v18_engine.calculate_true_dragon_score(
                                     net_inflow=flow_15min * current_price,
                                     price=current_price,
                                     prev_close=pre_close,
@@ -1200,22 +1200,48 @@ class LiveTradingEngine:
     
     def _v18_calculate_score(self, stock_code: str, tick_data: Dict[str, Any]) -> float:
         """
-        V18引擎实时算分
+        V18引擎实时算分 - 挂载记忆引擎
         
         Args:
             stock_code: 股票代码
             tick_data: Tick数据
             
         Returns:
-            float: V18得分 (0-100)
+            float: V18得分 (0-100)，已应用记忆衰减
         """
         if not self.warfare_core:
             return 0.0
         
         try:
+            # ============================================================
+            # 【记忆引擎挂载】算分前读取记忆衰减
+            # ============================================================
+            memory_multiplier = 1.0
+            try:
+                from logic.memory.short_term_memory import ShortTermMemoryEngine
+                memory_engine = ShortTermMemoryEngine()
+                memory_score = memory_engine.read_memory(stock_code)
+                if memory_score is not None:
+                    # 将记忆分数转化为multiplier (0.5~1.5范围)
+                    # memory_score范围0-100，映射到multiplier 0.5-1.5
+                    memory_multiplier = 0.5 + (memory_score / 100.0)
+                    logger.debug(f"🧠 {stock_code} 记忆激活: score={memory_score:.2f}, multiplier={memory_multiplier:.2f}")
+                memory_engine.close()
+            except Exception as mem_e:
+                # Graceful降级：记忆引擎失败时multiplier=1.0
+                logger.debug(f"⚠️ {stock_code} 记忆读取失败，使用默认multiplier=1.0: {mem_e}")
+                memory_multiplier = 1.0
+            
             # 送入V18验钞机进行实时打分
             score = self.warfare_core.process_tick(tick_data)
-            return float(score) if score else 0.0
+            base_score = float(score) if score else 0.0
+            
+            # 应用记忆multiplier
+            final_score = base_score * memory_multiplier
+            
+            logger.debug(f"🎯 {stock_code} V18算分: base={base_score:.2f}, memory_mult={memory_multiplier:.2f}, final={final_score:.2f}")
+            return final_score
+            
         except Exception as e:
             logger.error(f"❌ {stock_code} V18算分失败: {e}")
             return 0.0
@@ -1254,12 +1280,12 @@ class LiveTradingEngine:
             logger.error(f"❌ {stock_code} 交易执行失败: {e}")
 
     def format_dragon_report(self, rank: int, stock_code: str, stock_name: str,
-                            final_score: float, inflow_ratio: float, 
+                            final_score: float, inflow_ratio: float,
                             ratio_stock: float, sustain_ratio: float,
-                            space_gap_pct: float, tag: str) -> str:
+                            space_gap_pct: float, tag: str, mfe: float = 0.0) -> str:
         """
         格式化龙榜输出 - 工业级UI看板
-        
+
         Args:
             rank: 排名序号
             stock_code: 股票代码
@@ -1270,12 +1296,13 @@ class LiveTradingEngine:
             sustain_ratio: 接力比（资金维持率）
             space_gap_pct: 空间差百分比（用于纯度评级）
             tag: 标签（换手甜点/战法类型）
-            
+            mfe: MFE资金做功效率
+
         Returns:
             str: 格式化后的龙榜行
         """
         purity = '极优' if space_gap_pct < 0.05 else '优' if space_gap_pct < 0.10 else '良'
-        return f"{rank}. [{stock_code} {stock_name}] 🩸得分: {final_score:.1f} | 流入比: {inflow_ratio:.1%} | 自身爆发: {ratio_stock:.1f}x | 接力(Sustain): {sustain_ratio:.2f}x | 纯度: {purity} | [标签: {tag}]"
+        return f"{rank}. [{stock_code} {stock_name}] 🩸得分: {final_score:.1f} | 流入比: {inflow_ratio:.1%} | 自身爆发: {ratio_stock:.1f}x | 接力(Sustain): {sustain_ratio:.2f}x | MFE: {mfe:.2f} | 纯度: {purity} | [标签: {tag}]"
 
     def calculate_time_slice_flows(self, stock_code: str, date: str = None) -> Optional[Dict]:
         """
@@ -1584,6 +1611,7 @@ class LiveTradingEngine:
             2. 换手率得分(权重30): 对数曲线，拉开区分度
             3. 价格动能(权重30): (现价-最低价)/(最高价-最低价)反映日内强势度
             4. 乘数: 固定1.1，废除吸血效应防止虚假满分
+            5. MFE: 资金做功效率 = (最高价-最低价) / 净流入占比
             """
             import math
             
@@ -1618,6 +1646,12 @@ class LiveTradingEngine:
             
             final_score = round(base_score * multiplier, 2)
             
+            # 5. 计算MFE (Money Force Efficiency) - 资金做功效率
+            # MFE = (最高价 - 最低价) / 净流入占流通市值比例
+            price_range = high - low
+            inflow_ratio = net_inflow / (price * 1e8) if price > 0 else 0  # 简化估算
+            mfe = price_range / inflow_ratio if inflow_ratio > 0 else 0.0
+            
             # 资金强度标签
             if capital_strength >= 35:
                 strength_label = "极强"
@@ -1628,7 +1662,7 @@ class LiveTradingEngine:
             else:
                 strength_label = "弱"
             
-            return final_score, round(net_inflow_yi, 2), strength_label
+            return final_score, round(net_inflow_yi, 2), strength_label, round(mfe, 2)
         
         current_time = datetime.now()
         
@@ -1727,7 +1761,7 @@ class LiveTradingEngine:
                                     float_volume = true_dict.get_float_volume(stock_code)
                                     turnover_rate = (raw_volume * 100 / float_volume * 100) if float_volume > 0 else 0
                                     
-                                    is_valid, reason = quick_validate(
+                                    is_valid, reason, metadata = quick_validate(
                                         stock_code=stock_code,
                                         volume_ratio=volume_ratio,
                                         turnover_rate=turnover_rate,
@@ -1771,8 +1805,8 @@ class LiveTradingEngine:
                                                 from datetime import datetime
                                                 real_time = datetime.fromtimestamp(time_val/1000).strftime('%H:%M:%S')
                                         
-                                        # 【CTO静态快照打分】计算V18风格综合得分、净流入、资金强度
-                                        final_score, net_inflow_yi, strength_label = calculate_snapshot_score(
+                                        # 【CTO静态快照打分】计算V18风格综合得分、净流入、资金强度、MFE
+                                        final_score, net_inflow_yi, strength_label, mfe = calculate_snapshot_score(
                                             volume_ratio=volume_ratio,
                                             turnover_rate=turnover_rate,
                                             price=tick_event_data['price'],
@@ -1782,7 +1816,7 @@ class LiveTradingEngine:
                                             low=tick_event_data['low'],
                                             amount=tick_event_data['amount']
                                         )
-                                        
+
                                         triggered_stocks.append({
                                             'stock_code': stock_code,
                                             'time': real_time,  # 【修复】使用真实/模拟交易时间，非current_time
@@ -1793,7 +1827,8 @@ class LiveTradingEngine:
                                             'low': round(tick_event_data.get('low', 0), 2),
                                             'final_score': final_score,  # 【CTO】综合得分
                                             'net_inflow_yi': net_inflow_yi,  # 【CTO】净流入（亿）
-                                            'strength_label': strength_label  # 【CTO】资金强度标签
+                                            'strength_label': strength_label,  # 【CTO】资金强度标签
+                                            'mfe': round(mfe, 2)  # 【CTO】MFE资金做功效率
                                         })
                                     else:
                                         # 记录被淘汰的股票用于JSON报告
@@ -1834,8 +1869,8 @@ class LiveTradingEngine:
                     # 使用真实时空切片计算V18 Dragon Score并输出工业级看板
                     dragon_rankings = []
                     try:
-                        from logic.strategies.v18_core_engine import get_unified_warfare_core
-                        v18_engine = get_unified_warfare_core()
+                        from logic.strategies.v18_core_engine import V18CoreEngine
+                        v18_engine = V18CoreEngine()
                         
                         today_str = current_time.strftime('%Y%m%d')
                         
@@ -1868,7 +1903,7 @@ class LiveTradingEngine:
                             
                             # 调用 V18 calculate_true_dragon_score
                             try:
-                                final_score, sustain_ratio, inflow_ratio, ratio_stock = v18_engine.calculate_true_dragon_score(
+                                final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe = v18_engine.calculate_true_dragon_score(
                                     net_inflow=stock.get('net_inflow_yi', 0) * 1e8,  # 亿转元
                                     price=stock['price'],
                                     prev_close=stock.get('prev_close', stock['price'] * 0.95),
@@ -1884,7 +1919,7 @@ class LiveTradingEngine:
                                 
                                 # 确定标签
                                 tag = "换手甜点" if stock.get('turnover_rate', 0) > 5 else "弱转强"
-                                
+
                                 dragon_rankings.append({
                                     'rank': i,
                                     'stock_code': stock_code,
@@ -1894,7 +1929,8 @@ class LiveTradingEngine:
                                     'ratio_stock': ratio_stock,
                                     'sustain_ratio': sustain_ratio,
                                     'space_gap_pct': space_gap_pct,
-                                    'tag': tag
+                                    'tag': tag,
+                                    'mfe': mfe  # 【CTO】MFE资金做功效率
                                 })
                                 
                             except Exception as e:
@@ -1924,7 +1960,8 @@ class LiveTradingEngine:
                                     ratio_stock=item['ratio_stock'],
                                     sustain_ratio=item['sustain_ratio'],
                                     space_gap_pct=item['space_gap_pct'],
-                                    tag=item['tag']
+                                    tag=item['tag'],
+                                    mfe=item.get('mfe', 0.0)  # 【CTO】MFE资金做功效率
                                 ))
                             
                             if len(dragon_rankings) > 10:
@@ -1932,7 +1969,7 @@ class LiveTradingEngine:
                             print(f"{'='*80}\n")
                             
                     except Exception as e:
-                        logger.error(f"❌ 龙榜计算失败: {e}")
+                        logger.error(f"❌ V18实盘真龙榜单计算失败: {e}")
 
                     # 【第三斩】输出JSON报告到logs目录
                     audit_report = {
@@ -1969,11 +2006,12 @@ class LiveTradingEngine:
                     print(f"   - 趋势破位: {filtered_by_trend} 只")
                     print(f"✅ 成功捕获真龙: {len(triggered_stocks)} 只")
                     if triggered_stocks:
-                        print(f"\n🐉 前5只真龙数据 (净流入|强度|得分|量比|换手):")
+                        print(f"\n🐉 前5只真龙数据 (净流入|强度|得分|量比|换手|MFE):")
                         for i, stock in enumerate(triggered_stocks[:5], 1):
                             print(f"   {i}. {stock['stock_code']} | 净流入: {stock.get('net_inflow_yi', 0)}亿 | "
                                   f"强度: {stock.get('strength_label', '未知')} | 得分: {stock.get('final_score', 0)} | "
-                                  f"量比: {stock['volume_ratio']}x | 换手: {stock['turnover_rate']}%")
+                                  f"量比: {stock['volume_ratio']}x | 换手: {stock['turnover_rate']}% | "
+                                  f"MFE: {stock.get('mfe', 0.0):.2f}")
                     print(f"\n📂 完整分析报告: {os.path.abspath(report_file)}")
                     print(f"{'='*70}\n")
                 

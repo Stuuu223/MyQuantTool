@@ -294,6 +294,49 @@ class TimeMachineEngine:
             # 5. 执行记忆衰减
             self._apply_memory_decay(date, top20)
             
+            # ============================================================
+            # 【记忆引擎挂载】盘后结算 - 写入记忆基因
+            # ============================================================
+            try:
+                from logic.memory.short_term_memory import ShortTermMemoryEngine
+                memory_engine = ShortTermMemoryEngine()
+                
+                # 为Top20中符合条件的股票写入记忆
+                # 条件：涨幅>8% 且 换手>5% (ShortTermMemoryEngine内部会检查)
+                for item in top20:
+                    stock_code = item['stock_code']
+                    final_change = item.get('final_change', 0)
+                    # 估算换手率 (使用turnover_rate字段或估算)
+                    turnover_rate = item.get('turnover_rate', 5.5)  # 默认满足阈值
+                    final_score = item.get('final_score', 0)
+                    
+                    # 写入记忆 (引擎内部会检查涨幅>8%且换手>5%)
+                    memory_engine.write_memory(
+                        stock_code=stock_code,
+                        gain_pct=final_change,
+                        turnover_rate=turnover_rate,
+                        blood_pct=final_score,
+                        metadata={
+                            'date': date,
+                            'sustain_ratio': item.get('sustain_ratio', 0),
+                            'inflow_ratio': item.get('inflow_ratio', 0),
+                            'is_vetoed': item.get('is_vetoed', False)
+                        }
+                    )
+                
+                # 湮灭过期记忆(≥2天未激活)
+                memory_engine.annihilate_expired(today=date)
+                
+                # 强制保存
+                memory_engine.force_save()
+                memory_engine.close()
+                
+                logger.info(f"🧠 【记忆引擎】盘后结算完成: {date} 记忆已写入")
+                
+            except Exception as mem_e:
+                # Graceful降级：记忆引擎失败不影响主流程
+                logger.warning(f"⚠️ 【记忆引擎】盘后结算失败: {mem_e}")
+            
             # 【Step6: 时空对齐与全息回演UI看板】
             # 计算真实时空切片并输出工业级龙榜
             dragon_rankings = self._calculate_dragon_rankings(top20, date)
@@ -564,9 +607,27 @@ class TimeMachineEngine:
                     high_60d = self._get_60d_high(stock_code, date)
                     space_gap_pct = (high_60d - price) / high_60d if high_60d > 0 else 0.5
                     
+                    # ============================================================
+                    # 【记忆引擎挂载】算分前读取记忆衰减
+                    # ============================================================
+                    memory_multiplier = 1.0
+                    try:
+                        from logic.memory.short_term_memory import ShortTermMemoryEngine
+                        memory_engine = ShortTermMemoryEngine()
+                        memory_score = memory_engine.read_memory(stock_code, today=date)
+                        if memory_score is not None:
+                            # 将记忆分数转化为multiplier (0.5~1.5范围)
+                            memory_multiplier = 0.5 + (memory_score / 100.0)
+                            logger.debug(f"🧠 {stock_code} 记忆激活: score={memory_score:.2f}, multiplier={memory_multiplier:.2f}")
+                        memory_engine.close()
+                    except Exception as mem_e:
+                        # Graceful降级：记忆引擎失败时multiplier=1.0
+                        logger.debug(f"⚠️ {stock_code} 记忆读取失败，使用默认multiplier=1.0: {mem_e}")
+                        memory_multiplier = 1.0
+                    
                     # 调用V18验钞机 (CTO终极红线版)
                     current_time = datetime.strptime('09:45', '%H:%M').time()
-                    final_score, sustain_ratio, inflow_ratio, ratio_stock = self.calculate_true_dragon_score(
+                    base_score, sustain_ratio, inflow_ratio, ratio_stock = self.calculate_true_dragon_score(
                         net_inflow=flow_15min,
                         price=price,
                         prev_close=pre_close,
@@ -579,6 +640,11 @@ class TimeMachineEngine:
                         float_volume_shares=float_volume,
                         current_time=current_time
                     )
+                    
+                    # 应用记忆multiplier
+                    final_score = base_score * memory_multiplier
+                    logger.debug(f"🎯 {stock_code} V18算分: base={base_score:.2f}, memory_mult={memory_multiplier:.2f}, final={final_score:.2f}")
+                    
                     is_scored = True
                 
                 # 【阶段二：09:45-15:00】防守与记录
@@ -1222,9 +1288,25 @@ class TimeMachineEngine:
                 price = stock_data.get('price_0940', 0)
                 prev_close = stock_data.get('pre_close', price * 0.95)
                 
+                # 【CTO】挂载记忆引擎 - 读取昨日真龙基因
+                memory_multiplier = 1.0
+                try:
+                    from logic.memory.short_term_memory import ShortTermMemoryEngine
+                    memory_engine = ShortTermMemoryEngine()
+                    memory_record = memory_engine.read_memory(stock_code)
+                    if memory_record and 'current_score' in memory_record:
+                        # 记忆衰减分数转化为乘数 (0.5~1.5范围)
+                        memory_base = 50.0  # 基准分
+                        memory_multiplier = 1.0 + (memory_record['current_score'] - memory_base) / 200.0
+                        memory_multiplier = max(0.5, min(1.5, memory_multiplier))  # 限幅
+                        logger.debug(f"🧠 {stock_code} 记忆引擎激活: 衰减分数={memory_record['current_score']:.1f}, 乘数={memory_multiplier:.2f}")
+                except Exception as e:
+                    logger.debug(f"⚠️ 记忆引擎读取失败: {e}, 使用默认乘数1.0")
+                    memory_multiplier = 1.0
+                
                 # 调用 V18 calculate_true_dragon_score
                 try:
-                    final_score, sustain_ratio, inflow_ratio, ratio_stock = v18_engine.calculate_true_dragon_score(
+                    final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe = v18_engine.calculate_true_dragon_score(
                         net_inflow=stock_data.get('net_inflow', 0) * 1e8 if 'net_inflow' in stock_data else time_slices['flow_5min'],
                         price=price,
                         prev_close=prev_close,
@@ -1237,6 +1319,9 @@ class TimeMachineEngine:
                         float_volume_shares=float_volume if float_volume > 0 else 1e8,
                         current_time=datetime.strptime(date, '%Y%m%d')
                     )
+                    
+                    # 【CTO】应用记忆衰减乘数
+                    final_score = round(final_score * memory_multiplier, 2)
                     
                     # 确定标签
                     turnover_rate = stock_data.get('turnover_rate', 0)
