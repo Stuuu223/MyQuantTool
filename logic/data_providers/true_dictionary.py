@@ -24,6 +24,19 @@ import pandas as pd
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timedelta
 
+# 【CTO修复】导入交易日历工具，禁止在量化系统中使用timedelta推算交易日
+try:
+    from logic.utils.calendar_utils import (
+        get_real_trading_dates,
+        get_latest_completed_trading_day,
+        get_nth_previous_trading_day,
+        get_trading_day_range
+    )
+    CALENDAR_UTILS_AVAILABLE = True
+except ImportError as e:
+    CALENDAR_UTILS_AVAILABLE = False
+    logging.warning(f"[TrueDictionary] 交易日历工具导入失败: {e}")
+
 # 获取logger
 try:
     from logic.utils.logger import get_logger
@@ -179,9 +192,17 @@ class TrueDictionary:
             success = 0
             failed = 0
             
-            # 获取最近14个自然日的日K数据（确保有5个交易日）
-            end_date = datetime.now().strftime('%Y%m%d')
-            start_date = (datetime.now() - timedelta(days=14)).strftime('%Y%m%d')
+            # 【CTO修复】使用QMT原生交易日历，禁止用timedelta推算交易日
+            # 获取最近10个交易日数据（确保有5个有效交易日，考虑节假日）
+            if CALENDAR_UTILS_AVAILABLE:
+                end_date = get_latest_completed_trading_day()
+                start_date = get_nth_previous_trading_day(end_date, 10)
+                logger.info(f"[日历对齐] 5日均量计算周期: {start_date} ~ {end_date} (交易日历)")
+            else:
+                # 极端降级方案（仅当日历工具不可用时）
+                end_date = datetime.now().strftime('%Y%m%d')
+                start_date = (datetime.now() - timedelta(days=20)).strftime('%Y%m%d')
+                logger.warning(f"[日历降级] 使用自然日推算: {start_date} ~ {end_date}")
             
             # CTO强制修正：一把梭哈！不分批！
             # QMT底层API是C++接口，一次性传5000只股票毫秒级完成
@@ -270,9 +291,17 @@ class TrueDictionary:
             success = 0
             failed = 0
             
-            # 获取最近30个自然日的日K数据（确保有20个交易日）
-            end_date = datetime.now().strftime('%Y%m%d')
-            start_date = (datetime.now() - timedelta(days=30)).strftime('%Y%m%d')
+            # 【CTO修复】使用QMT原生交易日历，禁止用timedelta推算交易日
+            # MA计算需要至少20个交易日数据，倒推25个交易日确保充足
+            if CALENDAR_UTILS_AVAILABLE:
+                end_date = get_latest_completed_trading_day()
+                start_date = get_nth_previous_trading_day(end_date, 25)
+                logger.info(f"[日历对齐] MA均线计算周期: {start_date} ~ {end_date} (交易日历)")
+            else:
+                # 极端降级方案
+                end_date = datetime.now().strftime('%Y%m%d')
+                start_date = (datetime.now() - timedelta(days=45)).strftime('%Y%m%d')
+                logger.warning(f"[日历降级] 使用自然日推算: {start_date} ~ {end_date}")
             
             all_data = xtdata.get_local_data(
                 field_list=['time', 'close'],
@@ -363,9 +392,17 @@ class TrueDictionary:
             success = 0
             failed = 0
             
-            # 获取最近30个自然日的日K数据（确保有20个交易日）
-            end_date = datetime.now().strftime('%Y%m%d')
-            start_date = (datetime.now() - timedelta(days=30)).strftime('%Y%m%d')
+            # 【CTO修复】使用QMT原生交易日历，禁止用timedelta推算交易日
+            # ATR需要20个交易日数据，倒推25个交易日确保充足
+            if CALENDAR_UTILS_AVAILABLE:
+                end_date = get_latest_completed_trading_day()
+                start_date = get_nth_previous_trading_day(end_date, 25)
+                logger.info(f"[日历对齐] ATR计算周期: {start_date} ~ {end_date} (交易日历)")
+            else:
+                # 极端降级方案
+                end_date = datetime.now().strftime('%Y%m%d')
+                start_date = (datetime.now() - timedelta(days=45)).strftime('%Y%m%d')
+                logger.warning(f"[日历降级] 使用自然日推算: {start_date} ~ {end_date}")
             
             all_data = xtdata.get_local_data(
                 field_list=['time', 'high', 'low', 'pre_close'],

@@ -1651,6 +1651,14 @@ class LiveTradingEngine:
         import pandas as pd
         import json
         
+        # 【CTO修复】导入QMT原生交易日历工具
+        try:
+            from logic.utils.calendar_utils import get_latest_completed_trading_day
+            CALENDAR_UTILS_AVAILABLE = True
+        except ImportError as e:
+            CALENDAR_UTILS_AVAILABLE = False
+            logger.warning(f"[交易日历] 导入失败: {e}")
+        
         # 【CTO静态快照打分算法】盘后无法获取连续Tick流，用静态数据估算
         def calculate_snapshot_score(volume_ratio, turnover_rate, price, open_price, prev_close, high, low, amount):
             """
@@ -1922,13 +1930,19 @@ class LiveTradingEngine:
                         from logic.strategies.v18_core_engine import V18CoreEngine
                         v18_engine = V18CoreEngine()
                         
-                        today_str = current_time.strftime('%Y%m%d')
+                        # 【CTO修复】使用QMT原生交易日历获取最近交易日，解决周六凌晨跨日Bug
+                        if CALENDAR_UTILS_AVAILABLE:
+                            target_date_str = get_latest_completed_trading_day()
+                            logger.info(f"🔄 [时空对齐] 复盘日期定位: {target_date_str} (原生交易日历校准)")
+                        else:
+                            target_date_str = current_time.strftime('%Y%m%d')
+                            logger.warning(f"🔄 [时空降级] 复盘日期定位: {target_date_str} (自然日回退)")
                         
                         for i, stock in enumerate(triggered_stocks[:20], 1):  # Top 20
                             stock_code = stock['stock_code']
                             
                             # 【时空绝对对齐】获取真实切片数据
-                            time_slices = self.calculate_time_slice_flows(stock_code, today_str)
+                            time_slices = self.calculate_time_slice_flows(stock_code, target_date_str)
                             
                             if time_slices is None:
                                 logger.debug(f"⚠️ {stock_code} 时空切片数据不足，跳过Dragon Score计算")
