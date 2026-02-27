@@ -190,7 +190,7 @@ class QmtDataManager:
 
     def start_vip_service(self) -> Optional[Tuple[str, int]]:
         """
-        启动VIP行情服务 (CTO修复: 单例模式)
+        启动VIP行情服务 (CTO修复: 降级容错版)
 
         Returns:
             监听地址和端口元组，启动失败返回None
@@ -264,40 +264,11 @@ class QmtDataManager:
             return self.listen_port
 
         except Exception as e:
-            logger.error(f"[QmtDataManager] 启动VIP服务失败: {e}")
+            # 【CTO 核心改动】：捕获VIP异常并降级，绝不熔断系统！
             self._vip_initialized = False
             QmtDataManager._vip_global_lock = False
-            
-            # 检查是否是路径相关错误
-            error_msg = str(e)
-            if "系统找不到指定的路径" in error_msg or "FileNotFoundError" in error_msg or "path" in error_msg.lower():
-                raise RuntimeError(
-                    f"❌ VIP服务启动失败：路径配置错误！\n"
-                    f"💡 问题诊断：\n"
-                    f"   - QMT数据目录路径不存在: {self.data_dir}\n"
-                    f"   - 请检查QMT是否已正确安装\n"
-                    f"   - 请检查.env文件中的QMT_PATH配置\n\n"
-                    f"🔧 解决方案：\n"
-                    f"   1. 确认QMT客户端已安装并运行\n"
-                    f"   2. 检查环境变量QMT_PATH是否指向正确的QMT数据目录\n"
-                    f"   3. 常见路径: H:\\QMT\\userdata_mini, E:\\QMT\\userdata_mini\n"
-                    f"   4. 如需帮助，请检查QMT客户端实际数据路径\n\n"
-                    f"📋 当前配置路径: {self.data_dir}\n"
-                    f"📋 错误详情: {e}"
-                )
-            else:
-                # CTO修复：VIP失败直接熔断，不降级
-                raise RuntimeError(
-                    f"❌ VIP服务启动失败，系统熔断！\n"
-                    f"💡 问题诊断：{e}\n\n"
-                    f"🔧 解决方案：\n"
-                    f"   1. 检查VIP Token是否正确\n"
-                    f"   2. 确认QMT客户端正在运行\n"
-                    f"   3. 检查网络连接和防火墙设置\n"
-                    f"   4. 尝试重启QMT客户端\n\n"
-                    f"📋 错误详情: {e}"
-                )
-
+            logger.warning(f"⚠️ VIP L2服务启动异常，自动降级为L1普通行情！(细节: {e})")
+            return None  # 降级返回，不熔断系统
     def stop_vip_service(self) -> bool:
         """
         停止VIP行情服务

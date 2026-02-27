@@ -171,6 +171,8 @@ class LiveTradingEngine:
         Args:
             enable_dynamic_radar: 是否启用动态雷达（盘后复盘设为False，避免卡死）
         """
+        # 【CTO修复】将参数保存为实例变量，供后续函数使用
+        self.enable_dynamic_radar = enable_dynamic_radar
         logger.info("🚀 启动实盘总控引擎 (CTO第一斩版)")
         
         # QMT Manager已通过依赖注入保证存在，无需检查
@@ -788,9 +790,9 @@ class LiveTradingEngine:
         # 初始化交易相关组件
         self._init_trading_components()
         
-        # 【CTO铁血整改】根据参数决定是否启动动态雷达
+        # 【CTO铁血整改】根据实例变量决定是否启动动态雷达
         # 盘后复盘时enable_dynamic_radar=False，避免卡死
-        if enable_dynamic_radar:
+        if self.enable_dynamic_radar:
             logger.info("📡 启动动态雷达刷新线程...")
             self._start_dynamic_radar()
         else:
@@ -904,8 +906,10 @@ class LiveTradingEngine:
                             space_gap_pct = (high_60d - current_price) / high_60d if high_60d > 0 else 0.5
                             
                             # 调用V18验钞机
-                            if self.warfare_core and hasattr(self.warfare_core, 'calculate_true_dragon_score'):
-                                final_score, sustain_ratio, inflow_ratio, ratio_stock = self.warfare_core.calculate_true_dragon_score(
+                            try:
+                                from logic.strategies.v18_core_engine import V18CoreEngine
+                                v18_engine = V18CoreEngine()
+                                final_score, sustain_ratio, inflow_ratio, ratio_stock = v18_engine.calculate_true_dragon_score(
                                     net_inflow=flow_15min * current_price,
                                     price=current_price,
                                     prev_close=pre_close,
@@ -918,13 +922,15 @@ class LiveTradingEngine:
                                     float_volume_shares=float_volume,
                                     current_time=now.time()
                                 )
-                            else:
+                            except Exception as e:
                                 # 简化计算
                                 final_score = change_pct * 100
                                 sustain_ratio = 1.0
                                 inflow_ratio = flow_15min * current_price / float_market_cap if float_market_cap > 0 else 0
                                 ratio_stock = flow_5min / flow_5min_median if flow_5min_median > 0 else 0
-                            
+                                import logging
+                                logger = logging.getLogger(__name__)
+                                logger.error(f"V18引擎计算失败: {e}")
                             # 纯度评级
                             purity = '极优' if space_gap_pct < 0.05 else '优' if space_gap_pct < 0.10 else '良'
                             

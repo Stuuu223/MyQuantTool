@@ -232,27 +232,7 @@ class TimeMachineEngine:
         
         try:
             # CTO修复：第一步 - VIP阻塞下载数据（打通任督二脉！）
-            print(f"  📥 向VIP节点请求 {date} Tick数据并阻塞等待...")
-            from logic.data_providers.qmt_manager import QmtDataManager
-            downloader = QmtDataManager()
-            
-            # CTO修复：同时下载Tick和1d日线数据（用于昨收价）
-            from xtquant import xtdata
-            for stock in stock_pool:
-                xtdata.download_history_data(stock, 'tick', date, date)
-                xtdata.download_history_data(stock, '1d', date, date)
-            import time
-            time.sleep(5)  # 等待下载完成
-            
-            download_results = downloader.download_tick_data(
-                stock_list=stock_pool,  # CTO修复：下载全部88只
-                trade_date=date,
-                use_vip=True,
-                check_existing=True
-            )
-            success_downloads = sum(1 for r in download_results.values() if r.success)
-            print(f"  ✅ 下载完成: {success_downloads}/{len(stock_pool)} 只")
-            
+            # 【CTO修复】禁用阻塞下载，只使用本地缓存\n            # 系统只读取本地已缓存数据，无数据直接跳过\n            
             # 2. 获取当日股票池数据
             print(f"  📊 获取 {len(stock_pool)} 只股票数据...")
             

@@ -13,7 +13,7 @@ CTO架构决策:
 
 Author: AI总监 (CTO规范版)
 Date: 2026-02-26
-Version: 2.1.0 - 100% QMT本地架构，Tushare已物理剥离
+Version: 2.2.0 - 100% QMT本地架构，Tushare已物理剥离
 """
 
 import os
@@ -71,7 +71,7 @@ class TrueDictionary:
         # 元数据
         self._metadata = {
             'qmt_warmup_time': None,
-            'avg_volume_warmup_time': None,  # 原tushare_warmup_time已更名
+            'avg_volume_warmup_time': None,  # QMT本地数据预热时间
             'stock_count': 0,
             'cache_date': None,
             'data_source': 'QMT本地100%'  # CTO规范标记

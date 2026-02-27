@@ -37,7 +37,7 @@ day_change = MetricDefinitions.TRUE_CHANGE(close_price, pre_close)
 **强制使用**: `MetricDefinitions.TRUE_AMPLITUDE(high, low, pre_close)`
 
 ### 1.3 昨收价获取
-**绝对禁止**: 使用Tushare或估算值  
+**绝对禁止**: 使用任何外部API或估算值  
 **唯一正确**: QMT本地日线数据  
 **强制使用**: `PathResolver.get_qmt_data_dir()` + `xtdata.get_local_data()`
 
@@ -149,7 +149,7 @@ main.py -> logic/strategies/ -> logic/core/ -> logic/data_providers/ -> xtdata
 
 ### 4.3 数据血缘
 所有数据必须能追溯到QMT本地数据源
-- 禁止Tushare作为数据源
+- 禁止任何外部数据源作为数据源
 - 禁止估算值
 - 禁止兜底默认值
 
@@ -163,7 +163,7 @@ main.py -> logic/strategies/ -> logic/core/ -> logic/data_providers/ -> xtdata
 | ❌ 随意创建文件（除非绝对必要） | 项目混乱 | 优先编辑现有文件 |
 | ❌ 在tools/目录创建新文件 | 屎山+1 | 使用main.py CLI |
 | ❌ 在tasks/目录创建新文件 | 屎山+1 | 使用main.py CLI |
-| ❌ 使用Tushare作为数据源 | 数据污染 | 使用QMT本地数据 |
+| ❌ 使用任何外部数据源 | 数据污染 | 使用QMT本地数据 |
 | ❌ 使用估算值代替真实数据 | 错误结果 | 报错熔断，拒绝计算 |
 | ❌ 自行编写计算逻辑 | 不一致 | 使用MetricDefinitions |
 | ❌ 硬编码路径 | 系统脆弱 | 使用PathResolver |
@@ -196,7 +196,7 @@ main.py -> logic/strategies/ -> logic/core/ -> logic/data_providers/ -> xtdata
 **禁止**:
 - ❌ 另辟蹊径写临时脚本
 - ❌ 绕过规范打补丁
-- ❌ 用Tushare糊弄
+- ❌ 用任何外部数据源糊弄
 
 **正确**:
 - ✅ 查看QMT官方文档（dict.thinktrader.net）
@@ -211,7 +211,7 @@ main.py -> logic/strategies/ -> logic/core/ -> logic/data_providers/ -> xtdata
 以下情况代码提交将被**立即拒绝**：
 1. 硬编码路径（`E:\`, `C:\`等）
 2. 自行计算涨幅而不使用MetricDefinitions
-3. 使用Tushare作为数据源
+3. 使用任何外部数据源
 4. 新建tools/或tasks/文件
 5. 未通过SanityGuards检查
 6. 返回None代替错误
@@ -444,7 +444,7 @@ price_condition = "high > pre_close"
 
 ### 10.6 AI-Native开发形态（CTO黑科技）
 **记忆钩子**：自动加载ShortTermMemory.json，治愈AI失忆症
-**自愈断言**：audit_rules.py红线强制拦截（Magic Number/Tushare/For循环）
+**自愈断言**：audit_rules.py红线强制拦截（Magic Number/外部数据源/For循环）
 **专家路由**：5个专业Agent各司其职（量化策略/数据工程/微观结构/回测架构/代码审计）
 **阅后即焚**：过程文档（Phase_*.md）在完成后自动清理
 **文档即代码**：每次提交必须同步更新SYSTEM_CONSTITUTION.md
