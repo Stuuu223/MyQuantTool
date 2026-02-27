@@ -1238,8 +1238,6 @@ class LiveTradingEngine:
             
         except Exception as e:
             logger.error(f"❌ {stock_code} 交易执行失败: {e}")
-<<<<<<< HEAD
-=======
 
     def format_dragon_report(self, rank: int, stock_code: str, stock_name: str,
                             final_score: float, inflow_ratio: float, 
@@ -1354,8 +1352,7 @@ class LiveTradingEngine:
         except Exception as e:
             logger.error(f"❌ {stock_code} 时空切片计算失败: {e}")
             return None
->>>>>>> 4ebbab7 (V20纯血架构重构：动能势能双轨Ratio化+战法分流+VWAP宽容)
-    
+
     def _check_trade_signal(self, stock_code: str, score: float, tick_data: Dict[str, Any]):
         """
         [已废弃] 检查交易信号 - Phase 2后统一使用_tick级开火流程
@@ -1818,9 +1815,7 @@ class LiveTradingEngine:
                     # 【CTO】按final_score降序排序，高分在前
                     if triggered_stocks:
                         triggered_stocks.sort(key=lambda x: x.get('final_score', 0), reverse=True)
-                    
-<<<<<<< HEAD
-=======
+
                     # 【Step6: 时空对齐与全息回演UI看板】
                     # 使用真实时空切片计算V18 Dragon Score并输出工业级看板
                     dragon_rankings = []
@@ -1924,8 +1919,7 @@ class LiveTradingEngine:
                             
                     except Exception as e:
                         logger.error(f"❌ 龙榜计算失败: {e}")
-                    
->>>>>>> 4ebbab7 (V20纯血架构重构：动能势能双轨Ratio化+战法分流+VWAP宽容)
+
                     # 【第三斩】输出JSON报告到logs目录
                     audit_report = {
                         'scan_time': current_time.isoformat(),
