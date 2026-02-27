@@ -363,11 +363,12 @@ class V18CoreEngine:
         
         # ==========================================
         # 第三步：效率算子 MFE (Money Force Efficiency)
-        # 公式: MFE = (最高价 - 最低价) / 净流入占流通市值比例
-        # 物理意义: 单位资金做功的价格振幅效率
+        # 【CTO物理学对齐】MFE = 振幅百分比 / 净流入占比
+        # 物理意义: 单位资金做功的价格振幅效率（无量纲化，跨市值公平竞技）
         # ==========================================
-        price_range = high - low
-        mfe = price_range / inflow_ratio if inflow_ratio > 0 else 0.0
+        # 【修复】分子必须是百分比振幅，不能用绝对价差！
+        price_range_pct = (high - low) / prev_close if prev_close > 0 else 0.0
+        mfe = price_range_pct / inflow_ratio if inflow_ratio > 0 else 0.0
         
         final_score = round(base_score * multiplier, 2)
         return final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe

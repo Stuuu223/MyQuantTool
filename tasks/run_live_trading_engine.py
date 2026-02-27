@@ -1991,6 +1991,9 @@ class LiveTradingEngine:
                                 # 确定标签
                                 tag = "换手甜点" if stock.get('turnover_rate', 0) > 5 else "弱转强"
 
+                                # 计算净流入（亿）用于展示
+                                net_inflow_yi_calc = stock.get('net_inflow_yi', 0)
+
                                 dragon_rankings.append({
                                     'rank': i,
                                     'stock_code': stock_code,
@@ -2001,7 +2004,10 @@ class LiveTradingEngine:
                                     'sustain_ratio': sustain_ratio,
                                     'space_gap_pct': space_gap_pct,
                                     'tag': tag,
-                                    'mfe': mfe  # 【CTO】MFE资金做功效率
+                                    'mfe': mfe,  # 【CTO】MFE资金做功效率
+                                    'net_inflow_yi': net_inflow_yi_calc,  # 【CTO】净流入（亿）
+                                    'turnover_rate': stock.get('turnover_rate', 0),  # 换手率
+                                    'volume_ratio': stock.get('volume_ratio', 0)  # 量比
                                 })
                                 
                             except Exception as e:
@@ -2074,15 +2080,8 @@ class LiveTradingEngine:
                     except Exception as e:
                         logger.error(f"❌ JSON报告保存失败: {e}")
                     
-                    # 【CTO重铸】对triggered_stocks进行多维排序（解决同分按代码排序问题）
-                    triggered_stocks.sort(
-                        key=lambda x: (
-                            round(x.get('final_score', 0), 1),  # 第一权重：总分
-                            x.get('mfe', 0),                    # 第二权重：MFE资金效率
-                            x.get('net_inflow_yi', 0)           # 第三权重：净流入
-                        ),
-                        reverse=True
-                    )
+                    # 【CTO终极对齐】战地看板使用dragon_rankings统一数据源（SSOT）
+                    # 彻底废除triggered_stocks的独立排序，实现全息龙榜和战地看板100%一致
                     
                     # 【CTO工业级控制台战地汇总看板】使用print强制输出到控制台
                     print(f"\n{'='*70}")
@@ -2094,12 +2093,16 @@ class LiveTradingEngine:
                     print(f"   - 换手不符: {filtered_by_turnover} 只")
                     print(f"   - 趋势破位: {filtered_by_trend} 只")
                     print(f"✅ 成功捕获真龙: {len(triggered_stocks)} 只")
-                    if triggered_stocks:
-                        print(f"\n🐉 前5只真龙数据 (净流入|强度|得分|量比|换手|MFE):")
-                        for i, stock in enumerate(triggered_stocks[:5], 1):
-                            print(f"   {i}. {stock['stock_code']} | 净流入: {stock.get('net_inflow_yi', 0)}亿 | "
-                                  f"强度: {stock.get('strength_label', '未知')} | 得分: {stock.get('final_score', 0)} | "
-                                  f"量比: {stock['volume_ratio']}x | 换手: {stock['turnover_rate']}% | "
+                    # 【CTO修复】使用dragon_rankings统一数据源，与全息龙榜一致
+                    if dragon_rankings:
+                        print(f"\n🐉 前5只真龙数据 (净流入|得分|自身爆发|量比|换手|MFE):")
+                        for i, stock in enumerate(dragon_rankings[:5], 1):
+                            print(f"   {i}. {stock['stock_code']} | "
+                                  f"净流入: {stock.get('net_inflow_yi', 0):.2f}亿 | "
+                                  f"得分: {stock.get('final_score', 0):.2f} | "
+                                  f"自身爆发: {stock.get('ratio_stock', 0):.1f}x | "
+                                  f"量比: {stock.get('volume_ratio', 0)}x | "
+                                  f"换手: {stock.get('turnover_rate', 0)}% | "
                                   f"MFE: {stock.get('mfe', 0.0):.2f}")
                     print(f"\n📂 完整分析报告: {os.path.abspath(report_file)}")
                     print(f"{'='*70}\n")
