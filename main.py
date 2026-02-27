@@ -326,24 +326,21 @@ def backtest_cmd(ctx, date, start_date, end_date, universe, full_market, volume_
                 click.echo(f"  {stock}: {'✅' if result.get('success') else '❌'}")
                 
         else:
-            # 标准回测 - 【CTO修复】修正导入路径
+            # 标准回测 - 【CTO修复】全息回测默认跑全市场
             from logic.backtest.time_machine_engine import TimeMachineEngine
             
-            if not universe:
-                click.echo(click.style("❌ 错误: 标准回测需要指定--universe参数", fg='red'))
-                ctx.exit(1)
-                
-            stock_code = universe.replace('.SZ', '').replace('.SH', '')
+            # 【CTO】全息回测默认跑全市场，无需指定universe
+            click.echo(click.style(f"🚀 启动全息回测: 日期={date}, 全市场扫描", fg='cyan'))
             
             # 使用TimeMachineEngine进行回测
             engine = TimeMachineEngine(initial_capital=20000.0)
-            result = engine.run_daily_backtest(date, [stock_code])
+            result = engine.run_daily_backtest(date)
             
             click.echo(f"\n📈 回测结果:")
             if result and result.get('top20'):
-                top = result['top20'][0]
-                click.echo(f"  得分: {top.get('final_score', 0):.2f}")
-                click.echo(f"  收盘涨幅: {top.get('final_change', top.get('change_0940', 0)):.2f}%")
+                click.echo(f"  Top20候选股数量: {len(result['top20'])}")
+                for i, top in enumerate(result['top20'][:5], 1):  # 显示前5
+                    click.echo(f"  {i}. {top.get('stock_code', 'N/A')}: 得分={top.get('final_score', 0):.1f}, 收盘涨幅={top.get('final_change', top.get('change_0940', 0)):.2f}%")
             
         click.echo(click.style("\n✅ 回测完成", fg='green'))
         
