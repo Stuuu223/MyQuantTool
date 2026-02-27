@@ -200,7 +200,20 @@ class TimeMachineEngine:
         logger.info(f"【时间机器】获取到 {len(dates)} 个交易日（{start_date} 至 {end_date}）")
         return dates
     
-    def run_daily_backtest(self, date: str, stock_pool: List[str]) -> Dict:
+    def run_daily_backtest(self, date: str, stock_pool: List[str] = None) -> Dict:
+        # 【CTO修复】全市场扫描兜底
+        if stock_pool is None:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info("【时间机器】未指定股票池，默认获取全市场股票...")
+            try:
+                from xtquant import xtdata
+                stock_pool = xtdata.get_stock_list_in_sector('沪深A股')
+            except Exception:
+                stock_pool = []
+            if not stock_pool:
+                logger.warning("【时间机器】获取全市场失败，请检查数据。")
+                return None
         """
         单日回测
         

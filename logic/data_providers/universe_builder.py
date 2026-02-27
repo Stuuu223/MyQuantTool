@@ -83,35 +83,32 @@ class UniverseBuilder:
             from xtquant import xtdata
             all_stocks = xtdata.get_stock_list_in_sector('沪深A股')
             
-            # 限制股票数量以提高性能
-            if len(all_stocks) > 1000:  # 只取前1000只股票进行统计
-                all_stocks = all_stocks[:1000]
-            
+            # 【CTO红线】：绝对禁止切片！必须算全市场！
             volume_ratios = []
-            for stock in all_stocks[:500]:  # 进一步限制到前500只，避免性能问题
+            from logic.data_providers.true_dictionary import get_true_dictionary
+            true_dict = get_true_dictionary()
+            
+            # 【CTO性能优化】：一次性批量获取全市场数据到内存！绝不在循环里单只查！
+            tick_data_all = xtdata.get_local_data(
+                field_list=['volume'],
+                stock_list=all_stocks,
+                period='tick',
+                start_time=date,
+                end_time=date
+            )
+
+            for stock in all_stocks:
                 try:
-                    # 获取股票的5日均量和当日量比
-                    from logic.data_providers.true_dictionary import get_true_dictionary
-                    true_dict = get_true_dictionary()
-                    
                     avg_volume_5d = true_dict.get_avg_volume_5d(stock)
                     if avg_volume_5d and avg_volume_5d > 0:
-                        # 获取当日tick数据计算当前量
-                        tick_data = xtdata.get_local_data(
-                            field_list=['volume'],
-                            stock_list=[stock],
-                            period='tick',
-                            start_time=date,
-                            end_time=date
-                        )
-                        
-                        if tick_data and stock in tick_data and len(tick_data[stock]) > 0:
-                            current_volume = tick_data[stock]['volume'].iloc[-1] if hasattr(tick_data[stock], 'iloc') else tick_data[stock]['volume'].values[-1]
-                            volume_ratio = (current_volume * 100) / avg_volume_5d  # 转换为股后计算
-                            if volume_ratio > 0 and volume_ratio < 50:  # 过滤异常值
+                        if tick_data_all and stock in tick_data_all and len(tick_data_all[stock]) > 0:
+                            stock_ticks = tick_data_all[stock]
+                            current_volume = stock_ticks['volume'].iloc[-1] if hasattr(stock_ticks['volume'], 'iloc') else stock_ticks['volume'][-1]
+                            volume_ratio = (current_volume * 100) / avg_volume_5d  # 乘以100转为手为单位
+                            if 0 < volume_ratio < 50:  # 过滤极端异常值
                                 volume_ratios.append(volume_ratio)
                 except:
-                    continue  # 跳过无法获取数据的股票
+                    continue
             
             if volume_ratios:
                 # 计算分位数阈值
@@ -158,7 +155,7 @@ class UniverseBuilder:
             true_dict = get_true_dictionary()
             
             # 限制处理股票数量以提高性能
-            for stock in all_stocks[:1000]:  # 只处理前1000只股票
+            for stock in all_stocks:  # 只处理前1000只股票
                 try:
                     # 获取股票基本信息
                     stock_name = xtdata.get_stock_name(stock) or ""
