@@ -319,6 +319,8 @@ class V18CoreEngine:
         # 2. 势能打分：相对自身历史爆发力 (权重 30分)
         # 游资逻辑：flow_5min_ratio_stock。今天这5分钟脉冲，是它平时死水状态的多少倍？
         ratio_stock = flow_5min / flow_5min_median_stock if flow_5min_median_stock > 0 else 0.0
+        # 【CTO铁血截断】A股不可能有5分钟涌入超过历史50倍还能不涨停的票！封死上限防止爆表！
+        ratio_stock = min(ratio_stock, 50.0)
         potential_score = min(30.0, (ratio_stock / 15.0) * 30.0)  # 爆发超过15倍拿满 30分
         
         # 3. 价格动能强度：日内 K 线推力 (权重 40分)

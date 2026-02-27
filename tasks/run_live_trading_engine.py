@@ -2008,8 +2008,16 @@ class LiveTradingEngine:
                                 logger.error(f"❌ {stock_code} Dragon Score计算失败: {e}")
                                 continue
                         
-                        # 按final_score降序重新排序
-                        dragon_rankings.sort(key=lambda x: x['final_score'], reverse=True)
+                        # 【CTO重铸】工业级多维排序 (先按得分，得分相同按MFE高的排前，再按流入比)
+                        # 解决同分按股票代码排序的荒谬问题
+                        dragon_rankings.sort(
+                            key=lambda x: (
+                                round(x.get('final_score', 0), 1),  # 第一权重：总分
+                                x.get('mfe', 0),                    # 第二权重：MFE资金效率(越高越好)
+                                x.get('inflow_ratio', 0)            # 第三权重：流入占比
+                            ),
+                            reverse=True
+                        )
                         
                         # 【工业级UI看板输出】
                         if dragon_rankings:
@@ -2065,6 +2073,16 @@ class LiveTradingEngine:
                         logger.info(f"📄 JSON报告已保存: {report_file}")
                     except Exception as e:
                         logger.error(f"❌ JSON报告保存失败: {e}")
+                    
+                    # 【CTO重铸】对triggered_stocks进行多维排序（解决同分按代码排序问题）
+                    triggered_stocks.sort(
+                        key=lambda x: (
+                            round(x.get('final_score', 0), 1),  # 第一权重：总分
+                            x.get('mfe', 0),                    # 第二权重：MFE资金效率
+                            x.get('net_inflow_yi', 0)           # 第三权重：净流入
+                        ),
+                        reverse=True
+                    )
                     
                     # 【CTO工业级控制台战地汇总看板】使用print强制输出到控制台
                     print(f"\n{'='*70}")
