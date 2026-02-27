@@ -943,6 +943,7 @@ class LiveTradingEngine:
                                     prev_close=pre_close,
                                     high=current_price * 1.02,
                                     low=current_price * 0.98,
+                                    open_price=current_price,  # 【CTO修复】添加开盘价
                                     flow_5min=flow_5min,
                                     flow_15min=flow_15min,
                                     flow_5min_median_stock=flow_5min_median if flow_5min_median > 0 else 1.0,
@@ -1980,6 +1981,7 @@ class LiveTradingEngine:
                                     prev_close=stock.get('prev_close', stock['price'] * 0.95),
                                     high=stock.get('high', stock['price']),
                                     low=stock.get('low', stock['price'] * 0.98),
+                                    open_price=stock.get('open', stock['price'] * 0.98),  # 【CTO修复】添加开盘价
                                     flow_5min=time_slices['flow_5min'],
                                     flow_15min=time_slices['flow_15min'],
                                     flow_5min_median_stock=flow_5min_median,
@@ -2014,13 +2016,18 @@ class LiveTradingEngine:
                                 logger.error(f"❌ {stock_code} Dragon Score计算失败: {e}")
                                 continue
                         
-                        # 【CTO重铸】工业级多维排序 (先按得分，得分相同按MFE高的排前，再按流入比)
-                        # 解决同分按股票代码排序的荒谬问题
+                        # 【CTO重铸】工业级多维排序 (先按得分，得分相同按MFE排，再按流入比)
+                        # 【修复】MFE惩罚缩量一字板：MFE>5.0说明缺乏换手，给予排序惩罚！
+                        def get_mfe_score(mfe_val):
+                            if mfe_val > 5.0:
+                                return 5.0 - (mfe_val - 5.0) * 0.1  # 超过5的部分开始倒扣
+                            return mfe_val
+                        
                         dragon_rankings.sort(
                             key=lambda x: (
-                                round(x.get('final_score', 0), 1),  # 第一权重：总分
-                                x.get('mfe', 0),                    # 第二权重：MFE资金效率(越高越好)
-                                x.get('inflow_ratio', 0)            # 第三权重：流入占比
+                                round(x.get('final_score', 0), 1),   # 第一权重：总分
+                                get_mfe_score(x.get('mfe', 0)),      # 第二权重：MFE(惩罚一字板)
+                                x.get('inflow_ratio', 0)             # 第三权重：流入占比
                             ),
                             reverse=True
                         )

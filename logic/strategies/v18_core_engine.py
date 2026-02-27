@@ -244,6 +244,7 @@ class V18CoreEngine:
         prev_close: float,
         high: float,
         low: float,
+        open_price: float,  # 【CTO修复】添加开盘价参数
         flow_5min: float,
         flow_15min: float,
         flow_5min_median_stock: float,
@@ -265,6 +266,7 @@ class V18CoreEngine:
             prev_close: 昨日收盘价（元）
             high: 日内最高价（元）
             low: 日内最低价（元）
+            open_price: 开盘价（元）
             flow_5min: 最近5分钟资金流入（元）
             flow_15min: 最近15分钟资金流入（元）
             flow_5min_median_stock: 该股票历史5分钟资金流入中位数（元）
@@ -313,7 +315,9 @@ class V18CoreEngine:
         
         # 1. 动能打分：净流入占流通市值的比例 (权重 30分)
         # 游资逻辑：不看绝对流入多少，看占流通盘的百分比。如果5分钟流入达到流通盘的 1%，那是极其恐怖的资金黑洞！
-        inflow_ratio = net_inflow / float_market_cap if float_market_cap > 0 else 0.0
+        # 【CTO修复】流入比除零保护，A股一天真实沉淀极难超过50%
+        inflow_ratio = net_inflow / float_market_cap if float_market_cap > 1000 else 0.0
+        inflow_ratio = min(max(inflow_ratio, -0.5), 0.5)  # 强制限幅在-50%~50%
         kinetic_score = min(30.0, (inflow_ratio / 0.01) * 30.0)  # 达到 1% 拿满 30分
         
         # 2. 势能打分：相对自身历史爆发力 (权重 30分)
@@ -363,11 +367,13 @@ class V18CoreEngine:
         
         # ==========================================
         # 第三步：效率算子 MFE (Money Force Efficiency)
-        # 【CTO物理学对齐】MFE = 振幅百分比 / 净流入占比
-        # 物理意义: 单位资金做功的价格振幅效率（无量纲化，跨市值公平竞技）
+        # 【CTO物理学对齐】MFE = 向上推力百分比 / 净流入占比
+        # 物理意义: 单位资金做功的向上效率（无量纲化，跨市值公平竞技）
         # ==========================================
-        # 【修复】分子必须是百分比振幅，不能用绝对价差！
-        price_range_pct = (high - low) / prev_close if prev_close > 0 else 0.0
+        # 【修复】分子必须是向上推力，不能用总振幅！过滤天地板砸盘！
+        # 向上推力 = (收盘-最低 + 最高-开盘) / 2，只奖励向上的动能
+        upward_thrust = ((price - low) + (high - open_price)) / 2.0 if open_price > 0 else (high - low)
+        price_range_pct = upward_thrust / prev_close if prev_close > 0 else 0.0
         mfe = price_range_pct / inflow_ratio if inflow_ratio > 0 else 0.0
         
         final_score = round(base_score * multiplier, 2)
