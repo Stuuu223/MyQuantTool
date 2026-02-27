@@ -405,7 +405,7 @@ class TrueDictionary:
                 logger.warning(f"[日历降级] 使用自然日推算: {start_date} ~ {end_date}")
             
             all_data = xtdata.get_local_data(
-                field_list=['time', 'high', 'low', 'pre_close'],
+                field_list=['time', 'high', 'low', 'close', 'open'],  # 【修复】添加close和open用于推导pre_close
                 stock_list=stock_list,
                 period='1d',
                 start_time=start_date,
@@ -416,9 +416,27 @@ class TrueDictionary:
                 for stock_code, df in all_data.items():
                     if df is not None and len(df) >= 5:  # 至少5天数据才计算
                         try:
-                            # 计算每日 (High - Low) / Pre_Close
-                            # 注意: 第一行的pre_close可能为0或NaN,需要处理
+                            # 【Bug修复】QMT返回的数据可能没有pre_close列
+                            # 需要从close列计算前一日收盘价
                             df = df.copy()
+                            
+                            # 检查是否有pre_close列
+                            if 'pre_close' not in df.columns:
+                                # 尝试从close列推导前一日收盘价
+                                if 'close' in df.columns:
+                                    df['pre_close'] = df['close'].shift(1)
+                                    # 第一行的pre_close用开盘价替代（如果有）或使用close
+                                    if 'open' in df.columns:
+                                        df.loc[df.index[0], 'pre_close'] = df.loc[df.index[0], 'open']
+                                    else:
+                                        df.loc[df.index[0], 'pre_close'] = df.loc[df.index[0], 'close']
+                                else:
+                                    # 无法计算，跳过
+                                    failed += 1
+                                    continue
+                            
+                            # 计算每日 (High - Low) / Pre_Close
+                            # 注意: pre_close可能为0或NaN,需要处理
                             df['tr'] = (df['high'] - df['low']) / df['pre_close'].replace(0, float('nan'))
                             
                             # 过滤掉无效值
