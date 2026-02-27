@@ -288,3 +288,122 @@ def safe_calculate_estimated_volume(current_volume_shou: float, minutes_passed: 
     minutes_passed = min(minutes_passed, 240.0)
     
     return (current_volume_shou / minutes_passed) * 240.0
+<<<<<<< HEAD
+=======
+
+
+def calculate_estimated_flow(volume_delta: float, price: float, float_volume_shares: float) -> float:
+    """
+    【资金流量算子】真实资金推算器 - 量纲嗅探，手转股强制*100
+    
+    计算流入/流出的预估资金量，自动处理单位转换：
+    - volume_delta: 可以是手(来自tick)或股(来自日K)，根据数值范围自动识别
+    - price: 当前价格(元)
+    - float_volume_shares: 流通股本(股)
+    
+    Args:
+        volume_delta: 成交量变化量(手或股，自动识别)
+        price: 当前股价
+        float_volume_shares: 流通股本(股)
+        
+    Returns:
+        float: 预估资金流量(万元)
+        
+    Example:
+        >>> flow = calculate_estimated_flow(15000, 25.5, 100000000)
+        >>> # 如果volume_delta是手: 15000手 = 150万股，资金=150万*25.5=3825万元
+        >>> print(f"预估资金: {flow:.0f}万元")
+    """
+    if volume_delta <= 0 or price <= 0 or float_volume_shares <= 0:
+        return 0.0
+    
+    # 【量纲嗅探】自动识别单位：
+    # - 如果volume_delta相对于流通股本很小(比如<0.1%)，则认为是股
+    # - 如果较大，则认为是手，需要*100转换为股
+    ratio_to_float = volume_delta / float_volume_shares
+    
+    if ratio_to_float < 0.001:  # 小于0.1%流通股，认为是股
+        volume_in_shares = volume_delta
+    else:
+        # 手转股的强制转换
+        volume_in_shares = volume_delta * SHOU_TO_GU
+    
+    # 计算资金量(元)，然后转换为万元
+    amount_wan = (volume_in_shares * price) / 10000.0
+    
+    return float(amount_wan)
+
+
+def calculate_space_gap(current_price: float, high_60d: float) -> float:
+    """
+    【空间算子】突破纯度算子 - 返回距离60日高点的百分比
+    
+    正值表示还有上涨空间(距离高点有差距)，负值表示已突破新高
+    
+    Args:
+        current_price: 当前价格
+        high_60d: 60日最高价
+        
+    Returns:
+        float: 距离60日高点的百分比(%)
+              正值 = 距离高点还有X%空间
+              0 = 正好在高点
+              负值 = 已突破X%创新高
+              
+    Example:
+        >>> gap = calculate_space_gap(95.0, 100.0)
+        >>> # gap = 5.0，表示距离60日高点还有5%空间
+        >>> if gap < 10:  # 距离高点不到10%
+        ...     print("临近突破")
+    """
+    if high_60d <= 0:
+        return float('inf')  # 无效数据返回无穷大
+    
+    # 计算距离高点的百分比差距
+    gap_percent = ((high_60d - current_price) / high_60d) * 100.0
+    
+    return float(gap_percent)
+
+
+def calculate_pullback_ratio(high_price: float, current_price: float, pre_close: float) -> float:
+    """
+    【回调算子】骗炮计算器 - 回吐利润比例
+    
+    计算从高点回落的回撤比例，用于识别"冲高回落"骗炮行为：
+    - 0%: 还在高点，未回落
+    - 50%: 回落到涨幅的一半
+    - 100%: 完全回吐，跌回昨收
+    - >100%: 翻绿，跌破昨收
+    
+    Args:
+        high_price: 日内最高价
+        current_price: 当前价格
+        pre_close: 昨日收盘价
+        
+    Returns:
+        float: 回吐利润比例(%)
+              
+    Example:
+        >>> ratio = calculate_pullback_ratio(110.0, 105.0, 100.0)
+        >>> # 最高涨幅10元，当前回落到5元，回吐比例=50%
+        >>> if ratio > 50:  # 回吐超过50%
+        ...     print("骗炮嫌疑，谨慎追高")
+    """
+    if high_price <= pre_close:
+        return 0.0  # 根本没涨，不存在回吐
+    
+    if current_price > high_price:
+        return 0.0  # 还在创新高
+    
+    # 计算最大涨幅和当前回吐
+    max_gain = high_price - pre_close
+    current_gain = current_price - pre_close
+    
+    if max_gain <= 0:
+        return 0.0
+    
+    # 回吐比例 = (最大涨幅 - 当前涨幅) / 最大涨幅 * 100
+    pullback = ((max_gain - current_gain) / max_gain) * 100.0
+    
+    return float(max(0.0, min(pullback, 200.0)))  # 限制在0-200%范围内
+>>>>>>> 4ebbab7 (V20纯血架构重构：动能势能双轨Ratio化+战法分流+VWAP宽容)

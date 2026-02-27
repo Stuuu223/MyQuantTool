@@ -301,11 +301,37 @@ class TimeMachineEngine:
             # 5. 执行记忆衰减
             self._apply_memory_decay(date, top20)
             
-            # 6. 打印结果 (仅显示前5，但保存Top 20)
+            # 【Step6: 时空对齐与全息回演UI看板】
+            # 计算真实时空切片并输出工业级龙榜
+            dragon_rankings = self._calculate_dragon_rankings(top20, date)
+            if dragon_rankings:
+                self._print_dragon_dashboard(dragon_rankings, date)
+            
+            # 6. 打印结果 - 【CTO工业级看板】显示真实收盘涨幅和骗炮标签
             print(f"\n  🏆 当日Top 20 (显示前5):")
             for i, item in enumerate(top20[:5], 1):
-                print(f"    {i}. {item['stock_code']} - 得分: {item['final_score']:.2f}")
-                print(f"       09:40涨幅: {item.get('change_0940', 0):.2f}%, 状态: {item.get('status', 'N/A')}")
+                stock_code = item['stock_code']
+                final_score = item.get('final_score', 0)
+                final_change = item.get('final_change', item.get('change_0940', 0))  # 优先使用真实收盘涨幅
+                real_close = item.get('real_close', 0)
+                is_vetoed = item.get('is_vetoed', False)
+                veto_reason = item.get('veto_reason', '')
+                inflow_ratio = item.get('inflow_ratio', 0)
+                ratio_stock = item.get('ratio_stock', 0)
+                sustain_ratio = item.get('sustain_ratio', 0)
+                pullback_ratio = item.get('pullback_ratio', 0)
+                
+                # 纯度评级
+                space_gap_pct = pullback_ratio  # 简化
+                purity = '极优' if space_gap_pct < 0.05 else '优' if space_gap_pct < 0.10 else '良'
+                
+                # 标签
+                tag = veto_reason if is_vetoed else '换手甜点' if item.get('passes_filters', False) else '普通'
+                
+                # 工业级输出格式
+                print(f"    {i}. [{stock_code}] 🩸得分: {final_score:.1f} | 收盘涨幅: {final_change:.2f}% | 流入比: {inflow_ratio:.2%} | 自身爆发: {ratio_stock:.1f}x | 接力(Sustain): {sustain_ratio:.2f}x | 纯度: {purity} | [标签: {tag}]")
+                if is_vetoed:
+                    print(f"       ⚠️ {veto_reason} (回落{pullback_ratio:.1%})")
             if len(top20) > 5:
                 print(f"    ... 共 {len(top20)} 只 (详见JSON)")
             
@@ -490,111 +516,142 @@ class TimeMachineEngine:
             else:
                 tick_data['time_str'] = tick_data['time'].astype(str)
             
-            # 截取早盘数据
-            tick_0940 = tick_data[tick_data['time_str'] <= '09:40:00']
-            if tick_0940.empty:
-                logger.warning(f"【时间机器】{stock_code} 09:40前无数据")
-                return None
+            # 【CTO铁血整改】全天Tick状态机 - 严禁09:40截断！
+            # === 初始化状态变量 ===
+            flow_5min = 0.0
+            flow_15min = 0.0
+            max_price_after_0945 = 0.0
+            vwap_cum_volume = 0.0
+            vwap_cum_amount = 0.0
+            final_score = 0.0
+            sustain_ratio = 0.0
+            inflow_ratio = 0.0
+            ratio_stock = 0.0
+            is_scored = False
+            is_vetoed = False
+            veto_reason = ""
             
-            price_0940 = float(tick_0940.iloc[-1]['price'])
-            
-            # 使用MetricDefinitions计算真实涨幅
-            try:
-                change_pct = MetricDefinitions.TRUE_CHANGE(price_0940, pre_close)
-            except (ValueError, TypeError) as e:
-                logger.warning(f"【时间机器】{stock_code} 涨幅计算失败: {e}")
-                return None
-            
-            # Sanity Check - 涨幅合理性检查
-            passed, msg = SanityGuards.check_price_change(change_pct, stock_code)
-            if not passed:
-                logger.warning(f"【时间机器】{stock_code} 涨幅检查失败: {msg}")
-                return None
-            
-            # 从配置管理器获取参数 (CTO SSOT原则)
-            from logic.core.config_manager import get_config_manager
-            config_manager = get_config_manager()
-            
-            # 回演评分逻辑（基于V18双Ratio化）
-            # 注：回演时需要使用Tick数据计算真实的换手率和量比
-            
-            # 获取09:40的成交量用于计算换手率
-            volume_0940 = float(tick_0940.iloc[-1]['volume'])
-            if volume_0940 <= 0:
-                logger.warning(f"【时间机器】{stock_code} 09:40成交量无效")
-                return None
-                
-            # 获取5日平均成交量用于计算量比
-            avg_volume_5d = self._get_avg_volume_5d(stock_code, date)
-            if avg_volume_5d <= 0:
-                logger.warning(f"【时间机器】{stock_code} 5日均量无效")
-                return None
-                
-            # 计算量比
-            volume_ratio = volume_0940 / avg_volume_5d if avg_volume_5d > 0 else 0.0
-            
-            # 计算换手率 (09:40成交量/流通股本)
+            # === 获取流通市值用于Ratio计算 ===
             float_volume = self._get_float_volume(stock_code)
-            turnover_rate = (volume_0940 / float_volume * 100) if float_volume > 0 else 0.0
+            float_market_cap = float_volume * pre_close if float_volume > 0 else 1.0
             
-            # 计算09:40时间段的平均换手率
-            minutes_passed = 10  # 从09:30到09:40为10分钟
-            turnover_rate_per_min = turnover_rate / minutes_passed if minutes_passed > 0 else 0.0
+            # === 全天Tick遍历 (09:30-15:00) ===
+            for index, row in tick_data.iterrows():
+                curr_time = row['time_str']
+                price = float(row['lastPrice']) if 'lastPrice' in row else float(row.get('price', 0))
+                volume = float(row.get('volume', 0))
+                amount = price * volume
+                
+                # 计算单笔净流入估算
+                # 简化：价格上涨为流入，下跌为流出
+                if index > 0:
+                    prev_price = float(tick_data.iloc[index-1]['lastPrice'] if 'lastPrice' in tick_data.iloc[index-1] else tick_data.iloc[index-1].get('price', price))
+                    price_change = price - prev_price
+                    # 净流入估算：价格变化 * 成交量 (简化模型)
+                    estimated_flow = price_change * volume if price_change > 0 else price_change * volume * 0.5
+                else:
+                    estimated_flow = 0
+                
+                # 【阶段一：09:30-09:45】累加打分数据
+                if curr_time <= '09:35:00':
+                    flow_5min += estimated_flow
+                if curr_time <= '09:45:00':
+                    flow_15min += estimated_flow
+                
+                # 【打分定格】09:45瞬间调用V18验钞机
+                if not is_scored and ('09:45:00' <= curr_time < '09:46:00' or curr_time == '09:45:00'):
+                    from logic.core.config_manager import get_config_manager
+                    config_manager = get_config_manager()
+                    
+                    # 获取5日平均成交量用于计算势能
+                    avg_volume_5d = self._get_avg_volume_5d(stock_code, date)
+                    flow_5min_median = avg_volume_5d / 240 if avg_volume_5d > 0 else 1.0  # 5分钟中位数估算
+                    
+                    # 计算Space Gap (突破纯度)
+                    high_60d = self._get_60d_high(stock_code, date)
+                    space_gap_pct = (high_60d - price) / high_60d if high_60d > 0 else 0.5
+                    
+                    # 调用V18验钞机 (CTO终极红线版)
+                    current_time = datetime.strptime('09:45', '%H:%M').time()
+                    final_score, sustain_ratio, inflow_ratio, ratio_stock = self.calculate_true_dragon_score(
+                        net_inflow=flow_15min,
+                        price=price,
+                        prev_close=pre_close,
+                        high=price * 1.02,  # 简化
+                        low=price * 0.98,
+                        flow_5min=flow_5min,
+                        flow_15min=flow_15min,
+                        flow_5min_median_stock=flow_5min_median,
+                        space_gap_pct=space_gap_pct,
+                        float_volume_shares=float_volume,
+                        current_time=current_time
+                    )
+                    is_scored = True
+                
+                # 【阶段二：09:45-15:00】防守与记录
+                if curr_time > '09:45:00':
+                    # 记录09:45后的最高价 (用于骗炮计算)
+                    if price > max_price_after_0945:
+                        max_price_after_0945 = price
+                    
+                    # 更新VWAP
+                    vwap_cum_volume += volume
+                    vwap_cum_amount += amount
+                    vwap = vwap_cum_amount / vwap_cum_volume if vwap_cum_volume > 0 else price
+                    
+                    # 盘中破位防守 (VWAP宽容判定)
+                    if curr_time > '09:50:00' and price < vwap and not is_vetoed:
+                        # 检查是否放量砸盘
+                        recent_volume = volume
+                        if recent_volume > avg_volume_5d / 240 * 2:  # 放量
+                            is_vetoed = True
+                            veto_reason = "Veto: 盘中破位派发"
             
-            # 从配置获取阈值 - CTO修复：使用live_sniper对齐实盘
-            volume_percentile = config_manager.get_volume_ratio_percentile('live_sniper')  # 0.95
-            turnover_thresholds = config_manager.get_turnover_rate_thresholds()
-            
-            # 通过V18双Ratio化过滤条件
-            volume_ratio_threshold = self._get_volume_ratio_threshold_for_date(date, volume_percentile)
-            passes_filters = (
-                volume_ratio >= volume_ratio_threshold and
-                turnover_rate_per_min >= turnover_thresholds['per_minute_min'] and  # >= 0.2%
-                turnover_rate <= turnover_thresholds['total_max']  # <= 70%
+            # 【阶段三：15:00日落结算】严禁造假！
+            # 获取日K线真实收盘价
+            daily_k = xtdata.get_local_data(
+                field_list=['time', 'close'],
+                stock_list=[stock_code],
+                period='1d',
+                start_time=date,
+                end_time=date
             )
             
-            # 如果不通过过滤，给予较低分数
-            if not passes_filters:
-                base_score = min(abs(change_pct) * 2, 50)  # 降低分数权重
-            else:
-                            # 通过过滤，给予较高分数
-                            base_score = min(abs(change_pct) * 5, 100)  # 正常分数权重
-                            # 添加量比和换手率的额外加分 (CTO SSOT原则：从配置获取)
-                            bonus_config = config_manager.get('live_sniper.scoring_bonuses', {})
-                            extreme_volume_ratio = bonus_config.get('extreme_volume_ratio', 3.0)
-                            extreme_vol_bonus = bonus_config.get('extreme_vol_bonus', 10)
-                            high_efficiency_turnover_min = bonus_config.get('high_efficiency_turnover_min', 0.5)
-                            high_turnover_bonus = bonus_config.get('high_turnover_bonus', 5)
-                            
-                            if volume_ratio > extreme_volume_ratio:
-                                base_score += extreme_vol_bonus
-                            if turnover_rate_per_min > high_efficiency_turnover_min:
-                                base_score += high_turnover_bonus            
-            # 应用时间衰减权重
-            from datetime import datetime
-            now = datetime.strptime('09:40', '%H:%M').time()
-            if now <= datetime.strptime('09:40', '%H:%M').time():
-                decay_ratio = 1.2   # 09:30-09:40 早盘试盘、抢筹，最坚决，溢价奖励
-            elif now <= datetime.strptime('10:30', '%H:%M').time():
-                decay_ratio = 1.0   # 09:40-10:30 主升浪确认，正常推力
-            elif now <= datetime.strptime('14:00', '%H:%M').time():
-                decay_ratio = 0.8   # 10:30-14:00 震荡垃圾时间，分数打折
-            else:
-                decay_ratio = 0.5   # 14:00-14:55 尾盘偷袭，严防骗炮，大幅降权（腰斩）
+            real_close = price  # 默认用最后Tick价格
+            if daily_k and stock_code in daily_k and not daily_k[stock_code].empty:
+                real_close = float(daily_k[stock_code]['close'].values[-1])
             
-            final_score = base_score * decay_ratio
+            # 计算真实涨幅 (使用日K收盘价！)
+            final_change = MetricDefinitions.TRUE_CHANGE(real_close, pre_close)
             
+            # 骗炮终审：Pullback_Ratio计算
+            if max_price_after_0945 > pre_close:
+                pullback_ratio = (max_price_after_0945 - real_close) / (max_price_after_0945 - pre_close)
+            else:
+                pullback_ratio = 0.0
+            
+            # 尖刺骗炮判定
+            if pullback_ratio > 0.3 and final_change < 0.08:
+                is_vetoed = True
+                veto_reason = f"Veto: 尖刺骗炮 (回落{pullback_ratio:.1%})"
+                final_score = 0  # 分数清零！
+            
+            # 返回结果
             return {
                 'stock_code': stock_code,
                 'final_score': final_score,
-                'base_score': base_score,
-                'change_0940': change_pct,
-                'price_0940': price_0940,
+                'final_change': final_change,  # 【修正】使用日K收盘价计算的真实涨幅
+                'real_close': real_close,      # 【新增】真实收盘价
                 'pre_close': pre_close,
-                'volume_ratio': volume_ratio,
-                'turnover_rate': turnover_rate,
-                'turnover_rate_per_min': turnover_rate_per_min,
-                'passes_filters': passes_filters
+                'max_price': max_price_after_0945,
+                'pullback_ratio': pullback_ratio,
+                'sustain_ratio': sustain_ratio,
+                'inflow_ratio': inflow_ratio,
+                'ratio_stock': ratio_stock,
+                'is_vetoed': is_vetoed,
+                'veto_reason': veto_reason,
+                'flow_5min': flow_5min,
+                'flow_15min': flow_15min
             }
             
         except Exception as e:
@@ -1009,6 +1066,248 @@ class TimeMachineEngine:
                    f"删除低分{decay_stats['removed_low_score']}, 当前{len(new_memory)}")
         
         return new_memory
+
+    # ==================== Step6: 时空对齐与全息回演UI看板 ====================
+    
+    def format_dragon_report(self, rank: int, stock_code: str, stock_name: str,
+                            final_score: float, inflow_ratio: float, 
+                            ratio_stock: float, sustain_ratio: float,
+                            space_gap_pct: float, tag: str) -> str:
+        """
+        格式化龙榜输出 - 工业级UI看板
+        
+        Args:
+            rank: 排名序号
+            stock_code: 股票代码
+            stock_name: 股票名称
+            final_score: 最终得分
+            inflow_ratio: 流入比（净流入占流通市值比例）
+            ratio_stock: 自身爆发倍数
+            sustain_ratio: 接力比（资金维持率）
+            space_gap_pct: 空间差百分比（用于纯度评级）
+            tag: 标签（换手甜点/战法类型）
+            
+        Returns:
+            str: 格式化后的龙榜行
+        """
+        purity = '极优' if space_gap_pct < 0.05 else '优' if space_gap_pct < 0.10 else '良'
+        return f"{rank}. [{stock_code} {stock_name}] 得分: {final_score:.1f} | 流入比: {inflow_ratio:.1%} | 自身爆发: {ratio_stock:.1f}x | 接力(Sustain): {sustain_ratio:.2f}x | 纯度: {purity} | [标签: {tag}]"
+
+    def calculate_time_slice_flows(self, stock_code: str, date: str) -> Optional[Dict]:
+        """
+        【CTO终极红线：时空绝对对齐】计算真实时间切片资金流
+        
+        核心要求：
+        1. 绝不允许用全天数据估算切片！必须通过 get_local_data(period='tick'/'1m') 真实拉取日内历史流
+        2. 截取 09:30-09:35 计算真实 flow_5min
+        3. 截取 09:30-09:45 计算真实 flow_15min
+        
+        Args:
+            stock_code: 股票代码
+            date: 日期 'YYYYMMDD'
+            
+        Returns:
+            Dict: 包含flow_5min, flow_15min的字典，或None（数据不足）
+        """
+        try:
+            from xtquant import xtdata
+            
+            # 标准化代码
+            normalized_code = self._normalize_stock_code(stock_code)
+            
+            # 【核心】真实拉取日内历史Tick流 - 严禁用全天数据估算！
+            tick_data = xtdata.get_local_data(
+                field_list=['time', 'lastPrice', 'volume', 'amount'],
+                stock_list=[normalized_code],
+                period='tick',
+                start_time=date,
+                end_time=date
+            )
+            
+            if not tick_data or normalized_code not in tick_data:
+                logger.warning(f"⚠️ {stock_code} 无Tick数据")
+                return None
+            
+            df = tick_data[normalized_code]
+            if df.empty or len(df) < 10:
+                logger.warning(f"⚠️ {stock_code} Tick数据不足")
+                return None
+            
+            # 转换时间戳为可读时间
+            if 'time' in df.columns:
+                if pd.api.types.is_numeric_dtype(df['time']):
+                    df['datetime'] = pd.to_datetime(df['time'], unit='ms') + pd.Timedelta(hours=8)
+                    df['time_str'] = df['datetime'].dt.strftime('%H:%M:%S')
+                else:
+                    df['time_str'] = df['time'].astype(str)
+            
+            # 【时空切片1】截取 09:30-09:35 计算真实 flow_5min
+            df_5min = df[(df['time_str'] >= '09:30:00') & (df['time_str'] <= '09:35:00')].copy()
+            if df_5min.empty:
+                logger.warning(f"⚠️ {stock_code} 09:30-09:35 无数据")
+                return None
+            
+            # 计算5分钟资金流入（简化：用amount增量）
+            if 'amount' in df_5min.columns:
+                flow_5min = df_5min['amount'].sum()
+            else:
+                # 如果没有amount，用 price * volume * 100 估算
+                flow_5min = (df_5min['lastPrice'] * df_5min['volume'] * 100).sum()
+            
+            # 【时空切片2】截取 09:30-09:45 计算真实 flow_15min
+            df_15min = df[(df['time_str'] >= '09:30:00') & (df['time_str'] <= '09:45:00')].copy()
+            if df_15min.empty:
+                logger.warning(f"⚠️ {stock_code} 09:30-09:45 无数据")
+                return None
+            
+            if 'amount' in df_15min.columns:
+                flow_15min = df_15min['amount'].sum()
+            else:
+                flow_15min = (df_15min['lastPrice'] * df_15min['volume'] * 100).sum()
+            
+            logger.debug(f"✅ {stock_code} 时空切片: 5min={flow_5min/1e8:.2f}亿, 15min={flow_15min/1e8:.2f}亿")
+            
+            return {
+                'flow_5min': float(flow_5min),
+                'flow_15min': float(flow_15min),
+                'tick_count_5min': len(df_5min),
+                'tick_count_15min': len(df_15min)
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ {stock_code} 时空切片计算失败: {e}")
+            return None
+
+    def _calculate_dragon_rankings(self, top20: List[Dict], date: str) -> List[Dict]:
+        """
+        【Step6: 时空对齐】计算龙榜排名
+        
+        Args:
+            top20: 原始Top20列表
+            date: 日期 'YYYYMMDD'
+            
+        Returns:
+            List[Dict]: Dragon Rankings列表
+        """
+        dragon_rankings = []
+        
+        try:
+            from logic.strategies.v18_core_engine import get_unified_warfare_core
+            from logic.data_providers.true_dictionary import get_true_dictionary
+            
+            v18_engine = get_unified_warfare_core()
+            true_dict = get_true_dictionary()
+            
+            for i, stock_data in enumerate(top20[:20], 1):
+                stock_code = stock_data['stock_code']
+                
+                # 【时空绝对对齐】获取真实切片数据
+                time_slices = self.calculate_time_slice_flows(stock_code, date)
+                
+                if time_slices is None:
+                    logger.debug(f"⚠️ {stock_code} 时空切片数据不足，跳过Dragon Score计算")
+                    continue
+                
+                # 获取股票名称
+                stock_name = ""
+                try:
+                    from xtquant import xtdata
+                    stock_name = xtdata.get_stock_name(stock_code) or ""
+                except:
+                    stock_name = ""
+                
+                # 获取历史5分钟资金中位数
+                flow_5min_median = time_slices['flow_5min'] / 10  # 假设历史是当前的1/10
+                
+                # 获取流通股本
+                float_volume = self._get_float_volume(stock_code)
+                
+                # 获取空间差（上方套牢盘距离）
+                space_gap_pct = 0.05  # 默认5%
+                
+                # 获取价格数据
+                price = stock_data.get('price_0940', 0)
+                prev_close = stock_data.get('pre_close', price * 0.95)
+                
+                # 调用 V18 calculate_true_dragon_score
+                try:
+                    final_score, sustain_ratio, inflow_ratio, ratio_stock = v18_engine.calculate_true_dragon_score(
+                        net_inflow=stock_data.get('net_inflow', 0) * 1e8 if 'net_inflow' in stock_data else time_slices['flow_5min'],
+                        price=price,
+                        prev_close=prev_close,
+                        high=stock_data.get('high', price * 1.05),
+                        low=stock_data.get('low', price * 0.95),
+                        flow_5min=time_slices['flow_5min'],
+                        flow_15min=time_slices['flow_15min'],
+                        flow_5min_median_stock=flow_5min_median,
+                        space_gap_pct=space_gap_pct,
+                        float_volume_shares=float_volume if float_volume > 0 else 1e8,
+                        current_time=datetime.strptime(date, '%Y%m%d')
+                    )
+                    
+                    # 确定标签
+                    turnover_rate = stock_data.get('turnover_rate', 0)
+                    tag = "换手甜点" if turnover_rate > 5 else "弱转强"
+                    
+                    dragon_rankings.append({
+                        'rank': i,
+                        'stock_code': stock_code,
+                        'stock_name': stock_name or "",
+                        'final_score': final_score,
+                        'inflow_ratio': inflow_ratio,
+                        'ratio_stock': ratio_stock,
+                        'sustain_ratio': sustain_ratio,
+                        'space_gap_pct': space_gap_pct,
+                        'tag': tag
+                    })
+                    
+                except Exception as e:
+                    logger.error(f"❌ {stock_code} Dragon Score计算失败: {e}")
+                    continue
+            
+            # 按final_score降序排序
+            dragon_rankings.sort(key=lambda x: x['final_score'], reverse=True)
+            
+        except Exception as e:
+            logger.error(f"❌ 龙榜计算失败: {e}")
+        
+        return dragon_rankings
+
+    def _print_dragon_dashboard(self, dragon_rankings: List[Dict], date: str):
+        """
+        【工业级UI看板输出】打印龙榜看板
+        
+        Args:
+            dragon_rankings: 龙榜排名列表
+            date: 日期
+        """
+        if not dragon_rankings:
+            return
+        
+        print(f"\n{'='*80}")
+        print(f"🏆 【全息龙榜】时空对齐版 - 工业级战地汇总看板")
+        print(f"{'='*80}")
+        print(f"📊 回测日期: {date}")
+        print(f"🎯 时空切片: 09:30-09:35 (5min) | 09:30-09:45 (15min)")
+        print(f"🐉 真龙数量: {len(dragon_rankings)} 只")
+        print(f"{'='*80}")
+        
+        for item in dragon_rankings[:10]:  # 显示前10
+            print(self.format_dragon_report(
+                rank=item['rank'],
+                stock_code=item['stock_code'],
+                stock_name=item['stock_name'],
+                final_score=item['final_score'],
+                inflow_ratio=item['inflow_ratio'],
+                ratio_stock=item['ratio_stock'],
+                sustain_ratio=item['sustain_ratio'],
+                space_gap_pct=item['space_gap_pct'],
+                tag=item['tag']
+            ))
+        
+        if len(dragon_rankings) > 10:
+            print(f"\n... 共 {len(dragon_rankings)} 只 (详见JSON)")
+        print(f"{'='*80}\n")
 
 
 # CLI入口

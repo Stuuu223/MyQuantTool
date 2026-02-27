@@ -377,3 +377,75 @@ def batch_calc_sustain(current_prices: List[float],
         logger.warning(f"批量计算部分失败 ({len(errors)}/{len(current_prices)}): {errors[:3]}")
     
     return results
+
+
+def render_battle_dashboard(top_dragons: List[dict], 
+                           title: str = "V20 纯血游资雷达",
+                           clear_screen: bool = True) -> None:
+    """
+    【CTO SSOT】统一工业级战地汇总看板渲染
+    
+    所有输出模块(实盘Live、热复盘Replay、全息回演Time Machine)必须调用此函数！
+    
+    Args:
+        top_dragons: 龙榜数据列表，每只龙包含：
+            - code: 股票代码
+            - score: 最终得分
+            - price: 当前价格
+            - change: 涨幅(%)
+            - inflow_ratio: 净流入占流通市值比例
+            - ratio_stock: 自身爆发倍数(相对历史)
+            - sustain_ratio: 接力比(15min/5min)
+            - purity: 纯度评级(极优/优/良)
+            - tag: 标签(换手甜点/弱转强/骗炮等)
+        title: 看板标题
+        clear_screen: 是否清屏
+    
+    输出格式示例:
+    ============================================================================
+    🚀 [V20 纯血游资雷达] 动态火控看板 | 当前时间: 09:45:30
+    ============================================================================
+    排名 代码           🩸得分   价格     涨幅    流入比   爆发    接力    纯度
+    ----------------------------------------------------------------------------
+    1    300986.SZ     185.4    24.58   8.5%    1.2%    18.5x   1.45x   极优
+    2    002969.SZ     156.4    13.02   5.2%    0.8%    12.3x   1.62x   优
+    ============================================================================
+    """
+    import os
+    from datetime import datetime
+    
+    # 清屏
+    if clear_screen:
+        os.system('cls' if os.name == 'nt' else 'clear')
+    
+    # 获取当前时间
+    now = datetime.now()
+    time_str = now.strftime('%H:%M:%S')
+    
+    # 打印表头
+    width = 100
+    print("="*width)
+    print(f"🚀 [{title}] 动态火控看板 | 当前时间: {time_str}")
+    print("="*width)
+    
+    # 打印列标题
+    print(f"{'排名':<4} {'代码':<12} {'🩸得分':<8} {'价格':<8} {'涨幅':<8} {'流入比':<8} {'爆发':<6} {'接力':<6} {'纯度':<4} {'标签':<10}")
+    print("-"*width)
+    
+    # 打印龙榜
+    for i, dragon in enumerate(top_dragons[:10], 1):
+        code = dragon.get('code', dragon.get('stock_code', 'N/A'))
+        score = dragon.get('score', dragon.get('final_score', 0))
+        price = dragon.get('price', 0)
+        change = dragon.get('change', dragon.get('final_change', 0))
+        inflow_ratio = dragon.get('inflow_ratio', 0)
+        ratio_stock = dragon.get('ratio_stock', 0)
+        sustain_ratio = dragon.get('sustain_ratio', 0)
+        purity = dragon.get('purity', '良')
+        tag = dragon.get('tag', '')
+        
+        # 格式化输出
+        print(f"{i:<4} {code:<12} {score:<8.1f} {price:<8.2f} {change:<7.1f}% {inflow_ratio:<7.2%} {ratio_stock:<6.1f}x {sustain_ratio:<6.2f}x {purity:<4} {tag:<10}")
+    
+    print("="*width)
+    print(f"💡 共 {len(top_dragons)} 只标的 | 数据实时更新中... (按 Ctrl+C 退出)")

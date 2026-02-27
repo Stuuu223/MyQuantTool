@@ -237,6 +237,134 @@ class V18CoreEngine:
         decay_ratio = self.get_time_decay_ratio(timestamp)
         return float(base_score * decay_ratio)
     
+<<<<<<< HEAD
+=======
+    def calculate_true_dragon_score(
+        self,
+        net_inflow: float,
+        price: float,
+        prev_close: float,
+        high: float,
+        low: float,
+        flow_5min: float,
+        flow_15min: float,
+        flow_5min_median_stock: float,
+        space_gap_pct: float,
+        float_volume_shares: float,
+        current_time: datetime
+    ) -> tuple[float, float, float, float]:
+        """
+        【Boss终极钦定：彻底废除绝对金额！动能与势能的双轨 Ratio 验钞机！】
+        
+        算法设计原则：
+        1. 彻底废除绝对金额魔法数字（如 5亿满分），全盘Ratio化
+        2. 动能30分+势能30分+价格推力40分 = 100分基础分
+        3. 四大乘数机制：维持能力、筹码纯度、吸血效应、早盘时间
+        
+        Args:
+            net_inflow: 净流入金额（元）
+            price: 当前价格（元）
+            prev_close: 昨日收盘价（元）
+            high: 日内最高价（元）
+            low: 日内最低价（元）
+            flow_5min: 最近5分钟资金流入（元）
+            flow_15min: 最近15分钟资金流入（元）
+            flow_5min_median_stock: 该股票历史5分钟资金流入中位数（元）
+            space_gap_pct: 空间差百分比（上方套牢盘距离）
+            float_volume_shares: 真实流通股本（股）
+            current_time: 当前时间（datetime对象）
+        
+        Returns:
+            tuple: (final_score, sustain_ratio, inflow_ratio, ratio_stock)
+                - final_score: 最终验钞得分（float）
+                - sustain_ratio: 资金维持率（float）
+                - inflow_ratio: 净流入占流通市值比例（float）
+                - ratio_stock: 相对自身历史爆发力倍数（float）
+        
+        Raises:
+            TypeError: 输入类型不正确时
+            ValueError: 价格<=0或流通股本<=0时
+        """
+        # 类型检查
+        if not all(isinstance(x, (int, float)) for x in [
+            net_inflow, price, prev_close, high, low, 
+            flow_5min, flow_15min, flow_5min_median_stock,
+            space_gap_pct, float_volume_shares
+        ]):
+            raise TypeError("所有数值参数必须是数字类型")
+        
+        if not isinstance(current_time, datetime):
+            raise TypeError(f"current_time必须是datetime类型，当前类型: {type(current_time)}")
+        
+        # 参数有效性检查
+        if price <= 0:
+            raise ValueError(f"当前价格必须>0，当前值: {price}")
+        if float_volume_shares <= 0:
+            raise ValueError(f"流通股本必须>0，当前值: {float_volume_shares}")
+        if high < low:
+            raise ValueError(f"最高价不能低于最低价")
+        
+        # ==========================================
+        # 0. 基础准备：计算真实流通市值 (元)
+        # ==========================================
+        float_market_cap = float_volume_shares * price
+        
+        # ==========================================
+        # 第一步：真实验钞 Base Score (满分100)
+        # ==========================================
+        
+        # 1. 动能打分：净流入占流通市值的比例 (权重 30分)
+        # 游资逻辑：不看绝对流入多少，看占流通盘的百分比。如果5分钟流入达到流通盘的 1%，那是极其恐怖的资金黑洞！
+        inflow_ratio = net_inflow / float_market_cap if float_market_cap > 0 else 0.0
+        kinetic_score = min(30.0, (inflow_ratio / 0.01) * 30.0)  # 达到 1% 拿满 30分
+        
+        # 2. 势能打分：相对自身历史爆发力 (权重 30分)
+        # 游资逻辑：flow_5min_ratio_stock。今天这5分钟脉冲，是它平时死水状态的多少倍？
+        ratio_stock = flow_5min / flow_5min_median_stock if flow_5min_median_stock > 0 else 0.0
+        potential_score = min(30.0, (ratio_stock / 15.0) * 30.0)  # 爆发超过15倍拿满 30分
+        
+        # 3. 价格动能强度：日内 K 线推力 (权重 40分)
+        if high == low:
+            # 平盘特殊情况：如果当前价高于昨收，给满分，否则给0分
+            momentum_score = 40.0 if price > prev_close else 0.0
+        else:
+            day_strength = (price - low) / (high - low)
+            momentum_score = day_strength * 40.0
+        
+        base_score = kinetic_score + potential_score + momentum_score
+        
+        # ==========================================
+        # 第二步：神级乘数区 (Multipliers - 决定王座)
+        # ==========================================
+        multiplier = 1.0
+        
+        # A. 维持能力 (Sustain Ability - 抓翻倍大妖的核心)
+        # 15分钟资金 / 5分钟资金，健康阶梯推升应该 > 1.2
+        sustain_ratio = (flow_15min / flow_5min) if flow_5min > 0 else 0.0
+        if sustain_ratio > 1.2:
+            multiplier *= 1.5  # 健康阶梯推升，超级加倍！
+        elif sustain_ratio < 1.0:
+            multiplier *= 0.5  # 资金抽水，尖刺骗炮，重罚！
+        
+        # B. 筹码纯度 (空间差 < 10% 抛压轻)
+        if space_gap_pct < 0.10:
+            multiplier *= 1.2
+        
+        # C. 吸血效应 (横向比较/资金占比极大)
+        # 只要流入比例 > 1.5%，说明在疯狂吸血，给予情绪溢价
+        if inflow_ratio > 0.015:
+            multiplier *= 1.2
+        
+        # D. 早盘时间坚决度
+        if current_time.hour == 9 and current_time.minute <= 40:
+            multiplier *= 1.2
+        elif current_time.hour >= 14:
+            multiplier *= 0.5
+        
+        final_score = round(base_score * multiplier, 2)
+        return final_score, sustain_ratio, inflow_ratio, ratio_stock
+    
+>>>>>>> 4ebbab7 (V20纯血架构重构：动能势能双轨Ratio化+战法分流+VWAP宽容)
     def calculate_volume_ratio(
         self,
         current_volume: Union[int, float],
@@ -354,7 +482,11 @@ if __name__ == "__main__":
         turnover_rate_per_min=0.3  # > 0.2
     )
     print(f"  涨幅5.5%, 量比2.5, 换手0.3%/min -> 基础分: {score1:.2f}")
+<<<<<<< HEAD
     assert score1 > 27.5, "通过过滤的分数应该>27.5"
+=======
+    assert score1 >= 27.5, "通过过滤的分数应该>=27.5"
+>>>>>>> 4ebbab7 (V20纯血架构重构：动能势能双轨Ratio化+战法分流+VWAP宽容)
     print("  ✅ 通过")
     
     # 测试2: 基础分计算（未通过过滤）
@@ -405,6 +537,7 @@ if __name__ == "__main__":
     # 测试6: 向量化量比计算
     print("\n【测试6】向量化量比计算（Pandas）")
     import pandas as pd
+<<<<<<< HEAD
     df = pd.DataFrame({
         'time': ['09:30:00', '09:31:00', '09:32:00', '09:33:00', '09:34:00'],
         'volume': [1000, 2000, 3000, 4000, 5000]
@@ -425,6 +558,18 @@ if __name__ == "__main__":
     print(f"  起爆点: {breakout}")
     assert breakout is not None, "应该找到起爆点"
     assert breakout['timestamp'] == '09:33:00', "起爆时间应该是09:33:00"
+=======
+    volume_series = pd.Series([1000, 2000, 3000, 4000, 5000])
+    ratio_series = engine.calculate_volume_ratio(
+        current_volume=volume_series,
+        elapsed_seconds=300,  # 5分钟
+        avg_volume_5d=100000
+    )
+    print(f"  量比序列: {ratio_series.tolist()}")
+    print(f"  最后一行动态量比: {ratio_series.iloc[-1]:.2f}")
+    assert len(ratio_series) == 5, "向量化计算应返回等长序列"
+    assert ratio_series.iloc[-1] > 0, "量比应为正数"
+>>>>>>> 4ebbab7 (V20纯血架构重构：动能势能双轨Ratio化+战法分流+VWAP宽容)
     print("  ✅ 通过")
     
     # 测试8: 配置读取验证
@@ -435,6 +580,99 @@ if __name__ == "__main__":
     print(f"  极端量比奖励阈值: {engine.extreme_volume_ratio}")
     print("  ✅ 配置读取正常")
     
+<<<<<<< HEAD
+=======
+    # 测试9: True Dragon Score - 完美起爆场景
+    print("\n【测试9】True Dragon Score - 完美起爆场景")
+    test_time = datetime(2026, 2, 27, 9, 35, 0)  # 早盘9:35
+    final_score, sustain_ratio, inflow_ratio, ratio_stock = engine.calculate_true_dragon_score(
+        net_inflow=50000000,      # 5000万净流入
+        price=25.0,
+        prev_close=22.0,
+        high=26.0,
+        low=23.0,
+        flow_5min=10000000,       # 5分钟流入1000万
+        flow_15min=15000000,      # 15分钟流入1500万 (sustain_ratio=1.5 > 1.2)
+        flow_5min_median_stock=500000,  # 历史5分钟中位数50万
+        space_gap_pct=0.05,       # 5%空间差 (<10%)
+        float_volume_shares=100000000,  # 1亿股流通盘
+        current_time=test_time
+    )
+    print(f"  净流入比: {inflow_ratio:.4f} (目标>1%={inflow_ratio>0.01})")
+    print(f"  自身爆发力: {ratio_stock:.1f}倍 (目标>15倍={ratio_stock>15})")
+    print(f"  维持率: {sustain_ratio:.2f} (健康>1.2={sustain_ratio>1.2})")
+    print(f"  最终得分: {final_score:.2f}")
+    # 验证：早盘(1.2) + 维持好(1.5) + 筹码纯(1.2) + 吸血(1.2) = 2.592x乘数
+    assert inflow_ratio == 0.02, f"净流入比例应为2%，实际{inflow_ratio}"
+    assert ratio_stock == 20.0, f"爆发力应为20倍，实际{ratio_stock}"
+    assert sustain_ratio == 1.5, f"维持率应为1.5，实际{sustain_ratio}"
+    assert final_score > 200, f"完美起爆应>200分，实际{final_score}"
+    print("  ✅ 通过")
+    
+    # 测试10: True Dragon Score - 骗炮陷阱场景
+    print("\n【测试10】True Dragon Score - 骗炮陷阱场景")
+    test_time2 = datetime(2026, 2, 27, 14, 30, 0)  # 尾盘14:30
+    final_score2, sustain_ratio2, inflow_ratio2, ratio_stock2 = engine.calculate_true_dragon_score(
+        net_inflow=10000000,      # 1000万净流入
+        price=25.0,
+        prev_close=22.0,
+        high=26.0,
+        low=23.0,
+        flow_5min=8000000,        # 5分钟流入800万
+        flow_15min=6000000,       # 15分钟流入600万 (sustain_ratio=0.75 < 1.0，资金抽水！)
+        flow_5min_median_stock=1000000,  # 历史5分钟中位数100万
+        space_gap_pct=0.25,       # 25%空间差 (>10%)
+        float_volume_shares=1000000000,  # 10亿股大流通盘
+        current_time=test_time2
+    )
+    print(f"  净流入比: {inflow_ratio2:.4f} (目标<1%={inflow_ratio2<0.01})")
+    print(f"  自身爆发力: {ratio_stock2:.1f}倍 (目标<15倍={ratio_stock2<15})")
+    print(f"  维持率: {sustain_ratio2:.2f} (资金抽水<1.0={sustain_ratio2<1.0})")
+    print(f"  最终得分: {final_score2:.2f}")
+    # 验证：尾盘(0.5) + 维持差(0.5) = 0.25x惩罚
+    assert sustain_ratio2 == 0.75, f"维持率应为0.75，实际{sustain_ratio2}"
+    assert final_score2 < 50, f"骗炮陷阱应<50分，实际{final_score2}"
+    print("  ✅ 通过")
+    
+    # 测试11: True Dragon Score - 边界值测试
+    print("\n【测试11】True Dragon Score - 边界值测试")
+    # 平盘情况
+    final_score3, _, _, _ = engine.calculate_true_dragon_score(
+        net_inflow=50000000,
+        price=25.0,
+        prev_close=24.0,  # 昨收24
+        high=25.0,        # 最高=当前
+        low=25.0,         # 最低=当前（平盘）
+        flow_5min=10000000,
+        flow_15min=12000000,
+        flow_5min_median_stock=1000000,
+        space_gap_pct=0.08,
+        float_volume_shares=100000000,
+        current_time=datetime(2026, 2, 27, 10, 0, 0)
+    )
+    print(f"  平盘但价格>昨收，得分: {final_score3:.2f}")
+    assert final_score3 > 0, "平盘上涨应得正分"
+    
+    # 平盘下跌情况
+    final_score4, _, _, _ = engine.calculate_true_dragon_score(
+        net_inflow=50000000,
+        price=23.0,       # 当前<昨收
+        prev_close=24.0,
+        high=23.0,
+        low=23.0,
+        flow_5min=10000000,
+        flow_15min=12000000,
+        flow_5min_median_stock=1000000,
+        space_gap_pct=0.08,
+        float_volume_shares=100000000,
+        current_time=datetime(2026, 2, 27, 10, 0, 0)
+    )
+    print(f"  平盘且价格<昨收，得分: {final_score4:.2f}")
+    # 平盘下跌，momentum_score=0，只剩动能和势能分
+    assert final_score4 < final_score3, "平盘下跌应得更低分"
+    print("  ✅ 通过")
+    
+>>>>>>> 4ebbab7 (V20纯血架构重构：动能势能双轨Ratio化+战法分流+VWAP宽容)
     print("\n" + "=" * 70)
     print("✅ 所有单元测试通过！V18核心引擎已就绪。")
     print("=" * 70)

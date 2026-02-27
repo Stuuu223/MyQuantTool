@@ -507,6 +507,150 @@ class TradeGatekeeper:
         
         return opportunities_final, opportunities_blocked, timing_downgraded
 
+    # =========================================================================
+    # CTO终极红线: Step 5 - 守门人动态防守 + VWAP宽容判定
+    # =========================================================================
+
+    def veto_spike_trap(self, pullback_ratio: float, change_pct: float) -> Tuple[bool, str]:
+        """
+        尖刺骗炮拦截器
+        
+        逻辑: pullback_ratio > 0.3 且 涨幅 < 8%
+        这种形态是典型的"尖刺骗炮"，上拉后快速回落，属于诱多陷阱
+        
+        Args:
+            pullback_ratio: 回落比例 (0.0 ~ 1.0)
+            change_pct: 当前涨幅 (小数形式, 如 0.05 表示 5%)
+            
+        Returns:
+            (是否拦截, 原因)
+        """
+        if pullback_ratio > 0.3 and change_pct < 0.08:
+            reason = f"Veto: 尖刺骗炮 (回落{pullback_ratio:.1%}, 涨幅{change_pct:.1%})"
+            logger.warning(f"🚫 [尖刺骗炮拦截] {reason}")
+            return True, reason
+        return False, ""
+
+    def veto_capital_flee(self, sustain_ratio: float) -> Tuple[bool, str]:
+        """
+        抽水跑路拦截器
+        
+        逻辑: sustain_ratio < 1.0
+        资金持续性不足，主力可能在抽水跑路
+        
+        Args:
+            sustain_ratio: 资金持续比 (进攻段/蓄势段)
+            
+        Returns:
+            (是否拦截, 原因)
+        """
+        if sustain_ratio < 1.0:
+            reason = f"Veto: 资金抽水 (持续比{sustain_ratio:.2f} < 1.0)"
+            logger.warning(f"🚫 [抽水跑路拦截] {reason}")
+            return True, reason
+        return False, ""
+
+    def veto_vwap_break(self, current_price: float, vwap: float, 
+                        flow_5min: float, sustain_ratio: float) -> Tuple[bool, str]:
+        """
+        VWAP宽容防线 - 【Boss核心点】
+        
+        废除"跌破VWAP即死刑"的粗暴逻辑，识别洗盘坑 vs 真破位
+        
+        逻辑:
+        如果 current_price < vwap (跌破VWAP):
+            - 且 flow_5min < 0 (放量砸盘) -> 真破位，拦截
+            - 且 flow_5min >= 0 (缩量洗盘) 且 sustain_ratio > 1.2 (后续接力强) 
+              -> 假破位，是黄金坑！放行
+              
+        Args:
+            current_price: 当前价格
+            vwap: VWAP均价
+            flow_5min: 5分钟资金流 (负值表示流出/砸盘)
+            sustain_ratio: 资金持续比
+            
+        Returns:
+            (是否拦截, 原因)
+            注意: 返回 True 表示拦截，False 表示放行
+        """
+        if current_price < vwap:
+            price_gap = (vwap - current_price) / vwap
+            
+            if flow_5min < 0:
+                # 放量砸盘，真破位
+                reason = f"Veto: 破位派发 (价{vwap:.2f}->{current_price:.2f}, 落差{price_gap:.2%}, 5分资金{flow_5min:.0f}万)"
+                logger.warning(f"🚫 [VWAP破位拦截] {reason}")
+                return True, reason
+            elif flow_5min >= 0 and sustain_ratio > 1.2:
+                # 缩量洗盘 + 后续接力强 = 黄金坑！放行
+                reason = f"Pass: 健康洗盘坑 (价{vwap:.2f}->{current_price:.2f}, 5分资金{flow_5min:.0f}万, 持续比{sustain_ratio:.2f})"
+                logger.info(f"✅ [VWAP宽容放行] {reason}")
+                return False, reason  # 不拦截，放行
+            else:
+                # 其他情况：跌破VWAP但不符合放行条件，保守拦截
+                reason = f"Veto: VWAP跌破 (价{vwap:.2f}->{current_price:.2f}, 条件不足)"
+                logger.warning(f"🚫 [VWAP跌破拦截] {reason}")
+                return True, reason
+        
+        # 价格在VWAP之上，不拦截
+        return False, ""
+
+    def gatekeeper_check(self, score_data: Dict) -> Tuple[bool, str]:
+        """
+        守门人总入口 - CTO终极红线 Step 5
+        
+        依次执行三斧拦截:
+        1. 尖刺骗炮拦截 (veto_spike_trap)
+        2. 抽水跑路拦截 (veto_capital_flee)
+        3. VWAP宽容判定 (veto_vwap_break)
+        
+        Args:
+            score_data: 评分数据字典，包含以下字段:
+                - pullback_ratio: 回落比例
+                - change_pct: 当前涨幅 (小数形式)
+                - sustain_ratio: 资金持续比
+                - current_price: 当前价格
+                - vwap: VWAP均价
+                - flow_5min: 5分钟资金流
+                - stock_code: 股票代码 (可选，用于日志)
+                
+        Returns:
+            (是否通过, 原因)
+            通过返回 (True, "Pass: 守门人检查通过")
+            拦截返回 (False, "Veto: xxx")
+        """
+        stock_code = score_data.get('stock_code', 'UNKNOWN')
+        logger.info(f"🔒 [守门人检查] 开始检查 {stock_code}")
+        
+        # ========== 第1斧: 尖刺骗炮拦截 ==========
+        pullback_ratio = score_data.get('pullback_ratio', 0.0)
+        change_pct = score_data.get('change_pct', 0.0)
+        
+        is_veto, reason = self.veto_spike_trap(pullback_ratio, change_pct)
+        if is_veto:
+            return False, reason
+        
+        # ========== 第2斧: 抽水跑路拦截 ==========
+        sustain_ratio = score_data.get('sustain_ratio', 999.0)
+        
+        is_veto, reason = self.veto_capital_flee(sustain_ratio)
+        if is_veto:
+            return False, reason
+        
+        # ========== 第3斧: VWAP宽容判定 ==========
+        current_price = score_data.get('current_price', 0.0)
+        vwap = score_data.get('vwap', 0.0)
+        flow_5min = score_data.get('flow_5min', 0.0)
+        
+        # 复用sustain_ratio，如果前面检查过
+        is_veto, reason = self.veto_vwap_break(current_price, vwap, flow_5min, sustain_ratio)
+        if is_veto:
+            return False, reason
+        
+        # 全部通过
+        logger.info(f"✅ [守门人检查] {stock_code} 通过所有检查")
+        return True, "Pass: 守门人检查通过"
+
 
 # =============================================================================
 # 订单级别检查（与trade_interface.py集成）

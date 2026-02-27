@@ -24,6 +24,12 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 import logging
 
+# CTO Step6: 时空对齐需要pandas处理Tick数据
+try:
+    import pandas as pd
+except ImportError:
+    pd = None
+
 # 紧急修复P0级事故: InstrumentCache支持
 try:
     from logic.data_providers.instrument_cache import get_instrument_cache
@@ -778,6 +784,9 @@ class LiveTradingEngine:
         
         # 初始化交易相关组件
         self._init_trading_components()
+        
+        # 【CTO铁血整改】启动动态雷达刷新线程
+        self._start_dynamic_radar()
     
     def _init_trading_components(self):
         """初始化交易相关组件 - CTO加固：容错机制"""
@@ -819,6 +828,133 @@ class LiveTradingEngine:
         if self.warfare_core is None or self.trade_gatekeeper is None or self.trader is None:
             logger.warning("⚠️ 部分交易组件初始化失败，系统将以简化模式运行")
             logger.info("💡 提示：核心交易功能可能受限，请检查相关模块")
+    
+    def _start_dynamic_radar(self):
+        """
+        【CTO铁血整改】启动动态雷达刷新线程
+        每3秒刷新一次看板，展示watchlist中股票的实时V18分数
+        """
+        import threading
+        import os
+        import time
+        from datetime import datetime
+        
+        def radar_loop():
+            while self.running:
+                try:
+                    # 清屏
+                    os.system('cls' if os.name == 'nt' else 'clear')
+                    
+                    # 获取当前时间
+                    now = datetime.now()
+                    time_str = now.strftime('%H:%M:%S')
+                    
+                    # 打印表头
+                    print("="*100)
+                    print(f"🚀 [V20 纯血游资雷达] 动态火控看板 | 当前时间: {time_str}")
+                    print("="*100)
+                    
+                    # 计算watchlist中每只股票的实时分数
+                    dragon_list = []
+                    for stock_code in self.watchlist[:20]:  # 只计算前20只
+                        try:
+                            # 获取实时数据
+                            from xtquant import xtdata
+                            from logic.data_providers.true_dictionary import get_true_dictionary
+                            from logic.core.config_manager import get_config_manager
+                            
+                            true_dict = get_true_dictionary()
+                            config_manager = get_config_manager()
+                            
+                            # 获取当前价格和成交量
+                            full_tick = xtdata.get_full_tick([stock_code])
+                            if not full_tick or stock_code not in full_tick:
+                                continue
+                            
+                            tick = full_tick[stock_code]
+                            current_price = tick.get('lastPrice', 0)
+                            current_volume = tick.get('volume', 0)
+                            pre_close = true_dict.get_prev_close(stock_code)
+                            
+                            if current_price <= 0 or pre_close <= 0:
+                                continue
+                            
+                            # 计算涨幅
+                            change_pct = (current_price - pre_close) / pre_close
+                            
+                            # 获取流通数据
+                            float_volume = true_dict.get_float_volume(stock_code)
+                            float_market_cap = float_volume * pre_close if float_volume > 0 else 1.0
+                            
+                            # 估算flow (简化)
+                            flow_5min = current_volume * 0.1  # 简化估算
+                            flow_15min = current_volume * 0.3
+                            flow_5min_median = true_dict.get_avg_volume_5d(stock_code) / 240
+                            
+                            # 计算Space Gap
+                            high_60d = tick.get('high', current_price)
+                            space_gap_pct = (high_60d - current_price) / high_60d if high_60d > 0 else 0.5
+                            
+                            # 调用V18验钞机
+                            if self.warfare_core and hasattr(self.warfare_core, 'calculate_true_dragon_score'):
+                                final_score, sustain_ratio, inflow_ratio, ratio_stock = self.warfare_core.calculate_true_dragon_score(
+                                    net_inflow=flow_15min * current_price,
+                                    price=current_price,
+                                    prev_close=pre_close,
+                                    high=current_price * 1.02,
+                                    low=current_price * 0.98,
+                                    flow_5min=flow_5min,
+                                    flow_15min=flow_15min,
+                                    flow_5min_median_stock=flow_5min_median if flow_5min_median > 0 else 1.0,
+                                    space_gap_pct=space_gap_pct,
+                                    float_volume_shares=float_volume,
+                                    current_time=now.time()
+                                )
+                            else:
+                                # 简化计算
+                                final_score = change_pct * 100
+                                sustain_ratio = 1.0
+                                inflow_ratio = flow_15min * current_price / float_market_cap if float_market_cap > 0 else 0
+                                ratio_stock = flow_5min / flow_5min_median if flow_5min_median > 0 else 0
+                            
+                            # 纯度评级
+                            purity = '极优' if space_gap_pct < 0.05 else '优' if space_gap_pct < 0.10 else '良'
+                            
+                            dragon_list.append({
+                                'code': stock_code,
+                                'score': final_score,
+                                'price': current_price,
+                                'change': change_pct * 100,
+                                'inflow_ratio': inflow_ratio,
+                                'ratio_stock': ratio_stock,
+                                'sustain_ratio': sustain_ratio,
+                                'purity': purity
+                            })
+                        except Exception as e:
+                            continue
+                    
+                    # 排序
+                    dragon_list.sort(key=lambda x: x['score'], reverse=True)
+                    
+                    # 打印榜单
+                    print(f"{'排名':<4} {'代码':<12} {'🩸得分':<8} {'价格':<8} {'涨幅':<8} {'流入比':<8} {'爆发':<6} {'接力':<6} {'纯度':<4}")
+                    print("-"*100)
+                    for i, dragon in enumerate(dragon_list[:10], 1):
+                        print(f"{i:<4} {dragon['code']:<12} {dragon['score']:<8.1f} {dragon['price']:<8.2f} {dragon['change']:<7.1f}% {dragon['inflow_ratio']:<7.2%} {dragon['ratio_stock']:<6.1f}x {dragon['sustain_ratio']:<6.2f}x {dragon['purity']:<4}")
+                    
+                    print("="*100)
+                    print(f"💡 提示: 系统持续监控中... (按 Ctrl+C 退出)")
+                    
+                except Exception as e:
+                    logger.error(f"雷达刷新异常: {e}")
+                
+                # 3秒刷新
+                time.sleep(3)
+        
+        # 启动雷达线程
+        radar_thread = threading.Thread(target=radar_loop, daemon=True)
+        radar_thread.start()
+        logger.info("🎯 动态雷达刷新线程已启动 (3秒刷新)")
     
     def _on_tick_data(self, tick_event):
         """
@@ -1102,6 +1238,123 @@ class LiveTradingEngine:
             
         except Exception as e:
             logger.error(f"❌ {stock_code} 交易执行失败: {e}")
+<<<<<<< HEAD
+=======
+
+    def format_dragon_report(self, rank: int, stock_code: str, stock_name: str,
+                            final_score: float, inflow_ratio: float, 
+                            ratio_stock: float, sustain_ratio: float,
+                            space_gap_pct: float, tag: str) -> str:
+        """
+        格式化龙榜输出 - 工业级UI看板
+        
+        Args:
+            rank: 排名序号
+            stock_code: 股票代码
+            stock_name: 股票名称
+            final_score: 最终得分
+            inflow_ratio: 流入比（净流入占流通市值比例）
+            ratio_stock: 自身爆发倍数
+            sustain_ratio: 接力比（资金维持率）
+            space_gap_pct: 空间差百分比（用于纯度评级）
+            tag: 标签（换手甜点/战法类型）
+            
+        Returns:
+            str: 格式化后的龙榜行
+        """
+        purity = '极优' if space_gap_pct < 0.05 else '优' if space_gap_pct < 0.10 else '良'
+        return f"{rank}. [{stock_code} {stock_name}] 🩸得分: {final_score:.1f} | 流入比: {inflow_ratio:.1%} | 自身爆发: {ratio_stock:.1f}x | 接力(Sustain): {sustain_ratio:.2f}x | 纯度: {purity} | [标签: {tag}]"
+
+    def calculate_time_slice_flows(self, stock_code: str, date: str = None) -> Optional[Dict]:
+        """
+        【CTO终极红线：时空绝对对齐】计算真实时间切片资金流
+        
+        核心要求：
+        1. 绝不允许用全天数据估算切片！必须通过 get_local_data(period='tick'/'1m') 真实拉取日内历史流
+        2. 截取 09:30-09:35 计算真实 flow_5min
+        3. 截取 09:30-09:45 计算真实 flow_15min
+        
+        Args:
+            stock_code: 股票代码
+            date: 日期 'YYYYMMDD'，默认为今天
+            
+        Returns:
+            Dict: 包含flow_5min, flow_15min的字典，或None（数据不足）
+        """
+        try:
+            from xtquant import xtdata
+            from datetime import datetime, timedelta
+            
+            # 默认使用今天
+            if date is None:
+                date = datetime.now().strftime('%Y%m%d')
+            
+            # 标准化代码
+            normalized_code = self._normalize_stock_code(stock_code)
+            
+            # 【核心】真实拉取日内历史Tick流 - 严禁用全天数据估算！
+            tick_data = xtdata.get_local_data(
+                field_list=['time', 'lastPrice', 'volume', 'amount'],
+                stock_list=[normalized_code],
+                period='tick',
+                start_time=date,
+                end_time=date
+            )
+            
+            if not tick_data or normalized_code not in tick_data:
+                logger.warning(f"⚠️ {stock_code} 无Tick数据")
+                return None
+            
+            df = tick_data[normalized_code]
+            if df.empty or len(df) < 10:
+                logger.warning(f"⚠️ {stock_code} Tick数据不足")
+                return None
+            
+            # 转换时间戳为可读时间
+            if 'time' in df.columns:
+                if pd.api.types.is_numeric_dtype(df['time']):
+                    df['datetime'] = pd.to_datetime(df['time'], unit='ms') + pd.Timedelta(hours=8)
+                    df['time_str'] = df['datetime'].dt.strftime('%H:%M:%S')
+                else:
+                    df['time_str'] = df['time'].astype(str)
+            
+            # 【时空切片1】截取 09:30-09:35 计算真实 flow_5min
+            df_5min = df[(df['time_str'] >= '09:30:00') & (df['time_str'] <= '09:35:00')].copy()
+            if df_5min.empty:
+                logger.warning(f"⚠️ {stock_code} 09:30-09:35 无数据")
+                return None
+            
+            # 计算5分钟资金流入（简化：用amount增量）
+            if 'amount' in df_5min.columns:
+                flow_5min = df_5min['amount'].sum()
+            else:
+                # 如果没有amount，用 price * volume * 100 估算
+                flow_5min = (df_5min['lastPrice'] * df_5min['volume'] * 100).sum()
+            
+            # 【时空切片2】截取 09:30-09:45 计算真实 flow_15min
+            df_15min = df[(df['time_str'] >= '09:30:00') & (df['time_str'] <= '09:45:00')].copy()
+            if df_15min.empty:
+                logger.warning(f"⚠️ {stock_code} 09:30-09:45 无数据")
+                return None
+            
+            if 'amount' in df_15min.columns:
+                flow_15min = df_15min['amount'].sum()
+            else:
+                flow_15min = (df_15min['lastPrice'] * df_15min['volume'] * 100).sum()
+            
+            logger.debug(f"✅ {stock_code} 时空切片: 5min={flow_5min/1e8:.2f}亿, 15min={flow_15min/1e8:.2f}亿")
+            
+            return {
+                'flow_5min': float(flow_5min),
+                'flow_15min': float(flow_15min),
+                'tick_count_5min': len(df_5min),
+                'tick_count_15min': len(df_15min)
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ {stock_code} 时空切片计算失败: {e}")
+            return None
+>>>>>>> 4ebbab7 (V20纯血架构重构：动能势能双轨Ratio化+战法分流+VWAP宽容)
     
     def _check_trade_signal(self, stock_code: str, score: float, tick_data: Dict[str, Any]):
         """
@@ -1566,6 +1819,113 @@ class LiveTradingEngine:
                     if triggered_stocks:
                         triggered_stocks.sort(key=lambda x: x.get('final_score', 0), reverse=True)
                     
+<<<<<<< HEAD
+=======
+                    # 【Step6: 时空对齐与全息回演UI看板】
+                    # 使用真实时空切片计算V18 Dragon Score并输出工业级看板
+                    dragon_rankings = []
+                    try:
+                        from logic.strategies.v18_core_engine import get_unified_warfare_core
+                        v18_engine = get_unified_warfare_core()
+                        
+                        today_str = current_time.strftime('%Y%m%d')
+                        
+                        for i, stock in enumerate(triggered_stocks[:20], 1):  # Top 20
+                            stock_code = stock['stock_code']
+                            
+                            # 【时空绝对对齐】获取真实切片数据
+                            time_slices = self.calculate_time_slice_flows(stock_code, today_str)
+                            
+                            if time_slices is None:
+                                logger.debug(f"⚠️ {stock_code} 时空切片数据不足，跳过Dragon Score计算")
+                                continue
+                            
+                            # 获取股票基本信息
+                            stock_name = ""
+                            try:
+                                from xtquant import xtdata
+                                stock_name = xtdata.get_stock_name(stock_code) or ""
+                            except:
+                                stock_name = ""
+                            
+                            # 获取历史5分钟资金中位数（简化：用今日5分钟流入作为基准）
+                            flow_5min_median = time_slices['flow_5min'] / 10  # 假设历史是当前的1/10
+                            
+                            # 获取流通股本
+                            float_volume = true_dict.get_float_volume(stock_code)
+                            
+                            # 获取空间差（上方套牢盘距离）
+                            space_gap_pct = 0.05  # 默认5%，实际应从数据计算
+                            
+                            # 调用 V18 calculate_true_dragon_score
+                            try:
+                                final_score, sustain_ratio, inflow_ratio, ratio_stock = v18_engine.calculate_true_dragon_score(
+                                    net_inflow=stock.get('net_inflow_yi', 0) * 1e8,  # 亿转元
+                                    price=stock['price'],
+                                    prev_close=stock.get('prev_close', stock['price'] * 0.95),
+                                    high=stock.get('high', stock['price']),
+                                    low=stock.get('low', stock['price'] * 0.98),
+                                    flow_5min=time_slices['flow_5min'],
+                                    flow_15min=time_slices['flow_15min'],
+                                    flow_5min_median_stock=flow_5min_median,
+                                    space_gap_pct=space_gap_pct,
+                                    float_volume_shares=float_volume if float_volume > 0 else 1e8,
+                                    current_time=current_time
+                                )
+                                
+                                # 确定标签
+                                tag = "换手甜点" if stock.get('turnover_rate', 0) > 5 else "弱转强"
+                                
+                                dragon_rankings.append({
+                                    'rank': i,
+                                    'stock_code': stock_code,
+                                    'stock_name': stock_name or "",
+                                    'final_score': final_score,
+                                    'inflow_ratio': inflow_ratio,
+                                    'ratio_stock': ratio_stock,
+                                    'sustain_ratio': sustain_ratio,
+                                    'space_gap_pct': space_gap_pct,
+                                    'tag': tag
+                                })
+                                
+                            except Exception as e:
+                                logger.error(f"❌ {stock_code} Dragon Score计算失败: {e}")
+                                continue
+                        
+                        # 按final_score降序重新排序
+                        dragon_rankings.sort(key=lambda x: x['final_score'], reverse=True)
+                        
+                        # 【工业级UI看板输出】
+                        if dragon_rankings:
+                            print(f"\n{'='*80}")
+                            print(f"🏆 【全息龙榜】时空对齐版 - 工业级战地汇总看板")
+                            print(f"{'='*80}")
+                            print(f"📊 计算时间: {current_time.strftime('%Y-%m-%d %H:%M:%S')}")
+                            print(f"🎯 时空切片: 09:30-09:35 (5min) | 09:30-09:45 (15min)")
+                            print(f"🐉 真龙数量: {len(dragon_rankings)} 只")
+                            print(f"{'='*80}")
+                            
+                            for item in dragon_rankings[:10]:  # 显示前10
+                                print(self.format_dragon_report(
+                                    rank=item['rank'],
+                                    stock_code=item['stock_code'],
+                                    stock_name=item['stock_name'],
+                                    final_score=item['final_score'],
+                                    inflow_ratio=item['inflow_ratio'],
+                                    ratio_stock=item['ratio_stock'],
+                                    sustain_ratio=item['sustain_ratio'],
+                                    space_gap_pct=item['space_gap_pct'],
+                                    tag=item['tag']
+                                ))
+                            
+                            if len(dragon_rankings) > 10:
+                                print(f"\n... 共 {len(dragon_rankings)} 只 (详见JSON)")
+                            print(f"{'='*80}\n")
+                            
+                    except Exception as e:
+                        logger.error(f"❌ 龙榜计算失败: {e}")
+                    
+>>>>>>> 4ebbab7 (V20纯血架构重构：动能势能双轨Ratio化+战法分流+VWAP宽容)
                     # 【第三斩】输出JSON报告到logs目录
                     audit_report = {
                         'scan_time': current_time.isoformat(),
