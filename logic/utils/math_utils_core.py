@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 数学工具库 - CTO防御性编程：反混淆与防降级
@@ -288,8 +288,6 @@ def safe_calculate_estimated_volume(current_volume_shou: float, minutes_passed: 
     minutes_passed = min(minutes_passed, 240.0)
     
     return (current_volume_shou / minutes_passed) * 240.0
-<<<<<<< HEAD
-=======
 
 
 def calculate_estimated_flow(volume_delta: float, price: float, float_volume_shares: float) -> float:
@@ -406,4 +404,3 @@ def calculate_pullback_ratio(high_price: float, current_price: float, pre_close:
     pullback = ((max_gain - current_gain) / max_gain) * 100.0
     
     return float(max(0.0, min(pullback, 200.0)))  # 限制在0-200%范围内
->>>>>>> 4ebbab7 (V20纯血架构重构：动能势能双轨Ratio化+战法分流+VWAP宽容)

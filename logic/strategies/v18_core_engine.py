@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 V18核心算子引擎 - 无状态数学计算模块
@@ -237,8 +237,6 @@ class V18CoreEngine:
         decay_ratio = self.get_time_decay_ratio(timestamp)
         return float(base_score * decay_ratio)
     
-<<<<<<< HEAD
-=======
     def calculate_true_dragon_score(
         self,
         net_inflow: float,
@@ -364,7 +362,6 @@ class V18CoreEngine:
         final_score = round(base_score * multiplier, 2)
         return final_score, sustain_ratio, inflow_ratio, ratio_stock
     
->>>>>>> 4ebbab7 (V20纯血架构重构：动能势能双轨Ratio化+战法分流+VWAP宽容)
     def calculate_volume_ratio(
         self,
         current_volume: Union[int, float],
@@ -482,11 +479,7 @@ if __name__ == "__main__":
         turnover_rate_per_min=0.3  # > 0.2
     )
     print(f"  涨幅5.5%, 量比2.5, 换手0.3%/min -> 基础分: {score1:.2f}")
-<<<<<<< HEAD
-    assert score1 > 27.5, "通过过滤的分数应该>27.5"
-=======
     assert score1 >= 27.5, "通过过滤的分数应该>=27.5"
->>>>>>> 4ebbab7 (V20纯血架构重构：动能势能双轨Ratio化+战法分流+VWAP宽容)
     print("  ✅ 通过")
     
     # 测试2: 基础分计算（未通过过滤）
@@ -537,28 +530,6 @@ if __name__ == "__main__":
     # 测试6: 向量化量比计算
     print("\n【测试6】向量化量比计算（Pandas）")
     import pandas as pd
-<<<<<<< HEAD
-    df = pd.DataFrame({
-        'time': ['09:30:00', '09:31:00', '09:32:00', '09:33:00', '09:34:00'],
-        'volume': [1000, 2000, 3000, 4000, 5000]
-    })
-    df_result = engine.calculate_volume_ratio_with_progress(df, avg_volume_5d=100000)
-    print(f"  DataFrame列: {list(df_result.columns)}")
-    print(f"  最后一行动态量比: {df_result['dynamic_volume_ratio'].iloc[-1]:.2f}")
-    assert 'dynamic_volume_ratio' in df_result.columns
-    print("  ✅ 通过")
-    
-    # 测试7: 寻找起爆点
-    print("\n【测试7】向量化寻找起爆点")
-    df2 = pd.DataFrame({
-        'time': ['09:30:00', '09:31:00', '09:32:00', '09:33:00', '09:34:00'],
-        'dynamic_volume_ratio': [0.5, 0.7, 0.9, 1.2, 1.5]  # 09:33突破0.95
-    })
-    breakout = engine.find_breakout_point(df2, volume_ratio_threshold=0.95)
-    print(f"  起爆点: {breakout}")
-    assert breakout is not None, "应该找到起爆点"
-    assert breakout['timestamp'] == '09:33:00', "起爆时间应该是09:33:00"
-=======
     volume_series = pd.Series([1000, 2000, 3000, 4000, 5000])
     ratio_series = engine.calculate_volume_ratio(
         current_volume=volume_series,
@@ -569,7 +540,6 @@ if __name__ == "__main__":
     print(f"  最后一行动态量比: {ratio_series.iloc[-1]:.2f}")
     assert len(ratio_series) == 5, "向量化计算应返回等长序列"
     assert ratio_series.iloc[-1] > 0, "量比应为正数"
->>>>>>> 4ebbab7 (V20纯血架构重构：动能势能双轨Ratio化+战法分流+VWAP宽容)
     print("  ✅ 通过")
     
     # 测试8: 配置读取验证
@@ -580,8 +550,6 @@ if __name__ == "__main__":
     print(f"  极端量比奖励阈值: {engine.extreme_volume_ratio}")
     print("  ✅ 配置读取正常")
     
-<<<<<<< HEAD
-=======
     # 测试9: True Dragon Score - 完美起爆场景
     print("\n【测试9】True Dragon Score - 完美起爆场景")
     test_time = datetime(2026, 2, 27, 9, 35, 0)  # 早盘9:35
@@ -672,7 +640,6 @@ if __name__ == "__main__":
     assert final_score4 < final_score3, "平盘下跌应得更低分"
     print("  ✅ 通过")
     
->>>>>>> 4ebbab7 (V20纯血架构重构：动能势能双轨Ratio化+战法分流+VWAP宽容)
     print("\n" + "=" * 70)
     print("✅ 所有单元测试通过！V18核心引擎已就绪。")
     print("=" * 70)

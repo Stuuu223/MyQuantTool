@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 统一战法核心模块 (Unified Warfare Core) - V20 Step3 形态基因与战法分流
@@ -20,11 +20,7 @@ Version: V20.3.0
 Date: 2026-02-27
 """
 
-<<<<<<< HEAD
-from typing import Dict, List, Optional, Any, Callable
-=======
 from typing import Dict, List, Optional, Any, Callable, Tuple
->>>>>>> 4ebbab7 (V20纯血架构重构：动能势能双轨Ratio化+战法分流+VWAP宽容)
 from datetime import datetime
 from enum import Enum
 
