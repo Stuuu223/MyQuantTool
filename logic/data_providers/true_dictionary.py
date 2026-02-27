@@ -407,10 +407,21 @@ class TrueDictionary:
                 failed = len(stock_list)
                 logger.error(f"[ATR调试-致命] xtdata.get_local_data返回None或空字典!")
             
+            # 【CTO修复】为所有股票设置默认ATR值(0.05 = 5%日波动)
+            # 确保即使QMT数据缺失,系统也能继续运行
+            for stock_code in stock_list:
+                if stock_code not in self._atr_20d_map:
+                    self._atr_20d_map[stock_code] = 0.05  # 默认5%日波动
+            
             elapsed = (time.perf_counter() - start) * 1000
             
-            print(f"[QMT本地] ATR_20D计算完成: {success}只成功")
-            logger.info(f"[QMT本地] ATR_20D计算完成: {success}只成功,耗时{elapsed:.1f}ms")
+            # 【CTO修正】如果使用默认值的超过50%，必须报严重警告
+            if success < len(stock_list) * 0.5:
+                logger.error(f"❌ [数据断层致命告警] {len(stock_list)-success} 只股票丢失真实日K！被迫启用 0.05 盲狙默认值！这极度危险！")
+                print(f"❌ [QMT本地] ATR_20D计算: {success}只真实数据, {len(stock_list)-success}只使用默认值(极度危险！)")
+            else:
+                logger.info(f"✅ [QMT本地] ATR_20D计算完成: {success}只成功,{len(stock_list)-success}只使用默认值,耗时{elapsed:.1f}ms")
+                print(f"[QMT本地] ATR_20D计算完成: {success}只成功, {len(stock_list)-success}只使用默认值")
             
             return {
                 'source': 'QMT本地日K数据',

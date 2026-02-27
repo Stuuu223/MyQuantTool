@@ -90,6 +90,10 @@ class LiveTradingEngine:
         self.trade_gatekeeper = None
         self.trader = None
         
+        # 【CTO挂载】微积分形态学引擎 - 时空对齐 (管理多个股票实例)
+        self.kinetic_engines: Dict[str, Any] = {}
+        self._init_kinetic_engine()
+        
         # 【架构解耦】初始化QMT事件适配器
         self._init_qmt_adapter()
         
@@ -98,6 +102,30 @@ class LiveTradingEngine:
             self._init_event_bus()
         
         logger.info("✅ [LiveTradingEngine] 初始化完成 - QMT Manager已注入")
+    
+    def _init_kinetic_engine(self):
+        """【CTO挂载】初始化微积分形态学引擎管理器 - 时空对齐"""
+        try:
+            from logic.execution.kinetic_engine import KineticEngine
+            self.kinetic_engine_class = KineticEngine
+            self.kinetic_engines = {}  # {stock_code: engine_instance}
+            logger.info("🎯 [时空对齐] KineticEngine微积分引擎管理器已挂载")
+        except Exception as e:
+            logger.error(f"❌ KineticEngine挂载失败: {e}")
+            self.kinetic_engine_class = None
+            self.kinetic_engines = {}
+    
+    def _get_kinetic_engine(self, stock_code: str):
+        """获取或创建股票的KineticEngine实例"""
+        if not self.kinetic_engine_class:
+            return None
+        if stock_code not in self.kinetic_engines:
+            try:
+                self.kinetic_engines[stock_code] = self.kinetic_engine_class(stock_code)
+            except Exception as e:
+                logger.debug(f"⚠️ 创建KineticEngine失败 {stock_code}: {e}")
+                return None
+        return self.kinetic_engines[stock_code]
     
     def _init_event_bus(self):
         """初始化EventBus"""
@@ -1072,6 +1100,28 @@ class LiveTradingEngine:
                 return  # 微观防线拦截
             
             # ============================================================
+            # 【CTO挂载】Phase 2 Step 5.5: 微积分形态学引擎 - 时空对齐
+            # ============================================================
+            kinetic_engine = self._get_kinetic_engine(stock_code)
+            if kinetic_engine:
+                # 将Tick喂给微积分引擎
+                kinetic_engine.on_price_update(now, tick_event.price, tick_event.high)
+                
+                # 检测是否尖刺骗炮(Spike Trap)
+                result = kinetic_engine.on_price_update(now, tick_event.price, tick_event.high)
+                if result and result.get('is_trap', False):
+                    logger.error(f"💀 {stock_code} 尖刺骗炮(Spike) detected! 时空否决！")
+                    # 打上标签并跳过
+                    tick_data['tag'] = "💀 尖刺骗炮(Spike)"
+                    return  # 直接处决，不进入V18算分
+                
+                # 检测生命周期T_maintain
+                if hasattr(kinetic_engine, 'lifecycle_tracker'):
+                    status = kinetic_engine.lifecycle_tracker.get_status()
+                    if status and status.maintain_minutes < 11:
+                        logger.warning(f"⏱️ {stock_code} 生命周期T_maintain={status.maintain_minutes} < 11min, 降权处理")
+            
+            # ============================================================
             # Phase 2 Step 6: V18引擎算分
             # ============================================================
             score = self._v18_calculate_score(stock_code, tick_data)
@@ -1892,8 +1942,15 @@ class LiveTradingEngine:
                             except:
                                 stock_name = ""
                             
-                            # 获取历史5分钟资金中位数（简化：用今日5分钟流入作为基准）
-                            flow_5min_median = time_slices['flow_5min'] / 10  # 假设历史是当前的1/10
+                            # 【CTO修复】使用真实的5日均量计算5分钟资金中位数
+                            # 公式: 5日均量(股) / 240分钟 * 5分钟 * 股价(元) = 5分钟资金中位数(元)
+                            avg_volume_5d = true_dict.get_avg_volume_5d(stock_code)
+                            if avg_volume_5d and avg_volume_5d > 0:
+                                # 5日均量(股) -> 5分钟均量(股) -> 5分钟资金(元)
+                                flow_5min_median = (avg_volume_5d / 240 * 5) * stock['price']
+                            else:
+                                # 降级: 使用当前5分钟流入的1/10作为保守估计
+                                flow_5min_median = time_slices['flow_5min'] / 10
                             
                             # 获取流通股本
                             float_volume = true_dict.get_float_volume(stock_code)
