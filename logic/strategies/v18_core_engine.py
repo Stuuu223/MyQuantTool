@@ -372,9 +372,14 @@ class V18CoreEngine:
         # ==========================================
         # 【修复】分子必须是向上推力，不能用总振幅！过滤天地板砸盘！
         # 向上推力 = (收盘-最低 + 最高-开盘) / 2，只奖励向上的动能
-        upward_thrust = ((price - low) + (high - open_price)) / 2.0 if open_price > 0 else (high - low)
-        price_range_pct = upward_thrust / prev_close if prev_close > 0 else 0.0
-        mfe = price_range_pct / inflow_ratio if inflow_ratio > 0 else 0.0
+        # 【CTO 防御】：如果 inflow_ratio 极小或为负，保留其物理意义，但防止除零爆炸
+        if abs(inflow_ratio) < 0.001:
+            mfe = 0.0
+        else:
+            # 允许负数 MFE 存在（价格涨但资金流出 = 极端诱多抛压）
+            mfe = price_range_pct / inflow_ratio
+            # 强制限幅在 -100 到 100 之间，防止极端极值毁掉排序
+            mfe = max(-100.0, min(mfe, 100.0))
         
         final_score = round(base_score * multiplier, 2)
         return final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe

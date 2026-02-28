@@ -2018,9 +2018,12 @@ class LiveTradingEngine:
                         
                         # 【CTO重铸】工业级多维排序 (先按得分，得分相同按MFE排，再按流入比)
                         # 【修复】MFE惩罚缩量一字板：MFE>5.0说明缺乏换手，给予排序惩罚！
+                        # 【CTO 防御】：惩罚有度，底部锁死！防止高 MFE 票被扣成负数掉出榜单！
                         def get_mfe_score(mfe_val):
                             if mfe_val > 5.0:
-                                return 5.0 - (mfe_val - 5.0) * 0.1  # 超过5的部分开始倒扣
+                                # 超过 5 的部分开始打折，但最低保留 2.0 的基础权重（它毕竟涨停了）
+                                penalty_score = 5.0 - (mfe_val - 5.0) * 0.05 
+                                return max(2.0, penalty_score)
                             return mfe_val
                         
                         dragon_rankings.sort(
