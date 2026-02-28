@@ -61,27 +61,26 @@ logic/core/
 
 ### 1. 环境配置
 ```bash
-# 创建.env文件，填入token和QMT路径
+# 创建.env文件，填入token（QMT路径通过PathResolver自动解析）
 echo "TUSHARE_TOKEN=your_token" > .env
 echo "QMT_VIP_TOKEN=your_vip_token" >> .env
-echo "QMT_PATH=E:\\qmt\\userdata_mini" >> .env
 ```
 
-**数据路径说明**:
-- Tick分笔数据: `E:\qmt\userdata_mini\datadir\SH\0\600000\20260215.dat`
-- 1分钟K线: `E:\qmt\userdata_mini\datadir\SH\60\600000\20260215.dat`
-- 日K线: `E:\qmt\userdata_mini\datadir\SH\86400\600000\20260215.dat`
+**数据路径说明** (由PathResolver自动管理):
+- Tick分笔数据: `{QMT_PATH}/datadir/{SH/SZ}/0/{stock_code}/{YYYYMMDD}.dat`
+- 1分钟K线: `{QMT_PATH}/datadir/{SH/SZ}/60/{stock_code}/{YYYYMMDD}.dat`
+- 日K线: `{QMT_PATH}/datadir/{SH/SZ}/86400/{stock_code}/{YYYYMMDD}.dat`
 
 ### 2. 数据下载
 ```bash
-# 下载Tick数据 (前台透明执行)
-python main.py download --date 20251231 --type tick
+# 下载Tick数据 (前台透明执行，替换YYYYMMDD为实际日期)
+python main.py download --date YYYYMMDD --type tick
 ```
 
 ### 3. 全息时间机器 (核心功能 - 跨日连贯流)
 ```bash
-# 12月24日至1月5日跨日回测
-python main.py backtest --start_date 20251224 --end_date 20260105 --full_market --strategy v18 --save
+# 跨日回测 (替换start_date和end_date为实际日期)
+python main.py backtest --start_date YYYYMMDD --end_date YYYYMMDD --full_market --strategy v18 --save
 
 # 输出: data/backtest_out/time_machine/time_machine_YYYYMMDD.json (每日Top 20)
 #       data/backtest_out/time_machine/time_machine_summary_*.json (汇总报告)
@@ -89,8 +88,8 @@ python main.py backtest --start_date 20251224 --end_date 20260105 --full_market 
 
 ### 4. 单日验证
 ```bash
-# 单日回测 (粗筛 + 三防线)
-python main.py backtest --date 20251231 --full_market --strategy v18
+# 单日回测 (粗筛 + 三防线，替换YYYYMMDD为实际日期)
+python main.py backtest --date YYYYMMDD --full_market --strategy v18
 ```
 
 ### 5. 实盘监控
@@ -132,7 +131,7 @@ python main.py scan --help
 
 #### 1. backtest - 回测
 ```bash
-python main.py backtest --date 20260105 --universe 300986.SZ
+python main.py backtest --date YYYYMMDD --universe <STOCK_CODE>.SZ
 ```
 
 **参数**:
@@ -145,14 +144,14 @@ python main.py backtest --date 20260105 --universe 300986.SZ
 
 **示例**:
 ```bash
-# 基础回测 - 单只股票
-python main.py backtest --date 20260105 --universe 300986.SZ
+# 基础回测 - 单只股票 (替换YYYYMMDD和STOCK_CODE)
+python main.py backtest --date YYYYMMDD --universe <STOCK_CODE>.SZ
 
 # V18策略回测
-python main.py backtest --date 20260105 --universe data/candidates.csv --strategy v18
+python main.py backtest --date YYYYMMDD --universe data/candidates.csv --strategy v18
 
 # 时间机器回测（两段式筛选）
-python main.py backtest --date 20260105 --strategy time_machine --target 300986 --save
+python main.py backtest --date YYYYMMDD --strategy time_machine --target <STOCK_CODE> --save
 ```
 
 #### 2. scan - 市场扫描
@@ -175,17 +174,17 @@ python main.py scan --mode premarket
 # 盘中扫描
 python main.py scan --mode intraday
 
-# 盘后扫描指定日期
-python main.py scan --date 20260105 --mode postmarket
+# 盘后扫描指定日期 (替换YYYYMMDD)
+python main.py scan --date YYYYMMDD --mode postmarket
 ```
 
 #### 3. analyze - 股票分析
 ```bash
-python main.py analyze --stock 300986.SZ --date 20260105
+python main.py analyze --stock <STOCK_CODE>.SZ --date YYYYMMDD
 ```
 
 **参数**:
-- `--stock`, `-s`: 股票代码 (如 300986.SZ 或 300986, 必需)
+- `--stock`, `-s`: 股票代码 (如 STOCK_CODE.SZ 或 STOCK_CODE, 必需)
 - `--date`, `-d`: 分析单个日期
 - `--start-date`: 开始日期 (与--date互斥)
 - `--end-date`: 结束日期 (与--date互斥)
@@ -193,19 +192,19 @@ python main.py analyze --stock 300986.SZ --date 20260105
 
 **示例**:
 ```bash
-# 分析单日
-python main.py analyze --stock 300986.SZ --date 20260105
+# 分析单日 (替换STOCK_CODE和YYYYMMDD)
+python main.py analyze --stock <STOCK_CODE>.SZ --date YYYYMMDD
 
 # 分析日期范围
-python main.py analyze --stock 300986.SZ --start-date 20251231 --end-date 20260105
+python main.py analyze --stock <STOCK_CODE>.SZ --start-date YYYYMMDD --end-date YYYYMMDD
 
 # 详细分析
-python main.py analyze --stock 300986.SZ --date 20260105 --detail
+python main.py analyze --stock <STOCK_CODE>.SZ --date YYYYMMDD --detail
 ```
 
 #### 4. download - 数据下载
 ```bash
-python main.py download --date 20260105 --type tick
+python main.py download --date YYYYMMDD --type tick
 ```
 
 **参数**:
@@ -219,19 +218,19 @@ python main.py download --date 20260105 --type tick
 # 下载今日所有数据
 python main.py download
 
-# 下载指定日期Tick数据
-python main.py download --date 20260105 --type tick
+# 下载指定日期Tick数据 (替换YYYYMMDD)
+python main.py download --date YYYYMMDD --type tick
 
 # 下载指定股票池数据
-python main.py download --date 20260105 --universe data/candidates.csv
+python main.py download --date YYYYMMDD --universe data/candidates.csv
 
 # 高并发下载
-python main.py download --date 20260105 --workers 8
+python main.py download --date YYYYMMDD --workers 8
 ```
 
 #### 5. verify - 数据验证
 ```bash
-python main.py verify --date 20260105
+python main.py verify --date YYYYMMDD
 ```
 
 **参数**:
@@ -244,11 +243,11 @@ python main.py verify --date 20260105
 # 验证今日数据
 python main.py verify
 
-# 验证指定日期
-python main.py verify --date 20260105
+# 验证指定日期 (替换YYYYMMDD)
+python main.py verify --date YYYYMMDD
 
 # 验证并修复
-python main.py verify --date 20260105 --fix
+python main.py verify --date YYYYMMDD --fix
 ```
 
 #### 6. monitor - 实时监控
@@ -277,7 +276,7 @@ python main.py monitor --mode auction
 
 #### 7. simulate - 历史模拟
 ```bash
-python main.py simulate --start-date 20260224 --end-date 20260228
+python main.py simulate --start-date YYYYMMDD --end-date YYYYMMDD
 ```
 
 **参数**:
@@ -288,8 +287,8 @@ python main.py simulate --start-date 20260224 --end-date 20260228
 
 **示例**:
 ```bash
-# Phase 0.5: 50样本历史回测
-python main.py simulate --start-date 20260224 --end-date 20260228
+# Phase 0.5: 50样本历史回测 (替换日期)
+python main.py simulate --start-date YYYYMMDD --end-date YYYYMMDD
 
 # Phase 3: 实盘测试
 python main.py simulate --phase 3 --watchlist data/watchlist.csv
