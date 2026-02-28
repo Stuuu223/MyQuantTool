@@ -41,6 +41,11 @@ class RollingFlowCalculator:
     pass
 
 class EventLifecycleAnalyzer:
+    def __init__(self, breakout_threshold=5.0, trap_reversal_threshold=3.0, max_drawdown_threshold=5.0):
+        self.breakout_threshold = breakout_threshold
+        self.trap_reversal_threshold = trap_reversal_threshold
+        self.max_drawdown_threshold = max_drawdown_threshold
+    
     def analyze_day(self, df, pre_close):
         return {'breakouts': [], 'traps': []}
 
