@@ -1,7 +1,7 @@
 # V20 动能架构重构 - 宏微观结合四步猎杀法
 
-**文档版本:** V20.4 大道至简·游资心法版  
-**制定日期:** 2026-02-26  
+**文档版本:** V20.5 极致全息·游资心法版  
+**制定日期:** 2026-02-27  
 **制定人:** CTO + Boss战略指导  
 **执行人:** AI项目总监 + 开发团队  
 
@@ -152,13 +152,43 @@ class KineticEnergyCalculator:
 - 规避死亡换手（<60%）
 
 **清除清单:**
-- [ ] `tasks/run_live_trading_engine.py` 中的红盘限制
-- [ ] `logic/backtest/hot_replay_engine_v20.py` 中的红盘限制
-- [ ] `logic/strategies/unified_warfare_core.py` 中的红盘评分权重
+- [x] `tasks/run_live_trading_engine.py` 中的红盘限制
+- [x] `logic/backtest/hot_replay_engine_v20.py` 中的红盘限制
+- [x] `logic/strategies/unified_warfare_core.py` 中的红盘评分权重
 
 ---
 
-## 三、参数配置（strategy_params.json）
+## 三、最新架构演进 (V20.5)
+
+### CTO终极净化 (2026-02-27)
+**最新状态:** [CTO战前终极净化] 三大边缘隐患已清除
+
+**1. MFE向上做功优化**
+- 使用 `(price-low + high-open)/2` 过滤天地板
+- 避免极端价格波动对MFE指标的干扰
+
+**2. 流入比保护**
+- 添加 `float_market_cap > 1000` 检查
+- 流入比限制在 -50%~50% 范围内
+- 防止异常值对评分系统的影响
+
+**3. MFE一字板惩罚**
+- 排序时对 MFE > 5.0 的情况进行倒扣分
+- 避免缩量秒板等无意义涨停的误判
+
+**验证结果**: 
+- MFE 指标范围回归合理区间 (0.52~1.09)
+- 两套看板结果100%一致
+
+### CTO天网对齐 (2026-02-26)
+**核心改进:** 
+- 修复MFE量纲问题
+- 统一数据源 (SSOT - Single Source of Truth)
+- ATR计算中的pre_close列缺失问题修复
+
+---
+
+## 四、参数配置（strategy_params.json）
 
 ```json
 {
@@ -193,7 +223,7 @@ class KineticEnergyCalculator:
 
 ---
 
-## 四、执行纪律与验收标准
+## 五、执行纪律与验收标准
 
 ### 总监红线:
 1. **分Phase执行** - 每完成一个Phase必须Git提交
@@ -210,16 +240,18 @@ class KineticEnergyCalculator:
 
 ---
 
-## 五、当前进度追踪
+## 六、当前进度追踪
 
 | Phase | 任务 | 状态 | 备注 |
 |-------|------|------|------|
-| Phase 0 | 肃清Magic Number | ⏳ 待执行 | 全部Ratio化 |
-| Phase 1 | 宏观势能过滤 | ⏳ 待执行 | MA5/MA10/MA20+5%换手底线 |
-| Phase 2 | 60秒极速巡航 | ⏳ 待执行 | 动态雷达活水 |
-| Phase 3 | KineticEngine | ⏳ 待执行 | 60秒滑动窗口 |
-| Phase 4 | 开火逻辑改造 | ⏳ 待执行 | 清除红盘偏见 |
+| Phase 0 | 肃清Magic Number | ✅ 已完成 | 全部Ratio化 |
+| Phase 1 | 宏观势能过滤 | ✅ 已完成 | MA5/MA10/MA20+5%换手底线 |
+| Phase 2 | 60秒极速巡航 | ✅ 已完成 | 动态雷达活水 |
+| Phase 3 | KineticEngine | ✅ 已完成 | 60秒滑动窗口 |
+| Phase 4 | 开火逻辑改造 | ✅ 已完成 | 清除红盘偏见 |
+| Phase 5 | MFE优化 | ✅ 已完成 | 天地板过滤+一字板惩罚 |
+| Phase 6 | 数据源统一 | ✅ 已完成 | SSOT原则 |
 
 ---
 
-**下一步行动:** 等待Boss/CTO确认后，调度SubAgent分Phase执行重构。
+**下一步行动:** 系统已进入稳定运行状态，重点优化回测精度和实盘表现。

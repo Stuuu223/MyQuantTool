@@ -1,7 +1,7 @@
 # 量化交易系统宪法 (System Constitution)
 
-**版本**: v9.0.0  
-**生效日期**: 2026-02-23  
+**版本**: v9.5.0  
+**生效日期**: 2026-02-27  
 **制定者**: CTO + 老板  
 **执行者**: AI开发团队
 
@@ -314,46 +314,6 @@ mask = (df['volume_ratio'] > volume_ratio_threshold) & \
 
 ---
 
-## 附录：常用接口速查
-
-### PathResolver（路径解析）
-```python
-from logic.core.path_resolver import PathResolver
-
-root = PathResolver.get_root()          # 项目根目录
-data_dir = PathResolver.get_data_dir()  # 数据目录
-config_dir = PathResolver.get_config_dir()  # 配置目录
-qmt_dir = PathResolver.get_qmt_data_dir()   # QMT数据目录
-```
-
-### MetricDefinitions（指标计算）
-```python
-from logic.core.metric_definitions import MetricDefinitions
-
-change = MetricDefinitions.TRUE_CHANGE(current, pre_close)
-gap = MetricDefinitions.GAP_UP_PREMIUM(open_price, pre_close)
-amplitude = MetricDefinitions.TRUE_AMPLITUDE(high, low, pre_close)
-vwap = MetricDefinitions.VWAP(df)
-```
-
-### SanityGuards（数据检查）
-```python
-from logic.core.sanity_guards import SanityGuards
-
-passed, errors = SanityGuards.full_sanity_check({
-    'stock_code': '300986.SZ',
-    'change_pct': 20.0,
-    'base_score': 80.0,
-    'final_score': 89.0,
-    'volume': 1000000,
-    'pre_close': 11.18
-})
-```
-
----
-
----
-
 ## 第十条：V20极致全息架构铁律（2026-02-26 CTO战略决策）
 
 ### 10.1 数据分级管理战略
@@ -451,8 +411,91 @@ price_condition = "high > pre_close"
 
 ---
 
+## 第十一条：V20.5 极致全息架构铁律（2026-02-27 CTO终极净化）
+
+### 11.1 CTO终极净化成果
+**最新状态**：[CTO战前终极净化] 三大边缘隐患已清除
+
+**1. MFE向上做功优化**
+- 使用 `(price-low + high-open)/2` 过滤天地板
+- 避免极端价格波动对MFE指标的干扰
+- 确保MFE指标在合理范围（0.52~1.09）
+
+**2. 流入比保护**
+- 添加 `float_market_cap > 1000` 检查
+- 流入比限制在 -50%~50% 范围内
+- 防止异常值对评分系统的影响
+
+**3. MFE一字板惩罚**
+- 排序时对 MFE > 5.0 的情况进行倒扣分
+- 避免缩量秒板等无意义涨停的误判
+- 保持评分系统的有效性
+
+**验证结果**：
+- MFE指标范围回归合理区间 (0.52~1.09)
+- 两套看板结果100%一致
+
+### 11.2 CTO天网对齐
+**核心改进**：
+- 修复MFE量纲问题
+- 统一数据源 (SSOT - Single Source of Truth)
+- 修复ATR计算中的pre_close列缺失问题
+- 确保所有计算基于同一数据源
+
+### 11.3 数据源统一(SSOT)原则
+**SSOT原则**（Single Source of Truth）：
+- 所有数据必须源自QMT本地数据
+- 不允许多数据源并存
+- 统一数据访问接口
+- 避免数据不一致性
+
+**数据流向**：
+```
+QMT本地数据 → TrueDictionary → V18CoreEngine → TradeGatekeeper
+```
+
+---
+
+## 附录：常用接口速查
+
+### PathResolver（路径解析）
+```python
+from logic.core.path_resolver import PathResolver
+
+root = PathResolver.get_root()          # 项目根目录
+data_dir = PathResolver.get_data_dir()  # 数据目录
+config_dir = PathResolver.get_config_dir()  # 配置目录
+qmt_dir = PathResolver.get_qmt_data_dir()   # QMT数据目录
+```
+
+### MetricDefinitions（指标计算）
+```python
+from logic.core.metric_definitions import MetricDefinitions
+
+change = MetricDefinitions.TRUE_CHANGE(current, pre_close)
+gap = MetricDefinitions.GAP_UP_PREMIUM(open_price, pre_close)
+amplitude = MetricDefinitions.TRUE_AMPLITUDE(high, low, pre_close)
+vwap = MetricDefinitions.VWAP(df)
+```
+
+### SanityGuards（数据检查）
+```python
+from logic.core.sanity_guards import SanityGuards
+
+passed, errors = SanityGuards.full_sanity_check({
+    'stock_code': '300986.SZ',
+    'change_pct': 20.0,
+    'base_score': 80.0,
+    'final_score': 89.0,
+    'volume': 1000000,
+    'pre_close': 11.18
+})
+```
+
+---
+
 **本宪法是系统的最高法律，任何代码必须遵守。**
 
 **制定日期**: 2026-02-23  
-**修订日期**: 2026-02-26（V20极致全息架构）  
+**修订日期**: 2026-02-27（V20.5 极致全息架构）  
 **生效状态**: 立即生效
