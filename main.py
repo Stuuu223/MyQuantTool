@@ -306,6 +306,7 @@ def backtest_cmd(ctx, date, start_date, end_date, universe, full_market, volume_
         elif strategy == 'v18':
             # V18全息回测
             from logic.backtest.behavior_replay_engine import BehaviorReplayEngine
+            from logic.data_providers.universe_builder import UniverseBuilder
             
             engine = BehaviorReplayEngine(use_sustain_filter=True)
             
@@ -317,7 +318,13 @@ def backtest_cmd(ctx, date, start_date, end_date, universe, full_market, volume_
             elif universe:
                 stocks = [universe]
             else:
-                stocks = []
+                # 【CTO修复】当universe为空时，使用UniverseBuilder获取全市场股票池
+                click.echo("🔄 使用UniverseBuilder获取全市场股票池...")
+                builder = UniverseBuilder()
+                stocks = builder.get_daily_universe(date)
+                if not stocks:
+                    click.echo(click.style("❌ UniverseBuilder返回空股票池", fg='red'))
+                    ctx.exit(1)
             
             click.echo(f"📊 加载 {len(stocks)} 只股票")
             
