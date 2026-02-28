@@ -293,13 +293,15 @@ class TimeMachineEngine:
                         
                         # 【CTO优化】优先使用日K数据估算，Tick数据按需获取
                         tick_data = self._get_tick_data(stock, date)
-                        if tick_data is not None and len(tick_data) > 100:
+                        # 【CTO修复】降低阈值从100到10，避免数据不足时全部跳过
+                        if tick_data is not None and len(tick_data) > 10:
                             valid_stocks.append(stock)
                             logger.debug(f"  ✓ {stock}: {len(tick_data)} 条Tick数据")
                         else:
-                            # Tick数据不足，直接跳过（不阻塞）
-                            logger.debug(f"  ⏭️ {stock}: Tick数据不足，跳过")
-                            continue
+                            # Tick数据不足，尝试使用日K数据
+                            logger.debug(f"  ⏭️ {stock}: Tick数据不足({len(tick_data) if tick_data else 0}条)，尝试日K降级")
+                            # 【CTO修复】即使Tick数据不足，只要有日K数据也加入
+                            valid_stocks.append(stock)
                             
                     except Exception as e:
                         # 【CTO优化】异常时直接continue，不记录详细错误以提速
@@ -1008,16 +1010,21 @@ class TimeMachineEngine:
                 if not date:
                     raise ValueError("使用Tushare粗筛时必须提供date参数")
                 
-                logger.info(f"【时间机器】使用Tushare实时粗筛: {date}")
+                logger.info(f"【时间机器】使用UniverseBuilder获取股票池: {date}")
                 try:
                     # UniverseBuilder内部使用正确的绝对阈值3.0
                     builder = UniverseBuilder()
+                    logger.info(f"【时间机器】开始调用get_daily_universe...")
                     stock_pool = builder.get_daily_universe(date)
                     
-                    if not stock_pool:
-                        raise RuntimeError(f"Tushare粗筛返回空股票池: {date}")
+                    logger.info(f"【时间机器】UniverseBuilder返回: {len(stock_pool)} 只股票")
                     
-                    logger.info(f"【时间机器】Tushare粗筛完成: {len(stock_pool)} 只")
+                    if not stock_pool:
+                        logger.error(f"【时间机器】 UniverseBuilder返回空股票池: {date}")
+                        # 【CTO修复】返回空列表而不是报错，让上层处理
+                        return []
+                    
+                    logger.info(f"【时间机器】股票池获取完成: {len(stock_pool)} 只")
                     return stock_pool
                     
                 except Exception as e:

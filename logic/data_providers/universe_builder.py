@@ -279,15 +279,26 @@ class UniverseBuilder:
         df_filtered = df_filtered[df_filtered['volume_ratio'] >= volume_ratio_threshold]
         logger.info(f"【UniverseBuilder】第二层(量比>{volume_ratio_threshold:.2f}, 右侧起爆): {len(df_filtered)} 只")
         
+        # 【CTO调试】打印量比和换手率分布
+        if len(df_filtered) > 0:
+            logger.info(f"【UniverseBuilder】量比范围: {df_filtered['volume_ratio'].min():.2f} - {df_filtered['volume_ratio'].max():.2f}")
+            logger.info(f"【UniverseBuilder】换手率范围: {df_filtered['turnover_rate'].min():.2f}% - {df_filtered['turnover_rate'].max():.2f}%")
+        
         # 第三层: 换手率过滤 (CTO换手率纠偏裁决)
         # 换手率 > 最低活跃阈值 (拒绝死水) 且 < 死亡换手率 (防范极端爆炒陷阱)
         min_turnover = self.MIN_ACTIVE_TURNOVER_RATE
         max_turnover = self.DEATH_TURNOVER_RATE
+        
+        # 【CTO调试】统计被过滤原因
+        low_turnover = len(df_filtered[df_filtered['turnover_rate'] <= min_turnover])
+        high_turnover = len(df_filtered[df_filtered['turnover_rate'] >= max_turnover])
+        
         df_filtered = df_filtered[
             (df_filtered['turnover_rate'] > min_turnover) & 
             (df_filtered['turnover_rate'] < max_turnover)
         ]
         logger.info(f"【UniverseBuilder】第三层(换手率>{min_turnover}%-<{max_turnover}%): {len(df_filtered)} 只")
+        logger.info(f"【UniverseBuilder】  被过滤: 低于{min_turnover}%有{low_turnover}只, 高于{max_turnover}%有{high_turnover}只")
         
         # 第四层: 剔除科创板(688)和北交所(8开头/4开头)
         df_filtered = df_filtered[~df_filtered['ts_code'].str.startswith('688')]
