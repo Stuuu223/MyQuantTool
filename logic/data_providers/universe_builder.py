@@ -258,6 +258,21 @@ class UniverseBuilder:
                 
                 df_basic = pd.DataFrame(stock_data)
                 logger.info(f"【UniverseBuilder】日K降级方案构建成功: {len(df_basic)} 只")
+                
+                # 【CTO修复】如果日K降级方案也失败，返回所有非ST股票（不过滤）
+                if len(df_basic) == 0:
+                    logger.warning(f"【UniverseBuilder】日K降级方案也失败，返回所有非ST股票")
+                    all_non_st_stocks = []
+                    for stock in all_stocks[:500]:  # 限制500只
+                        try:
+                            stock_name = xtdata.get_stock_name(stock) or ""
+                            if 'ST' in stock_name or 'ST' in stock or stock.startswith('8') or stock.startswith('4'):
+                                continue
+                            all_non_st_stocks.append(stock)
+                        except:
+                            continue
+                    logger.info(f"【UniverseBuilder】返回{len(all_non_st_stocks)}只非ST股票（不过滤）")
+                    return all_non_st_stocks
             
         except Exception as e:
             logger.error(f"QMT截面数据获取失败: {e}")
