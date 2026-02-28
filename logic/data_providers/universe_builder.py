@@ -162,7 +162,12 @@ class UniverseBuilder:
             for stock in all_stocks:
                 try:
                     # 获取股票基本信息
-                    stock_name = xtdata.get_stock_name(stock) or ""
+                    # 【CTO修复】get_stock_name不存在，使用get_instrument_detail
+                    try:
+                        detail = xtdata.get_instrument_detail(stock)
+                        stock_name = detail.get('StockName', '') if detail else ''
+                    except:
+                        stock_name = ''
                     
                     # 过滤掉ST股票和北交所股票
                     if 'ST' in stock_name or 'ST' in stock or stock.startswith('8') or stock.startswith('4'):
@@ -227,7 +232,12 @@ class UniverseBuilder:
                 # 【CTO铁血令】跑全量，不准切片！
                 for stock in all_stocks:
                     try:
-                        stock_name = xtdata.get_stock_name(stock) or ""
+                        # 【CTO修复】get_stock_name不存在，使用get_instrument_detail
+                        try:
+                            detail = xtdata.get_instrument_detail(stock)
+                            stock_name = detail.get('StockName', '') if detail else ''
+                        except:
+                            stock_name = ''
                         if 'ST' in stock_name or 'ST' in stock or stock.startswith('8') or stock.startswith('4'):
                             continue
 
@@ -317,7 +327,12 @@ class UniverseBuilder:
                     st_count = 0
                     for stock in all_stocks:
                         try:
-                            stock_name = xtdata.get_stock_name(stock) or ""
+                            # 【CTO修复】get_stock_name不存在，使用get_instrument_detail
+                            try:
+                                detail = xtdata.get_instrument_detail(stock)
+                                stock_name = detail.get('StockName', '') if detail else ''
+                            except:
+                                stock_name = ''
                             if 'ST' in stock_name or 'ST' in stock or stock.startswith('8') or stock.startswith('4'):
                                 st_count += 1
                                 continue
