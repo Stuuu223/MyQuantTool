@@ -264,6 +264,18 @@ class QmtDataManager:
             return self.listen_port
 
         except Exception as e:
+            # 【CTO核级重构】：捕获端口占用错误，静默处理
+            error_str = str(e)
+            if "58609" in error_str or "端口" in error_str or "port" in error_str.lower():
+                logger.warning("⚠️ VIP L2 端口已被占用，复用现有连接")
+                self._vip_initialized = True
+                QmtDataManager._vip_global_initialized = True
+                QmtDataManager._vip_global_lock = False
+                # 使用默认端口返回
+                self.listen_port = ("127.0.0.1", 58609)
+                QmtDataManager._vip_global_port = self.listen_port
+                return self.listen_port
+            
             # 【CTO 核心改动】：捕获VIP异常并降级，绝不熔断系统！
             self._vip_initialized = False
             QmtDataManager._vip_global_lock = False

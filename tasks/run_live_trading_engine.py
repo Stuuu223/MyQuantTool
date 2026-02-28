@@ -2138,16 +2138,17 @@ class LiveTradingEngine:
                                 'tag': item.get('tag', '真龙')
                             })
                         
-                        # 【强制渲染】大屏必须在热复盘完成后显示
-                        if dashboard_dragons:
-                            render_battle_dashboard(
-                                top_dragons=dashboard_dragons,
-                                title=f"🔥 热复盘战报 [{target_date_str}]",
-                                clear_screen=True
-                            )
-                            logger.info(f"✅ 【CTO强制】热复盘大屏渲染完成: {len(dashboard_dragons)} 只真龙")
-                        else:
-                            logger.warning("⚠️ 【CTO强制】无真龙数据，跳过大屏渲染")
+                        # 【CTO铁血指令】：无论结果怎样，必须把大屏拍在Boss脸上！
+                        if not dashboard_dragons:
+                            logger.warning("⚠️ 今日没有任何股票通过V18过滤条件！")
+                            # dashboard_dragons保持为空列表，但大屏必须渲染！
+                        
+                        render_battle_dashboard(
+                            top_dragons=dashboard_dragons,
+                            title=f"🔥 热复盘战报 [{target_date_str}]",
+                            clear_screen=True
+                        )
+                        logger.info(f"✅ 【CTO强制】热复盘大屏强制渲染完成: {len(dashboard_dragons)} 只真龙")
                             
                     except Exception as e:
                         logger.error(f"❌ 【CTO强制】热复盘大屏渲染失败: {e}")
