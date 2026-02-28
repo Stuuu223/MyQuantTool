@@ -727,14 +727,21 @@ class TimeMachineEngine:
             得分字典或None
         """
         try:
+            # 【CTO铁血令】所有输入参数强制类型转换，防止类型爆炸
+            def safe_float(val):
+                try:
+                    return float(val) if val is not None else 0.0
+                except (ValueError, TypeError):
+                    return 0.0
+            
             # 获取数据
             tick_data = self._get_tick_data(stock_code, date)
             
             if tick_data is None or tick_data.empty or len(tick_data) < 10:
                 return None
             
-            # 获取昨收价
-            pre_close = self._get_pre_close(stock_code, date)
+            # 获取昨收价并强制转换
+            pre_close = safe_float(self._get_pre_close(stock_code, date))
             if pre_close <= 0:
                 return None
             
@@ -847,7 +854,7 @@ class TimeMachineEngine:
                     config_manager = get_config_manager()
                     
                     # 获取5日平均成交量用于计算势能
-                    avg_volume_5d = self._get_avg_volume_5d(stock_code, date)
+                    avg_volume_5d = safe_float(self._get_avg_volume_5d(stock_code, date))
                     flow_5min_median = avg_volume_5d / 240 if avg_volume_5d > 0 else 1.0  # 5分钟中位数估算
                     
                     # 计算Space Gap (突破纯度)

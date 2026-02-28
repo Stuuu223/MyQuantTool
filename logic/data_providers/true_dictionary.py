@@ -674,8 +674,15 @@ class TrueDictionary:
         return self._down_stop_price.get(stock_code, 0.0)
     
     def get_avg_volume_5d(self, stock_code: str) -> float:
-        """获取5日平均成交量 - O(1)内存查询"""
-        return self._avg_volume_5d.get(stock_code, 0.0)
+        """获取5日平均成交量 - O(1)内存查询
+        
+        【CTO铁血令】强制转换为float，防止类型爆炸
+        """
+        try:
+            val = self._avg_volume_5d.get(stock_code, 0.0)
+            return float(val) if val is not None else 0.0
+        except (ValueError, TypeError):
+            return 0.0
     
     def get_sectors(self, stock_code: str) -> List[str]:
         """获取所属板块 - O(1)内存查询"""

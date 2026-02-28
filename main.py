@@ -878,27 +878,37 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, volume_percentile, dry_run, 
     import time
     
     # ==========================================
-    # 【CTO修复】交易日判断与自动降级
+    # 【CTO绝对物理拦截】交易日判断与自动降级
     # ==========================================
     from logic.utils.calendar_utils import is_trading_day, get_latest_completed_trading_day
     
     now = datetime.now()
     today_str = now.strftime('%Y%m%d')
     
-    # 检查今天是否为交易日
+    # 检查今天是否为交易日 - 绝对禁止非交易日启动实盘
     if not is_trading_day(today_str):
-        click.echo(click.style(f"\n⚠️ 警告: 今天 ({today_str}) 不是交易日", fg='yellow', bold=True))
-        click.echo(click.style("🔄 自动转入复盘模式...", fg='cyan'))
-        # 强制设置历史回放日期为最近交易日
-        replay_date = get_latest_completed_trading_day()
-        click.echo(click.style(f"📅 复盘日期: {replay_date}", fg='cyan'))
+        click.echo(click.style(f"\n🛑 今天 ({today_str}) 是非交易日！禁止启动实盘火控雷达！", fg='red', bold=True))
+        click.echo(click.style("🔄 自动为您切换至【历史热复盘模式】...", fg='yellow'))
+        # 获取最近交易日并执行回测
+        from logic.backtest.time_machine_engine import TimeMachineEngine
+        prev_date = get_latest_completed_trading_day()
+        click.echo(click.style(f"📅 复盘日期: {prev_date}", fg='cyan'))
+        
+        engine = TimeMachineEngine()
+        result = engine.run_daily_backtest(prev_date)
+        click.echo(f"\n✅ 热复盘完成: 共评分 {len(result) if result else 0} 只股票")
+        return  # 绝对禁止继续启动实盘引擎
     
-    # 检查是否已收盘 (15:00后)
+    # 检查是否已收盘 (15:00后) - 禁止盘后启动实盘
     elif now.hour >= 15:
-        click.echo(click.style(f"\n⏰ 股市已收盘 (当前 {now.hour}:00)，自动转入复盘模式", fg='yellow', bold=True))
-        # 如果今天已是交易日且已收盘，使用今天作为复盘日期
-        replay_date = today_str
-        click.echo(click.style(f"📅 复盘日期: {replay_date}", fg='cyan'))
+        click.echo(click.style(f"\n🛑 今日股市已收盘 (当前 {now.hour}:00)！禁止启动实盘监控！", fg='red', bold=True))
+        click.echo(click.style("🔄 自动生成盘后右侧起爆战报...", fg='yellow'))
+        # 执行盘后战报生成
+        from logic.backtest.time_machine_engine import TimeMachineEngine
+        engine = TimeMachineEngine()
+        result = engine.run_daily_backtest(today_str)
+        click.echo(f"\n✅ 盘后战报完成: 共评分 {len(result) if result else 0} 只股票")
+        return  # 绝对禁止继续启动实盘引擎
     
     click.echo(click.style("\n🚀 启动实盘猎杀系统 (EventDriven 事件驱动模式)", fg='green', bold=True))
     click.echo(f"📅 日期: {datetime.now().strftime('%Y-%m-%d')}")
