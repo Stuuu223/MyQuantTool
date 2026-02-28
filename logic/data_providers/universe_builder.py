@@ -238,21 +238,25 @@ class UniverseBuilder:
                             current_amount = df_daily['amount'].iloc[-1]
                             avg_volume_5d = true_dict.get_avg_volume_5d(stock)
                             
+                            # 【CTO修复】即使avg_volume_5d不可用，也添加股票（使用默认volume_ratio=1.0）
                             if avg_volume_5d and avg_volume_5d > 0:
                                 volume_ratio = (current_volume * 100) / avg_volume_5d
-                                float_volume = true_dict.get_float_volume(stock)
-                                turnover_rate = ((current_volume * 100) / float_volume * 100) if float_volume > 0 else 0
-                                circ_mv = true_dict.get_float_market_cap(stock) / 10000
-                                total_mv = true_dict.get_total_market_cap(stock) / 10000
-                                
-                                stock_data.append({
-                                    'ts_code': stock,
-                                    'volume_ratio': volume_ratio,
-                                    'turnover_rate': turnover_rate,
-                                    'circ_mv': circ_mv,
-                                    'total_mv': total_mv,
-                                    'amount': current_amount
-                                })
+                            else:
+                                volume_ratio = 1.0  # 默认volume_ratio
+                            
+                            float_volume = true_dict.get_float_volume(stock)
+                            turnover_rate = ((current_volume * 100) / float_volume * 100) if float_volume > 0 else 0
+                            circ_mv = true_dict.get_float_market_cap(stock) / 10000
+                            total_mv = true_dict.get_total_market_cap(stock) / 10000
+                            
+                            stock_data.append({
+                                'ts_code': stock,
+                                'volume_ratio': volume_ratio,
+                                'turnover_rate': turnover_rate,
+                                'circ_mv': circ_mv,
+                                'total_mv': total_mv,
+                                'amount': current_amount
+                            })
                     except:
                         continue
                 
