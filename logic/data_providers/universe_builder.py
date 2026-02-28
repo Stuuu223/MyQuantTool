@@ -43,6 +43,7 @@ class UniverseBuilder:
         """初始化，使用粗筛专用参数"""
         self.strategy = strategy  # 默认使用universe_build策略
         self.config_manager = get_config_manager()
+        self.logger = logging.getLogger(__name__)
         
     @property
     def MIN_AMOUNT(self) -> int:
