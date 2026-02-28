@@ -213,12 +213,64 @@ class UniverseBuilder:
             df_basic = pd.DataFrame(stock_data)
             logger.info(f"【UniverseBuilder】QMT截面数据构建成功: {len(df_basic)} 只")
             
+            # 【CTO修复】如果tick数据为空，使用日K数据降级方案
+            if len(df_basic) == 0:
+                logger.warning(f"【UniverseBuilder】{date}的tick数据为空，使用日K数据降级方案")
+                stock_data = []
+                for stock in all_stocks[:1000]:  # 限制1000只
+                    try:
+                        stock_name = xtdata.get_stock_name(stock) or ""
+                        if 'ST' in stock_name or 'ST' in stock or stock.startswith('8') or stock.startswith('4'):
+                            continue
+                        
+                        # 使用日K数据
+                        daily_data = xtdata.get_local_data(
+                            field_list=['volume', 'amount', 'open', 'high', 'low', 'close'],
+                            stock_list=[stock],
+                            period='1d',
+                            start_time=date,
+                            end_time=date
+                        )
+                        
+                        if daily_data and stock in daily_data and len(daily_data[stock]) > 0:
+                            df_daily = daily_data[stock]
+                            current_volume = df_daily['volume'].iloc[-1]
+                            current_amount = df_daily['amount'].iloc[-1]
+                            avg_volume_5d = true_dict.get_avg_volume_5d(stock)
+                            
+                            if avg_volume_5d and avg_volume_5d > 0:
+                                volume_ratio = (current_volume * 100) / avg_volume_5d
+                                float_volume = true_dict.get_float_volume(stock)
+                                turnover_rate = ((current_volume * 100) / float_volume * 100) if float_volume > 0 else 0
+                                circ_mv = true_dict.get_float_market_cap(stock) / 10000
+                                total_mv = true_dict.get_total_market_cap(stock) / 10000
+                                
+                                stock_data.append({
+                                    'ts_code': stock,
+                                    'volume_ratio': volume_ratio,
+                                    'turnover_rate': turnover_rate,
+                                    'circ_mv': circ_mv,
+                                    'total_mv': total_mv,
+                                    'amount': current_amount
+                                })
+                    except:
+                        continue
+                
+                df_basic = pd.DataFrame(stock_data)
+                logger.info(f"【UniverseBuilder】日K降级方案构建成功: {len(df_basic)} 只")
+            
         except Exception as e:
             logger.error(f"QMT截面数据获取失败: {e}")
+            import traceback
+            traceback.print_exc()
             raise RuntimeError(f"QMT截面数据获取失败: {e}")
         
         # 向量化过滤 (CTO: 禁止循环，用Pandas)
         # 第一层: 剔除量比为空的股票
+        if len(df_basic) == 0:
+            logger.error(f"【UniverseBuilder】{date}无有效数据，返回空列表")
+            return []
+        
         df_filtered = df_basic[df_basic['volume_ratio'].notna()].copy()
         logger.info(f"【UniverseBuilder】第一层(有效量比): {len(df_filtered)} 只")
         
