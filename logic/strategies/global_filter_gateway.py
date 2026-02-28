@@ -32,6 +32,29 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def safe_float(value, default=0.0):
+    """
+    【CTO类型安全】安全转换为float，防止str/int比较错误
+    
+    Args:
+        value: 任意类型的输入值
+        default: 转换失败时的默认值
+        
+    Returns:
+        float: 转换后的浮点数，失败返回default
+    """
+    if value is None:
+        return default
+    if isinstance(value, str):
+        value = value.strip()
+        if value == '' or value.lower() in ('nan', 'inf', '-inf', 'none'):
+            return default
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return default
+
+
 class GlobalFilterGateway:
     """
     全局过滤网关 - 统一所有选股过滤逻辑
@@ -46,7 +69,7 @@ class GlobalFilterGateway:
     """
     
     # ========== CTO红线常量：死亡换手阈值 ==========
-    DEATH_TURNOVER_THRESHOLD = 60.0  # 死亡换手线60%
+    DEATH_TURNOVER_THRESHOLD = 70.0  # 【CTO铁血令】死亡换手线统一为70%
     SWEET_SPOT_MIN = 8.0  # 甜点位下限8%
     SWEET_SPOT_MAX = 15.0  # 甜点位上限15%
     
@@ -106,12 +129,18 @@ class GlobalFilterGateway:
                    f"量比>={min_volume_multiplier}x | 换手{min_turnover}%~{max_turnover}% | "
                    f"【均线判定已删除，权力下放】")
         
-        # ========== 预处理：换手率单位自适应 ==========
+        # ========== 预处理：换手率单位自适应 + safe_float类型安全 ==========
         if 'turnover_rate' in df.columns:
+            # 【CTO类型安全】强制转换为float，防止str/int比较错误
+            df['turnover_rate'] = df['turnover_rate'].apply(lambda x: safe_float(x, 0.0))
             # 【Bug修复】换手率单位自适应：如果是小数(0.05)则转为百分比(5.0)
             if df['turnover_rate'].max() <= 1.0:
                 logger.info(f"  🔧 检测到换手率数据为小数形式，自动转换为百分比")
                 df['turnover_rate'] = df['turnover_rate'] * 100.0
+        
+        # 【CTO类型安全】volume_ratio也强制转换
+        if 'volume_ratio' in df.columns:
+            df['volume_ratio'] = df['volume_ratio'].apply(lambda x: safe_float(x, 0.0))
         
         # ========== 【CTO红线】死亡换手拦截 ==========
         # turnover_rate > 70%直接拦截，永不进入候选池
@@ -203,6 +232,10 @@ class GlobalFilterGateway:
                 - metadata: 元数据字典，包含'tag'等标记（如'换手甜点'）
         """
         metadata = {}
+        
+        # 【CTO类型安全】强制转换为float，防止str/int比较错误
+        volume_ratio = safe_float(volume_ratio, 0.0)
+        turnover_rate = safe_float(turnover_rate, 0.0)
         
         try:
             min_multiplier = config_manager.get('live_sniper.min_volume_multiplier')

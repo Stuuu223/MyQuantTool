@@ -128,30 +128,19 @@ class UniverseBuilder:
             return universe_config.get('volume_ratio_absolute', 3.0)
     
     def get_daily_universe(self, date: str) -> List[str]:
-        """
-        获取当日股票池 - 【CTO核爆级重构】使用DTO数据整流罩，彻底解决单位换算！
-        
-        Args:
-            date: 日期 'YYYYMMDD'
-            
-        Returns:
-            股票代码列表 (约60-100只)
-        """
         from xtquant import xtdata
-        from logic.core.models import QMTStockSnapshot, create_snapshot_from_qmt
         import pandas as pd
-        import time
         
-        start_time = time.time()
-        self.logger.info(f"⚡ [CTO极速粗筛] 使用DTO整流罩，一把拉取全市场日K数据 ({date})...")
+        self.logger.info(f"⚡ [CTO终极粗筛] 启动全市场防弹扫描 ({date})...")
         
         all_stocks = xtdata.get_stock_list_in_sector('沪深A股')
-        
-        # 1. 一次性获取全市场日K（绝不是tick！）
+        if not all_stocks: return []
+
+        # 恢复完整字段请求，以防万一
         daily_data = xtdata.get_local_data(
-            field_list=['volume', 'close', 'preClose', 'open', 'high', 'low', 'amount'],
+            field_list=['open', 'high', 'low', 'close', 'volume', 'amount', 'preClose', 'turnover'],
             stock_list=all_stocks,
-            period='1d',  # 【CTO强制】只用日K，严禁tick！
+            period='1d',
             start_time=date,
             end_time=date
         )
@@ -161,44 +150,53 @@ class UniverseBuilder:
         true_dict.warmup(all_stocks, target_date=date)
         
         valid_stocks = []
-        st_count, missing_count = 0, 0
-        
-        # 2. 使用DTO整流罩极速过滤
         for stock in all_stocks:
             try:
-                # 静态过滤
-                if stock.startswith('8') or stock.startswith('4') or stock.startswith('688'):
-                    continue
-                detail = xtdata.get_instrument_detail(stock)
-                name = detail.get('StockName', '') if detail else ''
-                if 'ST' in name or '退' in name:
-                    st_count += 1
-                    continue
+                # 1. 静态垃圾清理
+                if stock.startswith(('8', '4', '688')): continue
+                if not daily_data or stock not in daily_data or daily_data[stock].empty: continue
                 
-                # 获取原始数据
-                df_daily = daily_data.get(stock) if daily_data else None
-                float_vol = true_dict.get_float_volume(stock)
-                avg_vol_5d = true_dict.get_avg_volume_5d(stock)
+                df_daily = daily_data[stock]
+                raw_vol = df_daily['volume'].iloc[-1]
+                if pd.isna(raw_vol) or float(raw_vol) <= 0: continue
+                current_volume = float(raw_vol)
                 
-                # 【CTO核心】：使用DTO整流罩清洗所有数据！
-                snapshot = create_snapshot_from_qmt(stock, df_daily, float_vol, avg_vol_5d)
+                # 2. 提取基础缓存并强转
+                avg_vol = float(true_dict.get_avg_volume_5d(stock) or 0.0)
+                float_vol = float(true_dict.get_float_volume(stock) or 0.0)
                 
-                # 【CTO系统级死票过滤器】：无效股票直接砍掉！
-                if not snapshot.is_valid:
-                    missing_count += 1
+                if avg_vol <= 0.0 or float_vol <= 0.0 or pd.isna(avg_vol) or pd.isna(float_vol):
                     continue
                 
-                # 【CTO核心】：直接使用DTO清洗后的数据做判断！
-                # 再也不用操心单位换算，再也不用写*100或/10000！
-                if snapshot.volume_ratio >= 1.5 and 3.0 <= snapshot.turnover_rate <= 70.0:
-                    valid_stocks.append(stock)
+                # 3. 【CTO 绝对单位纠偏】：量比计算
+                vol_ratio = current_volume / avg_vol
+                if vol_ratio < 0.01: vol_ratio *= 100.0
+                if vol_ratio > 1000.0: vol_ratio /= 100.0
+                
+                # 4. 【CTO 双重换手率防线】
+                turnover = 0.0
+                # 防线A: 优先尝试官方数据
+                if 'turnover' in df_daily.columns:
+                    raw_turnover = df_daily['turnover'].iloc[-1]
+                    if not pd.isna(raw_turnover) and float(raw_turnover) > 0:
+                        turnover = float(raw_turnover)
+                        if 0 < turnover < 1.0: turnover *= 100.0
+                
+                # 防线B: 官方无数据，启动自适应物理计算！
+                if turnover <= 0.0:
+                    turnover = (current_volume / float_vol) * 100.0
+                    if turnover < 0.1: turnover *= 10000.0 # 自适应万股
                     
-            except Exception as e:
-                self.logger.debug(f"处理{stock}时出错: {e}")
+                # 如果算出来大得离谱(>100%)，绝对是有除权或单位错误，直接废弃
+                if turnover > 100.0: continue
+
+                # 5. 绝对阈值过滤
+                if vol_ratio >= 1.5 and 3.0 <= turnover <= 70.0:
+                    valid_stocks.append(stock)
+            except Exception:
                 continue
                 
-        elapsed = time.time() - start_time
-        self.logger.info(f"✅ DTO粗筛完成！ST过滤:{st_count} 数据缺失:{missing_count} 最终候选:{len(valid_stocks)}只 (耗时:{elapsed:.2f}s)")
+        self.logger.info(f"✅ 粗筛完成！最终候选: {len(valid_stocks)} 只。")
         return valid_stocks
     
     # ===== 以下方法已废弃，保留仅供参考 =====

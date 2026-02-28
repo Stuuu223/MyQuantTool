@@ -42,7 +42,7 @@ Boss指出当前系统三大致命问题：
 1. **趋势防线** - `MA5 >= MA10` 且 `昨日收盘价 >= MA20`
 2. **资金活跃度Ratio** - `Turnover_Ratio > 1.5`（今天比平时活跃50%以上）
 3. **大哥起步线** - `今日估算全天换手率 >= 5.0%`（无5%不妖股）
-4. **死亡换手熔断** - `今日估算全天换手率 <= 60.0%`（规避筹码断层）
+4. **死亡换手熔断** - `今日估算全天换手率 <= 70.0%`（【CTO铁血令】规避筹码断层）
 5. **量比分位数** - `volume_ratio >= 全市场0.90分位`
 
 **数据来源:**
@@ -149,7 +149,7 @@ class KineticEnergyCalculator:
 **条件B（深水炸弹/瞬间动能，Boss特批）:**
 - `velocity_60s > 1.5%`（一分钟内抢筹拉升超1.5%）
 - `burst_turnover_60s > 0.15%`（动能区间内爆量）
-- 规避死亡换手（<60%）
+- 规避死亡换手（<70%）【CTO铁血令】
 
 **清除清单:**
 - [x] `tasks/run_live_trading_engine.py` 中的红盘限制
@@ -206,8 +206,8 @@ class KineticEnergyCalculator:
     "turnover_thresholds": {
       "ratio_to_5d_avg": 1.5,
       "absolute_min_percent": 5.0,
-      "absolute_max_percent": 60.0,
-      "_note": "5%起步是妖股，60%死亡换手规避"
+      "absolute_max_percent": 70.0,
+      "_note": "5%起步是妖股，70%死亡换手规避【CTO铁血令】"
     },
     
     "volume_ratio_percentile": 0.90,

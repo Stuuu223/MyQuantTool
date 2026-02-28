@@ -1,99 +1,103 @@
-# QMT数据源量纲知识库 (Domain Knowledge Base)
+# QMT 领域知识与数据契约 (绝对铁律)
 
-**版本**: v1.0.0  
-**生效日期**: 2026-02-26  
-**制定者**: CTO + Boss  
-**适用范围**: 所有AI开发团队成员  
+> **警告：任何与 QMT `xtdata` 交互的代码，必须严格遵守以下数据结构与量纲约定。违背者直接视为重大生产事故！**
 
----
+## 1. 历史日 K 线 (period='1d') 的数据结构
 
-## 量纲铁律 (不可违背)
+调用 `xtdata.get_local_data(..., period='1d')` 获取历史日线时：
 
-### [量纲铁律 1] QMT get_full_tick 返回的 volume 单位是**手**！
+- `volume` (成交量)：单位是 **【手】** (1手 = 100股)。
+- `amount` (成交额)：单位是 **【元】**。
+- `preClose` (昨收)：单位是 **【元】**。
 
-**关键事实**:
-- `xtdata.get_full_tick()` 返回的 `volume` 字段单位是**手** (1手 = 100股)
-- 计算量比、换手率时，必须先将**手转换为股** (乘以100)
+**换算铁律**：在与流通股本（股）计算换手率时，必须执行 `(volume * 100) / float_volume`！
 
-**错误示例**:
+## 2. 历史 Tick (period='tick') 的数据结构
+
+调用 `xtdata.get_local_data(..., period='tick')` 获取历史切片时：
+
+- `volume` (成交量)：单笔成交量，单位是 **【手】**！
+- `lastPrice` (最新价) / `price`：单位是 **【元】**。
+- `time` (时间)：这是一个极度危险的异构字段！
+  - 它通常是 **`int64` 类型的【毫秒级时间戳】**（例如 `1704072600000`）。
+  - 它偶尔会是 `str` 类型的字符串（例如 `"09:30:00"`）。
+  - **清洗铁律**：绝不能直接与 `'09:35:00'` 比较！必须通过统一的时间转换器清洗为纯字符串后，再做字符串比较！
+
+## 3. 股票基础信息 (Instrument Detail)
+
+调用 `xtdata.get_instrument_detail(stock_code)` 时：
+
+- `FloatVolume` (流通股本)：这是一个巨坑！它的单位通常是 **【万股】或【股】**，不同的券商版本表现不同！
+- **自适应铁律**：计算时，不要硬除 10000。必须通过 `models.py` 的 DTO 整流罩（自适应判断结果是否在 0~100 之间）来动态纠偏！
+
+## 4. 架构隔离铁律 (分离关注点)
+
+- **下载层**：只有 `tools/unified_downloader.py` 有权调用 `download_history_data` 和 `start_vip_service`。
+- **回测层**：`TimeMachineEngine` **绝对禁止**调用下载函数！如果 `get_local_data` 查不到数据，直接在日志打印"本地未找到该日期的 xxx 数据"，然后 `continue`！绝不允许在算分时试图连接网络！
+
+## 5. 数据目录路径
+
+- QMT 数据统一读写根目录：`H:\QMT\userdata_mini\datadir` (底层为 C++ 维护的 .dat 数据库，严禁手动去拼凑 day/tick 等子目录！)
+
+## 6. 量纲计算铁律（CTO 强制）
+
+### 量比计算
 ```python
-# ❌ 错误：直接用手除以股
-volume_ratio = tick_volume / avg_volume_5d  # 结果会缩小100倍！
+# 量比 = 当前量 / 5日均量 (同源相除，单位自动抵消)
+vol_ratio = current_volume / avg_volume_5d
 ```
 
-**正确示例**:
+### 换手率计算
 ```python
-# ✅ 正确：先统一单位为股
-volume_gu = tick_volume * 100  # 手→股
-volume_ratio = volume_gu / avg_volume_5d
+# QMT实测：日K volume单位是手，FloatVolume单位是股
+# 正确换手率 = (volume手 * 100 / FloatVolume股) * 100%
+turnover = (current_volume * 100 / float_volume) * 100
 ```
 
----
-
-### [量纲铁律 2] 计算量比时，分子和分母的单位必须绝对一致！
-
-**数据来源**:
-- `tick_volume`: 手 (来自get_full_tick)
-- `avg_volume_5d`: 股 (来自日K数据volume字段的均值)
-
-**强制对齐**:
+### 资金流计算
 ```python
-# 统一转换为"股"单位
-current_volume_gu = tick_volume_shou * 100
-volume_ratio = current_volume_gu / avg_volume_5d_gu
+# Tick资金流 = (价格变化 * 成交量)
+# 需要先统一单位：volume(手) * 100 = volume(股)
+estimated_flow = price_change * (volume * 100)
 ```
 
----
+## 7. 时间处理铁律（CTO 强制）
 
-### [量纲铁律 3] 计算换手率时，流通股本需要探针检查其量级！
-
-**数据来源**:
-- `tick_volume`: 手 (来自get_full_tick)
-- `float_volume`: 股 (来自get_instrument_detail)
-
-**强制计算**:
+### Tick时间清洗
 ```python
-# 统一转换为"股"单位
-current_volume_gu = tick_volume_shou * 100
-turnover_rate = (current_volume_gu / float_volume_gu) * 100  # 输出百分比
+def safe_parse_time(val):
+    """万能时间解析器 - 支持毫秒时间戳和字符串"""
+    if isinstance(val, str):
+        if ':' in val: return val[-8:]  # 截取HH:MM:SS
+    
+    try:
+        num_val = float(val)
+        if num_val == 0: return '09:30:00'
+        if num_val > 20000000000:  # 毫秒时间戳
+            return datetime.fromtimestamp(num_val/1000.0).strftime('%H:%M:%S')
+        else:  # 秒时间戳
+            return datetime.fromtimestamp(num_val).strftime('%H:%M:%S')
+    except:
+        return '09:30:00'
 ```
 
-**输出要求**:
-- 换手率最终输出必须是**百分比** (如 5.0 表示 5%)
-- 禁止输出小数形式 (如 0.05 表示 5%)
+### 时间比较铁律
+```python
+# ❌ 错误：直接比较时间戳和字符串
+if curr_time == '09:45:00':  # 错误！curr_time可能是毫秒时间戳
+
+# ✅ 正确：先清洗为统一格式
+curr_time_str = safe_parse_time(curr_time)
+if curr_time_str == '09:45:00':  # 正确！都是字符串
+```
+
+## 8. 违规惩罚机制
+
+任何违背以上铁律的代码，将面临以下惩罚：
+1. **立即拒绝**：CTO会直接拒绝合并
+2. **代码重写**：全部重写，不留任何妥协
+3. **记录黑名单**：违规者被记入代码审查黑名单
 
 ---
 
-### [量纲铁律 4] 常见QMT字段单位速查表
-
-| 字段名 | 单位 | 来源 | 备注 |
-|--------|------|------|------|
-| volume (tick) | 手 | get_full_tick | 必须×100转股通 |
-| volume (日K) | 股 | get_local_data(1d) | 已经是股 |
-| amount | 元 | get_full_tick | 成交额 |
-| FloatVolume | 股 | get_instrument_detail | 流通股本 |
-| avg_volume_5d | 股 | 计算值 | 日K volume均值 |
-
----
-
-## 防错自检清单
-
-写任何涉及成交量、换手率的代码前，必须自检：
-
-1. [ ] 当前volume单位是手还是股？
-2. [ ] 对比的基准volume单位是手还是股？
-3. [ ] 两者是否已经统一为相同单位？
-4. [ ] 换手率输出是百分比(5.0)还是小数(0.05)？
-
----
-
-## 违规处罚
-
-违反量纲铁律导致计算错误的：
-- 🔴 代码拒绝合并
-- 🔴 回滚重来
-- 🔴 重新阅读本知识库
-
----
-
-**记住：单位错位是量化开发中最愚蠢的错误，没有之一！**
+**最后警告**：这些不是建议，是铁律！违反任何一条，都会导致系统崩溃或计算错误！

@@ -11,8 +11,8 @@
 
 使用示例:
     # 回测
-    python main.py backtest --date 20260105 --universe 300986.SZ
-    python main.py backtest --date 20260105 --universe data/cleaned_candidates_66.csv --strategy v18
+    python main.py backtest --date 20260105
+    python main.py backtest --date 20260105 --universe data/cleaned_candidates_66.csv
     
     # 扫描
     python main.py scan --date 20260105 --mode premarket
@@ -169,83 +169,76 @@ def cli(ctx, version):
               help='开始日期 (YYYYMMDD格式)，用于连续回测')
 @click.option('--end_date', callback=validate_date,
               help='结束日期 (YYYYMMDD格式)，用于连续回测')
-@click.option('--universe', '-u', 
+@click.option('--universe', '-u',
               help='股票池: 单只股票、CSV文件路径，或使用"TUSHARE"实时粗筛')
-@click.option('--full_market', is_flag=True,
-              help='全市场模式: 使用Tushare每日动态粗筛 (CTO强制)')
 @click.option('--volume_percentile', default=0.88, type=float,
               help='量比分位数阈值 (默认: 0.88)')
-@click.option('--strategy', '-s', default='right_side_breakout',
-              type=click.Choice(['right_side_breakout', 'v18', 'time_machine', 'behavior_replay']),
-              help='策略名称 (默认: right_side_breakout)')
 @click.option('--output', '-o', default='data/backtest_results',
               help='输出目录 (默认: data/backtest_results)')
 @click.option('--save', is_flag=True, help='保存结果到文件')
-@click.option('--target', help='目标股票代码（用于验证，如300986）')
 @click.pass_context
-def backtest_cmd(ctx, date, start_date, end_date, universe, full_market, volume_percentile, strategy, output, save, target):
+def backtest_cmd(ctx, date, start_date, end_date, universe, volume_percentile, output, save):
     """
-    执行回测
+    执行回测 - V20纯血全息架构
     
     示例:
         \b
-        # 基础回测
-        python main.py backtest --date 20260105 --universe 300986.SZ
+        # 单日回测
+        python main.py backtest --date 20260105
         
-        # V18策略回测
-        python main.py backtest --date 20260105 --universe data/cleaned_candidates_66.csv --strategy v18
+        # 指定股票池回测
+        python main.py backtest --date 20260105 --universe data/cleaned_candidates_66.csv
         
         # 全息时间机器 - 跨日连贯流 (CTO强制)
-        python main.py backtest --start_date 20251224 --end_date 20260105 --full_market --strategy v18
+        python main.py backtest --start_date 20251224 --end_date 20260105
         
-        # 时间机器回测（两段式筛选）
-        python main.py backtest --date 20260105 --strategy time_machine --target 300986
-        
-        # 行为回测并保存结果
-        python main.py backtest --date 20260105 --universe 300986.SZ --save --output data/results
+        # 回测并保存结果
+        python main.py backtest --date 20260105 --save --output data/results
     """
     # 参数验证
     if start_date and end_date:
         # 连续回测模式
-        click.echo(click.style(f"\n🚀 启动全息时间机器: {strategy}", fg='green', bold=True))
+        click.echo(click.style(f"\n🚀 启动V20纯血全息回测", fg='green', bold=True))
         click.echo(f"📅 区间: {start_date} ~ {end_date}")
-        click.echo(f"🎯 模式: {'全市场Tushare粗筛' if full_market else 'CSV文件'}")
+        click.echo(f"🎯 股票池: {universe or '全市场Tushare粗筛'}")
         click.echo(f"💾 输出: {output}")
     elif date:
         # 单日回测模式
-        click.echo(click.style(f"\n🚀 启动回测: {strategy}", fg='green', bold=True))
+        click.echo(click.style(f"\n🚀 启动V20纯血回测", fg='green', bold=True))
         click.echo(f"📅 日期: {date}")
-        click.echo(f"🎯 股票池: {universe or '默认全市场'}")
+        click.echo(f"🎯 股票池: {universe or '全市场Tushare粗筛'}")
         click.echo(f"💾 输出: {output}")
     else:
         click.echo(click.style("❌ 错误: 必须指定 --date 或 --start_date/--end_date", fg='red'))
         ctx.exit(1)
     
     try:
-        # CTODict: 全息时间机器跨日回测
-        if start_date and end_date and full_market:
-            from logic.backtest.time_machine_engine import TimeMachineEngine
-            from logic.data_providers.universe_builder import UniverseBuilder
-            from logic.core.config_manager import get_config_manager
-            
-            # 配置管理器统一参数管理 (CTO SSOT原则)
-            config_manager = get_config_manager()
-            # 更新配置文件中的量比阈值
-            config_manager._config['halfway']['volume_surge_percentile'] = volume_percentile
-            click.echo(f"📊 量比分位数阈值设置为: {volume_percentile}")
-            
-            engine = TimeMachineEngine(initial_capital=20000.0)
+        from logic.backtest.time_machine_engine import TimeMachineEngine
+        from logic.core.config_manager import get_config_manager
+
+        # 配置管理器统一参数管理 (CTO SSOT原则)
+        config_manager = get_config_manager()
+        # 更新配置文件中的量比阈值
+        config_manager._config['halfway']['volume_surge_percentile'] = volume_percentile
+        click.echo(f"📊 量比分位数阈值设置为: {volume_percentile}")
+
+        # V20纯血TimeMachineEngine
+        engine = TimeMachineEngine(initial_capital=20000.0)
+
+        if start_date and end_date:
+            # 连续回测模式
+            stock_pool_path = universe if universe and Path(universe).exists() else 'TUSHARE'
             results = engine.run_continuous_backtest(
                 start_date=start_date,
                 end_date=end_date,
-                stock_pool_path='TUSHARE',
+                stock_pool_path=stock_pool_path,
                 use_tushare=True
             )
-            
+
             # 输出结果
             success_count = len([r for r in results if r.get('status') == 'success'])
             click.echo(click.style(f"\n✅ 跨日回测完成: {success_count}/{len(results)} 个交易日成功", fg='green'))
-            
+
             if save:
                 import json
                 output_path = Path(output) / f'time_machine_{start_date}_{end_date}.json'
@@ -253,104 +246,16 @@ def backtest_cmd(ctx, date, start_date, end_date, universe, full_market, volume_
                 with open(output_path, 'w', encoding='utf-8') as f:
                     json.dump(results, f, ensure_ascii=False, indent=2)
                 click.echo(f"💾 结果已保存: {output_path}")
-            
-            return
-        
-        # CTODict: 单日全市场回测也使用time_machine_engine
-        if date and full_market:
-            from logic.backtest.time_machine_engine import TimeMachineEngine
-            from logic.data_providers.universe_builder import UniverseBuilder
-            from logic.core.config_manager import get_config_manager
-            
-            # 配置管理器统一参数管理 (CTO SSOT原则)
-            config_manager = get_config_manager()
-            # 更新配置文件中的量比阈值
-            config_manager._config['halfway']['volume_surge_percentile'] = volume_percentile
-            click.echo(f"📊 量比分位数阈值设置为: {volume_percentile}")
-            
-            engine = TimeMachineEngine(initial_capital=20000.0)
-            results = engine.run_continuous_backtest(
-                start_date=date,
-                end_date=date,
-                stock_pool_path='TUSHARE',
-                use_tushare=True
-            )
-            
-            if results:
-                result = results[0]
-                top20 = result.get('top20', [])
-                click.echo(click.style(f"\n✅ 回测完成: {result.get('date')}", fg='green'))
-                click.echo(f"📊 粗筛股票池: {result.get('valid_stocks', 0)} 只")
-                click.echo(f"🏆 Top 20 已生成 (详见 {output}/time_machine/)")
-                
-                # 打印前5名
-                if top20:
-                    click.echo("\n前5名:")
-                    for i, item in enumerate(top20[:5], 1):
-                        click.echo(f"  {i}. {item['stock_code']} - 得分: {item['final_score']:.2f}")
-            
-            return
-        
-        if strategy == 'time_machine':
-            # 时间机器回测
-            from tasks.run_time_machine_backtest import TimeMachineBacktest, save_results
-            
-            time_machine = TimeMachineBacktest()
-            result = time_machine.run_backtest(trade_date=date)
-            
-            if save:
-                output_path = Path(output)
-                output_path.mkdir(parents=True, exist_ok=True)
-                save_results(result, output_path)
-                
-        elif strategy == 'v18':
-            # V18全息回测
-            from logic.backtest.behavior_replay_engine import BehaviorReplayEngine
-            from logic.data_providers.universe_builder import UniverseBuilder
-            
-            engine = BehaviorReplayEngine(use_sustain_filter=True)
-            
-            if universe and Path(universe).exists():
-                # 从CSV加载股票池
-                import pandas as pd
-                df = pd.read_csv(universe)
-                stocks = df.iloc[:, 0].tolist() if len(df.columns) == 1 else df['code'].tolist()
-            elif universe:
-                stocks = [universe]
-            else:
-                # 【CTO修复】当universe为空时，使用UniverseBuilder获取全市场股票池
-                click.echo("🔄 使用UniverseBuilder获取全市场股票池...")
-                builder = UniverseBuilder()
-                stocks = builder.get_daily_universe(date)
-                if not stocks:
-                    click.echo(click.style("❌ UniverseBuilder返回空股票池", fg='red'))
-                    ctx.exit(1)
-            
-            click.echo(f"📊 加载 {len(stocks)} 只股票")
-            
-            for stock in stocks:
-                # 【CTO修复】使用正确的replay_single_day方法
-                stock_name = stock.split('.')[0] if '.' in stock else stock
-                result = engine.replay_single_day(stock, stock_name, date)
-                click.echo(f"  {stock}: {'✅' if result.trades_executed > 0 else '❌'}")
-                
-        else:
-            # 标准回测 - 【CTO修复】全息回测默认跑全市场
-            from logic.backtest.time_machine_engine import TimeMachineEngine
-            
-            # 【CTO】全息回测默认跑全市场，无需指定universe
-            click.echo(click.style(f"🚀 启动全息回测: 日期={date}, 全市场扫描", fg='cyan'))
-            
-            # 使用TimeMachineEngine进行回测
-            # 【CTO统一战报】工业级大屏已在run_daily_backtest中显示
-            engine = TimeMachineEngine(initial_capital=20000.0)
+
+        elif date:
+            # 单日回测模式 - V20纯血入口
             result = engine.run_daily_backtest(date)
-            
+
             # 回测结果已在大屏中展示，此处仅输出统计信息
             if result and result.get('top20'):
                 click.echo(f"\n📊 回测统计: Top20候选股数量={len(result['top20'])}, 详见上方工业级大屏")
-            
-        click.echo(click.style("\n✅ 回测完成", fg='green'))
+
+        click.echo(click.style("\n✅ V20纯血回测完成", fg='green'))
         
     except Exception as e:
         logger.error(f"❌ 回测失败: {e}", exc_info=True)
@@ -900,7 +805,7 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, volume_percentile, dry_run, 
         engine = TimeMachineEngine()
         result = engine.run_daily_backtest(prev_date)
         
-        click.echo(f"\n✅ 热复盘完成: 共评分 {len(result) if result else 0} 只股票")
+        click.echo(f"\n✅ 热复盘完成: 共评分 {len(result.get('top20', [])) if result else 0} 只股票")
         
         # 【CTO物理钉死】：立刻、马上把大屏画出来！
         if result and result.get('top20'):
@@ -930,7 +835,7 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, volume_percentile, dry_run, 
         from logic.backtest.time_machine_engine import TimeMachineEngine
         engine = TimeMachineEngine()
         result = engine.run_daily_backtest(today_str)
-        click.echo(f"\n✅ 盘后战报完成: 共评分 {len(result) if result else 0} 只股票")
+        click.echo(f"\n✅ 盘后战报完成: 共评分 {len(result.get('top20', [])) if result else 0} 只股票")
         return  # 绝对禁止继续启动实盘引擎
     
     click.echo(click.style("\n🚀 启动实盘猎杀系统 (EventDriven 事件驱动模式)", fg='green', bold=True))

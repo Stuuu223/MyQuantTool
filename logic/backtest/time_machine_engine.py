@@ -51,8 +51,7 @@ class TimeMachineEngine:
         self.results_cache: Dict[str, Dict] = {}
         self._ensure_output_dirs()
         
-        # CTO修复：启动VIP服务确保数据连接
-        self.data_manager.start_vip_service()
+        # 【CTO铁令】：回测只读本地数据，绝对禁止启动VIP服务！
         
     def _ensure_output_dirs(self):
         """确保输出目录存在"""
@@ -159,6 +158,52 @@ class TimeMachineEngine:
             logger.warning(f"获取流通股本失败 {stock_code}: {e}")
             return 0.0
     
+    def _get_60d_high(self, stock_code: str, date: str) -> float:
+        """
+        获取60日最高价
+        
+        Args:
+            stock_code: 股票代码
+            date: 当前日期 'YYYYMMDD'
+        
+        Returns:
+            60日最高价，失败返回0
+        """
+        try:
+            from xtquant import xtdata
+            from datetime import datetime, timedelta
+            
+            # 计算60个交易日的日期范围
+            current = datetime.strptime(date, '%Y%m%d')
+            start_date = (current - timedelta(days=90)).strftime('%Y%m%d')  # 90天以确保有60个交易日
+            
+            normalized_code = self._normalize_stock_code(stock_code)
+            
+            # 获取日线数据
+            data = xtdata.get_local_data(
+                field_list=['time', 'high'],
+                stock_list=[normalized_code],
+                period='1d',
+                start_time=start_date,
+                end_time=date
+            )
+            
+            if data and normalized_code in data:
+                df = data[normalized_code]
+                if not df.empty and len(df) >= 60:
+                    # 取最近60个交易日的最高价
+                    recent_highs = df.tail(60)['high'].values
+                    return float(max(recent_highs))
+                elif not df.empty:
+                    # 数据不足60天，取所有数据的最高价
+                    return float(df['high'].max())
+            
+            return 0.0
+            
+        except Exception as e:
+            logger.warning(f"获取60日最高价失败 {stock_code}: {e}")
+            return 0.0
+    
     def _get_volume_ratio_threshold_for_date(self, date: str, base_percentile: float) -> float:
         """
         获取特定日期的量比阈值 (CTO SSOT原则)
@@ -234,11 +279,6 @@ class TimeMachineEngine:
             builder = UniverseBuilder()
             stock_pool = builder.get_daily_universe(date)
             logger.info(f"【时间机器】UniverseBuilder返回: {len(stock_pool)} 只")
-        
-        # 【CTO内存熔断】：如果粗筛失效传过来几千只，直接切断，只取前200！
-        if len(stock_pool) > 200:
-            logger.warning(f"⚠️ 【CTO内存熔断】粗筛异常！返回了{len(stock_pool)}只票，强制截断至前200只以防内存爆炸！")
-            stock_pool = stock_pool[:200]
             
         if not stock_pool:
             logger.error("❌ 【时间机器】粗筛结果为空，今日回测终止！")
@@ -506,48 +546,84 @@ class TimeMachineEngine:
         
         return daily_result
     
-    def _get_tick_data(self, stock_code: str, date: str) -> Optional[pd.DataFrame]:
+    def _get_tick_data(self, stock_code: str, date: str):
         """
-        【CTO铁腕断头台】：回测引擎只能读本地！没有就滚！
-        严禁任何下载行为！
+        【CTO纯血读取管道】：只读本地，无下载，绝对强转，防一切穿透！
         """
         try:
             from xtquant import xtdata
+            import pandas as pd
+            import numpy as np
             
             normalized_code = self._normalize_stock_code(stock_code)
             
-            # 只读本地数据，严禁下载！
+            # 1. 绝对纯净的本地读取
             data = xtdata.get_local_data(
-                field_list=['time', 'lastPrice', 'volume'],
+                field_list=['time', 'lastPrice', 'volume', 'amount'],
                 stock_list=[normalized_code],
                 period='tick',
                 start_time=date,
                 end_time=date
             )
             
-            if data and normalized_code in data and not data[normalized_code].empty:
-                df = data[normalized_code]
-                # 转换时间格式
-                if 'time' in df.columns:
-                    df['time'] = df['time'].apply(
-                        lambda x: datetime.fromtimestamp(x/1000).strftime('%H:%M:%S') 
-                        if isinstance(x, (int, float)) else str(x)
-                    )
-                # 重命名价格列
-                if 'lastPrice' in df.columns:
-                    df = df.rename(columns={'lastPrice': 'price'})
-                return df
+            # 2. 严密的非空校验
+            if not data or normalized_code not in data or data[normalized_code].empty:
+                self.logger.warning(f"【时间机器】{date} {stock_code} 本地无Tick切片，跳过")
+                return None
+                
+            df = data[normalized_code].copy()
             
-            # 无数据直接返回None，严禁下载！
-            return None
+            # 3. 钛合金数据清洗 (防 String/NaN 穿透)
+            if 'lastPrice' in df.columns:
+                df['price'] = pd.to_numeric(df['lastPrice'], errors='coerce').fillna(0.0)
+            else:
+                df['price'] = 0.0
+                
+            if 'volume' in df.columns:
+                df['volume'] = pd.to_numeric(df['volume'], errors='coerce').fillna(0.0)
+            else:
+                df['volume'] = 0.0
+                
+            if 'amount' in df.columns:
+                df['amount'] = pd.to_numeric(df['amount'], errors='coerce').fillna(0.0)
+            else:
+                df['amount'] = 0.0
+                
+            # 4. CTO 万能时间解析器
+            if 'time' in df.columns:
+                def safe_parse_time(val):
+                    if pd.isna(val): return '09:30:00'
+                    if isinstance(val, str):
+                        return val[-8:] if ':' in val else '09:30:00'
+                    try:
+                        num_val = float(val)
+                        if num_val == 0: return '09:30:00'
+                        from datetime import datetime
+                        # 区分毫秒与秒
+                        if num_val > 20000000000:
+                            return datetime.fromtimestamp(num_val/1000.0).strftime('%H:%M:%S')
+                        else:
+                            return datetime.fromtimestamp(num_val).strftime('%H:%M:%S')
+                    except:
+                        return '09:30:00'
+
+                df['time_str'] = df['time'].apply(safe_parse_time)
+                # 统一赋值覆盖，防止下游拿错
+                df['time'] = df['time_str']
+            else:
+                df['time_str'] = '09:30:00'
+                df['time'] = '09:30:00'
+                
+            # 清洗完成，安全返回！
+            return df
             
         except Exception as e:
-            logger.warning(f"获取Tick数据失败 {stock_code}: {e}")
+            self.logger.error(f"❌ 读取 Tick 时发生未知崩溃: {e}")
             return None
     
     def _get_pre_close(self, stock_code: str, date: str) -> float:
         """
-        获取昨收价 (CTO修复: 确保VIP服务已启动)
+        获取昨收价 (CTO修复: 只读本地数据，不启动VIP)
         
         Args:
             stock_code: 股票代码
@@ -559,9 +635,7 @@ class TimeMachineEngine:
         try:
             from xtquant import xtdata
             
-            # CTO修复: 确保VIP服务已启动才能读取数据
-            if not self.data_manager._vip_initialized:
-                self.data_manager.start_vip_service()
+            # 【CTO铁令】：绝对禁止启动VIP服务！回测只读本地数据！
             
             # 标准化代码
             normalized_code = self._normalize_stock_code(stock_code)
@@ -643,16 +717,44 @@ class TimeMachineEngine:
         """
         # 【CTO核爆级强转】：能挡住一切脏数据的铁壁！
         def force_float(val):
+            """CTO绝对净化版 - 防止NaN/Inf/str穿透"""
             if val is None: return 0.0
             try:
-                if isinstance(val, (dict, list, tuple)): return 0.0
-                return float(val) if str(val).strip() != '' else 0.0
+                # 【CTO第一刀】：先杀NaN/Inf！
+                if pd.isna(val) or np.isinf(val): return 0.0
             except:
-                return 0.0
+                pass
+            
+            # 【CTO第二刀】：处理字符串！
+            if isinstance(val, str):
+                v_str = val.strip().lower()
+                if not v_str or v_str in ('nan', 'inf', '-inf', 'null', 'none'): return 0.0
+                try: return float(val)
+                except: return 0.0
+            
+            # 【CTO第三刀】：杀掉字典/列表！
+            if isinstance(val, (dict, list, tuple)): return 0.0
+            
+            # 【CTO第四刀】：最终转换！
+            try: return float(val)
+            except: return 0.0
 
         try:
             # 获取数据
             tick_data = self._get_tick_data(stock_code, date)
+            
+            # 【调试日志】检查Tick数据状态
+            print(f"【DEBUG】{stock_code} Tick数据类型: {type(tick_data)}")
+            if tick_data is not None:
+                print(f"【DEBUG】{stock_code} Tick数据形状: {tick_data.shape if hasattr(tick_data, 'shape') else 'N/A'}")
+                if hasattr(tick_data, 'empty'):
+                    print(f"【DEBUG】{stock_code} Tick数据为空: {tick_data.empty}")
+            
+            if tick_data is None or tick_data.empty:
+                logger.warning(f"【时间机器】{stock_code} Tick数据为空！")
+                return None
+            logger.info(f"【时间机器】{stock_code} Tick数据获取成功，行数={len(tick_data)}")
+            
             if tick_data is None or tick_data.empty:
                 return None
             
@@ -661,8 +763,14 @@ class TimeMachineEngine:
             avg_volume_5d = force_float(self._get_avg_volume_5d(stock_code, date))
             float_volume = force_float(self._get_float_volume(stock_code))
             
+            print(f"【DEBUG】{stock_code} 核心参数:")
+            print(f"  pre_close: {pre_close}")
+            print(f"  avg_volume_5d: {avg_volume_5d}")
+            print(f"  float_volume: {float_volume}")
+            
             # 核心参数为0，直接死刑，绝不在底下因为除零或类型报错！
             if pre_close <= 0.0 or avg_volume_5d <= 0.0 or float_volume <= 0.0:
+                print(f"【DEBUG】{stock_code} 核心参数为0，提前return！")
                 return None
             
             # 使用SanityGuards检查昨收价
@@ -710,7 +818,12 @@ class TimeMachineEngine:
                 logger.warning(f"【时间机器】{stock_code} 使用估算开盘价: {open_price:.2f} (昨收{pre_close} * 1.02)")
             
             # 最终校验: 只有当开盘价和昨收价都为0时才跳过
+            print(f"【DEBUG】{stock_code} 开盘价和昨收价:")
+            print(f"  open_price: {open_price}")
+            print(f"  pre_close: {pre_close}")
+            
             if open_price <= 0 and pre_close <= 0:
+                print(f"【DEBUG】{stock_code} 开盘价和昨收价都无效，提前return！")
                 logger.warning(f"【时间机器】{stock_code} 开盘价和昨收价都无效，跳过")
                 return None
             
@@ -742,102 +855,180 @@ class TimeMachineEngine:
             veto_reason = ""
             
             # === 获取流通市值用于Ratio计算 ===
-            float_market_cap = float_volume * pre_close if float_volume > 0 else 1.0
+            float_market_cap = force_float(float_volume * pre_close) if force_float(float_volume) > 0 else 1.0
+            
+            # 【调试日志】记录Tick数据范围
+            logger.debug(f"【时间机器】{stock_code} 开始遍历Tick数据，共{len(tick_data)}条")
+            print(f"【DEBUG】{stock_code} 开始遍历Tick数据，共{len(tick_data)}条")
+            
+            # 【调试日志】检查Tick数据前10条和后10条
+            print(f"【DEBUG】Tick数据前10条:")
+            for i in range(min(10, len(tick_data))):
+                print(f"  {i}: time={tick_data['time'].iloc[i]}, price={tick_data['price'].iloc[i]}")
+            
+            print(f"【DEBUG】Tick数据后10条:")
+            for i in range(max(0, len(tick_data)-10), len(tick_data)):
+                print(f"  {i}: time={tick_data['time'].iloc[i]}, price={tick_data['price'].iloc[i]}")
             
             # === 全天Tick遍历 (09:30-15:00) ===
+            tick_count = 0
             for index, row in tick_data.iterrows():
-                curr_time = str(row['time_str'])
-                price = force_float(row['lastPrice']) if 'lastPrice' in row else force_float(row.get('price', 0))
-                volume = force_float(row.get('volume', 0))
-                amount = force_float(price * volume)
+                tick_count += 1
                 
-                # 计算单笔净流入估算
-                # 简化：价格上涨为流入，下跌为流出
-                if index > 0:
-                    prev_price_raw = tick_data.iloc[index-1]
-                    prev_price = force_float(prev_price_raw['lastPrice']) if 'lastPrice' in prev_price_raw else force_float(prev_price_raw.get('price', price))
-                    price_change = force_float(price - prev_price)
-                    # 净流入估算：价格变化 * 成交量 (简化模型)
-                    estimated_flow = force_float(price_change * volume) if price_change > 0 else force_float(price_change * volume * 0.5)
-                else:
-                    estimated_flow = 0.0
+                if tick_count == 1:
+                    print(f"【DEBUG】{stock_code} Tick遍历循环开始执行！")
+                if tick_count % 1000 == 0:
+                    print(f"【DEBUG】{stock_code} 已遍历{tick_count}条Tick...")
+                try:
+                    # 【CTO铁血时间转换】：杜绝一切int和str的比较崩溃！
+                    raw_time = row.get('time')
+                    
+                    # 【调试日志】每100条记录一次，打印原始时间
+                    if tick_count % 1000 == 0:
+                        print(f"【DEBUG】Tick#{tick_count} 原始time: {raw_time} (type: {type(raw_time)})")
+                    
+                    # 如果是数字（时间戳），强制转成HH:MM:SS
+                    if isinstance(raw_time, (int, float)):
+                        from datetime import datetime
+                        curr_time = datetime.fromtimestamp(int(raw_time)/1000).strftime('%H:%M:%S')
+                    else:
+                        curr_time = str(raw_time).strip()
+                    
+                    # 如果转出来是很短的乱码，默认当作盘前
+                    if len(curr_time) < 5:
+                        curr_time = "09:00:00"
+                    
+                    # 【调试日志】检查时间转换结果
+                    if tick_count % 100 == 0:
+                        print(f"【DEBUG】Tick#{tick_count} 时间转换: raw={repr(raw_time)} -> curr_time={repr(curr_time)}")
+                    
+                    # 提取价格与成交量
+                    price = force_float(row.get('lastPrice', row.get('price', 0)))
+                    volume = force_float(row.get('volume', 0))
+                    amount = force_float(price * volume)
+                    
+                    if price <= 0: continue
+                    
+                    # 【调试日志】检查是否到达09:45时间点
+                    if '09:45:00' <= curr_time <= '09:46:00':
+                        print(f"【DEBUG】检测到09:45时间点！time={curr_time}, price={price}, is_scored={is_scored}")
                 
-                # 【阶段一：09:30-09:45】累加打分数据
-                if curr_time <= '09:35:00':
-                    flow_5min = force_float(flow_5min + estimated_flow)
-                if curr_time <= '09:45:00':
-                    flow_15min = force_float(flow_15min + estimated_flow)
-                
-                # 【打分定格】09:45瞬间调用V18验钞机
-                if not is_scored and ('09:45:00' <= curr_time < '09:46:00' or curr_time == '09:45:00'):
-                    from logic.core.config_manager import get_config_manager
-                    config_manager = get_config_manager()
+                    # 计算单笔净流入估算
+                    # 简化：价格上涨为流入，下跌为流出
+                    if index > 0:
+                        prev_price_raw = tick_data.iloc[index-1]
+                        prev_price = force_float(prev_price_raw['lastPrice']) if 'lastPrice' in prev_price_raw else force_float(prev_price_raw.get('price', price))
+                        price_change = force_float(price - prev_price)
+                        # 【CTO修复】确保price_change是数值后再比较
+                        if force_float(price_change) > 0:
+                            estimated_flow = force_float(price_change * volume)
+                        else:
+                            estimated_flow = force_float(price_change * volume * 0.5)
+                    else:
+                        estimated_flow = 0.0
                     
-                    # 5日平均成交量已在前方强制转换
-                    flow_5min_median = force_float(avg_volume_5d / 240) if avg_volume_5d > 0 else 1.0  # 5分钟中位数估算
+                    # 【阶段一：09:30-09:45】累加打分数据
+                    if curr_time <= '09:35:00':
+                        flow_5min = force_float(flow_5min + estimated_flow)
+                    if curr_time <= '09:45:00':
+                        flow_15min = force_float(flow_15min + estimated_flow)
                     
-                    # 计算Space Gap (突破纯度)
-                    high_60d = self._get_60d_high(stock_code, date)
-                    space_gap_pct = (high_60d - price) / high_60d if high_60d > 0 else 0.5
+                    # 【打分定格】09:45瞬间调用V18验钞机
+                    # 【调试日志】检查curr_time的值和类型
+                    if '09:45:00' <= curr_time <= '09:46:00':
+                        print(f"【DEBUG】curr_time详情: value={repr(curr_time)}, type={type(curr_time)}, len={len(curr_time)}")
+                        print(f"【DEBUG】curr_time比较: '09:45:00' <= '{curr_time}' <= '09:46:00': {('09:45:00' <= curr_time <= '09:46:00')}")
                     
-                    # ============================================================
-                    # 【记忆引擎挂载】算分前读取记忆衰减
-                    # ============================================================
-                    memory_multiplier = 1.0
-                    try:
-                        from logic.memory.short_term_memory import ShortTermMemoryEngine
-                        memory_engine = ShortTermMemoryEngine()
-                        memory_score = memory_engine.read_memory(stock_code, today=date)
-                        if memory_score is not None:
-                            # 将记忆分数转化为multiplier (0.5~1.5范围)
-                            memory_multiplier = 0.5 + (memory_score / 100.0)
-                            logger.debug(f"🧠 {stock_code} 记忆激活: score={memory_score:.2f}, multiplier={memory_multiplier:.2f}")
-                        memory_engine.close()
-                    except Exception as mem_e:
-                        # Graceful降级：记忆引擎失败时multiplier=1.0
-                        logger.debug(f"⚠️ {stock_code} 记忆读取失败，使用默认multiplier=1.0: {mem_e}")
+                    condition1 = not is_scored
+                    condition2a = '09:45:00' <= curr_time < '09:46:00'
+                    condition2b = curr_time == '09:45:00'
+                    condition2 = condition2a or condition2b
+                    
+                    if '09:45:00' <= curr_time <= '09:46:00':
+                        print(f"【DEBUG】09:45条件检查: is_scored={is_scored}, condition1={condition1}, condition2a={condition2a}, condition2b={condition2b}, condition2={condition2}")
+                    
+                    if not is_scored and ('09:45:00' <= curr_time < '09:46:00' or curr_time == '09:45:00'):
+                        print(f"【DEBUG】进入09:45打分逻辑！")
+                        logger.debug(f"【时间机器】{stock_code} 触发09:45打分！时间={curr_time}, 价格={price}")
+                        from logic.core.config_manager import get_config_manager
+                        config_manager = get_config_manager()
+                        
+                        # 5日平均成交量已在前方强制转换
+                        flow_5min_median = force_float(avg_volume_5d / 240) if force_float(avg_volume_5d) > 0 else 1.0  # 5分钟中位数估算
+                        
+                        # 计算Space Gap (突破纯度)
+                        high_60d = self._get_60d_high(stock_code, date)
+                        high_60d_float = force_float(high_60d)
+                        # 【CTO修复】确保high_60d是数值后再计算和比较
+                        if high_60d_float > 0:
+                            space_gap_pct = force_float((high_60d_float - price) / high_60d_float)
+                        else:
+                            space_gap_pct = 0.5
+                        
+                        # ============================================================
+                        # 【记忆引擎挂载】算分前读取记忆衰减
+                        # ============================================================
                         memory_multiplier = 1.0
+                        try:
+                            from logic.memory.short_term_memory import ShortTermMemoryEngine
+                            memory_engine = ShortTermMemoryEngine()
+                            memory_score = memory_engine.read_memory(stock_code, today=date)
+                            if memory_score is not None:
+                                # 将记忆分数转化为multiplier (0.5~1.5范围)
+                                memory_multiplier = 0.5 + (memory_score / 100.0)
+                                logger.debug(f"🧠 {stock_code} 记忆激活: score={memory_score:.2f}, multiplier={memory_multiplier:.2f}")
+                            memory_engine.close()
+                        except Exception as mem_e:
+                            # Graceful降级：记忆引擎失败时multiplier=1.0
+                            logger.debug(f"⚠️ {stock_code} 记忆读取失败，使用默认multiplier=1.0: {mem_e}")
+                            memory_multiplier = 1.0
+                        
+                        # 调用V18验钞机 (CTO终极红线版)
+                        current_time = datetime.strptime('09:45', '%H:%M').time()
+                        base_score, sustain_ratio, inflow_ratio, ratio_stock = self.calculate_true_dragon_score(
+                            net_inflow=flow_15min,
+                            price=price,
+                            prev_close=pre_close,
+                            high=price * 1.02,  # 简化
+                            low=price * 0.98,
+                            flow_5min=flow_5min,
+                            flow_15min=flow_15min,
+                            flow_5min_median_stock=flow_5min_median,
+                            space_gap_pct=space_gap_pct,
+                            float_volume_shares=float_volume,
+                            current_time=current_time
+                        )
+                        
+                        # 应用记忆multiplier
+                        final_score = base_score * memory_multiplier
+                        logger.debug(f"🎯 {stock_code} V18算分: base={base_score:.2f}, memory_mult={memory_multiplier:.2f}, final={final_score:.2f}")
+                        
+                        is_scored = True
                     
-                    # 调用V18验钞机 (CTO终极红线版)
-                    current_time = datetime.strptime('09:45', '%H:%M').time()
-                    base_score, sustain_ratio, inflow_ratio, ratio_stock = self.calculate_true_dragon_score(
-                        net_inflow=flow_15min,
-                        price=price,
-                        prev_close=pre_close,
-                        high=price * 1.02,  # 简化
-                        low=price * 0.98,
-                        flow_5min=flow_5min,
-                        flow_15min=flow_15min,
-                        flow_5min_median_stock=flow_5min_median,
-                        space_gap_pct=space_gap_pct,
-                        float_volume_shares=float_volume,
-                        current_time=current_time
-                    )
-                    
-                    # 应用记忆multiplier
-                    final_score = base_score * memory_multiplier
-                    logger.debug(f"🎯 {stock_code} V18算分: base={base_score:.2f}, memory_mult={memory_multiplier:.2f}, final={final_score:.2f}")
-                    
-                    is_scored = True
+                    # 【阶段二：09:45-15:00】防守与记录
+                    if curr_time > '09:45:00':
+                        # 记录09:45后的最高价 (用于骗炮计算)
+                        # 【CTO修复】确保price和max_price_after_0945都是数值后再比较
+                        if force_float(price) > force_float(max_price_after_0945):
+                            max_price_after_0945 = force_float(price)
+                        
+                        # 更新VWAP
+                        vwap_cum_volume = force_float(vwap_cum_volume + volume)
+                        vwap_cum_amount = force_float(vwap_cum_amount + amount)
+                        vwap = force_float(vwap_cum_amount / vwap_cum_volume) if force_float(vwap_cum_volume) > 0 else force_float(price)
+                        
+                        # 盘中破位防守 (VWAP宽容判定)
+                        if curr_time > '09:50:00' and force_float(price) < force_float(vwap) and not is_vetoed:
+                            # 检查是否放量砸盘
+                            recent_volume = force_float(volume)
+                            # 【CTO修复】确保recent_volume是数值后再比较
+                            if force_float(recent_volume) > force_float(avg_volume_5d / 240 * 2):  # 放量
+                                is_vetoed = True
+                                veto_reason = "Veto: 盘中破位派发"
                 
-                # 【阶段二：09:45-15:00】防守与记录
-                if curr_time > '09:45:00':
-                    # 记录09:45后的最高价 (用于骗炮计算)
-                    if price > max_price_after_0945:
-                        max_price_after_0945 = force_float(price)
-                    
-                    # 更新VWAP
-                    vwap_cum_volume = force_float(vwap_cum_volume + volume)
-                    vwap_cum_amount = force_float(vwap_cum_amount + amount)
-                    vwap = force_float(vwap_cum_amount / vwap_cum_volume) if vwap_cum_volume > 0 else force_float(price)
-                    
-                    # 盘中破位防守 (VWAP宽容判定)
-                    if curr_time > '09:50:00' and price < vwap and not is_vetoed:
-                        # 检查是否放量砸盘
-                        recent_volume = force_float(volume)
-                        if recent_volume > force_float(avg_volume_5d / 240 * 2):  # 放量
-                            is_vetoed = True
-                            veto_reason = "Veto: 盘中破位派发"
+                except Exception as e:
+                    # 某一个Tick坏了直接跳过，绝不允许崩溃！
+                    continue
             
             # 【阶段三：15:00日落结算】严禁造假！
             # 获取日K线真实收盘价
@@ -857,13 +1048,15 @@ class TimeMachineEngine:
             final_change = force_float(MetricDefinitions.TRUE_CHANGE(real_close, pre_close))
             
             # 骗炮终审：Pullback_Ratio计算 - 全部使用force_float
-            if max_price_after_0945 > pre_close:
+            # 【CTO修复】确保数值后再比较
+            if force_float(max_price_after_0945) > force_float(pre_close):
                 pullback_ratio = force_float((max_price_after_0945 - real_close) / (max_price_after_0945 - pre_close))
             else:
                 pullback_ratio = 0.0
             
             # 尖刺骗炮判定
-            if pullback_ratio > 0.3 and final_change < 0.08:
+            # 【CTO修复】确保数值后再比较
+            if force_float(pullback_ratio) > 0.3 and force_float(final_change) < 0.08:
                 is_vetoed = True
                 veto_reason = f"Veto: 尖刺骗炮 (回落{pullback_ratio:.1%})"
                 final_score = 0.0  # 分数清零！
@@ -874,7 +1067,11 @@ class TimeMachineEngine:
                 return None
             
             # 【CTO】计算MFE (Maximum Favorable Excursion) 最大有利波动 - 使用force_float
-            mfe = force_float((max_price_after_0945 - pre_close) / pre_close * 100) if pre_close > 0 else 0.0
+            # 【CTO修复】确保数值后再比较
+            if force_float(pre_close) > 0:
+                mfe = force_float((max_price_after_0945 - pre_close) / pre_close * 100)
+            else:
+                mfe = 0.0
             
             # 返回结果 - 所有数值都经过force_float
             return {
@@ -1001,63 +1198,64 @@ class TimeMachineEngine:
         
         return all_results
     
-        def _load_stock_pool(self, path: str, date: str = None) -> List[str]:
-            """
-            加载股票池 - CTODict: 禁止模拟数据，强制真实粗筛
+    def _load_stock_pool(self, path: str, date: str = None) -> List[str]:
+        """
+        加载股票池 - CTODict: 禁止模拟数据，强制真实粗筛
+        
+        Args:
+            path: 股票池文件路径 或 'TUSHARE' 表示实时粗筛
+            date: 日期 'YYYYMMDD' (用于Tushare粗筛)
+        
+        Returns:
+            股票代码列表 (约500只)
+        
+        Raises:
+            RuntimeError: 无法获取真实数据时抛出致命异常 (Fail Fast)
+        """
+        # 如果使用Tushare实时粗筛
+        if path.upper() == 'TUSHARE' or path == '':
+            if not date:
+                raise ValueError("使用Tushare粗筛时必须提供date参数")
             
-            Args:
-                path: 股票池文件路径 或 'TUSHARE' 表示实时粗筛
-                date: 日期 'YYYYMMDD' (用于Tushare粗筛)
+            logger.info(f"【时间机器】使用UniverseBuilder获取股票池: {date}")
+            # 【CTO断头台】：Fail Fast！直接调用，让错误暴露！
+            # UniverseBuilder内部使用正确的绝对阈值3.0
+            builder = UniverseBuilder()
+            logger.info(f"【时间机器】开始调用get_daily_universe...")
+            stock_pool = builder.get_daily_universe(date)
             
-            Returns:
-                股票代码列表 (约500只)
+            logger.info(f"【时间机器】UniverseBuilder返回: {len(stock_pool)} 只股票")
             
-            Raises:
-                RuntimeError: 无法获取真实数据时抛出致命异常 (Fail Fast)
-            """
-            # 如果使用Tushare实时粗筛
-            if path.upper() == 'TUSHARE' or path == '':
-                if not date:
-                    raise ValueError("使用Tushare粗筛时必须提供date参数")
-                
-                logger.info(f"【时间机器】使用UniverseBuilder获取股票池: {date}")
-                # 【CTO断头台】：Fail Fast！直接调用，让错误暴露！
-                # UniverseBuilder内部使用正确的绝对阈值3.0
-                builder = UniverseBuilder()
-                logger.info(f"【时间机器】开始调用get_daily_universe...")
-                stock_pool = builder.get_daily_universe(date)
-                
-                logger.info(f"【时间机器】UniverseBuilder返回: {len(stock_pool)} 只股票")
-                
-                if not stock_pool:
-                    logger.error(f"【时间机器】 UniverseBuilder返回空股票池: {date}")
-                    # 【CTO修复】返回空列表而不是报错，让上层处理
-                    return []
-                
-                logger.info(f"【时间机器】股票池获取完成: {len(stock_pool)} 只")
-                return stock_pool
-                
-            # 如果提供CSV文件路径
-            full_path = PathResolver.resolve_path(path)
+            if not stock_pool:
+                logger.error(f"【时间机器】 UniverseBuilder返回空股票池: {date}")
+                # 【CTO修复】返回空列表而不是报错，让上层处理
+                return []
             
-            if not full_path.exists():
-                logger.error(f"【时间机器】股票池文件不存在: {path}")
-                raise FileNotFoundError(f"股票池文件不存在: {path}。请提供有效CSV文件或使用'TUSHARE'进行实时粗筛")
+            logger.info(f"【时间机器】股票池获取完成: {len(stock_pool)} 只")
+            return stock_pool
             
-            try:
-                df = pd.read_csv(full_path)
-                if 'ts_code' in df.columns:
-                    return df['ts_code'].tolist()
-                elif 'stock_code' in df.columns:
-                    return df['stock_code'].tolist()
-                elif 'code' in df.columns:
-                    return df['code'].tolist()
-                else:
-                    # 假设第一列是股票代码
-                    return df.iloc[:, 0].tolist()
-            except Exception as e:
-                logger.error(f"【时间机器】加载股票池失败: {e}")
-                raise RuntimeError(f"无法加载股票池文件: {e}") from e    
+        # 如果提供CSV文件路径
+        full_path = PathResolver.resolve_path(path)
+        
+        if not full_path.exists():
+            logger.error(f"【时间机器】股票池文件不存在: {path}")
+            raise FileNotFoundError(f"股票池文件不存在: {path}。请提供有效CSV文件或使用'TUSHARE'进行实时粗筛")
+        
+        try:
+            df = pd.read_csv(full_path)
+            if 'ts_code' in df.columns:
+                return df['ts_code'].tolist()
+            elif 'stock_code' in df.columns:
+                return df['stock_code'].tolist()
+            elif 'code' in df.columns:
+                return df['code'].tolist()
+            else:
+                # 假设第一列是股票代码
+                return df.iloc[:, 0].tolist()
+        except Exception as e:
+            logger.error(f"【时间机器】加载股票池失败: {e}")
+            raise RuntimeError(f"无法加载股票池文件: {e}") from e
+    
     def _save_daily_result(self, date: str, result: Dict):
         """
         保存每日结果
@@ -1164,7 +1362,7 @@ class TimeMachineEngine:
     
     def _load_memory(self) -> Dict[str, Dict]:
         """
-        加载短期记忆 - 自动补充缺失字段
+        加载短期记忆 - 【CTO绝对类型锁】永远返回dict！
         
         Returns:
             记忆字典 {stock_code: memory_item}
@@ -1172,10 +1370,24 @@ class TimeMachineEngine:
         try:
             if self.MEMORY_FILE.exists():
                 with open(self.MEMORY_FILE, 'r', encoding='utf-8') as f:
-                    memory = json.load(f)
+                    content = f.read().strip()
+                    # 【CTO绝对拦截】：防死空文件变成字符串！
+                    if not content:
+                        return {}
+                    memory = json.loads(content)
+                    
+                    # 【CTO类型锁死】：只要不是字典，统统视为空！
+                    if not isinstance(memory, dict):
+                        logger.warning(f"【记忆衰减】加载的记忆数据类型异常: {type(memory)}，返回空字典")
+                        return {}
                 
                 # 自动补充缺失的字段（向后兼容旧数据结构）
-                for stock_code, mem_item in memory.items():
+                for stock_code, mem_item in list(memory.items()):
+                    # 【CTO绝对类型锁】确保mem_item是字典！
+                    if not isinstance(mem_item, dict):
+                        del memory[stock_code]
+                        continue
+                    
                     if 'absent_days' not in mem_item:
                         mem_item['absent_days'] = 0
                         logger.debug(f"【记忆衰减】{stock_code} 补充 absent_days=0")
@@ -1186,8 +1398,8 @@ class TimeMachineEngine:
                 return memory
             return {}
         except Exception as e:
-            logger.error(f"【记忆衰减】加载记忆失败: {e}")
-            return {}
+            logger.error(f"【记忆衰减】加载记忆异常: {e}")
+            return {}  # 永远只返回空字典！
     
     def _save_memory(self, memory: Dict[str, Dict]) -> bool:
         """

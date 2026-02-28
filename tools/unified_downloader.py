@@ -360,12 +360,12 @@ def download_holographic(date: str, resume: bool = True, timeout: int = 3600):
         
         if not stock_list:
             console.print(f"[red]❌ 粗筛返回空股票池，可能是非交易日或数据问题[/red]")
-            console.print(f"[yellow]💡 提示: 请检查日期是否为交易日，或Tushare Token是否配置[/yellow]")
+            console.print(f"[red]💡 提示: 纯血QMT粗筛未获取到任何数据！请检查该日期的日K数据是否已存在于本地！[/red]")
             return
             
     except Exception as e:
         console.print(f"[red]❌ 粗筛失败: {e}[/red]")
-        console.print(f"[yellow]💡 提示: 请确保TUSHARE_TOKEN环境变量已设置[/yellow]")
+        console.print(f"[yellow]💡 提示: 请确保QMT本地数据已下载完整[/yellow]")
         return
     
     console.print(f"\n✅ 粗筛完成: {len(stock_list)} 只股票")

@@ -31,7 +31,7 @@ logger = logging.getLogger("V18CoreEngine")
 
 def safe_float(value, default=0.0):
     """
-    安全转换为float，捕获ValueError和TypeError
+    【CTO绝对净化版】安全转换为float，捕获ValueError、TypeError、NaN和Inf
     
     Args:
         value: 任意类型的输入值
@@ -39,15 +39,37 @@ def safe_float(value, default=0.0):
         
     Returns:
         float: 转换后的浮点数，失败返回default
+        
+    【CTO修复】:
+    - 修复str('nan')变成float('nan')的问题
+    - 修复numpy.nan和pandas.NA穿透的问题
+    - 确保NaN和Inf都返回default
     """
     if value is None:
         return default
-    if isinstance(value, str):
-        value = value.strip()
-        if value == '':
-            return default
+    
+    # 【CTO第一刀】：先杀NaN/Inf！
     try:
-        return float(value)
+        import pandas as pd
+        import numpy as np
+        if pd.isna(value) or np.isinf(value):
+            return default
+    except:
+        pass
+    
+    if isinstance(value, str):
+        value = value.strip().lower()
+        if value == '' or value in ('nan', 'inf', '-inf', 'null', 'none'):
+            return default
+    
+    try:
+        result = float(value)
+        # 【CTO第二刀】：再次检查NaN/Inf！
+        import pandas as pd
+        import numpy as np
+        if pd.isna(result) or np.isinf(result):
+            return default
+        return result
     except (ValueError, TypeError):
         return default
 
