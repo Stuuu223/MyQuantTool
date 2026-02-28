@@ -1,0 +1,69 @@
+"""检查已下载数据状态"""
+from xtquant import xtdata
+import datetime
+
+xtdata.connect()
+
+# 检查今天和近期数据
+today = datetime.date.today()
+print(f'今天日期: {today}')
+
+# 检查000001.SZ的历史数据
+stock = '000001.SZ'
+
+# 检查日K数据
+daily = xtdata.get_local_data(
+    field_list=['time', 'close'],
+    stock_list=[stock],
+    period='1d',
+    start_time='20240101',
+    end_time=today.strftime('%Y%m%d')
+)
+if daily and stock in daily:
+    print(f'日K数据条数: {len(daily[stock])}')
+    print(f'日K日期范围: {daily[stock]["time"].iloc[0]} 到 {daily[stock]["time"].iloc[-1]}')
+else:
+    print('日K数据: 无')
+
+# 检查tick数据
+tick = xtdata.get_local_data(
+    field_list=['time'],
+    stock_list=[stock],
+    period='tick',
+    start_time='20250220',
+    end_time=today.strftime('%Y%m%d')
+)
+if tick and stock in tick:
+    print(f'Tick数据条数: {len(tick[stock])}')
+else:
+    print('Tick数据: 无')
+
+# 检查20251231的数据（回测目标日期）
+target_tick = xtdata.get_local_data(
+    field_list=['time'],
+    stock_list=[stock],
+    period='tick',
+    start_time='20251231',
+    end_time='20251231'
+)
+if target_tick and stock in target_tick:
+    print(f'20251231 Tick数据条数: {len(target_tick[stock])}')
+else:
+    print('20251231 Tick数据: 无 (这是回测目标日期!)')
+
+print('\n===== 检查全市场股票列表 =====')
+all_stocks = xtdata.get_stock_list_in_sector('沪深A股')
+print(f'全市场股票数: {len(all_stocks)}')
+
+# 检查是否有数据目录
+import os
+qmt_path = os.getenv('QMT_PATH', 'E:\\qmt\\userdata_mini')
+print(f'\nQMT数据路径: {qmt_path}')
+if os.path.exists(qmt_path):
+    datadir = os.path.join(qmt_path, 'datadir')
+    if os.path.exists(datadir):
+        print(f'datadir存在: {datadir}')
+        # 列出一级目录
+        import glob
+        subdirs = glob.glob(os.path.join(datadir, '*'))[:5]
+        print(f'数据子目录示例: {subdirs}')

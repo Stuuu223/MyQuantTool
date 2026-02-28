@@ -61,10 +61,16 @@ logic/core/
 
 ### 1. 环境配置
 ```bash
-# 创建.env文件，填入token
+# 创建.env文件，填入token和QMT路径
 echo "TUSHARE_TOKEN=your_token" > .env
 echo "QMT_VIP_TOKEN=your_vip_token" >> .env
+echo "QMT_PATH=E:\\qmt\\userdata_mini" >> .env
 ```
+
+**数据路径说明**:
+- Tick分笔数据: `E:\qmt\userdata_mini\datadir\SH\0\600000\20260215.dat`
+- 1分钟K线: `E:\qmt\userdata_mini\datadir\SH\60\600000\20260215.dat`
+- 日K线: `E:\qmt\userdata_mini\datadir\SH\86400\600000\20260215.dat`
 
 ### 2. 数据下载
 ```bash

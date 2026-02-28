@@ -20,7 +20,6 @@
 **目录结构**:
 ```
 data/
-├── qmt_data/              # [核心] QMT官方Tick+K线数据（永保留，37.68 GB）
 ├── datadir/               # [核心] QMT数据目录（自动管理，47.81 MB）
 ├── minute_data_hot/       # [热点] 热门股票K线（定期更新，625.23 MB）
 ├── minute_data_real/      # [实时] 实时K线数据（7天轮转，406.64 MB）
