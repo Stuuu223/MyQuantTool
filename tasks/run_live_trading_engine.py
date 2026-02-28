@@ -2116,6 +2116,43 @@ class LiveTradingEngine:
                                   f"MFE: {stock.get('mfe', 0.0):.2f}")
                     print(f"\n📂 完整分析报告: {os.path.abspath(report_file)}")
                     print(f"{'='*70}\n")
+                    
+                    # 【CTO强制】热复盘必须渲染大屏！确保结果可见不被跳过
+                    try:
+                        from logic.utils.metrics_utils import render_battle_dashboard
+                        
+                        # 构建大屏数据格式
+                        dashboard_dragons = []
+                        for item in dragon_rankings[:20]:  # Top 20
+                            purity = '极优' if item.get('space_gap_pct', 0.5) < 0.05 else '优' if item.get('space_gap_pct', 0.5) < 0.10 else '良'
+                            dashboard_dragons.append({
+                                'code': item['stock_code'],
+                                'score': item.get('final_score', 0),
+                                'price': item.get('price', 0),
+                                'change': item.get('change', 0),
+                                'inflow_ratio': item.get('inflow_ratio', 0),
+                                'ratio_stock': item.get('ratio_stock', 0),
+                                'sustain_ratio': item.get('sustain_ratio', 0),
+                                'mfe': item.get('mfe', 0),
+                                'purity': purity,
+                                'tag': item.get('tag', '真龙')
+                            })
+                        
+                        # 【强制渲染】大屏必须在热复盘完成后显示
+                        if dashboard_dragons:
+                            render_battle_dashboard(
+                                top_dragons=dashboard_dragons,
+                                title=f"🔥 热复盘战报 [{target_date_str}]",
+                                clear_screen=True
+                            )
+                            logger.info(f"✅ 【CTO强制】热复盘大屏渲染完成: {len(dashboard_dragons)} 只真龙")
+                        else:
+                            logger.warning("⚠️ 【CTO强制】无真龙数据，跳过大屏渲染")
+                            
+                    except Exception as e:
+                        logger.error(f"❌ 【CTO强制】热复盘大屏渲染失败: {e}")
+                        import traceback
+                        logger.error(traceback.format_exc())
                 
             except Exception as e:
                 logger.error(f"❌ 历史信号回放失败: {e}")

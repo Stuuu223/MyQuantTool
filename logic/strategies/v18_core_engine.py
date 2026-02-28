@@ -29,6 +29,29 @@ from logic.core.metric_definitions import MetricDefinitions
 logger = logging.getLogger("V18CoreEngine")
 
 
+def safe_float(value, default=0.0):
+    """
+    安全转换为float，捕获ValueError和TypeError
+    
+    Args:
+        value: 任意类型的输入值
+        default: 转换失败时的默认值
+        
+    Returns:
+        float: 转换后的浮点数，失败返回default
+    """
+    if value is None:
+        return default
+    if isinstance(value, str):
+        value = value.strip()
+        if value == '':
+            return default
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return default
+
+
 class V18CoreEngine:
     """
     V18核心算子 - 无状态数学计算引擎
@@ -290,41 +313,38 @@ class V18CoreEngine:
             TypeError: 输入类型不正确时
             ValueError: 价格<=0或流通股本<=0时
         """
-        # 类型检查
-        if not all(isinstance(x, (int, float)) for x in [
-            net_inflow, price, prev_close, high, low, 
-            flow_5min, flow_15min, flow_5min_median_stock,
-            space_gap_pct, float_volume_shares
-        ]):
-            raise TypeError("所有数值参数必须是数字类型")
+        # 类型检查 - 【CTO修复】接受字符串类型，内部用safe_float转换
+        # 原始类型检查太严格，导致空字符串无法处理
+        # if not all(isinstance(x, (int, float, str)) for x in [...]):
+        #     raise TypeError("所有数值参数必须是数字、字符串或None类型")
         
         if not isinstance(current_time, datetime):
             raise TypeError(f"current_time必须是datetime类型，当前类型: {type(current_time)}")
         
-        # 参数有效性检查
+        # ==========================================
+        # 0. 基础准备：计算真实流通市值 (元)
+        # ==========================================
+        # 【CTO修复】使用safe_float强制转换，防止类型爆炸和空字符串崩溃
+        # 注意：必须先转换再进行有效性检查！
+        net_inflow = safe_float(net_inflow, 0.0)
+        price = safe_float(price, 0.0)
+        prev_close = safe_float(prev_close, 0.0)
+        high = safe_float(high, 0.0)
+        low = safe_float(low, 0.0)
+        open_price = safe_float(open_price, 0.0)
+        flow_5min = safe_float(flow_5min, 0.0)
+        flow_15min = safe_float(flow_15min, 0.0)
+        flow_5min_median_stock = safe_float(flow_5min_median_stock, 0.0)
+        space_gap_pct = safe_float(space_gap_pct, 0.0)
+        float_volume_shares = safe_float(float_volume_shares, 0.0)
+        
+        # 参数有效性检查 - 【CTO修复】移到safe_float转换之后
         if price <= 0:
             raise ValueError(f"当前价格必须>0，当前值: {price}")
         if float_volume_shares <= 0:
             raise ValueError(f"流通股本必须>0，当前值: {float_volume_shares}")
         if high < low:
             raise ValueError(f"最高价不能低于最低价")
-        
-        # ==========================================
-        # 0. 基础准备：计算真实流通市值 (元)
-        # ==========================================
-        # 【CTO修复】强制转换为float，防止类型爆炸
-        net_inflow = float(net_inflow) if net_inflow is not None else 0.0
-        price = float(price) if price is not None else 0.0
-        prev_close = float(prev_close) if prev_close is not None else 0.0
-        high = float(high) if high is not None else 0.0
-        low = float(low) if low is not None else 0.0
-        open_price = float(open_price) if open_price is not None else 0.0
-        flow_5min = float(flow_5min) if flow_5min is not None else 0.0
-        flow_15min = float(flow_15min) if flow_15min is not None else 0.0
-        flow_5min_median_stock = float(flow_5min_median_stock) if flow_5min_median_stock is not None else 0.0
-        space_gap_pct = float(space_gap_pct) if space_gap_pct is not None else 0.0
-        float_volume_shares = float(float_volume_shares) if float_volume_shares is not None else 0.0
-        price = float(price) if price is not None else 0.0
         
         float_market_cap = float_volume_shares * price
         
