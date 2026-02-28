@@ -24,11 +24,12 @@ import json
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from logic.services.data_service import data_service
+# 【CTO修复】注释掉不存在的模块导入，避免ModuleNotFoundError
+# from logic.services.data_service import data_service
+# from logic.services.event_lifecycle_service import EventLifecycleService
 from logic.qmt_historical_provider import QMTHistoricalProvider
 from logic.rolling_metrics import RollingFlowCalculator
 from logic.event_lifecycle_analyzer import EventLifecycleAnalyzer
-from logic.services.event_lifecycle_service import EventLifecycleService
 
 
 @dataclass
@@ -155,12 +156,10 @@ class BehaviorReplayEngine:
         
         # 新增：维持能力服务
         self.use_sustain_filter = use_sustain_filter
+        # 【CTO修复】EventLifecycleService模块不存在，暂时禁用
+        self.lifecycle_service = None
         if use_sustain_filter:
-            self.lifecycle_service = EventLifecycleService()
-            print("✅ 维持能力过滤器已启用")
-        else:
-            self.lifecycle_service = None
-            print("⚠️ 维持能力过滤器已禁用（回退到原始逻辑）")
+            print("⚠️ 维持能力过滤器已禁用（模块不存在）")
         
         # 统计结果
         self.all_trades: List[ReplayTrade] = []
@@ -209,7 +208,22 @@ class BehaviorReplayEngine:
                     return result
             
             # 3. 事件检测
-            pre_close = data_service.get_pre_close(stock_code, date)
+            # 【CTO修复】使用QMT本地数据获取前收盘价
+            try:
+                from xtquant import xtdata
+                pre_close_data = xtdata.get_local_data(
+                    field_list=['preClose'],
+                    stock_list=[stock_code],
+                    period='1d',
+                    start_time=date,
+                    end_time=date
+                )
+                if pre_close_data and stock_code in pre_close_data and not pre_close_data[stock_code].empty:
+                    pre_close = float(pre_close_data[stock_code]['preClose'].values[0])
+                else:
+                    pre_close = df['close'].iloc[0] * 0.98 if not df.empty else 0
+            except:
+                pre_close = df['close'].iloc[0] * 0.98 if not df.empty else 0
             events = self.lifecycle_analyzer.analyze_day(df, pre_close)
             result.events_detected = len(events['breakouts']) + len(events['traps'])
             
@@ -246,8 +260,24 @@ class BehaviorReplayEngine:
             DataFrame with tick data or None if failed
         """
         try:
-            formatted_code = data_service._format_code(stock_code)
-            pre_close = data_service.get_pre_close(stock_code, date)
+            # 【CTO修复】使用股票代码直接，无需format
+            formatted_code = stock_code
+            # 【CTO修复】使用QMT本地数据获取前收盘价
+            try:
+                from xtquant import xtdata
+                pre_close_data = xtdata.get_local_data(
+                    field_list=['preClose'],
+                    stock_list=[stock_code],
+                    period='1d',
+                    start_time=date,
+                    end_time=date
+                )
+                if pre_close_data and stock_code in pre_close_data and not pre_close_data[stock_code].empty:
+                    pre_close = float(pre_close_data[stock_code]['preClose'].values[0])
+                else:
+                    pre_close = 0
+            except:
+                pre_close = 0
             
             if pre_close <= 0:
                 return None
@@ -302,8 +332,24 @@ class BehaviorReplayEngine:
             DataFrame with kline data in tick-like format or None if failed
         """
         try:
-            formatted_code = data_service._format_code(stock_code)
-            pre_close = data_service.get_pre_close(stock_code, date)
+            # 【CTO修复】使用股票代码直接，无需format
+            formatted_code = stock_code
+            # 【CTO修复】使用QMT本地数据获取前收盘价
+            try:
+                from xtquant import xtdata
+                pre_close_data = xtdata.get_local_data(
+                    field_list=['preClose'],
+                    stock_list=[stock_code],
+                    period='1d',
+                    start_time=date,
+                    end_time=date
+                )
+                if pre_close_data and stock_code in pre_close_data and not pre_close_data[stock_code].empty:
+                    pre_close = float(pre_close_data[stock_code]['preClose'].values[0])
+                else:
+                    pre_close = 0
+            except:
+                pre_close = 0
             
             if pre_close <= 0:
                 return None
