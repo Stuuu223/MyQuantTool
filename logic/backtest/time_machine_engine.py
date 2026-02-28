@@ -501,7 +501,12 @@ class TimeMachineEngine:
     
     def _get_tick_data(self, stock_code: str, date: str) -> Optional[pd.DataFrame]:
         """
-        获取Tick数据
+        【CTO铁血令】获取Tick数据 - 银河系搜索协议
+        
+        1. 先查本地
+        2. 无数据则启动VIP下载
+        3. 阻塞等待落盘
+        4. 再次读取
         
         Args:
             stock_code: 股票代码
@@ -512,11 +517,12 @@ class TimeMachineEngine:
         """
         try:
             from xtquant import xtdata
+            import time
             
             # 标准化代码
             normalized_code = self._normalize_stock_code(stock_code)
             
-            # 获取本地数据
+            # 第1步：尝试本地读取
             data = xtdata.get_local_data(
                 field_list=['time', 'lastPrice', 'volume'],
                 stock_list=[normalized_code],
@@ -527,7 +533,7 @@ class TimeMachineEngine:
             
             if data and normalized_code in data:
                 df = data[normalized_code]
-                if not df.empty:
+                if not df.empty and len(df) > 100:
                     # 转换时间格式
                     if 'time' in df.columns:
                         df['time'] = df['time'].apply(
@@ -537,12 +543,90 @@ class TimeMachineEngine:
                     # 重命名价格列为标准格式
                     if 'lastPrice' in df.columns:
                         df = df.rename(columns={'lastPrice': 'price'})
+                    logger.debug(f"【银河系搜索】{stock_code} 本地Tick数据命中: {len(df)}条")
                     return df
             
+            # 第2步：本地无数据或数据不足，启动VIP下载
+            logger.info(f"【银河系搜索】{stock_code} 本地无Tick数据或不足100条，启动VIP下载...")
+            
+            # 确保VIP服务已启动
+            if not self.data_manager._vip_initialized:
+                logger.info(f"【银河系搜索】{stock_code} VIP服务未启动，正在启动...")
+                self.data_manager.start_vip_service()
+            
+            # 调用下载（单只股票，避免批量下载超时）
+            result = self.data_manager.download_tick_data(
+                stock_list=[normalized_code],
+                trade_date=date,
+                use_vip=True,
+                check_existing=False  # 强制重新下载
+            )
+            
+            # 第3步：检查下载结果
+            download_result = result.get(normalized_code)
+            if download_result and download_result.success:
+                logger.info(f"【银河系搜索】{stock_code} VIP下载成功: {download_result.record_count}条，等待落盘...")
+                
+                # 第4步：轮询检查数据是否落盘（最多等30秒）
+                for i in range(30):
+                    time.sleep(1)
+                    check_data = xtdata.get_local_data(
+                        field_list=['time', 'lastPrice', 'volume'],
+                        stock_list=[normalized_code],
+                        period='tick',
+                        start_time=date,
+                        end_time=date
+                    )
+                    
+                    if check_data and normalized_code in check_data:
+                        check_df = check_data[normalized_code]
+                        if not check_df.empty and len(check_df) > 100:
+                            logger.info(f"【银河系搜索】{stock_code} 数据落盘成功: {len(check_df)}条 (等待{i+1}秒)")
+                            # 转换时间格式
+                            if 'time' in check_df.columns:
+                                check_df['time'] = check_df['time'].apply(
+                                    lambda x: datetime.fromtimestamp(x/1000).strftime('%H:%M:%S') 
+                                    if isinstance(x, (int, float)) else str(x)
+                                )
+                            # 重命名价格列为标准格式
+                            if 'lastPrice' in check_df.columns:
+                                check_df = check_df.rename(columns={'lastPrice': 'price'})
+                            return check_df
+                
+                logger.warning(f"【银河系搜索】{stock_code} 下载成功但落盘超时(30秒)")
+            else:
+                error_msg = download_result.error if download_result else "未知错误"
+                logger.error(f"【银河系搜索】{stock_code} VIP下载失败: {error_msg}")
+            
+            # 第5步：最后尝试读取（可能部分落盘）
+            final_data = xtdata.get_local_data(
+                field_list=['time', 'lastPrice', 'volume'],
+                stock_list=[normalized_code],
+                period='tick',
+                start_time=date,
+                end_time=date
+            )
+            
+            if final_data and normalized_code in final_data:
+                final_df = final_data[normalized_code]
+                if not final_df.empty:
+                    logger.info(f"【银河系搜索】{stock_code} 最终读取: {len(final_df)}条")
+                    # 转换时间格式
+                    if 'time' in final_df.columns:
+                        final_df['time'] = final_df['time'].apply(
+                            lambda x: datetime.fromtimestamp(x/1000).strftime('%H:%M:%S') 
+                            if isinstance(x, (int, float)) else str(x)
+                        )
+                    # 重命名价格列为标准格式
+                    if 'lastPrice' in final_df.columns:
+                        final_df = final_df.rename(columns={'lastPrice': 'price'})
+                    return final_df
+            
+            logger.warning(f"【银河系搜索】{stock_code} 银河系翻遍了也没找到数据")
             return None
             
         except Exception as e:
-            logger.warning(f"获取Tick数据失败 {stock_code}: {e}")
+            logger.error(f"【银河系搜索】获取Tick数据失败 {stock_code}: {e}")
             return None
     
     def _get_pre_close(self, stock_code: str, date: str) -> float:
