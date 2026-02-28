@@ -128,7 +128,7 @@ class UniverseBuilder:
     
     def get_daily_universe(self, date: str) -> List[str]:
         """
-        获取当日股票池 - 【CTO核爆级重构】纯日K粗筛，严禁Tick！
+        获取当日股票池 - 【CTO核爆级重构】使用DTO数据整流罩，彻底解决单位换算！
         
         Args:
             date: 日期 'YYYYMMDD'
@@ -137,18 +137,18 @@ class UniverseBuilder:
             股票代码列表 (约60-100只)
         """
         from xtquant import xtdata
+        from logic.core.models import QMTStockSnapshot, create_snapshot_from_qmt
         import pandas as pd
-        import numpy as np
         import time
         
         start_time = time.time()
-        self.logger.info(f"⚡ [CTO极速粗筛] 抛弃所有Tick，一把拉取全市场日K数据 ({date})...")
+        self.logger.info(f"⚡ [CTO极速粗筛] 使用DTO整流罩，一把拉取全市场日K数据 ({date})...")
         
         all_stocks = xtdata.get_stock_list_in_sector('沪深A股')
         
         # 1. 一次性获取全市场日K（绝不是tick！）
         daily_data = xtdata.get_local_data(
-            field_list=['volume', 'close', 'preClose', 'amount'],
+            field_list=['volume', 'close', 'preClose', 'open', 'high', 'low', 'amount'],
             stock_list=all_stocks,
             period='1d',  # 【CTO强制】只用日K，严禁tick！
             start_time=date,
@@ -162,7 +162,7 @@ class UniverseBuilder:
         valid_stocks = []
         st_count, missing_count = 0, 0
         
-        # 2. 纯内存极速过滤
+        # 2. 使用DTO整流罩极速过滤
         for stock in all_stocks:
             try:
                 # 静态过滤
@@ -173,37 +173,31 @@ class UniverseBuilder:
                 if 'ST' in name or '退' in name:
                     st_count += 1
                     continue
-                    
-                # 日K数据过滤
-                if not daily_data or stock not in daily_data or daily_data[stock].empty:
+                
+                # 获取原始数据
+                df_daily = daily_data.get(stock) if daily_data else None
+                float_vol = true_dict.get_float_volume(stock)
+                avg_vol_5d = true_dict.get_avg_volume_5d(stock)
+                
+                # 【CTO核心】：使用DTO整流罩清洗所有数据！
+                snapshot = create_snapshot_from_qmt(stock, df_daily, float_vol, avg_vol_5d)
+                
+                # 【CTO系统级死票过滤器】：无效股票直接砍掉！
+                if not snapshot.is_valid:
                     missing_count += 1
                     continue
-                    
-                df_daily = daily_data[stock]
-                current_volume = float(df_daily['volume'].iloc[-1])
                 
-                # 获取5日均量和流通盘(必须安全)
-                avg_vol = float(true_dict.get_avg_volume_5d(stock))
-                float_vol = float(true_dict.get_float_volume(stock))
-                
-                # 【CTO绝对防御】：数据为0或NaN的直接干掉，不准造假！
-                if avg_vol <= 0 or float_vol <= 0 or pd.isna(avg_vol) or pd.isna(float_vol):
-                    continue
-                    
-                # 核心风控指标计算
-                vol_ratio = (current_volume * 100) / avg_vol
-                turnover = (current_volume * 100 / float_vol) * 100
-                if 0 < turnover < 0.1:
-                    turnover = (current_volume / float_vol) * 100  # 单位纠偏
-                    
-                # 极其暴力的绝对阈值过滤(3%~70%死亡换手)
-                if vol_ratio >= 1.5 and 3.0 <= turnover <= 70.0:
+                # 【CTO核心】：直接使用DTO清洗后的数据做判断！
+                # 再也不用操心单位换算，再也不用写*100或/10000！
+                if snapshot.volume_ratio >= 1.5 and 3.0 <= snapshot.turnover_rate <= 70.0:
                     valid_stocks.append(stock)
-            except Exception:
+                    
+            except Exception as e:
+                self.logger.debug(f"处理{stock}时出错: {e}")
                 continue
                 
         elapsed = time.time() - start_time
-        self.logger.info(f"✅ 粗筛完成！ST过滤:{st_count} 数据缺失:{missing_count} 最终候选:{len(valid_stocks)}只 (耗时:{elapsed:.2f}s)")
+        self.logger.info(f"✅ DTO粗筛完成！ST过滤:{st_count} 数据缺失:{missing_count} 最终候选:{len(valid_stocks)}只 (耗时:{elapsed:.2f}s)")
         return valid_stocks
     
     # ===== 以下方法已废弃，保留仅供参考 =====
