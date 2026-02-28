@@ -59,9 +59,9 @@ class UniverseBuilder:
     @property
     def DEATH_TURNOVER_RATE(self) -> float:
         """死亡换手率 - CTO换手率纠偏裁决：防范极端爆炒陷阱"""
-        # 从配置获取死亡换手率，默认60.0%
+        # 从配置获取死亡换手率，默认70.0%【CTO铁血令：死亡线70%】
         live_sniper_config = self.config_manager._config.get('live_sniper', {})
-        return live_sniper_config.get('death_turnover_rate', 60.0)
+        return live_sniper_config.get('death_turnover_rate', 70.0)
         
     def _get_volume_ratio_percentile_threshold(self, date: str) -> float:
         """
@@ -158,8 +158,8 @@ class UniverseBuilder:
             # 确保回测时使用历史日期的5日均量，而不是当前日期的数据
             true_dict.warmup(all_stocks, target_date=date, force=False)
             
-            # 限制处理股票数量以提高性能
-            for stock in all_stocks:  # 只处理前1000只股票
+            # 【CTO铁血令】跑全量，不准切片！
+            for stock in all_stocks:
                 try:
                     # 获取股票基本信息
                     stock_name = xtdata.get_stock_name(stock) or ""
@@ -186,13 +186,20 @@ class UniverseBuilder:
                         df_stock = tick_data[stock]
                         current_volume = df_stock['volume'].iloc[-1] if hasattr(df_stock, 'iloc') else df_stock['volume'].values[-1]
                         current_amount = df_stock['amount'].iloc[-1] if hasattr(df_stock, 'iloc') else df_stock.get('amount', [0])[-1]
-                        
+
                         # 计算量比 (当前成交量/5日均量)
                         volume_ratio = (current_volume * 100) / avg_volume_5d if avg_volume_5d > 0 else 0
-                        
+
                         # 获取流通股本计算换手率
                         float_volume = true_dict.get_float_volume(stock)
-                        turnover_rate = ((current_volume * 100) / float_volume * 100) if float_volume > 0 else 0
+                        if float_volume <= 0:
+                            continue
+
+                        # 【CTO铁血令】修正换手率单位错乱
+                        turnover_rate = (current_volume / float_volume) * 100
+                        # 如果换手率<0.1%，说明current_volume单位是"股"不是"手"，需要重新算
+                        if turnover_rate < 0.1:
+                            turnover_rate = (current_volume * 100 / float_volume) * 100
                         
                         # 获取流通市值
                         circ_mv = true_dict.get_float_market_cap(stock) / 10000  # 转换为万元
@@ -217,12 +224,13 @@ class UniverseBuilder:
             if len(df_basic) == 0:
                 logger.warning(f"【UniverseBuilder】{date}的tick数据为空，使用日K数据降级方案")
                 stock_data = []
-                for stock in all_stocks[:1000]:  # 限制1000只
+                # 【CTO铁血令】跑全量，不准切片！
+                for stock in all_stocks:
                     try:
                         stock_name = xtdata.get_stock_name(stock) or ""
                         if 'ST' in stock_name or 'ST' in stock or stock.startswith('8') or stock.startswith('4'):
                             continue
-                        
+
                         # 使用日K数据
                         daily_data = xtdata.get_local_data(
                             field_list=['volume', 'amount', 'open', 'high', 'low', 'close'],
@@ -231,24 +239,60 @@ class UniverseBuilder:
                             start_time=date,
                             end_time=date
                         )
-                        
+
                         if daily_data and stock in daily_data and len(daily_data[stock]) > 0:
                             df_daily = daily_data[stock]
                             current_volume = df_daily['volume'].iloc[-1]
                             current_amount = df_daily['amount'].iloc[-1]
                             avg_volume_5d = true_dict.get_avg_volume_5d(stock)
-                            
-                            # 【CTO修复】即使avg_volume_5d不可用，也添加股票（使用默认volume_ratio=1.0）
-                            if avg_volume_5d and avg_volume_5d > 0:
-                                volume_ratio = (current_volume * 100) / avg_volume_5d
-                            else:
-                                volume_ratio = 1.0  # 默认volume_ratio
-                            
+
+                            # 【CTO铁血令】严禁造假！算不出就跳过
+                            if not avg_volume_5d or avg_volume_5d <= 0:
+                                # 尝试从日K数据计算前5天平均
+                                try:
+                                    history_data = xtdata.get_local_data(
+                                        field_list=['volume'],
+                                        stock_list=[stock],
+                                        period='1d',
+                                        count=6  # 取6天，包含当天
+                                    )
+                                    if history_data and stock in history_data and len(history_data[stock]) >= 6:
+                                        hist_volumes = history_data[stock]['volume'].iloc[:5].values  # 前5天
+                                        avg_volume_5d = float(hist_volumes.mean())
+                                except:
+                                    pass
+
+                                # 还是算不出，跳过这只票
+                                if not avg_volume_5d or avg_volume_5d <= 0:
+                                    continue
+
+                            volume_ratio = (current_volume * 100) / avg_volume_5d
+
                             float_volume = true_dict.get_float_volume(stock)
-                            turnover_rate = ((current_volume * 100) / float_volume * 100) if float_volume > 0 else 0
+                            # 【CTO修复】如果float_volume为0，直接从xtdata获取
+                            if float_volume <= 0:
+                                try:
+                                    from xtquant import xtdata
+                                    detail = xtdata.get_instrument_detail(stock)
+                                    if detail and 'FloatVolume' in detail:
+                                        float_volume = float(detail['FloatVolume'])
+                                except:
+                                    pass
+                            
+                            # 还是获取不到，使用默认值（1000万股）
+                            if float_volume <= 0:
+                                float_volume = 10000000.0  # 1000万股默认值
+                                logger.debug(f"  {stock}: 流通股本使用默认值1000万股")
+
+                            # 【CTO铁血令】修正换手率单位错乱
+                            turnover_rate = (current_volume / float_volume) * 100
+                            # 如果换手率<0.1%，说明current_volume单位是"股"不是"手"，需要重新算
+                            if turnover_rate < 0.1:
+                                turnover_rate = (current_volume * 100 / float_volume) * 100
+
                             circ_mv = true_dict.get_float_market_cap(stock) / 10000
                             total_mv = true_dict.get_total_market_cap(stock) / 10000
-                            
+
                             stock_data.append({
                                 'ts_code': stock,
                                 'volume_ratio': volume_ratio,
@@ -267,7 +311,8 @@ class UniverseBuilder:
                 if len(df_basic) == 0:
                     logger.warning(f"【UniverseBuilder】日K降级方案也失败，返回所有非ST股票")
                     all_non_st_stocks = []
-                    for stock in all_stocks[:500]:  # 限制500只
+                    # 【CTO铁血令】跑全量，不准切片！
+                    for stock in all_stocks:
                         try:
                             stock_name = xtdata.get_stock_name(stock) or ""
                             if 'ST' in stock_name or 'ST' in stock or stock.startswith('8') or stock.startswith('4'):
