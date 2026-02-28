@@ -379,75 +379,61 @@ def batch_calc_sustain(current_prices: List[float],
     return results
 
 
-def render_battle_dashboard(top_dragons: List[dict], 
-                           title: str = "V20 纯血游资雷达",
-                           clear_screen: bool = True) -> None:
+def render_battle_dashboard(data_list, title="战报", clear_screen=False):
     """
-    【CTO SSOT】统一工业级战地汇总看板渲染
-    
-    所有输出模块(实盘Live、热复盘Replay、全息回演Time Machine)必须调用此函数！
-    
-    Args:
-        top_dragons: 龙榜数据列表，每只龙包含：
-            - code: 股票代码
-            - score: 最终得分
-            - price: 当前价格
-            - change: 涨幅(%)
-            - inflow_ratio: 净流入占流通市值比例
-            - ratio_stock: 自身爆发倍数(相对历史)
-            - sustain_ratio: 接力比(15min/5min)
-            - mfe: 最大有利波动(%)
-            - purity: 纯度评级(极优/优/良)
-            - tag: 标签(换手甜点/弱转强/骗炮等)
-        title: 看板标题
-        clear_screen: 是否清屏
-    
-    输出格式示例:
-    ============================================================================
-    🚀 [V20 纯血游资雷达] 动态火控看板 | 当前时间: 09:45:30
-    ============================================================================
-    排名 代码           🩸得分   价格     涨幅    流入比   爆发    接力    MFE   纯度  标签
-    ----------------------------------------------------------------------------
-    1    300986.SZ     185.4    24.58   8.5%    1.2%    18.5x   1.45x   6.2%  极优  换手甜点
-    2    002969.SZ     156.4    13.02   5.2%    0.8%    12.3x   1.62x   3.1%  优    弱转强
-    ============================================================================
+    【CTO安全渲染】：绝对兜底，不准报错，更不准静默吞没！
     """
-    import os
-    from datetime import datetime
+    # 【CTO安全渲染】空列表保护
+    if not data_list:
+        print(f"\n====================\n{title} (空榜单)\n====================")
+        return
     
     # 清屏
     if clear_screen:
+        import os
         os.system('cls' if os.name == 'nt' else 'clear')
     
-    # 获取当前时间
-    now = datetime.now()
-    time_str = now.strftime('%H:%M:%S')
+    print(f"\n{'='*100}")
+    print(f"🚀 {title}")
+    print(f"{'='*100}")
+    print(f"{'排名':<4} {'代码':<10} {'得分':<6} {'价格':<6} {'流入比':<6} {'爆发':<6} {'接力':<6} {'MFE':<6}")
+    print(f"{'-'*100}")
     
-    # 打印表头
-    width = 115
-    print("="*width)
-    print(f"🚀 [{title}] 动态火控看板 | 当前时间: {time_str}")
-    print("="*width)
-    
-    # 打印列标题 - 新增MFE列
-    print(f"{'排名':<4} {'代码':<12} {'🩸得分':<8} {'价格':<8} {'涨幅':<7} {'流入比':<7} {'爆发':<6} {'接力':<6} {'MFE':<6} {'纯度':<4} {'标签':<10}")
-    print("-"*width)
-    
-    # 打印龙榜
-    for i, dragon in enumerate(top_dragons[:10], 1):
-        code = dragon.get('code', dragon.get('stock_code', 'N/A'))
-        score = dragon.get('score', dragon.get('final_score', 0))
-        price = dragon.get('price', 0)
-        change = dragon.get('change', dragon.get('final_change', 0))
-        inflow_ratio = dragon.get('inflow_ratio', 0)
-        ratio_stock = dragon.get('ratio_stock', 0)
-        sustain_ratio = dragon.get('sustain_ratio', 0)
-        mfe = dragon.get('mfe', 0)  # 新增MFE字段
-        purity = dragon.get('purity', '良')
-        tag = dragon.get('tag', '')
+    for i, item in enumerate(data_list, 1):
+        # 【CTO安全渲染】：绝对兜底，不准报错
+        code = item.get('code', item.get('stock_code', 'N/A'))
+        score = item.get('score', item.get('final_score', 0.0))
+        price = item.get('price', 0.0)
+        inflow = item.get('inflow_ratio', 0.0)
+        ratio = item.get('ratio_stock', 0.0)
+        sustain = item.get('sustain_ratio', 0.0)
+        mfe = item.get('mfe', 0.0)
         
-        # 格式化输出 - 新增MFE列
-        print(f"{i:<4} {code:<12} {score:<8.1f} {price:<8.2f} {change:<6.1f}% {inflow_ratio:<6.2%} {ratio_stock:<6.1f}x {sustain_ratio:<6.2f}x {mfe:<5.1f}% {purity:<4} {tag:<10}")
-    
-    print("="*width)
-    print(f"💡 共 {len(top_dragons)} 只标的 | 数据实时更新中... (按 Ctrl+C 退出)")
+        # 【CTO安全渲染】强制数值转换，防止类型爆炸
+        try:
+            score = float(score) if score is not None else 0.0
+        except (ValueError, TypeError):
+            score = 0.0
+        try:
+            price = float(price) if price is not None else 0.0
+        except (ValueError, TypeError):
+            price = 0.0
+        try:
+            inflow = float(inflow) if inflow is not None else 0.0
+        except (ValueError, TypeError):
+            inflow = 0.0
+        try:
+            ratio = float(ratio) if ratio is not None else 0.0
+        except (ValueError, TypeError):
+            ratio = 0.0
+        try:
+            sustain = float(sustain) if sustain is not None else 0.0
+        except (ValueError, TypeError):
+            sustain = 0.0
+        try:
+            mfe = float(mfe) if mfe is not None else 0.0
+        except (ValueError, TypeError):
+            mfe = 0.0
+        
+        print(f"{i:<4} {code:<10} {score:<6.2f} {price:<6.2f} {inflow:<6.2f} {ratio:<6.2f} {sustain:<6.2f} {mfe:<6.2f}")
+    print(f"{'='*100}\n")

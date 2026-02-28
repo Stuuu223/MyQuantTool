@@ -21,6 +21,7 @@ import sys
 import time
 import logging
 import pandas as pd
+import numpy as np
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timedelta
 
@@ -257,7 +258,10 @@ class TrueDictionary:
                     if df is not None and len(df) >= 1:
                         # 计算所有可用数据的成交量均值（不限于5天）
                         avg_volume = df['volume'].mean()
-                        if avg_volume and avg_volume > 0:
+                        # 【CTO铁血清洗】：绝不允许NaN或Inf进入系统缓存！
+                        if pd.isna(avg_volume) or np.isinf(avg_volume):
+                            avg_volume = 0.0
+                        if avg_volume > 0:
                             self._avg_volume_5d[stock_code] = float(avg_volume)
                             success += 1
                         else:

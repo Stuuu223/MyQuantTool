@@ -209,36 +209,47 @@ class TimeMachineEngine:
         return dates
     
     def run_daily_backtest(self, date: str, stock_pool: List[str] = None) -> Dict:
-        # 【CTO修复】全市场扫描兜底
-        if stock_pool is None:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.info("【时间机器】未指定股票池，默认获取全市场股票...")
-            try:
-                from xtquant import xtdata
-                stock_pool = xtdata.get_stock_list_in_sector('沪深A股')
-            except Exception:
-                stock_pool = []
-            if not stock_pool:
-                logger.warning("【时间机器】获取全市场失败，请检查数据。")
-                return None
         """
-        单日回测
+        单日回测 - 【CTO内存熔断版】
         
         模拟实盘流程：
         1. 09:30 开盘前准备
         2. 09:40 计算早盘数据
         3. 输出当日Top 20 (CTODict: 扩容观察梯度)
         
+        【CTO内存熔断】：严禁全量Tick读取，必须通过UniverseBuilder粗筛(<200只)
+        
         Args:
             date: 交易日期 'YYYYMMDD'
-            stock_pool: 股票代码列表
+            stock_pool: 股票代码列表(可选，不传则使用UniverseBuilder粗筛)
         
         Returns:
             当日回测结果字典
         """
+        # 1. 【CTO内存熔断】强制依赖UniverseBuilder给出极少量的候选池(必须<200)
+        if stock_pool is None:
+            logger.info("【时间机器】未指定股票池，使用UniverseBuilder粗筛...")
+            try:
+                from logic.data_providers.universe_builder import UniverseBuilder
+                builder = UniverseBuilder()
+                stock_pool = builder.get_daily_universe(date)
+                logger.info(f"【时间机器】UniverseBuilder返回: {len(stock_pool)} 只")
+            except Exception as e:
+                logger.error(f"【时间机器】UniverseBuilder粗筛失败: {e}")
+                return {'date': date, 'status': 'error', 'error': f'粗筛失败: {e}'}
+        
+        # 【CTO内存熔断】：如果粗筛失效传过来几千只，直接切断，只取前200！
+        if len(stock_pool) > 200:
+            logger.warning(f"⚠️ 【CTO内存熔断】粗筛异常！返回了{len(stock_pool)}只票，强制截断至前200只以防内存爆炸！")
+            stock_pool = stock_pool[:200]
+            
+        if not stock_pool:
+            logger.error("❌ 【时间机器】粗筛结果为空，今日回测终止！")
+            return {'date': date, 'status': 'error', 'error': '粗筛结果为空'}
+        
         print(f"\n{'='*60}")
         print(f"【时间机器】回测日期: {date}")
+        print(f"⚡ [CTO极速引擎] 靶向读取{len(stock_pool)}只股票Tick...")
         print(f"{'='*60}")
         
         daily_result = {
