@@ -312,15 +312,24 @@ class UniverseBuilder:
                     logger.warning(f"【UniverseBuilder】日K降级方案也失败，返回所有非ST股票")
                     all_non_st_stocks = []
                     # 【CTO铁血令】跑全量，不准切片！
+                    # 【CTO调试】查看all_stocks和过滤情况
+                    logger.info(f"【UniverseBuilder】all_stocks总数: {len(all_stocks)}")
+                    st_count = 0
                     for stock in all_stocks:
                         try:
                             stock_name = xtdata.get_stock_name(stock) or ""
                             if 'ST' in stock_name or 'ST' in stock or stock.startswith('8') or stock.startswith('4'):
+                                st_count += 1
                                 continue
                             all_non_st_stocks.append(stock)
                         except:
                             continue
+                    logger.info(f"【UniverseBuilder】ST/北交股票过滤: {st_count}只")
                     logger.info(f"【UniverseBuilder】返回{len(all_non_st_stocks)}只非ST股票（不过滤）")
+                    # 【CTO修复】如果all_non_st_stocks为空，返回原始all_stocks
+                    if len(all_non_st_stocks) == 0:
+                        logger.warning(f"【UniverseBuilder】all_non_st_stocks为空，返回原始all_stocks前100只")
+                        return all_stocks[:100]
                     return all_non_st_stocks
             
         except Exception as e:
