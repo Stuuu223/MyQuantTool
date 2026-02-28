@@ -889,15 +889,38 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, volume_percentile, dry_run, 
     if not is_trading_day(today_str):
         click.echo(click.style(f"\n🛑 今天 ({today_str}) 是非交易日！禁止启动实盘火控雷达！", fg='red', bold=True))
         click.echo(click.style("🔄 自动为您切换至【历史热复盘模式】...", fg='yellow'))
-        # 获取最近交易日并执行回测
+        
         from logic.backtest.time_machine_engine import TimeMachineEngine
+        from logic.utils.calendar_utils import get_latest_completed_trading_day
+        from logic.utils.metrics_utils import render_battle_dashboard  # 【CTO强制】导入大屏渲染
+        
         prev_date = get_latest_completed_trading_day()
         click.echo(click.style(f"📅 复盘日期: {prev_date}", fg='cyan'))
         
         engine = TimeMachineEngine()
         result = engine.run_daily_backtest(prev_date)
+        
         click.echo(f"\n✅ 热复盘完成: 共评分 {len(result) if result else 0} 只股票")
-        return  # 绝对禁止继续启动实盘引擎
+        
+        # 【CTO物理钉死】：立刻、马上把大屏画出来！
+        if result and result.get('top20'):
+            dashboard_data = []
+            for item in result['top20'][:20]:
+                dashboard_data.append({
+                    'code': item.get('stock_code', ''),
+                    'score': item.get('final_score', 0),
+                    'price': item.get('real_close', item.get('price_0940', 0)),
+                    'change': item.get('final_change', item.get('change_pct', 0)),
+                    'inflow_ratio': item.get('inflow_ratio', 0),
+                    'ratio_stock': item.get('ratio_stock', 0),
+                    'sustain_ratio': item.get('sustain_ratio', 0),
+                    'mfe': item.get('mfe', 0),
+                    'tag': item.get('tag', '复盘')
+                })
+            render_battle_dashboard(dashboard_data, title=f"[{prev_date}] 热复盘真龙看板(V20极速版)", clear_screen=False)
+        else:
+            click.echo(click.style("⚠️ 今日没有任何股票通过V18苛刻的风控漏斗！", fg='red'))
+        return  # 画完大屏才能滚！
     
     # 检查是否已收盘 (15:00后) - 禁止盘后启动实盘
     elif now.hour >= 15:

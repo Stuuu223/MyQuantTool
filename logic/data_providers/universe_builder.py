@@ -128,278 +128,83 @@ class UniverseBuilder:
     
     def get_daily_universe(self, date: str) -> List[str]:
         """
-        获取当日股票池 (CTO重构版 - 截面向量查询)
+        获取当日股票池 - 【CTO核爆级重构】纯日K粗筛，严禁Tick！
         
         Args:
             date: 日期 'YYYYMMDD'
             
         Returns:
             股票代码列表 (约60-100只)
-            
-        Raises:
-            RuntimeError: 无法获取数据时抛出
         """
+        from xtquant import xtdata
+        import pandas as pd
+        import numpy as np
         import time
+        
         start_time = time.time()
-        logger.info(f"【UniverseBuilder】开始构建 {date} 股票池 (CTO重构版)")
+        self.logger.info(f"⚡ [CTO极速粗筛] 抛弃所有Tick，一把拉取全市场日K数据 ({date})...")
         
-        # 【V20重构】使用QMT本地数据获取全市场截面
-        try:
-            from xtquant import xtdata
-            all_stocks = xtdata.get_stock_list_in_sector('沪深A股')
-            logger.info(f"【UniverseBuilder】QMT获取全市场股票: {len(all_stocks)} 只")
-            
-            # 构建DataFrame模拟Tushare接口返回的数据结构
-            stock_data = []
-            from logic.data_providers.true_dictionary import get_true_dictionary
-            true_dict = get_true_dictionary()
-            
-            # 【CTO修复】调用warmup时传入target_date，消灭未来函数
-            # 确保回测时使用历史日期的5日均量，而不是当前日期的数据
-            true_dict.warmup(all_stocks, target_date=date, force=False)
-            
-            # 【CTO铁血令】跑全量，不准切片！
-            for stock in all_stocks:
-                try:
-                    # 获取股票基本信息
-                    # 【CTO修复】get_stock_name不存在，使用get_instrument_detail
-                    try:
-                        detail = xtdata.get_instrument_detail(stock)
-                        stock_name = detail.get('StockName', '') if detail else ''
-                    except:
-                        stock_name = ''
+        all_stocks = xtdata.get_stock_list_in_sector('沪深A股')
+        
+        # 1. 一次性获取全市场日K（绝不是tick！）
+        daily_data = xtdata.get_local_data(
+            field_list=['volume', 'close', 'preClose', 'amount'],
+            stock_list=all_stocks,
+            period='1d',  # 【CTO强制】只用日K，严禁tick！
+            start_time=date,
+            end_time=date
+        )
+        
+        from logic.data_providers.true_dictionary import get_true_dictionary
+        true_dict = get_true_dictionary()
+        true_dict.warmup(all_stocks, target_date=date)
+        
+        valid_stocks = []
+        st_count, missing_count = 0, 0
+        
+        # 2. 纯内存极速过滤
+        for stock in all_stocks:
+            try:
+                # 静态过滤
+                if stock.startswith('8') or stock.startswith('4') or stock.startswith('688'):
+                    continue
+                detail = xtdata.get_instrument_detail(stock)
+                name = detail.get('StockName', '') if detail else ''
+                if 'ST' in name or '退' in name:
+                    st_count += 1
+                    continue
                     
-                    # 过滤掉ST股票和北交所股票
-                    if 'ST' in stock_name or 'ST' in stock or stock.startswith('8') or stock.startswith('4'):
-                        continue
+                # 日K数据过滤
+                if not daily_data or stock not in daily_data or daily_data[stock].empty:
+                    missing_count += 1
+                    continue
                     
-                    # 获取5日均量
-                    avg_volume_5d = true_dict.get_avg_volume_5d(stock)
-                    if not avg_volume_5d or avg_volume_5d <= 0:
-                        continue
-                    
-                    # 获取当日数据
-                    tick_data = xtdata.get_local_data(
-                        field_list=['volume', 'amount'],
-                        stock_list=[stock],
-                        period='tick',
-                        start_time=date,
-                        end_time=date
-                    )
-                    
-                    if tick_data and stock in tick_data and len(tick_data[stock]) > 0:
-                        df_stock = tick_data[stock]
-                        current_volume = df_stock['volume'].iloc[-1] if hasattr(df_stock, 'iloc') else df_stock['volume'].values[-1]
-                        current_amount = df_stock['amount'].iloc[-1] if hasattr(df_stock, 'iloc') else df_stock.get('amount', [0])[-1]
-
-                        # 计算量比 (当前成交量/5日均量)
-                        volume_ratio = (current_volume * 100) / avg_volume_5d if avg_volume_5d > 0 else 0
-
-                        # 获取流通股本计算换手率
-                        float_volume = true_dict.get_float_volume(stock)
-                        if float_volume <= 0:
-                            continue
-
-                        # 【CTO铁血令】修正换手率单位错乱
-                        turnover_rate = (current_volume / float_volume) * 100
-                        # 如果换手率<0.1%，说明current_volume单位是"股"不是"手"，需要重新算
-                        if turnover_rate < 0.1:
-                            turnover_rate = (current_volume * 100 / float_volume) * 100
-                        
-                        # 获取流通市值
-                        circ_mv = true_dict.get_float_market_cap(stock) / 10000  # 转换为万元
-                        total_mv = true_dict.get_total_market_cap(stock) / 10000  # 转换为万元
-                        
-                        stock_data.append({
-                            'ts_code': stock,
-                            'volume_ratio': volume_ratio,
-                            'turnover_rate': turnover_rate,
-                            'circ_mv': circ_mv,
-                            'total_mv': total_mv,
-                            'amount': current_amount
-                        })
-                except:
-                    continue  # 跳过无法获取数据的股票
-            
-            import pandas as pd
-            df_basic = pd.DataFrame(stock_data)
-            logger.info(f"【UniverseBuilder】QMT截面数据构建成功: {len(df_basic)} 只")
-            
-            # 【CTO修复】如果tick数据为空，使用日K数据降级方案
-            if len(df_basic) == 0:
-                logger.warning(f"【UniverseBuilder】{date}的tick数据为空，使用日K数据降级方案")
-                stock_data = []
-                # 【CTO铁血令】跑全量，不准切片！
-                for stock in all_stocks:
-                    try:
-                        # 【CTO修复】get_stock_name不存在，使用get_instrument_detail
-                        try:
-                            detail = xtdata.get_instrument_detail(stock)
-                            stock_name = detail.get('StockName', '') if detail else ''
-                        except:
-                            stock_name = ''
-                        if 'ST' in stock_name or 'ST' in stock or stock.startswith('8') or stock.startswith('4'):
-                            continue
-
-                        # 使用日K数据
-                        daily_data = xtdata.get_local_data(
-                            field_list=['volume', 'amount', 'open', 'high', 'low', 'close'],
-                            stock_list=[stock],
-                            period='1d',
-                            start_time=date,
-                            end_time=date
-                        )
-
-                        if daily_data and stock in daily_data and len(daily_data[stock]) > 0:
-                            df_daily = daily_data[stock]
-                            current_volume = df_daily['volume'].iloc[-1]
-                            current_amount = df_daily['amount'].iloc[-1]
-                            avg_volume_5d = true_dict.get_avg_volume_5d(stock)
-
-                            # 【CTO铁血令】严禁造假！算不出就跳过
-                            if not avg_volume_5d or avg_volume_5d <= 0:
-                                # 尝试从日K数据计算前5天平均
-                                try:
-                                    history_data = xtdata.get_local_data(
-                                        field_list=['volume'],
-                                        stock_list=[stock],
-                                        period='1d',
-                                        count=6  # 取6天，包含当天
-                                    )
-                                    if history_data and stock in history_data and len(history_data[stock]) >= 6:
-                                        hist_volumes = history_data[stock]['volume'].iloc[:5].values  # 前5天
-                                        avg_volume_5d = float(hist_volumes.mean())
-                                except:
-                                    pass
-
-                                # 还是算不出，跳过这只票
-                                if not avg_volume_5d or avg_volume_5d <= 0:
-                                    continue
-
-                            volume_ratio = (current_volume * 100) / avg_volume_5d
-
-                            float_volume = true_dict.get_float_volume(stock)
-                            # 【CTO修复】如果float_volume为0，直接从xtdata获取
-                            if float_volume <= 0:
-                                try:
-                                    from xtquant import xtdata
-                                    detail = xtdata.get_instrument_detail(stock)
-                                    if detail and 'FloatVolume' in detail:
-                                        float_volume = float(detail['FloatVolume'])
-                                except:
-                                    pass
-                            
-                            # 还是获取不到，使用默认值（1000万股）
-                            if float_volume <= 0:
-                                float_volume = 10000000.0  # 1000万股默认值
-                                logger.debug(f"  {stock}: 流通股本使用默认值1000万股")
-
-                            # 【CTO铁血令】修正换手率单位错乱
-                            turnover_rate = (current_volume / float_volume) * 100
-                            # 如果换手率<0.1%，说明current_volume单位是"股"不是"手"，需要重新算
-                            if turnover_rate < 0.1:
-                                turnover_rate = (current_volume * 100 / float_volume) * 100
-
-                            circ_mv = true_dict.get_float_market_cap(stock) / 10000
-                            total_mv = true_dict.get_total_market_cap(stock) / 10000
-
-                            stock_data.append({
-                                'ts_code': stock,
-                                'volume_ratio': volume_ratio,
-                                'turnover_rate': turnover_rate,
-                                'circ_mv': circ_mv,
-                                'total_mv': total_mv,
-                                'amount': current_amount
-                            })
-                    except:
-                        continue
+                df_daily = daily_data[stock]
+                current_volume = float(df_daily['volume'].iloc[-1])
                 
-                df_basic = pd.DataFrame(stock_data)
-                logger.info(f"【UniverseBuilder】日K降级方案构建成功: {len(df_basic)} 只")
+                # 获取5日均量和流通盘(必须安全)
+                avg_vol = float(true_dict.get_avg_volume_5d(stock))
+                float_vol = float(true_dict.get_float_volume(stock))
                 
-                # 【CTO修复】如果日K降级方案也失败，返回所有非ST股票（不过滤）
-                if len(df_basic) == 0:
-                    logger.warning(f"【UniverseBuilder】日K降级方案也失败，返回所有非ST股票")
-                    all_non_st_stocks = []
-                    # 【CTO铁血令】跑全量，不准切片！
-                    # 【CTO调试】查看all_stocks和过滤情况
-                    logger.info(f"【UniverseBuilder】all_stocks总数: {len(all_stocks)}")
-                    st_count = 0
-                    for stock in all_stocks:
-                        try:
-                            # 【CTO修复】get_stock_name不存在，使用get_instrument_detail
-                            try:
-                                detail = xtdata.get_instrument_detail(stock)
-                                stock_name = detail.get('StockName', '') if detail else ''
-                            except:
-                                stock_name = ''
-                            if 'ST' in stock_name or 'ST' in stock or stock.startswith('8') or stock.startswith('4'):
-                                st_count += 1
-                                continue
-                            all_non_st_stocks.append(stock)
-                        except:
-                            continue
-                    logger.info(f"【UniverseBuilder】ST/北交股票过滤: {st_count}只")
-                    logger.info(f"【UniverseBuilder】返回{len(all_non_st_stocks)}只非ST股票（不过滤）")
-                    # 【CTO修复】如果all_non_st_stocks为空，返回原始all_stocks
-                    if len(all_non_st_stocks) == 0:
-                        logger.warning(f"【UniverseBuilder】all_non_st_stocks为空，返回原始all_stocks前100只")
-                        return all_stocks[:100]
-                    return all_non_st_stocks
-            
-        except Exception as e:
-            logger.error(f"QMT截面数据获取失败: {e}")
-            import traceback
-            traceback.print_exc()
-            raise RuntimeError(f"QMT截面数据获取失败: {e}")
-        
-        # 向量化过滤 (CTO: 禁止循环，用Pandas)
-        # 第一层: 剔除量比为空的股票
-        if len(df_basic) == 0:
-            logger.error(f"【UniverseBuilder】{date}无有效数据，返回空列表")
-            return []
-        
-        df_filtered = df_basic[df_basic['volume_ratio'].notna()].copy()
-        logger.info(f"【UniverseBuilder】第一层(有效量比): {len(df_filtered)} 只")
-        
-        # 第二层: 量比 > 分位数阈值 (右侧起爆：筛选真正放量的股票，CTO裁决：统一使用分位数标准)
-        volume_ratio_threshold = self._get_volume_ratio_percentile_threshold(date)
-        df_filtered = df_filtered[df_filtered['volume_ratio'] >= volume_ratio_threshold]
-        logger.info(f"【UniverseBuilder】第二层(量比>{volume_ratio_threshold:.2f}, 右侧起爆): {len(df_filtered)} 只")
-        
-        # 【CTO调试】打印量比和换手率分布
-        if len(df_filtered) > 0:
-            logger.info(f"【UniverseBuilder】量比范围: {df_filtered['volume_ratio'].min():.2f} - {df_filtered['volume_ratio'].max():.2f}")
-            logger.info(f"【UniverseBuilder】换手率范围: {df_filtered['turnover_rate'].min():.2f}% - {df_filtered['turnover_rate'].max():.2f}%")
-        
-        # 第三层: 换手率过滤 (CTO换手率纠偏裁决)
-        # 换手率 > 最低活跃阈值 (拒绝死水) 且 < 死亡换手率 (防范极端爆炒陷阱)
-        min_turnover = self.MIN_ACTIVE_TURNOVER_RATE
-        max_turnover = self.DEATH_TURNOVER_RATE
-        
-        # 【CTO调试】统计被过滤原因
-        low_turnover = len(df_filtered[df_filtered['turnover_rate'] <= min_turnover])
-        high_turnover = len(df_filtered[df_filtered['turnover_rate'] >= max_turnover])
-        
-        df_filtered = df_filtered[
-            (df_filtered['turnover_rate'] > min_turnover) & 
-            (df_filtered['turnover_rate'] < max_turnover)
-        ]
-        logger.info(f"【UniverseBuilder】第三层(换手率>{min_turnover}%-<{max_turnover}%): {len(df_filtered)} 只")
-        logger.info(f"【UniverseBuilder】  被过滤: 低于{min_turnover}%有{low_turnover}只, 高于{max_turnover}%有{high_turnover}只")
-        
-        # 第四层: 剔除科创板(688)和北交所(8开头/4开头)
-        df_filtered = df_filtered[~df_filtered['ts_code'].str.startswith('688')]
-        df_filtered = df_filtered[~df_filtered['ts_code'].str.match(r'^[84]\d{5}\.(SZ|SH|BJ)')]
-        logger.info(f"【UniverseBuilder】第四层(剔除科创/北交): {len(df_filtered)} 只")
-        
-        # 转换为标准格式
-        result = [self._to_standard_code(code) for code in df_filtered['ts_code'].tolist()]
-        
+                # 【CTO绝对防御】：数据为0或NaN的直接干掉，不准造假！
+                if avg_vol <= 0 or float_vol <= 0 or pd.isna(avg_vol) or pd.isna(float_vol):
+                    continue
+                    
+                # 核心风控指标计算
+                vol_ratio = (current_volume * 100) / avg_vol
+                turnover = (current_volume * 100 / float_vol) * 100
+                if 0 < turnover < 0.1:
+                    turnover = (current_volume / float_vol) * 100  # 单位纠偏
+                    
+                # 极其暴力的绝对阈值过滤(3%~70%死亡换手)
+                if vol_ratio >= 1.5 and 3.0 <= turnover <= 70.0:
+                    valid_stocks.append(stock)
+            except Exception:
+                continue
+                
         elapsed = time.time() - start_time
-        logger.info(f"【UniverseBuilder】最终股票池: {len(result)} 只 (耗时: {elapsed:.2f}秒)")
-        
-        return result
+        self.logger.info(f"✅ 粗筛完成！ST过滤:{st_count} 数据缺失:{missing_count} 最终候选:{len(valid_stocks)}只 (耗时:{elapsed:.2f}s)")
+        return valid_stocks
     
     # ===== 以下方法已废弃，保留仅供参考 =====
     # 原代码使用循环调用stk_mins导致6000次API请求
