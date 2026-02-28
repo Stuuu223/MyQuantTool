@@ -229,14 +229,11 @@ class TimeMachineEngine:
         # 1. 【CTO内存熔断】强制依赖UniverseBuilder给出极少量的候选池(必须<200)
         if stock_pool is None:
             logger.info("【时间机器】未指定股票池，使用UniverseBuilder粗筛...")
-            try:
-                from logic.data_providers.universe_builder import UniverseBuilder
-                builder = UniverseBuilder()
-                stock_pool = builder.get_daily_universe(date)
-                logger.info(f"【时间机器】UniverseBuilder返回: {len(stock_pool)} 只")
-            except Exception as e:
-                logger.error(f"【时间机器】UniverseBuilder粗筛失败: {e}")
-                return {'date': date, 'status': 'error', 'error': f'粗筛失败: {e}'}
+            # 【CTO断头台】：Fail Fast！让错误直接暴露，绝不假死伪装！
+            from logic.data_providers.universe_builder import UniverseBuilder
+            builder = UniverseBuilder()
+            stock_pool = builder.get_daily_universe(date)
+            logger.info(f"【时间机器】UniverseBuilder返回: {len(stock_pool)} 只")
         
         # 【CTO内存熔断】：如果粗筛失效传过来几千只，直接切断，只取前200！
         if len(stock_pool) > 200:
@@ -1024,25 +1021,21 @@ class TimeMachineEngine:
                     raise ValueError("使用Tushare粗筛时必须提供date参数")
                 
                 logger.info(f"【时间机器】使用UniverseBuilder获取股票池: {date}")
-                try:
-                    # UniverseBuilder内部使用正确的绝对阈值3.0
-                    builder = UniverseBuilder()
-                    logger.info(f"【时间机器】开始调用get_daily_universe...")
-                    stock_pool = builder.get_daily_universe(date)
-                    
-                    logger.info(f"【时间机器】UniverseBuilder返回: {len(stock_pool)} 只股票")
-                    
-                    if not stock_pool:
-                        logger.error(f"【时间机器】 UniverseBuilder返回空股票池: {date}")
-                        # 【CTO修复】返回空列表而不是报错，让上层处理
-                        return []
-                    
-                    logger.info(f"【时间机器】股票池获取完成: {len(stock_pool)} 只")
-                    return stock_pool
-                    
-                except Exception as e:
-                    logger.error(f"【时间机器】Tushare粗筛失败: {e}")
-                    raise RuntimeError(f"无法获取真实股票池: {e}") from e
+                # 【CTO断头台】：Fail Fast！直接调用，让错误暴露！
+                # UniverseBuilder内部使用正确的绝对阈值3.0
+                builder = UniverseBuilder()
+                logger.info(f"【时间机器】开始调用get_daily_universe...")
+                stock_pool = builder.get_daily_universe(date)
+                
+                logger.info(f"【时间机器】UniverseBuilder返回: {len(stock_pool)} 只股票")
+                
+                if not stock_pool:
+                    logger.error(f"【时间机器】 UniverseBuilder返回空股票池: {date}")
+                    # 【CTO修复】返回空列表而不是报错，让上层处理
+                    return []
+                
+                logger.info(f"【时间机器】股票池获取完成: {len(stock_pool)} 只")
+                return stock_pool
                 
             # 如果提供CSV文件路径
             full_path = PathResolver.resolve_path(path)
