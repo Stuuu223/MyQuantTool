@@ -59,9 +59,9 @@ class UniverseBuilder:
     @property
     def DEATH_TURNOVER_RATE(self) -> float:
         """死亡换手率 - CTO换手率纠偏裁决：防范极端爆炒陷阱"""
-        # 从配置获取死亡换手率，默认70.0%
+        # 从配置获取死亡换手率，默认60.0%
         live_sniper_config = self.config_manager._config.get('live_sniper', {})
-        return live_sniper_config.get('death_turnover_rate', 70.0)
+        return live_sniper_config.get('death_turnover_rate', 60.0)
         
     def _get_volume_ratio_percentile_threshold(self, date: str) -> float:
         """

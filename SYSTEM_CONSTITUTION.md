@@ -392,6 +392,7 @@ price_condition = "high > pre_close"
 |------|-----|------|
 | 量比降维 | **0.90分位** | 实盘0.95 - 0.05 |
 | 换手率 | **3.0%** | live_sniper.min_active_turnover_rate |
+| 死亡换手率 | **60.0%** | live_sniper.turnover_rate_max |
 | 价格条件 | **high > pre_close** | 只要最高价红过 |
 | 上下文天数 | **60天** | 前30后30 |
 | 日K策略 | **全市场自动补全** | 非交易时间静默补齐 |

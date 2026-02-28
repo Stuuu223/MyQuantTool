@@ -46,7 +46,7 @@ class GlobalFilterGateway:
     """
     
     # ========== CTO红线常量：死亡换手阈值 ==========
-    DEATH_TURNOVER_THRESHOLD = 70.0  # 死亡换手线70%
+    DEATH_TURNOVER_THRESHOLD = 60.0  # 死亡换手线60%
     SWEET_SPOT_MIN = 8.0  # 甜点位下限8%
     SWEET_SPOT_MAX = 15.0  # 甜点位上限15%
     
