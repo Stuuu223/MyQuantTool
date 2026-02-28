@@ -333,14 +333,13 @@ def backtest_cmd(ctx, date, start_date, end_date, universe, full_market, volume_
             click.echo(click.style(f"🚀 启动全息回测: 日期={date}, 全市场扫描", fg='cyan'))
             
             # 使用TimeMachineEngine进行回测
+            # 【CTO统一战报】工业级大屏已在run_daily_backtest中显示
             engine = TimeMachineEngine(initial_capital=20000.0)
             result = engine.run_daily_backtest(date)
             
-            click.echo(f"\n📈 回测结果:")
+            # 回测结果已在大屏中展示，此处仅输出统计信息
             if result and result.get('top20'):
-                click.echo(f"  Top20候选股数量: {len(result['top20'])}")
-                for i, top in enumerate(result['top20'][:5], 1):  # 显示前5
-                    click.echo(f"  {i}. {top.get('stock_code', 'N/A')}: 得分={top.get('final_score', 0):.1f}, 收盘涨幅={top.get('final_change', top.get('change_0940', 0)):.2f}%")
+                click.echo(f"\n📊 回测统计: Top20候选股数量={len(result['top20'])}, 详见上方工业级大屏")
             
         click.echo(click.style("\n✅ 回测完成", fg='green'))
         
@@ -868,6 +867,29 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, volume_percentile, dry_run, 
     """
     from datetime import datetime
     import time
+    
+    # ==========================================
+    # 【CTO修复】交易日判断与自动降级
+    # ==========================================
+    from logic.utils.calendar_utils import is_trading_day, get_latest_completed_trading_day
+    
+    now = datetime.now()
+    today_str = now.strftime('%Y%m%d')
+    
+    # 检查今天是否为交易日
+    if not is_trading_day(today_str):
+        click.echo(click.style(f"\n⚠️ 警告: 今天 ({today_str}) 不是交易日", fg='yellow', bold=True))
+        click.echo(click.style("🔄 自动转入复盘模式...", fg='cyan'))
+        # 强制设置历史回放日期为最近交易日
+        replay_date = get_latest_completed_trading_day()
+        click.echo(click.style(f"📅 复盘日期: {replay_date}", fg='cyan'))
+    
+    # 检查是否已收盘 (15:00后)
+    elif now.hour >= 15:
+        click.echo(click.style(f"\n⏰ 股市已收盘 (当前 {now.hour}:00)，自动转入复盘模式", fg='yellow', bold=True))
+        # 如果今天已是交易日且已收盘，使用今天作为复盘日期
+        replay_date = today_str
+        click.echo(click.style(f"📅 复盘日期: {replay_date}", fg='cyan'))
     
     click.echo(click.style("\n🚀 启动实盘猎杀系统 (EventDriven 事件驱动模式)", fg='green', bold=True))
     click.echo(f"📅 日期: {datetime.now().strftime('%Y-%m-%d')}")

@@ -20,9 +20,13 @@ from datetime import datetime, time
 from typing import Union, Dict, Optional, Any
 import pandas as pd
 import numpy as np
+import logging
 
 from logic.core.config_manager import get_config_manager
 from logic.core.metric_definitions import MetricDefinitions
+
+# 配置V18引擎专用日志器
+logger = logging.getLogger("V18CoreEngine")
 
 
 class V18CoreEngine:
@@ -275,11 +279,12 @@ class V18CoreEngine:
             current_time: 当前时间（datetime对象）
         
         Returns:
-            tuple: (final_score, sustain_ratio, inflow_ratio, ratio_stock)
+            tuple: (final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe)
                 - final_score: 最终验钞得分（float）
                 - sustain_ratio: 资金维持率（float）
                 - inflow_ratio: 净流入占流通市值比例（float）
                 - ratio_stock: 相对自身历史爆发力倍数（float）
+                - mfe: 资金效率指标Money Force Efficiency（float）
         
         Raises:
             TypeError: 输入类型不正确时
@@ -345,10 +350,26 @@ class V18CoreEngine:
         # A. 维持能力 (Sustain Ability - 抓翻倍大妖的核心)
         # 15分钟资金 / 5分钟资金，健康阶梯推升应该 > 1.2
         sustain_ratio = (flow_15min / flow_5min) if flow_5min > 0 else 0.0
+        
+        # 【杂毛断头台】机制 - 焊死跟风杂毛，只留真龙
+        stock_identifier = f"{current_time.strftime('%H:%M')}@{price:.2f}"
+        
         if sustain_ratio > 1.2:
             multiplier *= 1.5  # 健康阶梯推升，超级加倍！
         elif sustain_ratio < 1.0:
-            multiplier *= 0.5  # 资金抽水，尖刺骗炮，重罚！
+            # 致命惩罚：资金维持不住，杂毛断头台绞杀！
+            multiplier *= 0.1
+            logger.warning(
+                f"[杂毛断头台-致命绞杀] {stock_identifier} sustain_ratio={sustain_ratio:.2f} < 1.0, "
+                f"资金断流骗炮，final_score将被压制到接近0"
+            )
+        elif sustain_ratio < 1.1:
+            # 降权惩罚：资金维持吃力，疑似跟风杂毛
+            multiplier *= 0.5
+            logger.warning(
+                f"[杂毛断头台-降权警告] {stock_identifier} sustain_ratio={sustain_ratio:.2f} < 1.1, "
+                f"资金维持薄弱，final_score减半"
+            )
         
         # B. 筹码纯度 (空间差 < 10% 抛压轻)
         if space_gap_pct < 0.10:
@@ -372,6 +393,11 @@ class V18CoreEngine:
         # ==========================================
         # 【修复】分子必须是向上推力，不能用总振幅！过滤天地板砸盘！
         # 向上推力 = (收盘-最低 + 最高-开盘) / 2，只奖励向上的动能
+        
+        # 计算向上推力百分比（相对于昨收）
+        upward_thrust = ((price - low) + (high - open_price)) / 2
+        price_range_pct = upward_thrust / prev_close if prev_close > 0 else 0.0
+        
         # 【CTO 防御】：如果 inflow_ratio 极小或为负，保留其物理意义，但防止除零爆炸
         if abs(inflow_ratio) < 0.001:
             mfe = 0.0
@@ -521,7 +547,7 @@ if __name__ == "__main__":
         ("09:35:00", 1.2, "早盘抢筹"),
         ("09:45:00", 1.0, "主升浪确认"),
         ("11:00:00", 0.8, "垃圾时间"),
-        ("14:30:00", 0.5, "尾盘陷阱"),
+        ("14:30:00", 0.2, "尾盘陷阱-严惩偷袭"),
     ]
     for t, expected, desc in test_times:
         decay = engine.get_time_decay_ratio(t)
@@ -575,12 +601,13 @@ if __name__ == "__main__":
     # 测试9: True Dragon Score - 完美起爆场景
     print("\n【测试9】True Dragon Score - 完美起爆场景")
     test_time = datetime(2026, 2, 27, 9, 35, 0)  # 早盘9:35
-    final_score, sustain_ratio, inflow_ratio, ratio_stock = engine.calculate_true_dragon_score(
+    final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe = engine.calculate_true_dragon_score(
         net_inflow=50000000,      # 5000万净流入
         price=25.0,
         prev_close=22.0,
         high=26.0,
         low=23.0,
+        open_price=22.5,          # 开盘价
         flow_5min=10000000,       # 5分钟流入1000万
         flow_15min=15000000,      # 15分钟流入1500万 (sustain_ratio=1.5 > 1.2)
         flow_5min_median_stock=500000,  # 历史5分钟中位数50万
@@ -591,6 +618,7 @@ if __name__ == "__main__":
     print(f"  净流入比: {inflow_ratio:.4f} (目标>1%={inflow_ratio>0.01})")
     print(f"  自身爆发力: {ratio_stock:.1f}倍 (目标>15倍={ratio_stock>15})")
     print(f"  维持率: {sustain_ratio:.2f} (健康>1.2={sustain_ratio>1.2})")
+    print(f"  MFE: {mfe:.2f}")
     print(f"  最终得分: {final_score:.2f}")
     # 验证：早盘(1.2) + 维持好(1.5) + 筹码纯(1.2) + 吸血(1.2) = 2.592x乘数
     assert inflow_ratio == 0.02, f"净流入比例应为2%，实际{inflow_ratio}"
@@ -599,15 +627,16 @@ if __name__ == "__main__":
     assert final_score > 200, f"完美起爆应>200分，实际{final_score}"
     print("  ✅ 通过")
     
-    # 测试10: True Dragon Score - 骗炮陷阱场景
-    print("\n【测试10】True Dragon Score - 骗炮陷阱场景")
+    # 测试10: True Dragon Score - 骗炮陷阱场景（杂毛断头台测试）
+    print("\n【测试10】True Dragon Score - 骗炮陷阱场景（杂毛断头台测试）")
     test_time2 = datetime(2026, 2, 27, 14, 30, 0)  # 尾盘14:30
-    final_score2, sustain_ratio2, inflow_ratio2, ratio_stock2 = engine.calculate_true_dragon_score(
+    final_score2, sustain_ratio2, inflow_ratio2, ratio_stock2, mfe2 = engine.calculate_true_dragon_score(
         net_inflow=10000000,      # 1000万净流入
         price=25.0,
         prev_close=22.0,
         high=26.0,
         low=23.0,
+        open_price=22.5,          # 开盘价
         flow_5min=8000000,        # 5分钟流入800万
         flow_15min=6000000,       # 15分钟流入600万 (sustain_ratio=0.75 < 1.0，资金抽水！)
         flow_5min_median_stock=1000000,  # 历史5分钟中位数100万
@@ -618,21 +647,23 @@ if __name__ == "__main__":
     print(f"  净流入比: {inflow_ratio2:.4f} (目标<1%={inflow_ratio2<0.01})")
     print(f"  自身爆发力: {ratio_stock2:.1f}倍 (目标<15倍={ratio_stock2<15})")
     print(f"  维持率: {sustain_ratio2:.2f} (资金抽水<1.0={sustain_ratio2<1.0})")
+    print(f"  MFE: {mfe2:.2f}")
     print(f"  最终得分: {final_score2:.2f}")
-    # 验证：尾盘(0.5) + 维持差(0.5) = 0.25x惩罚
+    # 验证：尾盘(0.2) + 维持差(0.1) = 0.02x致命惩罚 (杂毛断头台绞杀！)
     assert sustain_ratio2 == 0.75, f"维持率应为0.75，实际{sustain_ratio2}"
-    assert final_score2 < 50, f"骗炮陷阱应<50分，实际{final_score2}"
-    print("  ✅ 通过")
+    assert final_score2 < 20, f"骗炮陷阱应<20分(致命惩罚)，实际{final_score2}"
+    print("  ✅ 通过 - 杂毛断头台已绞杀骗炮股")
     
     # 测试11: True Dragon Score - 边界值测试
     print("\n【测试11】True Dragon Score - 边界值测试")
     # 平盘情况
-    final_score3, _, _, _ = engine.calculate_true_dragon_score(
+    final_score3, _, _, _, _ = engine.calculate_true_dragon_score(
         net_inflow=50000000,
         price=25.0,
         prev_close=24.0,  # 昨收24
         high=25.0,        # 最高=当前
         low=25.0,         # 最低=当前（平盘）
+        open_price=24.0,  # 开盘价
         flow_5min=10000000,
         flow_15min=12000000,
         flow_5min_median_stock=1000000,
@@ -644,12 +675,13 @@ if __name__ == "__main__":
     assert final_score3 > 0, "平盘上涨应得正分"
     
     # 平盘下跌情况
-    final_score4, _, _, _ = engine.calculate_true_dragon_score(
+    final_score4, _, _, _, _ = engine.calculate_true_dragon_score(
         net_inflow=50000000,
         price=23.0,       # 当前<昨收
         prev_close=24.0,
         high=23.0,
         low=23.0,
+        open_price=24.0,  # 开盘价
         flow_5min=10000000,
         flow_15min=12000000,
         flow_5min_median_stock=1000000,
@@ -661,6 +693,30 @@ if __name__ == "__main__":
     # 平盘下跌，momentum_score=0，只剩动能和势能分
     assert final_score4 < final_score3, "平盘下跌应得更低分"
     print("  ✅ 通过")
+    
+    # 测试12: 杂毛断头台 - sustain_ratio在1.0~1.1之间的降权惩罚
+    print("\n【测试12】杂毛断头台 - sustain_ratio=1.05降权惩罚测试")
+    test_time3 = datetime(2026, 2, 27, 10, 15, 0)  # 上午10:15
+    final_score5, sustain_ratio5, _, _, _ = engine.calculate_true_dragon_score(
+        net_inflow=30000000,      # 3000万净流入
+        price=25.0,
+        prev_close=22.0,
+        high=26.0,
+        low=23.0,
+        open_price=22.5,
+        flow_5min=10000000,       # 5分钟流入1000万
+        flow_15min=10500000,      # 15分钟流入1050万 (sustain_ratio=1.05, 在1.0~1.1之间)
+        flow_5min_median_stock=500000,
+        space_gap_pct=0.08,
+        float_volume_shares=100000000,
+        current_time=test_time3
+    )
+    print(f"  维持率: {sustain_ratio5:.2f} (1.0 < sustain_ratio < 1.1，应受降权惩罚)")
+    print(f"  最终得分: {final_score5:.2f}")
+    assert 1.0 < sustain_ratio5 < 1.1, f"维持率应在1.0~1.1之间，实际{sustain_ratio5}"
+    # 正常情况应该>50分，但降权惩罚后应该<50分
+    assert final_score5 < 100, f"降权惩罚后应<100分，实际{final_score5}"
+    print("  ✅ 通过 - sustain_ratio降权惩罚生效")
     
     print("\n" + "=" * 70)
     print("✅ 所有单元测试通过！V18核心引擎已就绪。")

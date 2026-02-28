@@ -330,7 +330,7 @@ def download_holographic(date: str, resume: bool = True, timeout: int = 3600):
     live_sniper_config = config_manager._config.get('live_sniper', {})
     volume_percentile = live_sniper_config.get('volume_ratio_percentile', 0.95)
     min_turnover = live_sniper_config.get('min_active_turnover_rate', 3.0)
-    max_turnover = live_sniper_config.get('death_turnover_rate', 60.0)
+    max_turnover = live_sniper_config.get('death_turnover_rate', 70.0)
     
     console.print(f"\n[bold cyan]📊 全息数据下载器 (V18双Ratio筛选)[/bold cyan]")
     console.print(f"📅 目标日期: {date}")
@@ -519,7 +519,7 @@ def download_holographic_range(start_date: str, end_date: str, resume: bool = Tr
     live_sniper_config = config_manager._config.get('live_sniper', {})
     volume_percentile = live_sniper_config.get('volume_ratio_percentile', 0.95)
     min_turnover = live_sniper_config.get('min_active_turnover_rate', 3.0)
-    max_turnover = live_sniper_config.get('death_turnover_rate', 60.0)
+    max_turnover = live_sniper_config.get('death_turnover_rate', 70.0)
     
     # 生成交易日列表
     dates = generate_dates(start_date, end_date)

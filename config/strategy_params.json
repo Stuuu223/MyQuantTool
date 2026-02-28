@@ -79,7 +79,7 @@
       "early_morning_rush": 1.2,
       "morning_confirm": 1.0,
       "noon_trash": 0.8,
-      "tail_trap": 0.5
+      "tail_trap": 0.2
     },
     "scoring_bonuses": {
       "extreme_volume_ratio": 3.0,

@@ -24,6 +24,7 @@ from logic.core.sanity_guards import SanityGuards
 from logic.data_providers.qmt_manager import QmtDataManager
 from logic.data_providers.universe_builder import UniverseBuilder
 from logic.core.config_manager import get_config_manager
+from logic.utils.metrics_utils import render_battle_dashboard
 
 logger = logging.getLogger(__name__)
 
@@ -274,22 +275,63 @@ class TimeMachineEngine:
             print(f"  🧮 计算早盘指标...")
             
             stock_scores = []
+            data_missing_count = 0
+            data_missing_stocks = []  # 记录因数据缺失被跳过的股票
+            
             for stock in valid_stocks:
                 try:
                     score = self._calculate_morning_score(stock, date)
-                    if score:
-                        stock_scores.append(score)
+                    
+                    # 【CTO修复】数据完整性断言：禁止0分兜底
+                    if score is None:
+                        data_missing_count += 1
+                        data_missing_stocks.append(stock)
+                        logger.warning(f"  ⚠️ {stock}: 数据缺失，跳过算分")
+                        continue
+                    
+                    # 检查关键数据字段
+                    if score.get('final_score', 0) == 0:
+                        # 区分是Veto导致的0分还是数据缺失导致的0分
+                        if not score.get('is_vetoed', False):
+                            data_missing_count += 1
+                            data_missing_stocks.append(stock)
+                            logger.warning(f"  ⚠️ {stock}: final_score=0且无Veto标记，判定为数据缺失，跳过")
+                            continue
+                    
+                    # 检查昨收价和开盘价的有效性
+                    if score.get('pre_close', 0) <= 0:
+                        data_missing_count += 1
+                        data_missing_stocks.append(stock)
+                        logger.warning(f"  ⚠️ {stock}: pre_close={score.get('pre_close', 0)} 无效，跳过")
+                        continue
+                    
+                    stock_scores.append(score)
+                    
                 except Exception as e:
                     error_msg = f"{stock}计算错误: {str(e)}"
                     daily_result['errors'].append(error_msg)
                     logger.warning(f"  ⚠️ {error_msg}")
             
-            # 3. 排序选出Top 20 (CTODict: 扩容至Top 20观察梯度)
-            stock_scores.sort(key=lambda x: x['final_score'], reverse=True)
+            # 3. 【CTO多维排序】得分相同看MFE，MFE大于5倒扣
+            # 计算MFE (最大 favorable excursion)
+            for score in stock_scores:
+                max_price = score.get('max_price', 0)
+                pre_close = score.get('pre_close', 1)
+                # MFE = (最高价 - 昨收) / 昨收 * 100，无量纲百分比
+                mfe = ((max_price - pre_close) / pre_close * 100) if pre_close > 0 else 0
+                score['mfe'] = mfe
+                # MFE大于5%倒扣分数（惩罚冲高回落）
+                if mfe > 5:
+                    score['final_score'] = score.get('final_score', 0) - (mfe - 5) * 2
+            
+            # 多维排序：final_score降序，相同则看MFE升序（MFE越小越好）
+            stock_scores.sort(key=lambda x: (x.get('final_score', 0), -x.get('mfe', 0)), reverse=True)
             top20 = stock_scores[:20]
             
             daily_result['top20'] = top20
             daily_result['status'] = 'success'
+            daily_result['data_missing_count'] = data_missing_count
+            daily_result['data_missing_stocks'] = data_missing_stocks
             
             # 5. 执行记忆衰减
             self._apply_memory_decay(date, top20)
@@ -338,38 +380,58 @@ class TimeMachineEngine:
                 logger.warning(f"⚠️ 【记忆引擎】盘后结算失败: {mem_e}")
             
             # 【Step6: 时空对齐与全息回演UI看板】
-            # 计算真实时空切片并输出工业级龙榜
-            dragon_rankings = self._calculate_dragon_rankings(top20, date)
-            if dragon_rankings:
-                self._print_dragon_dashboard(dragon_rankings, date)
+            # 【CTO统一战报】使用工业级大屏render_battle_dashboard
             
-            # 6. 打印结果 - 【CTO工业级看板】显示真实收盘涨幅和骗炮标签
-            print(f"\n  🏆 当日Top 20 (显示前5):")
-            for i, item in enumerate(top20[:5], 1):
+            # 构建dragon数据格式适配大屏
+            dragons_for_dashboard = []
+            for item in top20:
                 stock_code = item['stock_code']
                 final_score = item.get('final_score', 0)
-                final_change = item.get('final_change', item.get('change_0940', 0))  # 优先使用真实收盘涨幅
+                final_change = item.get('final_change', item.get('change_0940', 0))
                 real_close = item.get('real_close', 0)
+                pre_close = item.get('pre_close', 1)
                 is_vetoed = item.get('is_vetoed', False)
                 veto_reason = item.get('veto_reason', '')
                 inflow_ratio = item.get('inflow_ratio', 0)
                 ratio_stock = item.get('ratio_stock', 0)
                 sustain_ratio = item.get('sustain_ratio', 0)
                 pullback_ratio = item.get('pullback_ratio', 0)
+                mfe = item.get('mfe', 0)
                 
                 # 纯度评级
-                space_gap_pct = pullback_ratio  # 简化
+                space_gap_pct = pullback_ratio
                 purity = '极优' if space_gap_pct < 0.05 else '优' if space_gap_pct < 0.10 else '良'
                 
                 # 标签
                 tag = veto_reason if is_vetoed else '换手甜点' if item.get('passes_filters', False) else '普通'
                 
-                # 工业级输出格式
-                print(f"    {i}. [{stock_code}] 🩸得分: {final_score:.1f} | 收盘涨幅: {final_change:.2f}% | 流入比: {inflow_ratio:.2%} | 自身爆发: {ratio_stock:.1f}x | 接力(Sustain): {sustain_ratio:.2f}x | 纯度: {purity} | [标签: {tag}]")
-                if is_vetoed:
-                    print(f"       ⚠️ {veto_reason} (回落{pullback_ratio:.1%})")
-            if len(top20) > 5:
-                print(f"    ... 共 {len(top20)} 只 (详见JSON)")
+                dragons_for_dashboard.append({
+                    'code': stock_code,
+                    'score': final_score,
+                    'price': real_close if real_close > 0 else item.get('price_0940', 0),
+                    'change': final_change,
+                    'inflow_ratio': inflow_ratio,
+                    'ratio_stock': ratio_stock,
+                    'sustain_ratio': sustain_ratio,
+                    'mfe': mfe,
+                    'purity': purity,
+                    'tag': tag
+                })
+            
+            # 调用工业级大屏（与实盘统一）
+            if dragons_for_dashboard:
+                render_battle_dashboard(
+                    top_dragons=dragons_for_dashboard,
+                    title=f"全息回测 [{date}]",
+                    clear_screen=False  # 不回测不清屏，保留日志
+                )
+            
+            # 【CTO修复】打印数据缺失统计
+            if data_missing_count > 0:
+                print(f"\n  📊 数据完整性报告:")
+                print(f"     因数据缺失被跳过: {data_missing_count} 只")
+                print(f"     被跳过股票: {', '.join(data_missing_stocks[:10])}{'...' if len(data_missing_stocks) > 10 else ''}")
+                logger.info(f"【时间机器】{date} 数据缺失统计: {data_missing_count} 只被跳过")
             
             logger.info(f"【时间机器】{date} 回测成功，Top20: {[s['stock_code'] for s in top20[:5]]}...")
             
@@ -543,6 +605,52 @@ class TimeMachineEngine:
                 logger.warning(f"【时间机器】{stock_code} 昨收价检查失败: {msg}")
                 return None
             
+            # 【CTO修复】数据完整性断言：检查开盘价有效性 - 多重兜底机制
+            open_price = 0.0
+            
+            # 兜底1: 尝试从本地日线数据获取开盘价
+            try:
+                from xtquant import xtdata
+                daily_data = xtdata.get_local_data(
+                    field_list=['time', 'open'],
+                    stock_list=[stock_code],
+                    period='1d',
+                    start_time=date,
+                    end_time=date
+                )
+                if daily_data and stock_code in daily_data and not daily_data[stock_code].empty:
+                    open_price = float(daily_data[stock_code]['open'].values[0])
+                    logger.debug(f"【时间机器】{stock_code} 从日线数据获取开盘价: {open_price}")
+            except Exception as e:
+                logger.debug(f"【时间机器】{stock_code} 从日线获取开盘价失败: {e}")
+            
+            # 兜底2: 尝试从Tick数据第一个记录获取开盘价
+            if open_price <= 0:
+                try:
+                    first_tick = tick_data.iloc[0]
+                    if 'lastPrice' in first_tick:
+                        open_price = float(first_tick['lastPrice'])
+                    elif 'price' in first_tick:
+                        open_price = float(first_tick['price'])
+                    elif 'openPrice' in first_tick:
+                        open_price = float(first_tick['openPrice'])
+                    logger.debug(f"【时间机器】{stock_code} 从Tick数据获取开盘价: {open_price}")
+                except Exception as e:
+                    logger.debug(f"【时间机器】{stock_code} 从Tick获取开盘价失败: {e}")
+            
+            # 兜底3: 使用昨收价估算开盘价 (假设高开2%)
+            if open_price <= 0 and pre_close > 0:
+                open_price = pre_close * 1.02
+                logger.warning(f"【时间机器】{stock_code} 使用估算开盘价: {open_price:.2f} (昨收{pre_close} * 1.02)")
+            
+            # 最终校验: 只有当开盘价和昨收价都为0时才跳过
+            if open_price <= 0 and pre_close <= 0:
+                logger.warning(f"【时间机器】{stock_code} 开盘价和昨收价都无效，跳过")
+                return None
+            
+            # 使用有效的开盘价
+            first_tick_price = open_price if open_price > 0 else pre_close
+            
             # CTO修复：正确处理时间戳获取09:40价格
             # 确保time列是字符串格式 HH:MM:SS
             if pd.api.types.is_numeric_dtype(tick_data['time']):
@@ -695,6 +803,14 @@ class TimeMachineEngine:
                 veto_reason = f"Veto: 尖刺骗炮 (回落{pullback_ratio:.1%})"
                 final_score = 0  # 分数清零！
             
+            # 【CTO修复】数据完整性断言：如果没有成功打分，返回None
+            if not is_scored:
+                logger.warning(f"【时间机器】{stock_code} {date}: 未能在09:45完成打分（缺少关键时间点Tick数据），判定为数据缺失")
+                return None
+            
+            # 【CTO】计算MFE (Maximum Favorable Excursion) 最大有利波动
+            mfe = ((max_price_after_0945 - pre_close) / pre_close * 100) if pre_close > 0 else 0
+            
             # 返回结果
             return {
                 'stock_code': stock_code,
@@ -707,6 +823,7 @@ class TimeMachineEngine:
                 'sustain_ratio': sustain_ratio,
                 'inflow_ratio': inflow_ratio,
                 'ratio_stock': ratio_stock,
+                'mfe': mfe,                     # 【新增】MFE无量纲字段
                 'is_vetoed': is_vetoed,
                 'veto_reason': veto_reason,
                 'flow_5min': flow_5min,
@@ -1128,29 +1245,7 @@ class TimeMachineEngine:
 
     # ==================== Step6: 时空对齐与全息回演UI看板 ====================
     
-    def format_dragon_report(self, rank: int, stock_code: str, stock_name: str,
-                            final_score: float, inflow_ratio: float, 
-                            ratio_stock: float, sustain_ratio: float,
-                            space_gap_pct: float, tag: str) -> str:
-        """
-        格式化龙榜输出 - 工业级UI看板
-        
-        Args:
-            rank: 排名序号
-            stock_code: 股票代码
-            stock_name: 股票名称
-            final_score: 最终得分
-            inflow_ratio: 流入比（净流入占流通市值比例）
-            ratio_stock: 自身爆发倍数
-            sustain_ratio: 接力比（资金维持率）
-            space_gap_pct: 空间差百分比（用于纯度评级）
-            tag: 标签（换手甜点/战法类型）
-            
-        Returns:
-            str: 格式化后的龙榜行
-        """
-        purity = '极优' if space_gap_pct < 0.05 else '优' if space_gap_pct < 0.10 else '良'
-        return f"{rank}. [{stock_code} {stock_name}] 得分: {final_score:.1f} | 流入比: {inflow_ratio:.1%} | 自身爆发: {ratio_stock:.1f}x | 接力(Sustain): {sustain_ratio:.2f}x | 纯度: {purity} | [标签: {tag}]"
+    
 
     def calculate_time_slice_flows(self, stock_code: str, date: str) -> Optional[Dict]:
         """
@@ -1237,155 +1332,9 @@ class TimeMachineEngine:
             logger.error(f"❌ {stock_code} 时空切片计算失败: {e}")
             return None
 
-    def _calculate_dragon_rankings(self, top20: List[Dict], date: str) -> List[Dict]:
-        """
-        【Step6: 时空对齐】计算龙榜排名
-        
-        Args:
-            top20: 原始Top20列表
-            date: 日期 'YYYYMMDD'
-            
-        Returns:
-            List[Dict]: Dragon Rankings列表
-        """
-        dragon_rankings = []
-        
-        try:
-            from logic.strategies.v18_core_engine import get_unified_warfare_core
-            from logic.data_providers.true_dictionary import get_true_dictionary
-            
-            v18_engine = get_unified_warfare_core()
-            true_dict = get_true_dictionary()
-            
-            for i, stock_data in enumerate(top20[:20], 1):
-                stock_code = stock_data['stock_code']
-                
-                # 【时空绝对对齐】获取真实切片数据
-                time_slices = self.calculate_time_slice_flows(stock_code, date)
-                
-                if time_slices is None:
-                    logger.debug(f"⚠️ {stock_code} 时空切片数据不足，跳过Dragon Score计算")
-                    continue
-                
-                # 获取股票名称
-                stock_name = ""
-                try:
-                    from xtquant import xtdata
-                    stock_name = xtdata.get_stock_name(stock_code) or ""
-                except:
-                    stock_name = ""
-                
-                # 获取历史5分钟资金中位数
-                flow_5min_median = time_slices['flow_5min'] / 10  # 假设历史是当前的1/10
-                
-                # 获取流通股本
-                float_volume = self._get_float_volume(stock_code)
-                
-                # 获取空间差（上方套牢盘距离）
-                space_gap_pct = 0.05  # 默认5%
-                
-                # 获取价格数据
-                price = stock_data.get('price_0940', 0)
-                prev_close = stock_data.get('pre_close', price * 0.95)
-                
-                # 【CTO】挂载记忆引擎 - 读取昨日真龙基因
-                memory_multiplier = 1.0
-                try:
-                    from logic.memory.short_term_memory import ShortTermMemoryEngine
-                    memory_engine = ShortTermMemoryEngine()
-                    memory_record = memory_engine.read_memory(stock_code)
-                    if memory_record and 'current_score' in memory_record:
-                        # 记忆衰减分数转化为乘数 (0.5~1.5范围)
-                        memory_base = 50.0  # 基准分
-                        memory_multiplier = 1.0 + (memory_record['current_score'] - memory_base) / 200.0
-                        memory_multiplier = max(0.5, min(1.5, memory_multiplier))  # 限幅
-                        logger.debug(f"🧠 {stock_code} 记忆引擎激活: 衰减分数={memory_record['current_score']:.1f}, 乘数={memory_multiplier:.2f}")
-                except Exception as e:
-                    logger.debug(f"⚠️ 记忆引擎读取失败: {e}, 使用默认乘数1.0")
-                    memory_multiplier = 1.0
-                
-                # 调用 V18 calculate_true_dragon_score
-                try:
-                    final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe = v18_engine.calculate_true_dragon_score(
-                        net_inflow=stock_data.get('net_inflow', 0) * 1e8 if 'net_inflow' in stock_data else time_slices['flow_5min'],
-                        price=price,
-                        prev_close=prev_close,
-                        high=stock_data.get('high', price * 1.05),
-                        low=stock_data.get('low', price * 0.95),
-                        flow_5min=time_slices['flow_5min'],
-                        flow_15min=time_slices['flow_15min'],
-                        flow_5min_median_stock=flow_5min_median,
-                        space_gap_pct=space_gap_pct,
-                        float_volume_shares=float_volume if float_volume > 0 else 1e8,
-                        current_time=datetime.strptime(date, '%Y%m%d')
-                    )
-                    
-                    # 【CTO】应用记忆衰减乘数
-                    final_score = round(final_score * memory_multiplier, 2)
-                    
-                    # 确定标签
-                    turnover_rate = stock_data.get('turnover_rate', 0)
-                    tag = "换手甜点" if turnover_rate > 5 else "弱转强"
-                    
-                    dragon_rankings.append({
-                        'rank': i,
-                        'stock_code': stock_code,
-                        'stock_name': stock_name or "",
-                        'final_score': final_score,
-                        'inflow_ratio': inflow_ratio,
-                        'ratio_stock': ratio_stock,
-                        'sustain_ratio': sustain_ratio,
-                        'space_gap_pct': space_gap_pct,
-                        'tag': tag
-                    })
-                    
-                except Exception as e:
-                    logger.error(f"❌ {stock_code} Dragon Score计算失败: {e}")
-                    continue
-            
-            # 按final_score降序排序
-            dragon_rankings.sort(key=lambda x: x['final_score'], reverse=True)
-            
-        except Exception as e:
-            logger.error(f"❌ 龙榜计算失败: {e}")
-        
-        return dragon_rankings
+    
 
-    def _print_dragon_dashboard(self, dragon_rankings: List[Dict], date: str):
-        """
-        【工业级UI看板输出】打印龙榜看板
-        
-        Args:
-            dragon_rankings: 龙榜排名列表
-            date: 日期
-        """
-        if not dragon_rankings:
-            return
-        
-        print(f"\n{'='*80}")
-        print(f"🏆 【全息龙榜】时空对齐版 - 工业级战地汇总看板")
-        print(f"{'='*80}")
-        print(f"📊 回测日期: {date}")
-        print(f"🎯 时空切片: 09:30-09:35 (5min) | 09:30-09:45 (15min)")
-        print(f"🐉 真龙数量: {len(dragon_rankings)} 只")
-        print(f"{'='*80}")
-        
-        for item in dragon_rankings[:10]:  # 显示前10
-            print(self.format_dragon_report(
-                rank=item['rank'],
-                stock_code=item['stock_code'],
-                stock_name=item['stock_name'],
-                final_score=item['final_score'],
-                inflow_ratio=item['inflow_ratio'],
-                ratio_stock=item['ratio_stock'],
-                sustain_ratio=item['sustain_ratio'],
-                space_gap_pct=item['space_gap_pct'],
-                tag=item['tag']
-            ))
-        
-        if len(dragon_rankings) > 10:
-            print(f"\n... 共 {len(dragon_rankings)} 只 (详见JSON)")
-        print(f"{'='*80}\n")
+    
 
 
 # CLI入口
