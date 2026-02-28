@@ -38,7 +38,7 @@ data/
 
 ### qmt_data/ ⭐ **[核心，勿删]**
 
-**路径**: `data/qmt_data/`  
+**路径**: `{PROJECT_ROOT}/data/qmt_data/` (由PathResolver自动解析)  
 **文件数**: 50,287个  
 **大小**: 37.68 GB (94.7%)  
 **用途**: QMT官方历史Tick和K线数据  
@@ -86,7 +86,7 @@ import os
 from datetime import datetime, timedelta
 
 cutoff = datetime.now() - timedelta(days=90)
-for dat_file in Path("data/qmt_data").rglob("*.dat"):
+for dat_file in PathResolver.get_qmt_data_dir().rglob("*.dat"):
     if datetime.fromtimestamp(dat_file.stat().st_mtime) < cutoff:
         dat_file.unlink()
 ```
@@ -310,17 +310,16 @@ backtest_20260215_low_suction_v12_1_0.json
 5. `data/data/` - 嵌套目录（违反架构原则）
 6. ... 其他空目录
 
-**清理命令**:
+**清理命令** (使用相对路径，在项目根目录执行):
 ```powershell
 # 删除空目录
-Remove-Item -Path "E:\MyQuantTool\data\backtest" -Recurse -Force
-Remove-Item -Path "E:\MyQuantTool\data\money_flow" -Recurse -Force
-Remove-Item -Path "E:\MyQuantTool\data\quoter" -Recurse -Force
-Remove-Item -Path "E:\MyQuantTool\data\log" -Recurse -Force
+Remove-Item -Path "data\backtest" -Recurse -Force
+Remove-Item -Path "data\money_flow" -Recurse -Force
+Remove-Item -Path "data\quoter" -Recurse -Force
+Remove-Item -Path "data\log" -Recurse -Force
 
-# 重构data/data/嵌套
-Move-Item -Path "E:\MyQuantTool\data\data\*" -Destination "E:\MyQuantTool\data\"
-Remove-Item -Path "E:\MyQuantTool\data\data" -Recurse -Force
+# 或使用Python脚本 (推荐，跨平台)
+python tools/cleanup_archives.py --remove-empty-dirs
 ```
 
 ---
