@@ -500,23 +500,12 @@ class TimeMachineEngine:
     
     def _get_tick_data(self, stock_code: str, date: str) -> Optional[pd.DataFrame]:
         """
-        【CTO核级重构】获取Tick数据 - 本地只读模式
-        
-        【CTO铁血令】严禁在循环内下载！严禁串行下载！
-        只读取本地已缓存数据，无数据直接返回None！
-        缺失数据交由unified_downloader统一处理！
-        
-        Args:
-            stock_code: 股票代码
-            date: 日期 'YYYYMMDD'
-        
-        Returns:
-            DataFrame包含time, price等字段，或None
+        【CTO铁腕断头台】：回测引擎只能读本地！没有就滚！
+        严禁任何下载行为！
         """
         try:
             from xtquant import xtdata
             
-            # 标准化代码
             normalized_code = self._normalize_stock_code(stock_code)
             
             # 只读本地数据，严禁下载！
@@ -528,26 +517,24 @@ class TimeMachineEngine:
                 end_time=date
             )
             
-            if data and normalized_code in data:
+            if data and normalized_code in data and not data[normalized_code].empty:
                 df = data[normalized_code]
-                if not df.empty and len(df) > 10:  # 【CTO修复】降低阈值到10条
-                    # 转换时间格式
-                    if 'time' in df.columns:
-                        df['time'] = df['time'].apply(
-                            lambda x: datetime.fromtimestamp(x/1000).strftime('%H:%M:%S') 
-                            if isinstance(x, (int, float)) else str(x)
-                        )
-                    # 重命名价格列为标准格式
-                    if 'lastPrice' in df.columns:
-                        df = df.rename(columns={'lastPrice': 'price'})
-                    return df
+                # 转换时间格式
+                if 'time' in df.columns:
+                    df['time'] = df['time'].apply(
+                        lambda x: datetime.fromtimestamp(x/1000).strftime('%H:%M:%S') 
+                        if isinstance(x, (int, float)) else str(x)
+                    )
+                # 重命名价格列
+                if 'lastPrice' in df.columns:
+                    df = df.rename(columns={'lastPrice': 'price'})
+                return df
             
-            # 【CTO核级重构】无数据直接返回None，严禁下载！
-            # 缺失数据由unified_downloader统一处理
+            # 无数据直接返回None，严禁下载！
             return None
             
         except Exception as e:
-            # 【CTO优化】异常时静默返回None，不记录错误以提速
+            logger.warning(f"获取Tick数据失败 {stock_code}: {e}")
             return None
     
     def _get_pre_close(self, stock_code: str, date: str) -> float:
@@ -648,23 +635,27 @@ class TimeMachineEngine:
             得分字典或None
         """
         try:
-            # 【CTO铁血令】所有输入参数强制类型转换，防止类型爆炸
+            # 【CTO铁律转换】：所有参数强制转float，杜绝类型爆炸
             def safe_float(val):
                 try:
-                    return float(val) if val is not None else 0.0
+                    return float(val) if val is not None and str(val).strip() != '' else 0.0
                 except (ValueError, TypeError):
                     return 0.0
             
             # 获取数据
             tick_data = self._get_tick_data(stock_code, date)
-            
-            if tick_data is None or tick_data.empty or len(tick_data) < 10:
+            if tick_data is None or tick_data.empty:
                 return None
             
             # 获取昨收价并强制转换
             pre_close = safe_float(self._get_pre_close(stock_code, date))
             if pre_close <= 0:
                 return None
+            
+            # 获取5日平均成交量并强制转换
+            avg_volume_5d = safe_float(self._get_avg_volume_5d(stock_code, date))
+            if avg_volume_5d <= 0:
+                return None  # 连均量都没有，直接放弃！
             
             # 使用SanityGuards检查昨收价
             passed, msg = SanityGuards.check_pre_close_valid(pre_close, stock_code)
@@ -686,7 +677,7 @@ class TimeMachineEngine:
                     end_time=date
                 )
                 if daily_data and stock_code in daily_data and not daily_data[stock_code].empty:
-                    open_price = float(daily_data[stock_code]['open'].values[0])
+                    open_price = safe_float(daily_data[stock_code]['open'].values[0])
                     logger.debug(f"【时间机器】{stock_code} 从日线数据获取开盘价: {open_price}")
             except Exception as e:
                 logger.debug(f"【时间机器】{stock_code} 从日线获取开盘价失败: {e}")
@@ -696,11 +687,11 @@ class TimeMachineEngine:
                 try:
                     first_tick = tick_data.iloc[0]
                     if 'lastPrice' in first_tick:
-                        open_price = float(first_tick['lastPrice'])
+                        open_price = safe_float(first_tick['lastPrice'])
                     elif 'price' in first_tick:
-                        open_price = float(first_tick['price'])
+                        open_price = safe_float(first_tick['price'])
                     elif 'openPrice' in first_tick:
-                        open_price = float(first_tick['openPrice'])
+                        open_price = safe_float(first_tick['openPrice'])
                     logger.debug(f"【时间机器】{stock_code} 从Tick数据获取开盘价: {open_price}")
                 except Exception as e:
                     logger.debug(f"【时间机器】{stock_code} 从Tick获取开盘价失败: {e}")
@@ -743,40 +734,40 @@ class TimeMachineEngine:
             veto_reason = ""
             
             # === 获取流通市值用于Ratio计算 ===
-            float_volume = self._get_float_volume(stock_code)
+            float_volume = safe_float(self._get_float_volume(stock_code))
             float_market_cap = float_volume * pre_close if float_volume > 0 else 1.0
             
             # === 全天Tick遍历 (09:30-15:00) ===
             for index, row in tick_data.iterrows():
-                curr_time = row['time_str']
-                price = float(row['lastPrice']) if 'lastPrice' in row else float(row.get('price', 0))
-                volume = float(row.get('volume', 0))
-                amount = price * volume
+                curr_time = str(row['time_str'])
+                price = safe_float(row['lastPrice']) if 'lastPrice' in row else safe_float(row.get('price', 0))
+                volume = safe_float(row.get('volume', 0))
+                amount = safe_float(price * volume)
                 
                 # 计算单笔净流入估算
                 # 简化：价格上涨为流入，下跌为流出
                 if index > 0:
-                    prev_price = float(tick_data.iloc[index-1]['lastPrice'] if 'lastPrice' in tick_data.iloc[index-1] else tick_data.iloc[index-1].get('price', price))
-                    price_change = price - prev_price
+                    prev_price_raw = tick_data.iloc[index-1]
+                    prev_price = safe_float(prev_price_raw['lastPrice']) if 'lastPrice' in prev_price_raw else safe_float(prev_price_raw.get('price', price))
+                    price_change = safe_float(price - prev_price)
                     # 净流入估算：价格变化 * 成交量 (简化模型)
-                    estimated_flow = price_change * volume if price_change > 0 else price_change * volume * 0.5
+                    estimated_flow = safe_float(price_change * volume) if price_change > 0 else safe_float(price_change * volume * 0.5)
                 else:
-                    estimated_flow = 0
+                    estimated_flow = 0.0
                 
                 # 【阶段一：09:30-09:45】累加打分数据
                 if curr_time <= '09:35:00':
-                    flow_5min += estimated_flow
+                    flow_5min = safe_float(flow_5min + estimated_flow)
                 if curr_time <= '09:45:00':
-                    flow_15min += estimated_flow
+                    flow_15min = safe_float(flow_15min + estimated_flow)
                 
                 # 【打分定格】09:45瞬间调用V18验钞机
                 if not is_scored and ('09:45:00' <= curr_time < '09:46:00' or curr_time == '09:45:00'):
                     from logic.core.config_manager import get_config_manager
                     config_manager = get_config_manager()
                     
-                    # 获取5日平均成交量用于计算势能
-                    avg_volume_5d = safe_float(self._get_avg_volume_5d(stock_code, date))
-                    flow_5min_median = avg_volume_5d / 240 if avg_volume_5d > 0 else 1.0  # 5分钟中位数估算
+                    # 5日平均成交量已在前方强制转换
+                    flow_5min_median = safe_float(avg_volume_5d / 240) if avg_volume_5d > 0 else 1.0  # 5分钟中位数估算
                     
                     # 计算Space Gap (突破纯度)
                     high_60d = self._get_60d_high(stock_code, date)
@@ -826,18 +817,18 @@ class TimeMachineEngine:
                 if curr_time > '09:45:00':
                     # 记录09:45后的最高价 (用于骗炮计算)
                     if price > max_price_after_0945:
-                        max_price_after_0945 = price
+                        max_price_after_0945 = safe_float(price)
                     
                     # 更新VWAP
-                    vwap_cum_volume += volume
-                    vwap_cum_amount += amount
-                    vwap = vwap_cum_amount / vwap_cum_volume if vwap_cum_volume > 0 else price
+                    vwap_cum_volume = safe_float(vwap_cum_volume + volume)
+                    vwap_cum_amount = safe_float(vwap_cum_amount + amount)
+                    vwap = safe_float(vwap_cum_amount / vwap_cum_volume) if vwap_cum_volume > 0 else safe_float(price)
                     
                     # 盘中破位防守 (VWAP宽容判定)
                     if curr_time > '09:50:00' and price < vwap and not is_vetoed:
                         # 检查是否放量砸盘
-                        recent_volume = volume
-                        if recent_volume > avg_volume_5d / 240 * 2:  # 放量
+                        recent_volume = safe_float(volume)
+                        if recent_volume > safe_float(avg_volume_5d / 240 * 2):  # 放量
                             is_vetoed = True
                             veto_reason = "Veto: 盘中破位派发"
             
@@ -851,16 +842,16 @@ class TimeMachineEngine:
                 end_time=date
             )
             
-            real_close = price  # 默认用最后Tick价格
+            real_close = safe_float(price)  # 默认用最后Tick价格
             if daily_k and stock_code in daily_k and not daily_k[stock_code].empty:
-                real_close = float(daily_k[stock_code]['close'].values[-1])
+                real_close = safe_float(daily_k[stock_code]['close'].values[-1])
             
             # 计算真实涨幅 (使用日K收盘价！)
-            final_change = MetricDefinitions.TRUE_CHANGE(real_close, pre_close)
+            final_change = safe_float(MetricDefinitions.TRUE_CHANGE(real_close, pre_close))
             
-            # 骗炮终审：Pullback_Ratio计算
+            # 骗炮终审：Pullback_Ratio计算 - 全部使用safe_float
             if max_price_after_0945 > pre_close:
-                pullback_ratio = (max_price_after_0945 - real_close) / (max_price_after_0945 - pre_close)
+                pullback_ratio = safe_float((max_price_after_0945 - real_close) / (max_price_after_0945 - pre_close))
             else:
                 pullback_ratio = 0.0
             
@@ -868,33 +859,33 @@ class TimeMachineEngine:
             if pullback_ratio > 0.3 and final_change < 0.08:
                 is_vetoed = True
                 veto_reason = f"Veto: 尖刺骗炮 (回落{pullback_ratio:.1%})"
-                final_score = 0  # 分数清零！
+                final_score = 0.0  # 分数清零！
             
             # 【CTO修复】数据完整性断言：如果没有成功打分，返回None
             if not is_scored:
                 logger.warning(f"【时间机器】{stock_code} {date}: 未能在09:45完成打分（缺少关键时间点Tick数据），判定为数据缺失")
                 return None
             
-            # 【CTO】计算MFE (Maximum Favorable Excursion) 最大有利波动
-            mfe = ((max_price_after_0945 - pre_close) / pre_close * 100) if pre_close > 0 else 0
+            # 【CTO】计算MFE (Maximum Favorable Excursion) 最大有利波动 - 使用safe_float
+            mfe = safe_float((max_price_after_0945 - pre_close) / pre_close * 100) if pre_close > 0 else 0.0
             
-            # 返回结果
+            # 返回结果 - 所有数值都经过safe_float
             return {
                 'stock_code': stock_code,
-                'final_score': final_score,
-                'final_change': final_change,  # 【修正】使用日K收盘价计算的真实涨幅
-                'real_close': real_close,      # 【新增】真实收盘价
-                'pre_close': pre_close,
-                'max_price': max_price_after_0945,
-                'pullback_ratio': pullback_ratio,
-                'sustain_ratio': sustain_ratio,
-                'inflow_ratio': inflow_ratio,
-                'ratio_stock': ratio_stock,
-                'mfe': mfe,                     # 【新增】MFE无量纲字段
+                'final_score': safe_float(final_score),
+                'final_change': safe_float(final_change),
+                'real_close': safe_float(real_close),
+                'pre_close': safe_float(pre_close),
+                'max_price': safe_float(max_price_after_0945),
+                'pullback_ratio': safe_float(pullback_ratio),
+                'sustain_ratio': safe_float(sustain_ratio),
+                'inflow_ratio': safe_float(inflow_ratio),
+                'ratio_stock': safe_float(ratio_stock),
+                'mfe': safe_float(mfe),
                 'is_vetoed': is_vetoed,
                 'veto_reason': veto_reason,
-                'flow_5min': flow_5min,
-                'flow_15min': flow_15min
+                'flow_5min': safe_float(flow_5min),
+                'flow_15min': safe_float(flow_15min)
             }
             
         except Exception as e:
