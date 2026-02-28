@@ -154,6 +154,10 @@ class UniverseBuilder:
             from logic.data_providers.true_dictionary import get_true_dictionary
             true_dict = get_true_dictionary()
             
+            # 【CTO修复】调用warmup时传入target_date，消灭未来函数
+            # 确保回测时使用历史日期的5日均量，而不是当前日期的数据
+            true_dict.warmup(all_stocks, target_date=date, force=False)
+            
             # 限制处理股票数量以提高性能
             for stock in all_stocks:  # 只处理前1000只股票
                 try:

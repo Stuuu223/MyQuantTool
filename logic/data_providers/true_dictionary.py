@@ -100,7 +100,7 @@ class TrueDictionary:
     # 盘前装弹机 - 09:25前必须完成 (100% QMT本地)
     # ============================================================
     
-    def warmup(self, stock_list: List[str], force: bool = False) -> Dict:
+    def warmup(self, stock_list: List[str], target_date: str = None, force: bool = False) -> Dict:
         """
         盘前装弹主入口 - CTO规范: 100% QMT本地，0外网请求
         
@@ -111,12 +111,14 @@ class TrueDictionary:
         
         Args:
             stock_list: 全市场股票代码列表(约5000只)
+            target_date: 目标日期(格式'YYYYMMDD')，用于回测时指定历史日期。为None则使用当前日期
             force: 是否强制刷新
             
         Returns:
             Dict: 装弹结果统计
         """
-        today = datetime.now().strftime('%Y%m%d')
+        # 【CTO修复】使用target_date替代当前日期，消灭未来函数
+        today = target_date if target_date else datetime.now().strftime('%Y%m%d')
         
         # 检查是否已装弹
         if not force and self._metadata['cache_date'] == today:
@@ -130,13 +132,13 @@ class TrueDictionary:
         qmt_result = self._warmup_qmt_data(stock_list)
         
         # Step 2: QMT本地日K数据计算5日均量 (0外网请求!)
-        avg_volume_result = self._warmup_avg_volume_from_qmt(stock_list)
+        avg_volume_result = self._warmup_avg_volume_from_qmt(stock_list, target_date)
         
         # Step 3: 【CTO第三维趋势网】计算MA5/MA10/MA20均线数据
-        ma_result = self._warmup_ma_data(stock_list)
+        ma_result = self._warmup_ma_data(stock_list, target_date)
         
         # Step 4: 【CTO ATR股性突变雷达】计算20日ATR数据
-        atr_result = self._warmup_atr_data(stock_list)
+        atr_result = self._warmup_atr_data(stock_list, target_date)
         
         # Step 5: 数据完整性检查
         integrity_check = self._check_data_integrity(stock_list)
@@ -170,13 +172,17 @@ class TrueDictionary:
         logger.warning("⚠️ [TrueDictionary] warmup_qmt_only() 已弃用，请直接使用 warmup()")
         return self.warmup(stock_list, force)
     
-    def _warmup_avg_volume_from_qmt(self, stock_list: List[str]) -> Dict:
+    def _warmup_avg_volume_from_qmt(self, stock_list: List[str], target_date: str = None) -> Dict:
         """
         CTO强制规范: 从QMT本地日K数据计算5日均量
         
         使用QMT本地数据替代外网API：
         1. 读取最近5个交易日的日K线数据
         2. 计算volume的5日移动平均
+        
+        Args:
+            stock_list: 股票代码列表
+            target_date: 目标日期(格式'YYYYMMDD')，用于回测时指定历史日期
         
         Returns:
             Dict: 计算结果统计
@@ -192,16 +198,28 @@ class TrueDictionary:
             success = 0
             failed = 0
             
-            # 【CTO修复】使用QMT原生交易日历，禁止用timedelta推算交易日
+            # 【CTO修复】使用target_date替代当前日期，消灭未来函数
             # 获取最近10个交易日数据（确保有5个有效交易日，考虑节假日）
             if CALENDAR_UTILS_AVAILABLE:
-                end_date = get_latest_completed_trading_day()
-                start_date = get_nth_previous_trading_day(end_date, 10)
-                logger.info(f"[日历对齐] 5日均量计算周期: {start_date} ~ {end_date} (交易日历)")
+                if target_date:
+                    # 回测模式：使用target_date作为结束日期
+                    end_date = target_date
+                    start_date = get_nth_previous_trading_day(end_date, 10)
+                    logger.info(f"[日历对齐-回测模式] 5日均量计算周期: {start_date} ~ {end_date} (交易日历)")
+                else:
+                    # 实盘模式：使用最新完成交易日
+                    end_date = get_latest_completed_trading_day()
+                    start_date = get_nth_previous_trading_day(end_date, 10)
+                    logger.info(f"[日历对齐-实盘模式] 5日均量计算周期: {start_date} ~ {end_date} (交易日历)")
             else:
                 # 极端降级方案（仅当日历工具不可用时）
-                end_date = datetime.now().strftime('%Y%m%d')
-                start_date = (datetime.now() - timedelta(days=20)).strftime('%Y%m%d')
+                if target_date:
+                    end_date = target_date
+                    end_dt = datetime.strptime(target_date, '%Y%m%d')
+                    start_date = (end_dt - timedelta(days=20)).strftime('%Y%m%d')
+                else:
+                    end_date = datetime.now().strftime('%Y%m%d')
+                    start_date = (datetime.now() - timedelta(days=20)).strftime('%Y%m%d')
                 logger.warning(f"[日历降级] 使用自然日推算: {start_date} ~ {end_date}")
             
             # CTO强制修正：一把梭哈！不分批！
@@ -274,11 +292,15 @@ class TrueDictionary:
             print(f"🚨 [QMT本地-5日均量] 计算失败: {e}")
             return {'source': 'QMT本地', 'success': 0, 'failed': len(stock_list), 'error': str(e)}
     
-    def _warmup_ma_data(self, stock_list: List[str]) -> Dict:
+    def _warmup_ma_data(self, stock_list: List[str], target_date: str = None) -> Dict:
         """
         【CTO第三维趋势网】计算MA5/MA10/MA20均线数据
         
         使用QMT本地日K数据计算均线，用于盘后回放的趋势过滤
+        
+        Args:
+            stock_list: 股票代码列表
+            target_date: 目标日期(格式'YYYYMMDD')，用于回测时指定历史日期
         """
         start = time.perf_counter()
         
@@ -291,16 +313,26 @@ class TrueDictionary:
             success = 0
             failed = 0
             
-            # 【CTO修复】使用QMT原生交易日历，禁止用timedelta推算交易日
+            # 【CTO修复】使用target_date替代当前日期，消灭未来函数
             # MA计算需要至少20个交易日数据，倒推25个交易日确保充足
             if CALENDAR_UTILS_AVAILABLE:
-                end_date = get_latest_completed_trading_day()
-                start_date = get_nth_previous_trading_day(end_date, 25)
-                logger.info(f"[日历对齐] MA均线计算周期: {start_date} ~ {end_date} (交易日历)")
+                if target_date:
+                    end_date = target_date
+                    start_date = get_nth_previous_trading_day(end_date, 25)
+                    logger.info(f"[日历对齐-回测模式] MA均线计算周期: {start_date} ~ {end_date} (交易日历)")
+                else:
+                    end_date = get_latest_completed_trading_day()
+                    start_date = get_nth_previous_trading_day(end_date, 25)
+                    logger.info(f"[日历对齐-实盘模式] MA均线计算周期: {start_date} ~ {end_date} (交易日历)")
             else:
                 # 极端降级方案
-                end_date = datetime.now().strftime('%Y%m%d')
-                start_date = (datetime.now() - timedelta(days=45)).strftime('%Y%m%d')
+                if target_date:
+                    end_date = target_date
+                    end_dt = datetime.strptime(target_date, '%Y%m%d')
+                    start_date = (end_dt - timedelta(days=45)).strftime('%Y%m%d')
+                else:
+                    end_date = datetime.now().strftime('%Y%m%d')
+                    start_date = (datetime.now() - timedelta(days=45)).strftime('%Y%m%d')
                 logger.warning(f"[日历降级] 使用自然日推算: {start_date} ~ {end_date}")
             
             all_data = xtdata.get_local_data(
@@ -368,7 +400,7 @@ class TrueDictionary:
         """
         return self._ma_data.get(stock_code)
     
-    def _warmup_atr_data(self, stock_list: List[str]) -> Dict:
+    def _warmup_atr_data(self, stock_list: List[str], target_date: str = None) -> Dict:
         """
         【CTO ATR股性突变雷达】计算20日ATR数据
         
@@ -377,6 +409,7 @@ class TrueDictionary:
         
         Args:
             stock_list: 股票代码列表
+            target_date: 目标日期(格式'YYYYMMDD')，用于回测时指定历史日期
             
         Returns:
             Dict: 计算结果统计
@@ -392,16 +425,26 @@ class TrueDictionary:
             success = 0
             failed = 0
             
-            # 【CTO修复】使用QMT原生交易日历，禁止用timedelta推算交易日
+            # 【CTO修复】使用target_date替代当前日期，消灭未来函数
             # ATR需要20个交易日数据，倒推25个交易日确保充足
             if CALENDAR_UTILS_AVAILABLE:
-                end_date = get_latest_completed_trading_day()
-                start_date = get_nth_previous_trading_day(end_date, 25)
-                logger.info(f"[日历对齐] ATR计算周期: {start_date} ~ {end_date} (交易日历)")
+                if target_date:
+                    end_date = target_date
+                    start_date = get_nth_previous_trading_day(end_date, 25)
+                    logger.info(f"[日历对齐-回测模式] ATR计算周期: {start_date} ~ {end_date} (交易日历)")
+                else:
+                    end_date = get_latest_completed_trading_day()
+                    start_date = get_nth_previous_trading_day(end_date, 25)
+                    logger.info(f"[日历对齐-实盘模式] ATR计算周期: {start_date} ~ {end_date} (交易日历)")
             else:
                 # 极端降级方案
-                end_date = datetime.now().strftime('%Y%m%d')
-                start_date = (datetime.now() - timedelta(days=45)).strftime('%Y%m%d')
+                if target_date:
+                    end_date = target_date
+                    end_dt = datetime.strptime(target_date, '%Y%m%d')
+                    start_date = (end_dt - timedelta(days=45)).strftime('%Y%m%d')
+                else:
+                    end_date = datetime.now().strftime('%Y%m%d')
+                    start_date = (datetime.now() - timedelta(days=45)).strftime('%Y%m%d')
                 logger.warning(f"[日历降级] 使用自然日推算: {start_date} ~ {end_date}")
             
             all_data = xtdata.get_local_data(
@@ -609,7 +652,7 @@ class TrueDictionary:
     # 盘中O(1)极速查询 - 严禁任何网络请求!!!
     # ============================================================
     
-    def get_float_volume(self, stock_code: str) -> int:
+    def get_float_volume(self, stock_code: str) -> float:
         """
         获取流通股本 - O(1)内存查询
         
@@ -617,8 +660,10 @@ class TrueDictionary:
         - 09:30后只读内存
         - 严禁调用xtdata.get_instrument_detail
         - 未找到返回0(由调用方判断是否熔断)
+        
+        【CTO修复】强制转换为float，防止类型爆炸
         """
-        return self._float_volume.get(stock_code, 0)
+        return float(self._float_volume.get(stock_code, 0))
     
     def get_up_stop_price(self, stock_code: str) -> float:
         """获取涨停价 - O(1)内存查询"""
@@ -694,9 +739,14 @@ def get_true_dictionary() -> TrueDictionary:
     return _true_dict_instance
 
 
-def warmup_true_dictionary(stock_list: List[str]) -> Dict:
-    """便捷函数: 执行盘前装弹 (100% QMT本地)"""
-    return get_true_dictionary().warmup(stock_list)
+def warmup_true_dictionary(stock_list: List[str], target_date: str = None) -> Dict:
+    """便捷函数: 执行盘前装弹 (100% QMT本地)
+    
+    Args:
+        stock_list: 股票代码列表
+        target_date: 目标日期(格式'YYYYMMDD')，用于回测时指定历史日期
+    """
+    return get_true_dictionary().warmup(stock_list, target_date=target_date)
 
 
 # ============================================================

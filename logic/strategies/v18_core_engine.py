@@ -312,6 +312,20 @@ class V18CoreEngine:
         # ==========================================
         # 0. 基础准备：计算真实流通市值 (元)
         # ==========================================
+        # 【CTO修复】强制转换为float，防止类型爆炸
+        net_inflow = float(net_inflow) if net_inflow is not None else 0.0
+        price = float(price) if price is not None else 0.0
+        prev_close = float(prev_close) if prev_close is not None else 0.0
+        high = float(high) if high is not None else 0.0
+        low = float(low) if low is not None else 0.0
+        open_price = float(open_price) if open_price is not None else 0.0
+        flow_5min = float(flow_5min) if flow_5min is not None else 0.0
+        flow_15min = float(flow_15min) if flow_15min is not None else 0.0
+        flow_5min_median_stock = float(flow_5min_median_stock) if flow_5min_median_stock is not None else 0.0
+        space_gap_pct = float(space_gap_pct) if space_gap_pct is not None else 0.0
+        float_volume_shares = float(float_volume_shares) if float_volume_shares is not None else 0.0
+        price = float(price) if price is not None else 0.0
+        
         float_market_cap = float_volume_shares * price
         
         # ==========================================

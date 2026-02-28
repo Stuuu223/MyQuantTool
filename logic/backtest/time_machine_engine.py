@@ -112,6 +112,9 @@ class TimeMachineEngine:
         """
         获取股票流通股本 (用于计算换手率)
         
+        【CTO修复】使用QMT正确的API: get_instrument_detail
+        删除幻觉API: xtdata.get_stock_list() (该API不存在)
+        
         Args:
             stock_code: 股票代码
         
@@ -123,28 +126,32 @@ class TimeMachineEngine:
             
             normalized_code = self._normalize_stock_code(stock_code)
             
-            # 获取股票基本信息
-            security_info = xtdata.get_stock_list()
-            if normalized_code in security_info:
-                # 这里可能需要通过其他方式获取流通股本
-                # 临时使用历史数据中的数据
-                data = xtdata.get_local_data(
-                    field_list=['time', 'volume', 'amount'],
-                    stock_list=[normalized_code],
-                    period='1d',
-                    start_time='20250101',
-                    end_time='20251231'
-                )
-                
-                if data and normalized_code in data:
-                    df = data[normalized_code]
-                    if not df.empty:
-                        # 基于历史数据估算流通股本（简化实现）
-                        # 实际中可能需要使用tushare或其它接口获取准确数据
-                        avg_daily_volume = df['volume'].tail(10).mean()
-                        # 这里我们使用一个简化的估算方法
-                        # 实际中需要准确的流通股本数据
-                        return avg_daily_volume * 200  # 简化估算，实际值需要从其他接口获取
+            # 【CTO修复】使用正确的QMT API获取股票详情
+            detail = xtdata.get_instrument_detail(normalized_code, True)
+            
+            if detail is not None:
+                # 提取FloatVolume(流通股本)
+                fv = detail.get('FloatVolume', 0) if hasattr(detail, 'get') else getattr(detail, 'FloatVolume', 0)
+                if fv:
+                    # 【CTO修复】强制转换为float，防止类型爆炸
+                    return float(fv)
+            
+            # 降级方案：使用历史数据估算
+            logger.warning(f"【降级】{stock_code} 无法获取流通股本，尝试估算...")
+            data = xtdata.get_local_data(
+                field_list=['time', 'volume', 'amount'],
+                stock_list=[normalized_code],
+                period='1d',
+                start_time='20250101',
+                end_time='20251231'
+            )
+            
+            if data and normalized_code in data:
+                df = data[normalized_code]
+                if not df.empty:
+                    avg_daily_volume = df['volume'].tail(10).mean()
+                    # 【CTO修复】强制转换为float
+                    return float(avg_daily_volume * 200)
             
             return 0.0
             
