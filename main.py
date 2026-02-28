@@ -329,8 +329,10 @@ def backtest_cmd(ctx, date, start_date, end_date, universe, full_market, volume_
             click.echo(f"📊 加载 {len(stocks)} 只股票")
             
             for stock in stocks:
-                result = engine.replay(stock, date)
-                click.echo(f"  {stock}: {'✅' if result.get('success') else '❌'}")
+                # 【CTO修复】使用正确的replay_single_day方法
+                stock_name = stock.split('.')[0] if '.' in stock else stock
+                result = engine.replay_single_day(stock, stock_name, date)
+                click.echo(f"  {stock}: {'✅' if result.trades_executed > 0 else '❌'}")
                 
         else:
             # 标准回测 - 【CTO修复】全息回测默认跑全市场
