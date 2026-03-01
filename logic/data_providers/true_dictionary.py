@@ -314,26 +314,18 @@ class TrueDictionary:
             success = 0
             failed = 0
             
-            # 【CTO修复】使用target_date替代当前日期，消灭未来函数
-            # MA计算需要至少20个交易日数据，倒推25个交易日确保充足
-            if CALENDAR_UTILS_AVAILABLE:
-                if target_date:
-                    end_date = target_date
-                    start_date = get_nth_previous_trading_day(end_date, 25)
-                    logger.info(f"[日历对齐-回测模式] MA均线计算周期: {start_date} ~ {end_date} (交易日历)")
-                else:
-                    end_date = get_latest_completed_trading_day()
-                    start_date = get_nth_previous_trading_day(end_date, 25)
-                    logger.info(f"[日历对齐-实盘模式] MA均线计算周期: {start_date} ~ {end_date} (交易日历)")
-            else:
-                # 【CTO强制】：回测模式必须传target_date！
-                if not target_date:
-                    logger.error("❌ [CTO铁血令] MA预热必须传入target_date！禁止使用datetime.now()！")
-                    return {'success': 0, 'failed': len(stock_list)}
-                end_date = target_date
-                end_dt = datetime.strptime(target_date, '%Y%m%d')
-                start_date = (end_dt - timedelta(days=45)).strftime('%Y%m%d')
-                logger.warning(f"[日历降级] MA周期: {start_date} ~ {end_date}")
+            # 【CTO时空锁死】：回测模式必须基于target_date往前推算！
+            # 【CTO防爆】：禁止调用get_trading_dates，会导致BSON崩溃！
+            if not target_date:
+                logger.error("❌ [CTO铁血令] MA预热必须传入target_date！禁止使用datetime.now()！")
+                return {'success': 0, 'failed': len(stock_list)}
+            
+            # 【CTO时空锁死】：必须基于目标回测日期往前推算！
+            end_date = target_date
+            end_dt = datetime.strptime(target_date, '%Y%m%d')
+            # MA20需要至少60个自然日确保有20个交易日
+            start_date = (end_dt - timedelta(days=60)).strftime('%Y%m%d')
+            logger.info(f"[CTO时空锁死] MA均线计算周期: {start_date} ~ {end_date}")
             
             # 【CTO单点爆破】：一只一只查！防爆！防C++崩溃！
             all_data = {}
@@ -436,28 +428,18 @@ class TrueDictionary:
             success = 0
             failed = 0
             
-            # 【CTO修复】使用target_date替代当前日期，消灭未来函数
-            # ATR需要20个交易日数据，倒推25个交易日确保充足
-            if CALENDAR_UTILS_AVAILABLE:
-                if target_date:
-                    end_date = target_date
-                    start_date = get_nth_previous_trading_day(end_date, 25)
-                    logger.info(f"[日历对齐-回测模式] ATR计算周期: {start_date} ~ {end_date} (交易日历)")
-                else:
-                    end_date = get_latest_completed_trading_day()
-                    start_date = get_nth_previous_trading_day(end_date, 25)
-                    logger.info(f"[日历对齐-实盘模式] ATR计算周期: {start_date} ~ {end_date} (交易日历)")
-            else:
-                # 极端降级方案
-                if target_date:
-                    end_date = target_date
-                    end_dt = datetime.strptime(target_date, '%Y%m%d')
-                    start_date = (end_dt - timedelta(days=45)).strftime('%Y%m%d')
-                else:
-                    # 【CTO强制】：回测模式必须传target_date！
-                    logger.error("❌ [CTO铁血令] ATR预热必须传入target_date！")
-                    return {'success': 0, 'failed': len(stock_list)}
-                logger.warning(f"[日历降级] ATR周期: {start_date} ~ {end_date}")
+            # 【CTO时空锁死】：回测模式必须基于target_date往前推算！
+            # 【CTO防爆】：禁止调用get_trading_dates，会导致BSON崩溃！
+            if not target_date:
+                logger.error("❌ [CTO铁血令] ATR预热必须传入target_date！禁止使用datetime.now()！")
+                return {'success': 0, 'failed': len(stock_list)}
+            
+            # 【CTO时空锁死】：必须基于目标回测日期往前推算！
+            end_date = target_date
+            end_dt = datetime.strptime(target_date, '%Y%m%d')
+            # ATR20需要至少45个自然日确保有20个交易日
+            start_date = (end_dt - timedelta(days=45)).strftime('%Y%m%d')
+            logger.info(f"[CTO时空锁死] ATR计算周期: {start_date} ~ {end_date}")
             
             # 【CTO单点爆破】：一只一只查！防爆！防C++崩溃！
             all_data = {}
