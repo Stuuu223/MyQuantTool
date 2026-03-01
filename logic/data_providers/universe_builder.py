@@ -144,7 +144,7 @@ class UniverseBuilder:
             chunk = all_stocks[i:i + chunk_size]
             try:
                 chunk_data = xtdata.get_local_data(
-                    field_list=['open', 'high', 'low', 'close', 'volume', 'amount', 'preClose', 'turnover'],
+                    field_list=['open', 'high', 'low', 'close', 'volume', 'amount', 'preClose'],
                     stock_list=chunk,
                     period='1d',
                     start_time=date,
