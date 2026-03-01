@@ -199,28 +199,19 @@ class TrueDictionary:
             success = 0
             failed = 0
             
-            # 【CTO修复】使用target_date替代当前日期，消灭未来函数
-            # 获取最近10个交易日数据（确保有5个有效交易日，考虑节假日）
-            if CALENDAR_UTILS_AVAILABLE:
-                if target_date:
-                    # 回测模式：使用target_date作为结束日期
-                    end_date = target_date
-                    start_date = get_nth_previous_trading_day(end_date, 10)
-                    logger.info(f"[日历对齐-回测模式] 5日均量计算周期: {start_date} ~ {end_date} (交易日历)")
-                else:
-                    # 实盘模式：使用最新完成交易日
-                    end_date = get_latest_completed_trading_day()
-                    start_date = get_nth_previous_trading_day(end_date, 10)
-                    logger.info(f"[日历对齐-实盘模式] 5日均量计算周期: {start_date} ~ {end_date} (交易日历)")
-            else:
-                # 【CTO强制】：回测模式必须传target_date！
-                if not target_date:
-                    logger.error("❌ [CTO铁血令] 回测模式必须传入target_date！禁止使用datetime.now()！")
-                    return {'success': 0, 'failed': len(stock_list)}
-                end_date = target_date
-                end_dt = datetime.strptime(target_date, '%Y%m%d')
-                start_date = (end_dt - timedelta(days=20)).strftime('%Y%m%d')
-                logger.warning(f"[日历降级] 使用自然日推算: {start_date} ~ {end_date}")
+            # 【CTO时空锁死】：回测模式必须基于target_date往前推算！
+            # 【CTO防爆】：禁止调用get_trading_dates，会导致BSON崩溃！
+            # 原因：get_trading_dates内部触发了QMT C++层的批量数据加载
+            if not target_date:
+                logger.error("❌ [CTO铁血令] 回测模式必须传入target_date！禁止使用datetime.now()！")
+                return {'success': 0, 'failed': len(stock_list)}
+            
+            # 【CTO时空锁死】：必须基于目标回测日期往前推算！
+            end_date = target_date
+            end_dt = datetime.strptime(target_date, '%Y%m%d')
+            # 往前推30个自然日，确保能覆盖到5个交易日
+            start_date = (end_dt - timedelta(days=30)).strftime('%Y%m%d')
+            logger.info(f"[CTO时空锁死] 5日均量计算周期: {start_date} ~ {end_date}")
             
             # 【CTO单点爆破】：一只一只查！防爆！防C++崩溃！
             all_data = {}

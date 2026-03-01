@@ -2,11 +2,18 @@
 QMT原生交易日历工具
 解决跨日Bug：使用xtdata.get_trading_dates('SH')获取真实交易日历
 禁止在量化系统中使用datetime.timedelta推算交易日！
+
+【CTO防爆修正】：xtdata.get_trading_dates可能触发BSON崩溃
+添加熔断机制，降级到自然日推算
 """
 import time
 import logging
 from datetime import datetime, timedelta
 from typing import List, Optional
+
+# 【CTO防爆】：全局缓存交易日历，避免重复调用xtdata
+_TRADING_DATES_CACHE = None
+_TRADING_DATES_AVAILABLE = None
 
 try:
     from xtquant import xtdata
@@ -17,20 +24,30 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-def get_real_trading_dates() -> List[str]:
+def _safe_get_trading_dates() -> List[str]:
     """
-    获取A股上交所(SH)的真实交易日历列表
-    返回: YYYYMMDD格式字符串列表，按时间排序
+    【CTO防爆】安全获取交易日历，带熔断机制
     """
+    global _TRADING_DATES_CACHE, _TRADING_DATES_AVAILABLE
+    
+    # 如果已经确定不可用，直接返回空
+    if _TRADING_DATES_AVAILABLE == False:
+        return []
+    
+    # 如果有缓存，直接返回
+    if _TRADING_DATES_CACHE is not None:
+        return _TRADING_DATES_CACHE
+    
     if xtdata is None:
-        logger.error("[日历工具] xtdata模块不可用，无法获取交易日历")
+        _TRADING_DATES_AVAILABLE = False
         return []
     
     try:
-        # 获取上交所交易日历，返回时间戳列表(毫秒)
+        # 【CTO防爆】：尝试获取交易日历
         dates = xtdata.get_trading_dates('SH')
         if not dates:
             logger.warning("[日历工具] 未能获取到原生日历，QMT可能未就绪")
+            _TRADING_DATES_AVAILABLE = False
             return []
         
         # 统一转换为YYYYMMDD字符串格式
@@ -45,12 +62,23 @@ def get_real_trading_dates() -> List[str]:
         
         # 去重并排序
         result = sorted(list(set(formatted_dates)))
-        logger.debug(f"[日历工具] 成功获取 {len(result)} 个交易日")
+        logger.info(f"[日历工具] 成功获取 {len(result)} 个交易日")
+        _TRADING_DATES_CACHE = result
+        _TRADING_DATES_AVAILABLE = True
         return result
         
     except Exception as e:
-        logger.error(f"[日历工具] 获取交易日历失败: {e}")
+        logger.warning(f"[日历工具] 获取交易日历失败(CTO熔断): {e}")
+        _TRADING_DATES_AVAILABLE = False
         return []
+
+
+def get_real_trading_dates() -> List[str]:
+    """
+    获取A股上交所(SH)的真实交易日历列表
+    返回: YYYYMMDD格式字符串列表，按时间排序
+    """
+    return _safe_get_trading_dates()
 
 
 def get_latest_completed_trading_day() -> str:
