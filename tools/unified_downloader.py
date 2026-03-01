@@ -160,6 +160,9 @@ def download_daily_k(days: int = 365, resume: bool = True):
                     end_time=end_date
                 )
                 
+                # 【CTO修复】批次间强制等待2秒，让xtdata写完磁盘，避免STATUS_NO_MEMORY
+                time.sleep(2)
+                
                 # 标记完成
                 for stock in batch:
                     state["completed"].append(stock)
@@ -169,9 +172,11 @@ def download_daily_k(days: int = 365, resume: bool = True):
                 progress.update(task, advance=len(batch))
                 
             except Exception as e:
-                state["failed"].extend(batch)
-                failed_count += len(batch)
-                console.print(f"[red]❌ 批次 {batch_num} 失败: {e}[/red]")
+                # 【CTO修复】异常时立即停止，不再继续硬跑喂死进程
+                console.print(f"[red]❌ xtdata服务异常，立即停止: {e}[/red]")
+                console.print("[red]⚠️ 请检查QMT客户端状态后重试[/red]")
+                save_state("daily_k", state)
+                return
             
             # 定期保存状态
             if batch_num % 5 == 0:
