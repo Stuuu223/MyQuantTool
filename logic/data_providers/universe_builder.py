@@ -94,6 +94,14 @@ class UniverseBuilder:
         from logic.data_providers.true_dictionary import get_true_dictionary
         true_dict = get_true_dictionary()
         
+        # 【CTO修复】：在循环外一次性预热TrueDictionary（仅预热少量股票）
+        # 避免在循环中逐只预热导致效率低下
+        preheat_stocks = [s for s in all_stocks[:100] if not s.startswith(('8', '4', '688'))]
+        try:
+            true_dict.warmup(preheat_stocks, target_date=date)
+        except Exception as e:
+            self.logger.warning(f"TrueDictionary预热失败: {e}")
+        
         valid_stocks = []
         success_count = 0
         fail_count = 0
@@ -122,12 +130,7 @@ class UniverseBuilder:
                 if pd.isna(raw_vol) or float(raw_vol) <= 0: continue
                 current_volume = float(raw_vol)
                 
-                # 单点预热TrueDictionary
-                try:
-                    true_dict.warmup([stock], target_date=date)
-                except:
-                    pass
-                
+                # 【CTO修复】：不再在循环中预热，改用预先预热+直接获取缓存
                 # 2. 提取基础缓存并强转
                 avg_vol = float(true_dict.get_avg_volume_5d(stock) or 0.0)
                 float_vol = float(true_dict.get_float_volume(stock) or 0.0)
