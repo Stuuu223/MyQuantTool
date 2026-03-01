@@ -584,13 +584,17 @@ class QmtDataManager:
             logger.error("[QmtDataManager] xtquant模块不可用")
             return {}
 
-        # 如果需要VIP服务，确保服务已启动
+        # 如果需要VIP服务，确保本地代理已启动
+        # CTO架构修复：只需要start_vip_service()，不需要xtdata.connect()
+        # xtdata.connect()会把连接切换到实时Level-2服务器（55310端口）
+        # 导致download_history_data请求发到实时服务器而非历史数据服务器
         if use_vip and self.use_vip:
-            if not self._ensure_vip_connection():
-                # CTO修复：VIP不可用直接熔断，禁止降级
-                raise RuntimeError(
-                    "[QmtDataManager] VIP服务不可用，直接熔断！禁止降级到普通下载"
-                )
+            if not self._vip_initialized:
+                result = self.start_vip_service()
+                if not result:
+                    raise RuntimeError(
+                        "[QmtDataManager] VIP本地代理启动失败"
+                    )
 
         results = {}
         logger.info(
