@@ -19,7 +19,14 @@ from logic.core.path_resolver import PathResolver
 MEMORY_DECAY_FACTOR = 0.5      # 衰减系数
 MEMORY_MIN_SCORE = 10.0        # 最低分数阈值
 MEMORY_MAX_ABSENCE_DAYS = 2    # 连续不上榜最大天数
-from logic.core.metric_definitions import MetricDefinitions
+
+# 【CTO修复】TRUE_CHANGE 内联定义，不再依赖已废弃的 MetricDefinitions
+def TRUE_CHANGE(close: float, pre_close: float) -> float:
+    """计算真实涨跌幅(%)"""
+    if pre_close == 0:
+        return 0.0
+    return (close - pre_close) / pre_close * 100
+
 from logic.core.sanity_guards import SanityGuards
 from logic.data_providers.qmt_manager import QmtDataManager
 from logic.data_providers.universe_builder import UniverseBuilder
@@ -961,7 +968,7 @@ class TimeMachineEngine:
             logger.debug(f"【时间机器】{stock_code} 使用Tick最后价格作为收盘价: {real_close}")
             
             # 计算真实涨幅 (使用日K收盘价！)
-            final_change = force_float(MetricDefinitions.TRUE_CHANGE(real_close, pre_close))
+            final_change = force_float(TRUE_CHANGE(real_close, pre_close))
             
             # 骗炮终审：Pullback_Ratio计算 - 全部使用force_float
             # 【CTO修复】确保数值后再比较

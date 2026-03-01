@@ -23,7 +23,6 @@ import numpy as np
 import logging
 
 from logic.core.config_manager import get_config_manager
-from logic.core.metric_definitions import MetricDefinitions
 
 # 配置V18引擎专用日志器
 logger = logging.getLogger("V18CoreEngine")

@@ -1660,6 +1660,10 @@ class LiveTradingEngine:
             CALENDAR_UTILS_AVAILABLE = False
             logger.warning(f"[交易日历] 导入失败: {e}")
         
+        # 【CTO修复】在函数开头赋予明确的时间切片！
+        current_time = datetime.now()
+        target_date_str = current_time.strftime('%Y%m%d')  # 默认值
+        
         # 【CTO静态快照打分算法】盘后无法获取连续Tick流，用静态数据估算
         def calculate_snapshot_score(volume_ratio, turnover_rate, price, open_price, prev_close, high, low, amount):
             """
@@ -2144,7 +2148,7 @@ class LiveTradingEngine:
                             # dashboard_dragons保持为空列表，但大屏必须渲染！
                         
                         render_battle_dashboard(
-                            top_dragons=dashboard_dragons,
+                            data_list=dashboard_dragons,
                             title=f"🔥 热复盘战报 [{target_date_str}]",
                             clear_screen=True
                         )
