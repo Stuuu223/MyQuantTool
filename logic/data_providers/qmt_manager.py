@@ -214,86 +214,54 @@ class QmtDataManager:
         raise ValueError("QMT_VIP_TOKEN未配置，请在 .env 文件中写入: QMT_VIP_TOKEN=您的Token")
 
     def start_vip_service(self) -> bool:
-        """
-        【CTO 终极直连架构 V2.1】直连本地 MiniQMT 客户端
-
-        三步走：
-        Step 1 - set_token()：注入 VIP 权限（CRITICAL-1修复，原代码完全缺失此步）
-        Step 2 - connect()：连接本地 MiniQMT，不传参自动识别
-        Step 3 - 探针验证：get_trading_calendar('SZSE') 有数据才算真正连通
-                 （CRITICAL-2修复：connect() 无可靠返回值，不抛异常≠连通）
-
-        官方文档依据：
-        "xtdata 提供和 MiniQmt 的交互接口，本质是和 MiniQmt 建立连接，
-         由 MiniQmt 处理行情数据请求。xtdata.connect() 不传参可自动识别本地 MiniQMT。"
-
-        Returns:
-            True = 三步全通；False = 任意环节失败
-        """
-        if QmtDataManager._vip_global_initialized:
-            logger.info("[QmtDataManager] VIP客户端已连接，复用现有连接")
-            return True
-
+        """【CTO 终极直连与探针防爆版 V3.0】"""
         with QmtDataManager._vip_lock:
             if QmtDataManager._vip_global_initialized:
                 return True
 
             try:
                 logger.info("=" * 60)
-                logger.info("【启动QMT VIP直连模式 V2.2】")
+                logger.info("【启动 QMT 客户端直连模式 V3.0】")
                 logger.info("=" * 60)
 
-                # ── Step 1: 验证 VIP Token 配置 ──
-                # 注意：xtdata 没有 set_token 方法！
-                # Token 在 MiniQMT 客户端登录时已配置，直连模式下无需代码注入
-                token = self.vip_token  # lazy property，验证配置存在
-                logger.info(f"✅ Step 1: VIP Token 已配置 ({token[:6]}...{token[-4:]})")
-
-                # ── Step 2: 连接本地 MiniQMT ──
+                # 1. 尝试连接本地客户端 (极简版默认 58609)
                 try:
-                    xtdata.connect()
-                    logger.info("✅ Step 2: xtdata.connect() 调用完成")
-                except Exception as conn_e:
-                    logger.error(f"❌ Step 2: xtdata.connect() 抛出异常: {conn_e}")
-                    logger.error("请确认 MiniQMT / 投研版是否已登录运行")
-                    QmtDataManager._vip_init_event.set()
-                    return False
+                    xtdata.connect(port=58609)
+                    logger.info("✅ 成功连入本地 QMT 客户端 (58609)！")
+                except Exception:
+                    try:
+                        xtdata.connect(port=58610)
+                        logger.info("✅ 成功连入本地 QMT 客户端 (58610)！")
+                    except Exception as e:
+                        logger.error(f"❌ 客户端连接全面崩溃: {e}")
+                        return False
 
-                # ── Step 3: 探针验证 ──
-                # 用 get_markets() 验证连接（极简版支持）
+                # 2. 【CTO 双重探针验证】
+                # get_trading_calendar 在极简版/投研版sp3不支持，改用双重探针
+                time.sleep(1.0)
                 try:
+                    # 探针1: get_markets 基础连接验证
                     markets = xtdata.get_markets()
                     if not markets:
-                        logger.error(
-                            "❌ Step 3: 探针返回空数据，连接未就绪（MiniQMT是否已登录？）"
-                        )
-                        QmtDataManager._vip_init_event.set()
+                        logger.error("❌ 探针返回空数据，连接未就绪")
                         return False
-                    logger.info(
-                        f"✅ Step 3: 探针验证通过（已授权 {len(markets)} 个市场）"
-                    )
+                    logger.info(f"✅ 探针1通过：已授权 {len(markets)} 个市场")
+                    
+                    # 探针2: get_full_tick 实时数据验证（更强）
+                    tick = xtdata.get_full_tick(['000001.SZ'])
+                    if tick and len(tick) > 0:
+                        logger.info(f"✅ 探针2通过：实时Tick数据通道畅通")
+                    else:
+                        logger.warning("⚠️ 探针2返回空，但连接已建立，继续执行")
                 except Exception as probe_e:
-                    logger.error(f"❌ Step 3: 探针异常: {probe_e}")
-                    QmtDataManager._vip_init_event.set()
+                    logger.error(f"❌ 探针异常: {probe_e}")
                     return False
 
-                # ── 全部通过 ──
                 QmtDataManager._vip_global_initialized = True
-                QmtDataManager._vip_global_port = ("auto", 0)
-                QmtDataManager._vip_init_event.set()
-
-                logger.info("=" * 60)
-                logger.info("✅ VIP直连完成：Token验证 → connect() → 探针验证 全部通过")
-                logger.info("=" * 60)
                 return True
 
-            except ValueError as ve:
-                logger.error(f"❌ VIP Token 配置错误: {ve}")
-                QmtDataManager._vip_init_event.set()
-                return False
             except Exception as e:
-                logger.error(f"❌ VIP 客户端连线发生未知异常: {e}")
-                QmtDataManager._vip_init_event.set()
+                logger.error(f"❌ VIP 启动发生未知异常: {e}")
                 return False
 
     def stop_vip_service(self) -> bool:
