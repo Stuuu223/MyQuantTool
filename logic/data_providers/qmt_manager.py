@@ -40,8 +40,6 @@ except ImportError:
     xtdata = None
     xttrader = None
 
-import logging
-
 logger = logging.getLogger(__name__)
 
 
@@ -245,10 +243,14 @@ class QmtDataManager:
         # 当前线程获取到锁，执行初始化
         # ============================================================
         try:
+            # P1级修复：每次开始初始化前，clear() Event，确保重新初始化时等待线程能正确等待
+            QmtDataManager._vip_init_event.clear()
+            
             # 双重检查：防止在等待锁期间其他线程已完成初始化
             if QmtDataManager._vip_global_initialized:
                 self._vip_initialized = True
                 self.listen_port = QmtDataManager._vip_global_port
+                QmtDataManager._vip_init_event.set()  # 通知等待线程
                 return self.listen_port
 
             # 检查XT模块可用性
@@ -562,7 +564,7 @@ class QmtDataManager:
                     if (
                         existing
                         and stock_code in existing
-                        and len(existing[stock_code]) > 100
+                        and len(existing[stock_code]) > 0
                     ):
                         tick_count = len(existing[stock_code])
                         results[stock_code] = DownloadResult(
