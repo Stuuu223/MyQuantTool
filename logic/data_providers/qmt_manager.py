@@ -240,13 +240,14 @@ class QmtDataManager:
 
             try:
                 logger.info("=" * 60)
-                logger.info("【启动QMT VIP直连模式 V2.1】")
+                logger.info("【启动QMT VIP直连模式 V2.2】")
                 logger.info("=" * 60)
 
-                # ── Step 1: 注入 VIP Token（CRITICAL-1修复） ──
-                token = self.vip_token  # lazy property，此处首次触发加载
-                xtdata.set_token(token)
-                logger.info("✅ Step 1: VIP Token 已注入 xtdata")
+                # ── Step 1: 验证 VIP Token 配置 ──
+                # 注意：xtdata 没有 set_token 方法！
+                # Token 在 MiniQMT 客户端登录时已配置，直连模式下无需代码注入
+                token = self.vip_token  # lazy property，验证配置存在
+                logger.info(f"✅ Step 1: VIP Token 已配置 ({token[:6]}...{token[-4:]})")
 
                 # ── Step 2: 连接本地 MiniQMT ──
                 try:
@@ -258,19 +259,18 @@ class QmtDataManager:
                     QmtDataManager._vip_init_event.set()
                     return False
 
-                # ── Step 3: 探针验证（CRITICAL-2修复） ──
-                # connect() 不抛异常不代表真的通了
-                # 用 get_trading_calendar 拿到实际数据才算连通
+                # ── Step 3: 探针验证 ──
+                # 用 get_markets() 验证连接（极简版支持）
                 try:
-                    probe = xtdata.get_trading_calendar("SZSE")
-                    if probe is None or len(probe) == 0:
+                    markets = xtdata.get_markets()
+                    if not markets:
                         logger.error(
                             "❌ Step 3: 探针返回空数据，连接未就绪（MiniQMT是否已登录？）"
                         )
                         QmtDataManager._vip_init_event.set()
                         return False
                     logger.info(
-                        f"✅ Step 3: 探针验证通过（SZSE交易日历 {len(probe)} 条）"
+                        f"✅ Step 3: 探针验证通过（已授权 {len(markets)} 个市场）"
                     )
                 except Exception as probe_e:
                     logger.error(f"❌ Step 3: 探针异常: {probe_e}")
@@ -283,7 +283,7 @@ class QmtDataManager:
                 QmtDataManager._vip_init_event.set()
 
                 logger.info("=" * 60)
-                logger.info("✅ VIP直连完成：Token注入 → connect() → 探针验证 全部通过")
+                logger.info("✅ VIP直连完成：Token验证 → connect() → 探针验证 全部通过")
                 logger.info("=" * 60)
                 return True
 
