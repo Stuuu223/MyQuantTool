@@ -129,11 +129,12 @@ class TrueDictionary:
         # Step 1: QMT本地极速读取 (C++接口, <100ms) - 只调用get_instrument_detail
         qmt_result = self._warmup_qmt_data(stock_list)
         
-        # 【CTO防爆】：跳过所有get_local_data调用！
-        # Step 2-4 已禁用，避免BSON崩溃
-        avg_volume_result = {'source': 'disabled', 'success': 0, 'failed': len(stock_list), 'note': 'CTO防爆：禁用get_local_data'}
-        ma_result = {'source': 'disabled', 'success': 0, 'failed': len(stock_list), 'note': 'CTO防爆：禁用get_local_data'}
-        atr_result = {'source': 'disabled', 'success': 0, 'failed': len(stock_list), 'note': 'CTO防爆：禁用get_local_data'}
+        # 【CTO全息克隆修复】：启用5日均量计算（单点查询安全！）
+        avg_volume_result = self._warmup_avg_volume_from_qmt(stock_list, target_date=target_date)
+        
+        # MA和ATR暂时禁用
+        ma_result = {'source': 'disabled', 'success': 0, 'failed': len(stock_list), 'note': 'CTO防爆：暂时禁用'}
+        atr_result = {'source': 'disabled', 'success': 0, 'failed': len(stock_list), 'note': 'CTO防爆：暂时禁用'}
         
         # Step 5: 数据完整性检查（只检查FloatVolume）
         integrity_check = self._check_data_integrity(stock_list)

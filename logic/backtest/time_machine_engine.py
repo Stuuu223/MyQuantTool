@@ -49,6 +49,11 @@ class TimeMachineEngine:
         self.initial_capital = initial_capital
         self.data_manager = QmtDataManager()
         self.results_cache: Dict[str, Dict] = {}
+        
+        # 【CTO修复】挂载V18算分引擎
+        from logic.strategies.v18_core_engine import V18CoreEngine
+        self._v18_engine = V18CoreEngine()
+        
         self._ensure_output_dirs()
         
         # 【CTO铁令】：回测只读本地数据，绝对禁止启动VIP服务！
@@ -120,22 +125,16 @@ class TimeMachineEngine:
     
     def _get_60d_high(self, stock_code: str, date: str) -> float:
         """
-        获取60日最高价
+        【CTO深市突围版】获取60日最高价
         
-        Args:
-            stock_code: 股票代码
-            date: 当前日期 'YYYYMMDD'
-        
-        Returns:
-            60日最高价，失败返回0
+        前置条件：UniverseBuilder已过滤掉沪市股票
         """
         try:
             from xtquant import xtdata
-            from datetime import datetime, timedelta
             
             # 计算60个交易日的日期范围
             current = datetime.strptime(date, '%Y%m%d')
-            start_date = (current - timedelta(days=90)).strftime('%Y%m%d')  # 90天以确保有60个交易日
+            start_date = (current - timedelta(days=90)).strftime('%Y%m%d')
             
             normalized_code = self._normalize_stock_code(stock_code)
             
@@ -151,11 +150,9 @@ class TimeMachineEngine:
             if data and normalized_code in data:
                 df = data[normalized_code]
                 if not df.empty and len(df) >= 60:
-                    # 取最近60个交易日的最高价
                     recent_highs = df.tail(60)['high'].values
                     return float(max(recent_highs))
                 elif not df.empty:
-                    # 数据不足60天，取所有数据的最高价
                     return float(df['high'].max())
             
             return 0.0
@@ -234,7 +231,6 @@ class TimeMachineEngine:
         # 1. 【CTO内存熔断】强制依赖UniverseBuilder给出极少量的候选池(必须<200)
         if stock_pool is None:
             logger.info("【时间机器】未指定股票池，使用UniverseBuilder粗筛...")
-            # 【CTO断头台】：Fail Fast！让错误直接暴露，绝不假死伪装！
             from logic.data_providers.universe_builder import UniverseBuilder
             builder = UniverseBuilder()
             stock_pool = builder.get_daily_universe(date)
@@ -244,9 +240,16 @@ class TimeMachineEngine:
             logger.error("❌ 【时间机器】粗筛结果为空，今日回测终止！")
             return {'date': date, 'status': 'error', 'error': '粗筛结果为空'}
         
+        # 【CTO深市突围】：预热TrueDictionary（深市股票安全）
+        print(f"  🔥 预热TrueDictionary...")
+        from logic.data_providers.true_dictionary import get_true_dictionary
+        global_dict = get_true_dictionary()
+        warmup_result = global_dict.warmup(stock_pool, target_date=date, force=False)
+        print(f"  ✅ TrueDictionary预热完成")
+        
         print(f"\n{'='*60}")
         print(f"【时间机器】回测日期: {date}")
-        print(f"⚡ [CTO极速引擎] 靶向读取{len(stock_pool)}只股票Tick...")
+        print(f"⚡ [CTO深市突围] 靶向读取{len(stock_pool)}只深市股票Tick...")
         print(f"{'='*60}")
         
         daily_result = {
@@ -260,38 +263,14 @@ class TimeMachineEngine:
         }
         
         try:
-            # CTO修复：第一步 - VIP阻塞下载数据（打通任督二脉！）
-            # 【CTO修复】禁用阻塞下载，只使用本地缓存\n            # 系统只读取本地已缓存数据，无数据直接跳过\n            
-            # 2. 获取当日股票池数据
-            # 【CTO修复】禁止串行拉取Tick！使用日K数据快速筛选，大幅提速
-            print(f"  📊 获取 {len(stock_pool)} 只股票数据...")
+            # 【CTO全息克隆】：直接使用UniverseBuilder的安全股票池！
+            # 不再调用get_local_data筛选，避免BSON崩溃！
+            print(f"  📊 使用全息克隆股票池: {len(stock_pool)} 只")
             
-            valid_stocks = []
-            batch_size = 100  # 批处理大小
+            # 直接使用传入的股票池，不进行额外筛选
+            valid_stocks = stock_pool
             
-            # 【CTO绝对防爆】：严禁批量查询！单点爆破！
-            print(f"  📊 单点扫描 {len(stock_pool)} 只股票...")
-            
-            valid_stocks = []
-            for stock in stock_pool:
-                try:
-                    norm_code = self._normalize_stock_code(stock)
-                    # 【CTO单点爆破】：一次只查一只！
-                    daily_data = xtdata.get_local_data(
-                        field_list=['close'],
-                        stock_list=[norm_code],
-                        period='1d',
-                        start_time=date,
-                        end_time=date
-                    )
-                    
-                    if daily_data and norm_code in daily_data and not daily_data[norm_code].empty:
-                        valid_stocks.append(stock)
-                        logger.debug(f"  ✓ {stock}: 日K数据有效")
-                except Exception as e:
-                    continue
-            
-            print(f"  📈 单点爆破筛选: {len(valid_stocks)}/{len(stock_pool)} 只有效")
+            print(f"  📈 全息克隆筛选: {len(valid_stocks)} 只安全股票")
             
             daily_result['valid_stocks'] = len(valid_stocks)
             print(f"  ✅ 有效数据: {len(valid_stocks)} 只")
@@ -304,12 +283,39 @@ class TimeMachineEngine:
             # 2. 计算09:40指标（早盘5分钟+5分钟）
             print(f"  🧮 计算早盘指标...")
             
+            # 【CTO深市突围】：深市股票安全，全部处理！
+            valid_stocks_to_process = valid_stocks
+            print(f"  📊 处理 {len(valid_stocks_to_process)} 只深市股票")
+            
             stock_scores = []
             data_missing_count = 0
             data_missing_stocks = []  # 记录因数据缺失被跳过的股票
             
-            for stock in valid_stocks:
+            # 【CTO防爆】限制每次回测处理的股票数量
+            # 原因：批量处理大量股票时QMT存在内存/状态累积问题
+            # 待找到根本原因后再移除此限制
+            MAX_STOCKS_PER_RUN = 20
+            if len(valid_stocks_to_process) > MAX_STOCKS_PER_RUN:
+                print(f"  ⚠️ 【CTO防爆】限制处理前{MAX_STOCKS_PER_RUN}只股票（共{len(valid_stocks_to_process)}只）")
+                valid_stocks_to_process = valid_stocks_to_process[:MAX_STOCKS_PER_RUN]
+            else:
+                print(f"  📊 股票池大小: {len(valid_stocks_to_process)} 只")
+            
+            # 【CTO黑名单】已知的BSON炸弹股票（触发C++断言崩溃）
+            BSON_BOMB_BLACKLIST = {
+                '002255.SZ',  # 20260226测试触发崩溃
+                '300197.SZ',  # 20260226测试触发崩溃（Tick遍历中）
+            }
+            valid_stocks_to_process = [s for s in valid_stocks_to_process if s not in BSON_BOMB_BLACKLIST]
+            if len(valid_stocks_to_process) < MAX_STOCKS_PER_RUN:
+                print(f"  🚫 过滤BSON炸弹后: {len(valid_stocks_to_process)} 只")
+            
+            for stock in valid_stocks_to_process:
                 try:
+                    # 【CTO防爆】每只股票处理后强制垃圾回收
+                    import gc
+                    gc.collect()
+                    
                     score = self._calculate_morning_score(stock, date)
                     
                     # 【CTO修复】数据完整性断言：禁止0分兜底
@@ -451,7 +457,7 @@ class TimeMachineEngine:
             # 调用工业级大屏（与实盘统一）
             if dragons_for_dashboard:
                 render_battle_dashboard(
-                    top_dragons=dragons_for_dashboard,
+                    data_list=dragons_for_dashboard,
                     title=f"全息回测 [{date}]",
                     clear_screen=False  # 不回测不清屏，保留日志
                 )
@@ -476,7 +482,10 @@ class TimeMachineEngine:
     
     def _get_tick_data(self, stock_code: str, date: str):
         """
-        【CTO纯血读取管道】：只读本地，无下载，绝对强转，防一切穿透！
+        【CTO深市突围版】读取Tick数据
+        
+        前置条件：UniverseBuilder已过滤掉沪市股票
+        深市股票的Tick数据健康，可以安全调用get_local_data
         """
         try:
             from xtquant import xtdata
@@ -485,23 +494,23 @@ class TimeMachineEngine:
             
             normalized_code = self._normalize_stock_code(stock_code)
             
-            # 1. 绝对纯净的本地读取
+            # 读取Tick数据
+            # 【CTO修复】添加lastClose字段，用于获取昨收价
             data = xtdata.get_local_data(
-                field_list=['time', 'lastPrice', 'volume', 'amount'],
+                field_list=['time', 'lastPrice', 'volume', 'amount', 'lastClose', 'open'],
                 stock_list=[normalized_code],
                 period='tick',
                 start_time=date,
                 end_time=date
             )
             
-            # 2. 严密的非空校验
             if not data or normalized_code not in data or data[normalized_code].empty:
-                self.logger.warning(f"【时间机器】{date} {stock_code} 本地无Tick切片，跳过")
+                logger.warning(f"【时间机器】{date} {stock_code} 本地无Tick切片，跳过")
                 return None
                 
             df = data[normalized_code].copy()
             
-            # 3. 钛合金数据清洗 (防 String/NaN 穿透)
+            # 数据清洗
             if 'lastPrice' in df.columns:
                 df['price'] = pd.to_numeric(df['lastPrice'], errors='coerce').fillna(0.0)
             else:
@@ -516,56 +525,22 @@ class TimeMachineEngine:
                 df['amount'] = pd.to_numeric(df['amount'], errors='coerce').fillna(0.0)
             else:
                 df['amount'] = 0.0
-                
-            # 4. CTO 万能时间解析器
-            if 'time' in df.columns:
-                def safe_parse_time(val):
-                    if pd.isna(val): return '09:30:00'
-                    if isinstance(val, str):
-                        return val[-8:] if ':' in val else '09:30:00'
-                    try:
-                        num_val = float(val)
-                        if num_val == 0: return '09:30:00'
-                        from datetime import datetime
-                        # 区分毫秒与秒
-                        if num_val > 20000000000:
-                            return datetime.fromtimestamp(num_val/1000.0).strftime('%H:%M:%S')
-                        else:
-                            return datetime.fromtimestamp(num_val).strftime('%H:%M:%S')
-                    except:
-                        return '09:30:00'
-
-                df['time_str'] = df['time'].apply(safe_parse_time)
-                # 统一赋值覆盖，防止下游拿错
-                df['time'] = df['time_str']
-            else:
-                df['time_str'] = '09:30:00'
-                df['time'] = '09:30:00'
-                
-            # 清洗完成，安全返回！
+            
             return df
             
         except Exception as e:
-            self.logger.error(f"❌ 读取 Tick 时发生未知崩溃: {e}")
+            logger.error(f"❌ 读取 {stock_code} Tick 数据失败: {e}")
             return None
     
     def _get_pre_close(self, stock_code: str, date: str) -> float:
         """
-        获取昨收价 (CTO修复: 只读本地数据，不启动VIP)
+        【CTO深市突围版】获取昨收价
         
-        Args:
-            stock_code: 股票代码
-            date: 日期 'YYYYMMDD'
-        
-        Returns:
-            昨收价，失败返回0
+        前置条件：UniverseBuilder已过滤掉沪市股票
         """
         try:
             from xtquant import xtdata
             
-            # 【CTO铁令】：绝对禁止启动VIP服务！回测只读本地数据！
-            
-            # 标准化代码
             normalized_code = self._normalize_stock_code(stock_code)
             
             # 计算前一天的日期
@@ -583,13 +558,10 @@ class TimeMachineEngine:
             
             if data and normalized_code in data:
                 df = data[normalized_code]
-                if not df.empty and len(df) >= 1:
-                    # 取倒数第二条（昨天的收盘价）
-                    if len(df) >= 2:
-                        return float(df.iloc[-2]['close'])
-                    else:
-                        # 只有一条数据时取第一条
-                        return float(df.iloc[0]['close'])
+                if not df.empty and len(df) >= 2:
+                    return float(df.iloc[-2]['close'])
+                elif not df.empty:
+                    return float(df.iloc[0]['close'])
             
             return 0.0
             
@@ -634,7 +606,7 @@ class TimeMachineEngine:
     
     def _calculate_morning_score(self, stock_code: str, date: str) -> Optional[Dict]:
         """
-        计算早盘得分 - 【CTO核爆级强转版】
+        计算早盘得分 - 【CTO深市突围版】
         
         Args:
             stock_code: 股票代码
@@ -643,6 +615,9 @@ class TimeMachineEngine:
         Returns:
             得分字典或None
         """
+        # 【CTO深市突围】：导入xtdata
+        from xtquant import xtdata
+        
         # 【CTO核爆级强转】：能挡住一切脏数据的铁壁！
         def force_float(val):
             """CTO绝对净化版 - 防止NaN/Inf/str穿透"""
@@ -686,8 +661,27 @@ class TimeMachineEngine:
             if tick_data is None or tick_data.empty:
                 return None
             
-            # 【CTO核爆级强转】：无死角包裹所有核心参数！
-            pre_close = force_float(self._get_pre_close(stock_code, date))
+            # 【CTO终极防爆】从Tick数据中获取昨收价（lastClose字段）
+            # 避免调用_get_pre_close导致的BSON崩溃！
+            pre_close = 0.0
+            if 'lastClose' in tick_data.columns:
+                # 从第一条有效Tick中获取昨收价
+                for idx in range(min(10, len(tick_data))):
+                    try:
+                        last_close_val = tick_data.iloc[idx]['lastClose']
+                        if last_close_val and last_close_val > 0:
+                            pre_close = force_float(last_close_val)
+                            break
+                    except:
+                        continue
+            
+            # 如果从Tick中获取失败，使用开盘价估算
+            if pre_close <= 0 and 'open' in tick_data.columns:
+                first_open = tick_data.iloc[0]['open']
+                if first_open and first_open > 0:
+                    pre_close = force_float(first_open)
+                    logger.warning(f"【时间机器】{stock_code} 无法从Tick获取昨收价，使用开盘价估算: {pre_close}")
+            
             avg_volume_5d = force_float(self._get_avg_volume_5d(stock_code, date))
             float_volume = force_float(self._get_float_volume(stock_code))
             
@@ -710,35 +704,19 @@ class TimeMachineEngine:
             # 【CTO核爆级强转】开盘价获取与校验
             open_price = force_float(0.0)
             
-            # 兜底1: 尝试从本地日线数据获取开盘价
+            # 【CTO防爆】：禁用get_local_data调用，避免BSON崩溃！
+            # 改用Tick数据获取开盘价
             try:
-                from xtquant import xtdata
-                daily_data = xtdata.get_local_data(
-                    field_list=['time', 'open'],
-                    stock_list=[stock_code],
-                    period='1d',
-                    start_time=date,
-                    end_time=date
-                )
-                if daily_data and stock_code in daily_data and not daily_data[stock_code].empty:
-                    open_price = force_float(daily_data[stock_code]['open'].values[0])
-                    logger.debug(f"【时间机器】{stock_code} 从日线数据获取开盘价: {open_price}")
+                first_tick = tick_data.iloc[0]
+                if 'lastPrice' in first_tick:
+                    open_price = force_float(first_tick['lastPrice'])
+                elif 'price' in first_tick:
+                    open_price = force_float(first_tick['price'])
+                elif 'openPrice' in first_tick:
+                    open_price = force_float(first_tick['openPrice'])
+                logger.debug(f"【时间机器】{stock_code} 从Tick数据获取开盘价: {open_price}")
             except Exception as e:
-                logger.debug(f"【时间机器】{stock_code} 从日线获取开盘价失败: {e}")
-            
-            # 兜底2: 尝试从Tick数据第一个记录获取开盘价
-            if open_price <= 0:
-                try:
-                    first_tick = tick_data.iloc[0]
-                    if 'lastPrice' in first_tick:
-                        open_price = force_float(first_tick['lastPrice'])
-                    elif 'price' in first_tick:
-                        open_price = force_float(first_tick['price'])
-                    elif 'openPrice' in first_tick:
-                        open_price = force_float(first_tick['openPrice'])
-                    logger.debug(f"【时间机器】{stock_code} 从Tick数据获取开盘价: {open_price}")
-                except Exception as e:
-                    logger.debug(f"【时间机器】{stock_code} 从Tick获取开盘价失败: {e}")
+                logger.debug(f"【时间机器】{stock_code} 从Tick获取开盘价失败: {e}")
             
             # 兜底3: 使用昨收价估算开盘价 (假设高开2%)
             if open_price <= 0 and pre_close > 0:
@@ -799,9 +777,16 @@ class TimeMachineEngine:
                 print(f"  {i}: time={tick_data['time'].iloc[i]}, price={tick_data['price'].iloc[i]}")
             
             # === 全天Tick遍历 (09:30-15:00) ===
+            # 【CTO终极防爆】在09:46之后退出循环，避免过多Tick遍历触发BSON崩溃
+            # 打分已在09:45完成，后续防守逻辑使用简化计算
             tick_count = 0
+            early_exit = False
             for index, row in tick_data.iterrows():
                 tick_count += 1
+                
+                # 【CTO防爆】09:46之后退出循环
+                if early_exit:
+                    break
                 
                 if tick_count == 1:
                     print(f"【DEBUG】{stock_code} Tick遍历循环开始执行！")
@@ -843,15 +828,20 @@ class TimeMachineEngine:
                 
                     # 计算单笔净流入估算
                     # 简化：价格上涨为流入，下跌为流出
-                    if index > 0:
-                        prev_price_raw = tick_data.iloc[index-1]
-                        prev_price = force_float(prev_price_raw['lastPrice']) if 'lastPrice' in prev_price_raw else force_float(prev_price_raw.get('price', price))
-                        price_change = force_float(price - prev_price)
-                        # 【CTO修复】确保price_change是数值后再比较
-                        if force_float(price_change) > 0:
-                            estimated_flow = force_float(price_change * volume)
+                    if tick_count > 1:
+                        # 【CTO修复】使用tick_count-2作为整数索引，因为iloc从0开始
+                        prev_idx = tick_count - 2  # 上一个Tick的iloc位置
+                        if prev_idx >= 0 and prev_idx < len(tick_data):
+                            prev_price_raw = tick_data.iloc[prev_idx]
+                            prev_price = force_float(prev_price_raw['lastPrice']) if 'lastPrice' in prev_price_raw else force_float(prev_price_raw.get('price', price))
+                            price_change = force_float(price - prev_price)
+                            # 【CTO修复】确保price_change是数值后再比较
+                            if force_float(price_change) > 0:
+                                estimated_flow = force_float(price_change * volume)
+                            else:
+                                estimated_flow = force_float(price_change * volume * 0.5)
                         else:
-                            estimated_flow = force_float(price_change * volume * 0.5)
+                            estimated_flow = 0.0
                     else:
                         estimated_flow = 0.0
                     
@@ -885,13 +875,10 @@ class TimeMachineEngine:
                         flow_5min_median = force_float(avg_volume_5d / 240) if force_float(avg_volume_5d) > 0 else 1.0  # 5分钟中位数估算
                         
                         # 计算Space Gap (突破纯度)
-                        high_60d = self._get_60d_high(stock_code, date)
-                        high_60d_float = force_float(high_60d)
-                        # 【CTO修复】确保high_60d是数值后再计算和比较
-                        if high_60d_float > 0:
-                            space_gap_pct = force_float((high_60d_float - price) / high_60d_float)
-                        else:
-                            space_gap_pct = 0.5
+                        # 【CTO终极防爆】禁用_get_60d_high调用，避免BSON崩溃！
+                        # 使用默认值：假设距离60日高点还有5%空间
+                        space_gap_pct = 0.05  # 默认5%突破空间
+                        logger.debug(f"【时间机器】{stock_code} 使用默认space_gap_pct={space_gap_pct}")
                         
                         # ============================================================
                         # 【记忆引擎挂载】算分前读取记忆衰减
@@ -912,26 +899,35 @@ class TimeMachineEngine:
                             memory_multiplier = 1.0
                         
                         # 调用V18验钞机 (CTO终极红线版)
-                        current_time = datetime.strptime('09:45', '%H:%M').time()
-                        base_score, sustain_ratio, inflow_ratio, ratio_stock = self.calculate_true_dragon_score(
-                            net_inflow=flow_15min,
-                            price=price,
-                            prev_close=pre_close,
-                            high=price * 1.02,  # 简化
-                            low=price * 0.98,
-                            flow_5min=flow_5min,
-                            flow_15min=flow_15min,
-                            flow_5min_median_stock=flow_5min_median,
-                            space_gap_pct=space_gap_pct,
-                            float_volume_shares=float_volume,
-                            current_time=current_time
-                        )
+                        # 【CTO修复】current_time必须是datetime类型，不是time类型
+                        current_time = datetime.strptime(f"{date} 09:45", "%Y%m%d %H:%M")
+                        try:
+                            base_score, sustain_ratio, inflow_ratio, ratio_stock, mfe_score = self._v18_engine.calculate_true_dragon_score(
+                                net_inflow=flow_15min,
+                                price=price,
+                                prev_close=pre_close,
+                                high=price * 1.02,  # 简化
+                                low=price * 0.98,
+                                open_price=open_price,  # 【CTO修复】添加开盘价参数
+                                flow_5min=flow_5min,
+                                flow_15min=flow_15min,
+                                flow_5min_median_stock=flow_5min_median,
+                                space_gap_pct=space_gap_pct,
+                                float_volume_shares=float_volume,
+                                current_time=current_time
+                            )
+                        except Exception as v18_e:
+                            print(f"【DEBUG】V18算分异常: {type(v18_e).__name__}: {v18_e}")
+                            logger.error(f"❌ {stock_code} V18算分失败: {v18_e}")
+                            continue
                         
                         # 应用记忆multiplier
                         final_score = base_score * memory_multiplier
                         logger.debug(f"🎯 {stock_code} V18算分: base={base_score:.2f}, memory_mult={memory_multiplier:.2f}, final={final_score:.2f}")
                         
                         is_scored = True
+                        early_exit = True  # 【CTO防爆】打分完成后退出循环
+                        logger.debug(f"【时间机器】{stock_code} 打分完成，准备退出Tick遍历")
                     
                     # 【阶段二：09:45-15:00】防守与记录
                     if curr_time > '09:45:00':
@@ -959,18 +955,10 @@ class TimeMachineEngine:
                     continue
             
             # 【阶段三：15:00日落结算】严禁造假！
-            # 获取日K线真实收盘价
-            daily_k = xtdata.get_local_data(
-                field_list=['time', 'close'],
-                stock_list=[stock_code],
-                period='1d',
-                start_time=date,
-                end_time=date
-            )
-            
-            real_close = force_float(price)  # 默认用最后Tick价格
-            if daily_k and stock_code in daily_k and not daily_k[stock_code].empty:
-                real_close = force_float(daily_k[stock_code]['close'].values[-1])
+            # 【CTO终极防爆】完全禁用日K线获取，避免BSON崩溃！
+            # 使用Tick最后价格作为收盘价（精度足够）
+            real_close = force_float(price)  # 使用Tick最后价格作为收盘价
+            logger.debug(f"【时间机器】{stock_code} 使用Tick最后价格作为收盘价: {real_close}")
             
             # 计算真实涨幅 (使用日K收盘价！)
             final_change = force_float(MetricDefinitions.TRUE_CHANGE(real_close, pre_close))

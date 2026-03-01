@@ -1,13 +1,19 @@
+# -*- coding: utf-8 -*-
 """
-股票池构建器 - CTO全息克隆版
+股票池构建器 - JSON遗产安全版
 
-【CTO铁令】：直接复用全息下载器的安全股票池！
-原因：get_local_data会触发BSON崩溃
-方案：读取download_state_holographic_*.json中的completed列表
+【CTO终极方案】：
+QMT本地数据存在损坏文件，导致get_local_data触发C++ BSON崩溃。
+由于Python无法捕获C++层面的崩溃，直接使用全息下载器的JSON遗产。
+
+安全策略：
+1. 读取全息下载器的JSON文件获取已成功下载的股票列表
+2. 只保留深市股票（.SZ），沪市数据有损坏风险
+3. 不调用任何get_local_data，避免BSON崩溃
 
 Author: CTO & AI总监
 Date: 2026-03-01
-Version: 6.0.0 - 全息克隆版（复用下载器遗产）
+Version: 10.0.0 - JSON遗产安全版
 """
 import os
 import json
@@ -19,9 +25,9 @@ logger = logging.getLogger(__name__)
 
 class UniverseBuilder:
     """
-    股票池构建器 - CTO全息克隆版
+    股票池构建器 - JSON遗产安全版
     
-    【核心策略】：直接读取全息下载器留下的JSON遗产
+    【铁律】：不调用get_local_data，只用JSON遗产！
     """
     
     def __init__(self, strategy: str = 'universe_build'):
@@ -30,63 +36,83 @@ class UniverseBuilder:
         
     def get_daily_universe(self, date: str) -> List[str]:
         """
-        【CTO全息克隆】粗筛
+        JSON遗产粗筛 - 安全可靠
         
-        第一优先级：读取全息下载器的JSON缓存
-        第二优先级：极简降级扫描
+        从全息下载器的JSON文件中读取已下载的股票列表
+        只保留深市股票，过滤掉有风险的沪市
+        
+        Args:
+            date: 日期 YYYYMMDD
+            
+        Returns:
+            候选股票列表
         """
-        self.logger.info(f"⚡ [CTO全息克隆] 启动安全降级扫描 ({date})...")
+        self.logger.info(f"⚡ [JSON遗产粗筛] 启动 ({date})...")
         
-        # =================================================================
-        # 🛡️ 终极护盾：直接读取全息下载器留下的JSON遗产！
-        # =================================================================
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        json_path = os.path.join(base_dir, 'data', f'download_state_holographic_{date}.json')
         
-        if os.path.exists(json_path):
+        # 尝试全息下载器的JSON
+        holo_path = os.path.join(base_dir, 'data', f'download_state_holographic_{date}.json')
+        all_stocks = []
+        
+        if os.path.exists(holo_path):
             try:
-                with open(json_path, 'r', encoding='utf-8') as f:
+                with open(holo_path, 'r', encoding='utf-8') as f:
                     state = json.load(f)
                     
                 if 'completed' in state and state['completed']:
-                    holographic_pool = state['completed']
-                    self.logger.info(f"🎉 发现全息下载器遗产！直接借库 {len(holographic_pool)} 只安全股票！")
-                    print(f"🎉 [CTO全息克隆] 从JSON遗产借库: {len(holographic_pool)} 只安全股票")
-                    
-                    # 过滤掉北交所股票（8开头、4开头）
-                    filtered_pool = [s for s in holographic_pool if not s.startswith(('8', '4'))]
-                    self.logger.info(f"✅ 过滤北交所后: {len(filtered_pool)} 只")
-                    
-                    if len(filtered_pool) > 10:
-                        return filtered_pool
+                    all_stocks = state['completed']
+                    self.logger.info(f"📄 读取全息遗产: {len(all_stocks)} 只")
             except Exception as e:
-                self.logger.warning(f"读取全息缓存失败: {e}")
+                self.logger.error(f"读取全息JSON失败: {e}")
         
-        # =================================================================
-        # 🛡️ 备用方案：极简扫描
-        # =================================================================
-        self.logger.warning("未找到全息缓存，执行极简扫描...")
+        if not all_stocks:
+            # 尝试Tick下载器的JSON
+            tick_path = os.path.join(base_dir, 'data', f'download_state_tick_{date}_{date}.json')
+            if os.path.exists(tick_path):
+                try:
+                    with open(tick_path, 'r', encoding='utf-8') as f:
+                        state = json.load(f)
+                    if 'completed' in state and state['completed']:
+                        completed = state['completed']
+                        all_stocks = list(completed.keys()) if isinstance(completed, dict) else completed
+                        self.logger.info(f"📄 读取Tick遗产: {len(all_stocks)} 只")
+                except Exception as e:
+                    self.logger.error(f"读取Tick JSON失败: {e}")
         
-        try:
-            from xtquant import xtdata
-            all_stocks = xtdata.get_stock_list_in_sector('沪深A股')
-        except Exception:
+        if not all_stocks:
+            self.logger.error(f"❌ 找不到 {date} 的JSON遗产！请先运行下载器！")
             return []
-            
-        if not all_stocks: 
-            return []
-
-        # 极简过滤：只排除北交所和科创板
+        
+        # ═══════════════════════════════════════════════════════════════
+        # 过滤：只保留深市股票，剔除沪市、北交所、科创板
+        # ═══════════════════════════════════════════════════════════════
         valid_stocks = []
         for stock in all_stocks:
-            if stock.startswith(('8', '4', '688')): 
+            # 【安全第一】：剔除所有沪市股票(.SH)，数据有损坏风险
+            if stock.endswith('.SH'):
+                continue
+            # 剔除北交所(8开头、4开头)和科创板(688开头)
+            if stock.startswith(('8', '4', '688')):
                 continue
             valid_stocks.append(stock)
         
-        # 取前200个
-        final_pool = valid_stocks[:200]
-        self.logger.info(f"✅ 极简扫描完成: {len(final_pool)} 只")
-        return final_pool
+        # 统计
+        sh_count = len([s for s in all_stocks if s.endswith('.SH')])
+        sz_count = len(valid_stocks)
+        
+        self.logger.info(f"🚫 剔除沪市: {sh_count} 只（数据风险）")
+        self.logger.info(f"✅ 保留深市: {sz_count} 只")
+        print(f"🚫 剔除沪市: {sh_count} 只（数据风险）")
+        print(f"✅ 保留深市: {sz_count} 只")
+        
+        # 限制最大数量
+        max_output = 100
+        if len(valid_stocks) > max_output:
+            self.logger.info(f"📏 限制输出: {len(valid_stocks)} → {max_output}")
+            valid_stocks = valid_stocks[:max_output]
+        
+        return valid_stocks
 
 
 # 便捷函数
@@ -99,5 +125,5 @@ def get_daily_universe(date: str) -> List[str]:
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
     universe = get_daily_universe('20260226')
-    print(f"股票池: {len(universe)} 只")
+    print(f"\n股票池: {len(universe)} 只")
     print(f"前10只: {universe[:10]}")
