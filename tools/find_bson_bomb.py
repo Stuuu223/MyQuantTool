@@ -63,16 +63,20 @@ logger = logging.getLogger('BSON_Sweeper')
 # rc==134  Linux SIGABRT                 ← 炸弹
 # 以下均为Windows结构化异常码（有符号）：
 # rc==-1073741819  0xC0000005 access violation  ← 炸弹
-# rc==-1073740940  0xC0000374 heap corruption    ← 炸弹
-# rc==-1073740777  stack overflow                ← 炸弹
-# rc==-1073741571  stack overflow alt            ← 炸弹
-# rc==-1073741787  0xC0000009 invalid param      ← 炸弹
+# rc==3            abort()                      ← 炸弹
+# rc==134          Linux SIGABRT                ← 炸弹
+# rc==-1073741819  0xC0000005 access violation  ← 炸弹
+# rc==-1073740940  0xC0000374 heap corruption   ← 炸弹
+# rc==-1073740777  0xC0000409 stack buffer overrun ← 炸弹 (无符号3221226505)
+# rc==-1073740791  0xC0000409 同上，另一种计算方式
+# rc==-1073741571  0xC0000409 同上
+# rc==-1073741787  0xC0000009 invalid param     ← 炸弹
 # 超时  无本地数据，QMT等网络，不是炸弹
 CRASH_CODES = frozenset({
-    3, 134,
-    -1073741819, -1073740940, -1073740777, -1073741571, -1073741787,
-})
-
+      3, 134,
+      -1073741819, -1073740940, -1073740777, -1073740791, -1073741571, -1073741787,
+      3221226505,  # 0xC0000409 无符号格式
+  })
 PROBE_DATE = '20260226'  # 已确认有本地日K的交易日
 
 
@@ -176,9 +180,15 @@ def main():
                 if rc in CRASH_CODES:
                     mine_list.append(stock)
                     logger.error(f'💥 BSON炸弹: {stock} | exit={rc}')
-                elif rc not in (0, 2):
-                    # 未知退出码，先记录但不直接入黑名单，方便事后分析
-                    logger.warning(f'❓ 未知退出码(仅记录，不入黑名单): {stock} | exit={rc}')
+                else:
+                    # 无符号转有符号再比较（Windows退出码可能返回无符号）
+                    rc_signed = rc if rc < 0x80000000 else rc - 0x100000000
+                    if rc_signed in CRASH_CODES:
+                        mine_list.append(stock)
+                        logger.error(f'💥 BSON炸弹: {stock} | exit={rc}(signed={rc_signed})')
+                    elif rc not in (0, 2):
+                        # 未知退出码，先记录但不直接入黑名单，方便事后分析
+                        logger.warning(f'❓ 未知退出码(仅记录，不入黑名单): {stock} | exit={rc}')
 
             except Exception as e:
                 logger.warning(f'子进程启动失败 {stock}: {e}')
