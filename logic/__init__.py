@@ -23,7 +23,7 @@ from logic.core.version import VERSION as __version__
 from logic.strategies.strategy_config import StrategyConfig, get_strategy_config
 
 # 数据提供层
-from logic.data_providers.qmt_manager import QMTManager
+from logic.data_providers.qmt_manager import QmtDataManager, get_qmt_manager
 from logic.data_providers.universe_builder import UniverseBuilder
 from logic.data_providers.true_dictionary import get_true_dictionary
 

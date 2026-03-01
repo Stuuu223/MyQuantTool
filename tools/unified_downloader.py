@@ -819,14 +819,18 @@ class HolographicDownloaderV20:
 
         console.print(f"   📥 需下载 {len(dates_to_download)} 天，已存在 {len(already_downloaded)} 天")
 
-        from logic.core.qmt_data_manager import QmtDataManager
+        from logic.data_providers.qmt_manager import QmtDataManager
         qmt_manager = QmtDataManager()
         success_dates = []
         for date in dates_to_download:
             try:
-                qmt_manager.download_tick_data([stock_code], date)
-                success_dates.append(date)
-                time.sleep(0.1)
+                # CTO修复：检查download_tick_data的返回结果
+                results = qmt_manager.download_tick_data([stock_code], date)
+                if results and stock_code in results and results[stock_code].success:
+                    success_dates.append(date)
+                    console.print(f"   [green]✅ {stock_code} {date} 成功 ({results[stock_code].record_count}条)[/green]")
+                else:
+                    console.print(f"   [red]❌ {stock_code} {date} 下载失败或无数据[/red]")
             except Exception as e:
                 console.print(f"   [red]❌ {stock_code} {date} 下载失败: {e}[/red]")
 

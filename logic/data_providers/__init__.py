@@ -23,6 +23,6 @@ def get_provider(provider_name: str = "qmt", **kwargs):
     return None
 
 
-from logic.data_providers.qmt_manager import QMTManager
+from logic.data_providers.qmt_manager import QmtDataManager, get_qmt_manager
 
-__all__ = ['get_provider', 'QMTManager']
+__all__ = ['get_provider', 'QmtDataManager', 'get_qmt_manager']
