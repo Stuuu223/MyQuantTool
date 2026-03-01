@@ -269,61 +269,29 @@ class TimeMachineEngine:
             valid_stocks = []
             batch_size = 100  # 批处理大小
             
-            # 【CTO优化】使用日K数据快速初筛，避免5000只股票串行拉取Tick
-            try:
-                from xtquant import xtdata
-                
-                # 批量获取日K数据（向量化，速度快）
-                normalized_codes = [self._normalize_stock_code(s) for s in stock_pool]
-                daily_data = xtdata.get_local_data(
-                    field_list=['time', 'open', 'high', 'low', 'close', 'volume'],
-                    stock_list=normalized_codes,
-                    period='1d',
-                    start_time=date,
-                    end_time=date
-                )
-                
-                # 快速筛选有日K数据的股票
-                stocks_with_daily = []
-                for stock in stock_pool:
+            # 【CTO绝对防爆】：严禁批量查询！单点爆破！
+            print(f"  📊 单点扫描 {len(stock_pool)} 只股票...")
+            
+            valid_stocks = []
+            for stock in stock_pool:
+                try:
                     norm_code = self._normalize_stock_code(stock)
+                    # 【CTO单点爆破】：一次只查一只！
+                    daily_data = xtdata.get_local_data(
+                        field_list=['close'],
+                        stock_list=[norm_code],
+                        period='1d',
+                        start_time=date,
+                        end_time=date
+                    )
+                    
                     if daily_data and norm_code in daily_data and not daily_data[norm_code].empty:
-                        stocks_with_daily.append(stock)
-                
-                print(f"  📈 日K数据筛选: {len(stocks_with_daily)}/{len(stock_pool)} 只有效")
-                
-                # 对初筛后的股票，选择性获取Tick数据
-                for i, stock in enumerate(stocks_with_daily):
-                    try:
-                        # 【CTO核级重构】删除进度日志，严禁循环内下载
-                        # 进度显示已删除 - 不再输出"⏳ 检查进度"
-                        
-                        # 【CTO优化】优先使用日K数据估算，Tick数据按需获取
-                        tick_data = self._get_tick_data(stock, date)
-                        # 【CTO修复】降低阈值从100到10，避免数据不足时全部跳过
-                        if tick_data is not None and len(tick_data) > 10:
-                            valid_stocks.append(stock)
-                            logger.debug(f"  ✓ {stock}: {len(tick_data)} 条Tick数据")
-                        else:
-                            # Tick数据不足，尝试使用日K数据
-                            logger.debug(f"  ⏭️ {stock}: Tick数据不足({len(tick_data) if tick_data else 0}条)，尝试日K降级")
-                            # 【CTO修复】即使Tick数据不足，只要有日K数据也加入
-                            valid_stocks.append(stock)
-                            
-                    except Exception as e:
-                        # 【CTO优化】异常时直接continue，不记录详细错误以提速
-                        continue
-                        
-            except Exception as e:
-                logger.warning(f"  ⚠️ 批量数据获取失败，降级到串行模式: {e}")
-                # 降级：串行模式但仍保持快速跳过
-                for stock in stock_pool:
-                    try:
-                        tick_data = self._get_tick_data(stock, date)
-                        if tick_data is not None and len(tick_data) > 100:
-                            valid_stocks.append(stock)
-                    except:
-                        continue  # 快速跳过失败的股票
+                        valid_stocks.append(stock)
+                        logger.debug(f"  ✓ {stock}: 日K数据有效")
+                except Exception as e:
+                    continue
+            
+            print(f"  📈 单点爆破筛选: {len(valid_stocks)}/{len(stock_pool)} 只有效")
             
             daily_result['valid_stocks'] = len(valid_stocks)
             print(f"  ✅ 有效数据: {len(valid_stocks)} 只")
