@@ -203,131 +203,51 @@ class QmtDataManager:
         logger.error("请在项目根目录创建.env文件，并写入: QMT_VIP_TOKEN=您的VIP_Token")
         raise ValueError("QMT_VIP_TOKEN未配置，请检查.env文件")
 
-    def start_vip_service(self) -> Optional[Tuple[str, int]]:
+    def start_vip_service(self) -> bool:
         """
-        启动VIP行情服务 (CTO Phase 6.3 并发安全重构版)
-
-        【并发安全设计】
-        - 使用 threading.Lock() 保护临界区
-        - 使用 threading.Event() 实现初始化完成通知
-        - 等待线程使用 Event.wait(timeout=30) 实现超时
-        - 避免忙等待，提高CPU效率
-
-        Returns:
-            监听地址和端口元组，启动失败返回None
-        """
-        # ============================================================
-        # 快速路径：如果已初始化完成，直接返回
-        # ============================================================
-        if QmtDataManager._vip_global_initialized and QmtDataManager._vip_global_port:
-            logger.info("[QmtDataManager] VIP服务已在运行，复用现有连接")
-            self.listen_port = QmtDataManager._vip_global_port
-            return self.listen_port
-
-        # ============================================================
-        # 加锁进入临界区 - 只有一个线程能执行初始化
-        # ============================================================
-        acquired = QmtDataManager._vip_lock.acquire(blocking=False)
+        【CTO 终极直连架构】：直连本地QMT客户端！
         
-        if not acquired:
-            # 当前锁被其他线程持有，说明正在初始化
-            logger.info("[QmtDataManager] VIP服务正在启动中，等待初始化完成...")
-            
-            # 使用Event等待初始化完成，最多等待30秒
-            # Event.wait() 是阻塞操作，不消耗CPU（比忙等待更高效）
-            init_completed = QmtDataManager._vip_init_event.wait(timeout=30)
-            
-            if init_completed and QmtDataManager._vip_global_initialized:
-                # 初始化成功，复用结果
-                self.listen_port = QmtDataManager._vip_global_port
-                logger.info(f"[QmtDataManager] VIP服务初始化完成，复用连接: {self.listen_port}")
-                return self.listen_port
-            else:
-                # 等待超时或初始化失败
-                logger.error("[QmtDataManager] 等待VIP服务初始化超时(30秒)")
-                return None
-
-        # ============================================================
-        # 当前线程获取到锁，执行初始化
-        # ============================================================
-        try:
-            # P1级修复：每次开始初始化前，clear() Event，确保重新初始化时等待线程能正确等待
-            QmtDataManager._vip_init_event.clear()
-            
-            # 双重检查：防止在等待锁期间其他线程已完成初始化
+        官方文档真相：
+        - xtdata 提供和 MiniQmt 的交互接口，本质是和 MiniQmt 建立连接
+        - 由 MiniQmt 处理行情数据请求
+        - xtdata.connect() 不传参可自动识别本地 MiniQMT，不用猜端口
+        
+        Returns:
+            是否成功连接
+        """
+        # 快速路径：已初始化则直接返回
+        if QmtDataManager._vip_global_initialized:
+            logger.info("[QmtDataManager] VIP客户端已连接，复用现有连接")
+            return True
+        
+        # 加锁进入临界区
+        with QmtDataManager._vip_lock:
             if QmtDataManager._vip_global_initialized:
-                self.listen_port = QmtDataManager._vip_global_port
-                QmtDataManager._vip_init_event.set()  # 通知等待线程
-                return self.listen_port
-
-            # 检查XT模块可用性
-            if not XT_AVAILABLE or not self.use_vip:
-                logger.warning("[QmtDataManager] VIP服务不可用或已禁用")
-                return None
-
-            logger.info("=" * 60)
-            logger.info("【启动QMT VIP行情服务】")
-            logger.info("=" * 60)
-
-            # 1. 设置数据目录
-            self.data_dir.mkdir(parents=True, exist_ok=True)
-            xtdc.set_data_home_dir(str(self.data_dir))
-            logger.info(f"📂 QMT数据目录: {self.data_dir}")
-
-            # 2. 设置VIP Token
-            xtdc.set_token(self.vip_token)
-            logger.info(f"🔑 VIP Token: {self.vip_token[:6]}...{self.vip_token[-4:]}")
-
-            # 3. 初始化并监听端口
-            # 【CTO架构修复】使用官方推荐模式：先关闭自动监听，再手动指定端口范围
-            xtdc.init(False)  # False = 不自动监听
-            listen_result = xtdc.listen(port=self.port_range)
+                return True
             
-            # 解析监听结果
-            if isinstance(listen_result, tuple) and len(listen_result) == 2:
-                ip, port = listen_result
-                self.listen_port = (ip, int(port))
-            else:
-                # 兼容旧版本返回单个port的情况
-                self.listen_port = ("127.0.0.1", int(listen_result))
-            
-            # 【CTO架构修复】不再设置实例级_vip_initialized，只使用类级状态
-
-            # ============================================================
-            # 设置全局单例状态 + 通知等待线程
-            # ============================================================
-            QmtDataManager._vip_global_initialized = True
-            QmtDataManager._vip_global_port = self.listen_port
-            
-            # 通知所有等待的线程：初始化完成！
-            QmtDataManager._vip_init_event.set()
-
-            # 【CTO BUG-1修复】使用self.listen_port[1]而非port变量，避免else分支NameError
-            logger.info(f"🚀 VIP行情服务已启动，监听端口: {self.listen_port[1]}")
-            logger.info("=" * 60)
-
-            return self.listen_port
-
-        except Exception as e:
-            # 【CTO架构修复】删除58609幽灵端口处理
-            # 官方文档说明：端口冲突时应使用自定义端口范围重新listen，而非回退到默认端口
-            # 任何启动失败都应明确返回None，由上层决定是否熔断
-            
-            logger.warning(f"⚠️ VIP L2服务启动失败: {e}")
-            logger.warning("VIP服务不可用，download_tick_data将抛出RuntimeError熔断！")
-            
-            # 重置全局状态
-            QmtDataManager._vip_global_initialized = False
-            QmtDataManager._vip_global_port = None
-            
-            # 通知等待线程：初始化完成（虽然失败，但避免死锁）
-            QmtDataManager._vip_init_event.set()
-            
-            return None  # 明确返回None，由上层处理
-            
-        finally:
-            # 确保锁一定被释放
-            QmtDataManager._vip_lock.release()
+            try:
+                logger.info("=" * 60)
+                logger.info("【启动QMT VIP直连模式】")
+                logger.info("=" * 60)
+                
+                # 【官方文档】xtdata.connect() 不传参可自动识别本地 MiniQMT
+                # 不需要猜端口！
+                xtdata.connect()
+                logger.info("✅ 成功连入本地 QMT 客户端（自动识别）！")
+                
+                # 设置全局状态
+                QmtDataManager._vip_global_initialized = True
+                QmtDataManager._vip_global_port = ("auto", 0)
+                QmtDataManager._vip_init_event.set()
+                
+                logger.info("=" * 60)
+                return True
+                
+            except Exception as e:
+                logger.error(f"❌ VIP 客户端连线失败: {e}")
+                logger.error("请确认 MiniQMT / 投研版是否已登录运行")
+                QmtDataManager._vip_init_event.set()
+                return False
 
     def stop_vip_service(self) -> bool:
         """
@@ -522,18 +442,14 @@ class QmtDataManager:
             logger.error("[QmtDataManager] xtquant模块不可用")
             return {}
 
-        # 如果需要VIP服务，确保本地代理已启动
-        # CTO架构修复：只需要start_vip_service()，不需要xtdata.connect()
-        # xtdata.connect()会把连接切换到实时Level-2服务器（55310端口）
-        # 导致download_history_data请求发到实时服务器而非历史数据服务器
+        # 【CTO终极直连架构】通过Token直连本地QMT客户端
         if use_vip and self.use_vip:
-            # 【CTO架构修复】使用类级别状态判断，而非实例变量
             if not QmtDataManager._vip_global_initialized:
                 result = self.start_vip_service()
                 if not result:
-                    raise RuntimeError(
-                        "[QmtDataManager] VIP本地代理启动失败"
-                    )
+                    # VIP连接失败，返回空结果，不熔断
+                    logger.error("❌ VIP客户端连接失败，请确认QMT是否已登录运行")
+                    return {}
 
         results = {}
         logger.info(
@@ -570,7 +486,8 @@ class QmtDataManager:
                         )
                         continue
 
-                # 下载Tick数据
+                # 【官方文档】download_history_data 是同步阻塞的！
+                # 补充完成后才返回，不需要轮询！
                 xtdata.download_history_data(
                     stock_code=stock_code,
                     period="tick",
@@ -578,47 +495,46 @@ class QmtDataManager:
                     end_time=trade_date,
                 )
 
-                # 【CTO极速轮询】：最大容忍5秒，每1秒试探一次
-                # 5秒拿不到的数据，30秒大概率也拿不到（停牌或VIP失效）
-                max_retries = 5
-                for attempt in range(max_retries):
-                    time.sleep(1.0)
-                    
-                    # 检查数据是否已落盘
-                    check_data = xtdata.get_local_data(
-                        field_list=["time"],
-                        stock_list=[stock_code],
-                        period="tick",
-                        start_time=trade_date,
-                        end_time=trade_date,
-                    )
+                # 直接检查数据（同步返回，无需轮询）
+                check_data = xtdata.get_local_data(
+                    field_list=["time"],
+                    stock_list=[stock_code],
+                    period="tick",
+                    start_time=trade_date,
+                    end_time=trade_date,
+                )
 
-                    # 只要数据大于0即刻成功跳出，绝不浪费时间！
-                    if check_data and stock_code in check_data:
-                        tick_df = check_data[stock_code]
-                        if tick_df is not None and len(tick_df) > 0:
-                            tick_count = len(tick_df)
-                            results[stock_code] = DownloadResult(
-                                success=True,
-                                stock_code=stock_code,
-                                period="tick",
-                                record_count=tick_count,
-                                message=f"成功 ({tick_count}条, 耗时~{attempt+1}秒)",
-                            )
-                            logger.info(
-                                f"[{i}/{len(stock_list)}] ✅ {stock_code} Tick数据已落盘 ({tick_count}条, 耗时~{attempt+1}秒)"
-                            )
-                            break
+                if check_data and stock_code in check_data:
+                    tick_df = check_data[stock_code]
+                    if tick_df is not None and len(tick_df) > 0:
+                        tick_count = len(tick_df)
+                        results[stock_code] = DownloadResult(
+                            success=True,
+                            stock_code=stock_code,
+                            period="tick",
+                            record_count=tick_count,
+                            message=f"成功 ({tick_count}条)",
+                        )
+                        logger.info(
+                            f"[{i}/{len(stock_list)}] ✅ {stock_code} Tick下载成功 ({tick_count}条)"
+                        )
+                    else:
+                        # 空数据：停牌/超限/无权限
+                        results[stock_code] = DownloadResult(
+                            success=False,
+                            stock_code=stock_code,
+                            period="tick",
+                            message="获取空数据 (可能停牌/超限)",
+                        )
+                        logger.warning(f"[{i}/{len(stock_list)}] ⏭️ {stock_code} {trade_date} Tick获取空数据，跳过")
                 else:
-                    # 5秒拿不到，立刻宣告死亡并跳过，防卡死！
                     results[stock_code] = DownloadResult(
                         success=False,
                         stock_code=stock_code,
                         period="tick",
-                        message="下载超时 (停牌或VIP失效)",
+                        message="获取空数据 (可能停牌/超限)",
                     )
-                    logger.warning(f"[{i}/{len(stock_list)}] ❌ {stock_code} Tick数据下载超时 (停牌或VIP失效)")
-                    continue
+                    logger.warning(f"[{i}/{len(stock_list)}] ⏭️ {stock_code} {trade_date} Tick获取空数据，跳过")
 
             except Exception as e:
                 logger.error(f"[{i}/{len(stock_list)}] {stock_code} 下载失败: {e}")
