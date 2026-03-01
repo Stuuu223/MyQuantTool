@@ -133,7 +133,8 @@ def download_daily_k(days: int = 365, resume: bool = True):
         return
     
     # 分批下载
-    BATCH_SIZE = 500
+    # 【CTO防爆锁】批次缩小到50，严禁500！
+    BATCH_SIZE = 50
     total_batches = (len(pending_stocks) + BATCH_SIZE - 1) // BATCH_SIZE
     
     success_count = len(completed_set)
@@ -153,15 +154,17 @@ def download_daily_k(days: int = 365, resume: bool = True):
             batch_num = i // BATCH_SIZE + 1
             
             try:
+                console.print(f"👉 正在下发批次 {batch_num}/{total_batches}...")
                 xtdata.download_history_data2(
                     stock_list=batch,
                     period='1d',
                     start_time=start_date,
-                    end_time=end_date
+                    end_time=end_date,
+                    incrementally=True  # 【CTO】增量下载，覆盖旧格式
                 )
                 
-                # 【CTO修复】批次间强制等待2秒，让xtdata写完磁盘，避免STATUS_NO_MEMORY
-                time.sleep(2)
+                # 【CTO防爆】强制等待2秒，让C++后台有时间落盘，防3221226505死锁
+                time.sleep(2.0)
                 
                 # 标记完成
                 for stock in batch:
@@ -172,9 +175,9 @@ def download_daily_k(days: int = 365, resume: bool = True):
                 progress.update(task, advance=len(batch))
                 
             except Exception as e:
-                # 【CTO修复】异常时立即停止，不再继续硬跑喂死进程
-                console.print(f"[red]❌ xtdata服务异常，立即停止: {e}[/red]")
-                console.print("[red]⚠️ 请检查QMT客户端状态后重试[/red]")
+                # 【CTO熔断】一旦C++引擎拒绝响应，立刻停机，绝不把死进程喂得更死
+                console.print(f"[red]❌ xtdata服务发生异常，C++底层可能已死锁: {e}[/red]")
+                console.print("[red]⚠️ 已紧急停止下载！请在任务管理器杀掉python/xtdata进程后重启QMT客户端重试。[/red]")
                 save_state("daily_k", state)
                 return
             
@@ -258,7 +261,7 @@ def download_tick_data(start_date: str, end_date: str, stock_list: List[str] = N
                     end_time=end_date
                 )
                 
-                if data and stock in data and len(data[stock]) > 100:
+                if data and stock in data and len(data[stock]) > 0:  # 【CTO】改为>0，停牌股/新股Tick少
                     state["completed"].append(stock)
                     success_count += 1
                 else:
@@ -467,7 +470,7 @@ def download_holographic(date: str, resume: bool = True, timeout: int = 3600):
                             end_time=date
                         )
                         
-                        if data and stock in data and len(data[stock]) > 100:
+                        if data and stock in data and len(data[stock]) > 0:  # 【CTO】改为>0
                             download_success = True
                             break
                         elif retry == 0:
@@ -643,7 +646,7 @@ def download_holographic_range(start_date: str, end_date: str, resume: bool = Tr
                                 end_time=date
                             )
                             
-                            if data and stock in data and len(data[stock]) > 100:
+                            if data and stock in data and len(data[stock]) > 0:  # 【CTO】改为>0
                                 download_success = True
                                 break
                         except:
@@ -920,6 +923,13 @@ class HolographicDownloaderV20:
         """
         hd_config = self.config.get('holographic_download', {})
         
+        # 【CTO修复】动态获取全市场股票数量，消灭Magic Number
+        try:
+            all_stocks = self._get_full_universe() if hasattr(self, '_get_full_universe') else []
+            total_scanned = len(all_stocks) if all_stocks else len(candidates) * 10  # fallback估算
+        except:
+            total_scanned = len(candidates) * 10  # 安全fallback
+        
         target_pool = {
             'date': date,
             'filter_criteria': {
@@ -930,9 +940,9 @@ class HolographicDownloaderV20:
             },
             'target_stocks': candidates,
             'statistics': {
-                'total_scanned': 5191,  # 全市场
+                'total_scanned': total_scanned,
                 'selected': len(candidates),
-                'selection_rate': f"{len(candidates)/5191*100:.2f}%"
+                'selection_rate': f"{len(candidates)/total_scanned*100:.2f}%"
             }
         }
         
