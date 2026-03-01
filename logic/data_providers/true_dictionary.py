@@ -223,17 +223,27 @@ class TrueDictionary:
                     start_date = (datetime.now() - timedelta(days=20)).strftime('%Y%m%d')
                 logger.warning(f"[日历降级] 使用自然日推算: {start_date} ~ {end_date}")
             
-            # CTO强制修正：一把梭哈！不分批！
-            # QMT底层API是C++接口，一次性传5000只股票毫秒级完成
-            # 分批反而拖慢I/O速度，且容易内存释放不及时导致卡死
+            # 【CTO防爆切片器】：每次只查500只，防撑爆BSON！
+            # 分批查询避免QMT底层C++ BSON解析器崩溃
+            chunk_size = 500
+            all_data = {}
+            logger.info(f"📦 [CTO切片] 分批获取日K数据计算5日均量，每批{chunk_size}只...")
             
-            all_data = xtdata.get_local_data(
-                field_list=['time', 'volume'],
-                stock_list=stock_list,  # 一把梭哈，全量传入
-                period='1d',
-                start_time=start_date,
-                end_time=end_date
-            )
+            for i in range(0, len(stock_list), chunk_size):
+                chunk = stock_list[i:i + chunk_size]
+                try:
+                    chunk_data = xtdata.get_local_data(
+                        field_list=['time', 'volume'],
+                        stock_list=chunk,
+                        period='1d',
+                        start_time=start_date,
+                        end_time=end_date
+                    )
+                    if chunk_data:
+                        all_data.update(chunk_data)
+                except Exception as e:
+                    logger.warning(f"[CTO切片] 批次{i//chunk_size + 1}获取失败: {e}")
+                    continue
             
             # 【调试日志】检查all_data返回状态
             logger.info(f"[调试] xtdata.get_local_data返回: type={type(all_data)}, "
@@ -339,13 +349,26 @@ class TrueDictionary:
                     start_date = (datetime.now() - timedelta(days=45)).strftime('%Y%m%d')
                 logger.warning(f"[日历降级] 使用自然日推算: {start_date} ~ {end_date}")
             
-            all_data = xtdata.get_local_data(
-                field_list=['time', 'close'],
-                stock_list=stock_list,
-                period='1d',
-                start_time=start_date,
-                end_time=end_date
-            )
+            # 【CTO防爆切片器】：每次只查500只，防撑爆BSON！
+            chunk_size = 500
+            all_data = {}
+            logger.info(f"📦 [CTO切片] 分批获取MA数据，每批{chunk_size}只...")
+            
+            for i in range(0, len(stock_list), chunk_size):
+                chunk = stock_list[i:i + chunk_size]
+                try:
+                    chunk_data = xtdata.get_local_data(
+                        field_list=['time', 'close'],
+                        stock_list=chunk,
+                        period='1d',
+                        start_time=start_date,
+                        end_time=end_date
+                    )
+                    if chunk_data:
+                        all_data.update(chunk_data)
+                except Exception as e:
+                    logger.warning(f"[CTO切片] MA批次{i//chunk_size + 1}获取失败: {e}")
+                    continue
             
             # 【调试】检查返回数据
             logger.info(f"[MA调试] get_local_data返回: type={type(all_data)}, is_none={all_data is None}")
@@ -451,13 +474,26 @@ class TrueDictionary:
                     start_date = (datetime.now() - timedelta(days=45)).strftime('%Y%m%d')
                 logger.warning(f"[日历降级] 使用自然日推算: {start_date} ~ {end_date}")
             
-            all_data = xtdata.get_local_data(
-                field_list=['time', 'high', 'low', 'close', 'open'],  # 【修复】添加close和open用于推导pre_close
-                stock_list=stock_list,
-                period='1d',
-                start_time=start_date,
-                end_time=end_date
-            )
+            # 【CTO防爆切片器】：每次只查500只，防撑爆BSON！
+            chunk_size = 500
+            all_data = {}
+            logger.info(f"📦 [CTO切片] 分批获取ATR数据，每批{chunk_size}只...")
+            
+            for i in range(0, len(stock_list), chunk_size):
+                chunk = stock_list[i:i + chunk_size]
+                try:
+                    chunk_data = xtdata.get_local_data(
+                        field_list=['time', 'high', 'low', 'close', 'open'],
+                        stock_list=chunk,
+                        period='1d',
+                        start_time=start_date,
+                        end_time=end_date
+                    )
+                    if chunk_data:
+                        all_data.update(chunk_data)
+                except Exception as e:
+                    logger.warning(f"[CTO切片] ATR批次{i//chunk_size + 1}获取失败: {e}")
+                    continue
             
             if all_data:
                 for stock_code, df in all_data.items():

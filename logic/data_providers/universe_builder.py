@@ -136,18 +136,39 @@ class UniverseBuilder:
         all_stocks = xtdata.get_stock_list_in_sector('沪深A股')
         if not all_stocks: return []
 
-        # 恢复完整字段请求，以防万一
-        daily_data = xtdata.get_local_data(
-            field_list=['open', 'high', 'low', 'close', 'volume', 'amount', 'preClose', 'turnover'],
-            stock_list=all_stocks,
-            period='1d',
-            start_time=date,
-            end_time=date
-        )
+        # 【CTO防爆切片器】：每次只查500只，防撑爆BSON！
+        chunk_size = 500
+        daily_data = {}
+        self.logger.info(f"📦 [CTO切片] 分批获取日K数据，每批{chunk_size}只...")
+        for i in range(0, len(all_stocks), chunk_size):
+            chunk = all_stocks[i:i + chunk_size]
+            try:
+                chunk_data = xtdata.get_local_data(
+                    field_list=['open', 'high', 'low', 'close', 'volume', 'amount', 'preClose', 'turnover'],
+                    stock_list=chunk,
+                    period='1d',
+                    start_time=date,
+                    end_time=date
+                )
+                if chunk_data:
+                    daily_data.update(chunk_data)
+            except Exception as e:
+                self.logger.warning(f"切片{i//chunk_size + 1}获取失败: {e}")
+                continue
         
+        self.logger.info(f"✅ [CTO切片] 日K数据获取完成: {len(daily_data)} 只")
+        
+        # 【CTO防爆切片】：预热字典也必须分批！
         from logic.data_providers.true_dictionary import get_true_dictionary
         true_dict = get_true_dictionary()
-        true_dict.warmup(all_stocks, target_date=date)
+        self.logger.info(f"📦 [CTO切片] 分批预热TrueDictionary...")
+        for i in range(0, len(all_stocks), chunk_size):
+            chunk = all_stocks[i:i + chunk_size]
+            try:
+                true_dict.warmup(chunk, target_date=date)
+            except Exception as e:
+                self.logger.warning(f"切片{i//chunk_size + 1}预热失败: {e}")
+                continue
         
         valid_stocks = []
         for stock in all_stocks:
