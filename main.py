@@ -200,13 +200,13 @@ def backtest_cmd(ctx, date, start_date, end_date, universe, volume_percentile, o
         # 连续回测模式
         click.echo(click.style(f"\n🚀 启动V20纯血全息回测", fg='green', bold=True))
         click.echo(f"📅 区间: {start_date} ~ {end_date}")
-        click.echo(f"🎯 股票池: {universe or '全市场Tushare粗筛'}")
+        click.echo(f"🎯 股票池: {universe or '纯血QMT本地全市场'}")
         click.echo(f"💾 输出: {output}")
     elif date:
         # 单日回测模式
         click.echo(click.style(f"\n🚀 启动V20纯血回测", fg='green', bold=True))
         click.echo(f"📅 日期: {date}")
-        click.echo(f"🎯 股票池: {universe or '全市场Tushare粗筛'}")
+        click.echo(f"🎯 股票池: {universe or '纯血QMT本地全市场'}")
         click.echo(f"💾 输出: {output}")
     else:
         click.echo(click.style("❌ 错误: 必须指定 --date 或 --start_date/--end_date", fg='red'))

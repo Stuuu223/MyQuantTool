@@ -213,14 +213,13 @@ class TrueDictionary:
                     start_date = get_nth_previous_trading_day(end_date, 10)
                     logger.info(f"[日历对齐-实盘模式] 5日均量计算周期: {start_date} ~ {end_date} (交易日历)")
             else:
-                # 极端降级方案（仅当日历工具不可用时）
-                if target_date:
-                    end_date = target_date
-                    end_dt = datetime.strptime(target_date, '%Y%m%d')
-                    start_date = (end_dt - timedelta(days=20)).strftime('%Y%m%d')
-                else:
-                    end_date = datetime.now().strftime('%Y%m%d')
-                    start_date = (datetime.now() - timedelta(days=20)).strftime('%Y%m%d')
+                # 【CTO强制】：回测模式必须传target_date！
+                if not target_date:
+                    logger.error("❌ [CTO铁血令] 回测模式必须传入target_date！禁止使用datetime.now()！")
+                    return {'success': 0, 'failed': len(stock_list)}
+                end_date = target_date
+                end_dt = datetime.strptime(target_date, '%Y%m%d')
+                start_date = (end_dt - timedelta(days=20)).strftime('%Y%m%d')
                 logger.warning(f"[日历降级] 使用自然日推算: {start_date} ~ {end_date}")
             
             # 【CTO单点爆破】：一只一只查！防爆！防C++崩溃！
@@ -336,15 +335,14 @@ class TrueDictionary:
                     start_date = get_nth_previous_trading_day(end_date, 25)
                     logger.info(f"[日历对齐-实盘模式] MA均线计算周期: {start_date} ~ {end_date} (交易日历)")
             else:
-                # 极端降级方案
-                if target_date:
-                    end_date = target_date
-                    end_dt = datetime.strptime(target_date, '%Y%m%d')
-                    start_date = (end_dt - timedelta(days=45)).strftime('%Y%m%d')
-                else:
-                    end_date = datetime.now().strftime('%Y%m%d')
-                    start_date = (datetime.now() - timedelta(days=45)).strftime('%Y%m%d')
-                logger.warning(f"[日历降级] 使用自然日推算: {start_date} ~ {end_date}")
+                # 【CTO强制】：回测模式必须传target_date！
+                if not target_date:
+                    logger.error("❌ [CTO铁血令] MA预热必须传入target_date！禁止使用datetime.now()！")
+                    return {'success': 0, 'failed': len(stock_list)}
+                end_date = target_date
+                end_dt = datetime.strptime(target_date, '%Y%m%d')
+                start_date = (end_dt - timedelta(days=45)).strftime('%Y%m%d')
+                logger.warning(f"[日历降级] MA周期: {start_date} ~ {end_date}")
             
             # 【CTO单点爆破】：一只一只查！防爆！防C++崩溃！
             all_data = {}
@@ -465,9 +463,10 @@ class TrueDictionary:
                     end_dt = datetime.strptime(target_date, '%Y%m%d')
                     start_date = (end_dt - timedelta(days=45)).strftime('%Y%m%d')
                 else:
-                    end_date = datetime.now().strftime('%Y%m%d')
-                    start_date = (datetime.now() - timedelta(days=45)).strftime('%Y%m%d')
-                logger.warning(f"[日历降级] 使用自然日推算: {start_date} ~ {end_date}")
+                    # 【CTO强制】：回测模式必须传target_date！
+                    logger.error("❌ [CTO铁血令] ATR预热必须传入target_date！")
+                    return {'success': 0, 'failed': len(stock_list)}
+                logger.warning(f"[日历降级] ATR周期: {start_date} ~ {end_date}")
             
             # 【CTO单点爆破】：一只一只查！防爆！防C++崩溃！
             all_data = {}
