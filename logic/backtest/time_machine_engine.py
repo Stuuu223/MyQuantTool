@@ -61,58 +61,40 @@ class TimeMachineEngine:
         
     def _get_avg_volume_5d(self, stock_code: str, date: str) -> float:
         """
-        获取股票5日平均成交量 (用于计算量比)
+        【CTO强制透传】直接从TrueDictionary单例获取5日均量
+        
+        不再独立计算，实现与UniverseBuilder的状态穿透！
+        UniverseBuilder预热后，此处直接读取缓存！
         
         Args:
             stock_code: 股票代码
-            date: 当前日期 'YYYYMMDD'
+            date: 当前日期 'YYYYMMDD' (保留参数兼容性，但实际从缓存读取)
         
         Returns:
             5日平均成交量，失败返回0
         """
         try:
-            from xtquant import xtdata
-            from datetime import datetime, timedelta
+            # 【CTO核心修复】：直接向全局真理字典要数据！
+            from logic.data_providers.true_dictionary import get_true_dictionary
+            global_dict = get_true_dictionary()
             
-            # 计算5个交易日的日期范围
-            current = datetime.strptime(date, '%Y%m%d')
-            dates = []
-            while len(dates) < 5:
-                current -= timedelta(days=1)
-                # 检查是否是交易日（跳过周末）
-                if current.weekday() < 5:
-                    dates.append(current.strftime('%Y%m%d'))
+            avg_volume_5d = global_dict.get_avg_volume_5d(stock_code)
             
-            # 获取日线数据
-            normalized_code = self._normalize_stock_code(stock_code)
-            data = xtdata.get_local_data(
-                field_list=['time', 'volume'],
-                stock_list=[normalized_code],
-                period='1d',
-                start_time=dates[-1],  # 最早日期
-                end_time=dates[0]      # 最近日期
-            )
-            
-            if data and normalized_code in data:
-                df = data[normalized_code]
-                if not df.empty and len(df) >= 5:
-                    # 取最近5个交易日的成交量
-                    recent_volumes = df.tail(5)['volume'].values
-                    avg_volume = sum(recent_volumes) / len(recent_volumes)
-                    return float(avg_volume)
+            if avg_volume_5d and avg_volume_5d > 0:
+                return float(avg_volume_5d)
             
             return 0.0
             
         except Exception as e:
-            logger.warning(f"获取5日均量失败 {stock_code}: {e}")
+            logger.warning(f"【CTO透传失败】获取5日均量失败 {stock_code}: {e}")
             return 0.0
     
     def _get_float_volume(self, stock_code: str) -> float:
         """
-        获取股票流通股本 (用于计算换手率)
+        【CTO强制透传】直接从TrueDictionary单例获取流通股本
         
-        【CTO修复】使用QMT正确的API: get_instrument_detail
-        删除幻觉API: xtdata.get_stock_list() (该API不存在)
+        不再独立调用QMT API，实现与UniverseBuilder的状态穿透！
+        UniverseBuilder预热后，此处直接读取缓存！
         
         Args:
             stock_code: 股票代码
@@ -121,41 +103,19 @@ class TimeMachineEngine:
             流通股本，失败返回0
         """
         try:
-            from xtquant import xtdata
+            # 【CTO核心修复】：直接向全局真理字典要数据！
+            from logic.data_providers.true_dictionary import get_true_dictionary
+            global_dict = get_true_dictionary()
             
-            normalized_code = self._normalize_stock_code(stock_code)
+            float_volume = global_dict.get_float_volume(stock_code)
             
-            # 【CTO修复】使用正确的QMT API获取股票详情
-            detail = xtdata.get_instrument_detail(normalized_code, True)
-            
-            if detail is not None:
-                # 提取FloatVolume(流通股本)
-                fv = detail.get('FloatVolume', 0) if hasattr(detail, 'get') else getattr(detail, 'FloatVolume', 0)
-                if fv:
-                    # 【CTO修复】强制转换为float，防止类型爆炸
-                    return float(fv)
-            
-            # 降级方案：使用历史数据估算
-            logger.warning(f"【降级】{stock_code} 无法获取流通股本，尝试估算...")
-            data = xtdata.get_local_data(
-                field_list=['time', 'volume', 'amount'],
-                stock_list=[normalized_code],
-                period='1d',
-                start_time='20250101',
-                end_time='20251231'
-            )
-            
-            if data and normalized_code in data:
-                df = data[normalized_code]
-                if not df.empty:
-                    avg_daily_volume = df['volume'].tail(10).mean()
-                    # 【CTO修复】强制转换为float
-                    return float(avg_daily_volume * 200)
+            if float_volume and float_volume > 0:
+                return float(float_volume)
             
             return 0.0
             
         except Exception as e:
-            logger.warning(f"获取流通股本失败 {stock_code}: {e}")
+            logger.warning(f"【CTO透传失败】获取流通股本失败 {stock_code}: {e}")
             return 0.0
     
     def _get_60d_high(self, stock_code: str, date: str) -> float:
