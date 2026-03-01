@@ -125,4 +125,15 @@ pages/
 vendor/
 
 # QMT SDK (通过pip安装)
+
 xtquant/
+
+
+
+# Phase4修复：运行时产生的下载缓存状态与全息战报，严禁污染 Git 仓库！
+
+data/download_state_*.json
+
+data/holographic_universe_*.json
+
+data/backtest_out/

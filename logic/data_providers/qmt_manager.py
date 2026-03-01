@@ -23,6 +23,7 @@ import os
 import json
 import time
 import logging
+import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple, Union
@@ -104,10 +105,20 @@ class QmtDataManager:
     # CTO修复：删除硬编码VIP Token，强制从环境变量读取
     # 请在.env文件中配置: QMT_VIP_TOKEN=your_token_here
 
-    # CTO修复：类级别静态变量实现单例连接
-    _vip_global_initialized = False
-    _vip_global_port = None
-    _vip_global_lock = False
+    # ============================================================
+    # 【并发安全重构】CTO Phase 6.3 - 2026-03-01
+    # ============================================================
+    # 问题：原布尔锁_vip_global_lock=False不是线程安全的
+    # 方案：使用threading.Lock()保护临界区 + threading.Event()实现初始化通知
+    # ============================================================
+    
+    # 类级别单例状态
+    _vip_global_initialized: bool = False
+    _vip_global_port: Optional[Tuple[str, int]] = None
+    
+    # 线程安全同步原语（类级别共享）
+    _vip_lock = threading.Lock()  # 保护临界区
+    _vip_init_event = threading.Event()  # 初始化完成事件通知
 
     def __init__(
         self,
@@ -186,44 +197,65 @@ class QmtDataManager:
 
     def start_vip_service(self) -> Optional[Tuple[str, int]]:
         """
-        启动VIP行情服务 (CTO修复: 降级容错版)
+        启动VIP行情服务 (CTO Phase 6.3 并发安全重构版)
+
+        【并发安全设计】
+        - 使用 threading.Lock() 保护临界区
+        - 使用 threading.Event() 实现初始化完成通知
+        - 等待线程使用 Event.wait(timeout=30) 实现超时
+        - 避免忙等待，提高CPU效率
 
         Returns:
             监听地址和端口元组，启动失败返回None
         """
-        # CTO修复：检查全局单例状态
+        # ============================================================
+        # 快速路径：如果已初始化完成，直接返回
+        # ============================================================
         if QmtDataManager._vip_global_initialized and QmtDataManager._vip_global_port:
             logger.info("[QmtDataManager] VIP服务已在运行，复用现有连接")
             self._vip_initialized = True
             self.listen_port = QmtDataManager._vip_global_port
             return self.listen_port
 
-        # 防止并发启动
-        if QmtDataManager._vip_global_lock:
-            logger.info("[QmtDataManager] VIP服务正在启动中，等待...")
-            import time
+        # ============================================================
+        # 加锁进入临界区 - 只有一个线程能执行初始化
+        # ============================================================
+        acquired = QmtDataManager._vip_lock.acquire(blocking=False)
+        
+        if not acquired:
+            # 当前锁被其他线程持有，说明正在初始化
+            logger.info("[QmtDataManager] VIP服务正在启动中，等待初始化完成...")
+            
+            # 使用Event等待初始化完成，最多等待30秒
+            # Event.wait() 是阻塞操作，不消耗CPU（比忙等待更高效）
+            init_completed = QmtDataManager._vip_init_event.wait(timeout=30)
+            
+            if init_completed and QmtDataManager._vip_global_initialized:
+                # 初始化成功，复用结果
+                self._vip_initialized = True
+                self.listen_port = QmtDataManager._vip_global_port
+                logger.info(f"[QmtDataManager] VIP服务初始化完成，复用连接: {self.listen_port}")
+                return self.listen_port
+            else:
+                # 等待超时或初始化失败
+                logger.error("[QmtDataManager] 等待VIP服务初始化超时(30秒)")
+                return None
 
-            for _ in range(30):  # 最多等30秒
-                time.sleep(1)
-                if QmtDataManager._vip_global_initialized:
-                    self._vip_initialized = True
-                    self.listen_port = QmtDataManager._vip_global_port
-                    return self.listen_port
-            logger.error("[QmtDataManager] 等待VIP服务启动超时")
-            return None
-
-        QmtDataManager._vip_global_lock = True
-
-        if not XT_AVAILABLE or not self.use_vip:
-            logger.warning("[QmtDataManager] VIP服务不可用或已禁用")
-            QmtDataManager._vip_global_lock = False
-            return None
-
-        if self._vip_initialized:
-            QmtDataManager._vip_global_lock = False
-            return self.listen_port
-
+        # ============================================================
+        # 当前线程获取到锁，执行初始化
+        # ============================================================
         try:
+            # 双重检查：防止在等待锁期间其他线程已完成初始化
+            if QmtDataManager._vip_global_initialized:
+                self._vip_initialized = True
+                self.listen_port = QmtDataManager._vip_global_port
+                return self.listen_port
+
+            # 检查XT模块可用性
+            if not XT_AVAILABLE or not self.use_vip:
+                logger.warning("[QmtDataManager] VIP服务不可用或已禁用")
+                return None
+
             logger.info("=" * 60)
             logger.info("【启动QMT VIP行情服务】")
             logger.info("=" * 60)
@@ -240,19 +272,25 @@ class QmtDataManager:
             # 3. 初始化并监听端口
             xtdc.init()
             listen_result = xtdc.listen(port=self.port_range)
-            # CTO修复：xtdc.listen返回(ip, port) tuple
+            
+            # 解析监听结果
             if isinstance(listen_result, tuple) and len(listen_result) == 2:
                 ip, port = listen_result
                 self.listen_port = (ip, int(port))
             else:
                 # 兼容旧版本返回单个port的情况
                 self.listen_port = ("127.0.0.1", int(listen_result))
+            
             self._vip_initialized = True
 
-            # CTO修复：设置全局单例状态
+            # ============================================================
+            # 设置全局单例状态 + 通知等待线程
+            # ============================================================
             QmtDataManager._vip_global_initialized = True
             QmtDataManager._vip_global_port = self.listen_port
-            QmtDataManager._vip_global_lock = False
+            
+            # 通知所有等待的线程：初始化完成！
+            QmtDataManager._vip_init_event.set()
 
             logger.info(f"🚀 VIP行情服务已启动，监听端口: {port}")
             logger.info("=" * 60)
@@ -265,18 +303,28 @@ class QmtDataManager:
             if "58609" in error_str or "端口" in error_str or "port" in error_str.lower():
                 logger.warning("⚠️ VIP L2 端口已被占用，复用现有连接")
                 self._vip_initialized = True
-                QmtDataManager._vip_global_initialized = True
-                QmtDataManager._vip_global_lock = False
-                # 使用默认端口返回
                 self.listen_port = ("127.0.0.1", 58609)
+                
+                # 设置全局状态并通知等待线程
+                QmtDataManager._vip_global_initialized = True
                 QmtDataManager._vip_global_port = self.listen_port
+                QmtDataManager._vip_init_event.set()
+                
                 return self.listen_port
             
-            # 【CTO 核心改动】：捕获VIP异常并降级，绝不熔断系统！
+            # VIP启动失败，返回None由上层决定是否继续
             self._vip_initialized = False
-            QmtDataManager._vip_global_lock = False
-            logger.warning(f"⚠️ VIP L2服务启动异常，自动降级为L1普通行情！(细节: {e})")
+            logger.warning(f"⚠️ VIP L2服务启动失败！(细节: {e})")
+            logger.warning("VIP服务不可用，download_tick_data将抛出RuntimeError熔断！")
+            
+            # 通知等待线程：初始化完成（虽然失败，但避免死锁）
+            QmtDataManager._vip_init_event.set()
+            
             return None  # 降级返回，不熔断系统
+            
+        finally:
+            # 确保锁一定被释放
+            QmtDataManager._vip_lock.release()
     def stop_vip_service(self) -> bool:
         """
         停止VIP行情服务
@@ -809,51 +857,7 @@ class QmtDataManager:
         }
 
 
-def init_qmt_data_dir() -> None:
-    """
-    初始化 QMT 数据目录
 
-    从 Config.qmt_data_dir 读取 QMT 数据目录路径，
-    并设置为 xtdata 的默认数据目录
-
-    Raises:
-        RuntimeError: 如果 Config.qmt_data_dir 未配置
-    """
-    try:
-        import config.config_system as config
-        from xtquant import xtdata
-
-        # 🔥 关键修复：通过实例调用get()方法，而不是通过类
-        config_instance = config.Config()
-        qmt_dir = config_instance.get("qmt_data_dir")
-
-        if not qmt_dir:
-            raise RuntimeError(
-                "Config.qmt_data_dir is empty, please set it in config/config.json"
-            )
-
-        # 设置 QMT 数据目录
-        # 注意：根据 xtquant 版本，可能使用 data_dir 或 set_data_dir
-        if hasattr(xtdata, "data_dir"):
-            xtdata.data_dir = qmt_dir
-        elif hasattr(xtdata, "set_data_dir"):
-            xtdata.set_data_dir(qmt_dir)
-        else:
-            print(
-                f"⚠️ [QMT] 无法设置数据目录，xtdata 未提供 data_dir 或 set_data_dir 方法"
-            )
-            print(f"⚠️ [QMT] 当前数据目录可能指向默认安装目录，而非 {qmt_dir}")
-
-        print(f"✅ [QMT] 数据目录已设置: {qmt_dir}")
-
-    except ImportError as e:
-        print(f"❌ [QMT] 导入模块失败: {e}")
-    except Exception as e:
-        print(f"❌ [QMT] 初始化数据目录失败: {e}")
-        import traceback
-
-        traceback.print_exc()
-        raise
 
 
 # 全局 QMT 管理器实例
@@ -873,35 +877,4 @@ def get_qmt_manager() -> 'QmtDataManager':
     return _qmt_manager
 
 
-if __name__ == "__main__":
-    # 测试 QMT 管理器
-    print("=" * 60)
-    print("🧪 QMT 管理器测试")
-    print("=" * 60)
 
-    manager = get_qmt_manager()
-    status = manager.get_status()
-
-    print(f"\n📊 QMT 状态:")
-    print(f"  xtquant 可用: {'✅' if status['xt_available'] else '❌'}")
-    print(f"  数据接口连接: {'✅' if status['data_connected'] else '❌'}")
-    print(f"  交易接口连接: {'✅' if status['trader_connected'] else '❌'}")
-    print(f"  配置加载: {'✅' if status['config_loaded'] else '❌'}")
-
-    if manager.is_available():
-        print(f"\n✅ QMT 管理器初始化成功")
-
-        # 测试获取股票列表
-        stock_list = manager.get_stock_list()
-        if stock_list:
-            print(f"📈 获取到 {len(stock_list)} 只股票")
-
-        # 测试获取tick数据
-        if stock_list and len(stock_list) > 0:
-            tick_data = manager.get_full_tick([stock_list[0]])
-            if tick_data:
-                print(f"⚡ 成功获取tick数据")
-    else:
-        print(f"\n❌ QMT 管理器初始化失败")
-
-    print("=" * 60)

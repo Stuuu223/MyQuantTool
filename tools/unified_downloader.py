@@ -515,7 +515,8 @@ def download_holographic(date: str, resume: bool = True, timeout: int = 3600):
                         field_list=["time"], stock_list=[stock],
                         period="tick", start_time=date, end_time=date
                     )
-                    if existing and stock in existing and len(existing[stock]) > 1000:
+                    # 【Phase2修复】阈值 > 0，停牌/新股首日秒板不再误判失败
+                    if existing and stock in existing and len(existing[stock]) > 0:
                         state["completed"].append(stock)
                         completed_set.add(stock)
                         skipped_count += 1
@@ -644,7 +645,8 @@ def download_holographic_range(start_date: str, end_date: str,
                             field_list=["time"], stock_list=[stock],
                             period="tick", start_time=date, end_time=date
                         )
-                        if existing and stock in existing and len(existing[stock]) > 1000:
+                        # 【Phase2修复】阈值 > 0，停牌/新股首日秒板不再误判失败
+                        if existing and stock in existing and len(existing[stock]) > 0:
                             state["completed"].append(stock)
                             day_skip += 1
                             continue
@@ -819,8 +821,9 @@ class HolographicDownloaderV20:
 
         console.print(f"   📥 需下载 {len(dates_to_download)} 天，已存在 {len(already_downloaded)} 天")
 
-        from logic.data_providers.qmt_manager import QmtDataManager
-        qmt_manager = QmtDataManager()
+        # 【Phase2修复】使用单例而非循环创建实例
+        from logic.data_providers.qmt_manager import get_qmt_manager
+        qmt_manager = get_qmt_manager()
         success_dates = []
         for date in dates_to_download:
             try:
