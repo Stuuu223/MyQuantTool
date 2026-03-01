@@ -68,64 +68,19 @@ class UniverseBuilder:
         """
         获取基于分位数的量比阈值 - V20 QMT本地化实现
         
+        【CTO防爆修正】：禁止批量获取全市场数据，直接使用配置默认值
+        原因：xtdata.get_local_data批量调用会导致BSON崩溃
+        
         Args:
             date: 日期 'YYYYMMDD'
             
         Returns:
             量比阈值
         """
-        # 从配置获取分位数阈值，默认使用live_sniper的0.95分位数
-        live_sniper_config = self.config_manager._config.get('live_sniper', {})
-        volume_percentile = live_sniper_config.get('volume_ratio_percentile', 0.95)
-        
-        # 【V20重构】使用QMT本地数据计算分位数阈值
-        # 获取全市场股票列表
-        try:
-            from xtquant import xtdata
-            all_stocks = xtdata.get_stock_list_in_sector('沪深A股')
-            
-            # 【CTO红线】：绝对禁止切片！必须算全市场！
-            volume_ratios = []
-            from logic.data_providers.true_dictionary import get_true_dictionary
-            true_dict = get_true_dictionary()
-            
-            # 【CTO性能优化】：一次性批量获取全市场数据到内存！绝不在循环里单只查！
-            tick_data_all = xtdata.get_local_data(
-                field_list=['volume'],
-                stock_list=all_stocks,
-                period='tick',
-                start_time=date,
-                end_time=date
-            )
-
-            for stock in all_stocks:
-                try:
-                    avg_volume_5d = true_dict.get_avg_volume_5d(stock)
-                    if avg_volume_5d and avg_volume_5d > 0:
-                        if tick_data_all and stock in tick_data_all and len(tick_data_all[stock]) > 0:
-                            stock_ticks = tick_data_all[stock]
-                            current_volume = stock_ticks['volume'].iloc[-1] if hasattr(stock_ticks['volume'], 'iloc') else stock_ticks['volume'][-1]
-                            volume_ratio = (current_volume * 100) / avg_volume_5d  # 乘以100转为手为单位
-                            if 0 < volume_ratio < 50:  # 过滤极端异常值
-                                volume_ratios.append(volume_ratio)
-                except:
-                    continue
-            
-            if volume_ratios:
-                # 计算分位数阈值
-                import numpy as np
-                threshold_value = float(np.percentile(volume_ratios, volume_percentile * 100))
-                # 确保阈值不低于安全下限
-                return max(threshold_value, 1.5)  # 设置最低阈值为1.5，确保真正放量
-            
-            # 如果QMT数据获取失败，回退到配置的绝对值
-            universe_config = self.config_manager._config.get('universe_build', {})
-            return universe_config.get('volume_ratio_absolute', 3.0)
-            
-        except Exception as e:
-            logger.warning(f"获取QMT分位数阈值失败，使用回退值: {e}")
-            universe_config = self.config_manager._config.get('universe_build', {})
-            return universe_config.get('volume_ratio_absolute', 3.0)
+        # 【CTO防爆修正】：直接返回配置默认值，不进行动态计算
+        # 动态计算需要批量获取全市场数据，会触发BSON崩溃
+        universe_config = self.config_manager._config.get('universe_build', {})
+        return universe_config.get('volume_ratio_absolute', 1.5)
     
     def get_daily_universe(self, date: str) -> List[str]:
         from xtquant import xtdata
