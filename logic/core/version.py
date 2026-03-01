@@ -4,25 +4,39 @@
 全局版本号配置
 
 Author: iFlow CLI
-Version: V18.6.1
+Version: V20.0.0
 """
 
 # 🚀 全局版本号
-VERSION = "V18.6.1"
+VERSION = "V20.0.0"
 
 # 版本信息
 VERSION_INFO = {
-    "major": 18,
-    "minor": 6,
-    "patch": 1,
-    "full": "V18.6.1",
-    "release_date": "2026-01-19",
-    "codename": "Async Refactoring",
-    "description": "异步化改造 - 解决致命阻塞隐患"
+    "major": 20,
+    "minor": 0,
+    "patch": 0,
+    "full": "V20.0.0",
+    "release_date": "2026-03-01",
+    "codename": "Pure Blood QMT",
+    "description": "CTO数据根基重铸 - 100%纯血QMT本地化"
 }
 
 # 版本历史
 VERSION_HISTORY = [
+    {
+        "version": "V20.0.0",
+        "release_date": "2026-03-01",
+        "codename": "Pure Blood QMT",
+        "description": "CTO数据根基重铸 - 100%纯血QMT本地化",
+        "changes": [
+            "核心重构：粉碎双轨制，删除老旧QMTManager类",
+            "安全修复：删除硬编码VIP Token，强制从.env读取",
+            "架构净化：清理所有Tushare残留，100%纯血QMT本地化",
+            "修复断链：修复unified_downloader.py幽灵引用路径",
+            "异步优化：重写Tick下载验证（异步指数退避30秒）",
+            "统一标准：死亡换手率统一为70%"
+        ]
+    },
     {
         "version": "V18.6.1",
         "release_date": "2026-01-19",

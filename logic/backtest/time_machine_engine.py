@@ -1013,17 +1013,15 @@ class TimeMachineEngine:
             return None
     
     def run_continuous_backtest(self, start_date: str, end_date: str, 
-                                 stock_pool_path: str = 'TUSHARE',
-                                 use_tushare: bool = True) -> List[Dict]:
+                                 stock_pool_path: str = None) -> List[Dict]:
         """
         连续多日回测 - 全息时间机器核心
-        CTODict: 强制使用真实Tushare粗筛，禁止模拟数据
+        CTO铁律: 100%纯血QMT本地化，使用UniverseBuilder粗筛
         
         Args:
             start_date: 开始日期 'YYYYMMDD'
             end_date: 结束日期 'YYYYMMDD'
-            stock_pool_path: 股票池文件路径，默认'TUSHARE'表示实时粗筛
-            use_tushare: 是否使用Tushare每日动态粗筛
+            stock_pool_path: 股票池文件路径（可选），默认使用UniverseBuilder动态粗筛
         
         Returns:
             每日回测结果列表
@@ -1032,11 +1030,11 @@ class TimeMachineEngine:
         print(f"# 全息时间机器启动")
         print(f"# 回测区间: {start_date} ~ {end_date}")
         print(f"# 初始资金: {self.initial_capital}元")
-        print(f"# 数据源: {'Tushare实时粗筛' if use_tushare else 'CSV文件'}")
+        print(f"# 数据源: UniverseBuilder动态粗筛 (QMT纯血)")
         print(f"{'#'*80}\n")
         
         logger.info(f"【时间机器】启动连续回测: {start_date} ~ {end_date}")
-        logger.info(f"【时间机器】数据源: {'Tushare实时粗筛' if use_tushare else 'CSV文件'}")
+        logger.info(f"【时间机器】数据源: UniverseBuilder动态粗筛 (QMT纯血)")
         
         # ==========================================
         # CTO强制植入：年度发车前的"脑白金"清洗仪式
@@ -1064,30 +1062,29 @@ class TimeMachineEngine:
         for i, date in enumerate(trade_dates, 1):
             print(f"\n📌 进度: [{i}/{len(trade_dates)}] {date}")
             
-            # CTODict: 每日动态粗筛 (Tushare模式)
-            if use_tushare:
-                try:
-                    stock_pool = self._load_stock_pool('TUSHARE', date)
-                    print(f"  📊 当日粗筛: {len(stock_pool)} 只")
-                except Exception as e:
-                    error_msg = str(e)
-                    # CTO修复：检测是否为节假日（Tushare返回空）
-                    if '粗筛返回空股票池' in error_msg or 'Empty' in error_msg:
-                        logger.warning(f"【时间机器】{date} 可能是节假日，跳过")
-                        print(f"  ⏭️  {date} 节假日/非交易日，跳过")
-                        all_results.append({
-                            'date': date,
-                            'status': 'holiday_skipped',
-                            'error': '节假日或非交易日'
-                        })
-                    else:
-                        logger.error(f"【时间机器】{date} 粗筛失败: {e}")
-                        print(f"  ❌ {date} 粗筛失败: {e}")
-                        all_results.append({
-                            'date': date,
-                            'status': 'coarse_filter_failed',
-                            'error': error_msg
-                        })
+            # CTO铁律: 每日动态粗筛 (UniverseBuilder纯血模式)
+            try:
+                stock_pool = self._load_stock_pool(date=date)
+                print(f"  📊 当日粗筛: {len(stock_pool)} 只")
+            except Exception as e:
+                error_msg = str(e)
+                # CTO修复：检测是否为节假日（UniverseBuilder返回空）
+                if '粗筛返回空股票池' in error_msg or 'Empty' in error_msg:
+                    logger.warning(f"【时间机器】{date} 可能是节假日，跳过")
+                    print(f"  ⏭️  {date} 节假日/非交易日，跳过")
+                    all_results.append({
+                        'date': date,
+                        'status': 'holiday_skipped',
+                        'error': '节假日或非交易日'
+                    })
+                else:
+                    logger.error(f"【时间机器】{date} 粗筛失败: {e}")
+                    print(f"  ❌ {date} 粗筛失败: {e}")
+                    all_results.append({
+                        'date': date,
+                        'status': 'coarse_filter_failed',
+                        'error': error_msg
+                    })
                     continue
             
             daily_result = self.run_daily_backtest(date, stock_pool)
@@ -1114,13 +1111,13 @@ class TimeMachineEngine:
         
         return all_results
     
-    def _load_stock_pool(self, path: str, date: str = None) -> List[str]:
+    def _load_stock_pool(self, path: str = None, date: str = None) -> List[str]:
         """
-        加载股票池 - CTODict: 禁止模拟数据，强制真实粗筛
+        加载股票池 - CTO铁律: 100%纯血QMT本地化
         
         Args:
-            path: 股票池文件路径 或 'TUSHARE' 表示实时粗筛
-            date: 日期 'YYYYMMDD' (用于Tushare粗筛)
+            path: 股票池文件路径（可选），如果为None则使用UniverseBuilder动态粗筛
+            date: 日期 'YYYYMMDD' (用于UniverseBuilder粗筛)
         
         Returns:
             股票代码列表 (约500只)
@@ -1128,10 +1125,10 @@ class TimeMachineEngine:
         Raises:
             RuntimeError: 无法获取真实数据时抛出致命异常 (Fail Fast)
         """
-        # 如果使用Tushare实时粗筛
-        if path.upper() == 'TUSHARE' or path == '':
+        # CTO铁律: 默认使用UniverseBuilder动态粗筛
+        if path is None:
             if not date:
-                raise ValueError("使用Tushare粗筛时必须提供date参数")
+                raise ValueError("使用UniverseBuilder粗筛时必须提供date参数")
             
             logger.info(f"【时间机器】使用UniverseBuilder获取股票池: {date}")
             # 【CTO断头台】：Fail Fast！直接调用，让错误暴露！
@@ -1155,7 +1152,7 @@ class TimeMachineEngine:
         
         if not full_path.exists():
             logger.error(f"【时间机器】股票池文件不存在: {path}")
-            raise FileNotFoundError(f"股票池文件不存在: {path}。请提供有效CSV文件或使用'TUSHARE'进行实时粗筛")
+            raise FileNotFoundError(f"股票池文件不存在: {path}。请提供有效CSV文件或使用UniverseBuilder进行动态粗筛")
         
         try:
             df = pd.read_csv(full_path)

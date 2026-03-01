@@ -177,21 +177,15 @@ class ConfigValidator:
             self.errors.append(f"❌ MAX_DAILY_LOSS_RATIO '{max_loss}' 不是有效的数字")
     
     def _validate_data_sources(self):
-        """验证数据源配置"""
-        # 检查降级顺序
-        fallback_order = os.getenv('DATA_FALLBACK_ORDER', 'QMT_LOCAL,TUSHARE')
-        valid_sources = {'QMT_VIP', 'QMT_LOCAL', 'TUSHARE'}
+        """验证数据源配置 - CTO铁律: 100%纯血QMT本地化"""
+        # 检查降级顺序（仅支持QMT）
+        fallback_order = os.getenv('DATA_FALLBACK_ORDER', 'QMT_LOCAL')
+        valid_sources = {'QMT_VIP', 'QMT_LOCAL'}
         
         sources = [s.strip() for s in fallback_order.split(',')]
         for source in sources:
             if source not in valid_sources:
                 self.errors.append(f"❌ DATA_FALLBACK_ORDER中的'{source}'无效，必须是{valid_sources}之一")
-        
-        # 检查Tushare Token
-        if 'TUSHARE' in sources:
-            token = os.getenv('TUSHARE_TOKEN')
-            if not token or token == 'your_tushare_token_here':
-                self.warnings.append("⚠️  TUSHARE在降级链中但Token未配置")
         
         # 检查VIP配置（仅PRODUCTION环境需要）
         system_env = self._config.get('system_env')

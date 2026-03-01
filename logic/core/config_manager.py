@@ -86,8 +86,8 @@ class ConfigManager:
         live_sniper = self._config.get('live_sniper', {})
         return {
             'per_minute_min': live_sniper.get('turnover_rate_per_min_min', 0.2),      # 每分钟最小换手率
-            'total_max': live_sniper.get('turnover_rate_max', 60.0),                  # 总换手率最大值
-            'death_turnover_rate': live_sniper.get('death_turnover_rate', 60.0),      # 死亡换手率阈值
+            'total_max': live_sniper.get('turnover_rate_max', 70.0),                  # 总换手率最大值 (CTO铁血令: 70%死亡线)
+            'death_turnover_rate': live_sniper.get('death_turnover_rate', 70.0),      # 死亡换手率阈值 (CTO铁血令: 70%死亡线)
             'min_active_turnover_rate': live_sniper.get('min_active_turnover_rate', 3.0)  # 最低活跃换手率
         }
     

@@ -14,7 +14,7 @@ GlobalFilterGateway - 全局过滤网关
 
 【Boss二维铁网 - V20.2红线版】
 1. 量能网: volume_ratio >= min_volume_multiplier (如1.5倍，动态放量) - 0/1判定
-2. 换手网: min_turnover <= turnover <= max_turnover (5%~60%，大哥起步线+死亡熔断) - 0/1判定
+2. 换手网: min_turnover <= turnover <= max_turnover (5%~70%，大哥起步线+死亡熔断) - 0/1判定
 3. 【删除】趋势网(MA5/MA10/MA20) - 完全删除，权力下放给战法Detector
 4. 【新增】死亡换手拦截: turnover > 70%直接拦截
 5. 【新增】甜点位标记: 8% <= turnover <= 15%注入{'tag': '换手甜点'}，绝不加分
