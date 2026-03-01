@@ -578,13 +578,12 @@ class QmtDataManager:
                     end_time=trade_date,
                 )
 
-                # CTO修复：阻塞等待数据落盘 (异步转同步)
-                wait_count = 0
-                max_wait = 30  # 最多等30秒
-                while wait_count < max_wait:
-                    time.sleep(1)
-                    wait_count += 1
-
+                # 【CTO极速轮询】：最大容忍5秒，每1秒试探一次
+                # 5秒拿不到的数据，30秒大概率也拿不到（停牌或VIP失效）
+                max_retries = 5
+                for attempt in range(max_retries):
+                    time.sleep(1.0)
+                    
                     # 检查数据是否已落盘
                     check_data = xtdata.get_local_data(
                         field_list=["time"],
@@ -594,6 +593,7 @@ class QmtDataManager:
                         end_time=trade_date,
                     )
 
+                    # 只要数据大于0即刻成功跳出，绝不浪费时间！
                     if check_data and stock_code in check_data:
                         tick_df = check_data[stock_code]
                         if tick_df is not None and len(tick_df) > 0:
@@ -603,21 +603,21 @@ class QmtDataManager:
                                 stock_code=stock_code,
                                 period="tick",
                                 record_count=tick_count,
-                                message=f"成功 ({tick_count}条, 等待{wait_count}秒)",
+                                message=f"成功 ({tick_count}条, 耗时~{attempt+1}秒)",
                             )
                             logger.info(
-                                f"[{i}/{len(stock_list)}] {stock_code} ✓ {tick_count}条 (等待{wait_count}秒)"
+                                f"[{i}/{len(stock_list)}] ✅ {stock_code} Tick数据已落盘 ({tick_count}条, 耗时~{attempt+1}秒)"
                             )
                             break
                 else:
-                    # 超时
+                    # 5秒拿不到，立刻宣告死亡并跳过，防卡死！
                     results[stock_code] = DownloadResult(
                         success=False,
                         stock_code=stock_code,
                         period="tick",
-                        message=f"下载超时 ({max_wait}秒)",
+                        message="下载超时 (停牌或VIP失效)",
                     )
-                    logger.warning(f"[{i}/{len(stock_list)}] {stock_code} 下载超时")
+                    logger.warning(f"[{i}/{len(stock_list)}] ❌ {stock_code} Tick数据下载超时 (停牌或VIP失效)")
                     continue
 
             except Exception as e:

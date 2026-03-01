@@ -405,308 +405,10 @@ def download_tick_data(start_date: str, end_date: str,
 
 
 # =============================================================================
-# 全息数据下载
+# 全息下载器（统一架构）
 # =============================================================================
 
-def start_vip_service():
-    """启动VIP服务加速"""
-    try:
-        from xtquant import xtdatacenter as xtdc
-        from logic.core.path_resolver import PathResolver
-
-        vip_token = os.getenv("QMT_VIP_TOKEN", "")
-        data_dir = os.getenv("QMT_PATH", "") or str(PathResolver.get_qmt_data_dir())
-
-        if vip_token:
-            xtdc.set_data_home_dir(data_dir)
-            xtdc.set_token(vip_token)
-            xtdc.init()
-            port = xtdc.listen(port=(58620, 58630))
-            return True, port
-        return False, "未配置 QMT_VIP_TOKEN"
-    except Exception as e:
-        return False, str(e)
-
-
-def download_holographic(date: str, resume: bool = True, timeout: int = 3600):
-    """下载单日全息数据（V18双Ratio筛选后的股票Tick）"""
-    from xtquant import xtdata
-    from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn
-    from rich.console import Console
-    from logic.core.config_manager import get_config_manager
-
-    console = Console()
-    config_manager = get_config_manager()
-    live_sniper_config = config_manager._config.get('live_sniper', {})
-    volume_percentile = live_sniper_config.get('volume_ratio_percentile', 0.95)
-    min_turnover = live_sniper_config.get('min_active_turnover_rate', 3.0)
-    max_turnover = live_sniper_config.get('death_turnover_rate', 70.0)
-
-    console.print(f"\n[bold cyan]📊 全息数据下载器 (V18双Ratio筛选)[/bold cyan]")
-    console.print(f"📅 目标日期: {date}")
-    console.print(f"📐 量比分位: {volume_percentile} | 换手率: {min_turnover}%-{max_turnover}%")
-    console.print(f"⏱️  超时: {timeout}秒")
-
-    vip_started, vip_result = start_vip_service()
-    if vip_started:
-        console.print(f"[green]✅ VIP服务已启动，端口: {vip_result}[/green]")
-    else:
-        console.print(f"[yellow]⚠️  VIP服务未启动: {vip_result}[/yellow]")
-
-    state_key = f"holographic_{date}"
-    state = load_state(state_key) if resume else {"completed": [], "failed": []}
-    completed_set = set(state.get("completed", []))
-
-    console.print("\n🔍 执行V18双Ratio粗筛...")
-    try:
-        from logic.data_providers.universe_builder import UniverseBuilder
-        stock_list = UniverseBuilder(date).build()
-        if not stock_list:
-            console.print(f"[red]❌ 粗筛返回空股票池，可能是非交易日或本地日K数据缺失[/red]")
-            return
-    except Exception as e:
-        console.print(f"[red]❌ 粗筛失败: {e}[/red]")
-        return
-
-    console.print(f"✅ 粗筛完成: {len(stock_list)} 只股票")
-
-    universe_file = STATE_DIR / f"holographic_universe_{date}.json"
-    with open(universe_file, 'w', encoding='utf-8') as f:
-        json.dump({
-            "date": date, "stocks": stock_list, "count": len(stock_list),
-            "created_at": datetime.now().isoformat(),
-            "params": {"volume_percentile": volume_percentile,
-                       "min_turnover": min_turnover, "max_turnover": max_turnover}
-        }, f, ensure_ascii=False, indent=2)
-    console.print(f"💾 股票池已保存: {universe_file}")
-
-    pending_stocks = [s for s in stock_list if s not in completed_set]
-    console.print(f"⏭️  待下载: {len(pending_stocks)} 只 (已完成: {len(completed_set)})")
-
-    if not pending_stocks:
-        console.print("[green]✅ 所有数据已下载完成！[/green]")
-        return
-
-    success_count = len(completed_set)
-    failed_count = len(state.get("failed", []))
-    skipped_count = 0
-    start_time = time.time()
-
-    with Progress(
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-        TimeRemainingColumn(),
-        console=console,
-    ) as progress:
-        task = progress.add_task("[cyan]下载进度", total=len(pending_stocks))
-
-        for i, stock in enumerate(pending_stocks):
-            if time.time() - start_time > timeout:
-                console.print(f"\n[yellow]⏰ 超时 {timeout}秒，保存进度并退出[/yellow]")
-                break
-
-            try:
-                if "." not in stock:
-                    stock = f"{stock}.SH" if stock.startswith("6") else f"{stock}.SZ"
-
-                try:
-                    existing = xtdata.get_local_data(
-                        field_list=["time"], stock_list=[stock],
-                        period="tick", start_time=date, end_time=date
-                    )
-                    # 【Phase2修复】阈值 > 0，停牌/新股首日秒板不再误判失败
-                    if existing and stock in existing and len(existing[stock]) > 0:
-                        state["completed"].append(stock)
-                        completed_set.add(stock)
-                        skipped_count += 1
-                        progress.update(task, advance=1)
-                        continue
-                except Exception:
-                    pass
-
-                download_success = False
-                for retry in range(2):
-                    try:
-                        xtdata.download_history_data(
-                            stock_code=stock, period="tick",
-                            start_time=date, end_time=date
-                        )
-                        data = xtdata.get_local_data(
-                            field_list=["time"], stock_list=[stock],
-                            period="tick", start_time=date, end_time=date
-                        )
-                        # 【修复】阈值 > 0
-                        if data and stock in data and len(data[stock]) > 0:
-                            download_success = True
-                            break
-                        if retry == 0:
-                            time.sleep(1)
-                    except Exception:
-                        if retry == 0:
-                            time.sleep(1)
-
-                if download_success:
-                    state["completed"].append(stock)
-                    success_count += 1
-                else:
-                    state["failed"].append(stock)
-                    failed_count += 1
-
-            except Exception:
-                state["failed"].append(stock)
-                failed_count += 1
-
-            progress.update(task, advance=1)
-            if (i + 1) % 20 == 0:
-                save_state(state_key, state)
-            time.sleep(0.1)
-
-    save_state(state_key, state)
-    console.print(f"\n[green]✅ 下载完成！成功: {success_count} | 失败: {failed_count} | 跳过: {skipped_count}[/green]")
-
-
-def download_holographic_range(start_date: str, end_date: str,
-                                resume: bool = True, timeout: int = 3600):
-    """日期范围全息数据下载（使用QMT真实交易日历）"""
-    from xtquant import xtdata
-    from rich.console import Console
-    from logic.core.config_manager import get_config_manager
-
-    console = Console()
-    config_manager = get_config_manager()
-    live_sniper_config = config_manager._config.get('live_sniper', {})
-    volume_percentile = live_sniper_config.get('volume_ratio_percentile', 0.95)
-    min_turnover = live_sniper_config.get('min_active_turnover_rate', 3.0)
-    max_turnover = live_sniper_config.get('death_turnover_rate', 70.0)
-
-    # 【修复】用真实交易日历，精确过滤节假日
-    dates = get_trading_calendar_qmt_local(start_date, end_date)
-
-    console.print(f"\n[bold cyan]📊 全息数据批量下载器[/bold cyan]")
-    console.print(f"📅 {start_date} ~ {end_date} | 交易日: {len(dates)} 天")
-    console.print(f"📐 量比分位: {volume_percentile} | 换手率: {min_turnover}%-{max_turnover}%")
-    console.print(f"⏱️  每日超时: {timeout}秒")
-
-    vip_started, vip_result = start_vip_service()
-    if vip_started:
-        console.print(f"[green]✅ VIP服务已启动，端口: {vip_result}[/green]")
-    else:
-        console.print(f"[yellow]⚠️  VIP服务未启动: {vip_result}[/yellow]")
-
-    total_stats = {
-        "total_days": len(dates), "success_days": 0, "skip_days": 0, "error_days": 0,
-        "total_stocks": 0, "total_downloaded": 0, "total_skipped": 0
-    }
-
-    for i, date in enumerate(dates, 1):
-        console.print(f"\n[bold]━━━ [{i}/{len(dates)}] {date} ━━━[/bold]")
-
-        try:
-            from logic.data_providers.universe_builder import UniverseBuilder
-            stock_list = UniverseBuilder(date).build()
-
-            if not stock_list:
-                console.print(f"[yellow]⏭️  {date} 无符合条件的股票（非交易日或数据缺失）[/yellow]")
-                total_stats["skip_days"] += 1
-                continue
-
-            console.print(f"📊 粗筛股票数: {len(stock_list)} 只")
-            total_stats["total_stocks"] += len(stock_list)
-
-            state_key = f"holographic_{date}"
-            state = load_state(state_key) if resume else {"completed": [], "failed": []}
-            completed_set = set(state.get("completed", []))
-
-            pending_stocks = [s for s in stock_list if s not in completed_set]
-
-            if not pending_stocks:
-                console.print(f"[green]✅ {date} 所有数据已下载，跳过[/green]")
-                total_stats["skip_days"] += 1
-                total_stats["total_skipped"] += len(stock_list)
-                continue
-
-            console.print(f"⏭️  待下载: {len(pending_stocks)} 只")
-
-            day_start = time.time()
-            day_success = day_skip = day_failed = 0
-
-            for stock in pending_stocks:
-                if time.time() - day_start > timeout:
-                    console.print(f"[yellow]⏰ {date} 超时，保存进度[/yellow]")
-                    break
-
-                try:
-                    if "." not in stock:
-                        stock = f"{stock}.SH" if stock.startswith("6") else f"{stock}.SZ"
-
-                    try:
-                        existing = xtdata.get_local_data(
-                            field_list=["time"], stock_list=[stock],
-                            period="tick", start_time=date, end_time=date
-                        )
-                        # 【Phase2修复】阈值 > 0，停牌/新股首日秒板不再误判失败
-                        if existing and stock in existing and len(existing[stock]) > 0:
-                            state["completed"].append(stock)
-                            day_skip += 1
-                            continue
-                    except Exception:
-                        pass
-
-                    download_success = False
-                    for retry in range(2):
-                        try:
-                            xtdata.download_history_data(
-                                stock_code=stock, period="tick",
-                                start_time=date, end_time=date
-                            )
-                            data = xtdata.get_local_data(
-                                field_list=["time"], stock_list=[stock],
-                                period="tick", start_time=date, end_time=date
-                            )
-                            # 【修复】阈值 > 0
-                            if data and stock in data and len(data[stock]) > 0:
-                                download_success = True
-                                break
-                        except Exception:
-                            time.sleep(0.5)
-
-                    if download_success:
-                        state["completed"].append(stock)
-                        day_success += 1
-                    else:
-                        state["failed"].append(stock)
-                        day_failed += 1
-
-                except Exception:
-                    state["failed"].append(stock)
-                    day_failed += 1
-
-                time.sleep(0.05)
-
-            save_state(state_key, state)
-            total_stats["success_days"] += 1
-            total_stats["total_downloaded"] += day_success
-            total_stats["total_skipped"] += day_skip
-            console.print(f"✅ {date} 完成: 下载{day_success} | 跳过{day_skip} | 失败{day_failed}")
-
-        except Exception as e:
-            console.print(f"[red]❌ {date} 处理失败: {e}[/red]")
-            total_stats["error_days"] += 1
-
-    console.print(f"\n{'=' * 60}")
-    console.print(f"[bold green]📊 全息数据批量下载完成[/bold green]")
-    console.print(f"总交易日: {total_stats['total_days']} | 成功: {total_stats['success_days']} | "
-                  f"跳过: {total_stats['skip_days']} | 错误: {total_stats['error_days']}")
-    console.print(f"累计下载: {total_stats['total_downloaded']} 只 | 累计跳过: {total_stats['total_skipped']} 只")
-    console.print("=" * 60)
-
-
-# =============================================================================
-# V20 全息下载器（上下文切片靶向下载）
-# =============================================================================
-
-class HolographicDownloaderV20:
+class HolographicDownloader:
     """
     V20极致全息下载器 - 上下文切片与靶向下载
 
@@ -979,13 +681,12 @@ def interactive_menu():
     table.add_column("说明")
     table.add_row("[1]", "日K数据", "全市场，最近N天")
     table.add_row("[2]", "Tick数据", "指定日期范围")
-    table.add_row("[3]", "全息数据 - 单日", "指定日期")
-    table.add_row("[4]", "全息数据 - 范围", "指定起止日期")
-    table.add_row("[5]", "全息数据 - 默认", "最近60交易日")
+    table.add_row("[3]", "全息数据下载", "V20上下文切片下载")
+    table.add_row("[4]", "环境探针与BSON扫雷", "gentle_probe + 全市场炸弹排查")
     table.add_row("[q]", "退出", "")
     console.print(table)
 
-    choice = input("请选择 [1-5/q]: ").strip().lower()
+    choice = input("请选择 [1-4/q]: ").strip().lower()
     if choice == 'q':
         return
 
@@ -1007,34 +708,45 @@ def interactive_menu():
         run_with_rich_ui(f"Tick下载 {start}~{end}", lambda: download_tick_data(start, end, resume=resume))
 
     elif choice == '3':
+        # 【CTO裁决A】使用新版HolographicDownloader
         date = input("目标日期 (YYYYMMDD): ").strip()
         if not date:
             console.print("[red]❌ 日期不能为空[/red]")
             return
-        raw = input("超时秒数 [默认3600]: ").strip()
-        timeout = int(raw) if raw.isdigit() else 3600
-        input(f"  全息单日: {date} | 超时{timeout}s  按 Enter 开始...")
-        run_with_rich_ui(f"全息单日 {date}", lambda: download_holographic(date, resume=resume, timeout=timeout))
+        input(f"  全息下载: {date}  按 Enter 开始...")
+        
+        def run_holographic():
+            downloader = HolographicDownloader()
+            candidates = downloader.calculate_download_candidates(date)
+            if candidates:
+                console.print(f"[green]✅ 找到 {len(candidates)} 只候选股票[/green]")
+                for cand in candidates[:5]:  # 显示前5只
+                    console.print(f"   {cand.get('stock_code', 'N/A')}")
+            else:
+                console.print("[yellow]⚠️ 未找到候选股票[/yellow]")
+        
+        run_with_rich_ui(f"全息下载 {date}", run_holographic)
 
     elif choice == '4':
-        start = input("开始日期 (YYYYMMDD): ").strip()
-        end = input("结束日期 (YYYYMMDD): ").strip()
-        if not start or not end:
-            console.print("[red]❌ 日期不能为空[/red]")
-            return
-        raw = input("每日超时秒数 [默认3600]: ").strip()
-        timeout = int(raw) if raw.isdigit() else 3600
-        input(f"  全息范围: {start}~{end} | 每日超时{timeout}s  按 Enter 开始...")
-        run_with_rich_ui(f"全息范围 {start}~{end}",
-                         lambda: download_holographic_range(start, end, resume=resume, timeout=timeout))
-
-    elif choice == '5':
-        raw = input("每日超时秒数 [默认3600]: ").strip()
-        timeout = int(raw) if raw.isdigit() else 3600
-        s, e, td = get_last_n_trading_days(60)
-        input(f"  全息默认: {s}~{e} ({len(td)}个交易日)  按 Enter 开始...")
-        run_with_rich_ui("全息默认60日",
-                         lambda: download_holographic_range(s, e, resume=resume, timeout=timeout))
+        # 【CTO裁决C】扫雷车入口
+        console.print("[bold cyan]🩺 温柔探针：验证 QMT 连接与本地数据...[/bold cyan]")
+        try:
+            from tools.gentle_probe import gentle_probe
+            gentle_probe()
+        except Exception as e:
+            console.print(f"[red]❌ 探针执行失败: {e}[/red]")
+        
+        console.print("[bold cyan]\n💣 BSON扫雷车：全市场炸弹排查[/bold cyan]")
+        confirm = input("确认执行？这需要较长时间 [y/N]: ").strip().lower()
+        if confirm == 'y':
+            import subprocess
+            script = Path(__file__).parent / 'find_bson_bomb.py'
+            if script.exists():
+                subprocess.run([sys.executable, str(script)])
+            else:
+                console.print("[red]❌ 找不到 find_bson_bomb.py[/red]")
+        else:
+            console.print("[yellow]已取消扫雷[/yellow]")
 
     else:
         console.print("[red]❌ 无效选项[/red]")
