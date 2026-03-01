@@ -17,7 +17,7 @@
     # 全息范围
     python tools/unified_downloader.py --type holographic --start-date 20260101 --end-date 20260228
 
-    # 全息默认（自动最近60交易日）
+    # 全息默认（自动当日）
     python tools/unified_downloader.py --type holographic
 
     # 禁用断点续传
@@ -30,8 +30,8 @@
     pip install rich click
     xtquant（QMT本地安装）
 
-Author: CTO重构 V20.1
-Date: 2026-03-01
+Author: CTO重构 V20.2
+Date: 2026-03-02
 变更:
     - [修复] _get_trade_date_offset: 改用 xtdata.get_trading_calendar('SSE') 真实交易日历
              get_trading_calendar 是纯本地读取，不触发网络请求，不会引发BSON崩溃
@@ -45,6 +45,9 @@ Date: 2026-03-01
     - [新增] run_with_rich_ui: 所有启动方式均显示 Rich Panel 常驻面板，下载在后台线程
     - [新增] interactive_menu: 无参数启动弹 Rich Table 菜单
     - [新增] Windows编码修复在文件顶部统一处理
+    - [CTO炸弹修复] run_v20_holographic_download: HolographicDownloaderV20 → HolographicDownloader
+    - [CTO炸弹修复] main() holographic分支: 删除已废弃的download_holographic/download_holographic_range引用
+    - [CTO BUG修复] interactive_menu choice='3': cand.get('stock_code') → cand.get('code')
 """
 
 import os
@@ -659,7 +662,8 @@ def run_v20_holographic_download(date: str | None = None):
     """
     if date is None:
         date = datetime.now().strftime('%Y%m%d')
-    HolographicDownloaderV20().run_v20_download(date)
+    # 【CTO炸弹修复】原代码错误调用已删除的 HolographicDownloaderV20，已更正
+    HolographicDownloader().run_v20_download(date)
 
 
 # =============================================================================
@@ -714,17 +718,18 @@ def interactive_menu():
             console.print("[red]❌ 日期不能为空[/red]")
             return
         input(f"  全息下载: {date}  按 Enter 开始...")
-        
+
         def run_holographic():
             downloader = HolographicDownloader()
             candidates = downloader.calculate_download_candidates(date)
             if candidates:
                 console.print(f"[green]✅ 找到 {len(candidates)} 只候选股票[/green]")
                 for cand in candidates[:5]:  # 显示前5只
-                    console.print(f"   {cand.get('stock_code', 'N/A')}")
+                    # 【CTO BUG修复】字段名是 'code'，不是 'stock_code'
+                    console.print(f"   {cand.get('code', 'N/A')}")
             else:
                 console.print("[yellow]⚠️ 未找到候选股票[/yellow]")
-        
+
         run_with_rich_ui(f"全息下载 {date}", run_holographic)
 
     elif choice == '4':
@@ -735,7 +740,7 @@ def interactive_menu():
             gentle_probe()
         except Exception as e:
             console.print(f"[red]❌ 探针执行失败: {e}[/red]")
-        
+
         console.print("[bold cyan]\n💣 BSON扫雷车：全市场炸弹排查[/bold cyan]")
         confirm = input("确认执行？这需要较长时间 [y/N]: ").strip().lower()
         if confirm == 'y':
@@ -764,9 +769,8 @@ def interactive_menu():
 @click.option('--end-date', default=None, help='结束日期 YYYYMMDD')
 @click.option('--date', default=None, help='单日日期 YYYYMMDD（全息单日）')
 @click.option('--days', default=365, type=int, help='下载天数（日K，默认365）')
-@click.option('--timeout', default=3600, type=int, help='超时秒数（默认3600）')
 @click.option('--no-resume', is_flag=True, help='禁用断点续传')
-def main(download_type, start_date, end_date, date, days, timeout, no_resume):
+def main(download_type, start_date, end_date, date, days, no_resume):
     """统一下载器 - 所有启动方式均显示 Rich CLI 面板"""
     resume = not no_resume
 
@@ -782,18 +786,20 @@ def main(download_type, start_date, end_date, date, days, timeout, no_resume):
                          lambda: download_tick_data(start_date, end_date, resume=resume))
 
     elif download_type == 'holographic':
+        # 【CTO炸弹修复】统一走HolographicDownloader，删除已废弃的
+        # download_holographic / download_holographic_range 引用（原函数已删除，调用必崩）
         if start_date and end_date:
-            run_with_rich_ui(f"全息范围 {start_date}~{end_date}",
-                             lambda: download_holographic_range(start_date, end_date,
-                                                                resume=resume, timeout=timeout))
-        elif date:
-            run_with_rich_ui(f"全息单日 {date}",
-                             lambda: download_holographic(date, resume=resume, timeout=timeout))
+            trading_days = get_trading_calendar_qmt_local(start_date, end_date)
+            click.echo(f"💡 全息范围: {start_date}~{end_date} 共{len(trading_days)}个交易日")
+            def run_range():
+                downloader = HolographicDownloader()
+                for d in trading_days:
+                    downloader.run_v20_download(d)
+            run_with_rich_ui(f"全息范围 {start_date}~{end_date}", run_range)
         else:
-            s, e, td = get_last_n_trading_days(60)
-            click.echo(f"💡 自动设定最近60交易日: {s} ~ {e} (共{len(td)}天)")
-            run_with_rich_ui("全息默认60日",
-                             lambda: download_holographic_range(s, e, resume=resume, timeout=timeout))
+            target_date = date or datetime.now().strftime('%Y%m%d')
+            run_with_rich_ui(f"全息单日 {target_date}",
+                             lambda: HolographicDownloader().run_v20_download(target_date))
 
 
 if __name__ == "__main__":
