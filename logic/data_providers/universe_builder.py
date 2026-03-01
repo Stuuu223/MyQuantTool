@@ -94,13 +94,8 @@ class UniverseBuilder:
         from logic.data_providers.true_dictionary import get_true_dictionary
         true_dict = get_true_dictionary()
         
-        # 【CTO修复】：在循环外一次性预热TrueDictionary（仅预热少量股票）
-        # 避免在循环中逐只预热导致效率低下
-        preheat_stocks = [s for s in all_stocks[:100] if not s.startswith(('8', '4', '688'))]
-        try:
-            true_dict.warmup(preheat_stocks, target_date=date)
-        except Exception as e:
-            self.logger.warning(f"TrueDictionary预热失败: {e}")
+        # 【CTO修复】：不预热TrueDictionary，直接从QMT获取流通股本
+        # warmup可能触发BSON崩溃，改用lazy loading
         
         valid_stocks = []
         success_count = 0
