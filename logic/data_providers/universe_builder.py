@@ -136,8 +136,8 @@ class UniverseBuilder:
         all_stocks = xtdata.get_stock_list_in_sector('沪深A股')
         if not all_stocks: return []
 
-        # 【CTO防爆切片器】：每次只查500只，防撑爆BSON！
-        chunk_size = 500
+        # 【CTO防爆切片器】：每次只查200只，防撑爆BSON！
+        chunk_size = 200
         daily_data = {}
         self.logger.info(f"📦 [CTO切片] 分批获取日K数据，每批{chunk_size}只...")
         for i in range(0, len(all_stocks), chunk_size):

@@ -223,9 +223,9 @@ class TrueDictionary:
                     start_date = (datetime.now() - timedelta(days=20)).strftime('%Y%m%d')
                 logger.warning(f"[日历降级] 使用自然日推算: {start_date} ~ {end_date}")
             
-            # 【CTO防爆切片器】：每次只查500只，防撑爆BSON！
+            # 【CTO防爆切片器】：每次只查200只，防撑爆BSON！
             # 分批查询避免QMT底层C++ BSON解析器崩溃
-            chunk_size = 500
+            chunk_size = 200
             all_data = {}
             logger.info(f"📦 [CTO切片] 分批获取日K数据计算5日均量，每批{chunk_size}只...")
             
@@ -349,8 +349,8 @@ class TrueDictionary:
                     start_date = (datetime.now() - timedelta(days=45)).strftime('%Y%m%d')
                 logger.warning(f"[日历降级] 使用自然日推算: {start_date} ~ {end_date}")
             
-            # 【CTO防爆切片器】：每次只查500只，防撑爆BSON！
-            chunk_size = 500
+            # 【CTO防爆切片器】：每次只查200只，防撑爆BSON！
+            chunk_size = 200
             all_data = {}
             logger.info(f"📦 [CTO切片] 分批获取MA数据，每批{chunk_size}只...")
             
