@@ -39,9 +39,6 @@ except ImportError:
     xtdata = None
     xttrader = None
 
-# 导入QMTRouter - 接入熔断机制
-from logic.data_providers.fallback_provider import QMTRouter, CircuitBreakerError
-
 import logging
 
 logger = logging.getLogger(__name__)
@@ -502,9 +499,6 @@ class QmtDataManager:
         logger.info(
             f"【下载Tick数据】{trade_date} | {len(stock_list)}只股票 | VIP: {use_vip}"
         )
-
-        # 初始化QMTRouter - 接入熔断机制
-        router = QMTRouter()
 
         for i, stock_code in enumerate(stock_list, 1):
             try:

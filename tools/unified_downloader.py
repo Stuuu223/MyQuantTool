@@ -6,25 +6,25 @@
 
 启动方式（参数启动，所有方式均弹出 Rich CLI 面板）：
     # 日K下载（全市场最近365天）
-    python tools\unified_downloader.py --type daily_k --days 365
+    python tools/unified_downloader.py --type daily_k --days 365
 
     # Tick下载（指定日期范围）
-    python tools\unified_downloader.py --type tick --start-date 20260101 --end-date 20260228
+    python tools/unified_downloader.py --type tick --start-date 20260101 --end-date 20260228
 
     # 全息单日
-    python tools\unified_downloader.py --type holographic --date 20260228
+    python tools/unified_downloader.py --type holographic --date 20260228
 
     # 全息范围
-    python tools\unified_downloader.py --type holographic --start-date 20260101 --end-date 20260228
+    python tools/unified_downloader.py --type holographic --start-date 20260101 --end-date 20260228
 
     # 全息默认（自动最近60交易日）
-    python tools\unified_downloader.py --type holographic
+    python tools/unified_downloader.py --type holographic
 
     # 禁用断点续传
-    python tools\unified_downloader.py --type daily_k --days 365 --no-resume
+    python tools/unified_downloader.py --type daily_k --days 365 --no-resume
 
     # 无参数启动 → 交互式菜单
-    python tools\unified_downloader.py
+    python tools/unified_downloader.py
 
 依赖：
     pip install rich click
@@ -460,7 +460,7 @@ def download_holographic(date: str, resume: bool = True, timeout: int = 3600):
     console.print("\n🔍 执行V18双Ratio粗筛...")
     try:
         from logic.data_providers.universe_builder import UniverseBuilder
-        stock_list = UniverseBuilder().get_daily_universe(date)
+        stock_list = UniverseBuilder(date).build()
         if not stock_list:
             console.print(f"[red]❌ 粗筛返回空股票池，可能是非交易日或本地日K数据缺失[/red]")
             return
@@ -603,7 +603,7 @@ def download_holographic_range(start_date: str, end_date: str,
 
         try:
             from logic.data_providers.universe_builder import UniverseBuilder
-            stock_list = UniverseBuilder().get_daily_universe(date)
+            stock_list = UniverseBuilder(date).build()
 
             if not stock_list:
                 console.print(f"[yellow]⏭️  {date} 无符合条件的股票（非交易日或数据缺失）[/yellow]")
