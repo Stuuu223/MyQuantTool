@@ -137,12 +137,10 @@ class QmtDataManager:
         # 【CTO架构修复】防呆机制：禁止直接实例化，必须通过get_qmt_manager()获取单例
         global _qmt_manager
         if _qmt_manager is not None:
-            # 允许第一次初始化，后续实例化直接警告
-            import warnings
-            warnings.warn(
-                "QmtDataManager为全局单例，请通过get_qmt_manager()获取实例，"
-                "直接实例化可能导致状态不一致",
-                RuntimeWarning
+            # 【CTO BUG-2修复】必须用raise RuntimeError，不能用warnings.warn
+            # warnings.warn默认只显示一次，后续会被过滤，等于没装防呆
+            raise RuntimeError(
+                "QmtDataManager为全局单例，禁止直接实例化，请通过 get_qmt_manager() 获取实例"
             )
         
         self.vip_token = vip_token or self._load_vip_token()
@@ -304,7 +302,8 @@ class QmtDataManager:
             # 通知所有等待的线程：初始化完成！
             QmtDataManager._vip_init_event.set()
 
-            logger.info(f"🚀 VIP行情服务已启动，监听端口: {port}")
+            # 【CTO BUG-1修复】使用self.listen_port[1]而非port变量，避免else分支NameError
+            logger.info(f"🚀 VIP行情服务已启动，监听端口: {self.listen_port[1]}")
             logger.info("=" * 60)
 
             return self.listen_port
@@ -340,20 +339,17 @@ class QmtDataManager:
         Returns:
             是否成功停止
         """
-        # 【CTO架构修复】重置类级状态，确保下次start_vip_service()重新初始化
-        QmtDataManager._vip_global_initialized = False
-        QmtDataManager._vip_global_port = None
+        # 【CTO BUG-4修复】持有锁修改类级状态，避免TOCTOU竞争条件
+        with QmtDataManager._vip_lock:
+            QmtDataManager._vip_global_initialized = False
+            QmtDataManager._vip_global_port = None
+            self.listen_port = None
+        
+        # clear()放在锁外是安全的，因为此时其他线程acquire锁后会做clear()
         QmtDataManager._vip_init_event.clear()
-        self.listen_port = None
         
         logger.info("[QmtDataManager] VIP服务标记已重置（xtdc进程需依赖Python进程退出释放端口）")
         return True
-
-    # 【CTO架构修复】_ensure_vip_connection()已删除
-    # 原因：此方法是僵尸方法，从未被调用
-    # 内部逻辑错误：xtdata.connect()会切换到实时Level-2服务器
-    # 导致download_history_data请求发错地方，返回ErrorID: 200005
-    # 正确做法：只用start_vip_service()启动本地代理，不需要xtdata.connect()
 
     def download_daily_data(
         self, stock_list: List[str], start_date: str, end_date: str, delay: float = 0.05
@@ -859,18 +855,24 @@ class QmtDataManager:
 
 # 全局 QMT 管理器实例
 _qmt_manager: Optional['QmtDataManager'] = None
+# 【CTO BUG-3修复】模块级锁，保护单例初始化
+_qmt_manager_lock = threading.Lock()
 
 
 def get_qmt_manager() -> 'QmtDataManager':
     """
     获取全局 QMT 管理器实例（CTO修复：返回正确的QmtDataManager）
+    
+    【CTO BUG-3修复】双重检查锁，确保线程安全
 
     Returns:
         QmtDataManager: QMT 数据管理器实例
     """
     global _qmt_manager
     if _qmt_manager is None:
-        _qmt_manager = QmtDataManager()
+        with _qmt_manager_lock:
+            if _qmt_manager is None:  # 双重检查
+                _qmt_manager = QmtDataManager()
     return _qmt_manager
 
 
