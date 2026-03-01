@@ -348,21 +348,67 @@ class QmtDataManager:
             return False
 
     def _ensure_vip_connection(self) -> bool:
-        """确保VIP连接可用"""
+        """
+        确保VIP连接可用（CTO P0级修复：连接真实VIP服务器）
+        
+        旧逻辑错误：xtdata.connect(ip="127.0.0.1", port=58700)
+        新逻辑正确：xtdata.connect(ip="vipszmd1.thinktrader.net", port=55310)
+        
+        Returns:
+            bool: 是否连接成功
+        """
+        # 1. 确保VIP本地代理已启动
         if not self._vip_initialized:
-            self.start_vip_service()
-
-        if self._vip_initialized and self.listen_port:
-            try:
-                _, port = self.listen_port
-                # CTO修复：确保port是整数
-                if isinstance(port, str):
-                    port = int(port)
-                xtdata.connect(ip="127.0.0.1", port=port, remember_if_success=False)
-                return True
-            except Exception as e:
-                logger.error(f"[QmtDataManager] VIP连接失败: {e}")
+            result = self.start_vip_service()
+            if not result:
+                logger.error("[QmtDataManager] VIP本地服务启动失败")
                 return False
+
+        # 2. 从环境变量读取VIP站点列表
+        vip_sites_str = os.getenv('QMT_VIP_SITES', '')
+        if not vip_sites_str:
+            logger.error("❌ 未配置 QMT_VIP_SITES 环境变量")
+            logger.error("请在.env中添加：QMT_VIP_SITES=vipszmd1.thinktrader.net:55310,...")
+            return False
+
+        vip_sites = [s.strip() for s in vip_sites_str.split(',') if s.strip()]
+        if not vip_sites:
+            logger.error("❌ QMT_VIP_SITES 配置为空")
+            return False
+
+        logger.info(f"[QmtDataManager] 尝试连接 {len(vip_sites)} 个VIP站点...")
+
+        # 3. 轮询连接VIP服务器
+        for i, site in enumerate(vip_sites, 1):
+            if ':' not in site:
+                logger.warning(f"⚠️ VIP站点格式错误: {site}")
+                continue
+
+            try:
+                ip, port_str = site.split(':', 1)
+                port = int(port_str)
+
+                logger.info(f"[{i}/{len(vip_sites)}] 尝试连接 {ip}:{port}")
+
+                # 连接远程VIP服务器（关键修复点）
+                result = xtdata.connect(ip=ip, port=port, remember_if_success=False)
+
+                if result == 0:  # 0 = 成功
+                    logger.info(f"✅ VIP连接成功: {ip}:{port}")
+                    return True
+                else:
+                    logger.warning(f"⚠️ VIP连接失败: {ip}:{port} (错误码: {result})")
+
+            except ValueError as e:
+                logger.warning(f"⚠️ 端口解析错误: {site} - {e}")
+                continue
+            except Exception as e:
+                logger.warning(f"⚠️ 连接异常: {site} - {e}")
+                continue
+
+        # 4. 所有站点都失败
+        logger.error("❌ 所有VIP站点连接失败")
+        logger.error("可能原因：1.Token过期 2.网络不通 3.QMT未登录")
         return False
 
     def download_daily_data(
