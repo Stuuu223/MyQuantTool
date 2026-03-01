@@ -134,6 +134,17 @@ class QmtDataManager:
             use_vip: 是否启用VIP服务
             port_range: VIP服务端口范围
         """
+        # 【CTO架构修复】防呆机制：禁止直接实例化，必须通过get_qmt_manager()获取单例
+        global _qmt_manager
+        if _qmt_manager is not None:
+            # 允许第一次初始化，后续实例化直接警告
+            import warnings
+            warnings.warn(
+                "QmtDataManager为全局单例，请通过get_qmt_manager()获取实例，"
+                "直接实例化可能导致状态不一致",
+                RuntimeWarning
+            )
+        
         self.vip_token = vip_token or self._load_vip_token()
         # CTO修复：优先从环境变量读取，删除硬编码
         env_data_dir = os.getenv("QMT_PATH", "")
@@ -141,7 +152,8 @@ class QmtDataManager:
         self.use_vip = use_vip and XT_AVAILABLE
         self.port_range = port_range
         self.listen_port: Optional[Tuple[str, int]] = None
-        self._vip_initialized: bool = False
+        # 【CTO架构修复】删除实例级_vip_initialized，统一使用类级别状态
+        # VIP初始化状态只存在于 QmtDataManager._vip_global_initialized
 
         logger.info(
             f"[QmtDataManager] 初始化完成 | VIP: {use_vip} | 数据目录: {self.data_dir}"
@@ -211,7 +223,6 @@ class QmtDataManager:
         # ============================================================
         if QmtDataManager._vip_global_initialized and QmtDataManager._vip_global_port:
             logger.info("[QmtDataManager] VIP服务已在运行，复用现有连接")
-            self._vip_initialized = True
             self.listen_port = QmtDataManager._vip_global_port
             return self.listen_port
 
@@ -230,7 +241,6 @@ class QmtDataManager:
             
             if init_completed and QmtDataManager._vip_global_initialized:
                 # 初始化成功，复用结果
-                self._vip_initialized = True
                 self.listen_port = QmtDataManager._vip_global_port
                 logger.info(f"[QmtDataManager] VIP服务初始化完成，复用连接: {self.listen_port}")
                 return self.listen_port
@@ -248,7 +258,6 @@ class QmtDataManager:
             
             # 双重检查：防止在等待锁期间其他线程已完成初始化
             if QmtDataManager._vip_global_initialized:
-                self._vip_initialized = True
                 self.listen_port = QmtDataManager._vip_global_port
                 QmtDataManager._vip_init_event.set()  # 通知等待线程
                 return self.listen_port
@@ -272,7 +281,8 @@ class QmtDataManager:
             logger.info(f"🔑 VIP Token: {self.vip_token[:6]}...{self.vip_token[-4:]}")
 
             # 3. 初始化并监听端口
-            xtdc.init()
+            # 【CTO架构修复】使用官方推荐模式：先关闭自动监听，再手动指定端口范围
+            xtdc.init(False)  # False = 不自动监听
             listen_result = xtdc.listen(port=self.port_range)
             
             # 解析监听结果
@@ -283,7 +293,7 @@ class QmtDataManager:
                 # 兼容旧版本返回单个port的情况
                 self.listen_port = ("127.0.0.1", int(listen_result))
             
-            self._vip_initialized = True
+            # 【CTO架构修复】不再设置实例级_vip_initialized，只使用类级状态
 
             # ============================================================
             # 设置全局单例状态 + 通知等待线程
@@ -300,118 +310,50 @@ class QmtDataManager:
             return self.listen_port
 
         except Exception as e:
-            # 【CTO核级重构】：捕获端口占用错误，静默处理
-            error_str = str(e)
-            if "58609" in error_str or "端口" in error_str or "port" in error_str.lower():
-                logger.warning("⚠️ VIP L2 端口已被占用，复用现有连接")
-                self._vip_initialized = True
-                self.listen_port = ("127.0.0.1", 58609)
-                
-                # 设置全局状态并通知等待线程
-                QmtDataManager._vip_global_initialized = True
-                QmtDataManager._vip_global_port = self.listen_port
-                QmtDataManager._vip_init_event.set()
-                
-                return self.listen_port
+            # 【CTO架构修复】删除58609幽灵端口处理
+            # 官方文档说明：端口冲突时应使用自定义端口范围重新listen，而非回退到默认端口
+            # 任何启动失败都应明确返回None，由上层决定是否熔断
             
-            # VIP启动失败，返回None由上层决定是否继续
-            self._vip_initialized = False
-            logger.warning(f"⚠️ VIP L2服务启动失败！(细节: {e})")
+            logger.warning(f"⚠️ VIP L2服务启动失败: {e}")
             logger.warning("VIP服务不可用，download_tick_data将抛出RuntimeError熔断！")
+            
+            # 重置全局状态
+            QmtDataManager._vip_global_initialized = False
+            QmtDataManager._vip_global_port = None
             
             # 通知等待线程：初始化完成（虽然失败，但避免死锁）
             QmtDataManager._vip_init_event.set()
             
-            return None  # 降级返回，不熔断系统
+            return None  # 明确返回None，由上层处理
             
         finally:
             # 确保锁一定被释放
             QmtDataManager._vip_lock.release()
+
     def stop_vip_service(self) -> bool:
         """
-        停止VIP行情服务
-
+        停止VIP行情服务（逻辑层标记重置）
+        
+        注意：xtdatacenter没有公开stop API，端口真正释放需依赖Python进程退出
+        或手工杀掉后台进程。这里只做逻辑层重置，确保下次start_vip_service()会重新初始化。
+        
         Returns:
             是否成功停止
         """
-        if not self._vip_initialized:
-            return True
-
-        try:
-            # xtquant不直接提供服务停止接口，通过关闭连接实现
-            self._vip_initialized = False
-            self.listen_port = None
-            logger.info("[QmtDataManager] VIP服务已停止")
-            return True
-        except Exception as e:
-            logger.error(f"[QmtDataManager] 停止VIP服务失败: {e}")
-            return False
-
-    def _ensure_vip_connection(self) -> bool:
-        """
-        确保VIP连接可用（CTO P0级修复：连接真实VIP服务器）
+        # 【CTO架构修复】重置类级状态，确保下次start_vip_service()重新初始化
+        QmtDataManager._vip_global_initialized = False
+        QmtDataManager._vip_global_port = None
+        QmtDataManager._vip_init_event.clear()
+        self.listen_port = None
         
-        旧逻辑错误：xtdata.connect(ip="127.0.0.1", port=58700)
-        新逻辑正确：xtdata.connect(ip="vipszmd1.thinktrader.net", port=55310)
-        
-        Returns:
-            bool: 是否连接成功
-        """
-        # 1. 确保VIP本地代理已启动
-        if not self._vip_initialized:
-            result = self.start_vip_service()
-            if not result:
-                logger.error("[QmtDataManager] VIP本地服务启动失败")
-                return False
+        logger.info("[QmtDataManager] VIP服务标记已重置（xtdc进程需依赖Python进程退出释放端口）")
+        return True
 
-        # 2. 从环境变量读取VIP站点列表
-        vip_sites_str = os.getenv('QMT_VIP_SITES', '')
-        if not vip_sites_str:
-            logger.error("❌ 未配置 QMT_VIP_SITES 环境变量")
-            logger.error("请在.env中添加：QMT_VIP_SITES=vipszmd1.thinktrader.net:55310,...")
-            return False
-
-        vip_sites = [s.strip() for s in vip_sites_str.split(',') if s.strip()]
-        if not vip_sites:
-            logger.error("❌ QMT_VIP_SITES 配置为空")
-            return False
-
-        logger.info(f"[QmtDataManager] 尝试连接 {len(vip_sites)} 个VIP站点...")
-
-        # 3. 轮询连接VIP服务器
-        for i, site in enumerate(vip_sites, 1):
-            if ':' not in site:
-                logger.warning(f"⚠️ VIP站点格式错误: {site}")
-                continue
-
-            try:
-                ip, port_str = site.split(':', 1)
-                port = int(port_str)
-
-                logger.info(f"[{i}/{len(vip_sites)}] 尝试连接 {ip}:{port}")
-
-                # 连接远程VIP服务器（关键修复点）
-                result = xtdata.connect(ip=ip, port=port, remember_if_success=False)
-
-                # CTO P0修复：xtdata.connect()成功时返回IPythonApiClient对象，失败时抛异常
-                # 所以只要不抛异常，result就是有效的
-                if result is not None:
-                    logger.info(f"✅ VIP连接成功: {ip}:{port}")
-                    return True
-                else:
-                    logger.warning(f"⚠️ VIP连接失败: {ip}:{port} (返回None)")
-
-            except ValueError as e:
-                logger.warning(f"⚠️ 端口解析错误: {site} - {e}")
-                continue
-            except Exception as e:
-                logger.warning(f"⚠️ 连接异常: {site} - {e}")
-                continue
-
-        # 4. 所有站点都失败
-        logger.error("❌ 所有VIP站点连接失败")
-        logger.error("可能原因：1.Token过期 2.网络不通 3.QMT未登录")
-        return False
+    # 【CTO架构修复】_ensure_vip_connection()已删除
+    # 原因：此方法是僵尸方法，从未被调用
+    # 内部逻辑错误：xtdata.connect()会切换到实时Level-2服务器
+    # 导致download_history_data请求发错地方，返回ErrorID: 200005
+    # 正确做法：只用start_vip_service()启动本地代理，不需要xtdata.connect()
 
     def download_daily_data(
         self, stock_list: List[str], start_date: str, end_date: str, delay: float = 0.05
@@ -589,7 +531,8 @@ class QmtDataManager:
         # xtdata.connect()会把连接切换到实时Level-2服务器（55310端口）
         # 导致download_history_data请求发到实时服务器而非历史数据服务器
         if use_vip and self.use_vip:
-            if not self._vip_initialized:
+            # 【CTO架构修复】使用类级别状态判断，而非实例变量
+            if not QmtDataManager._vip_global_initialized:
                 result = self.start_vip_service()
                 if not result:
                     raise RuntimeError(
