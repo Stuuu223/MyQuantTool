@@ -1,1 +1,182 @@
-{}
+{
+  "600589.SH": {
+    "stock_code": "600589.SH",
+    "date": "20260227",
+    "score": 90.67,
+    "absent_days": 0,
+    "last_decay_date": "20260227",
+    "close_price": 0,
+    "change_pct": 0,
+    "status": "unknown"
+  },
+  "300017.SZ": {
+    "stock_code": "300017.SZ",
+    "date": "20260227",
+    "score": 90.56,
+    "absent_days": 0,
+    "last_decay_date": "20260227",
+    "close_price": 0,
+    "change_pct": 0,
+    "status": "unknown"
+  },
+  "600759.SH": {
+    "stock_code": "600759.SH",
+    "date": "20260227",
+    "score": 90.32,
+    "absent_days": 0,
+    "last_decay_date": "20260227",
+    "close_price": 0,
+    "change_pct": 0,
+    "status": "unknown"
+  },
+  "002506.SZ": {
+    "stock_code": "002506.SZ",
+    "date": "20260227",
+    "score": 90.27,
+    "absent_days": 0,
+    "last_decay_date": "20260227",
+    "close_price": 0,
+    "change_pct": 0,
+    "status": "unknown"
+  },
+  "002195.SZ": {
+    "stock_code": "002195.SZ",
+    "date": "20260227",
+    "score": 90.09,
+    "absent_days": 0,
+    "last_decay_date": "20260227",
+    "close_price": 0,
+    "change_pct": 0,
+    "status": "unknown"
+  },
+  "300251.SZ": {
+    "stock_code": "300251.SZ",
+    "date": "20260227",
+    "score": 90.03,
+    "absent_days": 0,
+    "last_decay_date": "20260227",
+    "close_price": 0,
+    "change_pct": 0,
+    "status": "unknown"
+  },
+  "002340.SZ": {
+    "stock_code": "002340.SZ",
+    "date": "20260227",
+    "score": 90.03,
+    "absent_days": 0,
+    "last_decay_date": "20260227",
+    "close_price": 0,
+    "change_pct": 0,
+    "status": "unknown"
+  },
+  "000630.SZ": {
+    "stock_code": "000630.SZ",
+    "date": "20260227",
+    "score": 89.91,
+    "absent_days": 0,
+    "last_decay_date": "20260227",
+    "close_price": 0,
+    "change_pct": 0,
+    "status": "unknown"
+  },
+  "601975.SH": {
+    "stock_code": "601975.SH",
+    "date": "20260227",
+    "score": 86.16,
+    "absent_days": 0,
+    "last_decay_date": "20260227",
+    "close_price": 0,
+    "change_pct": 0,
+    "status": "unknown"
+  },
+  "002131.SZ": {
+    "stock_code": "002131.SZ",
+    "date": "20260227",
+    "score": 79.04,
+    "absent_days": 0,
+    "last_decay_date": "20260227",
+    "close_price": 0,
+    "change_pct": 0,
+    "status": "unknown"
+  },
+  "300058.SZ": {
+    "stock_code": "300058.SZ",
+    "date": "20260227",
+    "score": 74.11,
+    "absent_days": 0,
+    "last_decay_date": "20260227",
+    "close_price": 0,
+    "change_pct": 0,
+    "status": "unknown"
+  },
+  "601390.SH": {
+    "stock_code": "601390.SH",
+    "date": "20260227",
+    "score": 71.58,
+    "absent_days": 0,
+    "last_decay_date": "20260227",
+    "close_price": 0,
+    "change_pct": 0,
+    "status": "unknown"
+  },
+  "300182.SZ": {
+    "stock_code": "300182.SZ",
+    "date": "20260227",
+    "score": 66.11,
+    "absent_days": 0,
+    "last_decay_date": "20260227",
+    "close_price": 0,
+    "change_pct": 0,
+    "status": "unknown"
+  },
+  "000100.SZ": {
+    "stock_code": "000100.SZ",
+    "date": "20260227",
+    "score": 64.47,
+    "absent_days": 0,
+    "last_decay_date": "20260227",
+    "close_price": 0,
+    "change_pct": 0,
+    "status": "unknown"
+  },
+  "000981.SZ": {
+    "stock_code": "000981.SZ",
+    "date": "20260227",
+    "score": 60.92,
+    "absent_days": 0,
+    "last_decay_date": "20260227",
+    "close_price": 0,
+    "change_pct": 0,
+    "status": "unknown"
+  },
+  "000725.SZ": {
+    "stock_code": "000725.SZ",
+    "date": "20260227",
+    "score": 55.15,
+    "absent_days": 0,
+    "last_decay_date": "20260227",
+    "close_price": 0,
+    "change_pct": 0,
+    "status": "unknown"
+  },
+  "601288.SH": {
+    "stock_code": "601288.SH",
+    "date": "20260227",
+    "score": 52.8,
+    "absent_days": 0,
+    "last_decay_date": "20260227",
+    "close_price": 0,
+    "change_pct": 0,
+    "status": "unknown"
+  },
+  "600871.SH": {
+    "stock_code": "600871.SH",
+    "date": "20260227",
+    "score": 52.13,
+    "absent_days": 0,
+    "last_decay_date": "20260227",
+    "close_price": 0,
+    "change_pct": 0,
+    "status": "unknown"
+  }
+}

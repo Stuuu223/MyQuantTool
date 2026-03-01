@@ -232,8 +232,8 @@ class TimeMachineEngine:
         if stock_pool is None:
             logger.info("【时间机器】未指定股票池，使用UniverseBuilder粗筛...")
             from logic.data_providers.universe_builder import UniverseBuilder
-            builder = UniverseBuilder()
-            stock_pool = builder.get_daily_universe(date)
+            builder = UniverseBuilder(target_date=date)
+            stock_pool = builder.build()
             logger.info(f"【时间机器】UniverseBuilder返回: {len(stock_pool)} 只")
             
         if not stock_pool:
@@ -1133,9 +1133,9 @@ class TimeMachineEngine:
             logger.info(f"【时间机器】使用UniverseBuilder获取股票池: {date}")
             # 【CTO断头台】：Fail Fast！直接调用，让错误暴露！
             # UniverseBuilder内部使用正确的绝对阈值3.0
-            builder = UniverseBuilder()
-            logger.info(f"【时间机器】开始调用get_daily_universe...")
-            stock_pool = builder.get_daily_universe(date)
+            builder = UniverseBuilder(target_date=date)
+            logger.info(f"【时间机器】开始调用build()...")
+            stock_pool = builder.build()
             
             logger.info(f"【时间机器】UniverseBuilder返回: {len(stock_pool)} 只股票")
             
