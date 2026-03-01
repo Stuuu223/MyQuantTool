@@ -393,11 +393,13 @@ class QmtDataManager:
                 # 连接远程VIP服务器（关键修复点）
                 result = xtdata.connect(ip=ip, port=port, remember_if_success=False)
 
-                if result == 0:  # 0 = 成功
+                # CTO P0修复：xtdata.connect()成功时返回IPythonApiClient对象，失败时抛异常
+                # 所以只要不抛异常，result就是有效的
+                if result is not None:
                     logger.info(f"✅ VIP连接成功: {ip}:{port}")
                     return True
                 else:
-                    logger.warning(f"⚠️ VIP连接失败: {ip}:{port} (错误码: {result})")
+                    logger.warning(f"⚠️ VIP连接失败: {ip}:{port} (返回None)")
 
             except ValueError as e:
                 logger.warning(f"⚠️ 端口解析错误: {site} - {e}")
