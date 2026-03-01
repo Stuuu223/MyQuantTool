@@ -131,56 +131,47 @@ class UniverseBuilder:
         from xtquant import xtdata
         import pandas as pd
         
-        self.logger.info(f"⚡ [CTO终极粗筛] 启动全市场防弹扫描 ({date})...")
+        self.logger.info(f"⚡ [CTO终极粗筛] 启动全市场单点防弹扫描 ({date})...")
         
         all_stocks = xtdata.get_stock_list_in_sector('沪深A股')
         if not all_stocks: return []
 
-        # 【CTO防爆切片器】：每次只查200只，防撑爆BSON！
-        chunk_size = 200
-        daily_data = {}
-        self.logger.info(f"📦 [CTO切片] 分批获取日K数据，每批{chunk_size}只...")
-        for i in range(0, len(all_stocks), chunk_size):
-            chunk = all_stocks[i:i + chunk_size]
-            try:
-                chunk_data = xtdata.get_local_data(
-                    field_list=['open', 'high', 'low', 'close', 'volume', 'amount', 'preClose'],
-                    stock_list=chunk,
-                    period='1d',
-                    start_time=date,
-                    end_time=date
-                )
-                if chunk_data:
-                    daily_data.update(chunk_data)
-            except Exception as e:
-                self.logger.warning(f"切片{i//chunk_size + 1}获取失败: {e}")
-                continue
-        
-        self.logger.info(f"✅ [CTO切片] 日K数据获取完成: {len(daily_data)} 只")
-        
-        # 【CTO防爆切片】：预热字典也必须分批！
         from logic.data_providers.true_dictionary import get_true_dictionary
         true_dict = get_true_dictionary()
-        self.logger.info(f"📦 [CTO切片] 分批预热TrueDictionary...")
-        for i in range(0, len(all_stocks), chunk_size):
-            chunk = all_stocks[i:i + chunk_size]
-            try:
-                true_dict.warmup(chunk, target_date=date)
-            except Exception as e:
-                self.logger.warning(f"切片{i//chunk_size + 1}预热失败: {e}")
-                continue
         
         valid_stocks = []
+        success_count = 0
+        fail_count = 0
+        
+        # 【CTO单点爆破】：一只一只查！防爆！防C++崩溃！
         for stock in all_stocks:
             try:
                 # 1. 静态垃圾清理
                 if stock.startswith(('8', '4', '688')): continue
-                if not daily_data or stock not in daily_data or daily_data[stock].empty: continue
+                
+                # 【CTO绝对防爆锁】：一次只查一只！坏了也不会殃及池鱼！
+                daily_data = xtdata.get_local_data(
+                    field_list=['open', 'high', 'low', 'close', 'volume', 'amount', 'preClose'],
+                    stock_list=[stock],
+                    period='1d',
+                    start_time=date,
+                    end_time=date
+                )
+                
+                if not daily_data or stock not in daily_data or daily_data[stock].empty:
+                    fail_count += 1
+                    continue
                 
                 df_daily = daily_data[stock]
                 raw_vol = df_daily['volume'].iloc[-1]
                 if pd.isna(raw_vol) or float(raw_vol) <= 0: continue
                 current_volume = float(raw_vol)
+                
+                # 单点预热TrueDictionary
+                try:
+                    true_dict.warmup([stock], target_date=date)
+                except:
+                    pass
                 
                 # 2. 提取基础缓存并强转
                 avg_vol = float(true_dict.get_avg_volume_5d(stock) or 0.0)
@@ -214,10 +205,12 @@ class UniverseBuilder:
                 # 5. 绝对阈值过滤
                 if vol_ratio >= 1.5 and 3.0 <= turnover <= 70.0:
                     valid_stocks.append(stock)
+                    success_count += 1
             except Exception:
+                fail_count += 1
                 continue
-                
-        self.logger.info(f"✅ 粗筛完成！最终候选: {len(valid_stocks)} 只。")
+        
+        self.logger.info(f"✅ 粗筛完成！成功:{success_count}, 失败:{fail_count}, 最终候选:{len(valid_stocks)} 只。")
         return valid_stocks
     
     # ===== 以下方法已废弃，保留仅供参考 =====

@@ -223,26 +223,23 @@ class TrueDictionary:
                     start_date = (datetime.now() - timedelta(days=20)).strftime('%Y%m%d')
                 logger.warning(f"[日历降级] 使用自然日推算: {start_date} ~ {end_date}")
             
-            # 【CTO防爆切片器】：每次只查200只，防撑爆BSON！
-            # 分批查询避免QMT底层C++ BSON解析器崩溃
-            chunk_size = 200
+            # 【CTO单点爆破】：一只一只查！防爆！防C++崩溃！
             all_data = {}
-            logger.info(f"📦 [CTO切片] 分批获取日K数据计算5日均量，每批{chunk_size}只...")
+            logger.info(f"📦 [CTO单点爆破] 单只获取日K数据计算5日均量...")
             
-            for i in range(0, len(stock_list), chunk_size):
-                chunk = stock_list[i:i + chunk_size]
+            for stock in stock_list:
                 try:
-                    chunk_data = xtdata.get_local_data(
+                    single_data = xtdata.get_local_data(
                         field_list=['time', 'volume'],
-                        stock_list=chunk,
+                        stock_list=[stock],
                         period='1d',
                         start_time=start_date,
                         end_time=end_date
                     )
-                    if chunk_data:
-                        all_data.update(chunk_data)
+                    if single_data and stock in single_data:
+                        all_data[stock] = single_data[stock]
                 except Exception as e:
-                    logger.warning(f"[CTO切片] 批次{i//chunk_size + 1}获取失败: {e}")
+                    # 有毒的票直接跳过！
                     continue
             
             # 【调试日志】检查all_data返回状态
@@ -349,25 +346,23 @@ class TrueDictionary:
                     start_date = (datetime.now() - timedelta(days=45)).strftime('%Y%m%d')
                 logger.warning(f"[日历降级] 使用自然日推算: {start_date} ~ {end_date}")
             
-            # 【CTO防爆切片器】：每次只查200只，防撑爆BSON！
-            chunk_size = 200
+            # 【CTO单点爆破】：一只一只查！防爆！防C++崩溃！
             all_data = {}
-            logger.info(f"📦 [CTO切片] 分批获取MA数据，每批{chunk_size}只...")
+            logger.info(f"📦 [CTO单点爆破] 单只获取MA数据...")
             
-            for i in range(0, len(stock_list), chunk_size):
-                chunk = stock_list[i:i + chunk_size]
+            for stock in stock_list:
                 try:
-                    chunk_data = xtdata.get_local_data(
+                    single_data = xtdata.get_local_data(
                         field_list=['time', 'close'],
-                        stock_list=chunk,
+                        stock_list=[stock],
                         period='1d',
                         start_time=start_date,
                         end_time=end_date
                     )
-                    if chunk_data:
-                        all_data.update(chunk_data)
+                    if single_data and stock in single_data:
+                        all_data[stock] = single_data[stock]
                 except Exception as e:
-                    logger.warning(f"[CTO切片] MA批次{i//chunk_size + 1}获取失败: {e}")
+                    # 有毒的票直接跳过！
                     continue
             
             # 【调试】检查返回数据
@@ -474,25 +469,23 @@ class TrueDictionary:
                     start_date = (datetime.now() - timedelta(days=45)).strftime('%Y%m%d')
                 logger.warning(f"[日历降级] 使用自然日推算: {start_date} ~ {end_date}")
             
-            # 【CTO防爆切片器】：每次只查500只，防撑爆BSON！
-            chunk_size = 500
+            # 【CTO单点爆破】：一只一只查！防爆！防C++崩溃！
             all_data = {}
-            logger.info(f"📦 [CTO切片] 分批获取ATR数据，每批{chunk_size}只...")
+            logger.info(f"📦 [CTO单点爆破] 单只获取ATR数据...")
             
-            for i in range(0, len(stock_list), chunk_size):
-                chunk = stock_list[i:i + chunk_size]
+            for stock in stock_list:
                 try:
-                    chunk_data = xtdata.get_local_data(
+                    single_data = xtdata.get_local_data(
                         field_list=['time', 'high', 'low', 'close', 'open'],
-                        stock_list=chunk,
+                        stock_list=[stock],
                         period='1d',
                         start_time=start_date,
                         end_time=end_date
                     )
-                    if chunk_data:
-                        all_data.update(chunk_data)
+                    if single_data and stock in single_data:
+                        all_data[stock] = single_data[stock]
                 except Exception as e:
-                    logger.warning(f"[CTO切片] ATR批次{i//chunk_size + 1}获取失败: {e}")
+                    # 有毒的票直接跳过！
                     continue
             
             if all_data:
