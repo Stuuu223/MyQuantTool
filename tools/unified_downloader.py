@@ -408,6 +408,68 @@ def download_tick_data(start_date: str, end_date: str,
 
 
 # =============================================================================
+# 【CTO极简原生下载】物理歼灭.dat异端！
+# =============================================================================
+
+def download_native_tick(date: str, stock_list: list | None = None):
+    """
+    【CTO极简复原令】
+    目标：只生成QMT底层认可的无后缀原生数据，彻底杜绝.dat封装格式！
+    前提：Boss已确认本地有投研版/VIP权限
+    
+    核心原则：
+    1. 只调用最干净的xtdata.download_history_data
+    2. 绝不在Python层做任何序列化保存
+    3. 让QMT C++底层自己去处理并生成无后缀原生文件
+    """
+    from xtquant import xtdata
+    import click
+    
+    click.echo(click.style(f"\n{'='*60}", fg='cyan'))
+    click.echo(click.style(f"🔧 【CTO原生下载器】物理歼灭.dat异端", fg='cyan', bold=True))
+    click.echo(click.style(f"{'='*60}", fg='cyan'))
+    
+    # 1. 强制连通极速投研版端口
+    click.echo(click.style("🔌 连接QMT数据端口...", fg='yellow'))
+    try:
+        xtdata.connect()
+    except Exception as e:
+        click.echo(click.style(f"❌ 连接失败: {e}", fg='red', bold=True))
+        raise SystemExit(1)
+    
+    # 2. 获取股票列表
+    if not stock_list:
+        stock_list = xtdata.get_stock_list_in_sector('沪深A股')
+    
+    click.echo(click.style(f"⏬ 开始原生批处理下载: tick | {date} | 共 {len(stock_list)} 只", fg='yellow'))
+    click.echo(click.style(f"   🎯 原则：只下载，不验证，不序列化，不产生.dat！", fg='cyan'))
+    
+    # 3. 纯净异步下载（绝不在Python层做任何多余操作）
+    for i, stock in enumerate(stock_list):
+        try:
+            # 直接调用，不捕获任何返回值，不保存任何中间文件！
+            # 让QMT C++底层自己去处理并生成它想要的无后缀原生文件！
+            xtdata.download_history_data(stock, 'tick', start_time=date, end_time=date)
+        except Exception as e:
+            pass  # 静默跳过异常，不中断流程
+        
+        # 进度显示
+        if (i + 1) % 500 == 0:
+            click.echo(click.style(f"   📥 已下发 {i + 1}/{len(stock_list)} 只...", fg='yellow'))
+    
+    # 4. 提供阻塞落盘时间
+    click.echo(click.style(f"\n⏳ 下载指令已全量下达 ({len(stock_list)} 只)", fg='cyan'))
+    click.echo(click.style("   请在QMT客户端界面查看实际下载进度！", fg='yellow'))
+    click.echo(click.style("   等待客户端完成落盘 (30秒)...", fg='yellow'))
+    
+    # 强制等待落盘
+    time.sleep(30)
+    
+    click.echo(click.style(f"\n✅ 原生下载指令投递完毕！", fg='green', bold=True))
+    click.echo(click.style(f"   💡 检查QMT数据目录，应生成无后缀原生二进制文件", fg='cyan'))
+
+
+# =============================================================================
 # 全息下载器（统一架构）
 # =============================================================================
 
@@ -763,11 +825,11 @@ def interactive_menu():
 
 @click.command()
 @click.option('--type', 'download_type',
-              type=click.Choice(['daily_k', 'tick', 'holographic']),
-              default='daily_k', help='下载类型: daily_k=日K, tick=Tick数据, holographic=全息数据')
+              type=click.Choice(['daily_k', 'tick', 'native_tick', 'holographic']),
+              default='daily_k', help='下载类型: daily_k=日K, tick=Tick数据, native_tick=CTO极简原生, holographic=全息数据')
 @click.option('--start-date', default=None, help='开始日期 YYYYMMDD')
 @click.option('--end-date', default=None, help='结束日期 YYYYMMDD')
-@click.option('--date', default=None, help='单日日期 YYYYMMDD（全息单日）')
+@click.option('--date', default=None, help='单日日期 YYYYMMDD（全息单日/原生Tick）')
 @click.option('--days', default=365, type=int, help='下载天数（日K，默认365）')
 @click.option('--no-resume', is_flag=True, help='禁用断点续传')
 def main(download_type, start_date, end_date, date, days, no_resume):
@@ -784,6 +846,11 @@ def main(download_type, start_date, end_date, date, days, no_resume):
             return
         run_with_rich_ui(f"Tick下载 {start_date}~{end_date}",
                          lambda: download_tick_data(start_date, end_date, resume=resume))
+
+    elif download_type == 'native_tick':
+        # 【CTO极简原生下载】物理歼灭.dat异端！
+        target_date = date or datetime.now().strftime('%Y%m%d')
+        download_native_tick(target_date)
 
     elif download_type == 'holographic':
         # 【CTO炸弹修复】统一走HolographicDownloader，删除已废弃的
