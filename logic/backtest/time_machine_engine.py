@@ -753,6 +753,11 @@ class TimeMachineEngine:
             morning_low = open_price if open_price > 0 else pre_close
             prev_vol = 0.0
             prev_price = open_price if open_price > 0 else pre_close
+            last_dir = 1.0  # 【Boss钦定】平盘打捞：记录上一笔交易方向
+            
+            # 【Boss钦定】累计成交额和成交量，用于VWAP计算
+            cumulative_amount = 0.0
+            cumulative_volume = 0.0
             
             # === 获取流通市值用于Ratio计算 ===
             float_market_cap = force_float(float_volume * pre_close) if force_float(float_volume) > 0 else 1.0
@@ -802,11 +807,21 @@ class TimeMachineEngine:
                     delta_vol = max(0.0, volume - prev_vol)
                     prev_vol = volume
                     
+                    # 【Boss钦定】平盘打捞：平盘Tick按上一笔方向折半计算
                     if price > prev_price:
                         flow_15min += delta_vol * price  # 主动向上做功
+                        last_dir = 1.0
                     elif price < prev_price:
                         flow_15min -= delta_vol * price  # 主动向下砸盘
+                        last_dir = -1.0
+                    else:
+                        # 【Boss钦定】平盘时，按上一笔方向折半计算
+                        flow_15min += delta_vol * price * 0.5 * last_dir
                     prev_price = price
+                    
+                    # 【Boss钦定】累计成交额和成交量（用于VWAP）
+                    cumulative_amount += amount
+                    cumulative_volume += volume
                     
                     # 【阶段一：09:30-09:45】累加打分数据 (flow_15min已在上方增量计算)
                     
@@ -869,7 +884,9 @@ class TimeMachineEngine:
                                 flow_5min_median_stock=flow_5min_median_stock,
                                 space_gap_pct=space_gap_pct,
                                 float_volume_shares=float_volume,
-                                current_time=mock_now
+                                current_time=mock_now,
+                                total_amount=cumulative_amount,  # 【Boss钦定】传入累计成交额
+                                total_volume=cumulative_volume   # 【Boss钦定】传入累计成交量
                             )
                         except Exception as kinetic_e:
                             print(f"【DEBUG】动能打分引擎算分异常: {type(kinetic_e).__name__}: {kinetic_e}")

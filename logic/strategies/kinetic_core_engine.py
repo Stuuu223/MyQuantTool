@@ -292,21 +292,25 @@ class 动能打分引擎CoreEngine:
         prev_close: float,
         high: float,
         low: float,
-        open_price: float,  # 【CTO修复】添加开盘价参数
+        open_price: float,
         flow_5min: float,
         flow_15min: float,
         flow_5min_median_stock: float,
         space_gap_pct: float,
         float_volume_shares: float,
-        current_time: datetime
+        current_time: datetime,
+        total_amount: float = 0.0,  # 【Boss钦定】总成交额（元），用于VWAP计算
+        total_volume: float = 0.0   # 【Boss钦定】总成交量（股），用于VWAP计算
     ) -> tuple[float, float, float, float, float]:
         """
-        【Boss终极钦定：彻底废除绝对金额！动能与势能的双轨 Ratio 验钞机！】
+        【V20.5 Boss终极钦定：动能与势能的双Ratio验钞机 + VWAP洗盘容错】
         
         算法设计原则：
-        1. 彻底废除绝对金额魔法数字（如 5亿满分），全盘Ratio化
+        1. 彻底废除绝对金额魔法数字，全盘Ratio化
         2. 动能30分+势能30分+价格推力40分 = 100分基础分
         3. 四大乘数机制：维持能力、筹码纯度、吸血效应、早盘时间
+        4. 【Boss钦定】VWAP洗盘容错：跌破均线-20分重罚，不清零！
+        5. 【Boss钦定】出货拦截：流入比<=0时，封顶40分
         
         Args:
             net_inflow: 净流入金额（元）
@@ -321,32 +325,23 @@ class 动能打分引擎CoreEngine:
             space_gap_pct: 空间差百分比（上方套牢盘距离）
             float_volume_shares: 真实流通股本（股）
             current_time: 当前时间（datetime对象）
+            total_amount: 总成交额（元），用于VWAP计算
+            total_volume: 总成交量（股），用于VWAP计算
         
         Returns:
             tuple: (final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe)
                 - final_score: 最终验钞得分（float）
                 - sustain_ratio: 资金维持率（float）
-                - inflow_ratio: 净流入占流通市值比例（float）
+                - inflow_ratio: 净流入占流通市值比例百分比（float，如2.5表示2.5%）
                 - ratio_stock: 相对自身历史爆发力倍数（float）
                 - mfe: 资金效率指标Money Force Efficiency（float）
-        
-        Raises:
-            TypeError: 输入类型不正确时
-            ValueError: 价格<=0或流通股本<=0时
         """
-        # 类型检查 - 【CTO修复】接受字符串类型，内部用safe_float转换
-        # 原始类型检查太严格，导致空字符串无法处理
-        # if not all(isinstance(x, (int, float, str)) for x in [...]):
-        #     raise TypeError("所有数值参数必须是数字、字符串或None类型")
-        
         if not isinstance(current_time, datetime):
             raise TypeError(f"current_time必须是datetime类型，当前类型: {type(current_time)}")
         
         # ==========================================
-        # 0. 基础准备：计算真实流通市值 (元)
+        # 0. 基础准备：安全转换 + 流通市值
         # ==========================================
-        # 【CTO修复】使用safe_float强制转换，防止类型爆炸和空字符串崩溃
-        # 注意：必须先转换再进行有效性检查！
         net_inflow = safe_float(net_inflow, 0.0)
         price = safe_float(price, 0.0)
         prev_close = safe_float(prev_close, 0.0)
@@ -358,8 +353,10 @@ class 动能打分引擎CoreEngine:
         flow_5min_median_stock = safe_float(flow_5min_median_stock, 0.0)
         space_gap_pct = safe_float(space_gap_pct, 0.0)
         float_volume_shares = safe_float(float_volume_shares, 0.0)
+        total_amount = safe_float(total_amount, 0.0)
+        total_volume = safe_float(total_volume, 0.0)
         
-        # 参数有效性检查 - 【CTO修复】移到safe_float转换之后
+        # 参数有效性检查
         if price <= 0:
             raise ValueError(f"当前价格必须>0，当前值: {price}")
         if float_volume_shares <= 0:
@@ -373,23 +370,22 @@ class 动能打分引擎CoreEngine:
         # 第一步：真实验钞 Base Score (满分100)
         # ==========================================
         
-        # 1. 动能打分：净流入占流通市值的比例 (权重 30分)
-        # 游资逻辑：不看绝对流入多少，看占流通盘的百分比。如果5分钟流入达到流通盘的 1%，那是极其恐怖的资金黑洞！
-        # 【CTO修复】流入比除零保护，A股一天真实沉淀极难超过50%
-        inflow_ratio = net_inflow / float_market_cap if float_market_cap > 1000 else 0.0
-        inflow_ratio = min(max(inflow_ratio, -0.5), 0.5)  # 强制限幅在-50%~50%
-        kinetic_score = min(30.0, (inflow_ratio / 0.01) * 30.0)  # 达到 1% 拿满 30分
+        # 1. 动能打分：净流入占流通市值的比例百分比 (权重 30分)
+        # 【Boss钦定】流入比改为百分比形式
+        inflow_ratio_pct = (net_inflow / float_market_cap * 100.0) if float_market_cap > 1000 else 0.0
+        inflow_ratio_pct = min(max(inflow_ratio_pct, -50.0), 50.0)  # 强制限幅在-50%~50%
+        # 返回值也用百分比形式
+        inflow_ratio = inflow_ratio_pct
+        # 达到1%拿满30分
+        kinetic_score = min(30.0, (inflow_ratio_pct / 1.0) * 30.0) if inflow_ratio_pct > 0 else 0.0
         
         # 2. 势能打分：相对自身历史爆发力 (权重 30分)
-        # 游资逻辑：flow_5min_ratio_stock。今天这5分钟脉冲，是它平时死水状态的多少倍？
         ratio_stock = flow_5min / flow_5min_median_stock if flow_5min_median_stock > 0 else 0.0
-        # 【CTO铁血截断】A股不可能有5分钟涌入超过历史50倍还能不涨停的票！封死上限防止爆表！
-        ratio_stock = min(ratio_stock, 50.0)
-        potential_score = min(30.0, (ratio_stock / 15.0) * 30.0)  # 爆发超过15倍拿满 30分
+        ratio_stock = min(ratio_stock, 50.0)  # 截断上限
+        potential_score = min(30.0, (ratio_stock / 15.0) * 30.0)
         
-        # 3. 价格动能强度：日内 K 线推力 (权重 40分)
+        # 3. 价格动能强度：日内K线推力 (权重 40分)
         if high == low:
-            # 平盘特殊情况：如果当前价高于昨收，给满分，否则给0分
             momentum_score = 40.0 if price > prev_close else 0.0
         else:
             day_strength = (price - low) / (high - low)
@@ -398,15 +394,34 @@ class 动能打分引擎CoreEngine:
         base_score = kinetic_score + potential_score + momentum_score
         
         # ==========================================
-        # 第二步：神级乘数区 (Multipliers - 决定王座)
+        # 【Boss钦定】第二步：出货拦截（一票否决）
+        # 如果主力在净流出（inflow_ratio_pct <= 0），封顶40分！
+        # ==========================================
+        is_net_outflow = inflow_ratio_pct <= 0
+        
+        # ==========================================
+        # 【Boss钦定】第三步：VWAP洗盘容错（灰度惩罚）
+        # 跌破VWAP不清零，只扣20分！给洗盘妖股留火种！
+        # ==========================================
+        vwap_penalty = 0.0
+        vwap = 0.0
+        if total_volume > 0 and total_amount > 0:
+            vwap = total_amount / total_volume  # VWAP = 成交额 / 成交量
+            if price < vwap and vwap > 0:
+                # 【Boss钦定】跌破VWAP，-20分重罚，但不清零！
+                vwap_penalty = 20.0
+                logger.debug(f"[VWAP洗盘容错] 价格{price:.2f} < VWAP{vwap:.2f}, 重罚-20分")
+        
+        base_score = max(0.0, base_score - vwap_penalty)
+        
+        # ==========================================
+        # 第四步：神级乘数区 (Multipliers - 决定王座)
         # ==========================================
         multiplier = 1.0
         
         # A. 维持能力 (Sustain Ability - 抓翻倍大妖的核心)
-        # 15分钟资金 / 5分钟资金，健康阶梯推升应该 > 1.2
         sustain_ratio = (flow_15min / flow_5min) if flow_5min > 0 else 0.0
         
-        # 【杂毛断头台】机制 - 焊死跟风杂毛，只留真龙
         stock_identifier = f"{current_time.strftime('%H:%M')}@{price:.2f}"
         
         if sustain_ratio > 1.2:
@@ -415,24 +430,21 @@ class 动能打分引擎CoreEngine:
             # 致命惩罚：资金维持不住，杂毛断头台绞杀！
             multiplier *= 0.1
             logger.warning(
-                f"[杂毛断头台-致命绞杀] {stock_identifier} sustain_ratio={sustain_ratio:.2f} < 1.0, "
-                f"资金断流骗炮，final_score将被压制到接近0"
+                f"[杂毛断头台-致命绞杀] {stock_identifier} sustain_ratio={sustain_ratio:.2f} < 1.0"
             )
         elif sustain_ratio < 1.1:
             # 降权惩罚：资金维持吃力，疑似跟风杂毛
             multiplier *= 0.5
             logger.warning(
-                f"[杂毛断头台-降权警告] {stock_identifier} sustain_ratio={sustain_ratio:.2f} < 1.1, "
-                f"资金维持薄弱，final_score减半"
+                f"[杂毛断头台-降权警告] {stock_identifier} sustain_ratio={sustain_ratio:.2f} < 1.1"
             )
         
         # B. 筹码纯度 (空间差 < 10% 抛压轻)
         if space_gap_pct < 0.10:
             multiplier *= 1.2
         
-        # C. 吸血效应 (横向比较/资金占比极大)
-        # 只要流入比例 > 1.5%，说明在疯狂吸血，给予情绪溢价
-        if inflow_ratio > 0.015:
+        # C. 吸血效应 (流入比例 > 1.5%)
+        if inflow_ratio_pct > 1.5:
             multiplier *= 1.2
         
         # D. 早盘时间坚决度
@@ -442,27 +454,29 @@ class 动能打分引擎CoreEngine:
             multiplier *= 0.5
         
         # ==========================================
-        # 第三步：效率算子 MFE (Money Force Efficiency)
-        # 【CTO物理学对齐】MFE = 向上推力百分比 / 净流入占比
-        # 物理意义: 单位资金做功的向上效率（无量纲化，跨市值公平竞技）
+        # 第五步：MFE效率算子 (Money Force Efficiency)
+        # 【Boss钦定】流入比<=0时，MFE直接-100
         # ==========================================
-        # 【修复】分子必须是向上推力，不能用总振幅！过滤天地板砸盘！
-        # 向上推力 = (收盘-最低 + 最高-开盘) / 2，只奖励向上的动能
-        
-        # 计算向上推力百分比（相对于昨收）
-        upward_thrust = ((price - low) + (high - open_price)) / 2
-        price_range_pct = upward_thrust / prev_close if prev_close > 0 else 0.0
-        
-        # 【CTO 防御】：如果 inflow_ratio 极小或为负，保留其物理意义，但防止除零爆炸
-        if abs(inflow_ratio) < 0.001:
-            mfe = 0.0
+        if inflow_ratio_pct <= 0:
+            # 净流出时，MFE置为-100，标记为出货
+            mfe = -100.0
         else:
-            # 允许负数 MFE 存在（价格涨但资金流出 = 极端诱多抛压）
-            mfe = price_range_pct / inflow_ratio
-            # 强制限幅在 -100 到 100 之间，防止极端极值毁掉排序
+            # 正常计算MFE
+            upward_thrust = ((price - low) + (high - open_price)) / 2
+            price_range_pct = upward_thrust / prev_close if prev_close > 0 else 0.0
+            mfe = price_range_pct / (inflow_ratio_pct / 100.0)  # 转回小数计算
             mfe = max(-100.0, min(mfe, 100.0))
         
+        # ==========================================
+        # 第六步：计算最终得分
+        # ==========================================
         final_score = round(base_score * multiplier, 2)
+        
+        # 【Boss钦定】出货拦截：净流出时，封顶40分
+        if is_net_outflow:
+            final_score = min(final_score, 40.0)
+            logger.debug(f"[出货拦截] {stock_identifier} 净流出，分数封顶40分")
+        
         return final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe
     
     def calculate_volume_ratio(
