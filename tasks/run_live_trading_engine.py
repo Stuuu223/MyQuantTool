@@ -990,8 +990,14 @@ class LiveTradingEngine:
         Args:
             tick_event: Tick事件对象
         """
+        # CTO强制透视：记录所有接收到的Tick（每100条打印一次避免刷屏）
+        self._debug_tick_received_count = getattr(self, '_debug_tick_received_count', 0) + 1
+        if self._debug_tick_received_count % 100 == 0:
+            logger.info(f"💓 [CTO透视] 累计接收Tick: {self._debug_tick_received_count} 条 | watchlist数量: {len(self.watchlist)}")
+        
         # CTO加固：容错机制
         if not self.running:
+            logger.warning("⚠️ [CTO透视] 引擎未运行，丢弃Tick")
             return
         
         stock_code = tick_event.stock_code
@@ -1000,12 +1006,15 @@ class LiveTradingEngine:
         # Phase 2 Step 1: 只在watchlist中的股票才处理
         # ============================================================
         if stock_code not in self.watchlist:
+            # CTO透视：记录被过滤的股票（每1000条打印一次）
+            self._debug_filtered_count = getattr(self, '_debug_filtered_count', 0) + 1
+            if self._debug_filtered_count % 1000 == 0:
+                logger.debug(f"🚫 [CTO透视] 已过滤 {self._debug_filtered_count} 条不在watchlist的Tick")
             return  # 不在观察池，直接丢弃
         
-        # 如果没有V18验钞机，记录警告但不阻止处理
+        # 【CTO修复】warfare_core为None时使用V18CoreEngine直接计算
         if not self.warfare_core:
-            logger.debug("⚠️ V18验钞机未初始化，跳过Tick数据处理")
-            return
+            logger.debug(f"📊 [CTO透视] {stock_code} 使用V18CoreEngine直接计算（warfare_core已废弃）")
         
         try:
             # ============================================================
@@ -1038,6 +1047,10 @@ class LiveTradingEngine:
             
             # 只有当量比突破0.95分位才继续处理（开火权下放）
             if current_volume_ratio < fire_threshold:
+                # 【CTO强制透视】记录被静默丢弃的Tick（每500条打印一次，避免刷屏）
+                self._debug_below_threshold_count = getattr(self, '_debug_below_threshold_count', 0) + 1
+                if self._debug_below_threshold_count % 500 == 0:
+                    logger.info(f"🚫 [CTO透视] 累计{self._debug_below_threshold_count}条Tick未达量比门槛({current_volume_ratio:.2f}x < {fire_threshold:.2f}x)")
                 return  # 未达开火门槛，静默丢弃
             
             logger.info(f"🔥 {stock_code} 触发量比阈值: {current_volume_ratio:.2f}x >= {fire_threshold:.2f}x")

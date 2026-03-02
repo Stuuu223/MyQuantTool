@@ -20,10 +20,12 @@ import os
 import sys
 import time
 import logging
+import json
 import pandas as pd
 import numpy as np
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timedelta
+from pathlib import Path
 
 # 【CTO修复】导入交易日历工具，禁止在量化系统中使用timedelta推算交易日
 try:
@@ -123,6 +125,36 @@ class TrueDictionary:
             logger.info(f"📦 [TrueDictionary] 当日数据已装弹,跳过")
             return self._get_warmup_stats()
         
+        # 【CTO缓存革命】Step 0: 尝试从硬盘缓存加载5日均量
+        cache_dir = Path("data/cache")
+        cache_file = cache_dir / f"true_dict_avg_vol_{today}.json"
+        
+        if not force and cache_file.exists():
+            try:
+                logger.info(f"⚡ [CTO缓存命中] 从硬盘加载 {cache_file}...")
+                with open(cache_file, 'r', encoding='utf-8') as f:
+                    cached_data = json.load(f)
+                
+                # 恢复缓存数据
+                self._avg_volume_5d = cached_data.get('avg_volume_5d', {})
+                self._float_volume = cached_data.get('float_volume', {})
+                self._up_stop_price = cached_data.get('up_stop_price', {})
+                
+                self._metadata['cache_date'] = today
+                self._metadata['data_source'] = 'QMT本地100% + 硬盘缓存'
+                
+                logger.info(f"✅ [CTO缓存命中] 0毫秒装弹完成! 5日均量:{len(self._avg_volume_5d)}只, 流通股本:{len(self._float_volume)}只")
+                return {
+                    'qmt': {'success': len(self._float_volume), 'failed': 0, 'note': 'from_cache'},
+                    'avg_volume': {'success': len(self._avg_volume_5d), 'failed': 0, 'note': 'from_cache'},
+                    'integrity': {'is_ready': True, 'missing_rate': 0},
+                    'total_stocks': len(stock_list),
+                    'ready_for_trading': True,
+                    'cache_hit': True
+                }
+            except Exception as e:
+                logger.warning(f"⚠️ [CTO缓存] 加载缓存失败: {e}, 重新计算...")
+        
         print(f"🚀 [TrueDictionary-CTO防弹衣] 启动盘前装弹,目标{len(stock_list)}只股票")
         logger.info(f"🚀 [TrueDictionary-CTO防弹衣] 启动盘前装弹,目标{len(stock_list)}只股票")
         
@@ -152,6 +184,29 @@ class TrueDictionary:
         
         print(f"✅ [TrueDictionary] CTO防弹衣装弹完成! (FloatVolume: {qmt_result['success']}只)")
         logger.info(f"✅ [TrueDictionary] CTO防弹衣装弹完成! (FloatVolume: {qmt_result['success']}只)")
+        
+        # 【CTO缓存革命】保存到硬盘缓存
+        try:
+            cache_dir = Path("data/cache")
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            cache_file = cache_dir / f"true_dict_avg_vol_{today}.json"
+            
+            cache_data = {
+                'avg_volume_5d': self._avg_volume_5d,
+                'float_volume': self._float_volume,
+                'up_stop_price': self._up_stop_price,
+                'cache_date': today,
+                'cached_at': datetime.now().isoformat()
+            }
+            
+            with open(cache_file, 'w', encoding='utf-8') as f:
+                json.dump(cache_data, f, ensure_ascii=False)
+            
+            logger.info(f"💾 [CTO缓存] 数据已持久化至 {cache_file}")
+            stats['cache_saved'] = True
+        except Exception as e:
+            logger.warning(f"⚠️ [CTO缓存] 保存缓存失败: {e}")
+            stats['cache_saved'] = False
         
         return stats
     
