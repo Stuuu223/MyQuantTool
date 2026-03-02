@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║                    🚀 MyQuantTool - 统一CLI入口 (V20)                        ║
+║                    🚀 MyQuantTool - 统一CLI入口 (V20.5)                      ║
 ║              Phase 7: 架构统一 · CLI标准化 · 生产就绪                        ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  所有操作必须通过此入口执行                                                   ║
@@ -31,7 +31,7 @@
 
 Author: AI开发专家
 Date: 2026-02-23
-Version: 20.0.0
+Version: 20.5.0
 """
 
 # =============== 🚨 必须放在最第一行：强制直连 ===============
@@ -98,7 +98,7 @@ def print_banner():
     """打印系统横幅"""
     banner = """
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║                    🚀 MyQuantTool V20.0.0 - Phase 7                          ║
+║                    🚀 MyQuantTool V20.5.0 - Phase 7                          ║
 ║              统一CLI入口 · 架构标准化 · 生产就绪                             ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  核心能力: 回测 · 扫描 · 分析 · 监控 · 数据管理                              ║
@@ -146,7 +146,7 @@ def validate_stock_code(ctx, param, value):
 def cli(ctx, version):
     """MyQuantTool 统一CLI入口 - 量化交易系统主程序"""
     if version:
-        click.echo("MyQuantTool V20.0.0 - Phase 7统一CLI")
+        click.echo("MyQuantTool V20.5.0 - Phase 7统一CLI")
         ctx.exit()
     
     if ctx.invoked_subcommand is None:
@@ -645,7 +645,7 @@ def monitor_cmd(ctx, mode, interval):
         # 启动CLI监控终端
         python main.py monitor --mode cli
         
-        # 启动集合竞价监控
+        # 启动集合竞价监控（直连LiveTradingEngine竞价管理器）
         python main.py monitor --mode auction
     """
     click.echo(click.style(f"\n👁️ 启动监控系统", fg='green', bold=True))
@@ -665,9 +665,28 @@ def monitor_cmd(ctx, mode, interval):
             cli_monitor_main()
             
         elif mode == 'auction':
-            from tasks.auction_manager import main as auction_main
-            
-            auction_main()
+            # [CTO-FIX] tasks/auction_manager.py 不存在，直接实例化 LiveTradingEngine
+            # 调用竞价快照初筛入口 _execute_auction_filter()
+            click.echo(click.style("🔔 启动集合竞价监控 (直连LiveTradingEngine)", fg='cyan'))
+            from tasks.run_live_trading_engine import LiveTradingEngine
+            from logic.data_providers.qmt_manager import QmtDataManager
+            from logic.core.config_manager import get_config_manager
+
+            config_manager = get_config_manager()
+            try:
+                qmt_manager = QmtDataManager()
+            except Exception as e:
+                click.echo(click.style(f"❌ QMT Manager创建失败: {e}", fg='red'))
+                ctx.exit(1)
+
+            engine = LiveTradingEngine(qmt_manager=qmt_manager)
+            click.echo("⚡ 执行集合竞价快照初筛...")
+            # 直接触发竞价初筛，不启动完整交易session
+            engine._execute_auction_filter()
+            watchlist_count = len(engine.watchlist) if hasattr(engine, 'watchlist') else 0
+            click.echo(click.style(f"✅ 竞价初筛完成，观察池: {watchlist_count} 只", fg='green'))
+            if watchlist_count > 0 and hasattr(engine, 'watchlist'):
+                click.echo(click.style(f"📊 前10只: {engine.watchlist[:10]}", fg='cyan'))
             
     except KeyboardInterrupt:
         click.echo(click.style("\n⚠️ 用户中断监控", fg='yellow'))
@@ -766,13 +785,14 @@ def simulate_cmd(ctx, start_date, end_date, watchlist, phase):
 @click.pass_context
 def live_cmd(ctx, mode, max_positions, cutoff_time, volume_percentile, dry_run, replay_date):
     """
-    🚀 实盘猎杀系统 - CTO终极架构版 (EventDriven事件驱动)
+    🚀 实盘猎杀系统 - V20.5高阶算子版 (EventDriven事件驱动)
     
     CTO强制规范: 
     - 09:25盘前装弹 → 09:30极速扫描 → 09:35后火控雷达
     - 所有数据必须QMT原生，禁止任何外网请求！
     - Tushare已物理剥离，改用QMT本地数据
     - 依赖注入模式：QMT实例从main.py传入引擎
+    - 换手率死亡拦截上限：300%（统一标准，禁止擅自改回70%）
     
     示例:
         python main.py live --mode paper          # 模拟盘测试
@@ -822,9 +842,9 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, volume_percentile, dry_run, 
                     'mfe': item.get('mfe', 0),
                     'tag': item.get('tag', '复盘')
                 })
-            render_battle_dashboard(dashboard_data, title=f"[{prev_date}] 热复盘真龙看板(V20极速版)", clear_screen=False)
+            render_battle_dashboard(dashboard_data, title=f"[{prev_date}] 热复盘真龙看板(V20.5高阶算子版)", clear_screen=False)
         else:
-            click.echo(click.style("⚠️ 今日没有任何股票通过V18苛刻的风控漏斗！", fg='red'))
+            click.echo(click.style("⚠️ 今日没有任何股票通过V20.5苛刻的风控漏斗！", fg='red'))
         return  # 画完大屏才能滚！
     
     # 检查是否已收盘 (15:00后) - 禁止盘后启动实盘
@@ -838,12 +858,13 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, volume_percentile, dry_run, 
         click.echo(f"\n✅ 盘后战报完成: 共评分 {len(result.get('top20', [])) if result else 0} 只股票")
         return  # 绝对禁止继续启动实盘引擎
     
-    click.echo(click.style("\n🚀 启动实盘猎杀系统 (EventDriven 事件驱动模式)", fg='green', bold=True))
+    click.echo(click.style("\n🚀 启动实盘猎杀系统 (EventDriven 事件驱动模式 V20.5)", fg='green', bold=True))
     click.echo(f"📅 日期: {datetime.now().strftime('%Y-%m-%d')}")
     click.echo(f"📊 模式: {'模拟盘' if mode == 'paper' else '实盘交易'}")
     click.echo(f"💰 最大持仓: {max_positions}")
     click.echo(f"📊 量比分位数: {volume_percentile}")
     click.echo(f"⏰ 截停时间: {cutoff_time}")
+    click.echo(click.style(f"🔒 换手率死亡拦截上限: 300%（CTO统一标准）", fg='yellow'))
     if dry_run:
         click.echo(click.style("🧪 干运行模式(不实际下单)", fg='yellow'))
     
@@ -912,106 +933,60 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, volume_percentile, dry_run, 
         cutoff = datetime.strptime(cutoff_time, '%H:%M:%S').time()
         cutoff_dt = now.replace(hour=cutoff.hour, minute=cutoff.minute, second=cutoff.second)
         
+        # ==========================================
+        # 公共函数：创建并初始化 LiveTradingEngine（避免重复代码）
+        # ==========================================
+        def _create_engine() -> 'LiveTradingEngine':
+            from tasks.run_live_trading_engine import LiveTradingEngine
+            from logic.core.config_manager import get_config_manager
+            from logic.data_providers.qmt_manager import QmtDataManager
+
+            config_manager = get_config_manager()
+            config_manager._config['halfway']['volume_surge_percentile'] = volume_percentile
+            click.echo(f"📊 实盘引擎量比分位数阈值设置为: {volume_percentile} (右侧起爆标准)")
+
+            try:
+                qmt_manager = QmtDataManager()
+                click.echo("✅ QMT Manager 已创建")
+            except Exception as exc:
+                click.echo(click.style(f"❌ QMT Manager创建失败: {exc}", fg='red'))
+                raise
+
+            return LiveTradingEngine(
+                qmt_manager=qmt_manager,
+                volume_percentile=volume_percentile
+            )
+
         # 初始化引擎变量，防止作用域错误
         engine = None
         
         # 如果指定了历史回放日期，则直接执行历史回放
         if replay_date:
             click.echo(click.style(f"🔄 指定日期历史回放模式: {replay_date}", fg='green'))
-            
-            # ==========================================
-            # Step 3: 挂载EventDriven引擎 (CTO依赖注入！)
-            # ==========================================
             click.echo("\n⚡ Step 2: 挂载 EventDriven 引擎...")
-            from tasks.run_live_trading_engine import LiveTradingEngine
-            from logic.core.config_manager import get_config_manager
-            
-            # 配置管理器统一参数管理 (CTO SSOT原则)
-            config_manager = get_config_manager()
-            # 更新配置文件中的量比阈值
-            config_manager._config['halfway']['volume_surge_percentile'] = volume_percentile
-            click.echo(f"📊 实盘引擎量比分位数阈值设置为: {volume_percentile} (右侧起爆标准)")
-            
-            # CTO强制：创建QMT管理器实例
-            try:
-                from logic.data_providers.qmt_manager import QmtDataManager
-                qmt_manager = QmtDataManager()
-                click.echo("✅ QMT Manager 已创建")
-            except Exception as e:
-                click.echo(click.style(f"❌ QMT Manager创建失败: {e}", fg='red'))
-                ctx.exit(1)
-            
-            # CTO强制：依赖注入模式 - 传入QMT实例
-            engine = LiveTradingEngine(
-                qmt_manager=qmt_manager,
-                volume_percentile=volume_percentile
-            )
-            
-            # 启动引擎（09:25第一斩 → 09:30第二斩 → 火控雷达）
-            # 【CTO修复】历史回放禁用动态雷达，避免卡死
+            engine = _create_engine()
             engine.start_session(enable_dynamic_radar=False)
-            
-            # 执行指定日期的历史信号回放
             click.echo(click.style(f"🔄 执行 {replay_date} 历史信号回放...", fg='green'))
             engine.replay_today_signals()
-            
             click.echo(click.style("✅ 历史信号回放完成", fg='green'))
             click.echo(click.style("🎯 系统将在3秒后退出", fg='yellow'))
             time.sleep(3)
-            
-            # 程序退出，不进入死循环
             click.echo(click.style("✅ 系统安全退出", fg='green'))
             return
         
-        # CTO修复：将大的时间判断条件放在前面，避免逻辑遮蔽
         # 收盘后：执行今日历史信号回放
         elif now > market_close:
-            # 收盘后运行，执行历史信号回放
             click.echo(click.style(f"🛑 股市已收盘，自动为您生成今日右侧起爆战报...", fg='green'))
-            
-            # ==========================================
-            # Step 3: 挂载EventDriven引擎 (CTO依赖注入！)
-            # ==========================================
             click.echo("\n⚡ Step 2: 挂载 EventDriven 引擎...")
-            from tasks.run_live_trading_engine import LiveTradingEngine
-            from logic.core.config_manager import get_config_manager
-            
-            # 配置管理器统一参数管理 (CTO SSOT原则)
-            config_manager = get_config_manager()
-            # 更新配置文件中的量比阈值
-            config_manager._config['halfway']['volume_surge_percentile'] = volume_percentile
-            click.echo(f"📊 实盘引擎量比分位数阈值设置为: {volume_percentile} (右侧起爆标准)")
-            
-            # CTO强制：创建QMT管理器实例
-            try:
-                from logic.data_providers.qmt_manager import QmtDataManager
-                qmt_manager = QmtDataManager()
-                click.echo("✅ QMT Manager 已创建")
-            except Exception as e:
-                click.echo(click.style(f"❌ QMT Manager创建失败: {e}", fg='red'))
-                ctx.exit(1)
-            
-            # CTO强制：依赖注入模式 - 传入QMT实例
-            engine = LiveTradingEngine(
-                qmt_manager=qmt_manager,
-                volume_percentile=volume_percentile
-            )
-            
-            # 启动引擎（09:25第一斩 → 09:30第二斩 → 火控雷达）
-            # 【CTO修复】盘后复盘禁用动态雷达，避免卡死
+            engine = _create_engine()
             engine.start_session(enable_dynamic_radar=False)
-            
-            # 执行今日历史信号回放
             click.echo(click.style("🔄 执行今日历史信号回放...", fg='green'))
             print("\n🔬 【物理探针】main.py即将调用replay_today_signals")
             engine.replay_today_signals()
             print("🔬 【物理探针】main.py已返回replay_today_signals")
-            
             click.echo(click.style("✅ 历史信号回放完成", fg='green'))
             click.echo(click.style("🎯 系统将在3秒后退出", fg='yellow'))
             time.sleep(3)
-            
-            # 程序退出，不进入死循环
             click.echo(click.style("✅ 系统安全退出", fg='green'))
             return
         
@@ -1022,26 +997,15 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, volume_percentile, dry_run, 
             time.sleep(3)
             return
         
-        # 开盘前：如果是凌晨（<09:30），执行昨日回放；否则等待开盘
+        # ==================================================================
+        # [CTO-FIX P0] 开盘前窗口（06:00 ~ 09:30）
+        # 原始Bug：sleep(3)后 engine=None，程序静默退出，竞价+开盘全部跳过
+        # 修复：sleep后立即创建engine并调用start_session()，进入保活循环
+        # ==================================================================
         elif now < market_open:
             if now.hour < 6:  # 凌晨测试模式
                 click.echo(click.style(f"🌙 凌晨测试模式，执行昨日信号回放...", fg='cyan'))
-                # 直接调用盘后回放逻辑
-                from tasks.run_live_trading_engine import LiveTradingEngine
-                from logic.core.config_manager import get_config_manager
-                config_manager = get_config_manager()
-                config_manager._config['halfway']['volume_surge_percentile'] = volume_percentile
-                try:
-                    from logic.data_providers.qmt_manager import QmtDataManager
-                    qmt_manager = QmtDataManager()
-                    click.echo("✅ QMT Manager 已创建")
-                except Exception as e:
-                    click.echo(click.style(f"❌ QMT Manager创建失败: {e}", fg='red'))
-                    ctx.exit(1)
-                engine = LiveTradingEngine(
-                    qmt_manager=qmt_manager,
-                    volume_percentile=volume_percentile
-                )
+                engine = _create_engine()
                 engine.start_session()
                 click.echo(click.style("🔄 执行昨日历史信号回放...", fg='green'))
                 print("\n🔬 【物理探针】main.py即将调用replay_today_signals")
@@ -1053,45 +1017,27 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, volume_percentile, dry_run, 
                 click.echo(click.style("✅ 系统安全退出", fg='green'))
                 return
             else:
+                # [P0修复] 06:00~09:30 竞价窗口：创建engine，等待开盘，不退出！
                 wait_seconds = (market_open - now).seconds
-                click.echo(f"⏳ 等待 09:30 开盘，雷达预热中... (距开盘 {wait_seconds}秒)")
-                time.sleep(min(wait_seconds, 3))  # 最多等3秒(测试用)
+                click.echo(click.style(
+                    f"⏳ 盘前装载模式 (距09:30开盘 {wait_seconds}秒)，创建引擎等待竞价...",
+                    fg='cyan'
+                ))
+                click.echo("\n⚡ Step 2: 挂载 EventDriven 引擎 (盘前模式)...")
+                engine = _create_engine()
+                # start_session 内部会设置 Timer 等到 09:25 触发竞价快照
+                engine.start_session()
+                click.echo(click.style("✅ 引擎已挂载，等待09:25竞价快照 → 09:30开盘信号", fg='green'))
+                click.echo(click.style("🛑 按 Ctrl+C 安全退出", fg='yellow'))
+                # 不 return！继续落到下面的 Step 4 保活循环
         
         # 交易时间内：启动实时监控模式
         else:
-            # 交易时间内，启动实时监控模式
-            # ==========================================
-            # Step 3: 挂载EventDriven引擎 (CTO依赖注入！)
-            # ==========================================
             click.echo("\n⚡ Step 2: 挂载 EventDriven 引擎...")
-            from tasks.run_live_trading_engine import LiveTradingEngine
-            from logic.core.config_manager import get_config_manager
-            
-            # 配置管理器统一参数管理 (CTO SSOT原则)
-            config_manager = get_config_manager()
-            # 更新配置文件中的量比阈值
-            config_manager._config['halfway']['volume_surge_percentile'] = volume_percentile
-            click.echo(f"📊 实盘引擎量比分位数阈值设置为: {volume_percentile} (右侧起爆标准)")
-            
-            # CTO强制：创建QMT管理器实例
-            try:
-                from logic.data_providers.qmt_manager import QmtDataManager
-                qmt_manager = QmtDataManager()
-                click.echo("✅ QMT Manager 已创建")
-            except Exception as e:
-                click.echo(click.style(f"❌ QMT Manager创建失败: {e}", fg='red'))
-                ctx.exit(1)
-            
-            # CTO强制：依赖注入模式 - 传入QMT实例
-            engine = LiveTradingEngine(
-                qmt_manager=qmt_manager,
-                volume_percentile=volume_percentile
-            )
-            
-            # 启动引擎（09:25第一斩 → 09:30第二斩 → 火控雷达）
+            engine = _create_engine()
             engine.start_session()
         
-            # 【CTO暴怒扒皮第一棒】强制审计：显示观察池数量
+            # 【CTO审计】强制显示观察池数量
             watchlist_count = len(engine.watchlist) if hasattr(engine, 'watchlist') else 0
             click.echo(click.style("=" * 60, fg='cyan'))
             click.echo(click.style(f"🚨 [CTO强制审计] 观察池最终状态: {watchlist_count}只", fg='cyan'))
@@ -1109,21 +1055,18 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, volume_percentile, dry_run, 
         # ==========================================
         # Step 4: 主线程保活 (CTO关键修复！)
         # ==========================================
-        # 只有在非历史回放模式下才进入死循环
+        # engine 不为 None（盘前/盘中均已创建），进入保活循环
         if engine is not None and not (replay_date or now > market_close):
-            # 保持主线程不死，让EventBus在后台不断接收Tick并打分！
             try:
                 while engine.running:
                     time.sleep(1)
             except KeyboardInterrupt:
                 pass
             
-            # 优雅退出
             click.echo("\n🛑 收到中断信号，正在卸载监控器...")
             engine.stop()
             click.echo(click.style("✅ 系统安全退出", fg='green'))
         elif engine is not None:
-            # 如果是历史回放模式，已经处理完成，正常退出
             click.echo(click.style("✅ 系统安全退出", fg='green'))
         
     except Exception as e:
