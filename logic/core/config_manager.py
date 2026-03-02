@@ -29,6 +29,7 @@ class ConfigManager:
         """初始化配置管理器"""
         self._config: Dict[str, Any] = {}
         self._load_config()
+        self._validate_critical_keys()  # 【CTO铁律】启动时强制校验核心配置
     
     def _load_config(self):
         """加载配置文件"""
@@ -38,6 +39,30 @@ class ConfigManager:
                 self._config = json.load(f)
         except Exception as e:
             raise RuntimeError(f"❌ [ConfigManager] 加载配置文件失败: {e}")
+    
+    def _validate_critical_keys(self):
+        """【CTO铁律】确保JSON配置文件已同步最新架构，拒绝静默默认值"""
+        critical_keys = [
+            'stock_filter.min_volume_multiplier',
+            'stock_filter.min_avg_turnover_pct',
+            'stock_filter.min_intraday_turnover_pct'
+        ]
+        missing = []
+        for key in critical_keys:
+            # 尝试深层读取
+            keys = key.split('.')
+            val = self._config
+            try:
+                for k in keys:
+                    val = val[k]
+            except KeyError:
+                missing.append(key)
+                
+        if missing:
+            error_msg = f"❌ [配置断言失败] strategy_params.json 缺少核心键值: {missing}。请立即更新配置文件！"
+            print(error_msg)
+            # 自动修复或硬报错，这里选择抛出异常逼迫修复
+            raise RuntimeError(error_msg)
     
     def get(self, key_path: str, default: Any = None) -> Any:
         """

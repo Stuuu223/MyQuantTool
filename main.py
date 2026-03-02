@@ -261,6 +261,52 @@ def backtest_cmd(ctx, date, start_date, end_date, universe, output, save):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# 【CTO强网关】入口级数据就绪断言
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def assert_data_readiness(date: str, stock_list: list):
+    """【CTO强网关】入口级数据就绪断言 - 拒绝在致盲状态下启动"""
+    from xtquant import xtdata
+    
+    click.echo(click.style(f"🔍 [数据断言] 开始核验 {date} 数据完整性...", fg='yellow'))
+    
+    # 抽样检查深市和沪市的代表性股票
+    check_stocks = ['000001.SZ', '300001.SZ', '600000.SH']
+    valid_stocks = [s for s in check_stocks if s in stock_list]
+    
+    if not valid_stocks:
+        valid_stocks = stock_list[:5]  # 如果代表股不在池子里，随便抽5只
+        
+    daily_data = xtdata.get_local_data(
+        field_list=['close', 'amount'],
+        stock_list=valid_stocks,
+        period='1d',
+        start_time=date,
+        end_time=date
+    )
+    
+    missing_count = 0
+    for stock in valid_stocks:
+        if stock not in daily_data or daily_data[stock].empty:
+            missing_count += 1
+        else:
+            try:
+                amount = float(daily_data[stock].iloc[-1].get('amount', 0))
+                if amount <= 0:
+                    missing_count += 1
+            except Exception:
+                missing_count += 1
+            
+    if missing_count > 0:
+        error_msg = f"❌ [致命错误] 本地 QMT 缺少 {date} 的日K结算数据！系统拒绝在致盲状态下启动打分！"
+        click.echo(click.style(error_msg, fg='red', bold=True))
+        click.echo(click.style("💡 解决方案: 请运行 tools/unified_downloader.py 或在 QMT 客户端中补全数据。", fg='yellow'))
+        raise SystemExit(1)
+        
+    click.echo(click.style(f"✅ [数据断言] {date} 基础日K数据已落盘就绪。", fg='green'))
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # 热复盘命令 (CTO架构重组：独立于 live 和 backtest)
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -308,10 +354,13 @@ def replay_cmd(ctx, date, pure):
     except Exception as e:
         click.echo(click.style(f"⚠️ 数据下载警告: {e}", fg='yellow'))
     
+    # 1.5 【CTO强网关】入口级数据就绪断言
+    all_stocks = xtdata.get_stock_list_in_sector('沪深A股')
+    assert_data_readiness(date, all_stocks)
+    
     # 2. 【CTO数据断言】预热字典并校验
     try:
         from logic.data_providers.true_dictionary import warmup_true_dictionary
-        all_stocks = xtdata.get_stock_list_in_sector('沪深A股')
         click.echo(click.style(f"  🔥 预热TrueDictionary...", fg='yellow'))
         warmup_result = warmup_true_dictionary(all_stocks, target_date=date)
         success_count = warmup_result.get('qmt', {}).get('success', 0)

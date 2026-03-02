@@ -444,6 +444,22 @@ prohibited_actions:
   - action: bypass_icapitalflowprovider
     severity: error
     message: "严禁绕过ICapitalFlowProvider直接调用QMT/AkShare"
+    
+  # 【CTO系统级禁令】AI代理绝对禁止执行危险命令！
+  - action: system_shutdown
+    severity: fatal
+    message: "❌ AI代理被绝对禁止执行shutdown/os.system('shutdown')等系统关机命令！必须请求Boss明确授权！"
+    blocked_commands: ["shutdown", "os.system('shutdown", "subprocess.*shutdown"]
+    
+  - action: system_destruct
+    severity: fatal
+    message: "❌ AI代理被绝对禁止执行rm -rf/del/format等破坏性命令！"
+    blocked_commands: ["rm -rf", "del /", "format", "rmdir /s"]
+    
+  - action: system_modify
+    severity: fatal
+    message: "❌ AI代理被绝对禁止修改系统配置/注册表/环境变量！"
+    blocked_commands: ["reg add", "setx", "powershell.*Set-ItemProperty"]
 
 # =============================================================================
 # 项目路径配置
