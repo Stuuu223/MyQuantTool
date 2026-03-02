@@ -1,7 +1,14 @@
 {
   "_comment": "策略参数配置 - 右侧起爆哲学：资金为王、顺势而为、追随市场短线大哥",
-  "version": "2.1",
-  "last_updated": "2026-02-24",
+  "version": "2.2",
+  "last_updated": "2026-03-03",
+  "stock_filter": {
+    "_description": "股票过滤核心参数 - CTO强制校验",
+    "min_volume_multiplier": 3.0,
+    "min_avg_turnover_pct": 3.0,
+    "min_intraday_turnover_pct": 5.0,
+    "notes": "量比>=3倍，日均换手>=3%，日内换手>=5%"
+  },
   "universe_build": {
     "_description": "粗筛参数 - 右侧起爆核心：筛选真正放量的股票",
     "use_percentile": false,
