@@ -60,9 +60,9 @@ class GlobalFilterGateway:
     全局过滤网关 - 统一所有选股过滤逻辑
     
     【使用场景】
-    - 盘中实盘: _catch_up_mid_day() 必须调用
-    - 盘后回放: replay_today_signals() 必须调用  
-    - 历史回测: backtest_engine 必须调用
+    - 盘中实盘: live_cmd → run_live_trading_engine
+    - 热复盘: replay_cmd → TimeMachineEngine (大一统)
+    - 历史回测: backtest_cmd → TimeMachineEngine (大一统)
     
     【CTO红线声明】
     此网关只做0/1生死判定，不做任何打分！均线判定已完全删除！

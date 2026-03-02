@@ -261,6 +261,77 @@ def backtest_cmd(ctx, date, start_date, end_date, universe, output, save):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# 热复盘命令 (CTO架构重组：独立于 live 和 backtest)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@cli.command(name='replay')
+@click.option('--date', type=str, default=None, help='要复盘的日期 (YYYYMMDD)，不传则默认上个交易日')
+@click.pass_context
+def replay_cmd(ctx, date):
+    """
+    🔥 今日/指定日热复盘
+    
+    使用历史静态数据，极速重演单日打分逻辑，生成战后大屏。
+    本质上是单日回测，复用 TimeMachineEngine 算分引擎。
+    
+    \b
+    示例:
+        python main.py replay                    # 复盘上个交易日
+        python main.py replay --date 20260227    # 复盘指定日期
+    """
+    from logic.utils.calendar_utils import get_latest_completed_trading_day
+    from logic.backtest.time_machine_engine import TimeMachineEngine
+    from logic.utils.metrics_utils import render_battle_dashboard
+    from xtquant import xtdata
+    import time
+    
+    # 确定复盘日期
+    if not date:
+        date = get_latest_completed_trading_day()
+        if not date:
+            click.echo(click.style("❌ 无法确定复盘日期！", fg='red'))
+            ctx.exit(1)
+    
+    click.echo(click.style(f"\n🎬 [热复盘] 目标日期锁定: {date}", fg='cyan', bold=True))
+    
+    # 1. 数据下载防线（确保本地有数据）
+    click.echo(click.style(f"⏬ 检查 {date} 的数据...", fg='yellow'))
+    try:
+        # 下载日K数据
+        xtdata.download_history_data("", "day", start_time=date, end_time=date)
+        time.sleep(1)
+        click.echo(click.style(f"✅ 日K数据已就绪", fg='green'))
+    except Exception as e:
+        click.echo(click.style(f"⚠️ 数据下载警告: {e}", fg='yellow'))
+    
+    # 2. 调用时间机器 (本质上是单日回测)
+    click.echo(click.style(f"🚀 引擎启动，开始扫描...", fg='green'))
+    
+    engine = TimeMachineEngine()
+    result = engine.run_daily_backtest(date)
+    
+    # 3. 渲染大屏
+    if result and result.get('top20'):
+        dashboard_data = []
+        for item in result['top20'][:20]:
+            dashboard_data.append({
+                'code': item.get('stock_code', ''),
+                'score': item.get('final_score', 0),
+                'price': item.get('real_close', item.get('price_0940', 0)),
+                'change': item.get('final_change', item.get('change_pct', 0)),
+                'inflow_ratio': item.get('inflow_ratio', 0),
+                'ratio_stock': item.get('ratio_stock', 0),
+                'sustain_ratio': item.get('sustain_ratio', 0),
+                'mfe': item.get('mfe', 0),
+                'tag': item.get('tag', '复盘')
+            })
+        render_battle_dashboard(dashboard_data, title=f"🔥 极速热复盘 [{date}]", clear_screen=False)
+        click.echo(click.style(f"\n✅ 热复盘完成: 共评分 {len(result['top20'])} 只股票", fg='green'))
+    else:
+        click.echo(click.style(f"\n⚠️ 日期 {date} 没有任何股票通过风控漏斗！", fg='yellow'))
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # 扫描命令
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -767,9 +838,8 @@ def simulate_cmd(ctx, start_date, end_date, watchlist, phase):
 @click.option('--max-positions', default=3, help='最大持仓数量')
 @click.option('--cutoff-time', default='14:50:00', help='截停时间(不开新仓)')
 @click.option('--dry-run', is_flag=True, help='干运行(不实际下单)')
-@click.option('--replay-date', help='历史回放日期 (格式: YYYYMMDD)，用于回放指定日期的信号')
 @click.pass_context
-def live_cmd(ctx, mode, max_positions, cutoff_time, dry_run, replay_date):
+def live_cmd(ctx, mode, max_positions, cutoff_time, dry_run):
     """
     🚀 实盘猎杀系统 - 纯血游资雷达高阶算子版 (EventDriven事件驱动)
     
@@ -950,34 +1020,10 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, dry_run, replay_date):
         # 初始化引擎变量，防止作用域错误
         engine = None
         
-        # 如果指定了历史回放日期，则直接执行历史回放
-        if replay_date:
-            click.echo(click.style(f"🔄 指定日期历史回放模式: {replay_date}", fg='green'))
-            click.echo("\n⚡ Step 2: 挂载 EventDriven 引擎...")
-            engine = _create_engine()
-            engine.start_session(enable_dynamic_radar=False)
-            click.echo(click.style(f"🔄 执行 {replay_date} 历史信号回放...", fg='green'))
-            engine.replay_today_signals()
-            click.echo(click.style("✅ 历史信号回放完成", fg='green'))
-            click.echo(click.style("🎯 系统将在3秒后退出", fg='yellow'))
-            time.sleep(3)
-            click.echo(click.style("✅ 系统安全退出", fg='green'))
-            return
-        
-        # 收盘后：执行今日历史信号回放
-        elif now > market_close:
-            click.echo(click.style(f"🛑 股市已收盘，自动为您生成今日右侧起爆战报...", fg='green'))
-            click.echo("\n⚡ Step 2: 挂载 EventDriven 引擎...")
-            engine = _create_engine()
-            engine.start_session(enable_dynamic_radar=False)
-            click.echo(click.style("🔄 执行今日历史信号回放...", fg='green'))
-            print("\n🔬 【物理探针】main.py即将调用replay_today_signals")
-            engine.replay_today_signals()
-            print("🔬 【物理探针】main.py已返回replay_today_signals")
-            click.echo(click.style("✅ 历史信号回放完成", fg='green'))
-            click.echo(click.style("🎯 系统将在3秒后退出", fg='yellow'))
-            time.sleep(3)
-            click.echo(click.style("✅ 系统安全退出", fg='green'))
+        # 收盘后：禁止启动实盘，引导用户使用 replay 命令
+        if now > market_close:
+            click.echo(click.style(f"🛑 股市已收盘 (当前 {now.strftime('%H:%M')})！禁止启动实盘监控！", fg='red', bold=True))
+            click.echo(click.style("💡 如需复盘今日行情，请运行: python main.py replay", fg='yellow'))
             return
         
         # 截停时间后到收盘前：不进行交易，等待收盘
@@ -994,17 +1040,8 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, dry_run, replay_date):
         # ==================================================================
         elif now < market_open:
             if now.hour < 6:  # 凌晨测试模式
-                click.echo(click.style(f"🌙 凌晨测试模式，执行昨日信号回放...", fg='cyan'))
-                engine = _create_engine()
-                engine.start_session()
-                click.echo(click.style("🔄 执行昨日历史信号回放...", fg='green'))
-                print("\n🔬 【物理探针】main.py即将调用replay_today_signals")
-                engine.replay_today_signals()
-                print("🔬 【物理探针】main.py已返回replay_today_signals")
-                click.echo(click.style("✅ 历史信号回放完成", fg='green'))
-                click.echo(click.style("🎯 系统将在3秒后退出", fg='yellow'))
-                time.sleep(3)
-                click.echo(click.style("✅ 系统安全退出", fg='green'))
+                click.echo(click.style(f"🌙 凌晨测试模式，禁止启动实盘引擎！", fg='red'))
+                click.echo(click.style("💡 如需复盘昨日行情，请运行: python main.py replay", fg='yellow'))
                 return
             else:
                 # [P0修复] 06:00~09:30 竞价窗口：创建engine，等待开盘，不退出！
@@ -1046,7 +1083,7 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, dry_run, replay_date):
         # Step 4: 主线程保活 (CTO关键修复！)
         # ==========================================
         # engine 不为 None（盘前/盘中均已创建），进入保活循环
-        if engine is not None and not (replay_date or now > market_close):
+        if engine is not None:
             try:
                 while engine.running:
                     time.sleep(1)
@@ -1055,8 +1092,6 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, dry_run, replay_date):
             
             click.echo("\n🛑 收到中断信号，正在卸载监控器...")
             engine.stop()
-            click.echo(click.style("✅ 系统安全退出", fg='green'))
-        elif engine is not None:
             click.echo(click.style("✅ 系统安全退出", fg='green'))
         
     except Exception as e:

@@ -57,6 +57,9 @@ class TimeMachineEngine:
         self.data_manager = QmtDataManager()
         self.results_cache: Dict[str, Dict] = {}
         
+        # 【CTO时空切割】区分热复盘(基因继承)和全息回演(平行宇宙)
+        self.is_continuous_backtest = False
+        
         # 【CTO修复】挂载动能打分引擎算分引擎
         from logic.strategies.kinetic_core_engine import 动能打分引擎CoreEngine
         self._kinetic_engine = 动能打分引擎CoreEngine()
@@ -432,10 +435,22 @@ class TimeMachineEngine:
             
             # ============================================================
             # 【记忆引擎挂载】盘后结算 - 写入记忆基因
+            # 【CTO时空切割】热复盘写实盘基因库，全息回演写平行宇宙
             # ============================================================
             try:
                 from logic.memory.short_term_memory import ShortTermMemoryEngine
-                memory_engine = ShortTermMemoryEngine()
+                from logic.core.path_resolver import PathResolver
+                
+                # 【CTO核心判定】热复盘 vs 全息回演
+                if self.is_continuous_backtest:
+                    # 全息回演 → 平行宇宙记忆库（阅后即焚）
+                    memory_file = PathResolver.get_data_dir() / 'memory' / 'ShortTermMemory_backtest.json'
+                    memory_engine = ShortTermMemoryEngine(memory_file=str(memory_file))
+                    logger.info(f"🧠 【平行宇宙】写入回测记忆库: {memory_file.name}")
+                else:
+                    # 热复盘 → 实盘基因库（传宗接代）
+                    memory_engine = ShortTermMemoryEngine()
+                    logger.info("🧠 【基因继承】写入实盘记忆库: ShortTermMemory.json")
                 
                 # 为Top20中符合条件的股票写入记忆
                 # 条件：涨幅>8% 且 换手>5% (ShortTermMemoryEngine内部会检查)
@@ -938,11 +953,20 @@ class TimeMachineEngine:
                         
                         # ============================================================
                         # 【记忆引擎挂载】算分前读取记忆衰减
+                        # 【CTO时空切割】热复盘读实盘基因库，全息回演读平行宇宙
                         # ============================================================
                         memory_multiplier = 1.0
                         try:
                             from logic.memory.short_term_memory import ShortTermMemoryEngine
-                            memory_engine = ShortTermMemoryEngine()
+                            from logic.core.path_resolver import PathResolver
+                            
+                            # 【CTO核心判定】热复盘 vs 全息回演
+                            if self.is_continuous_backtest:
+                                memory_file = PathResolver.get_data_dir() / 'memory' / 'ShortTermMemory_backtest.json'
+                                memory_engine = ShortTermMemoryEngine(memory_file=str(memory_file))
+                            else:
+                                memory_engine = ShortTermMemoryEngine()
+                            
                             memory_score = memory_engine.read_memory(stock_code, today=date)
                             if memory_score is not None:
                                 # 将记忆分数转化为multiplier (0.5~1.5范围)
@@ -1106,18 +1130,23 @@ class TimeMachineEngine:
         logger.info(f"【时间机器】数据源: UniverseBuilder动态粗筛 (QMT纯血)")
         
         # ==========================================
-        # CTO强制植入：年度发车前的"脑白金"清洗仪式
+        # 【CTO时空切割】全息回演使用平行宇宙记忆库
+        # 绝不触碰实盘基因库 ShortTermMemory.json！
         # ==========================================
-        memory_file = PathResolver.get_data_dir() / 'memory' / 'ShortTermMemory.json'
-        if memory_file.exists():
-            logger.warning("【CTO强制清洗】检测到残留的跨日记忆，正在物理抹除以防止未来函数污染...")
-            print("🧠 【CTO清洗】检测到残留记忆，执行物理抹除...")
-            # 强制清空，让时间机器以纯洁的状态回到过去！
-            with open(memory_file, 'w', encoding='utf-8') as f:
-                json.dump({"date": "19700101", "memory": {}}, f)
-            print("✅ 【CTO清洗】记忆库已清空，系统纯洁态启动！")
+        self.is_continuous_backtest = True  # 标记为全息回演模式
         
-        logger.info("【系统已就绪】记忆库已清空，准备开始连贯穿越！")
+        backtest_memory_file = PathResolver.get_data_dir() / 'memory' / 'ShortTermMemory_backtest.json'
+        if backtest_memory_file.exists():
+            logger.info("🗑️ 【时空清理】重置平行宇宙(回测)记忆库...")
+            print("🧠 【平行宇宙】重置回测专属记忆库...")
+            # 清空平行宇宙记忆，让回测以纯洁状态开始
+            backtest_memory_file.unlink()
+            print("✅ 【平行宇宙】回测记忆库已清空，实盘基因库不受影响！")
+        else:
+            logger.info("🆕 【平行宇宙】创建回测专属记忆库")
+            print("🧠 【平行宇宙】使用隔离记忆库，实盘基因库不受影响！")
+        
+        logger.info("【系统已就绪】平行宇宙记忆库已准备，开始连贯穿越！")
         # ==========================================
         
         # 2. 获取交易日
@@ -1345,13 +1374,20 @@ class TimeMachineEngine:
     def _load_memory(self) -> Dict[str, Dict]:
         """
         加载短期记忆 - 【CTO绝对类型锁】永远返回dict！
+        【CTO时空切割】热复盘读实盘基因库，全息回演读平行宇宙
         
         Returns:
             记忆字典 {stock_code: memory_item}
         """
         try:
-            if self.MEMORY_FILE.exists():
-                with open(self.MEMORY_FILE, 'r', encoding='utf-8') as f:
+            # 【CTO时空切割】根据模式选择记忆文件
+            if self.is_continuous_backtest:
+                memory_file = PathResolver.get_data_dir() / 'memory' / 'ShortTermMemory_backtest.json'
+            else:
+                memory_file = self.MEMORY_FILE
+            
+            if memory_file.exists():
+                with open(memory_file, 'r', encoding='utf-8') as f:
                     content = f.read().strip()
                     # 【CTO绝对拦截】：防死空文件变成字符串！
                     if not content:
@@ -1386,6 +1422,7 @@ class TimeMachineEngine:
     def _save_memory(self, memory: Dict[str, Dict]) -> bool:
         """
         保存短期记忆
+        【CTO时空切割】热复盘写实盘基因库，全息回演写平行宇宙
         
         Args:
             memory: 记忆字典
@@ -1394,13 +1431,19 @@ class TimeMachineEngine:
             是否保存成功
         """
         try:
-            # 确保目录存在
-            self.MEMORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+            # 【CTO时空切割】根据模式选择记忆文件
+            if self.is_continuous_backtest:
+                memory_file = PathResolver.get_data_dir() / 'memory' / 'ShortTermMemory_backtest.json'
+            else:
+                memory_file = self.MEMORY_FILE
             
-            with open(self.MEMORY_FILE, 'w', encoding='utf-8') as f:
+            # 确保目录存在
+            memory_file.parent.mkdir(parents=True, exist_ok=True)
+            
+            with open(memory_file, 'w', encoding='utf-8') as f:
                 json.dump(memory, f, ensure_ascii=False, indent=2)
             
-            logger.info(f"【记忆衰减】记忆已保存: {len(memory)} 条")
+            logger.info(f"【记忆衰减】记忆已保存: {len(memory)} 条 -> {memory_file.name}")
             return True
         except Exception as e:
             logger.error(f"【记忆衰减】保存记忆失败: {e}")
