@@ -350,16 +350,21 @@ class TimeMachineEngine:
                     logger.warning(f"  ⚠️ {error_msg}")
             
             # 3. 【CTO多维排序】得分相同看MFE，MFE大于5倒扣
-            # 计算MFE (最大 favorable excursion)
+            # 【CTO修复】MFE已在_calculate_morning_score中正确计算，不要覆盖！
+            # 只有当MFE缺失时才重新计算
             for score in stock_scores:
-                max_price = score.get('max_price', 0)
-                pre_close = score.get('pre_close', 1)
-                # MFE = (最高价 - 昨收) / 昨收 * 100，无量纲百分比
-                mfe = ((max_price - pre_close) / pre_close * 100) if pre_close > 0 else 0
-                score['mfe'] = mfe
+                # 【CTO修复】保留_calculate_morning_score返回的MFE，不覆盖！
+                if 'mfe' not in score or score.get('mfe', 0) == 0:
+                    max_price = score.get('max_price', 0)
+                    pre_close = score.get('pre_close', 1)
+                    # MFE = (最高价 - 昨收) / 昨收 * 100，无量纲百分比
+                    mfe = ((max_price - pre_close) / pre_close * 100) if pre_close > 0 else 0
+                    score['mfe'] = mfe
+                
                 # MFE大于5%倒扣分数（惩罚冲高回落）
-                if mfe > 5:
-                    score['final_score'] = score.get('final_score', 0) - (mfe - 5) * 2
+                mfe_val = score.get('mfe', 0)
+                if mfe_val > 5:
+                    score['final_score'] = score.get('final_score', 0) - (mfe_val - 5) * 2
             
             # 多维排序：final_score降序，相同则看MFE升序（MFE越小越好）
             stock_scores.sort(key=lambda x: (x.get('final_score', 0), -x.get('mfe', 0)), reverse=True)
@@ -607,7 +612,10 @@ class TimeMachineEngine:
     
     def _calculate_morning_score(self, stock_code: str, date: str) -> Optional[Dict]:
         """
-        计算早盘得分 - 【CTO深市突围版】
+        计算早盘得分 - 【CTO V20.5 MVP物理级重构版】
+        
+        修复: MFE=-100, inflow_ratio=0 等Bug
+        原则: 拒绝未来函数，09:45打分后立刻退出
         
         Args:
             stock_code: 股票代码
@@ -616,30 +624,19 @@ class TimeMachineEngine:
         Returns:
             得分字典或None
         """
-        # 【CTO深市突围】：导入xtdata
-        from xtquant import xtdata
-        
         # 【CTO核爆级强转】：能挡住一切脏数据的铁壁！
         def force_float(val):
-            """CTO绝对净化版 - 防止NaN/Inf/str穿透"""
             if val is None: return 0.0
             try:
-                # 【CTO第一刀】：先杀NaN/Inf！
                 if pd.isna(val) or np.isinf(val): return 0.0
             except:
                 pass
-            
-            # 【CTO第二刀】：处理字符串！
             if isinstance(val, str):
                 v_str = val.strip().lower()
                 if not v_str or v_str in ('nan', 'inf', '-inf', 'null', 'none'): return 0.0
                 try: return float(val)
                 except: return 0.0
-            
-            # 【CTO第三刀】：杀掉字典/列表！
             if isinstance(val, (dict, list, tuple)): return 0.0
-            
-            # 【CTO第四刀】：最终转换！
             try: return float(val)
             except: return 0.0
 
@@ -647,20 +644,10 @@ class TimeMachineEngine:
             # 获取数据
             tick_data = self._get_tick_data(stock_code, date)
             
-            # 【调试日志】检查Tick数据状态
-            print(f"【DEBUG】{stock_code} Tick数据类型: {type(tick_data)}")
-            if tick_data is not None:
-                print(f"【DEBUG】{stock_code} Tick数据形状: {tick_data.shape if hasattr(tick_data, 'shape') else 'N/A'}")
-                if hasattr(tick_data, 'empty'):
-                    print(f"【DEBUG】{stock_code} Tick数据为空: {tick_data.empty}")
-            
             if tick_data is None or tick_data.empty:
                 logger.warning(f"【时间机器】{stock_code} Tick数据为空！")
                 return None
             logger.info(f"【时间机器】{stock_code} Tick数据获取成功，行数={len(tick_data)}")
-            
-            if tick_data is None or tick_data.empty:
-                return None
             
             # 【CTO终极防爆】从Tick数据中获取昨收价（lastClose字段）
             # 避免调用_get_pre_close导致的BSON崩溃！
@@ -686,14 +673,8 @@ class TimeMachineEngine:
             avg_volume_5d = force_float(self._get_avg_volume_5d(stock_code, date))
             float_volume = force_float(self._get_float_volume(stock_code))
             
-            print(f"【DEBUG】{stock_code} 核心参数:")
-            print(f"  pre_close: {pre_close}")
-            print(f"  avg_volume_5d: {avg_volume_5d}")
-            print(f"  float_volume: {float_volume}")
-            
             # 核心参数为0，直接死刑，绝不在底下因为除零或类型报错！
             if pre_close <= 0.0 or avg_volume_5d <= 0.0 or float_volume <= 0.0:
-                print(f"【DEBUG】{stock_code} 核心参数为0，提前return！")
                 return None
             
             # 使用SanityGuards检查昨收价
@@ -705,19 +686,29 @@ class TimeMachineEngine:
             # 【CTO核爆级强转】开盘价获取与校验
             open_price = force_float(0.0)
             
-            # 【CTO防爆】：禁用get_local_data调用，避免BSON崩溃！
-            # 改用Tick数据获取开盘价
-            try:
-                first_tick = tick_data.iloc[0]
-                if 'lastPrice' in first_tick:
-                    open_price = force_float(first_tick['lastPrice'])
-                elif 'price' in first_tick:
-                    open_price = force_float(first_tick['price'])
-                elif 'openPrice' in first_tick:
-                    open_price = force_float(first_tick['openPrice'])
-                logger.debug(f"【时间机器】{stock_code} 从Tick数据获取开盘价: {open_price}")
-            except Exception as e:
-                logger.debug(f"【时间机器】{stock_code} 从Tick获取开盘价失败: {e}")
+            # 【CTO修复】优先从tick数据的open字段获取开盘价
+            if 'open' in tick_data.columns:
+                for idx in range(min(10, len(tick_data))):
+                    try:
+                        open_val = tick_data.iloc[idx]['open']
+                        if open_val and open_val > 0:
+                            open_price = force_float(open_val)
+                            logger.debug(f"【时间机器】{stock_code} 从Tick open字段获取开盘价: {open_price}")
+                            break
+                    except:
+                        continue
+            
+            # 兜底2: 从第一条有效tick的lastPrice获取
+            if open_price <= 0:
+                for idx in range(min(50, len(tick_data))):
+                    try:
+                        price_val = tick_data.iloc[idx].get('lastPrice', 0) or tick_data.iloc[idx].get('price', 0)
+                        if price_val and price_val > 0:
+                            open_price = force_float(price_val)
+                            logger.debug(f"【时间机器】{stock_code} 从第{idx}条Tick获取开盘价: {open_price}")
+                            break
+                    except:
+                        continue
             
             # 兜底3: 使用昨收价估算开盘价 (假设高开2%)
             if open_price <= 0 and pre_close > 0:
@@ -725,12 +716,7 @@ class TimeMachineEngine:
                 logger.warning(f"【时间机器】{stock_code} 使用估算开盘价: {open_price:.2f} (昨收{pre_close} * 1.02)")
             
             # 最终校验: 只有当开盘价和昨收价都为0时才跳过
-            print(f"【DEBUG】{stock_code} 开盘价和昨收价:")
-            print(f"  open_price: {open_price}")
-            print(f"  pre_close: {pre_close}")
-            
             if open_price <= 0 and pre_close <= 0:
-                print(f"【DEBUG】{stock_code} 开盘价和昨收价都无效，提前return！")
                 logger.warning(f"【时间机器】{stock_code} 开盘价和昨收价都无效，跳过")
                 return None
             
@@ -761,21 +747,17 @@ class TimeMachineEngine:
             is_vetoed = False
             veto_reason = ""
             
+            # 【CTO修复】早盘极值跟踪 (修复MFE=-100 Bug)
+            # 用开盘价初始化，确保即使早盘没有tick数据也有基准值
+            morning_high = open_price if open_price > 0 else pre_close
+            morning_low = open_price if open_price > 0 else pre_close
+            prev_vol = 0.0
+            prev_price = open_price if open_price > 0 else pre_close
+            
             # === 获取流通市值用于Ratio计算 ===
             float_market_cap = force_float(float_volume * pre_close) if force_float(float_volume) > 0 else 1.0
             
-            # 【调试日志】记录Tick数据范围
             logger.debug(f"【时间机器】{stock_code} 开始遍历Tick数据，共{len(tick_data)}条")
-            print(f"【DEBUG】{stock_code} 开始遍历Tick数据，共{len(tick_data)}条")
-            
-            # 【调试日志】检查Tick数据前10条和后10条
-            print(f"【DEBUG】Tick数据前10条:")
-            for i in range(min(10, len(tick_data))):
-                print(f"  {i}: time={tick_data['time'].iloc[i]}, price={tick_data['price'].iloc[i]}")
-            
-            print(f"【DEBUG】Tick数据后10条:")
-            for i in range(max(0, len(tick_data)-10), len(tick_data)):
-                print(f"  {i}: time={tick_data['time'].iloc[i]}, price={tick_data['price'].iloc[i]}")
             
             # === 全天Tick遍历 (09:30-15:00) ===
             # 【CTO终极防爆】在09:46之后退出循环，避免过多Tick遍历触发BSON崩溃
@@ -789,17 +771,9 @@ class TimeMachineEngine:
                 if early_exit:
                     break
                 
-                if tick_count == 1:
-                    print(f"【DEBUG】{stock_code} Tick遍历循环开始执行！")
-                if tick_count % 1000 == 0:
-                    print(f"【DEBUG】{stock_code} 已遍历{tick_count}条Tick...")
                 try:
                     # 【CTO铁血时间转换】：杜绝一切int和str的比较崩溃！
                     raw_time = row.get('time')
-                    
-                    # 【调试日志】每100条记录一次，打印原始时间
-                    if tick_count % 1000 == 0:
-                        print(f"【DEBUG】Tick#{tick_count} 原始time: {raw_time} (type: {type(raw_time)})")
                     
                     # 如果是数字（时间戳），强制转成HH:MM:SS
                     if isinstance(raw_time, (int, float)):
@@ -812,10 +786,6 @@ class TimeMachineEngine:
                     if len(curr_time) < 5:
                         curr_time = "09:00:00"
                     
-                    # 【调试日志】检查时间转换结果
-                    if tick_count % 100 == 0:
-                        print(f"【DEBUG】Tick#{tick_count} 时间转换: raw={repr(raw_time)} -> curr_time={repr(curr_time)}")
-                    
                     # 提取价格与成交量
                     price = force_float(row.get('lastPrice', row.get('price', 0)))
                     volume = force_float(row.get('volume', 0))
@@ -823,51 +793,25 @@ class TimeMachineEngine:
                     
                     if price <= 0: continue
                     
-                    # 【调试日志】检查是否到达09:45时间点
-                    if '09:45:00' <= curr_time <= '09:46:00':
-                        print(f"【DEBUG】检测到09:45时间点！time={curr_time}, price={price}, is_scored={is_scored}")
-                
-                    # 计算单笔净流入估算
-                    # 简化：价格上涨为流入，下跌为流出
-                    if tick_count > 1:
-                        # 【CTO修复】使用tick_count-2作为整数索引，因为iloc从0开始
-                        prev_idx = tick_count - 2  # 上一个Tick的iloc位置
-                        if prev_idx >= 0 and prev_idx < len(tick_data):
-                            prev_price_raw = tick_data.iloc[prev_idx]
-                            prev_price = force_float(prev_price_raw['lastPrice']) if 'lastPrice' in prev_price_raw else force_float(prev_price_raw.get('price', price))
-                            price_change = force_float(price - prev_price)
-                            # 【CTO修复】确保price_change是数值后再比较
-                            if force_float(price_change) > 0:
-                                estimated_flow = force_float(price_change * volume)
-                            else:
-                                estimated_flow = force_float(price_change * volume * 0.5)
-                        else:
-                            estimated_flow = 0.0
-                    else:
-                        estimated_flow = 0.0
+                    # 【CTO修复】跟踪早盘极值 (修复MFE=-100 Bug)
+                    if curr_time < '09:46:00':
+                        morning_high = max(morning_high, price)
+                        morning_low = min(morning_low, price)
                     
-                    # 【阶段一：09:30-09:45】累加打分数据
-                    if curr_time <= '09:35:00':
-                        flow_5min = force_float(flow_5min + estimated_flow)
-                    if curr_time <= '09:45:00':
-                        flow_15min = force_float(flow_15min + estimated_flow)
+                    # 【CTO修复】增量资金流计算 (修复流入比为0 Bug)
+                    delta_vol = max(0.0, volume - prev_vol)
+                    prev_vol = volume
+                    
+                    if price > prev_price:
+                        flow_15min += delta_vol * price  # 主动向上做功
+                    elif price < prev_price:
+                        flow_15min -= delta_vol * price  # 主动向下砸盘
+                    prev_price = price
+                    
+                    # 【阶段一：09:30-09:45】累加打分数据 (flow_15min已在上方增量计算)
                     
                     # 【打分定格】09:45瞬间调用动能打分引擎验钞机
-                    # 【调试日志】检查curr_time的值和类型
-                    if '09:45:00' <= curr_time <= '09:46:00':
-                        print(f"【DEBUG】curr_time详情: value={repr(curr_time)}, type={type(curr_time)}, len={len(curr_time)}")
-                        print(f"【DEBUG】curr_time比较: '09:45:00' <= '{curr_time}' <= '09:46:00': {('09:45:00' <= curr_time <= '09:46:00')}")
-                    
-                    condition1 = not is_scored
-                    condition2a = '09:45:00' <= curr_time < '09:46:00'
-                    condition2b = curr_time == '09:45:00'
-                    condition2 = condition2a or condition2b
-                    
-                    if '09:45:00' <= curr_time <= '09:46:00':
-                        print(f"【DEBUG】09:45条件检查: is_scored={is_scored}, condition1={condition1}, condition2a={condition2a}, condition2b={condition2b}, condition2={condition2}")
-                    
                     if not is_scored and ('09:45:00' <= curr_time < '09:46:00' or curr_time == '09:45:00'):
-                        print(f"【DEBUG】进入09:45打分逻辑！")
                         logger.debug(f"【时间机器】{stock_code} 触发09:45打分！时间={curr_time}, 价格={price}")
                         from logic.core.config_manager import get_config_manager
                         config_manager = get_config_manager()
@@ -902,20 +846,30 @@ class TimeMachineEngine:
                         # 调用动能打分引擎验钞机 (CTO终极红线版)
                         # 【CTO修复】current_time必须是datetime类型，不是time类型
                         current_time = datetime.strptime(f"{date} 09:45", "%Y%m%d %H:%M")
+                        # 容错：如果极值未被更新，用当前价兜底
+                        calc_high = morning_high if morning_high > 0 else price
+                        calc_low = morning_low if morning_low != float('inf') else price
+                        
                         try:
+                            # 【CTO 强挂载】调用 V20.5 动能算子
+                            mock_now = datetime.strptime(f"{date} 09:45", "%Y%m%d %H:%M")
+                            
+                            # 估算资金流中位数基准
+                            flow_5min_median_stock = (avg_volume_5d / 240.0 * 5.0) * price if avg_volume_5d > 0 else flow_15min / 3.0
+                            
                             base_score, sustain_ratio, inflow_ratio, ratio_stock, mfe_score = self._kinetic_engine.calculate_true_dragon_score(
                                 net_inflow=flow_15min,
                                 price=price,
                                 prev_close=pre_close,
-                                high=price * 1.02,  # 简化
-                                low=price * 0.98,
-                                open_price=open_price,  # 【CTO修复】添加开盘价参数
+                                high=calc_high,  # 【CTO修复】使用真实早盘最高价
+                                low=calc_low,    # 【CTO修复】使用真实早盘最低价
+                                open_price=open_price,
                                 flow_5min=flow_5min,
                                 flow_15min=flow_15min,
-                                flow_5min_median_stock=flow_5min_median,
+                                flow_5min_median_stock=flow_5min_median_stock,
                                 space_gap_pct=space_gap_pct,
                                 float_volume_shares=float_volume,
-                                current_time=current_time
+                                current_time=mock_now
                             )
                         except Exception as kinetic_e:
                             print(f"【DEBUG】动能打分引擎算分异常: {type(kinetic_e).__name__}: {kinetic_e}")
@@ -984,9 +938,10 @@ class TimeMachineEngine:
                 return None
             
             # 【CTO】计算MFE (Maximum Favorable Excursion) 最大有利波动 - 使用force_float
-            # 【CTO修复】确保数值后再比较
+            # 【CTO修复】使用morning_high而不是max_price_after_0945，因为early_exit导致后者未被更新
+            effective_high = morning_high if morning_high > 0 else real_close
             if force_float(pre_close) > 0:
-                mfe = force_float((max_price_after_0945 - pre_close) / pre_close * 100)
+                mfe = force_float((effective_high - pre_close) / pre_close * 100)
             else:
                 mfe = 0.0
             
