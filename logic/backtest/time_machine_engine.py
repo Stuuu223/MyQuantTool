@@ -470,12 +470,12 @@ class TimeMachineEngine:
                         # 热复盘 → 实盘基因库（传宗接代）
                         memory_engine = ShortTermMemoryEngine()
                         logger.info("🧠 【基因继承】写入实盘记忆库: ShortTermMemory.json")
-                
-                # 为Top20中符合条件的股票写入记忆
-                # 条件：涨幅>8% 且 换手>5% (ShortTermMemoryEngine内部会检查)
-                for rank_idx, item in enumerate(top20):
-                    stock_code = item['stock_code']
-                    final_change = item.get('final_change', 0)
+                    
+                    # 为Top20中符合条件的股票写入记忆
+                    # 条件：涨幅>8% 且 换手>5% (ShortTermMemoryEngine内部会检查)
+                    for rank_idx, item in enumerate(top20):
+                        stock_code = item['stock_code']
+                        final_change = item.get('final_change', 0)
                     # 估算换手率 (使用turnover_rate字段或估算)
                     turnover_rate = item.get('turnover_rate', 5.5)  # 默认满足阈值
                     final_score = item.get('final_score', 0)
@@ -494,22 +494,21 @@ class TimeMachineEngine:
                             'is_vetoed': item.get('is_vetoed', False)
                         }
                     )
-                
-                # 湮灭过期记忆(≥2天未激活)
-                memory_engine.annihilate_expired(today=date)
-                
-                # 强制保存
-                memory_engine.force_save()
-                memory_engine.close()
-                
-                logger.info(f"🧠 【记忆引擎】盘后结算完成: {date} 记忆已写入")
-                
-            except Exception as mem_e:
-                # Graceful降级：记忆引擎失败不影响主流程
-                logger.warning(f"⚠️ 【记忆引擎】盘后结算失败: {mem_e}")
+                    
+                    # 湮灭过期记忆(≥2天未激活)
+                    memory_engine.annihilate_expired(today=date)
+                    
+                    # 强制保存
+                    memory_engine.force_save()
+                    memory_engine.close()
+                    
+                    logger.info(f"🧠 【记忆引擎】盘后结算完成: {date} 记忆已写入")
+                    
+                except Exception as mem_e:
+                    # Graceful降级：记忆引擎失败不影响主流程
+                    logger.warning(f"⚠️ 【记忆引擎】盘后结算失败: {mem_e}")
             
             # 【Step6: 时空对齐与全息回演UI看板】
-            # 【CTO统一战报】使用工业级大屏render_battle_dashboard
             
             # 构建dragon数据格式适配大屏
             dragons_for_dashboard = []
