@@ -54,7 +54,8 @@ class TradeGatekeeper:
         self.data_tolerance_minutes = self.config.get('monitor', {}).get('data_freshness', {}).get('tolerance_minutes', 30)
         
         # 初始化计算器 (CTO加固)
-        self.capital_flow_calculator = None        logger.info("✅ 交易守门人初始化成功 (CTO加固版)")
+        self.capital_flow_calculator = None
+        logger.info("✅ 交易守门人初始化成功 (CTO加固版)")
     
     def can_trade(self, stock_code: str, score: float = None, tick_data: Dict[str, Any] = None) -> bool:
         """
@@ -332,10 +333,6 @@ class TradeGatekeeper:
         
         # 资金流检查已废弃，直接通过
         is_trap = False
-        
-                if flow_score < 30:  # 资金情绪较差
-            logger.info(f"⚠️ [资金流] {stock_code} 资金情绪较差: {flow_score:.2f}")
-            return False
         
         return True
     
