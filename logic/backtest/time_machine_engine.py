@@ -823,6 +823,22 @@ class TimeMachineEngine:
                     cumulative_amount += amount
                     cumulative_volume += volume
                     
+                    # 【CTO修复】flow_5min累加：截取09:30-09:35前5分钟资金流
+                    # 使用字符串前缀匹配，极其稳定，绝不漏算！
+                    if (curr_time.startswith('09:30') or 
+                        curr_time.startswith('09:31') or 
+                        curr_time.startswith('09:32') or 
+                        curr_time.startswith('09:33') or 
+                        curr_time.startswith('09:34') or 
+                        curr_time.startswith('09:35')):
+                        # 计算这个tick的资金流贡献
+                        if price > prev_price:
+                            flow_5min += delta_vol * price
+                        elif price < prev_price:
+                            flow_5min -= delta_vol * price
+                        else:
+                            flow_5min += delta_vol * price * 0.5 * last_dir
+                    
                     # 【阶段一：09:30-09:45】累加打分数据 (flow_15min已在上方增量计算)
                     
                     # 【打分定格】09:45瞬间调用动能打分引擎验钞机

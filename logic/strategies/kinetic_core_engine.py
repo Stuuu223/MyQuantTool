@@ -380,8 +380,11 @@ class 动能打分引擎CoreEngine:
         kinetic_score = min(30.0, (inflow_ratio_pct / 1.0) * 30.0) if inflow_ratio_pct > 0 else 0.0
         
         # 2. 势能打分：相对自身历史爆发力 (权重 30分)
-        ratio_stock = flow_5min / flow_5min_median_stock if flow_5min_median_stock > 0 else 0.0
-        ratio_stock = min(ratio_stock, 50.0)  # 截断上限
+        # 【CTO修复】如果flow_5min为0，用flow_15min/3反推兜底
+        safe_flow_5min = flow_5min if flow_5min > 0 else (flow_15min / 3.0 if flow_15min > 0 else 1.0)
+        ratio_stock = safe_flow_5min / flow_5min_median_stock if flow_5min_median_stock > 0 else 1.0
+        # 【CTO修复】限幅在0.01到50之间，防止极端值
+        ratio_stock = max(0.01, min(ratio_stock, 50.0))
         potential_score = min(30.0, (ratio_stock / 15.0) * 30.0)
         
         # 3. 价格动能强度：日内K线推力 (权重 40分)
@@ -420,7 +423,10 @@ class 动能打分引擎CoreEngine:
         multiplier = 1.0
         
         # A. 维持能力 (Sustain Ability - 抓翻倍大妖的核心)
-        sustain_ratio = (flow_15min / flow_5min) if flow_5min > 0 else 0.0
+        # 【CTO修复】使用safe_flow_5min确保不会除零，并限幅防止极端值
+        sustain_ratio = (flow_15min / safe_flow_5min) if safe_flow_5min > 0 else 1.0
+        # 【CTO修复】限幅在-10到10之间，防止极端负值毁掉排序
+        sustain_ratio = max(-10.0, min(sustain_ratio, 10.0))
         
         stock_identifier = f"{current_time.strftime('%H:%M')}@{price:.2f}"
         
