@@ -119,7 +119,7 @@ class V18CoreEngine:
         # 换手率阈值
         turnover_config = self._config.get_turnover_rate_thresholds()
         self.turnover_rate_per_min_min: float = turnover_config.get('per_minute_min', 0.2)
-        self.turnover_rate_max: float = turnover_config.get('total_max', 70.0)
+        self.turnover_rate_max: float = turnover_config.get('total_max', 300.0)
         
         # 时间衰减系数
         decay_config = self._config.get_time_decay_ratios()

@@ -915,8 +915,9 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, volume_percentile, dry_run, 
         from logic.data_providers.true_dictionary import get_true_dictionary
         true_dict = get_true_dictionary()
         
-        # CTO修复：全量处理，不截断！
-        warmup_result = true_dict.warmup(all_stocks)  # 全市场预热
+        # 【CTO修复连环雷1】传入target_date，解除CTO铁血令的回测锁！
+        today_str = datetime.now().strftime('%Y%m%d')
+        warmup_result = true_dict.warmup(all_stocks, target_date=today_str)  # 全市场预热
         
         if not warmup_result.get('ready_for_trading'):
             click.echo(click.style("🚨 盘前装弹失败! 系统熔断退出", fg='red', bold=True))

@@ -94,12 +94,13 @@ class LiveTradingEngine:
         self.kinetic_engines: Dict[str, Any] = {}
         self._init_kinetic_engine()
         
-        # 【架构解耦】初始化QMT事件适配器
-        self._init_qmt_adapter()
-        
+        # 【CTO修复】初始化顺序：先EventBus，再QMTEventAdapter
         # 初始化EventBus（如果未传入）
         if self.event_bus is None:
             self._init_event_bus()
+        
+        # 【架构解耦】初始化QMT事件适配器（需要event_bus已就绪）
+        self._init_qmt_adapter()
         
         logger.info("✅ [LiveTradingEngine] 初始化完成 - QMT Manager已注入")
     
@@ -137,16 +138,11 @@ class LiveTradingEngine:
             logger.error(f"❌ EventBus 初始化失败: {e}")
             raise RuntimeError(f"EventBus初始化失败: {e}")
         
-        try:
-            from logic.strategies.full_market_scanner import create_full_market_scanner
-            self.scanner = create_full_market_scanner()
-            logger.debug("🎯 FullMarketScanner 已加载")
-        except ImportError:
-            self.scanner = None
-            logger.warning("⚠️ FullMarketScanner 未找到")
-        except Exception as e:
-            self.scanner = None
-            logger.error(f"❌ FullMarketScanner 初始化异常: {e}")
+        # 【CTO修复连环雷2】FullMarketScanner已废弃，用UniverseBuilder替代！
+        # 原因：FullMarketScanner模块不存在，导致self.scanner=None
+        # 修复：直接使用UniverseBuilder的粗筛能力
+        self.scanner = None  # 标记为None，后续用UniverseBuilder
+        logger.info("🎯 [V20.5] 使用UniverseBuilder替代FullMarketScanner进行粗筛")
         
         try:
             from logic.data_providers.event_bus import create_event_bus
@@ -463,16 +459,11 @@ class LiveTradingEngine:
 
     def _premarket_scan(self):
         """
-        盘前扫描 - 获取粗筛池 + InstrumentCache盘前装弹 - CTO加固：容错机制
+        盘前扫描 - 获取粗筛池 + InstrumentCache盘前装弹 - CTO加固：直接使用UniverseBuilder
         
         Note: 此方法现在由_auction_snapshot_filter调用，用于InstrumentCache预热
         """
-        if not self.scanner:
-            logger.error("❌ 扫描器未初始化")
-            # CTO加固：容错机制 - 使用回退方案
-            self._fallback_premarket_scan()
-            return
-        
+        # 【CTO修复连环雷2】直接使用UniverseBuilder，不再依赖FullMarketScanner
         # 使用快照初筛替代原来的UniverseBuilder方式
         self._auction_snapshot_filter()
         
@@ -1665,7 +1656,7 @@ class LiveTradingEngine:
         target_date_str = current_time.strftime('%Y%m%d')  # 默认值
         
         # 【CTO静态快照打分算法】盘后无法获取连续Tick流，用静态数据估算
-        def calculate_snapshot_score(volume_ratio, turnover_rate, price, open_price, prev_close, high, low, amount):
+        def calculate_snapshot_score(volume_ratio, turnover_rate, price, open_price, prev_close, high, low, amount, float_volume=0):
             """
             基于单点快照计算V18风格综合得分 (CTO区分度优化版)
             
@@ -1712,7 +1703,10 @@ class LiveTradingEngine:
             # 5. 计算MFE (Money Force Efficiency) - 资金做功效率
             # MFE = (最高价 - 最低价) / 净流入占流通市值比例
             price_range = high - low
-            inflow_ratio = net_inflow / (price * 1e8) if price > 0 else 0  # 简化估算
+            # 【CTO修复】流入比 = 净流入 / 流通市值，使用真实流通市值
+            # 原公式 price * 1e8 完全错误，毫无物理意义
+            float_market_cap = float_volume * price if float_volume > 0 else price * 1e8  # 回退到估算值
+            inflow_ratio = net_inflow / float_market_cap if float_market_cap > 0 else 0
             mfe = price_range / inflow_ratio if inflow_ratio > 0 else 0.0
             
             # 资金强度标签
@@ -1821,8 +1815,10 @@ class LiveTradingEngine:
                                     from logic.strategies.global_filter_gateway import quick_validate
                                     
                                     # 计算换手率 (使用原始volume，假设为全天总量)
+                                    # 【CTO修复】换手率 = (成交量手*100股/流通股本)*100%
+                                    # 原公式运算优先级错误导致结果虚高100倍！
                                     float_volume = true_dict.get_float_volume(stock_code)
-                                    turnover_rate = (raw_volume * 100 / float_volume * 100) if float_volume > 0 else 0
+                                    turnover_rate = ((raw_volume * 100.0) / float_volume) * 100.0 if float_volume > 0 else 0.0
                                     
                                     is_valid, reason, metadata = quick_validate(
                                         stock_code=stock_code,
@@ -1877,7 +1873,8 @@ class LiveTradingEngine:
                                             prev_close=tick_event_data['prev_close'],
                                             high=tick_event_data['high'],
                                             low=tick_event_data['low'],
-                                            amount=tick_event_data['amount']
+                                            amount=tick_event_data['amount'],
+                                            float_volume=float_volume  # 【CTO修复】传入流通股本
                                         )
 
                                         triggered_stocks.append({

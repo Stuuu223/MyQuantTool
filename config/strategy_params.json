@@ -67,10 +67,10 @@
     "_COMMENT_turnover_rate_per_min_min": "【绝对百分比】每分钟最小换手率",
     "turnover_rate_per_min_min": 0.2,
     
-    "_COMMENT_turnover_rate_max": "【绝对百分比】死亡换手熔断线，超过此值强制剔除。CTO铁血令：死亡线70%",
-    "turnover_rate_max": 70.0,
+    "_COMMENT_turnover_rate_max": "【绝对百分比】死亡换手熔断线，超过此值强制剔除。V20.5.0：死亡线300%",
+    "turnover_rate_max": 300.0,
     
-    "_COMMENT_min_active_turnover_rate": "【绝对百分比】大哥起步线：无5%不妖股。Boss拍板：5%起步，20%常态，70%死亡【CTO铁血令】",
+    "_COMMENT_min_active_turnover_rate": "【绝对百分比】大哥起步线：无5%不妖股。Boss拍板：5%起步，20%常态，300%死亡【V20.5.0】",
     "min_active_turnover_rate": 5.0,
     
     "use_percentile": true,
