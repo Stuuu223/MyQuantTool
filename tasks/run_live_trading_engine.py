@@ -443,19 +443,35 @@ class LiveTradingEngine:
 
     def _fallback_premarket_scan(self):
         """
-        回退方案：当快照初筛失败时使用的基础股票池获取
+        【CTO修复】回退方案：使用QMTEventAdapter快照获取基础股票池
+        严禁使用UniverseBuilder（它是盘前工具，依赖日K线）
         """
-        if not self.scanner:
-            logger.error("❌ 扫描器未初始化")
-            return
+        logger.warning("⚠️ 执行QMT快照回退方案...")
         
-        # 获取粗筛股票池
-        from logic.data_providers.universe_builder import UniverseBuilder
-        import datetime
-        today = datetime.datetime.now().strftime('%Y%m%d')
-        universe = UniverseBuilder().get_daily_universe(today)
-        self.watchlist = universe[:100]  # 限制数量
-        logger.info(f"📊 回退盘前扫描完成: {len(self.watchlist)} 只候选")
+        try:
+            # 使用QMTEventAdapter获取全市场快照
+            if not hasattr(self, 'qmt_adapter') or self.qmt_adapter is None:
+                logger.error("❌ QMTEventAdapter未初始化，回退失败")
+                self.watchlist = []
+                return
+            
+            all_stocks = self.qmt_adapter.get_all_a_shares()
+            if not all_stocks:
+                logger.error("❌ 无法获取股票列表")
+                self.watchlist = []
+                return
+            
+            # 获取快照，只取前100只作为应急观察池
+            snapshot = self.qmt_adapter.get_full_tick_snapshot(all_stocks[:500])
+            if snapshot:
+                self.watchlist = list(snapshot.keys())[:100]
+                logger.info(f"📊 QMT快照回退完成: {len(self.watchlist)} 只候选")
+            else:
+                logger.error("❌ 快照获取失败")
+                self.watchlist = []
+        except Exception as e:
+            logger.error(f"❌ 回退方案失败: {e}")
+            self.watchlist = []
 
     def _premarket_scan(self):
         """
@@ -818,45 +834,13 @@ class LiveTradingEngine:
             logger.info("📊 静态模式：跳过动态雷达（适用于盘后复盘）")
     
     def _init_trading_components(self):
-        """初始化交易相关组件 - CTO加固：容错机制"""
-        try:
-            from logic.strategies.unified_warfare_core import get_unified_warfare_core
-            self.warfare_core = get_unified_warfare_core()
-            logger.debug("🎯 V18验钞机已加载")
-        except ImportError as e:
-            self.warfare_core = None
-            logger.warning(f"⚠️ V18验钞机未找到: {e}")
-        except Exception as e:
-            self.warfare_core = None
-            logger.error(f"❌ V18验钞机初始化异常: {e}")
-        
-        try:
-            from logic.execution.trade_gatekeeper import TradeGatekeeper
-            self.trade_gatekeeper = TradeGatekeeper()
-            logger.debug("🎯 TradeGatekeeper已加载")
-        except ImportError as e:
-            self.trade_gatekeeper = None
-            logger.warning(f"⚠️ TradeGatekeeper未找到: {e}")
-        except Exception as e:
-            self.trade_gatekeeper = None
-            logger.error(f"❌ TradeGatekeeper初始化异常: {e}")
-        
-        try:
-            from logic.execution.trade_interface import create_trader
-            self.trader = create_trader(mode='simulated', initial_cash=20000.0)  # 实盘前先用模拟盘测试
-            self.trader.connect()
-            logger.debug("🎯 交易接口已连接")
-        except ImportError as e:
-            self.trader = None
-            logger.warning(f"⚠️ 交易接口未找到: {e}")
-        except Exception as e:
-            self.trader = None
-            logger.error(f"❌ 交易接口初始化异常: {e}")
-        
-        # 如果交易组件初始化失败，记录警告但不阻止系统运行
-        if self.warfare_core is None or self.trade_gatekeeper is None or self.trader is None:
-            logger.warning("⚠️ 部分交易组件初始化失败，系统将以简化模式运行")
-            logger.info("💡 提示：核心交易功能可能受限，请检查相关模块")
+        """【CTO清理】初始化交易相关组件 - 删除已废弃模块引用"""
+        # 【CTO说明】unified_warfare_core等模块已被V20.5架构废除
+        # 相关功能已整合到V18CoreEngine和GlobalFilterGateway
+        self.warfare_core = None
+        self.trade_gatekeeper = None
+        self.trader = None
+        logger.debug("🎯 [V20.5] 交易组件初始化完成（精简模式）")
     
     def _start_dynamic_radar(self):
         """

@@ -915,9 +915,11 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, volume_percentile, dry_run, 
         from logic.data_providers.true_dictionary import get_true_dictionary
         true_dict = get_true_dictionary()
         
-        # 【CTO修复连环雷1】传入target_date，解除CTO铁血令的回测锁！
-        today_str = datetime.now().strftime('%Y%m%d')
-        warmup_result = true_dict.warmup(all_stocks, target_date=today_str)  # 全市场预热
+        # 【CTO修复】使用last_trade_day计算5日均量，绝不包含今天的盘中数据！
+        from logic.utils.calendar_utils import get_latest_completed_trading_day
+        last_trade_day = get_latest_completed_trading_day()
+        click.echo(f"📅 基准日期: {last_trade_day} (上一个交易日)")
+        warmup_result = true_dict.warmup(all_stocks, target_date=last_trade_day)  # 全市场预热
         
         if not warmup_result.get('ready_for_trading'):
             click.echo(click.style("🚨 盘前装弹失败! 系统熔断退出", fg='red', bold=True))
