@@ -266,18 +266,21 @@ def backtest_cmd(ctx, date, start_date, end_date, universe, output, save):
 
 @cli.command(name='replay')
 @click.option('--date', type=str, default=None, help='要复盘的日期 (YYYYMMDD)，不传则默认上个交易日')
+@click.option('--pure', is_flag=True, default=False,
+              help='纯净模式：不读取也不写入记忆库，用于独立单日切片研究')
 @click.pass_context
-def replay_cmd(ctx, date):
+def replay_cmd(ctx, date, pure):
     """
     🔥 今日/指定日热复盘
     
-    使用历史静态数据，极速重演单日打分逻辑，生成战后大屏。
-    本质上是单日回测，复用 TimeMachineEngine 算分引擎。
+    默认模式：基因继承（读取并更新实盘记忆库）
+    --pure模式：纯净切片（完全隔离记忆库，用于独立研究）
     
     \b
     示例:
-        python main.py replay                    # 复盘上个交易日
-        python main.py replay --date 20260227    # 复盘指定日期
+        python main.py replay                    # 复盘上个交易日（基因继承）
+        python main.py replay --date 20260227    # 复盘指定日期（基因继承）
+        python main.py replay --pure             # 纯净切片（不读写记忆）
     """
     from logic.utils.calendar_utils import get_latest_completed_trading_day
     from logic.backtest.time_machine_engine import TimeMachineEngine
@@ -292,7 +295,8 @@ def replay_cmd(ctx, date):
             click.echo(click.style("❌ 无法确定复盘日期！", fg='red'))
             ctx.exit(1)
     
-    click.echo(click.style(f"\n🎬 [热复盘] 目标日期锁定: {date}", fg='cyan', bold=True))
+    mode_label = "🧪 纯净切片" if pure else "🧬 基因继承"
+    click.echo(click.style(f"\n🎬 [热复盘] 日期: {date} | 模式: {mode_label}", fg='cyan', bold=True))
     
     # 1. 数据下载防线（确保本地有数据）
     click.echo(click.style(f"⏬ 检查 {date} 的数据...", fg='yellow'))
@@ -307,7 +311,7 @@ def replay_cmd(ctx, date):
     # 2. 调用时间机器 (本质上是单日回测)
     click.echo(click.style(f"🚀 引擎启动，开始扫描...", fg='green'))
     
-    engine = TimeMachineEngine()
+    engine = TimeMachineEngine(is_pure_mode=pure)
     result = engine.run_daily_backtest(date)
     
     # 3. 渲染大屏
@@ -325,7 +329,8 @@ def replay_cmd(ctx, date):
                 'mfe': item.get('mfe', 0),
                 'tag': item.get('tag', '复盘')
             })
-        render_battle_dashboard(dashboard_data, title=f"🔥 极速热复盘 [{date}]", clear_screen=False)
+        title_suffix = "(纯净切片·无记忆)" if pure else "(基因继承·实盘库)"
+        render_battle_dashboard(dashboard_data, title=f"🔥 极速热复盘 [{date}] {title_suffix}", clear_screen=False)
         click.echo(click.style(f"\n✅ 热复盘完成: 共评分 {len(result['top20'])} 只股票", fg='green'))
     else:
         click.echo(click.style(f"\n⚠️ 日期 {date} 没有任何股票通过风控漏斗！", fg='yellow'))

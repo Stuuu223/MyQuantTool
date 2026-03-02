@@ -52,8 +52,9 @@ class TimeMachineEngine:
     # 记忆文件路径
     MEMORY_FILE = Path(__file__).parent.parent.parent / 'data' / 'memory' / 'ShortTermMemory.json'
     
-    def __init__(self, initial_capital: float = 20000.0):
+    def __init__(self, initial_capital: float = 20000.0, is_pure_mode: bool = False):
         self.initial_capital = initial_capital
+        self.is_pure_mode = is_pure_mode  # 【新增】纯净模式开关
         self.data_manager = QmtDataManager()
         self.results_cache: Dict[str, Dict] = {}
         
@@ -445,26 +446,30 @@ class TimeMachineEngine:
             daily_result['data_missing_stocks'] = data_missing_stocks
             
             # 5. 执行记忆衰减
-            self._apply_memory_decay(date, top20)
+            # 【总监验证】纯净模式跳过记忆衰减和写入
+            if self.is_pure_mode:
+                logger.info("🧪 [纯净模式] 跳过记忆衰减与写入，实盘基因库保持原状")
+            else:
+                self._apply_memory_decay(date, top20)
             
-            # ============================================================
-            # 【记忆引擎挂载】盘后结算 - 写入记忆基因
-            # 【CTO时空切割】热复盘写实盘基因库，全息回演写平行宇宙
-            # ============================================================
-            try:
-                from logic.memory.short_term_memory import ShortTermMemoryEngine
-                from logic.core.path_resolver import PathResolver
-                
-                # 【CTO核心判定】热复盘 vs 全息回演
-                if self.is_continuous_backtest:
-                    # 全息回演 → 平行宇宙记忆库（阅后即焚）
-                    memory_file = PathResolver.get_data_dir() / 'memory' / 'ShortTermMemory_backtest.json'
-                    memory_engine = ShortTermMemoryEngine(memory_file=str(memory_file))
-                    logger.info(f"🧠 【平行宇宙】写入回测记忆库: {memory_file.name}")
-                else:
-                    # 热复盘 → 实盘基因库（传宗接代）
-                    memory_engine = ShortTermMemoryEngine()
-                    logger.info("🧠 【基因继承】写入实盘记忆库: ShortTermMemory.json")
+                # ============================================================
+                # 【记忆引擎挂载】盘后结算 - 写入记忆基因
+                # 【CTO时空切割】热复盘写实盘基因库，全息回演写平行宇宙
+                # ============================================================
+                try:
+                    from logic.memory.short_term_memory import ShortTermMemoryEngine
+                    from logic.core.path_resolver import PathResolver
+                    
+                    # 【CTO核心判定】热复盘 vs 全息回演
+                    if self.is_continuous_backtest:
+                        # 全息回演 → 平行宇宙记忆库（阅后即焚）
+                        memory_file = PathResolver.get_data_dir() / 'memory' / 'ShortTermMemory_backtest.json'
+                        memory_engine = ShortTermMemoryEngine(memory_file=str(memory_file))
+                        logger.info(f"🧠 【平行宇宙】写入回测记忆库: {memory_file.name}")
+                    else:
+                        # 热复盘 → 实盘基因库（传宗接代）
+                        memory_engine = ShortTermMemoryEngine()
+                        logger.info("🧠 【基因继承】写入实盘记忆库: ShortTermMemory.json")
                 
                 # 为Top20中符合条件的股票写入记忆
                 # 条件：涨幅>8% 且 换手>5% (ShortTermMemoryEngine内部会检查)
@@ -975,20 +980,24 @@ class TimeMachineEngine:
                         # ============================================================
                         # 【记忆引擎挂载】算分前读取记忆衰减
                         # 【CTO P1 BUG FIX】使用外部注入的memory_engine，不再内部创建
+                        # 【总监验证】纯净模式跳过记忆读取
                         # ============================================================
                         memory_multiplier = 1.0
-                        try:
-                            if memory_engine is not None:
-                                memory_score = memory_engine.read_memory(stock_code, today=date)
-                                if memory_score is not None:
-                                    # 将记忆分数转化为multiplier (0.5~1.5范围)
-                                    memory_multiplier = 0.5 + (memory_score / 100.0)
-                                    logger.debug(f"🧠 {stock_code} 记忆激活: score={memory_score:.2f}, multiplier={memory_multiplier:.2f}")
-                            # 注意：不在函数内close()！由外部统一管理生命周期
-                        except Exception as mem_e:
-                            # Graceful降级：记忆引擎失败时multiplier=1.0
-                            logger.debug(f"⚠️ {stock_code} 记忆读取失败，使用默认multiplier=1.0: {mem_e}")
-                            memory_multiplier = 1.0
+                        if self.is_pure_mode:
+                            logger.debug(f"🧪 [纯净模式] {stock_code} 跳过记忆读取，memory_multiplier=1.0")
+                        else:
+                            try:
+                                if memory_engine is not None:
+                                    memory_score = memory_engine.read_memory(stock_code, today=date)
+                                    if memory_score is not None:
+                                        # 将记忆分数转化为multiplier (0.5~1.5范围)
+                                        memory_multiplier = 0.5 + (memory_score / 100.0)
+                                        logger.debug(f"🧠 {stock_code} 记忆激活: score={memory_score:.2f}, multiplier={memory_multiplier:.2f}")
+                                # 注意：不在函数内close()！由外部统一管理生命周期
+                            except Exception as mem_e:
+                                # Graceful降级：记忆引擎失败时multiplier=1.0
+                                logger.debug(f"⚠️ {stock_code} 记忆读取失败，使用默认multiplier=1.0: {mem_e}")
+                                memory_multiplier = 1.0
                         
                         # 调用动能打分引擎验钞机 (CTO终极红线版)
                         # 【CTO修复】current_time必须是datetime类型，不是time类型

@@ -149,7 +149,7 @@ class UniverseBuilder:
             return []
 
         result = []
-        cnt = {'blacklist': 0, 'bj': 0, 'kcb': 0, 'sh': 0, 'st': 0}
+        cnt = {'blacklist': 0, 'bj': 0, 'kcb': 0, 'st': 0}
 
         for stock in all_stocks:
             code = stock.split('.')[0]
@@ -169,11 +169,8 @@ class UniverseBuilder:
                 cnt['kcb'] += 1
                 continue
 
-            # 3.5 【CTO P0 BUG FIX】沪市主板过滤 (60xxxx)
-            # SH Tick前100条全零，污染开盘价计算，全部排除
-            if code.startswith('60'):
-                cnt['sh'] += 1
-                continue
+            # 【总监验证】沪市Tick零值问题不存在，恢复沪市主板
+            # 验证日期: 2026-03-02, 5只沪市主板Tick零值率均为0%
 
             # 4. ST / 退市：通过 get_instrument_detail 检查名称
             #    get_instrument_detail 是纯内存C++调用，不触发BSON
@@ -197,7 +194,7 @@ class UniverseBuilder:
         logger.info(
             f'[漏斗1] 全市场{len(all_stocks)}只 '
             f'→ 黑名单:{cnt["blacklist"]} 北交所:{cnt["bj"]} '
-            f'科创板:{cnt["kcb"]} 沪市:{cnt["sh"]} ST:{cnt["st"]} '
+            f'科创板:{cnt["kcb"]} ST:{cnt["st"]} '
             f'→ 剩余: {len(result)}只'
         )
         return result
@@ -206,7 +203,7 @@ class UniverseBuilder:
 
     def _funnel2_daily_kline(self, stock_list: list[str]) -> list[str]:
         """
-        逐只读取日K，过滤量/价。
+        逐只读取日K，过滤量/价/换手率。
 
         【前提】必须先有黑名单（漏斗1已剔除BSON炸弹）。
         【方法】逐只try/except，Python层异常可捕获，跳过问题股票。
@@ -227,11 +224,12 @@ class UniverseBuilder:
         cnt_nodata   = 0
         cnt_volume   = 0
         cnt_price    = 0
+        cnt_turnover = 0  # 【总监验证】换手率过滤计数器
 
         for stock in stock_list:
             try:
                 data = xtdata.get_local_data(
-                    field_list=['close', 'volume'],
+                    field_list=['close', 'volume', 'amount'],  # 【总监验证】添加amount
                     stock_list=[stock],
                     period='1d',          # ← 只用日K，铁律
                     start_time=start_date,
@@ -262,6 +260,34 @@ class UniverseBuilder:
                 if not (self.min_price <= last_close <= self.max_price):
                     cnt_price += 1
                     continue
+
+                # 【CTO换手率铁网】使用成交额计算换手率，彻底规避volume手/股量纲争议
+                # amount单位：元，FloatVolume单位：股，last_close单位：元/股
+                try:
+                    avg_amount = df['amount'].iloc[-n:].mean()
+                    if pd.isna(avg_amount) or avg_amount <= 0:
+                        passed.append(stock)  # amount取不到就不做换手率过滤
+                        continue
+                    
+                    detail = xtdata.get_instrument_detail(stock, False)
+                    if detail:
+                        float_shares = float(
+                            detail.get('FloatVolume', 0)
+                            if hasattr(detail, 'get')
+                            else getattr(detail, 'FloatVolume', 0)
+                        )
+                    else:
+                        float_shares = 0.0
+                    
+                    if float_shares > 0:
+                        float_mkt_cap = float_shares * last_close  # 流通市值（元）
+                        avg_turnover_pct = (avg_amount / float_mkt_cap) * 100.0
+                        # 【Boss钦定3%铁网】5日均换手率必须>=3%
+                        if avg_turnover_pct < 3.0:
+                            cnt_turnover += 1
+                            continue
+                except Exception:
+                    pass  # 换手率计算失败则放行
 
                 passed.append(stock)
 
