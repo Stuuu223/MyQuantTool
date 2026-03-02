@@ -309,14 +309,22 @@ class TimeMachineEngine:
             
             filtered_candidates = []
             
-            # 使用 get_local_data 批量获取日K，极速过滤
+            # 【CTO降维重铸】日内快照漏斗，彻底废除volume量纲陷阱
+            # 使用amount（元）/流通市值计算换手率，永远不需要猜volume单位
+            print(f"  🔍 开始二维铁网快照预筛 (过滤死水大象)...")
+            from logic.core.config_manager import get_config_manager
+            config_mgr = get_config_manager()
+            min_turnover = config_mgr.get('stock_filter.min_intraday_turnover_pct', 5.0)
+            
+            filtered_candidates = []
+            
             try:
                 from xtquant import xtdata
                 from logic.data_providers.true_dictionary import get_true_dictionary
                 true_dict = get_true_dictionary()
                 
                 daily_data = xtdata.get_local_data(
-                    field_list=['volume'],
+                    field_list=['amount', 'close'],  # 只要金额和价格！废除volume
                     stock_list=valid_stocks_to_process,
                     period='1d',
                     start_time=date,
@@ -326,23 +334,35 @@ class TimeMachineEngine:
                 for stock in valid_stocks_to_process:
                     if daily_data and stock in daily_data and not daily_data[stock].empty:
                         try:
-                            day_vol = float(daily_data[stock].iloc[-1]['volume'])
-                            float_vol = true_dict.get_float_volume(stock)
-                            if float_vol and float_vol > 0:
-                                # 计算当天的总换手率
-                                # 【QMT量纲】日K volume单位是手(1手=100股)，需乘100
-                                day_turnover = (day_vol * 100.0 / float_vol) * 100.0
-                                # 【物理过滤】：如果全天换手率都达不到5%，早盘绝对不可能有资金做功！
-                                if day_turnover >= min_turnover:
-                                    filtered_candidates.append(stock)
+                            day_amount = float(daily_data[stock].iloc[-1]['amount'])
+                            day_close = float(daily_data[stock].iloc[-1]['close'])
+                            float_vol_shares = true_dict.get_float_volume(stock)
+                            
+                            # 【CTO核心防爆】数据缺失时跳过过滤，放行给Tick引擎裁决
+                            if day_amount <= 0 or day_close <= 0:
+                                filtered_candidates.append(stock)
+                                continue
+                            
+                            if float_vol_shares and float_vol_shares > 0:
+                                # 【绝对真理公式】换手率 = 成交额 / 流通市值 * 100%
+                                float_market_cap = float_vol_shares * day_close
+                                if float_market_cap > 0:
+                                    day_turnover = (day_amount / float_market_cap) * 100.0
+                                    if day_turnover >= min_turnover:
+                                        filtered_candidates.append(stock)
                         except Exception:
-                            continue
+                            # 异常时放行，交给Tick引擎裁决
+                            filtered_candidates.append(stock)
+                    else:
+                        # 【总监验证关键修复】无日K数据时，放行给Tick引擎裁决
+                        # 不能因为日K数据缺失就直接淘汰！
+                        filtered_candidates.append(stock)
                 
                 print(f"  🎯 换手率铁网(>={min_turnover}%)过滤完毕，剩余: {len(filtered_candidates)} 只真龙候选")
                 
             except Exception as e:
                 logger.error(f"快照预筛失败: {e}")
-                filtered_candidates = valid_stocks_to_process  # 极端兜底
+                filtered_candidates = valid_stocks_to_process  # 异常时兜底放行
             
             # 替换原来的待处理列表
             valid_stocks_to_process = filtered_candidates

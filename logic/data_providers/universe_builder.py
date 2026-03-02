@@ -298,7 +298,7 @@ class UniverseBuilder:
 
         logger.info(
             f'[漏斗2] 输入:{len(stock_list)}只 '
-            f'→ 无数据:{cnt_nodata} 量不足:{cnt_volume} 价格越界:{cnt_price} '
+            f'→ 无数据:{cnt_nodata} 量不足:{cnt_volume} 价格越界:{cnt_price} 换手不足:{cnt_turnover} '
             f'→ 通过: {len(passed)}只'
         )
         return passed
