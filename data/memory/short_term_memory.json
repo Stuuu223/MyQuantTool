@@ -1,1 +1,36 @@
-{}
+{
+  "600871.SH": {
+    "stock_code": "600871.SH",
+    "initial_score": 8.404829502357646,
+    "current_score": 8.404829502357646,
+    "create_date": "20260302",
+    "last_active_date": "20260302",
+    "half_life_count": 0,
+    "metadata": {
+      "gain_pct": 9.968847352024918,
+      "turnover_rate": 5.5,
+      "write_time": "2026-03-02T16:02:53.810799",
+      "date": "20260302",
+      "sustain_ratio": 1.0602430929166002,
+      "inflow_ratio": 1.3612274871348496e-05,
+      "is_vetoed": false
+    }
+  },
+  "600759.SH": {
+    "stock_code": "600759.SH",
+    "initial_score": 8.390324791082929,
+    "current_score": 8.390324791082929,
+    "create_date": "20260302",
+    "last_active_date": "20260302",
+    "half_life_count": 0,
+    "metadata": {
+      "gain_pct": 9.983896940418681,
+      "turnover_rate": 5.5,
+      "write_time": "2026-03-02T16:02:53.810799",
+      "date": "20260302",
+      "sustain_ratio": 1.0,
+      "inflow_ratio": 2.9243530140453842e-05,
+      "is_vetoed": false
+    }
+  }
+}

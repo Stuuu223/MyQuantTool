@@ -175,7 +175,7 @@ def cli(ctx, version):
               help='输出目录 (默认: data/backtest_results)')
 @click.option('--save', is_flag=True, help='保存结果到文件')
 @click.pass_context
-def backtest_cmd(ctx, date, start_date, end_date, universe, volume_percentile, output, save):
+def backtest_cmd(ctx, date, start_date, end_date, universe, output, save):
     """
     执行回测 - V20纯血全息架构
     
@@ -216,8 +216,8 @@ def backtest_cmd(ctx, date, start_date, end_date, universe, volume_percentile, o
 
         # 配置管理器统一参数管理 (CTO SSOT原则)
         config_manager = get_config_manager()
-        # 更新配置文件中的量比阈值
-        click.echo(f"📊 量比分位数阈值设置为: {volume_percentile}")
+        min_vol = config_manager.get_min_volume_multiplier()
+        click.echo(f"📊 量比阈值: {min_vol}x (从配置文件读取)")
 
         # V20纯血TimeMachineEngine
         engine = TimeMachineEngine(initial_capital=20000.0)
@@ -465,7 +465,7 @@ def analyze_cmd(ctx, stock, start_date, end_date, date, detail):
 @click.option('--workers', '-w', type=int, default=4,
               help='并发 workers 数 (默认: 4)')
 @click.pass_context
-def download_cmd(ctx, date, data_type, universe, volume_percentile, workers):
+def download_cmd(ctx, date, data_type, universe, workers):
     """
     数据下载管理
     
@@ -507,18 +507,12 @@ def download_cmd(ctx, date, data_type, universe, volume_percentile, workers):
                 df = pd.read_csv(universe)
                 stock_list = df.iloc[:, 0].tolist() if len(df.columns) == 1 else df['code'].tolist()
                 click.echo(f"📋 从CSV加载 {len(stock_list)} 只股票")
-        elif not universe and volume_percentile != 0.88:  # 只有当用户明确设置了volume_percentile时才进行粗筛
-            # 如果未指定股票池但设置了分位数，则使用粗筛获取股票池
+        elif not universe:
+            # 如果未指定股票池，使用粗筛获取股票池
             from logic.data_providers.universe_builder import UniverseBuilder
-            from logic.data_providers.universe_builder import get_daily_universe
-            from logic.core.config_manager import get_config_manager
             
-            # 配置管理器统一参数管理 (CTO SSOT原则)
-            config_manager = get_config_manager()
-            # 更新配置文件中的量比阈值
-            click.echo(f"📊 使用 {volume_percentile} 分位数进行粗筛")
-            
-            stock_list = get_daily_universe(date)
+            builder = UniverseBuilder(target_date=date)
+            stock_list = builder.build()
             click.echo(f"📊 粗筛获取到 {len(stock_list)} 只股票")
         
         # 执行下载 - 使用QmtDataManager
