@@ -65,13 +65,14 @@ class ConfigManager:
         return self.get('live_sniper.min_volume_multiplier', 3.0)
     
     def get_turnover_rate_thresholds(self) -> Dict[str, float]:
-        """获取换手率阈值 (从配置文件获取，支持实盘和回演统一)"""
-        # 优先从配置文件获取，否则使用默认值
-        live_sniper = self._config.get('live_sniper', {})
+        """【CTO规范化】获取换手率阈值，严禁缩进错乱"""
         return {
-            'per_minute_min': live_sniper.get('turnover_rate_per_min_min', 0.2),      # 每分钟最小换手率
-            'total_max': live_sniper.get('turnover_rate_max', 300.0),                  # 总换手率最大值 (V20.5.0: 300%死亡线)
-                            'death_turnover_rate': live_sniper.get('death_turnover_rate', 300.0),      # 死亡换手率阈值 (V20.5.0: 300%死亡线)            'min_active_turnover_rate': live_sniper.get('min_active_turnover_rate', 3.0)  # 最低活跃换手率
+            'min_avg_turnover_pct': self.get('stock_filter.min_avg_turnover_pct', 3.0),
+            'min_intraday_turnover_pct': self.get('stock_filter.min_intraday_turnover_pct', 5.0),
+            'per_minute_min': self.get('live_sniper.turnover_rate_per_min_min', 0.2),
+            'total_max': self.get('live_sniper.turnover_rate_max', 300.0),
+            'death_turnover_rate': self.get('live_sniper.death_turnover_rate', 300.0),
+            'min_active_turnover_rate': self.get('live_sniper.min_active_turnover_rate', 3.0)
         }
     
     def get_time_decay_ratios(self) -> Dict[str, float]:

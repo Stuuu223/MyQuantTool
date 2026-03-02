@@ -305,18 +305,14 @@ class TimeMachineEngine:
             
             from logic.core.config_manager import get_config_manager
             config_mgr = get_config_manager()
-            min_turnover = config_mgr.get('live_sniper.min_active_turnover_rate', 5.0)
+            min_turnover = config_mgr.get('stock_filter.min_intraday_turnover_pct', 5.0)
             
             filtered_candidates = []
+            missing_count = 0  # 【CTO铁律】数据缺失计数器
             
             # 【CTO降维重铸】日内快照漏斗，彻底废除volume量纲陷阱
             # 使用amount（元）/流通市值计算换手率，永远不需要猜volume单位
             print(f"  🔍 开始二维铁网快照预筛 (过滤死水大象)...")
-            from logic.core.config_manager import get_config_manager
-            config_mgr = get_config_manager()
-            min_turnover = config_mgr.get('stock_filter.min_intraday_turnover_pct', 5.0)
-            
-            filtered_candidates = []
             
             try:
                 from xtquant import xtdata
@@ -332,37 +328,44 @@ class TimeMachineEngine:
                 )
                 
                 for stock in valid_stocks_to_process:
-                    if daily_data and stock in daily_data and not daily_data[stock].empty:
-                        try:
-                            day_amount = float(daily_data[stock].iloc[-1]['amount'])
-                            day_close = float(daily_data[stock].iloc[-1]['close'])
-                            float_vol_shares = true_dict.get_float_volume(stock)
-                            
-                            # 【CTO核心防爆】数据缺失时跳过过滤，放行给Tick引擎裁决
-                            if day_amount <= 0 or day_close <= 0:
+                    # 【CTO铁律：数据不全，立刻淘汰，绝不放行！】
+                    if not daily_data or stock not in daily_data or daily_data[stock].empty:
+                        missing_count += 1
+                        continue
+                    
+                    try:
+                        day_amount = float(daily_data[stock].iloc[-1]['amount'])
+                        day_close = float(daily_data[stock].iloc[-1]['close'])
+                        float_vol_shares = true_dict.get_float_volume(stock)
+                        
+                        # 【CTO铁律】数据无效或停牌，直接淘汰！
+                        if day_amount <= 0 or day_close <= 0 or not float_vol_shares or float_vol_shares <= 0:
+                            missing_count += 1
+                            continue
+                        
+                        # 【绝对真理公式】换手率 = 成交额 / 流通市值 * 100%
+                        float_market_cap = float_vol_shares * day_close
+                        if float_market_cap > 0:
+                            day_turnover = (day_amount / float_market_cap) * 100.0
+                            if day_turnover >= min_turnover:
                                 filtered_candidates.append(stock)
-                                continue
-                            
-                            if float_vol_shares and float_vol_shares > 0:
-                                # 【绝对真理公式】换手率 = 成交额 / 流通市值 * 100%
-                                float_market_cap = float_vol_shares * day_close
-                                if float_market_cap > 0:
-                                    day_turnover = (day_amount / float_market_cap) * 100.0
-                                    if day_turnover >= min_turnover:
-                                        filtered_candidates.append(stock)
-                        except Exception:
-                            # 异常时放行，交给Tick引擎裁决
-                            filtered_candidates.append(stock)
-                    else:
-                        # 【总监验证关键修复】无日K数据时，放行给Tick引擎裁决
-                        # 不能因为日K数据缺失就直接淘汰！
-                        filtered_candidates.append(stock)
+                    except Exception:
+                        missing_count += 1
+                        continue
                 
-                print(f"  🎯 换手率铁网(>={min_turnover}%)过滤完毕，剩余: {len(filtered_candidates)} 只真龙候选")
+                # 【CTO数据断言】如果缺失率超过20%，触发断路器！
+                total_stocks = len(valid_stocks_to_process)
+                if total_stocks > 0 and (missing_count / total_stocks > 0.2):
+                    error_msg = f"❌ [Fail Fast] 数据严重缺失！{missing_count}/{total_stocks} 只股票无日K数据。请先运行 unified_downloader 下载数据！"
+                    logger.error(error_msg)
+                    print(error_msg)
+                    return None  # 直接终止今日回测！
+                
+                print(f"  🎯 换手率铁网(>={min_turnover}%)过滤完毕，剩余: {len(filtered_candidates)} 只真龙候选 (淘汰:{missing_count}只)")
                 
             except Exception as e:
                 logger.error(f"快照预筛失败: {e}")
-                filtered_candidates = valid_stocks_to_process  # 异常时兜底放行
+                return None  # 异常时直接终止，不再兜底放行！
             
             # 替换原来的待处理列表
             valid_stocks_to_process = filtered_candidates

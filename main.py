@@ -301,12 +301,27 @@ def replay_cmd(ctx, date, pure):
     # 1. 数据下载防线（确保本地有数据）
     click.echo(click.style(f"⏬ 检查 {date} 的数据...", fg='yellow'))
     try:
-        # 下载日K数据
+        # 【CTO强数据网关接入】强制拉取当天日K和Tick，确保本地绝对有数据
         xtdata.download_history_data("", "day", start_time=date, end_time=date)
         time.sleep(1)
         click.echo(click.style(f"✅ 日K数据已就绪", fg='green'))
     except Exception as e:
         click.echo(click.style(f"⚠️ 数据下载警告: {e}", fg='yellow'))
+    
+    # 2. 【CTO数据断言】预热字典并校验
+    try:
+        from logic.data_providers.true_dictionary import warmup_true_dictionary
+        all_stocks = xtdata.get_stock_list_in_sector('沪深A股')
+        click.echo(click.style(f"  🔥 预热TrueDictionary...", fg='yellow'))
+        warmup_result = warmup_true_dictionary(all_stocks, target_date=date)
+        success_count = warmup_result.get('qmt', {}).get('success', 0)
+        if success_count < 1000:
+            click.echo(click.style(f"❌ [数据断言失败] 财务数据装弹仅成功 {success_count} 只，系统拒绝启动！", fg='red'))
+            click.echo(click.style(f"   请先运行: python tools/unified_downloader.py 下载数据", fg='yellow'))
+            ctx.exit(1)
+        click.echo(click.style(f"  ✅ TrueDictionary预热完成", fg='green'))
+    except Exception as e:
+        click.echo(click.style(f"⚠️ 字典预热警告: {e}", fg='yellow'))
     
     # 2. 调用时间机器 (本质上是单日回测)
     click.echo(click.style(f"🚀 引擎启动，开始扫描...", fg='green'))
