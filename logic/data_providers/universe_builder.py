@@ -149,7 +149,7 @@ class UniverseBuilder:
             return []
 
         result = []
-        cnt = {'blacklist': 0, 'bj': 0, 'kcb': 0, 'st': 0}
+        cnt = {'blacklist': 0, 'bj': 0, 'kcb': 0, 'sh': 0, 'st': 0}
 
         for stock in all_stocks:
             code = stock.split('.')[0]
@@ -167,6 +167,12 @@ class UniverseBuilder:
             # 3. 科创板 (688xxx)
             if code.startswith('688'):
                 cnt['kcb'] += 1
+                continue
+
+            # 3.5 【CTO P0 BUG FIX】沪市主板过滤 (60xxxx)
+            # SH Tick前100条全零，污染开盘价计算，全部排除
+            if code.startswith('60'):
+                cnt['sh'] += 1
                 continue
 
             # 4. ST / 退市：通过 get_instrument_detail 检查名称
@@ -191,7 +197,7 @@ class UniverseBuilder:
         logger.info(
             f'[漏斗1] 全市场{len(all_stocks)}只 '
             f'→ 黑名单:{cnt["blacklist"]} 北交所:{cnt["bj"]} '
-            f'科创板:{cnt["kcb"]} ST:{cnt["st"]} '
+            f'科创板:{cnt["kcb"]} 沪市:{cnt["sh"]} ST:{cnt["st"]} '
             f'→ 剩余: {len(result)}只'
         )
         return result
@@ -215,7 +221,7 @@ class UniverseBuilder:
 
         end_date   = self.target_date
         end_dt     = datetime.strptime(self.target_date, '%Y%m%d')
-        start_date = (end_dt - timedelta(days=30)).strftime('%Y%m%d')
+        start_date = (end_dt - timedelta(days=10)).strftime('%Y%m%d')  # 【CTO P1 BUG FIX】30天→10天
 
         passed       = []
         cnt_nodata   = 0

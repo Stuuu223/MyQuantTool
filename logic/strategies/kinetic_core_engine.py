@@ -392,6 +392,10 @@ class 动能打分引擎CoreEngine:
             momentum_score = 40.0 if price > prev_close else 0.0
         else:
             day_strength = (price - low) / (high - low)
+            # 【CTO P0 BUG FIX】必须限幅！
+            # 当 price 超出 [low, high] 区间时（数据异常），day_strength 可能 >1 或 <0
+            # 导致 momentum_score 异常，进而触发误判
+            day_strength = max(0.0, min(day_strength, 1.0))
             momentum_score = day_strength * 40.0
         
         base_score = kinetic_score + potential_score + momentum_score

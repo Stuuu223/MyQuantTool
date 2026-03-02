@@ -366,13 +366,25 @@ class TimeMachineEngine:
             valid_stocks_to_process = [s for s in valid_stocks_to_process if s not in BSON_BOMB_BLACKLIST]
             print(f"  🚫 过滤BSON炸弹后: {len(valid_stocks_to_process)} 只")
             
+            # ========== 【CTO P1 BUG FIX】循环外创建一次 MemoryEngine ==========
+            from logic.memory.short_term_memory import ShortTermMemoryEngine
+            from logic.core.path_resolver import PathResolver
+            
+            if self.is_continuous_backtest:
+                _mem_file = str(PathResolver.get_data_dir() / 'memory' / 'ShortTermMemory_backtest.json')
+                _loop_memory_engine = ShortTermMemoryEngine(memory_file=_mem_file)
+            else:
+                _loop_memory_engine = ShortTermMemoryEngine()
+            logger.info("🧠 [MemoryEngine] 循环外单例已创建")
+            # ========== END FIX ==========
+            
             for stock in valid_stocks_to_process:
                 try:
                     # 【CTO防爆】每只股票处理后强制垃圾回收
                     import gc
                     gc.collect()
                     
-                    score = self._calculate_morning_score(stock, date)
+                    score = self._calculate_morning_score(stock, date, memory_engine=_loop_memory_engine)
                     
                     # 【CTO修复】数据完整性断言：禁止0分兜底
                     if score is None:
@@ -381,14 +393,8 @@ class TimeMachineEngine:
                         logger.warning(f"  ⚠️ {stock}: 数据缺失，跳过算分")
                         continue
                     
-                    # 检查关键数据字段
-                    if score.get('final_score', 0) == 0:
-                        # 区分是Veto导致的0分还是数据缺失导致的0分
-                        if not score.get('is_vetoed', False):
-                            data_missing_count += 1
-                            data_missing_stocks.append(stock)
-                            logger.warning(f"  ⚠️ {stock}: final_score=0且无Veto标记，判定为数据缺失，跳过")
-                            continue
+                    # 【CTO P0 BUG FIX】final_score=0 是动能引擎正确淘汰的垃圾股，属于合法结果
+                    # 只有 pre_close <= 0 才是数据无效的铁证，不再用 final_score=0 误判
                     
                     # 检查昨收价和开盘价的有效性
                     if score.get('pre_close', 0) <= 0:
@@ -403,6 +409,14 @@ class TimeMachineEngine:
                     error_msg = f"{stock}计算错误: {str(e)}"
                     daily_result['errors'].append(error_msg)
                     logger.warning(f"  ⚠️ {error_msg}")
+            
+            # ========== 【CTO P1 BUG FIX】循环结束后关闭MemoryEngine ==========
+            try:
+                _loop_memory_engine.close()
+                logger.info("🧠 [MemoryEngine] 循环结束，单例已关闭")
+            except Exception:
+                pass
+            # ========== END FIX ==========
             
             # 3. 【CTO多维排序】得分相同看MFE，MFE大于5倒扣
             # 【CTO修复】MFE已在_calculate_morning_score中正确计算，不要覆盖！
@@ -678,7 +692,12 @@ class TimeMachineEngine:
             # 默认为主板
             return f"{code}.SH"
     
-    def _calculate_morning_score(self, stock_code: str, date: str) -> Optional[Dict]:
+    def _calculate_morning_score(
+        self, 
+        stock_code: str, 
+        date: str,
+        memory_engine=None  # 【CTO P1 BUG FIX】外部注入，不再内部创建
+    ) -> Optional[Dict]:
         """
         计算早盘得分 - 【CTO V20.5 MVP物理级重构版】
         
@@ -688,6 +707,7 @@ class TimeMachineEngine:
         Args:
             stock_code: 股票代码
             date: 日期 'YYYYMMDD'
+            memory_engine: 记忆引擎实例（外部注入，循环复用）
         
         Returns:
             得分字典或None
@@ -954,26 +974,17 @@ class TimeMachineEngine:
                         
                         # ============================================================
                         # 【记忆引擎挂载】算分前读取记忆衰减
-                        # 【CTO时空切割】热复盘读实盘基因库，全息回演读平行宇宙
+                        # 【CTO P1 BUG FIX】使用外部注入的memory_engine，不再内部创建
                         # ============================================================
                         memory_multiplier = 1.0
                         try:
-                            from logic.memory.short_term_memory import ShortTermMemoryEngine
-                            from logic.core.path_resolver import PathResolver
-                            
-                            # 【CTO核心判定】热复盘 vs 全息回演
-                            if self.is_continuous_backtest:
-                                memory_file = PathResolver.get_data_dir() / 'memory' / 'ShortTermMemory_backtest.json'
-                                memory_engine = ShortTermMemoryEngine(memory_file=str(memory_file))
-                            else:
-                                memory_engine = ShortTermMemoryEngine()
-                            
-                            memory_score = memory_engine.read_memory(stock_code, today=date)
-                            if memory_score is not None:
-                                # 将记忆分数转化为multiplier (0.5~1.5范围)
-                                memory_multiplier = 0.5 + (memory_score / 100.0)
-                                logger.debug(f"🧠 {stock_code} 记忆激活: score={memory_score:.2f}, multiplier={memory_multiplier:.2f}")
-                            memory_engine.close()
+                            if memory_engine is not None:
+                                memory_score = memory_engine.read_memory(stock_code, today=date)
+                                if memory_score is not None:
+                                    # 将记忆分数转化为multiplier (0.5~1.5范围)
+                                    memory_multiplier = 0.5 + (memory_score / 100.0)
+                                    logger.debug(f"🧠 {stock_code} 记忆激活: score={memory_score:.2f}, multiplier={memory_multiplier:.2f}")
+                            # 注意：不在函数内close()！由外部统一管理生命周期
                         except Exception as mem_e:
                             # Graceful降级：记忆引擎失败时multiplier=1.0
                             logger.debug(f"⚠️ {stock_code} 记忆读取失败，使用默认multiplier=1.0: {mem_e}")
