@@ -454,7 +454,7 @@ class TimeMachineEngine:
                 
                 # 为Top20中符合条件的股票写入记忆
                 # 条件：涨幅>8% 且 换手>5% (ShortTermMemoryEngine内部会检查)
-                for item in top20:
+                for rank_idx, item in enumerate(top20):
                     stock_code = item['stock_code']
                     final_change = item.get('final_change', 0)
                     # 估算换手率 (使用turnover_rate字段或估算)
@@ -469,6 +469,7 @@ class TimeMachineEngine:
                         blood_pct=final_score,
                         metadata={
                             'date': date,
+                            'last_rank': rank_idx,  # 【CTO新增】记录排名用于动态势能评估
                             'sustain_ratio': item.get('sustain_ratio', 0),
                             'inflow_ratio': item.get('inflow_ratio', 0),
                             'is_vetoed': item.get('is_vetoed', False)
@@ -1451,12 +1452,13 @@ class TimeMachineEngine:
     
     def _apply_memory_decay(self, current_date: str, today_top20: List[Dict]) -> Dict[str, Dict]:
         """
-        执行记忆衰减 - 核心逻辑
+        【CTO P0级重铸】动态势能记忆评估算法
         
-        规则:
-        1. 新记忆分 = 老记忆分 * 0.5
-        2. 连续2日不上榜 -> 删除
-        3. 衰减后score < 10 -> 删除
+        核心物理思想：
+        1. 强更强(1.25x): 排名上升/维持 + 分数上升 → 奖励25%溢价
+        2. 弱转强(1.05x): 分数微降但排名未崩 → 维持5%微弱溢价
+        3. 不及预期(0.65x): 分数大幅下滑或排名暴跌 → 惩罚35%权重
+        4. 缺席衰减(0.5x): 未上榜 → 固定断崖衰减
         
         Args:
             current_date: 当前日期 'YYYYMMDD'
@@ -1466,85 +1468,127 @@ class TimeMachineEngine:
             更新后的记忆字典
         """
         # 1. 加载旧记忆
-        memory = self._load_memory()
+        old_memory_dict = self._load_memory()
+        new_memory_dict = {}
         
-        # 2. 获取今日上榜股票代码
-        today_top_codes: Set[str] = {item['stock_code'] for item in today_top20}
+        # 2. 构建今日股票映射
+        today_map = {item['stock_code']: item for item in today_top20}
+        today_top_codes = set(today_map.keys())
         
-        # 3. 更新记忆中每只股票
-        new_memory = {}
-        decay_stats = {'decayed': 0, 'removed_absent': 0, 'removed_low_score': 0, 'new_added': 0}
+        # 3. 衰减参数
+        MEMORY_MAX_ABSENCE_DAYS = 2
+        MEMORY_MIN_SCORE = 40.0
+        MEMORY_DECAY_FACTOR = 0.5  # 缺席时的固定断崖衰减
         
-        for stock_code, mem_item in memory.items():
-            # 获取当前分数
-            old_score = mem_item.get('score', 0)
+        # 4. 统计计数
+        stats = {
+            'strong_stronger': 0,      # 强更强
+            'weak_to_strong': 0,       # 弱转强
+            'underperformed': 0,       # 不及预期
+            'absent_decay': 0,         # 缺席衰减
+            'removed_absent': 0,       # 删除(缺席)
+            'removed_low_score': 0,    # 删除(低分)
+            'new_added': 0             # 新增
+        }
+        
+        # 5. 遍历旧记忆，进行动态势能评估
+        for stock_code, mem_item in old_memory_dict.items():
+            old_score = mem_item.get('score', 0.0)
+            old_rank = mem_item.get('last_rank', 20)
             
-            # 衰减分数
-            new_score = old_score * MEMORY_DECAY_FACTOR
-            
-            # 检查是否在今日Top20中
             if stock_code in today_top_codes:
-                # 今日上榜，重置缺席天数
-                mem_item['absent_days'] = 0
-                decay_stats['decayed'] += 1
-                logger.debug(f"【记忆衰减】{stock_code} 今日上榜，重置缺席天数")
-            else:
-                # 未上榜，增加缺席天数
-                absent_days = mem_item.get('absent_days', 0) + 1
-                mem_item['absent_days'] = absent_days
+                # 【情况A：继续上榜，动态评估】
+                today_item = today_map[stock_code]
+                today_score = today_item.get('final_score', 0.0)
+                # 计算今日排名
+                today_rank = next((i for i, x in enumerate(today_top20) if x['stock_code'] == stock_code), 20)
                 
-                # 检查是否连续缺席超过阈值
-                if absent_days >= MEMORY_MAX_ABSENCE_DAYS:
-                    decay_stats['removed_absent'] += 1
-                    logger.info(f"【记忆衰减】{stock_code} 连续{absent_days}日不上榜，删除")
-                    continue
-            
-            # 检查分数是否低于阈值
-            if new_score < MEMORY_MIN_SCORE:
-                decay_stats['removed_low_score'] += 1
-                logger.info(f"【记忆衰减】{stock_code} 分数{new_score:.1f} < {MEMORY_MIN_SCORE}，删除")
-                continue
-            
-            # 更新分数和日期
-            mem_item['score'] = round(new_score, 2)
-            mem_item['last_decay_date'] = current_date
-            new_memory[stock_code] = mem_item
-            decay_stats['decayed'] += 1
-        
-        # 4. 添加今日新上榜股票（不在记忆中的）
-        for item in today_top20:
-            stock_code = item['stock_code']
-            if stock_code not in new_memory:
-                new_memory[stock_code] = {
+                # ============ 核心物理算法：动能与位能变化 ============
+                if today_score >= old_score and today_rank <= old_rank:
+                    # 强更强：排名上升/维持 + 分数上升 → 奖励 1.25 倍
+                    multiplier = 1.25
+                    verdict = "强更强"
+                    stats['strong_stronger'] += 1
+                elif today_score >= old_score * 0.85 and today_rank <= old_rank + 3:
+                    # 弱转强/高位震荡：分数微降但排名未崩 → 维持 1.05 倍
+                    multiplier = 1.05
+                    verdict = "弱转强"
+                    stats['weak_to_strong'] += 1
+                else:
+                    # 不及预期：分数大幅下滑或排名暴跌 → 惩罚 0.65 倍
+                    multiplier = 0.65
+                    verdict = "不及预期"
+                    stats['underperformed'] += 1
+                
+                new_score = min(100.0, old_score * multiplier)  # 封顶 100 分
+                
+                new_memory_dict[stock_code] = {
                     'stock_code': stock_code,
                     'date': current_date,
-                    'score': item.get('final_score', 70.0),
+                    'score': round(new_score, 2),
                     'absent_days': 0,
                     'last_decay_date': current_date,
-                    'close_price': item.get('price_0940', 0),
-                    'change_pct': item.get('change_0940', 0),
-                    'status': item.get('status', 'unknown')
+                    'last_rank': today_rank,
+                    'last_verdict': verdict
                 }
-                decay_stats['new_added'] += 1
-                logger.debug(f"【记忆衰减】{stock_code} 新上榜，加入记忆")
+                logger.debug(f"🧠 [记忆动态进化] {stock_code}: {verdict} (Rank {old_rank}->{today_rank}), Score: {old_score:.1f}->{new_score:.1f}")
+                
+            else:
+                # 【情况B：未上榜，机械衰减】
+                absent_days = mem_item.get('absent_days', 0) + 1
+                
+                if absent_days >= MEMORY_MAX_ABSENCE_DAYS:
+                    logger.debug(f"🧠 [记忆湮灭] {stock_code}: 连续缺席 {absent_days} 天，彻底清除")
+                    stats['removed_absent'] += 1
+                    continue  # 物理删除
+                
+                new_score = old_score * MEMORY_DECAY_FACTOR
+                if new_score < MEMORY_MIN_SCORE:
+                    stats['removed_low_score'] += 1
+                    continue  # 分数太低，物理删除
+                
+                mem_item['score'] = round(new_score, 2)
+                mem_item['absent_days'] = absent_days
+                mem_item['last_decay_date'] = current_date
+                mem_item['last_verdict'] = f"缺席衰减(Day {absent_days})"
+                new_memory_dict[stock_code] = mem_item
+                stats['absent_decay'] += 1
         
-        # 5. 保存更新后的记忆
-        self._save_memory(new_memory)
+        # 6. 录入新晋妖股
+        for rank_idx, item in enumerate(today_top20):
+            stock_code = item['stock_code']
+            if stock_code not in new_memory_dict:
+                new_memory_dict[stock_code] = {
+                    'stock_code': stock_code,
+                    'date': current_date,
+                    'score': item.get('final_score', 60.0),  # 初始记忆底分
+                    'absent_days': 0,
+                    'last_decay_date': current_date,
+                    'last_rank': rank_idx,
+                    'last_verdict': '首次入榜'
+                }
+                stats['new_added'] += 1
+                logger.debug(f"🧠 [记忆新生] {stock_code}: 首次打入 Top20, 写入基因库")
         
-        # 6. 打印统计
-        print(f"\n  📉 记忆衰减统计:")
-        print(f"     原有记忆: {len(memory)} 条")
-        print(f"     衰减保留: {decay_stats['decayed']} 条")
-        print(f"     新增记忆: {decay_stats['new_added']} 条")
-        print(f"     删除(缺席): {decay_stats['removed_absent']} 条")
-        print(f"     删除(低分): {decay_stats['removed_low_score']} 条")
-        print(f"     当前记忆: {len(new_memory)} 条")
+        # 7. 保存更新后的记忆
+        self._save_memory(new_memory_dict)
         
-        logger.info(f"【记忆衰减】统计: 原有{len(memory)}, 保留{decay_stats['decayed']}, "
-                   f"新增{decay_stats['new_added']}, 删除缺席{decay_stats['removed_absent']}, "
-                   f"删除低分{decay_stats['removed_low_score']}, 当前{len(new_memory)}")
+        # 8. 打印统计
+        print(f"\n  🧠 记忆动态进化统计:")
+        print(f"     强更强(1.25x): {stats['strong_stronger']} 条")
+        print(f"     弱转强(1.05x): {stats['weak_to_strong']} 条")
+        print(f"     不及预期(0.65x): {stats['underperformed']} 条")
+        print(f"     缺席衰减(0.5x): {stats['absent_decay']} 条")
+        print(f"     删除(缺席≥2天): {stats['removed_absent']} 条")
+        print(f"     删除(低分<{MEMORY_MIN_SCORE}): {stats['removed_low_score']} 条")
+        print(f"     新增(首次入榜): {stats['new_added']} 条")
+        print(f"     当前记忆总数: {len(new_memory_dict)} 条")
         
-        return new_memory
+        logger.info(f"【记忆动态进化】强更强{stats['strong_stronger']}, 弱转强{stats['weak_to_strong']}, "
+                   f"不及预期{stats['underperformed']}, 缺席衰减{stats['absent_decay']}, "
+                   f"新增{stats['new_added']}, 当前{len(new_memory_dict)}")
+        
+        return new_memory_dict
 
     # ==================== Step6: 时空对齐与全息回演UI看板 ====================
     
