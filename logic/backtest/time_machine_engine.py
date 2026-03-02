@@ -292,15 +292,68 @@ class TimeMachineEngine:
             data_missing_count = 0
             data_missing_stocks = []  # 记录因数据缺失被跳过的股票
             
-            # 【CTO防爆】限制每次回测处理的股票数量
-            # 原因：批量处理大量股票时QMT存在内存/状态累积问题
-            # 待找到根本原因后再移除此限制
-            MAX_STOCKS_PER_RUN = 20
-            if len(valid_stocks_to_process) > MAX_STOCKS_PER_RUN:
-                print(f"  ⚠️ 【CTO防爆】限制处理前{MAX_STOCKS_PER_RUN}只股票（共{len(valid_stocks_to_process)}只）")
-                valid_stocks_to_process = valid_stocks_to_process[:MAX_STOCKS_PER_RUN]
-            else:
-                print(f"  📊 股票池大小: {len(valid_stocks_to_process)} 只")
+            # ==========================================
+            # 【CTO漏斗归位】废除强行截断，植入动态量价快照过滤！
+            # 问题：之前用 MAX_STOCKS_PER_RUN=20 截取前20只，导致京东方等大盘股混入
+            # 修复：用换手率物理漏斗过滤死水股，不依赖Magic Number市值限制
+            # ==========================================
+            print(f"  🔍 开始二维铁网快照预筛 (过滤死水大象)...")
+            
+            from logic.core.config_manager import get_config_manager
+            config_mgr = get_config_manager()
+            min_turnover = config_mgr.get('live_sniper.min_active_turnover_rate', 5.0)
+            
+            filtered_candidates = []
+            
+            # 使用 get_local_data 批量获取日K，极速过滤
+            try:
+                from xtquant import xtdata
+                from logic.data_providers.true_dictionary import get_true_dictionary
+                true_dict = get_true_dictionary()
+                
+                daily_data = xtdata.get_local_data(
+                    field_list=['volume'],
+                    stock_list=valid_stocks_to_process,
+                    period='1d',
+                    start_time=date,
+                    end_time=date
+                )
+                
+                for stock in valid_stocks_to_process:
+                    if daily_data and stock in daily_data and not daily_data[stock].empty:
+                        try:
+                            day_vol = float(daily_data[stock].iloc[-1]['volume'])
+                            float_vol = true_dict.get_float_volume(stock)
+                            if float_vol and float_vol > 0:
+                                # 计算当天的总换手率
+                                # 【QMT量纲】日K volume单位是手(1手=100股)，需乘100
+                                day_turnover = (day_vol * 100.0 / float_vol) * 100.0
+                                # 【物理过滤】：如果全天换手率都达不到5%，早盘绝对不可能有资金做功！
+                                if day_turnover >= min_turnover:
+                                    filtered_candidates.append(stock)
+                        except Exception:
+                            continue
+                
+                print(f"  🎯 换手率铁网(>={min_turnover}%)过滤完毕，剩余: {len(filtered_candidates)} 只真龙候选")
+                
+            except Exception as e:
+                logger.error(f"快照预筛失败: {e}")
+                filtered_candidates = valid_stocks_to_process  # 极端兜底
+            
+            # 替换原来的待处理列表
+            valid_stocks_to_process = filtered_candidates
+            
+            # 【CTO防爆兜底】：如果符合换手的股票还是太多，随机抽样50只
+            import random
+            if len(valid_stocks_to_process) > 50:
+                valid_stocks_to_process = random.sample(valid_stocks_to_process, 50)
+                print(f"  ⚠️ 触发BSON防爆，随机抽取 50 只高换手标的进行 Tick 精确打击")
+            
+            if len(valid_stocks_to_process) == 0:
+                print(f"  ❌ 换手率铁网过滤后无候选股票，今日回测终止")
+                return daily_result
+            
+            print(f"  📊 最终股票池: {len(valid_stocks_to_process)} 只")
             
             # 【CTO黑名单】已知的BSON炸弹股票（触发C++断言崩溃）
             BSON_BOMB_BLACKLIST = {
@@ -308,8 +361,7 @@ class TimeMachineEngine:
                 '300197.SZ',  # 20260226测试触发崩溃（Tick遍历中）
             }
             valid_stocks_to_process = [s for s in valid_stocks_to_process if s not in BSON_BOMB_BLACKLIST]
-            if len(valid_stocks_to_process) < MAX_STOCKS_PER_RUN:
-                print(f"  🚫 过滤BSON炸弹后: {len(valid_stocks_to_process)} 只")
+            print(f"  🚫 过滤BSON炸弹后: {len(valid_stocks_to_process)} 只")
             
             for stock in valid_stocks_to_process:
                 try:
@@ -794,7 +846,22 @@ class TimeMachineEngine:
                     # 提取价格与成交量
                     price = force_float(row.get('lastPrice', row.get('price', 0)))
                     volume = force_float(row.get('volume', 0))
-                    amount = force_float(price * volume)
+                    amount = force_float(row.get('amount', price * volume))  # 优先用原始amount字段
+                    
+                    # 【CTO修复】delta_vol必须先计算，不管price是否为0！
+                    # 因为volume是累计值，跳过更新会导致delta_vol计算错误
+                    delta_vol = max(0.0, volume - prev_vol)
+                    prev_vol = volume
+                    
+                    # 【CTO调试】打印第一个有效tick的volume值
+                    if tick_count == 1:
+                        print(f"【DEBUG】{stock_code} 第1个tick: volume={volume}, price={price}, amount={amount}")
+                    if tick_count == 100:
+                        print(f"【DEBUG】{stock_code} 第100个tick: volume={volume}, price={price}")
+                    
+                    if price <= 0: 
+                        # 价格无效时跳过资金流计算，但delta_vol已经正确计算了
+                        continue
                     
                     if price <= 0: continue
                     
@@ -803,20 +870,37 @@ class TimeMachineEngine:
                         morning_high = max(morning_high, price)
                         morning_low = min(morning_low, price)
                     
-                    # 【CTO修复】增量资金流计算 (修复流入比为0 Bug)
-                    delta_vol = max(0.0, volume - prev_vol)
-                    prev_vol = volume
+                    # ==========================================
+                    # 【CTO微积分平滑算法】解决资金正负抵消黑洞
+                    # 注意：delta_vol和prev_vol已在前方计算
+                    # ==========================================
+                    delta_amount = delta_vol * price  # 当前Tick的瞬时成交额
                     
-                    # 【Boss钦定】平盘打捞：平盘Tick按上一笔方向折半计算
-                    if price > prev_price:
-                        flow_15min += delta_vol * price  # 主动向上做功
+                    # 引入微小波动缓冲，不让一分钱的下跌抵消掉几千万的流入
+                    price_change = price - prev_price
+                    price_change_pct = price_change / prev_price if prev_price > 0 else 0.0
+                    
+                    # 动能权重 (买方力量占比，范围 0.0 到 1.0)
+                    if price_change_pct > 0.001:  # 涨幅大于千分之一，视为强势买单
+                        buy_power = 1.0
                         last_dir = 1.0
-                    elif price < prev_price:
-                        flow_15min -= delta_vol * price  # 主动向下砸盘
+                    elif price_change_pct < -0.001:  # 跌幅大于千分之一，视为强势卖单
+                        buy_power = 0.0
                         last_dir = -1.0
                     else:
-                        # 【Boss钦定】平盘时，按上一笔方向折半计算
-                        flow_15min += delta_vol * price * 0.5 * last_dir
+                        # 震荡区间（平盘或微小波动），按前一趋势的动能延续，并给予多空焦灼比例
+                        buy_power = 0.6 if last_dir > 0 else 0.4
+                    
+                    # 净流入 = 买方成交额 - 卖方成交额
+                    # buy_power为1.0时，净流入就是全额；buy_power为0.5时，净流入为0
+                    instant_net_inflow = delta_amount * (buy_power - (1.0 - buy_power))
+                    
+                    # 【CTO调试】每100个tick打印一次
+                    if tick_count % 100 == 0:
+                        print(f"【DEBUG】{stock_code} Tick#{tick_count}: delta_vol={delta_vol:.0f}, price={price:.2f}, buy_power={buy_power:.2f}, instant={instant_net_inflow/1e4:.1f}万")
+                    
+                    # 累加资金流
+                    flow_15min += instant_net_inflow
                     prev_price = price
                     
                     # 【Boss钦定】累计成交额和成交量（用于VWAP）
@@ -831,19 +915,15 @@ class TimeMachineEngine:
                         curr_time.startswith('09:33') or 
                         curr_time.startswith('09:34') or 
                         curr_time.startswith('09:35')):
-                        # 计算这个tick的资金流贡献
-                        if price > prev_price:
-                            flow_5min += delta_vol * price
-                        elif price < prev_price:
-                            flow_5min -= delta_vol * price
-                        else:
-                            flow_5min += delta_vol * price * 0.5 * last_dir
+                        flow_5min += instant_net_inflow
                     
                     # 【阶段一：09:30-09:45】累加打分数据 (flow_15min已在上方增量计算)
                     
                     # 【打分定格】09:45瞬间调用动能打分引擎验钞机
                     if not is_scored and ('09:45:00' <= curr_time < '09:46:00' or curr_time == '09:45:00'):
                         logger.debug(f"【时间机器】{stock_code} 触发09:45打分！时间={curr_time}, 价格={price}")
+                        # 【CTO调试】打印资金流累计值和成交量
+                        print(f"【DEBUG】{stock_code} 09:45时刻: volume={volume:.0f}, price={price:.2f}, flow_5min={flow_5min/1e8:.4f}亿, flow_15min={flow_15min/1e8:.4f}亿, float_cap={float_volume*pre_close/1e8:.2f}亿")
                         from logic.core.config_manager import get_config_manager
                         config_manager = get_config_manager()
                         
