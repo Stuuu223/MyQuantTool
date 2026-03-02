@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║                    🚀 MyQuantTool - 统一CLI入口 (V20.5)                      ║
+║                    🚀 MyQuantTool - 统一CLI入口 (纯血游资雷达)                      ║
 ║              Phase 7: 架构统一 · CLI标准化 · 生产就绪                        ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  所有操作必须通过此入口执行                                                   ║
@@ -98,7 +98,7 @@ def print_banner():
     """打印系统横幅"""
     banner = """
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║                    🚀 MyQuantTool V20.5.0 - Phase 7                          ║
+║                    🚀 MyQuantTool 纯血游资雷达.0 - Phase 7                          ║
 ║              统一CLI入口 · 架构标准化 · 生产就绪                             ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  核心能力: 回测 · 扫描 · 分析 · 监控 · 数据管理                              ║
@@ -146,7 +146,7 @@ def validate_stock_code(ctx, param, value):
 def cli(ctx, version):
     """MyQuantTool 统一CLI入口 - 量化交易系统主程序"""
     if version:
-        click.echo("MyQuantTool V20.5.0 - Phase 7统一CLI")
+        click.echo("MyQuantTool 纯血游资雷达.0 - Phase 7统一CLI")
         ctx.exit()
     
     if ctx.invoked_subcommand is None:
@@ -171,8 +171,6 @@ def cli(ctx, version):
               help='结束日期 (YYYYMMDD格式)，用于连续回测')
 @click.option('--universe', '-u',
               help='股票池: 单只股票、CSV文件路径，或使用"TUSHARE"实时粗筛')
-@click.option('--volume_percentile', default=0.88, type=float,
-              help='量比分位数阈值 (默认: 0.88)')
 @click.option('--output', '-o', default='data/backtest_results',
               help='输出目录 (默认: data/backtest_results)')
 @click.option('--save', is_flag=True, help='保存结果到文件')
@@ -219,7 +217,6 @@ def backtest_cmd(ctx, date, start_date, end_date, universe, volume_percentile, o
         # 配置管理器统一参数管理 (CTO SSOT原则)
         config_manager = get_config_manager()
         # 更新配置文件中的量比阈值
-        config_manager._config['halfway']['volume_surge_percentile'] = volume_percentile
         click.echo(f"📊 量比分位数阈值设置为: {volume_percentile}")
 
         # V20纯血TimeMachineEngine
@@ -465,8 +462,6 @@ def analyze_cmd(ctx, stock, start_date, end_date, date, detail):
               help='数据类型 (默认: all)')
 @click.option('--universe', '-u',
               help='股票池CSV文件路径')
-@click.option('--volume_percentile', default=0.88, type=float,
-              help='量比分位数阈值 (默认: 0.88)')
 @click.option('--workers', '-w', type=int, default=4,
               help='并发 workers 数 (默认: 4)')
 @click.pass_context
@@ -521,7 +516,6 @@ def download_cmd(ctx, date, data_type, universe, volume_percentile, workers):
             # 配置管理器统一参数管理 (CTO SSOT原则)
             config_manager = get_config_manager()
             # 更新配置文件中的量比阈值
-            config_manager._config['halfway']['volume_surge_percentile'] = volume_percentile
             click.echo(f"📊 使用 {volume_percentile} 分位数进行粗筛")
             
             stock_list = get_daily_universe(date)
@@ -778,14 +772,12 @@ def simulate_cmd(ctx, start_date, end_date, watchlist, phase):
               help='交易模式: paper=模拟盘, real=实盘')
 @click.option('--max-positions', default=3, help='最大持仓数量')
 @click.option('--cutoff-time', default='14:50:00', help='截停时间(不开新仓)')
-@click.option('--volume_percentile', default=0.95, type=float,
-              help='量比分位数阈值 (默认: 0.95)')
 @click.option('--dry-run', is_flag=True, help='干运行(不实际下单)')
 @click.option('--replay-date', help='历史回放日期 (格式: YYYYMMDD)，用于回放指定日期的信号')
 @click.pass_context
-def live_cmd(ctx, mode, max_positions, cutoff_time, volume_percentile, dry_run, replay_date):
+def live_cmd(ctx, mode, max_positions, cutoff_time, dry_run, replay_date):
     """
-    🚀 实盘猎杀系统 - V20.5高阶算子版 (EventDriven事件驱动)
+    🚀 实盘猎杀系统 - 纯血游资雷达高阶算子版 (EventDriven事件驱动)
     
     CTO强制规范: 
     - 09:25盘前装弹 → 09:30极速扫描 → 09:35后火控雷达
@@ -842,9 +834,9 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, volume_percentile, dry_run, 
                     'mfe': item.get('mfe', 0),
                     'tag': item.get('tag', '复盘')
                 })
-            render_battle_dashboard(dashboard_data, title=f"[{prev_date}] 热复盘真龙看板(V20.5高阶算子版)", clear_screen=False)
+            render_battle_dashboard(dashboard_data, title=f"[{prev_date}] 热复盘真龙看板(纯血游资雷达高阶算子版)", clear_screen=False)
         else:
-            click.echo(click.style("⚠️ 今日没有任何股票通过V20.5苛刻的风控漏斗！", fg='red'))
+            click.echo(click.style("⚠️ 今日没有任何股票通过纯血游资雷达苛刻的风控漏斗！", fg='red'))
         return  # 画完大屏才能滚！
     
     # 检查是否已收盘 (15:00后) - 禁止盘后启动实盘
@@ -858,11 +850,14 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, volume_percentile, dry_run, 
         click.echo(f"\n✅ 盘后战报完成: 共评分 {len(result.get('top20', [])) if result else 0} 只股票")
         return  # 绝对禁止继续启动实盘引擎
     
-    click.echo(click.style("\n🚀 启动实盘猎杀系统 (EventDriven 事件驱动模式 V20.5)", fg='green', bold=True))
+    click.echo(click.style("\n🚀 启动实盘猎杀系统 (EventDriven 事件驱动模式 纯血游资雷达)", fg='green', bold=True))
     click.echo(f"📅 日期: {datetime.now().strftime('%Y-%m-%d')}")
     click.echo(f"📊 模式: {'模拟盘' if mode == 'paper' else '实盘交易'}")
     click.echo(f"💰 最大持仓: {max_positions}")
-    click.echo(f"📊 量比分位数: {volume_percentile}")
+    from logic.core.config_manager import get_config_manager
+    config_manager = get_config_manager()
+    min_vol = config_manager.get('live_sniper.min_volume_multiplier', 3.0)
+    click.echo(f"📊 绝对量比阈值: {min_vol}x (配置文件驱动)")
     click.echo(f"⏰ 截停时间: {cutoff_time}")
     click.echo(click.style(f"🔒 换手率死亡拦截上限: 300%（CTO统一标准）", fg='yellow'))
     if dry_run:
@@ -945,8 +940,6 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, volume_percentile, dry_run, 
             from logic.data_providers.qmt_manager import QmtDataManager
 
             config_manager = get_config_manager()
-            config_manager._config['halfway']['volume_surge_percentile'] = volume_percentile
-            click.echo(f"📊 实盘引擎量比分位数阈值设置为: {volume_percentile} (右侧起爆标准)")
 
             try:
                 qmt_manager = QmtDataManager()
@@ -957,7 +950,7 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, volume_percentile, dry_run, 
 
             return LiveTradingEngine(
                 qmt_manager=qmt_manager,
-                volume_percentile=volume_percentile
+                volume_percentile=None  # 从配置文件读取
             )
 
         # 初始化引擎变量，防止作用域错误

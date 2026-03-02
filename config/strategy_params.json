@@ -60,19 +60,14 @@
   "live_sniper": {
     "_description": "实盘极速快照双斩与时间加权参数 - V20.4纯动态Ratio版",
     "_CTO_WARNING": "【反混淆规约】本配置所有参数必须带_type声明，严禁Magic Number！",
-    
     "_COMMENT_min_volume_multiplier": "【绝对倍数非分位数】量比最小倍数：今日估算成交量必须是5日均量的多少倍，如1.5表示今日放量50%以上",
-    "min_volume_multiplier": 1.5,
-    
+    "min_volume_multiplier": 3.0,
     "_COMMENT_turnover_rate_per_min_min": "【绝对百分比】每分钟最小换手率",
     "turnover_rate_per_min_min": 0.2,
-    
     "_COMMENT_turnover_rate_max": "【绝对百分比】死亡换手熔断线，超过此值强制剔除。V20.5.0：死亡线300%",
     "turnover_rate_max": 300.0,
-    
     "_COMMENT_min_active_turnover_rate": "【绝对百分比】大哥起步线：无5%不妖股。Boss拍板：5%起步，20%常态，300%死亡【V20.5.0】",
     "min_active_turnover_rate": 5.0,
-    
     "use_percentile": true,
     "volume_ratio_percentile": 0.95,
     "time_decay_ratios": {

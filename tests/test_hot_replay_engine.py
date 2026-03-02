@@ -4,7 +4,7 @@
 热复盘引擎测试脚本 - Phase 4验证
 
 测试目标:
-1. V18核心引擎算法正确性
+1. 动能打分引擎核心引擎算法正确性
 2. 向量化量比计算精度
 3. 起爆点检测准确性
 4. 热复盘全流程功能
@@ -29,9 +29,9 @@ print(f"项目根目录: {PROJECT_ROOT}")
 print(f"Python路径: {sys.path[0]}")
 
 # 导入测试模块
-print("\n【步骤1】导入V18核心引擎...")
-from logic.strategies.v18_core_engine import V18CoreEngine
-print("✅ V18CoreEngine导入成功")
+print("\n【步骤1】导入动能打分引擎核心引擎...")
+from logic.strategies.kinetic_core_engine import 动能打分引擎CoreEngine
+print("✅ 动能打分引擎CoreEngine导入成功")
 
 print("\n【步骤2】导入热复盘引擎...")
 from logic.backtest.hot_replay_engine import HotReplayEngine, ExplosionPoint
@@ -39,7 +39,7 @@ print("✅ HotReplayEngine导入成功")
 
 # 初始化引擎
 print("\n【步骤3】初始化引擎...")
-v18_engine = V18CoreEngine()
+v18_engine = 动能打分引擎CoreEngine()
 hot_engine = HotReplayEngine(max_workers=1)  # 测试用单进程
 print("✅ 引擎初始化完成")
 
@@ -51,10 +51,10 @@ print(f"时间衰减系数: 早盘={v18_engine.time_decay_early_morning}, 上午
 print("✅ 配置读取正常")
 
 # ==============================================================================
-# 测试1: V18核心算法验证
+# 测试1: 动能打分引擎核心算法验证
 # ==============================================================================
 print("\n" + "="*70)
-print("测试1: V18核心算法验证")
+print("测试1: 动能打分引擎核心算法验证")
 print("="*70)
 
 # 测试1.1: 基础分计算（通过过滤，但量比未达极端奖励阈值）
@@ -227,7 +227,7 @@ if has_real_data:
         print(f"  起爆时间: {result.timestamp}")
         print(f"  起爆价格: {result.price:.2f}")
         print(f"  量比: {result.volume_ratio:.2f}")
-        print(f"  V18得分: {result.v18_score:.2f}")
+        print(f"  动能打分引擎得分: {result.v18_score:.2f}")
         print(f"  收盘价: {result.close_price:.2f}")
         print(f"  收益率: {result.pnl_pct:.2f}%")
         print(f"  是否涨停: {result.is_limit_up}")
@@ -274,7 +274,7 @@ try:
         sorted_points = sorted(report.explosion_points, key=lambda x: x.v18_score, reverse=True)
         for i, ep in enumerate(sorted_points[:3], 1):
             print(f"    {i}. {ep.stock_code} @ {ep.timestamp.strftime('%H:%M:%S')} "
-                  f"量比={ep.volume_ratio:.2f} V18={ep.v18_score:.1f} 收益={ep.pnl_pct:+.2f}%")
+                  f"量比={ep.volume_ratio:.2f} 动能打分引擎={ep.v18_score:.1f} 收益={ep.pnl_pct:+.2f}%")
     
     # 生成战报预览
     print(f"\n【测试5.2】战报生成")
@@ -310,8 +310,8 @@ print("测试报告汇总")
 print("="*70)
 
 print("\n【核心功能验证】")
-print("  ✅ V18基础分计算 - 通过")
-print("  ✅ V18时间衰减 - 通过")
+print("  ✅ 动能打分引擎基础分计算 - 通过")
+print("  ✅ 动能打分引擎时间衰减 - 通过")
 print("  ✅ 量比计算（标量）- 通过")
 print("  ✅ 向量化量比计算 - 通过")
 print("  ✅ 向量化起爆点检测 - 通过")

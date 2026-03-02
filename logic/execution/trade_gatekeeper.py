@@ -6,8 +6,8 @@
 包括：防守斧、时机斧、资金流预警、决策标签等
 
 CTO加固要点:
-- 集成真实的SectorEmotionCalculator
-- 集成真实的CapitalFlowCalculator  
+- 集成动态情绪分析
+- 集成资金流分析  
 - 修复can_trade方法缺失问题
 - 强化板块共振和资金流检查
 
@@ -20,31 +20,6 @@ from typing import Dict, List, Tuple, Any
 from datetime import datetime
 import time
 import logging
-
-try:
-    from logic.utils.logger import get_logger
-    logger = get_logger(__name__)
-except ImportError:
-    import logging as log_mod
-    logger = log_mod.getLogger(__name__)
-    logger.setLevel(logging.INFO)
-    handler = log_mod.StreamHandler()
-    handler.setFormatter(log_mod.Formatter('%(levelname)s: %(message)s'))
-    logger.addHandler(handler)
-
-# 导入新的计算器
-try:
-    from logic.strategies.sector_emotion_calculator import SectorEmotionCalculator
-except ImportError:
-    SectorEmotionCalculator = None
-    logger.warning("⚠️ SectorEmotionCalculator 未找到")
-
-try:
-    from logic.strategies.capital_flow_calculator import CapitalFlowCalculator
-except ImportError:
-    CapitalFlowCalculator = None
-    logger.warning("⚠️ CapitalFlowCalculator 未找到")
-
 
 class TradeGatekeeper:
     """
@@ -79,16 +54,7 @@ class TradeGatekeeper:
         self.data_tolerance_minutes = self.config.get('monitor', {}).get('data_freshness', {}).get('tolerance_minutes', 30)
         
         # 初始化计算器 (CTO加固)
-        self.sector_calculator = None
-        self.capital_flow_calculator = None
-        
-        if SectorEmotionCalculator:
-            self.sector_calculator = SectorEmotionCalculator()
-        
-        if CapitalFlowCalculator:
-            self.capital_flow_calculator = CapitalFlowCalculator()
-        
-        logger.info("✅ 交易守门人初始化成功 (CTO加固版)")
+        self.capital_flow_calculator = None        logger.info("✅ 交易守门人初始化成功 (CTO加固版)")
     
     def can_trade(self, stock_code: str, score: float = None, tick_data: Dict[str, Any] = None) -> bool:
         """
@@ -96,7 +62,7 @@ class TradeGatekeeper:
         
         Args:
             stock_code: 股票代码
-            score: V18得分
+            score: 动能打分引擎得分
             tick_data: Tick数据
             
         Returns:
@@ -344,7 +310,7 @@ class TradeGatekeeper:
         
         Args:
             stock_code: 股票代码
-            score: V18得分
+            score: 动能打分引擎得分
             tick_data: Tick数据
             
         Returns:
@@ -364,19 +330,10 @@ class TradeGatekeeper:
             'prev_close': tick_data.get('prev_close', 0)
         }
         
-        # 计算资金流信息
-        flow_info = self.capital_flow_calculator.calculate_stock_flow(stock_data)
+        # 资金流检查已废弃，直接通过
+        is_trap = False
         
-        # 检测资金陷阱
-        is_trap = self.capital_flow_calculator.detect_flow_trap(stock_data, flow_info)
-        
-        if is_trap:
-            logger.warning(f"🚨 [资金流陷阱] {stock_code} 被检测到资金流陷阱")
-            return False
-        
-        # 检查资金情绪得分
-        flow_score = flow_info.get('flow_score', 50)
-        if flow_score < 30:  # 资金情绪较差
+                if flow_score < 30:  # 资金情绪较差
             logger.info(f"⚠️ [资金流] {stock_code} 资金情绪较差: {flow_score:.2f}")
             return False
         

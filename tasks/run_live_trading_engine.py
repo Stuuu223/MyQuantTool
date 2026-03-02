@@ -5,7 +5,7 @@
 - 盘前粗筛：09:25获取股票池
 - 开盘快照：09:30-09:35向量化过滤
 - 火控雷达：09:35后Tick订阅+实时算分
-- 交易执行：V18得分+TradeGatekeeper风控
+- 交易执行：动能打分引擎得分+TradeGatekeeper风控
 
 CTO加固要点:
 - 修复QMT回调问题 (真·事件订阅)
@@ -30,13 +30,6 @@ try:
 except ImportError:
     pd = None
 
-# 紧急修复P0级事故: InstrumentCache支持
-try:
-    from logic.data_providers.instrument_cache import get_instrument_cache
-    INSTRUMENT_CACHE_AVAILABLE = True
-except ImportError:
-    INSTRUMENT_CACHE_AVAILABLE = False
-
 # 获取logger
 try:
     from logic.utils.logger import get_logger
@@ -60,7 +53,7 @@ class LiveTradingEngine:
     - 实盘不容沙子，没有QMT就是玩具！
     """
     
-    def __init__(self, qmt_manager=None, event_bus=None, volume_percentile: float = 0.95):
+    def __init__(self, qmt_manager=None, event_bus=None, volume_percentile: float = 1.5):
         """
         初始化引擎 - CTO强制：依赖注入模式
         
@@ -85,10 +78,8 @@ class LiveTradingEngine:
         self.running = False
         self.volume_percentile = volume_percentile
         
-        # 交易相关组件
-        self.warfare_core = None
-        self.trade_gatekeeper = None
-        self.trader = None
+        # 【CTO清理】已废弃的V18模块已删除，使用动能打分引擎替代
+        # warfare_core/trade_gatekeeper/trader 已被纯血游资架构废除
         
         # 【CTO挂载】微积分形态学引擎 - 时空对齐 (管理多个股票实例)
         self.kinetic_engines: Dict[str, Any] = {}
@@ -142,7 +133,7 @@ class LiveTradingEngine:
         # 原因：FullMarketScanner模块不存在，导致self.scanner=None
         # 修复：直接使用UniverseBuilder的粗筛能力
         self.scanner = None  # 标记为None，后续用UniverseBuilder
-        logger.info("🎯 [V20.5] 使用UniverseBuilder替代FullMarketScanner进行粗筛")
+        logger.info("🎯 [纯血游资雷达] 使用UniverseBuilder替代FullMarketScanner进行粗筛")
         
         try:
             from logic.data_providers.event_bus import create_event_bus
@@ -153,20 +144,7 @@ class LiveTradingEngine:
             logger.error("❌ EventBus 加载失败")
         except Exception as e:
             self.event_bus = None
-            logger.error(f"❌ EventBus 初始化异常: {e}")
-        
-        # 初始化InstrumentCache (紧急修复P0级事故)
-        try:
-            from logic.data_providers.instrument_cache import get_instrument_cache
-            self.instrument_cache = get_instrument_cache()
-            logger.debug("🎯 InstrumentCache 已加载")
-        except ImportError:
-            self.instrument_cache = None
-            logger.warning("⚠️ InstrumentCache 未找到")
-        except Exception as e:
-            self.instrument_cache = None
-            logger.error(f"❌ InstrumentCache 初始化异常: {e}")
-    
+            logger.error(f"❌ EventBus 初始化异常: {e}")    
     def _init_qmt_adapter(self):
         """
         【架构解耦】初始化QMT事件适配器
@@ -261,6 +239,17 @@ class LiveTradingEngine:
             else:
                 logger.error(f"❌ [CTO强制审计] 观察池为空！0.90分位的宽体雷达失效！")
             logger.info("=" * 60)
+            
+            # 【CTO强制回显】终端控制台输出
+            import click
+            click.echo(f"\n{'='*60}")
+            click.echo(f"📢 [CTO物理透视] 盘中补网完毕！")
+            click.echo(f"🎯 成功进入观察池的股票数量: {watchlist_count} 只")
+            if watchlist_count > 0:
+                click.echo(click.style(f"✅ 观察池前5只: {self.watchlist[:5]}", fg="green"))
+            else:
+                click.echo(click.style("❌ 致命警报：观察池为0！所有股票均被过滤！", fg="red"))
+            click.echo(f"{'='*60}\n")
             
             self._fire_control_mode()
             return
@@ -642,7 +631,7 @@ class LiveTradingEngine:
         2. 从TrueDictionary获取真实五日均量、流通盘
         3. 向量化计算量比和换手率
         4. CTO物理过滤: 量比>3 且 1%<换手率<20%
-        5. 只保留Top30给V18引擎
+        5. 只保留Top30给动能打分引擎引擎
         """
         import pandas as pd
         
@@ -794,6 +783,20 @@ class LiveTradingEngine:
             logger.info(f"   ⏱️ 开盘已运行: {minutes_passed:.1f}分钟 | 量比倍数门槛: {min_volume_multiplier:.2f}x (动态Ratio)")
             logger.info(f"   📊 【CTO源码清剿】观察池使用纯动态倍数（>= {min_volume_multiplier}x），Zero Magic Number！")
             
+            # 【CTO强制回显】必须在终端显示观察池状态！
+            import click
+            click.echo(f"\n{'='*60}")
+            click.echo(f"📢 [CTO物理透视] 09:30盘中快照筛选完毕！")
+            click.echo(f"🎯 成功越过 {min_volume_multiplier:.1f}x 量比门槛的股票数量: {len(self.watchlist)} 只")
+            if len(self.watchlist) == 0:
+                click.echo(click.style("❌ 致命警报：观察池为0！所有股票均被过滤，雷达无目标可盯！", fg="red"))
+                click.echo(click.style(f"   请检查 {min_volume_multiplier:.1f}x 量比门槛是否过高，或今日行情是否极其低迷", fg="yellow"))
+            elif len(self.watchlist) < 10:
+                click.echo(click.style(f"⚠️ 观察池数量较少: {len(self.watchlist)}只", fg="yellow"))
+            else:
+                click.echo(click.style(f"✅ 观察池已就绪: {len(self.watchlist)}只", fg="green"))
+            click.echo(f"{'='*60}\n")
+            
             # 7. 记录详细日志（Top5）
             if len(filtered_df) > 0:
                 top5 = filtered_df.head(5)
@@ -834,18 +837,15 @@ class LiveTradingEngine:
             logger.info("📊 静态模式：跳过动态雷达（适用于盘后复盘）")
     
     def _init_trading_components(self):
-        """【CTO清理】初始化交易相关组件 - 删除已废弃模块引用"""
-        # 【CTO说明】unified_warfare_core等模块已被V20.5架构废除
-        # 相关功能已整合到V18CoreEngine和GlobalFilterGateway
-        self.warfare_core = None
-        self.trade_gatekeeper = None
-        self.trader = None
-        logger.debug("🎯 [V20.5] 交易组件初始化完成（精简模式）")
+        """【CTO清理】初始化交易相关组件 - 纯血游资架构"""
+        # 【CTO说明】V18的warfare_core/trade_gatekeeper等模块已被纯血游资架构废除
+        # 相关功能已整合到动能打分引擎CoreEngine和GlobalFilterGateway
+        logger.debug("🎯 [纯血游资雷达] 交易组件初始化完成（精简模式）")
     
     def _start_dynamic_radar(self):
         """
         【CTO铁血整改】启动动态雷达刷新线程
-        每3秒刷新一次看板，展示watchlist中股票的实时V18分数
+        每3秒刷新一次看板，展示watchlist中股票的实时动能打分引擎分数
         """
         import threading
         import os
@@ -908,11 +908,11 @@ class LiveTradingEngine:
                             high_60d = tick.get('high', current_price)
                             space_gap_pct = (high_60d - current_price) / high_60d if high_60d > 0 else 0.5
                             
-                            # 调用V18验钞机
+                            # 调用动能打分引擎验钞机
                             try:
-                                from logic.strategies.v18_core_engine import V18CoreEngine
-                                v18_engine = V18CoreEngine()
-                                final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe = v18_engine.calculate_true_dragon_score(
+                                from logic.strategies.动能打分引擎_core_engine import 动能打分引擎CoreEngine
+                                动能打分引擎_engine = 动能打分引擎CoreEngine()
+                                final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe = 动能打分引擎_engine.calculate_true_dragon_score(
                                     net_inflow=flow_15min * current_price,
                                     price=current_price,
                                     prev_close=pre_close,
@@ -934,7 +934,7 @@ class LiveTradingEngine:
                                 ratio_stock = flow_5min / flow_5min_median if flow_5min_median > 0 else 0
                                 import logging
                                 logger = logging.getLogger(__name__)
-                                logger.error(f"V18引擎计算失败: {e}")
+                                logger.error(f"动能打分引擎引擎计算失败: {e}")
                             # 纯度评级
                             purity = '极优' if space_gap_pct < 0.05 else '优' if space_gap_pct < 0.10 else '良'
                             
@@ -984,7 +984,7 @@ class LiveTradingEngine:
         3. 开火门槛：0.95分位（严格）
         4. 换手率检查（开火时才检查）
         5. 微观防线检查
-        6. V18引擎算分
+        6. 动能打分引擎引擎算分
         7. 拔枪射击！
         
         Args:
@@ -993,7 +993,7 @@ class LiveTradingEngine:
         # CTO强制透视：记录所有接收到的Tick（每100条打印一次避免刷屏）
         self._debug_tick_received_count = getattr(self, '_debug_tick_received_count', 0) + 1
         if self._debug_tick_received_count % 100 == 0:
-            logger.info(f"💓 [CTO透视] 累计接收Tick: {self._debug_tick_received_count} 条 | watchlist数量: {len(self.watchlist)}")
+            logger.debug(f"💓 [CTO透视] 累计接收Tick: {self._debug_tick_received_count} 条 | watchlist数量: {len(self.watchlist)}")
         
         # CTO加固：容错机制
         if not self.running:
@@ -1012,9 +1012,7 @@ class LiveTradingEngine:
                 logger.debug(f"🚫 [CTO透视] 已过滤 {self._debug_filtered_count} 条不在watchlist的Tick")
             return  # 不在观察池，直接丢弃
         
-        # 【CTO修复】warfare_core为None时使用V18CoreEngine直接计算
-        if not self.warfare_core:
-            logger.debug(f"📊 [CTO透视] {stock_code} 使用V18CoreEngine直接计算（warfare_core已废弃）")
+        # 【CTO清理】V18的warfare_core已废弃，使用动能打分引擎CoreEngine直接计算
         
         try:
             # ============================================================
@@ -1050,7 +1048,7 @@ class LiveTradingEngine:
                 # 【CTO强制透视】记录被静默丢弃的Tick（每500条打印一次，避免刷屏）
                 self._debug_below_threshold_count = getattr(self, '_debug_below_threshold_count', 0) + 1
                 if self._debug_below_threshold_count % 500 == 0:
-                    logger.info(f"🚫 [CTO透视] 累计{self._debug_below_threshold_count}条Tick未达量比门槛({current_volume_ratio:.2f}x < {fire_threshold:.2f}x)")
+                    logger.debug(f"🚫 [CTO透视] 累计{self._debug_below_threshold_count}条Tick未达量比门槛({current_volume_ratio:.2f}x < {fire_threshold:.2f}x)")
                 return  # 未达开火门槛，静默丢弃
             
             logger.info(f"🔥 {stock_code} 触发量比阈值: {current_volume_ratio:.2f}x >= {fire_threshold:.2f}x")
@@ -1102,7 +1100,7 @@ class LiveTradingEngine:
                     logger.error(f"💀 {stock_code} 尖刺骗炮(Spike) detected! 时空否决！")
                     # 打上标签并跳过
                     tick_data['tag'] = "💀 尖刺骗炮(Spike)"
-                    return  # 直接处决，不进入V18算分
+                    return  # 直接处决，不进入动能打分引擎算分
                 
                 # 检测生命周期T_maintain
                 if hasattr(kinetic_engine, 'lifecycle_tracker'):
@@ -1111,15 +1109,15 @@ class LiveTradingEngine:
                         logger.warning(f"⏱️ {stock_code} 生命周期T_maintain={status.maintain_minutes} < 11min, 降权处理")
             
             # ============================================================
-            # Phase 2 Step 6: V18引擎算分
+            # Phase 2 Step 6: 动能打分引擎引擎算分
             # ============================================================
-            score = self._v18_calculate_score(stock_code, tick_data)
+            score = self._calculate_signal_score(stock_code, tick_data)
             
-            if score < 70:  # V18阈值
-                logger.info(f"🚫 {stock_code} V18得分不足: {score:.2f} < 70")
+            if score < 70:  # 动能打分引擎阈值
+                logger.info(f"🚫 {stock_code} 动能打分引擎得分不足: {score:.2f} < 70")
                 return  # 得分不足，放弃开火
             
-            logger.info(f"🎯 {stock_code} V18高分通过: {score:.2f}")
+            logger.info(f"🎯 {stock_code} 动能打分引擎高分通过: {score:.2f}")
             
             # ============================================================
             # Phase 2 Step 7: 拔枪射击！
@@ -1133,19 +1131,19 @@ class LiveTradingEngine:
     
     def _get_current_fire_threshold(self, config_manager) -> float:
         """
-        获取当前开火阈值 - 0.95分位严格标准
+        获取当前开火阈值 - 绝对量比阈值（非分位数！）
         
         Args:
             config_manager: 配置管理器实例
             
         Returns:
-            float: 量比分位数阈值 (默认0.95)
+            float: 绝对量比阈值 (默认1.5倍)
         """
-        # 从配置获取0.95分位阈值
-        threshold = config_manager.get_volume_ratio_percentile('live_sniper')
+        # 【CTO重铸】：废除分位数误用，使用真实的游资放量标准
+        # 从配置获取最小量比倍数（如1.5倍），而非分位数
+        min_volume_multiplier = config_manager.get('live_sniper.min_volume_multiplier', 1.5)
         
-        # 确保不低于绝对最小值1.5
-        return max(threshold, 1.5)
+        return min_volume_multiplier
     
     def _calculate_turnover_rate(self, stock_code: str, tick_event, true_dict) -> float:
         """
@@ -1237,52 +1235,89 @@ class LiveTradingEngine:
             logger.error(f"❌ {stock_code} 微观防线检查异常: {e}")
             return True  # 容错：异常时默认通过
     
-    def _v18_calculate_score(self, stock_code: str, tick_data: Dict[str, Any]) -> float:
+    def _calculate_signal_score(self, stock_code: str, tick_data: Dict[str, Any]) -> float:
         """
-        V18引擎实时算分 - 挂载记忆引擎
+        V20.5 动能算分 - 直接调用 kinetic_core_engine
         
         Args:
             stock_code: 股票代码
             tick_data: Tick数据
             
         Returns:
-            float: V18得分 (0-100)，已应用记忆衰减
+            float: 动能得分 (0-100)
         """
-        if not self.warfare_core:
-            return 0.0
-        
         try:
-            # ============================================================
-            # 【记忆引擎挂载】算分前读取记忆衰减
-            # ============================================================
-            memory_multiplier = 1.0
-            try:
-                from logic.memory.short_term_memory import ShortTermMemoryEngine
-                memory_engine = ShortTermMemoryEngine()
-                memory_score = memory_engine.read_memory(stock_code)
-                if memory_score is not None:
-                    # 将记忆分数转化为multiplier (0.5~1.5范围)
-                    # memory_score范围0-100，映射到multiplier 0.5-1.5
-                    memory_multiplier = 0.5 + (memory_score / 100.0)
-                    logger.debug(f"🧠 {stock_code} 记忆激活: score={memory_score:.2f}, multiplier={memory_multiplier:.2f}")
-                memory_engine.close()
-            except Exception as mem_e:
-                # Graceful降级：记忆引擎失败时multiplier=1.0
-                logger.debug(f"⚠️ {stock_code} 记忆读取失败，使用默认multiplier=1.0: {mem_e}")
-                memory_multiplier = 1.0
+            # 【CTO 物理归位】：直接调用 V20.5 动能算子
+            from logic.strategies.kinetic_core_engine import 动能打分引擎CoreEngine
+            from logic.data_providers.true_dictionary import get_true_dictionary
             
-            # 送入V18验钞机进行实时打分
-            score = self.warfare_core.process_tick(tick_data)
-            base_score = float(score) if score else 0.0
+            if not hasattr(self, '_kinetic_core'):
+                self._kinetic_core = 动能打分引擎CoreEngine()
+            
+            true_dict = get_true_dictionary()
+            
+            # 提取 tick 数据
+            price = tick_data.get('price', 0)
+            volume = tick_data.get('volume', 0)
+            amount = tick_data.get('amount', 0)
+            high = tick_data.get('high', price)
+            low = tick_data.get('low', price)
+            open_price = tick_data.get('open', price)
+            prev_close = tick_data.get('prev_close', price * 0.98)
+            
+            # 获取流通股本
+            float_volume = true_dict.get_float_volume(stock_code)
+            if not float_volume or float_volume <= 0:
+                float_volume = 1e8  # 回退默认值
+            
+            # 计算5分钟和15分钟资金流（简化版）
+            from datetime import datetime
+            now = datetime.now()
+            market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
+            minutes_passed = max(1, (now - market_open).total_seconds() / 60)
+            
+            # 简化：用当前成交额估算资金流
+            flow_5min = amount / max(1, minutes_passed) * 5 if minutes_passed > 0 else amount
+            flow_15min = amount / max(1, minutes_passed) * 15 if minutes_passed > 0 else amount
+            
+            # 5分钟资金中位数（从5日均量估算）
+            avg_vol_5d = true_dict.get_avg_volume_5d(stock_code)
+            if avg_vol_5d and avg_vol_5d > 0:
+                flow_5min_median = (avg_vol_5d / 240 * 5) * price
+            else:
+                flow_5min_median = flow_5min / 10
+            
+            # 调用 V20.5 动能引擎
+            base_score, sustain_ratio, inflow_ratio, ratio_stock, mfe_score = self._kinetic_core.calculate_true_dragon_score(
+                net_inflow=amount * 0.5,  # 简化：假设50%为净流入
+                price=price,
+                prev_close=prev_close,
+                high=high,
+                low=low,
+                open_price=open_price,
+                flow_5min=flow_5min,
+                flow_15min=flow_15min,
+                flow_5min_median_stock=flow_5min_median,
+                space_gap_pct=0.05,
+                float_volume_shares=float_volume,
+                current_time=now
+            )
+            
+            logger.debug(f"🎯 {stock_code} V20.5动能得分: {base_score:.2f}, sustain={sustain_ratio:.2f}, mfe={mfe_score:.2f}")
+            return base_score
+            
+        except Exception as e:
+            logger.error(f"❌ {stock_code} V20.5动能算分失败: {e}")
+            return 0.0
             
             # 应用记忆multiplier
             final_score = base_score * memory_multiplier
             
-            logger.debug(f"🎯 {stock_code} V18算分: base={base_score:.2f}, memory_mult={memory_multiplier:.2f}, final={final_score:.2f}")
+            logger.debug(f"🎯 {stock_code} 动能算分: base={base_score:.2f}, memory_mult={memory_multiplier:.2f}, final={final_score:.2f}")
             return final_score
             
         except Exception as e:
-            logger.error(f"❌ {stock_code} V18算分失败: {e}")
+            logger.error(f"❌ {stock_code} 动能算分失败: {e}")
             return 0.0
     
     def _execute_trade(self, stock_code: str, tick_data: Dict[str, Any], score: float):
@@ -1292,7 +1327,7 @@ class LiveTradingEngine:
         Args:
             stock_code: 股票代码
             tick_data: Tick数据
-            score: V18得分
+            score: 动能打分引擎得分
         """
         if not self.trader:
             logger.warning(f"⚠️ {stock_code} 交易接口未连接，跳过执行")
@@ -1309,7 +1344,7 @@ class LiveTradingEngine:
                 direction=OrderDirection.BUY.value,
                 quantity=100,  # 可根据资金管理调整
                 price=tick_data.get('price', 0),
-                remark=f'V18_{score:.1f}_VR_{tick_data.get("volume_ratio", 0):.1f}'
+                remark=f'动能打分引擎_{score:.1f}_VR_{tick_data.get("volume_ratio", 0):.1f}'
             )
             
             result = self.trader.buy(order)
@@ -1655,7 +1690,7 @@ class LiveTradingEngine:
         # 【CTO静态快照打分算法】盘后无法获取连续Tick流，用静态数据估算
         def calculate_snapshot_score(volume_ratio, turnover_rate, price, open_price, prev_close, high, low, amount, float_volume=0):
             """
-            基于单点快照计算V18风格综合得分 (CTO区分度优化版)
+            基于单点快照计算动能打分引擎风格综合得分 (CTO区分度优化版)
             
             公式:
             1. 资金强度(权重40): 量比对数曲线15分 + 净流入对数曲线25分
@@ -1797,11 +1832,26 @@ class LiveTradingEngine:
                                     # 【CTO最终裁决】智能单位探测 + 物理熔断
                                     raw_volume = tick_event_data['volume']
                                     
+                                    # 【CTO强制】时间归一化量比计算 - 防止早盘量比失真
+                                    # 计算当前时间到9:30的分钟数（用快照时间代替）
+                                    from datetime import datetime
+                                    now = datetime.now()  # 在实际回放中，应使用tick的时间
+                                    market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
+                                    raw_minutes = (now - market_open).total_seconds() / 60
+                                    # 防止除零和过小值
+                                    minutes_passed = max(5, raw_minutes)  # 使用最小5分钟避免早盘虚高
+                                    
                                     # 【智能单位探测】如果volume小于5日均量的1/10，说明volume是手，均量是股
                                     if raw_volume < (avg_volume_5d / 10.0):
-                                        volume_ratio = (raw_volume * 100.0) / avg_volume_5d
+                                        # volume是手，avg_volume_5d是手 -> 需要时间归一化
+                                        current_rate = raw_volume / minutes_passed
+                                        historical_rate = avg_volume_5d / 240.0
+                                        volume_ratio = current_rate / historical_rate if historical_rate > 0 else 0.0
                                     else:
-                                        volume_ratio = raw_volume / avg_volume_5d
+                                        # volume是股，avg_volume_5d是股 -> 需要时间归一化
+                                        current_rate = raw_volume / minutes_passed
+                                        historical_rate = avg_volume_5d / 240.0
+                                        volume_ratio = current_rate / historical_rate if historical_rate > 0 else 0.0
                                     
                                     # 【物理熔断】正常A股量比极少超过30倍，>50直接熔断为0
                                     if volume_ratio > 50:
@@ -1812,10 +1862,11 @@ class LiveTradingEngine:
                                     from logic.strategies.global_filter_gateway import quick_validate
                                     
                                     # 计算换手率 (使用原始volume，假设为全天总量)
-                                    # 【CTO修复】换手率 = (成交量手*100股/流通股本)*100%
-                                    # 原公式运算优先级错误导致结果虚高100倍！
+                                    # 【CTO物理校准】QMT的tick volume已经是股(Shares)！
+                                    # 换手率 = (成交股数 / 流通股本) * 100%
+                                    # 原公式((raw_volume * 100) / float_volume) * 100放大了100倍！
                                     float_volume = true_dict.get_float_volume(stock_code)
-                                    turnover_rate = ((raw_volume * 100.0) / float_volume) * 100.0 if float_volume > 0 else 0.0
+                                    turnover_rate = (raw_volume / float_volume) * 100.0 if float_volume > 0 else 0.0
                                     
                                     is_valid, reason, metadata = quick_validate(
                                         stock_code=stock_code,
@@ -1861,7 +1912,7 @@ class LiveTradingEngine:
                                                 from datetime import datetime
                                                 real_time = datetime.fromtimestamp(time_val/1000).strftime('%H:%M:%S')
                                         
-                                        # 【CTO静态快照打分】计算V18风格综合得分、净流入、资金强度、MFE
+                                        # 【CTO静态快照打分】计算动能打分引擎风格综合得分、净流入、资金强度、MFE
                                         final_score, net_inflow_yi, strength_label, mfe = calculate_snapshot_score(
                                             volume_ratio=volume_ratio,
                                             turnover_rate=turnover_rate,
@@ -1923,11 +1974,11 @@ class LiveTradingEngine:
                         triggered_stocks.sort(key=lambda x: x.get('final_score', 0), reverse=True)
 
                     # 【Step6: 时空对齐与全息回演UI看板】
-                    # 使用真实时空切片计算V18 Dragon Score并输出工业级看板
+                    # 使用真实时空切片计算动能打分引擎 Dragon Score并输出工业级看板
                     dragon_rankings = []
                     try:
-                        from logic.strategies.v18_core_engine import V18CoreEngine
-                        v18_engine = V18CoreEngine()
+                        from logic.strategies.动能打分引擎_core_engine import 动能打分引擎CoreEngine
+                        动能打分引擎_engine = 动能打分引擎CoreEngine()
                         
                         # 【CTO修复】使用QMT原生交易日历获取最近交易日，解决周六凌晨跨日Bug
                         if CALENDAR_UTILS_AVAILABLE:
@@ -1971,9 +2022,9 @@ class LiveTradingEngine:
                             # 获取空间差（上方套牢盘距离）
                             space_gap_pct = 0.05  # 默认5%，实际应从数据计算
                             
-                            # 调用 V18 calculate_true_dragon_score
+                            # 调用 动能打分引擎 calculate_true_dragon_score
                             try:
-                                final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe = v18_engine.calculate_true_dragon_score(
+                                final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe = 动能打分引擎_engine.calculate_true_dragon_score(
                                     net_inflow=stock.get('net_inflow_yi', 0) * 1e8,  # 亿转元
                                     price=stock['price'],
                                     prev_close=stock.get('prev_close', stock['price'] * 0.95),
@@ -2062,7 +2113,7 @@ class LiveTradingEngine:
                             print(f"{'='*80}\n")
                             
                     except Exception as e:
-                        logger.error(f"❌ V18实盘真龙榜单计算失败: {e}")
+                        logger.error(f"❌ 动能打分引擎实盘真龙榜单计算失败: {e}")
 
                     # 【第三斩】输出JSON报告到logs目录
                     audit_report = {
@@ -2138,7 +2189,7 @@ class LiveTradingEngine:
                         
                         # 【CTO铁血指令】：无论结果怎样，必须把大屏拍在Boss脸上！
                         if not dashboard_dragons:
-                            logger.warning("⚠️ 今日没有任何股票通过V18过滤条件！")
+                            logger.warning("⚠️ 今日没有任何股票通过动能打分引擎过滤条件！")
                             # dashboard_dragons保持为空列表，但大屏必须渲染！
                         
                         render_battle_dashboard(

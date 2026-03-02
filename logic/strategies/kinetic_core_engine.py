@@ -1,13 +1,13 @@
 ﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-V18核心算子引擎 - 无状态数学计算模块
+动能打分引擎核心算子引擎 - 无状态数学计算模块
 ========================================
-CTO方案S任务1：从TimeMachineEngine剥离V18双Ratio算分逻辑
+CTO方案S任务1：从TimeMachineEngine剥离动能打分引擎双Ratio算分逻辑
 
 设计原则：
 1. 无状态 - 不保存任何运行时状态，纯函数式计算
-2. 可复用 - 实盘/回测/热复盘共用同一套V18大脑
+2. 可复用 - 实盘/回测/热复盘共用同一套动能打分引擎大脑
 3. 零硬编码 - 所有参数从ConfigManager读取
 4. 向量化支持 - 支持标量和向量化计算
 
@@ -24,8 +24,8 @@ import logging
 
 from logic.core.config_manager import get_config_manager
 
-# 配置V18引擎专用日志器
-logger = logging.getLogger("V18CoreEngine")
+# 配置动能打分引擎引擎专用日志器
+logger = logging.getLogger("动能打分引擎CoreEngine")
 
 
 def safe_float(value, default=0.0):
@@ -73,18 +73,18 @@ def safe_float(value, default=0.0):
         return default
 
 
-class V18CoreEngine:
+class 动能打分引擎CoreEngine:
     """
-    V18核心算子 - 无状态数学计算引擎
+    动能打分引擎核心算子 - 无状态数学计算引擎
     
     职责：
-    - 封装V18双Ratio算分算法（量比+换手率）
+    - 封装动能打分引擎双Ratio算分算法（量比+换手率）
     - 实现时间衰减权重计算
     - 提供标量和向量化两种计算接口
     - 知行合一：实盘/回测/复盘共用同一逻辑
     
     使用示例：
-        >>> engine = V18CoreEngine()
+        >>> engine = 动能打分引擎CoreEngine()
         >>> score = engine.calculate_base_score(
         ...     change_pct=5.2,
         ...     volume_ratio=2.5,
@@ -102,7 +102,7 @@ class V18CoreEngine:
     
     def __init__(self):
         """
-        初始化V18核心引擎
+        初始化动能打分引擎核心引擎
         
         从ConfigManager加载所有配置参数，确保零硬编码。
         """
@@ -110,7 +110,7 @@ class V18CoreEngine:
         self._load_config()
     
     def _load_config(self) -> None:
-        """从ConfigManager加载所有V18相关配置"""
+        """从ConfigManager加载所有动能打分引擎相关配置"""
         # 量比分位数阈值
         self.volume_ratio_percentile: float = self._config.get(
             'live_sniper.volume_ratio_percentile', 0.95
@@ -142,7 +142,7 @@ class V18CoreEngine:
         turnover_rate_per_min: float
     ) -> float:
         """
-        计算基础动能分（V18双Ratio核心算法）
+        计算基础动能分（动能打分引擎双Ratio核心算法）
         
         算法逻辑：
         1. 检查双Ratio过滤条件（量比+换手率）
@@ -167,7 +167,7 @@ class V18CoreEngine:
         # 获取量比阈值（根据日期动态计算，此处使用默认值）
         volume_ratio_threshold = self._get_volume_ratio_threshold()
         
-        # V18双Ratio化过滤检查
+        # 动能打分引擎双Ratio化过滤检查
         passes_filters = (
             volume_ratio >= volume_ratio_threshold and
             turnover_rate_per_min >= self.turnover_rate_per_min_min
@@ -569,10 +569,10 @@ class V18CoreEngine:
 
 if __name__ == "__main__":
     print("=" * 70)
-    print("V18核心算子引擎 - 单元测试")
+    print("动能打分引擎核心算子引擎 - 单元测试")
     print("=" * 70)
     
-    engine = V18CoreEngine()
+    engine = 动能打分引擎CoreEngine()
     
     # 测试1: 基础分计算（通过过滤）
     print("\n【测试1】基础分计算（通过双Ratio过滤）")
@@ -774,5 +774,5 @@ if __name__ == "__main__":
     print("  ✅ 通过 - sustain_ratio降权惩罚生效")
     
     print("\n" + "=" * 70)
-    print("✅ 所有单元测试通过！V18核心引擎已就绪。")
+    print("✅ 所有单元测试通过！动能打分引擎核心引擎已就绪。")
     print("=" * 70)

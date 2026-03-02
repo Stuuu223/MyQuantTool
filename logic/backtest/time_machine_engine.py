@@ -57,9 +57,9 @@ class TimeMachineEngine:
         self.data_manager = QmtDataManager()
         self.results_cache: Dict[str, Dict] = {}
         
-        # 【CTO修复】挂载V18算分引擎
-        from logic.strategies.v18_core_engine import V18CoreEngine
-        self._v18_engine = V18CoreEngine()
+        # 【CTO修复】挂载动能打分引擎算分引擎
+        from logic.strategies.kinetic_core_engine import 动能打分引擎CoreEngine
+        self._kinetic_engine = 动能打分引擎CoreEngine()
         
         self._ensure_output_dirs()
         
@@ -168,29 +168,23 @@ class TimeMachineEngine:
             logger.warning(f"获取60日最高价失败 {stock_code}: {e}")
             return 0.0
     
-    def _get_volume_ratio_threshold_for_date(self, date: str, base_percentile: float) -> float:
+    def _get_volume_ratio_threshold_for_date(self, date: str, base_percentile: float = None) -> float:
         """
-        获取特定日期的量比阈值 (CTO SSOT原则)
+        获取特定日期的量比阈值 (V20.5 SSOT原则)
         
         Args:
             date: 日期 'YYYYMMDD'
-            base_percentile: 基础分位数
+            base_percentile: 已废弃，保留参数兼容性
         
         Returns:
-            量比阈值
+            量比阈值 (绝对倍数，如3.0)
         """
-        # CTO强制执行：回测引擎必须使用配置管理器的分位数参数
-        # 不允许在回测中写死 return 3.0！必须算出当天的动态分位数！
+        # 【V20.5唯一真理】回测引擎必须使用 live_sniper.min_volume_multiplier
+        # 不再使用分位数，直接返回绝对倍数
         from logic.core.config_manager import get_config_manager
         config_manager = get_config_manager()
         
-        # 使用配置中的分位数，如果提供了base_percentile则使用它，否则使用配置默认值
-        volume_ratio_percentile = config_manager.get_volume_ratio_percentile('live_sniper')
-        
-        # 为了计算动态阈值，需要获取当日的量比数据
-        # 由于在回测环境下，我们无法直接获取当日全市场数据
-        # 所以这里使用配置的分位数值作为基准，但不使用硬编码的3.0
-        return volume_ratio_percentile
+        return config_manager.get_min_volume_multiplier()
     
     def get_trade_dates(self, start_date: str, end_date: str) -> List[str]:
         """
@@ -858,7 +852,7 @@ class TimeMachineEngine:
                     if curr_time <= '09:45:00':
                         flow_15min = force_float(flow_15min + estimated_flow)
                     
-                    # 【打分定格】09:45瞬间调用V18验钞机
+                    # 【打分定格】09:45瞬间调用动能打分引擎验钞机
                     # 【调试日志】检查curr_time的值和类型
                     if '09:45:00' <= curr_time <= '09:46:00':
                         print(f"【DEBUG】curr_time详情: value={repr(curr_time)}, type={type(curr_time)}, len={len(curr_time)}")
@@ -905,11 +899,11 @@ class TimeMachineEngine:
                             logger.debug(f"⚠️ {stock_code} 记忆读取失败，使用默认multiplier=1.0: {mem_e}")
                             memory_multiplier = 1.0
                         
-                        # 调用V18验钞机 (CTO终极红线版)
+                        # 调用动能打分引擎验钞机 (CTO终极红线版)
                         # 【CTO修复】current_time必须是datetime类型，不是time类型
                         current_time = datetime.strptime(f"{date} 09:45", "%Y%m%d %H:%M")
                         try:
-                            base_score, sustain_ratio, inflow_ratio, ratio_stock, mfe_score = self._v18_engine.calculate_true_dragon_score(
+                            base_score, sustain_ratio, inflow_ratio, ratio_stock, mfe_score = self._kinetic_engine.calculate_true_dragon_score(
                                 net_inflow=flow_15min,
                                 price=price,
                                 prev_close=pre_close,
@@ -923,14 +917,14 @@ class TimeMachineEngine:
                                 float_volume_shares=float_volume,
                                 current_time=current_time
                             )
-                        except Exception as v18_e:
-                            print(f"【DEBUG】V18算分异常: {type(v18_e).__name__}: {v18_e}")
-                            logger.error(f"❌ {stock_code} V18算分失败: {v18_e}")
+                        except Exception as kinetic_e:
+                            print(f"【DEBUG】动能打分引擎算分异常: {type(kinetic_e).__name__}: {kinetic_e}")
+                            logger.error(f"❌ {stock_code} 动能打分引擎算分失败: {kinetic_e}")
                             continue
                         
                         # 应用记忆multiplier
                         final_score = base_score * memory_multiplier
-                        logger.debug(f"🎯 {stock_code} V18算分: base={base_score:.2f}, memory_mult={memory_multiplier:.2f}, final={final_score:.2f}")
+                        logger.debug(f"🎯 {stock_code} 动能打分引擎算分: base={base_score:.2f}, memory_mult={memory_multiplier:.2f}, final={final_score:.2f}")
                         
                         is_scored = True
                         early_exit = True  # 【CTO防爆】打分完成后退出循环

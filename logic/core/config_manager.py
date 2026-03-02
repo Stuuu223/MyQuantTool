@@ -60,25 +60,9 @@ class ConfigManager:
         except (KeyError, TypeError):
             return default
     
-    def get_volume_ratio_percentile(self, strategy: str = 'halfway') -> float:
-        """获取量比分位数阈值"""
-        if strategy == 'halfway':
-            return self.get('halfway.volume_surge_percentile', 0.88)
-        elif strategy == 'leader':
-            return self.get('leader.volume_ratio_percentile', 0.90)
-        elif strategy == 'true_attack':
-            return self.get('true_attack.inflow_ratio_percentile', 0.99)
-        elif strategy == 'trap':
-            return self.get('trap.volume_spike_percentile', 0.95)
-        else:
-            return self.get('halfway.volume_surge_percentile', 0.88)
-    
-    def get_price_momentum_percentile(self, strategy: str = 'halfway') -> float:
-        """获取价格动量分位数阈值"""
-        if strategy == 'halfway':
-            return self.get('halfway.price_momentum_percentile', 0.85)
-        else:
-            return self.get('halfway.price_momentum_percentile', 0.85)
+    def get_min_volume_multiplier(self) -> float:
+        """【V20.5唯一真理】获取最小量比倍数阈值 - 从 live_sniper.min_volume_multiplier 读取"""
+        return self.get('live_sniper.min_volume_multiplier', 3.0)
     
     def get_turnover_rate_thresholds(self) -> Dict[str, float]:
         """获取换手率阈值 (从配置文件获取，支持实盘和回演统一)"""
@@ -121,32 +105,25 @@ def get_param(key_path: str, default: Any = None) -> Any:
     return get_config_manager().get(key_path, default)
 
 
-def get_volume_ratio_percentile(strategy: str = 'halfway') -> float:
-    """便捷获取量比分位数函数"""
-    return get_config_manager().get_volume_ratio_percentile(strategy)
-
-
-def get_price_momentum_percentile(strategy: str = 'halfway') -> float:
-    """便捷获取价格动量分位数函数"""
-    return get_config_manager().get_price_momentum_percentile(strategy)
+def get_min_volume_multiplier() -> float:
+    """【V20.5唯一真理】便捷获取最小量比倍数"""
+    return get_config_manager().get_min_volume_multiplier()
 
 
 if __name__ == "__main__":
     # 测试配置管理器
     print("=" * 60)
-    print("全局配置管理器测试")
+    print("全局配置管理器测试 (V20.5)")
     print("=" * 60)
     
     config_mgr = get_config_manager()
     
-    print(f"半路策略量比分位数: {config_mgr.get_volume_ratio_percentile('halfway')}")
-    print(f"龙头策略量比分位数: {config_mgr.get_volume_ratio_percentile('leader')}")
-    print(f"价格动量分位数: {config_mgr.get_price_momentum_percentile()}")
+    print(f"最小量比倍数: {config_mgr.get_min_volume_multiplier()}x")
     print(f"换手率阈值: {config_mgr.get_turnover_rate_thresholds()}")
     print(f"时间衰减比率: {config_mgr.get_time_decay_ratios()}")
     
     # 测试便捷函数
-    print(f"便捷函数获取: {get_param('halfway.volume_surge_percentile')}")
+    print(f"便捷函数获取: {get_param('live_sniper.min_volume_multiplier')}")
     
     print("=" * 60)
-    print("✅ 配置管理器测试完成")
+    print("✅ 配置管理器测试完成 (V20.5)")

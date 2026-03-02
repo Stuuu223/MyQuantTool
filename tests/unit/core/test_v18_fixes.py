@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-V18核心死律修复单元测试
+动能打分引擎核心死律修复单元测试
 
 测试内容:
 1. P11-A2: final_score不为0（废除Sustain乘数，改为扣分制）
@@ -24,15 +24,15 @@ import unittest
 from holographic_backtest_v2 import HolographicBacktestEngine
 
 
-class V18FixTests(unittest.TestCase):
-    """V18修复验证测试"""
+class 动能打分引擎FixTests(unittest.TestCase):
+    """动能打分引擎修复验证测试"""
     
     @classmethod
     def setUpClass(cls):
         """测试类初始化"""
         cls.engine = HolographicBacktestEngine('20251231')
         print("\n" + "="*80)
-        print("V18核心死律修复验证测试")
+        print("动能打分引擎核心死律修复验证测试")
         print("="*80)
     
     def test_01_sustain_penalty_not_multiplier(self):
@@ -247,7 +247,7 @@ def run_tests():
     """运行所有测试"""
     # 创建测试套件
     loader = unittest.TestLoader()
-    suite = loader.loadTestsFromTestCase(V18FixTests)
+    suite = loader.loadTestsFromTestCase(动能打分引擎FixTests)
     
     # 运行测试
     runner = unittest.TextTestRunner(verbosity=2)
@@ -255,7 +255,7 @@ def run_tests():
     
     # 打印总结
     print("\n" + "="*80)
-    print("V18修复验证测试总结")
+    print("动能打分引擎修复验证测试总结")
     print("="*80)
     print(f"测试运行数: {result.testsRun}")
     print(f"通过: {result.testsRun - len(result.failures) - len(result.errors)}")
@@ -263,7 +263,7 @@ def run_tests():
     print(f"错误: {len(result.errors)}")
     
     if result.wasSuccessful():
-        print("\n🎉 所有测试通过！V18核心死律已修复！")
+        print("\n🎉 所有测试通过！动能打分引擎核心死律已修复！")
         print("\n修复验证:")
         print("  ✅ P11-A2: Sustain从乘数改为惩罚制，final_score不再为0")
         print("  ✅ P11-A3: 基础分采用线性极值映射，高量比票得分更高")

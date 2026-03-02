@@ -242,22 +242,14 @@ class PathResolver:
             else:
                 raise RuntimeError(f"环境变量QMT_PATH指定的路径不存在: {path}")
         
-        config_file = cls.get_config_dir() / "data_paths.json"
-        
-        # 尝试从配置文件读取
-        if config_file.exists():
-            try:
-                with open(config_file, 'r', encoding='utf-8') as f:
-                    config = json.load(f)
-                    qmt_path = config.get('qmt_data_dir')
-                    if qmt_path:
-                        path = Path(qmt_path)
-                        if path.exists():
-                            return path.resolve()
-                        else:
-                            raise RuntimeError(f"配置中的QMT数据目录不存在: {path}")
-            except json.JSONDecodeError as e:
-                raise RuntimeError(f"配置文件格式错误: {config_file}") from e
+        # 直接从环境变量或默认路径获取QMT数据目录
+        qmt_path = os.environ.get("QMT_PATH")
+        if qmt_path:
+            path = Path(qmt_path)
+            if path.exists():
+                return path.resolve()
+            else:
+                raise RuntimeError(f"环境变量QMT_PATH指定的路径不存在: {path}")
         
         # 智能检测：尝试从xtdata获取当前连接的数据路径信息
         try:
