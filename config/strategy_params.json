@@ -26,25 +26,51 @@
   },
 
   "live_sniper": {
-    "_description": "Tick级动能打分引擎微调参数 - V20.5纯动态Ratio版",
+    "_description": "【火控雷达参数】Tick级动能打分引擎 - 狙击手专用",
+    
     "min_volume_multiplier": 3.0,
+    "_min_volume_multiplier_comment": "量比阈值：今日成交量必须>=5日均量的3倍才算放量",
+
     "turnover_rate_per_min_min": 0.2,
+    "_turnover_rate_per_min_min_comment": "每分钟最小换手率：低于此值说明成交稀疏，不够活跃",
+
     "turnover_rate_max": 300.0,
+    "_turnover_rate_max_comment": "换手率上限：超过300%视为死亡换手，直接拦截",
+
     "min_active_turnover_rate": 5.0,
+    "_min_active_turnover_rate_comment": "最小活跃换手率：低于5%说明没人玩，剔除",
+
     "volume_ratio_percentile": 0.95,
+    "_volume_ratio_percentile_comment": "量比分位数：取全市场95分位作为极端放量阈值，用于触发bonus加分",
+
     "sweet_spot_min": 8.0,
+    "_sweet_spot_min_comment": "换手甜点位下限：8%-15%换手率标记为'换手甜点'，主力控盘适中",
+
     "sweet_spot_max": 15.0,
+    "_sweet_spot_max_comment": "换手甜点位上限：超过15%说明分歧过大，低于8%说明关注度不够",
+
     "time_decay_ratios": {
+      "_description": "【时间衰减系数】不同时段的分数乘数，防尾盘骗炮",
       "early_morning_rush": 1.2,
+      "_early_morning_comment": "09:30-09:40 早盘抢筹：最坚决，分数×1.2溢价",
       "morning_confirm": 1.0,
+      "_morning_comment": "09:40-10:30 主升确认：正常推力，分数×1.0",
       "noon_trash": 0.8,
-      "tail_trap": 0.2
+      "_noon_comment": "10:30-14:00 垃圾时间：震荡居多，分数×0.8打折",
+      "tail_trap": 0.2,
+      "_tail_comment": "14:00-14:55 尾盘陷阱：严防骗炮，分数×0.2腰斩"
     },
+
     "scoring_bonuses": {
+      "_description": "【加分奖励】极端情况额外加分",
       "extreme_volume_ratio": 3.0,
+      "_extreme_volume_comment": "极端量比阈值：量比超过3倍时触发",
       "extreme_vol_bonus": 10,
+      "_extreme_vol_bonus_comment": "极端量比奖励：触发后+10分",
       "high_efficiency_turnover_min": 0.5,
-      "high_turnover_bonus": 5
+      "_high_efficiency_comment": "高效换手阈值：每分钟换手超过0.5%",
+      "high_turnover_bonus": 5,
+      "_high_turnover_bonus_comment": "高效换手奖励：触发后+5分"
     }
   },
 
@@ -56,10 +82,14 @@
   },
 
   "memory_engine": {
-    "_description": "记忆引擎阈值 - 写入与信号分离",
+    "_description": "【记忆引擎】跨日记忆衰减 - 捕捉连续强势股",
     "write_min_score": 10.0,
+    "_write_min_score_comment": "写入记忆库最低分：低于此分不记",
     "signal_min_score": 40.0,
+    "_signal_min_score_comment": "触发信号最低分：记忆衰减后仍需>=40分才触发",
     "max_absence_days": 2,
-    "decay_factor": 0.5
+    "_max_absence_days_comment": "TTL湮灭天数：连续2个交易日不上榜，记忆删除",
+    "decay_factor": 0.5,
+    "_decay_factor_comment": "半衰期：次日开盘分数×0.5衰减"
   }
 }
