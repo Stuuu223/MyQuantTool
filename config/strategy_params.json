@@ -27,6 +27,7 @@
 
   "live_sniper": {
     "_description": "Tick级动能打分引擎微调参数 - V20.5纯动态Ratio版",
+    "min_volume_multiplier": 3.0,
     "turnover_rate_per_min_min": 0.2,
     "turnover_rate_max": 300.0,
     "min_active_turnover_rate": 5.0,
