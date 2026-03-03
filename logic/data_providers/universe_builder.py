@@ -86,22 +86,20 @@ class UniverseBuilder:
     def __init__(
         self,
         target_date: str,
-        min_price:        float = 3.0,         # 最低收盘价
-        max_price:        float = 300.0,        # 最高收盘价
         require_ma_uptrend: bool = False,       # 漏斗3开关：MA多头排列
     ):
         self.target_date       = target_date
-        self.min_price         = min_price
-        self.max_price         = max_price
         self.require_ma_uptrend = require_ma_uptrend
         self._blacklist        = _load_bson_blacklist()
         self._stats: dict      = {}
         
-        # 【CTO SSOT重铸】从配置文件读取漏斗参数
+        # 【CTO SSOT重铸】从配置文件读取所有漏斗参数
         from logic.core.config_manager import get_config_manager
         cfg = get_config_manager()
-        self.min_avg_amount = cfg.get('stock_filter.min_avg_amount', 50_000_000.0)  # 5日均成交额≥5000万
-        self.min_avg_turnover_pct = cfg.get('stock_filter.min_avg_turnover_pct', 3.0)  # 5日均换手≥3%
+        self.min_avg_amount = cfg.get('stock_filter.min_avg_amount', 50_000_000.0)
+        self.min_avg_turnover_pct = cfg.get('stock_filter.min_avg_turnover_pct', 5.0)
+        self.min_price = cfg.get('stock_filter.min_price', 3.0)
+        self.max_price = cfg.get('stock_filter.max_price', 300.0)
 
     def build(self) -> list[str]:
         """执行三漏斗筛选，返回候选股票列表。"""
@@ -373,8 +371,6 @@ class UniverseBuilder:
 
 def build_universe(
     target_date: str,
-    min_price:        float = 3.0,
-    max_price:        float = 300.0,
     require_ma_uptrend: bool = False,
 ) -> list[str]:
     """
@@ -385,8 +381,6 @@ def build_universe(
     """
     return UniverseBuilder(
         target_date=target_date,
-        min_price=min_price,
-        max_price=max_price,
         require_ma_uptrend=require_ma_uptrend,
     ).build()
 

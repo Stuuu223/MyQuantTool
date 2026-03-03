@@ -6,12 +6,12 @@
   "stock_filter": {
     "_description": "【全局股票漏斗铁律】实盘/复盘/回测/下载 全局共用，宁缺毋滥！",
     "min_avg_amount": 50000000.0,
-    "min_avg_turnover_pct": 3.0,
+    "min_avg_turnover_pct": 5.0,
     "min_intraday_turnover_pct": 5.0,
     "min_volume_multiplier": 3.0,
     "min_price": 3.0,
     "max_price": 300.0,
-    "notes": "5000万均额保底 + 3%均换手粗筛 + 5%盘中换手快筛 + 3.0倍量比起爆"
+    "notes": "5000万均额保底 + 5%均换手粗筛 + 5%盘中换手快筛 + 3.0倍量比起爆"
   },
 
   "system_and_risk": {
