@@ -34,7 +34,10 @@ def main():
     if len(sys.argv) > 2:
         start_date = sys.argv[2]
     else:
-        start_date = target_date  # 默认只下载目标日
+        # 【审计修复】默认补近45天（约30个交易日）的历史缺口
+        from datetime import datetime, timedelta
+        start_date = (datetime.strptime(target_date, '%Y%m%d') 
+                      - timedelta(days=45)).strftime('%Y%m%d')
     
     print(f"📅 目标日期: {target_date} | 历史起始: {start_date}")
     

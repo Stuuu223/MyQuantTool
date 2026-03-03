@@ -16,6 +16,7 @@
 
   "system_and_risk": {
     "_description": "取代原 config.json 的全局系统与风控参数",
+    "qmt_port": 58610,
     "max_positions": 3,
     "max_single_position_value": 20000.0,
     "cutoff_time": "09:35:00",
