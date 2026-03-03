@@ -55,6 +55,12 @@ def main():
             atr_20d = ((hist['high'] - hist['low']) / pre_close.replace(0, np.nan)).mean()
             
             today = df.iloc[-1]
+            
+            # 【Bug 6修复】验证日期：最后一行必须是target_date
+            actual_date = str(df.index[-1])[:8]
+            if actual_date != target_date:
+                continue  # 跳过数据不完整的股票
+            
             if today['close'] <= 0 or atr_20d <= 0 or np.isnan(atr_20d):
                 continue
             
