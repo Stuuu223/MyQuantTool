@@ -358,22 +358,28 @@ def batch_analysis(date: str, stocks: list[str], require_limit_up: bool = True) 
     df = pd.DataFrame(rows)
 
     # 模式分布（互斥，合计应≈100%）
+    # 对照组可能没有pattern字段（普通股不涨停）
     print(f"\n{'='*65}")
-    print(f"样本: {len(df)} 只涨停股 | 模式分布（互斥）")
-    print(f"{'='*65}")
-    pattern_counts = df['pattern'].value_counts()
-    for p, cnt in pattern_counts.items():
-        print(f"  {p:20s}: {cnt:3d} = {cnt/len(df)*100:.1f}%")
+    if 'pattern' in df.columns:
+        print(f"样本: {len(df)} 只涨停股 | 模式分布（互斥）")
+        print(f"{'='*65}")
+        pattern_counts = df['pattern'].value_counts()
+        for p, cnt in pattern_counts.items():
+            print(f"  {p:20s}: {cnt:3d} = {cnt/len(df)*100:.1f}%")
+    else:
+        print(f"样本: {len(df)} 只 | 无涨停模式（普通股）")
+        print(f"{'='*65}")
 
-    # 各切片中位数
-    print(f"\n  {'切片':>12} | {'量能%':>6} | {'大单净买(万)':>10} | {'微观动能':>8}")
-    print(f"  {'-'*48}")
-    for start, end in SLICES:
-        key = f'slice_{start}_{end}m'
-        vol = df[f'{key}_vol'].median()
-        net = df[f'{key}_big_net'].median()
-        mom = df[f'{key}_momentum'].median()
-        print(f"  {start}~{end}m前    | {vol:>6.1f} | {net:>10.1f} | {mom:>8.4f}")
+    # 各切片中位数（仅涨停股有切片数据）
+    if 'slice_30_15m_vol' in df.columns:
+        print(f"\n  {'切片':>12} | {'量能%':>6} | {'大单净买(万)':>10} | {'微观动能':>8}")
+        print(f"  {'-'*48}")
+        for start, end in SLICES:
+            key = f'slice_{start}_{end}m'
+            vol = df[f'{key}_vol'].median()
+            net = df[f'{key}_big_net'].median()
+            mom = df[f'{key}_momentum'].median()
+            print(f"  {start}~{end}m前    | {vol:>6.1f} | {net:>10.1f} | {mom:>8.4f}")
 
     return df
 
