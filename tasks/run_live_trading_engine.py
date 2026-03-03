@@ -464,19 +464,13 @@ class LiveTradingEngine:
 
     def _premarket_scan(self):
         """
-        盘前扫描 - 获取粗筛池 + InstrumentCache盘前装弹 - CTO加固：直接使用UniverseBuilder
-        
-        Note: 此方法现在由_auction_snapshot_filter调用，用于InstrumentCache预热
+        盘前扫描 - CTO加固：直接使用快照初筛
         """
-        # 【CTO修复连环雷2】直接使用UniverseBuilder，不再依赖FullMarketScanner
-        # 使用快照初筛替代原来的UniverseBuilder方式
+        # 使用快照初筛
         self._auction_snapshot_filter()
         
-        # 同时预热TrueDictionary（获取涨停价等静态数据）
+        # 预热TrueDictionary（获取涨停价/流通盘等静态数据，唯一真理源！）
         self._warmup_true_dictionary()
-        
-        # 继续InstrumentCache盘前装弹
-        self._warmup_instrument_cache()
     
     def _warmup_true_dictionary(self):
         """预热TrueDictionary - 获取涨停价等静态数据 - CTO加固：容错机制"""
@@ -487,7 +481,7 @@ class LiveTradingEngine:
             # 使用当前watchlist + 扩展池进行预热
             warmup_stocks = self._get_extended_stock_pool(self.watchlist)
             
-            result = true_dict.warmup_all(warmup_stocks)
+            result = true_dict.warmup(warmup_stocks)
             
             if result['integrity']['is_ready']:
                 logger.info(
@@ -501,53 +495,6 @@ class LiveTradingEngine:
         except Exception as e:
             logger.error(f"❌ TrueDictionary预热失败: {e}")
             logger.warning("💡 提示：将使用实时数据获取，可能影响性能")
-    
-    def _warmup_instrument_cache(self):
-        """预热InstrumentCache - CTO加固：容错机制"""
-        if not self.instrument_cache:
-            logger.warning("⚠️ InstrumentCache未初始化，跳过预热")
-            return
-        
-        try:
-            # 使用扩展股票池进行缓存预热
-            extended_pool = self._get_extended_stock_pool(self.watchlist)
-            warmup_result = self.instrument_cache.warmup_cache(extended_pool)
-            
-            if warmup_result['success']:
-                logger.info(
-                    f"✅ InstrumentCache装弹完成: "
-                    f"FloatVolume缓存{warmup_result.get('cached_count', 0)}只, "
-                    f"耗时{warmup_result.get('elapsed_time', 0):.2f}秒"
-                )
-            else:
-                logger.warning("⚠️ InstrumentCache装弹未完成，将使用实时获取模式")
-                
-        except Exception as e:
-            logger.error(f"❌ InstrumentCache预热失败: {e}")
-        
-        # ===== 紧急修复P0级事故: InstrumentCache盘前装弹 - CTO加固：容错机制 =====
-        # 09:25前预热全市场数据，确保真实换手率和量比计算
-        logger.info("🔥 启动InstrumentCache盘前装弹...")
-        try:
-            # 获取扩展股票池用于缓存 (包含watchlist及额外股票)
-            extended_pool = self._get_extended_stock_pool(self.watchlist)
-            
-            # 预热缓存
-            warmup_result = self.instrument_cache.warmup_cache(extended_pool)
-            
-            if warmup_result['success']:
-                logger.info(
-                    f"✅ 盘前装弹完成: "
-                    f"FloatVolume缓存 {warmup_result.get('cached_count', 0)} 只, "
-                    f"5日均量缓存 {warmup_result.get('avg_volume_cached', 0)} 只, "
-                    f"耗时 {warmup_result.get('elapsed_time', 0):.2f}秒"
-                )
-            else:
-                logger.warning("⚠️ 盘前装弹未完成，将使用实时获取模式")
-                
-        except Exception as e:
-            logger.error(f"❌ 盘前装弹失败: {e}")
-        # ===== 紧急修复结束 =====
     
     def _get_extended_stock_pool(self, universe: List[str]) -> List[str]:
         """
@@ -1645,8 +1592,8 @@ class LiveTradingEngine:
         if self.event_bus:
             self.event_bus.stop()
         
-        # 断开交易连接
-        if self.trader:
+        # 【CTO防呆保护】防止paper模式下没有trader属性导致的报错
+        if hasattr(self, 'trader') and self.trader:
             self.trader.disconnect()
         
         logger.info("✅ 实盘总控引擎已停止")

@@ -86,18 +86,22 @@ class UniverseBuilder:
     def __init__(
         self,
         target_date: str,
-        min_avg_volume:   float = 3_000_000,  # 5日均量下限 300万股
         min_price:        float = 3.0,         # 最低收盘价
         max_price:        float = 300.0,        # 最高收盘价
         require_ma_uptrend: bool = False,       # 漏斗3开关：MA多头排列
     ):
         self.target_date       = target_date
-        self.min_avg_volume    = min_avg_volume
         self.min_price         = min_price
         self.max_price         = max_price
         self.require_ma_uptrend = require_ma_uptrend
         self._blacklist        = _load_bson_blacklist()
         self._stats: dict      = {}
+        
+        # 【CTO SSOT重铸】从配置文件读取漏斗参数
+        from logic.core.config_manager import get_config_manager
+        cfg = get_config_manager()
+        self.min_avg_amount = cfg.get('stock_filter.min_avg_amount', 50_000_000.0)  # 5日均成交额≥5000万
+        self.min_avg_turnover_pct = cfg.get('stock_filter.min_avg_turnover_pct', 3.0)  # 5日均换手≥3%
 
     def build(self) -> list[str]:
         """执行三漏斗筛选，返回候选股票列表。"""
@@ -248,11 +252,13 @@ class UniverseBuilder:
                 import pandas as pd
                 import numpy as np
 
-                # 5日均量（最多取最近5条）
+                # 5日均成交额（最多取最近5条）
                 n = min(5, len(df))
-                avg_vol = df['volume'].iloc[-n:].mean()
-                if pd.isna(avg_vol) or np.isinf(avg_vol) or avg_vol < self.min_avg_volume:
-                    cnt_volume += 1
+                avg_amount = df['amount'].iloc[-n:].mean()
+                
+                # 【防线一：5日均成交额 ≥ min_avg_amount】
+                if pd.isna(avg_amount) or np.isinf(avg_amount) or avg_amount < self.min_avg_amount:
+                    cnt_volume += 1  # 计入流动性不足
                     continue
 
                 # 最新收盘价
@@ -261,14 +267,9 @@ class UniverseBuilder:
                     cnt_price += 1
                     continue
 
-                # 【CTO换手率铁网】使用成交额计算换手率，彻底规避volume手/股量纲争议
+                # 【防线二：5日均换手率 ≥ min_avg_turnover_pct】
                 # amount单位：元，FloatVolume单位：股，last_close单位：元/股
                 try:
-                    avg_amount = df['amount'].iloc[-n:].mean()
-                    if pd.isna(avg_amount) or avg_amount <= 0:
-                        passed.append(stock)  # amount取不到就不做换手率过滤
-                        continue
-                    
                     detail = xtdata.get_instrument_detail(stock, False)
                     if detail:
                         float_shares = float(
@@ -282,8 +283,8 @@ class UniverseBuilder:
                     if float_shares > 0:
                         float_mkt_cap = float_shares * last_close  # 流通市值（元）
                         avg_turnover_pct = (avg_amount / float_mkt_cap) * 100.0
-                        # 【Boss钦定3%铁网】5日均换手率必须>=3%
-                        if avg_turnover_pct < 3.0:
+                        # 【CTO SSOT】从配置读取换手率阈值
+                        if avg_turnover_pct < self.min_avg_turnover_pct:
                             cnt_turnover += 1
                             continue
                 except Exception:
@@ -372,7 +373,6 @@ class UniverseBuilder:
 
 def build_universe(
     target_date: str,
-    min_avg_volume:   float = 3_000_000,
     min_price:        float = 3.0,
     max_price:        float = 300.0,
     require_ma_uptrend: bool = False,
@@ -385,7 +385,6 @@ def build_universe(
     """
     return UniverseBuilder(
         target_date=target_date,
-        min_avg_volume=min_avg_volume,
         min_price=min_price,
         max_price=max_price,
         require_ma_uptrend=require_ma_uptrend,

@@ -1,82 +1,34 @@
 {
-  "_comment": "策略参数配置 - 右侧起爆哲学：资金为王、顺势而为、追随市场短线大哥",
-  "version": "2.2",
+  "_comment": "系统唯一参数配置 - V20.5 纯血游资起爆哲学：资金为王、顺势而为",
+  "version": "2.5",
   "last_updated": "2026-03-03",
+  
   "stock_filter": {
-    "_description": "股票过滤核心参数 - CTO强制校验",
-    "min_volume_multiplier": 3.0,
+    "_description": "【全局股票漏斗铁律】实盘/复盘/回测/下载 全局共用，宁缺毋滥！",
+    "min_avg_amount": 50000000.0,
     "min_avg_turnover_pct": 3.0,
     "min_intraday_turnover_pct": 5.0,
-    "notes": "量比>=3倍，日均换手>=3%，日内换手>=5%"
-  },
-  "universe_build": {
-    "_description": "粗筛参数 - 右侧起爆核心：筛选真正放量的股票",
-    "use_percentile": false,
-    "volume_ratio_absolute": 3.0,
-    "notes": "量比绝对阈值3.0，确保真正放量，符合右侧起爆哲学"
-  },
-  "leader": {
-    "_description": "龙头候选策略参数",
-    "use_percentile": true,
-    "change_pct_percentile": 0.92,
-    "volume_ratio_percentile": 0.9,
-    "max_confidence_change_pct": 0.1,
-    "min_circ_mv_billion": 50,
-    "notes": "涨幅>市场92分位，量比>市场90分位"
-  },
-  "halfway": {
-    "_description": "半路突破策略参数",
-    "use_percentile": true,
-    "use_intensity_score": true,
-    "min_intensity_score": 0.35,
-    "ratio_stock_min": 0.01,
-    "sustain_min": 1.0,
-    "price_momentum_percentile": 0.85,
-    "volume_surge_percentile": 0.88,
-    "breakout_threshold_percentile": 0.8,
-    "timing_window_minutes": 30,
-    "max_entry_change_pct": 0.06
-  },
-  "true_attack": {
-    "_description": "真资金攻击策略参数",
-    "use_percentile": true,
-    "inflow_ratio_percentile": 0.99,
-    "price_strength_percentile": 0.95,
-    "volume_price_coordination_threshold": 0.8,
-    "sustained_inflow_minutes": 5,
-    "notes": "资金强度相对分位数，非绝对金额"
-  },
-  "trap": {
-    "_description": "诱多检测策略参数",
-    "use_percentile": true,
-    "volume_spike_percentile": 0.95,
-    "price_stall_threshold": 0.02,
-    "divergence_minutes": 3,
-    "final_change_threshold": 8.0,
-    "notes": "P1: final_change_threshold=8.0，涨幅低于此值才判定为骗炮"
-  },
-  "portfolio": {
-    "_description": "Portfolio层风控参数",
-    "max_positions": 3,
-    "dominance_ratio_threshold": 1.5,
-    "max_drawdown_pct": 0.03,
-    "min_advantage_score": 0.7,
-    "notes": "断层优势倍数、回撤控制"
-  },
-  "_CTO_ADDED": "下面是我们今天(2月24日)打磨出来的极限狙击参数！",
-  "live_sniper": {
-    "_description": "实盘极速快照双斩与时间加权参数 - V20.4纯动态Ratio版",
-    "_CTO_WARNING": "【反混淆规约】本配置所有参数必须带_type声明，严禁Magic Number！",
-    "_COMMENT_min_volume_multiplier": "【绝对倍数非分位数】量比最小倍数：今日估算成交量必须是5日均量的多少倍，如1.5表示今日放量50%以上",
     "min_volume_multiplier": 3.0,
-    "_COMMENT_turnover_rate_per_min_min": "【绝对百分比】每分钟最小换手率",
+    "min_price": 3.0,
+    "max_price": 300.0,
+    "notes": "5000万均额保底 + 3%均换手粗筛 + 5%盘中换手快筛 + 3.0倍量比起爆"
+  },
+
+  "system_and_risk": {
+    "_description": "取代原 config.json 的全局系统与风控参数",
+    "max_positions": 3,
+    "max_single_position_value": 20000.0,
+    "cutoff_time": "09:35:00",
+    "order_timeout_seconds": 5,
+    "max_daily_loss_pct": 0.05,
+    "circuit_breaker_missing_data_rate": 0.20
+  },
+
+  "live_sniper": {
+    "_description": "Tick级动能打分引擎微调参数 - V20.5纯动态Ratio版",
     "turnover_rate_per_min_min": 0.2,
-    "_COMMENT_turnover_rate_max": "【绝对百分比】死亡换手熔断线，超过此值强制剔除。V20.5.0：死亡线300%",
     "turnover_rate_max": 300.0,
-    "_COMMENT_min_active_turnover_rate": "【绝对百分比】大哥起步线：无5%不妖股。Boss拍板：5%起步，20%常态，300%死亡【V20.5.0】",
     "min_active_turnover_rate": 5.0,
-    "use_percentile": true,
-    "volume_ratio_percentile": 0.95,
     "time_decay_ratios": {
       "early_morning_rush": 1.2,
       "morning_confirm": 1.0,
@@ -90,27 +42,11 @@
       "high_turnover_bonus": 5
     }
   },
-  "holographic_download": {
-    "_description": "全息数据下载靶向参数 - V20极致全息架构",
-    "_CTO_NOTE": "严禁Magic Number硬编码！所有下载阈值必须从这里读取",
-    "volume_ratio_percentile_live": 0.95,
-    "volume_ratio_buffer": -0.05,
-    "volume_ratio_download": 0.9,
-    "min_turnover_rate": 3.0,
-    "price_condition": "high > pre_close",
-    "context_days_before": 30,
-    "context_days_after": 30,
-    "context_days_total": 60,
-    "target_stocks_per_day": "100-150",
-    "notes": "镜像降维法: 实盘0.95分位 → 下载0.90分位(降维0.05), 捕获准真龙+陷阱股"
-  },
-  "_experimental": {
-    "_description": "实验性参数（仅用于exp目录）",
-    "warning": "这些参数只供研究使用，不得用于生产",
-    "hardcoded_thresholds": {
-      "change_pct_absolute": 0.07,
-      "volume_ratio_absolute": 2.0,
-      "notes": "仅用于烟雾测试，生产环境必须使用分位数"
-    }
+
+  "portfolio": {
+    "_description": "Portfolio层风控参数",
+    "dominance_ratio_threshold": 1.5,
+    "max_drawdown_pct": 0.03,
+    "min_advantage_score": 0.7
   }
 }
