@@ -117,3 +117,39 @@ def get_next_trading_day(date_str: str) -> Optional[str]:
         return curr.strftime('%Y%m%d')
     except Exception:
         return None
+
+
+def get_trading_days_between(start_date_str: str, end_date_str: str) -> List[str]:
+    """
+    获取两个日期之间的所有交易日（使用QMT真实日历，排除节假日）
+    
+    【CTO封装】：一次封装，全项目复用
+    
+    Args:
+        start_date_str: 开始日期 (YYYYMMDD)
+        end_date_str: 结束日期 (YYYYMMDD)
+        
+    Returns:
+        交易日列表 ['YYYYMMDD', ...]
+    """
+    from datetime import datetime, timezone, timedelta
+    
+    CST = timezone(timedelta(hours=8))
+    
+    try:
+        from xtquant import xtdata
+        raw = xtdata.get_trading_dates('SH', start_date_str, end_date_str)
+        # get_trading_dates 返回毫秒时间戳，需要转换为日期字符串
+        return [datetime.fromtimestamp(d / 1000, tz=CST).strftime('%Y%m%d') for d in raw]
+    except Exception as e:
+        # 降级：纯周末过滤
+        logger.warning(f"QMT交易日历获取失败，降级为周末过滤: {e}")
+        start = datetime.strptime(start_date_str, '%Y%m%d')
+        end = datetime.strptime(end_date_str, '%Y%m%d')
+        days = []
+        curr = start
+        while curr <= end:
+            if curr.weekday() < 5:
+                days.append(curr.strftime('%Y%m%d'))
+            curr += timedelta(days=1)
+        return days
