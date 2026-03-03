@@ -4,11 +4,12 @@
     python tools/smart_download.py                           # 默认上个交易日
     python tools/smart_download.py 20260303                  # 单日
     python tools/smart_download.py 20260206 20260303         # 日期范围(逐日粗筛)
-    python tools/smart_download.py 20260206 20260303 --full  # 日期范围(全量补Tick,跳过粗筛)
+    python tools/smart_download.py 20260206 20260303 --full  # 日期范围(全量补Tick)
 设计原则:
   1. 日K直接读本地，不调用download
   2. 常规模式：逐日粗筛后下载Tick
-  3. --full模式：全市场分批投递，200只/批，每批打印时间戳+进度
+  3. --full模式：全市场循环单只投递，100只打印一次进度
+  4. 严禁download_history_data2（尝试证明同步阻塞，会崩）
 """
 import sys
 import time
@@ -18,13 +19,11 @@ from datetime import datetime, timedelta
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-BATCH_SIZE  = 200   # 每批投递数量（过大会QMT队列堡穴）
-BATCH_SLEEP = 3     # 批间间隔科数
-DAY_SLEEP   = 5     # 两个交易日之间间隔
+PRINT_EVERY = 100   # 每100只打印一次进度
+DAY_SLEEP   = 2     # 两个交易日之间间隔
 
 
 def log(msg: str):
-    """TODO: 带时间戳的输出，flush=True确保实时显示"""
     ts = datetime.now().strftime('%H:%M:%S')
     print(f'[{ts}] {msg}', flush=True)
 
@@ -43,7 +42,6 @@ def get_trading_days(start_date: str, end_date: str, xtdata) -> list[str]:
                 return days
     except Exception:
         pass
-    # 兑底：排除周末
     s = datetime.strptime(start_date, '%Y%m%d')
     e = datetime.strptime(end_date, '%Y%m%d')
     days, cur = [], s
@@ -76,46 +74,35 @@ def get_last_completed_day(xtdata, fallback: str) -> str:
     return fallback
 
 
-def download_batch(stocks: list[str], date: str, xtdata) -> bool:
-    """对单批股票投递单日Tick指令，返回是否成功"""
-    try:
-        xtdata.download_history_data2(
-            stock_list=stocks,
-            period='tick',
-            start_time=date,
-            end_time=date,
-        )
-        return True
-    except Exception as e:
-        log(f'  download_history_data2异常: {e}，尝试单只备用')
-        ok = 0
-        for s in stocks:
-            try:
-                xtdata.download_history_data(s, 'tick', start_time=date, end_time=date)
-                ok += 1
-            except Exception:
-                pass
-        log(f'  单只备用结果: {ok}/{len(stocks)} 成功')
-        return ok > 0
-
-
 def download_one_day(date: str, stocks: list[str], xtdata, full: bool):
-    """分批投递单个交易日Tick指令，每批打印进度"""
-    total   = len(stocks)
-    batches = [stocks[i:i+BATCH_SIZE] for i in range(0, total, BATCH_SIZE)]
-    t0      = time.time()
+    """
+    循环单只调用 download_history_data，每100只打印一次进度。
+    download_history_data2 已实证同步阻塞，严禁使用。
+    """
+    total = len(stocks)
+    t0    = time.time()
+    ok    = 0
+    fail  = 0
 
-    log(f'  {total}只股票 -> {len(batches)}批 ({BATCH_SIZE}只/批)')
-    for bi, batch in enumerate(batches):
-        bt0 = time.time()
-        ok  = download_batch(batch, date, xtdata)
-        elapsed = time.time() - bt0
-        total_so_far = time.time() - t0
-        status = '✅' if ok else '❌'
-        log(f'  批[{bi+1}/{len(batches)}] {len(batch)}只 {status} '
-            f'本批{elapsed:.1f}s | 天内共{total_so_far:.0f}s')
-        if bi < len(batches) - 1:
-            time.sleep(BATCH_SLEEP)
+    log(f'  开始下载 {total}只 Tick ({date})')
+    for i, stock in enumerate(stocks):
+        try:
+            xtdata.download_history_data(stock, 'tick',
+                                         start_time=date, end_time=date)
+            ok += 1
+        except Exception:
+            fail += 1
+
+        if (i + 1) % PRINT_EVERY == 0 or (i + 1) == total:
+            elapsed = time.time() - t0
+            speed   = (i + 1) / elapsed if elapsed > 0 else 0
+            remaining = (total - i - 1) / speed if speed > 0 else 0
+            log(f'  [{i+1}/{total}] ✅{ok} ❌{fail} | '
+                f'{elapsed:.0f}s已用 预计剩{remaining:.0f}s | '
+                f'{speed:.0f}只/s')
+
+    elapsed = time.time() - t0
+    log(f'  天完成: 共{total}只 成功{ok} 失败{fail} 耗时{elapsed:.0f}s')
 
     # 更新 tick_index
     try:
@@ -126,7 +113,9 @@ def download_one_day(date: str, stocks: list[str], xtdata, full: bool):
                 'date':      date,
                 'mode':      'full' if full else 'filtered',
                 'count':     total,
-                'batches':   len(batches),
+                'ok':        ok,
+                'fail':      fail,
+                'elapsed_s': round(elapsed, 1),
                 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             }, f, ensure_ascii=False, indent=2)
     except Exception:
@@ -167,9 +156,8 @@ def main():
     all_stocks = xtdata.get_stock_list_in_sector('沪深A股')
     log(f'全市场 {len(all_stocks)} 只股票')
 
-    # ── 阶段一：检查本地日K ──
     log('[阶段一] 检查本地日K...')
-    check_date = get_last_completed_day(xtdata, fallback=start_date)
+    check_date   = get_last_completed_day(xtdata, fallback=start_date)
     log(f'  检查日期: {check_date}')
     check_stocks = ['000001.SZ', '600000.SH', '300001.SZ']
     sample_data  = xtdata.get_local_data(
@@ -186,41 +174,39 @@ def main():
         return
 
     trading_days = get_trading_days(start_date, end_date, xtdata)
-    today = datetime.now().strftime('%Y%m%d')
+    today        = datetime.now().strftime('%Y%m%d')
     trading_days = [d for d in trading_days if d <= today]
-    log(f'  交易日 ({len(trading_days)}天): {trading_days[0] if trading_days else "N/A"} ~ {trading_days[-1] if trading_days else "N/A"}')
+    log(f'  交易日 ({len(trading_days)}天): '
+        f'{trading_days[0] if trading_days else "N/A"} ~ '
+        f'{trading_days[-1] if trading_days else "N/A"}')
 
     if not trading_days:
         log('❌ 没有可处理的交易日，退出')
         return
 
     if full_mode:
-        # ── FULL模式：逐日分批投递 ──
-        log(f'[阶段二] FULL模式 - {len(trading_days)}天 x {len(all_stocks)}只，分批{BATCH_SIZE}只/批')
+        log(f'[阶段二] FULL模式 - {len(trading_days)}天 x {len(all_stocks)}只')
         grand_t0 = time.time()
         for i, date in enumerate(trading_days):
-            day_t0 = time.time()
             log(f'\n>>> [{i+1}/{len(trading_days)}] {date}')
             download_one_day(date, all_stocks, xtdata, full=True)
-            day_elapsed   = time.time() - day_t0
             total_elapsed = time.time() - grand_t0
-            remaining     = (total_elapsed / (i + 1)) * (len(trading_days) - i - 1)
-            log(f'  天完成 {day_elapsed:.0f}s | 总耗时 {total_elapsed:.0f}s | '
-                f'预计剩余 {remaining:.0f}s ({remaining/60:.1f}min)')
+            remaining     = (total_elapsed / (i+1)) * (len(trading_days) - i - 1)
+            log(f'  总进度: {i+1}/{len(trading_days)}天 | '
+                f'总耗时{total_elapsed:.0f}s | 预计剩{remaining:.0f}s ({remaining/60:.1f}min)')
             if i < len(trading_days) - 1:
                 time.sleep(DAY_SLEEP)
         total_elapsed = time.time() - grand_t0
         log(f'\n✅ FULL全量完成! 总耗时 {total_elapsed:.0f}s ({total_elapsed/60:.1f}min)')
-        log(f'  Tick后台落盘中，请稍后验证覆盖率')
 
     else:
-        # ── 常规模式：逐日粗筛 + Tick ──
         from logic.data_providers.universe_builder import UniverseBuilder
-        total = 0
+        grand_total = 0
+        grand_t0    = time.time()
         for i, date in enumerate(trading_days):
             log(f'\n>>> [{i+1}/{len(trading_days)}] {date}')
             try:
-                t0 = time.time()
+                t0           = time.time()
                 valid_stocks = UniverseBuilder(date).build()
                 log(f'  粗筛: {len(valid_stocks)}只 ({time.time()-t0:.1f}s)')
             except Exception as e:
@@ -230,10 +216,14 @@ def main():
                 log('  ⚠️ 粗筛后无标的，跳过')
                 continue
             download_one_day(date, valid_stocks, xtdata, full=False)
-            total += len(valid_stocks)
+            grand_total += len(valid_stocks)
+            total_elapsed = time.time() - grand_t0
+            remaining     = (total_elapsed / (i+1)) * (len(trading_days) - i - 1)
+            log(f'  总进度: {i+1}/{len(trading_days)}天 | '
+                f'总耗时{total_elapsed:.0f}s | 预计剩{remaining:.0f}s ({remaining/60:.1f}min)')
             if i < len(trading_days) - 1:
-                time.sleep(1)
-        log(f'\n✅ 完成! 处理 {len(trading_days)}天，投递 {total}只次Tick指令')
+                time.sleep(DAY_SLEEP)
+        log(f'\n✅ 完成! 处理 {len(trading_days)}天，投递 {grand_total}只次Tick指令')
 
 
 if __name__ == '__main__':
