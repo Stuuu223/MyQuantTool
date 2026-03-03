@@ -150,14 +150,16 @@ def main():
     print('\n[阶段一] 检查本地日K...')
     check_date = get_last_completed_day(xtdata, fallback=start_date)
     print(f'  检查日期: {check_date}')
+    # 用大盘股检查（all_stocks[:10]可能是沪市无数据股票）
+    check_stocks = ['000001.SZ', '600000.SH', '300001.SZ']
     sample_data = xtdata.get_local_data(
-        field_list=['close'], stock_list=all_stocks[:10],
+        field_list=['close'], stock_list=check_stocks,
         period='1d', start_time=check_date, end_time=check_date
     )
-    valid_n = sum(1 for s in all_stocks[:10]
+    valid_n = sum(1 for s in check_stocks
                   if s in sample_data and sample_data[s] is not None
                   and len(sample_data[s]) > 0)
-    if valid_n >= 5:
+    if valid_n >= 2:  # 大盘股检查，2/3有效即可
         print(f'  ✅ 本地日K充足 ({valid_n}/10)，跳过下载')
     else:
         print(f'  ⚠️ 本地日K不足 ({valid_n}/10)，请先在QMT客户端手动下载日K再运行')
