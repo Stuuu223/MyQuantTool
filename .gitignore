@@ -132,8 +132,38 @@ xtquant/
 
 # Phase4修复：运行时产生的下载缓存状态与全息战报，严禁污染 Git 仓库！
 
+
+
 data/download_state_*.json
+
+
 
 data/holographic_universe_*.json
 
+
+
 data/backtest_out/
+
+
+
+
+
+
+
+# 研究工具生成的中间数据
+
+
+
+data/atr_probe_*.csv
+
+
+
+data/tick_prelude_*.csv
+
+
+
+data/tick_index/
+
+
+
+data/replay_diagnosis_report.json
