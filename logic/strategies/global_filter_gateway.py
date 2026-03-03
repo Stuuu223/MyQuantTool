@@ -70,8 +70,7 @@ class GlobalFilterGateway:
     
     # ========== CTO红线常量：死亡换手阈值 ==========
     DEATH_TURNOVER_THRESHOLD = 300.0  # 【V20.5.0】死亡换手线统一为300%
-    SWEET_SPOT_MIN = 8.0  # 甜点位下限8%
-    SWEET_SPOT_MAX = 15.0  # 甜点位上限15%
+    # 甜点位阈值已迁移到config: live_sniper.sweet_spot_min / sweet_spot_max
     
     @staticmethod
     def apply_boss_two_dimensional_filters(
@@ -115,7 +114,9 @@ class GlobalFilterGateway:
         try:
             min_volume_multiplier = config_manager.get('live_sniper.min_volume_multiplier')
             min_turnover = config_manager.get('live_sniper.min_active_turnover_rate')  # 5%
-            max_turnover = config_manager.get('live_sniper.turnover_rate_max')  # 60%
+            max_turnover = config_manager.get('live_sniper.turnover_rate_max')  # 300%
+            sweet_spot_min = config_manager.get('live_sniper.sweet_spot_min', 8.0)  # 甜点位下限
+            sweet_spot_max = config_manager.get('live_sniper.sweet_spot_max', 15.0)  # 甜点位上限
             
             # 验证读取成功
             if None in [min_volume_multiplier, min_turnover, max_turnover]:
@@ -185,8 +186,8 @@ class GlobalFilterGateway:
         # ========== 【CTO红线】甜点位标记（仅注入tag，绝不加分！） ==========
         # 换手8%-15%标记为甜点位，但不做任何打分，仅作为信息标记
         if 'turnover_rate' in df.columns and len(df) > 0:
-            sweet_mask = (df['turnover_rate'] >= GlobalFilterGateway.SWEET_SPOT_MIN) & \
-                         (df['turnover_rate'] <= GlobalFilterGateway.SWEET_SPOT_MAX)
+            sweet_mask = (df['turnover_rate'] >= sweet_spot_min) & \
+                         (df['turnover_rate'] <= sweet_spot_max)
             sweet_count = sweet_mask.sum()
             
             # 初始化tag列为空字符串
@@ -195,7 +196,7 @@ class GlobalFilterGateway:
             df.loc[sweet_mask, 'tag'] = '换手甜点'
             
             if sweet_count > 0:
-                logger.info(f"  🍰 甜点位标记: {sweet_count}只被标记为'换手甜点' (换手{GlobalFilterGateway.SWEET_SPOT_MIN}%~{GlobalFilterGateway.SWEET_SPOT_MAX}%)"
+                logger.info(f"  🍰 甜点位标记: {sweet_count}只被标记为'换手甜点' (换手{sweet_spot_min}%~{sweet_spot_max}%)"
                            f"【仅注入tag，绝不加分！】")
         
         # ========== 【CTO红线】趋势网已完全删除 ==========
@@ -241,10 +242,12 @@ class GlobalFilterGateway:
             min_multiplier = config_manager.get('live_sniper.min_volume_multiplier')
             min_turnover = config_manager.get('live_sniper.min_active_turnover_rate')
             max_turnover = config_manager.get('live_sniper.turnover_rate_max')
+            sweet_spot_min = config_manager.get('live_sniper.sweet_spot_min', 8.0)
+            sweet_spot_max = config_manager.get('live_sniper.sweet_spot_max', 15.0)
         except:
             return False, "配置读取失败", None
         
-        # 【CTO红线】死亡换手拦截 - 70%硬门槛
+        # 【CTO红线】死亡换手拦截 - 300%硬门槛
         if turnover_rate > GlobalFilterGateway.DEATH_TURNOVER_THRESHOLD:
             return False, f"死亡换手: {turnover_rate:.2f}% > {GlobalFilterGateway.DEATH_TURNOVER_THRESHOLD}%", None
         
@@ -259,7 +262,7 @@ class GlobalFilterGateway:
             return False, f"换手超标: {turnover_rate:.2f}% > {max_turnover}%", None
         
         # 【CTO红线】甜点位标记 - 仅注入tag，绝不加分！
-        if GlobalFilterGateway.SWEET_SPOT_MIN <= turnover_rate <= GlobalFilterGateway.SWEET_SPOT_MAX:
+        if sweet_spot_min <= turnover_rate <= sweet_spot_max:
             metadata['tag'] = '换手甜点'
         
         return True, "通过Boss二维铁网验证【0/1判定，均线权力下放】", metadata

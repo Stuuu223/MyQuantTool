@@ -31,6 +31,9 @@
     "turnover_rate_per_min_min": 0.2,
     "turnover_rate_max": 300.0,
     "min_active_turnover_rate": 5.0,
+    "volume_ratio_percentile": 0.95,
+    "sweet_spot_min": 8.0,
+    "sweet_spot_max": 15.0,
     "time_decay_ratios": {
       "early_morning_rush": 1.2,
       "morning_confirm": 1.0,

@@ -126,7 +126,7 @@ class 动能打分引擎CoreEngine:
         self.time_decay_early_morning: float = decay_config.get('early_morning_rush', 1.2)
         self.time_decay_morning_confirm: float = decay_config.get('morning_confirm', 1.0)
         self.time_decay_noon_trash: float = decay_config.get('noon_trash', 0.8)
-        self.time_decay_tail_trap: float = decay_config.get('tail_trap', 0.5)
+        self.time_decay_tail_trap: float = decay_config.get('tail_trap', 0.2)
         
         # 评分奖励配置
         bonus_config = self._config.get('live_sniper.scoring_bonuses', {})
