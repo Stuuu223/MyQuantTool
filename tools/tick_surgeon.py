@@ -146,23 +146,10 @@ def load_tick(stock: str, date: str) -> pd.DataFrame:
     return df
 
 
-def get_limit_ratio(stock: str) -> float:
-    """根据股票代码返回涨停比例：主板10%，创业板/科创板20%，北交所30%"""
-    if stock.startswith('30') or stock.startswith('688'):
-        return 0.20  # 创业板/科创板
-    elif stock.startswith('8') or stock.startswith('4'):
-        return 0.30  # 北交所
-    else:
-        return 0.10  # 主板（含ST的5%由其他逻辑处理）
-
-
-def find_limit_up_time(df: pd.DataFrame, prev_close: float, stock: str = '') -> datetime | None:
-    """找到首次触及涨停价的时间（根据板块自动判断涨停比例）"""
-    limit_ratio = get_limit_ratio(stock)
-    limit_price = round(prev_close * (1 + limit_ratio), 2)
-    # 容差：涨停价的0.1%，避免低价股误判
-    tolerance = limit_price * 0.001
-    hits = df[df['lastPrice'] >= limit_price - tolerance]
+def find_limit_up_time(df: pd.DataFrame, prev_close: float) -> datetime | None:
+    """找到首次触及涨停价的时间（10%涨停，ST/科创另算）"""
+    limit_price = round(prev_close * 1.10, 2)
+    hits = df[df['lastPrice'] >= limit_price - 0.01]
     return hits.iloc[0]['dt'] if not hits.empty else None
 
 
@@ -183,15 +170,14 @@ def _slice_metrics(slice_df: pd.DataFrame, total_vol: float) -> dict:
     big_sell = slice_df[slice_df['is_big'] & slice_df['is_active_sell']]['amount_delta'].sum()
     big_net  = round((big_buy - big_sell) / 10000, 1)
 
-    # 微观动能：取切片内各分钟值的均值（NaN/Inf过滤后）
+    # 微观动能：取切片内各分钟值的均值（NaN过滤后）
     speed_mean = slice_df['price_speed'].dropna().mean()
     accel_mean = slice_df['price_accel'].dropna().mean()
     cont_mean  = slice_df['continuity'].dropna().mean()
 
-    # 【Bug修复】过滤NaN和Inf，防止momentum污染统计
-    speed_mean = float(speed_mean) if not (np.isnan(speed_mean) or np.isinf(speed_mean)) else 0.0
-    accel_mean = float(accel_mean) if not (np.isnan(accel_mean) or np.isinf(accel_mean)) else 0.0
-    cont_mean  = float(cont_mean)  if not (np.isnan(cont_mean) or np.isinf(cont_mean))  else 0.0
+    speed_mean = float(speed_mean) if not np.isnan(speed_mean) else 0.0
+    accel_mean = float(accel_mean) if not np.isnan(accel_mean) else 0.0
+    cont_mean  = float(cont_mean)  if not np.isnan(cont_mean)  else 0.0
 
     momentum = round(
         speed_mean * W_SPEED + accel_mean * W_ACCEL + cont_mean * W_CONT, 4
@@ -247,12 +233,6 @@ def analyze_prelude(df: pd.DataFrame, limit_time: datetime) -> dict:
         result[f'{key}_momentum'] = m['momentum']
 
     # ── 模式分类（基于独立切片，互斥定义）──────────────────────
-    # 【Bug 4修复】开盘涨停（9:31之前）单独分类，不参与常规模式判断
-    # 原因：集合竞价涨停时，切片全是空数据，无法判断洗盘/假突破
-    if limit_time.hour == 9 and limit_time.minute < 31:
-        result['pattern'] = 'opening_limit'  # 开盘涨停，无法分类
-        return result
-    
     # 注意：三种模式必须互斥，否则分类比例之和会超过100%
     net_60_30 = result.get('slice_60_30m_big_net', 0)
     net_30_15 = result.get('slice_30_15m_big_net', 0)
@@ -284,7 +264,7 @@ def single_stock_report(stock: str, date: str) -> dict | None:
         return None
 
     final_chg  = (df['lastPrice'].iloc[-1] - prev_close) / prev_close * 100
-    limit_time = find_limit_up_time(df, prev_close, stock)
+    limit_time = find_limit_up_time(df, prev_close)
 
     if limit_time is None:
         return {
@@ -335,20 +315,14 @@ def print_single_report(r: dict):
         print(f"  {label:>6} | {vol:>6.1f} | {net:>10.1f} | {mom:>8.4f}")
 
 
-def batch_analysis(date: str, stocks: list[str], require_limit_up: bool = True) -> pd.DataFrame:
+def batch_analysis(date: str, limit_up_stocks: list[str]) -> pd.DataFrame:
     rows = []
-    for i, stock in enumerate(stocks):
-        print(f"  [{i+1}/{len(stocks)}] {stock}...", end=' ', flush=True)
+    for i, stock in enumerate(limit_up_stocks):
+        print(f"  [{i+1}/{len(limit_up_stocks)}] {stock}...", end=' ', flush=True)
         r = single_stock_report(stock, date)
-        if r:
-            if require_limit_up and not r.get('limit_up'):
-                print("跳过")
-                continue
+        if r and r.get('limit_up'):
             rows.append(r)
-            if r.get('limit_up'):
-                print(f"涨停@{r['limit_time']} 模式={r.get('pattern','?')}")
-            else:
-                print(f"涨幅{r['change_pct']:.1f}%")
+            print(f"涨停@{r['limit_time']} 模式={r.get('pattern','?')}")
         else:
             print("跳过")
 
@@ -358,28 +332,22 @@ def batch_analysis(date: str, stocks: list[str], require_limit_up: bool = True) 
     df = pd.DataFrame(rows)
 
     # 模式分布（互斥，合计应≈100%）
-    # 对照组可能没有pattern字段（普通股不涨停）
     print(f"\n{'='*65}")
-    if 'pattern' in df.columns:
-        print(f"样本: {len(df)} 只涨停股 | 模式分布（互斥）")
-        print(f"{'='*65}")
-        pattern_counts = df['pattern'].value_counts()
-        for p, cnt in pattern_counts.items():
-            print(f"  {p:20s}: {cnt:3d} = {cnt/len(df)*100:.1f}%")
-    else:
-        print(f"样本: {len(df)} 只 | 无涨停模式（普通股）")
-        print(f"{'='*65}")
+    print(f"样本: {len(df)} 只涨停股 | 模式分布（互斥）")
+    print(f"{'='*65}")
+    pattern_counts = df['pattern'].value_counts()
+    for p, cnt in pattern_counts.items():
+        print(f"  {p:20s}: {cnt:3d} = {cnt/len(df)*100:.1f}%")
 
-    # 各切片中位数（仅涨停股有切片数据）
-    if 'slice_30_15m_vol' in df.columns:
-        print(f"\n  {'切片':>12} | {'量能%':>6} | {'大单净买(万)':>10} | {'微观动能':>8}")
-        print(f"  {'-'*48}")
-        for start, end in SLICES:
-            key = f'slice_{start}_{end}m'
-            vol = df[f'{key}_vol'].median()
-            net = df[f'{key}_big_net'].median()
-            mom = df[f'{key}_momentum'].median()
-            print(f"  {start}~{end}m前    | {vol:>6.1f} | {net:>10.1f} | {mom:>8.4f}")
+    # 各切片中位数
+    print(f"\n  {'切片':>12} | {'量能%':>6} | {'大单净买(万)':>10} | {'微观动能':>8}")
+    print(f"  {'-'*48}")
+    for start, end in SLICES:
+        key = f'slice_{start}_{end}m'
+        vol = df[f'{key}_vol'].median()
+        net = df[f'{key}_big_net'].median()
+        mom = df[f'{key}_momentum'].median()
+        print(f"  {start}~{end}m前    | {vol:>6.1f} | {net:>10.1f} | {mom:>8.4f}")
 
     return df
 
@@ -419,7 +387,7 @@ def main():
             stocks = normal[:50]
             print(f"\n【对照组：普通股】{len(stocks)} 只（涨幅1~3%）")
 
-        result_df = batch_analysis(date, stocks, require_limit_up=(mode == 'batch'))
+        result_df = batch_analysis(date, stocks)
 
         if not result_df.empty:
             suffix = 'limit' if mode == 'batch' else 'control'

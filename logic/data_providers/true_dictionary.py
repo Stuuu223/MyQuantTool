@@ -223,14 +223,6 @@ class TrueDictionary:
         
         return stats
     
-    def warmup_qmt_only(self, stock_list: List[str], force: bool = False) -> Dict:
-        """
-        【已弃用】请直接使用 warmup() 方法
-        
-        保留此方法用于向后兼容，内部直接调用 warmup()
-        """
-        logger.warning("⚠️ [TrueDictionary] warmup_qmt_only() 已弃用，请直接使用 warmup()")
-        return self.warmup(stock_list, force)
     
     def _warmup_avg_volume_from_qmt(self, stock_list: List[str], target_date: str = None) -> Dict:
         """
