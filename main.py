@@ -341,6 +341,14 @@ def replay_cmd(ctx, date, pure):
             click.echo(click.style("❌ 无法确定复盘日期！", fg='red'))
             ctx.exit(1)
     
+    # 【CTO非交易日拦截】在任何数据操作之前检查
+    from logic.utils.calendar_utils import is_trading_day, get_nth_previous_trading_day
+    if not is_trading_day(date):
+        nearest = get_nth_previous_trading_day(date, 1)
+        click.echo(click.style(f"❌ {date} 是非交易日（周末/节假日），无法热复盘！", fg='red', bold=True))
+        click.echo(click.style(f"💡 最近的交易日是: {nearest}，请用 --date {nearest}", fg='yellow'))
+        ctx.exit(1)
+    
     mode_label = "🧪 纯净切片" if pure else "🧬 基因继承"
     click.echo(click.style(f"\n🎬 [热复盘] 日期: {date} | 模式: {mode_label}", fg='cyan', bold=True))
     

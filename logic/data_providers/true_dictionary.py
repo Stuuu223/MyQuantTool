@@ -135,23 +135,36 @@ class TrueDictionary:
                 with open(cache_file, 'r', encoding='utf-8') as f:
                     cached_data = json.load(f)
                 
-                # 恢复缓存数据
-                self._avg_volume_5d = cached_data.get('avg_volume_5d', {})
-                self._float_volume = cached_data.get('float_volume', {})
-                self._up_stop_price = cached_data.get('up_stop_price', {})
-                
-                self._metadata['cache_date'] = today
-                self._metadata['data_source'] = 'QMT本地100% + 硬盘缓存'
-                
-                logger.info(f"✅ [CTO缓存命中] 0毫秒装弹完成! 5日均量:{len(self._avg_volume_5d)}只, 流通股本:{len(self._float_volume)}只")
-                return {
-                    'qmt': {'success': len(self._float_volume), 'failed': 0, 'note': 'from_cache'},
-                    'avg_volume': {'success': len(self._avg_volume_5d), 'failed': 0, 'note': 'from_cache'},
-                    'integrity': {'is_ready': True, 'missing_rate': 0},
-                    'total_stocks': len(stock_list),
-                    'ready_for_trading': True,
-                    'cache_hit': True
-                }
+                # 【CTO缓存毒化告警】校验缓存有效性
+                cached_float_count = len(cached_data.get('float_volume', {}))
+                expected_count = len(stock_list)
+                if cached_float_count < expected_count * 0.5:
+                    # 缓存数量严重不足（<50%），判定为投毒缓存，强制重新装弹
+                    logger.error(f"⚠️ [CTO缓存毒化告警] 缓存只有{cached_float_count}只，期望{expected_count}只，丢弃烂缓存重新装弹！")
+                    # 备份证据
+                    import shutil
+                    poisoned_file = cache_file.with_suffix('.json.poisoned')
+                    shutil.move(str(cache_file), str(poisoned_file))
+                    logger.info(f"🗑️ 投毒缓存已备份到: {poisoned_file}")
+                    # 不return，继续往下走正常装弹流程
+                else:
+                    # 缓存健康，正常加载
+                    self._avg_volume_5d = cached_data.get('avg_volume_5d', {})
+                    self._float_volume = cached_data.get('float_volume', {})
+                    self._up_stop_price = cached_data.get('up_stop_price', {})
+                    
+                    self._metadata['cache_date'] = today
+                    self._metadata['data_source'] = 'QMT本地100% + 硬盘缓存'
+                    
+                    logger.info(f"✅ [CTO缓存命中] 0毫秒装弹完成! 5日均量:{len(self._avg_volume_5d)}只, 流通股本:{len(self._float_volume)}只")
+                    return {
+                        'qmt': {'success': len(self._float_volume), 'failed': 0, 'note': 'from_cache'},
+                        'avg_volume': {'success': len(self._avg_volume_5d), 'failed': 0, 'note': 'from_cache'},
+                        'integrity': {'is_ready': True, 'missing_rate': 0},
+                        'total_stocks': len(stock_list),
+                        'ready_for_trading': True,
+                        'cache_hit': True
+                    }
             except Exception as e:
                 logger.warning(f"⚠️ [CTO缓存] 加载缓存失败: {e}, 重新计算...")
         
@@ -254,9 +267,8 @@ class TrueDictionary:
             
             # 【CTO时空锁死】：必须基于目标回测日期往前推算！
             end_date = target_date
-            end_dt = datetime.strptime(target_date, '%Y%m%d')
-            # 往前推30个自然日，确保能覆盖到5个交易日
-            start_date = (end_dt - timedelta(days=30)).strftime('%Y%m%d')
+            # 【CTO宪法合规】使用日历工具替代timedelta，22个交易日约等于30自然日
+            start_date = get_nth_previous_trading_day(target_date, 22) if CALENDAR_UTILS_AVAILABLE else (datetime.strptime(target_date, '%Y%m%d') - timedelta(days=30)).strftime('%Y%m%d')
             logger.info(f"[CTO时空锁死] 5日均量计算周期: {start_date} ~ {end_date}")
             
             # 【CTO单点爆破】：一只一只查！防爆！防C++崩溃！
@@ -368,9 +380,8 @@ class TrueDictionary:
             
             # 【CTO时空锁死】：必须基于目标回测日期往前推算！
             end_date = target_date
-            end_dt = datetime.strptime(target_date, '%Y%m%d')
-            # MA20需要至少60个自然日确保有20个交易日
-            start_date = (end_dt - timedelta(days=60)).strftime('%Y%m%d')
+            # 【CTO宪法合规】使用日历工具替代timedelta，30个交易日约等于60自然日
+            start_date = get_nth_previous_trading_day(target_date, 30) if CALENDAR_UTILS_AVAILABLE else (datetime.strptime(target_date, '%Y%m%d') - timedelta(days=60)).strftime('%Y%m%d')
             logger.info(f"[CTO时空锁死] MA均线计算周期: {start_date} ~ {end_date}")
             
             # 【CTO单点爆破】：一只一只查！防爆！防C++崩溃！
@@ -482,9 +493,8 @@ class TrueDictionary:
             
             # 【CTO时空锁死】：必须基于目标回测日期往前推算！
             end_date = target_date
-            end_dt = datetime.strptime(target_date, '%Y%m%d')
-            # ATR20需要至少45个自然日确保有20个交易日
-            start_date = (end_dt - timedelta(days=45)).strftime('%Y%m%d')
+            # 【CTO宪法合规】使用日历工具替代timedelta，25个交易日约等于45自然日
+            start_date = get_nth_previous_trading_day(target_date, 25) if CALENDAR_UTILS_AVAILABLE else (datetime.strptime(target_date, '%Y%m%d') - timedelta(days=45)).strftime('%Y%m%d')
             logger.info(f"[CTO时空锁死] ATR计算周期: {start_date} ~ {end_date}")
             
             # 【CTO单点爆破】：一只一只查！防爆！防C++崩溃！
