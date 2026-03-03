@@ -28,7 +28,7 @@ import os
 import json
 import logging
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 
 try:
     from logic.utils.logger import get_logger
@@ -36,6 +36,9 @@ try:
 except ImportError:
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.INFO)
+
+# 【CTO宪法合规】使用日历工具替代timedelta
+from logic.utils.calendar_utils import get_nth_previous_trading_day
 
 
 # ── BSON黑名单加载 ────────────────────────────────────────────────────────────
@@ -219,8 +222,8 @@ class UniverseBuilder:
             return stock_list
 
         end_date   = self.target_date
-        end_dt     = datetime.strptime(self.target_date, '%Y%m%d')
-        start_date = (end_dt - timedelta(days=10)).strftime('%Y%m%d')  # 【CTO P1 BUG FIX】30天→10天
+        # 【CTO宪法合规】使用日历工具替代timedelta，避免跨周末踩坑
+        start_date = get_nth_previous_trading_day(self.target_date, 7)
 
         passed       = []
         cnt_nodata   = 0
@@ -316,8 +319,8 @@ class UniverseBuilder:
             return stock_list
 
         end_date   = self.target_date
-        end_dt     = datetime.strptime(self.target_date, '%Y%m%d')
-        start_date = (end_dt - timedelta(days=60)).strftime('%Y%m%d')
+        # 【CTO宪法合规】使用日历工具替代timedelta，42个交易日约等于60自然日
+        start_date = get_nth_previous_trading_day(self.target_date, 42)
 
         passed    = []
         cnt_fail  = 0

@@ -50,5 +50,13 @@
     "dominance_ratio_threshold": 1.5,
     "max_drawdown_pct": 0.03,
     "min_advantage_score": 0.7
+  },
+
+  "memory_engine": {
+    "_description": "记忆引擎阈值 - 写入与信号分离",
+    "write_min_score": 10.0,
+    "signal_min_score": 40.0,
+    "max_absence_days": 2,
+    "decay_factor": 0.5
   }
 }

@@ -15,10 +15,13 @@ import logging
 
 from logic.core.path_resolver import PathResolver
 
-# 记忆衰减参数
-MEMORY_DECAY_FACTOR = 0.5      # 衰减系数
-MEMORY_MIN_SCORE = 10.0        # 最低分数阈值
-MEMORY_MAX_ABSENCE_DAYS = 2    # 连续不上榜最大天数
+# 记忆衰减参数（从配置文件读取）
+from logic.core.config_manager import get_config_manager
+_cfg = get_config_manager()
+MEMORY_WRITE_MIN_SCORE = _cfg.get('memory_engine.write_min_score', 10.0)   # 写入记忆库的最低分
+MEMORY_SIGNAL_MIN_SCORE = _cfg.get('memory_engine.signal_min_score', 40.0)  # 触发信号的最低分
+MEMORY_DECAY_FACTOR = _cfg.get('memory_engine.decay_factor', 0.5)           # 衰减系数
+MEMORY_MAX_ABSENCE_DAYS = _cfg.get('memory_engine.max_absence_days', 2)     # 连续不上榜最大天数
 
 # 【CTO修复】TRUE_CHANGE 内联定义，不再依赖已废弃的 MetricDefinitions
 def TRUE_CHANGE(close: float, pre_close: float) -> float:
@@ -49,8 +52,8 @@ class TimeMachineEngine:
         )
     """
     
-    # 记忆文件路径
-    MEMORY_FILE = Path(__file__).parent.parent.parent / 'data' / 'memory' / 'ShortTermMemory.json'
+    # 记忆文件路径（统一使用小写文件名）
+    MEMORY_FILE = Path(__file__).parent.parent.parent / 'data' / 'memory' / 'short_term_memory.json'
     
     def __init__(self, initial_capital: float = 20000.0, is_pure_mode: bool = False):
         self.initial_capital = initial_capital
@@ -492,7 +495,7 @@ class TimeMachineEngine:
                     else:
                         # 热复盘 → 实盘基因库（传宗接代）
                         memory_engine = ShortTermMemoryEngine()
-                        logger.info("🧠 【基因继承】写入实盘记忆库: ShortTermMemory.json")
+                        logger.info("🧠 【基因继承】写入实盘记忆库: short_term_memory.json")
                     
                     # 为Top20中符合条件的股票写入记忆
                     # 条件：涨幅>8% 且 换手>5% (ShortTermMemoryEngine内部会检查)
@@ -1174,7 +1177,7 @@ class TimeMachineEngine:
         
         # ==========================================
         # 【CTO时空切割】全息回演使用平行宇宙记忆库
-        # 绝不触碰实盘基因库 ShortTermMemory.json！
+        # 绝不触碰实盘基因库 short_term_memory.json！
         # ==========================================
         self.is_continuous_backtest = True  # 标记为全息回演模式
         
@@ -1517,10 +1520,9 @@ class TimeMachineEngine:
         today_map = {item['stock_code']: item for item in today_top20}
         today_top_codes = set(today_map.keys())
         
-        # 3. 衰减参数
-        MEMORY_MAX_ABSENCE_DAYS = 2
-        MEMORY_MIN_SCORE = 40.0
-        MEMORY_DECAY_FACTOR = 0.5  # 缺席时的固定断崖衰减
+        # 3. 衰减参数（使用模块级常量，从config读取）
+        # 注意：此处使用 MEMORY_SIGNAL_MIN_SCORE 作为触发信号阈值
+        #       MEMORY_MAX_ABSENCE_DAYS 和 MEMORY_DECAY_FACTOR 已在模块顶部定义
         
         # 4. 统计计数
         stats = {
@@ -1585,7 +1587,7 @@ class TimeMachineEngine:
                     continue  # 物理删除
                 
                 new_score = old_score * MEMORY_DECAY_FACTOR
-                if new_score < MEMORY_MIN_SCORE:
+                if new_score < MEMORY_WRITE_MIN_SCORE:
                     stats['removed_low_score'] += 1
                     continue  # 分数太低，物理删除
                 
@@ -1622,7 +1624,7 @@ class TimeMachineEngine:
         print(f"     不及预期(0.65x): {stats['underperformed']} 条")
         print(f"     缺席衰减(0.5x): {stats['absent_decay']} 条")
         print(f"     删除(缺席≥2天): {stats['removed_absent']} 条")
-        print(f"     删除(低分<{MEMORY_MIN_SCORE}): {stats['removed_low_score']} 条")
+        print(f"     删除(低分<{MEMORY_WRITE_MIN_SCORE}): {stats['removed_low_score']} 条")
         print(f"     新增(首次入榜): {stats['new_added']} 条")
         print(f"     当前记忆总数: {len(new_memory_dict)} 条")
         

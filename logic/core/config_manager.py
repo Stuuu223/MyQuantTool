@@ -10,6 +10,9 @@ Version: V1.0 (工业级标准化版)
 """
 
 import json
+import threading
+from contextlib import contextmanager
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, Optional
 from logic.core.path_resolver import PathResolver
@@ -28,6 +31,7 @@ class ConfigManager:
     def __init__(self):
         """初始化配置管理器"""
         self._config: Dict[str, Any] = {}
+        self._lock = threading.Lock()  # 【线程安全】配置读写锁
         self._load_config()
         self._validate_critical_keys()  # 【CTO铁律】启动时强制校验核心配置
     
@@ -84,6 +88,48 @@ class ConfigManager:
             return value
         except (KeyError, TypeError):
             return default
+    
+    def set(self, key_path: str, value: Any) -> None:
+        """
+        通过点分路径设置配置值
+        
+        Args:
+            key_path: 键路径，如 'stock_filter.min_avg_turnover_pct'
+            value: 要设置的值
+        """
+        keys = key_path.split('.')
+        with self._lock:
+            node = self._config
+            for k in keys[:-1]:
+                node = node.setdefault(k, {})
+            node[keys[-1]] = value
+    
+    @contextmanager
+    def temporary_override(self, overrides: Dict[str, Any]):
+        """
+        线程安全的临时配置覆写上下文管理器
+        
+        用法:
+            with cfg.temporary_override({'stock_filter.min_avg_turnover_pct': 3.0}):
+                engine.run()
+            # 退出后自动恢复原始配置
+        
+        Args:
+            overrides: 要覆写的配置键值对，如 {'stock_filter.min_avg_turnover_pct': 3.0}
+        """
+        # 深拷贝当前配置，保留原始状态
+        with self._lock:
+            original_config = deepcopy(self._config)
+        
+        try:
+            # 通过合法setter写入覆写值
+            for key_path, value in overrides.items():
+                self.set(key_path, value)
+            yield self
+        finally:
+            # 无论是否异常，必定恢复
+            with self._lock:
+                self._config = original_config
     
     def get_min_volume_multiplier(self) -> float:
         """【V20.5唯一真理】获取最小量比倍数阈值 - 从 live_sniper.min_volume_multiplier 读取"""
