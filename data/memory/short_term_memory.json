@@ -44,5 +44,18 @@
       "write_time": "2026-03-04T12:48:51.363978",
       "test": true
     }
+  },
+  "TEST_BACKTEST.SZ": {
+    "stock_code": "TEST_BACKTEST.SZ",
+    "initial_score": 60.0,
+    "current_score": 60.0,
+    "create_date": "20251231",
+    "last_active_date": "20251231",
+    "half_life_count": 0,
+    "metadata": {
+      "gain_pct": 60.0,
+      "turnover_rate": 5.5,
+      "write_time": "2026-03-04T13:53:33.432257"
+    }
   }
 }
