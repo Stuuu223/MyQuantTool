@@ -1,0 +1,244 @@
+{
+  "generated_at": "2026-03-05 00:26:52",
+  "results": {
+    "5天30-50%": {
+      "sample_count": 200,
+      "total_candidates": 13315,
+      "avg_turnover": 5.64,
+      "median_turnover": 3.37,
+      "avg_return": 49.57,
+      "bucket_distribution": {
+        "1-2%": 19.5,
+        "2-3%": 17.5,
+        "3-5%": 15.0,
+        "5-10%": 21.5,
+        "10-15%": 6.5,
+        "15-20%": 4.5,
+        ">20%": 4.5
+      }
+    },
+    "5天50-80%": {
+      "sample_count": 200,
+      "total_candidates": 2864,
+      "avg_turnover": 6.94,
+      "median_turnover": 5.03,
+      "avg_return": 74.79,
+      "bucket_distribution": {
+        "1-2%": 14.5,
+        "2-3%": 7.0,
+        "3-5%": 20.5,
+        "5-10%": 30.5,
+        "10-15%": 12.0,
+        "15-20%": 2.5,
+        ">20%": 5.5
+      }
+    },
+    "5天80%+": {
+      "sample_count": 200,
+      "total_candidates": 277,
+      "avg_turnover": 5.58,
+      "median_turnover": 3.54,
+      "avg_return": 106.33,
+      "bucket_distribution": {
+        "1-2%": 16.5,
+        "2-3%": 14.0,
+        "3-5%": 18.5,
+        "5-10%": 19.0,
+        "10-15%": 6.0,
+        "15-20%": 10.5,
+        ">20%": 1.5
+      }
+    },
+    "10天50-70%": {
+      "sample_count": 200,
+      "total_candidates": 6819,
+      "avg_turnover": 6.5,
+      "median_turnover": 4.33,
+      "avg_return": 69.33,
+      "bucket_distribution": {
+        "1-2%": 17.5,
+        "2-3%": 11.0,
+        "3-5%": 20.5,
+        "5-10%": 22.0,
+        "10-15%": 13.0,
+        "15-20%": 3.0,
+        ">20%": 5.0
+      }
+    },
+    "10天70-100%": {
+      "sample_count": 200,
+      "total_candidates": 2607,
+      "avg_turnover": 6.68,
+      "median_turnover": 4.77,
+      "avg_return": 97.34,
+      "bucket_distribution": {
+        "1-2%": 15.0,
+        "2-3%": 10.5,
+        "3-5%": 18.0,
+        "5-10%": 31.0,
+        "10-15%": 7.0,
+        "15-20%": 4.0,
+        ">20%": 7.0
+      }
+    },
+    "10天100-150%": {
+      "sample_count": 200,
+      "total_candidates": 714,
+      "avg_turnover": 6.3,
+      "median_turnover": 3.59,
+      "avg_return": 135.3,
+      "bucket_distribution": {
+        "1-2%": 14.5,
+        "2-3%": 16.0,
+        "3-5%": 22.0,
+        "5-10%": 16.5,
+        "10-15%": 7.5,
+        "15-20%": 6.5,
+        ">20%": 6.0
+      }
+    },
+    "10天150%+": {
+      "sample_count": 157,
+      "total_candidates": 157,
+      "avg_turnover": 3.88,
+      "median_turnover": 2.26,
+      "avg_return": 193.96,
+      "bucket_distribution": {
+        "1-2%": 19.1,
+        "2-3%": 14.6,
+        "3-5%": 19.1,
+        "5-10%": 12.1,
+        "10-15%": 2.5,
+        "15-20%": 5.1,
+        ">20%": 1.9
+      }
+    },
+    "20天70-100%": {
+      "sample_count": 200,
+      "total_candidates": 7572,
+      "avg_turnover": 5.9,
+      "median_turnover": 3.63,
+      "avg_return": 99.24,
+      "bucket_distribution": {
+        "1-2%": 18.5,
+        "2-3%": 14.0,
+        "3-5%": 27.0,
+        "5-10%": 17.0,
+        "10-15%": 9.0,
+        "15-20%": 5.5,
+        ">20%": 3.0
+      }
+    },
+    "20天100-150%": {
+      "sample_count": 200,
+      "total_candidates": 3136,
+      "avg_turnover": 5.96,
+      "median_turnover": 4.3,
+      "avg_return": 146.02,
+      "bucket_distribution": {
+        "1-2%": 17.0,
+        "2-3%": 14.5,
+        "3-5%": 20.0,
+        "5-10%": 27.5,
+        "10-15%": 11.5,
+        "15-20%": 2.5,
+        ">20%": 2.5
+      }
+    },
+    "20天150-200%": {
+      "sample_count": 200,
+      "total_candidates": 590,
+      "avg_turnover": 5.44,
+      "median_turnover": 3.14,
+      "avg_return": 186.68,
+      "bucket_distribution": {
+        "1-2%": 17.0,
+        "2-3%": 20.5,
+        "3-5%": 17.5,
+        "5-10%": 23.0,
+        "10-15%": 5.5,
+        "15-20%": 3.5,
+        ">20%": 4.0
+      }
+    },
+    "20天200%+": {
+      "sample_count": 200,
+      "total_candidates": 353,
+      "avg_turnover": 2.76,
+      "median_turnover": 1.56,
+      "avg_return": 317.08,
+      "bucket_distribution": {
+        "1-2%": 26.5,
+        "2-3%": 13.5,
+        "3-5%": 15.5,
+        "5-10%": 7.5,
+        "10-15%": 1.5,
+        "15-20%": 2.0,
+        ">20%": 1.5
+      }
+    },
+    "30天100-150%": {
+      "sample_count": 200,
+      "total_candidates": 6234,
+      "avg_turnover": 5.65,
+      "median_turnover": 3.54,
+      "avg_return": 148.42,
+      "bucket_distribution": {
+        "1-2%": 17.0,
+        "2-3%": 15.5,
+        "3-5%": 20.0,
+        "5-10%": 20.0,
+        "10-15%": 9.0,
+        "15-20%": 5.0,
+        ">20%": 3.5
+      }
+    },
+    "30天150-200%": {
+      "sample_count": 200,
+      "total_candidates": 1592,
+      "avg_turnover": 5.37,
+      "median_turnover": 3.31,
+      "avg_return": 194.87,
+      "bucket_distribution": {
+        "1-2%": 21.5,
+        "2-3%": 14.5,
+        "3-5%": 24.5,
+        "5-10%": 18.5,
+        "10-15%": 6.5,
+        "15-20%": 4.0,
+        ">20%": 3.5
+      }
+    },
+    "30天200-300%": {
+      "sample_count": 200,
+      "total_candidates": 659,
+      "avg_turnover": 4.05,
+      "median_turnover": 2.59,
+      "avg_return": 267.05,
+      "bucket_distribution": {
+        "1-2%": 24.0,
+        "2-3%": 14.5,
+        "3-5%": 20.5,
+        "5-10%": 15.5,
+        "10-15%": 5.0,
+        "15-20%": 3.0,
+        ">20%": 1.0
+      }
+    },
+    "30天300%+": {
+      "sample_count": 200,
+      "total_candidates": 219,
+      "avg_turnover": 2.34,
+      "median_turnover": 1.54,
+      "avg_return": 409.46,
+      "bucket_distribution": {
+        "1-2%": 33.0,
+        "2-3%": 13.5,
+        "3-5%": 12.0,
+        "5-10%": 9.5,
+        "10-15%": 1.5,
+        "15-20%": 0.5
+      }
+    }
+  }
+}

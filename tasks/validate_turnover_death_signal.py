@@ -3,6 +3,7 @@
 """
 5日均换手率死亡信号验证 - 细粒度版
 目标：验证不同5日均换手率档位的1-10日收益率
+新增：反向验证 - 从最高收益股票反推换手率分布
 """
 
 import sys
@@ -20,13 +21,311 @@ VALIDATION_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def get_turnover_buckets():
-    """换手率分桶 - 每5%一档，从5%到70%"""
+    """换手率分桶 - 从3%开始，每5%一档"""
     buckets = []
+    buckets.append((3, 5, "3-5%"))
     for low in range(5, 70, 5):
         high = low + 5
         buckets.append((low, high, f"{low}-{high}%"))
     buckets.append((70, 999, ">70%"))
     return buckets
+
+
+def extreme_analysis():
+    """极端高收益样本分析：右侧起爆哲学"""
+    print("\n" + "=" * 80)
+    print("极端高收益样本分析：右侧起爆哲学")
+    print("=" * 80)
+    
+    try:
+        from xtquant import xtdata
+        xtdata.connect(port=58610)
+    except Exception as e:
+        print(f"❌ QMT连接失败: {e}")
+        return
+    
+    end_date = '20260304'
+    start_date = '20240101'
+    
+    # 收益区间：(持有天数, 收益下限%, 收益上限%, 描述)
+    return_ranges = [
+        (5, 30, 50, "5天30-50%"),
+        (5, 50, 80, "5天50-80%"),
+        (5, 80, 999, "5天80%+"),
+        (10, 50, 70, "10天50-70%"),
+        (10, 70, 100, "10天70-100%"),
+        (10, 100, 150, "10天100-150%"),
+        (10, 150, 999, "10天150%+"),
+        (20, 70, 100, "20天70-100%"),
+        (20, 100, 150, "20天100-150%"),
+        (20, 150, 200, "20天150-200%"),
+        (20, 200, 999, "20天200%+"),
+        (30, 100, 150, "30天100-150%"),
+        (30, 150, 200, "30天150-200%"),
+        (30, 200, 300, "30天200-300%"),
+        (30, 300, 999, "30天300%+"),
+    ]
+    
+    stock_codes = xtdata.get_stock_list_in_sector('沪深A股')
+    print(f"扫描 {len(stock_codes)} 只股票...")
+    
+    # 收集所有事件：{ (days, low, high): [(turnover_5d_avg, return_pct, stock, date), ...] }
+    all_events = {r[:3]: [] for r in return_ranges}
+    
+    for i, stock in enumerate(stock_codes):
+        if (i + 1) % 500 == 0:
+            print(f"  进度: {i+1}/{len(stock_codes)}")
+        
+        try:
+            result = xtdata.get_market_data_ex(
+                field_list=['open', 'high', 'low', 'close', 'volume'],
+                stock_list=[stock],
+                period='1d',
+                start_time=start_date,
+                end_time=end_date,
+                count=-1
+            )
+            if result is None or stock not in result:
+                continue
+            df = result[stock]
+            if df is None or len(df) < 35:
+                continue
+            
+            detail = xtdata.get_instrument_detail(stock, False)
+            if not detail:
+                continue
+            
+            float_vol = float(detail.get('FloatVolume', 0) if hasattr(detail, 'get') else getattr(detail, 'FloatVolume', 0))
+            if float_vol <= 0:
+                continue
+            
+            df = df.copy()
+            df['date_str'] = df.index.astype(str)
+            df['turnover_rate'] = df['volume'] * 100.0 / float_vol * 100.0
+            df['turnover_5d_avg'] = df['turnover_rate'].rolling(window=5, min_periods=1).mean()
+            df = df.reset_index(drop=True)
+            
+            for row_idx in range(len(df) - 30):
+                event_close = float(df['close'].iloc[row_idx])
+                turnover_5d_avg = df['turnover_5d_avg'].iloc[row_idx]
+                event_date = df['date_str'].iloc[row_idx]
+                
+                if pd.isna(turnover_5d_avg) or turnover_5d_avg <= 0:
+                    continue
+                
+                # 计算各持有期收益
+                for days, low_ret, high_ret, desc in return_ranges:
+                    if row_idx + days >= len(df):
+                        continue
+                    future_close = float(df['close'].iloc[row_idx + days])
+                    ret = (future_close / event_close - 1.0) * 100.0
+                    if low_ret <= ret < high_ret:
+                        all_events[(days, low_ret, high_ret)].append((turnover_5d_avg, ret, stock, event_date))
+        except Exception:
+            continue
+    
+    print(f"\n✅ 收集完成")
+    
+    # 分析结果
+    results = {}
+    print("\n" + "=" * 110)
+    print(f"{'收益区间':<15} {'样本数':<8} {'换手均值':<10} {'换手中位':<10} {'收益均值':<12} {'主要换手分布'}")
+    print("-" * 110)
+    
+    for days, low_ret, high_ret, desc in return_ranges:
+        events = all_events[(days, low_ret, high_ret)]
+        if len(events) < 10:
+            continue
+        
+        # 按收益排序，取前200（或全部）
+        events_sorted = sorted(events, key=lambda x: x[1], reverse=True)[:200]
+        
+        turnovers = [e[0] for e in events_sorted]
+        returns = [e[1] for e in events_sorted]
+        
+        avg_turnover = np.mean(turnovers)
+        median_turnover = np.median(turnovers)
+        avg_return = np.mean(returns)
+        
+        # 分档统计
+        bucket_counts = {}
+        fine_buckets = [(1, 2, "1-2%"), (2, 3, "2-3%"), (3, 5, "3-5%"), 
+                       (5, 10, "5-10%"), (10, 15, "10-15%"), (15, 20, "15-20%"), (20, 999, ">20%")]
+        for low, high, label in fine_buckets:
+            count = sum(1 for t in turnovers if low <= t < high)
+            pct = count / len(turnovers) * 100 if turnovers else 0
+            if pct > 0:
+                bucket_counts[label] = round(pct, 1)
+        
+        results[desc] = {
+            'sample_count': len(events_sorted),
+            'total_candidates': len(events),
+            'avg_turnover': round(avg_turnover, 2),
+            'median_turnover': round(median_turnover, 2),
+            'avg_return': round(avg_return, 2),
+            'bucket_distribution': bucket_counts
+        }
+        
+        # 打印
+        main_buckets = sorted(bucket_counts.items(), key=lambda x: x[1], reverse=True)[:3]
+        bucket_str = ', '.join([f'{k}:{v}%' for k, v in main_buckets])
+        ret_str = f"+{avg_return:.1f}%" if high_ret == 999 else f"+{avg_return:.1f}%"
+        print(f"{desc:<15} {len(events_sorted):>5}     {avg_turnover:>7.2f}%    {median_turnover:>7.2f}%    {ret_str:>10}   {bucket_str}")
+    
+    # 保存结果
+    output_path = VALIDATION_DIR / "turnover_extreme_analysis.json"
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump({
+            'generated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'results': results
+        }, f, ensure_ascii=False, indent=2)
+    print(f"\n✅ 已保存: {output_path}")
+    
+    return results
+    """反向分析：从最高收益股票反推换手率分布"""
+    print("\n" + "=" * 80)
+    print("反向验证：最高收益股票的换手率分布")
+    print("=" * 80)
+    
+    try:
+        from xtquant import xtdata
+        xtdata.connect(port=58610)
+    except Exception as e:
+        print(f"❌ QMT连接失败: {e}")
+        return
+    
+    end_date = '20260304'
+    start_date = '20240101'
+    forward_days_list = [1, 3, 5, 10, 20, 30]
+    top_pcts = [5, 10, 20]  # 前5%、10%、20%高收益股票
+    
+    stock_codes = xtdata.get_stock_list_in_sector('沪深A股')
+    print(f"扫描 {len(stock_codes)} 只股票...")
+    
+    # 收集所有事件：{forward_day: [(turnover_5d_avg, return_pct), ...]}
+    all_events = {n: [] for n in forward_days_list}
+    
+    for i, stock in enumerate(stock_codes):
+        if (i + 1) % 500 == 0:
+            print(f"  进度: {i+1}/{len(stock_codes)}, 已收集 {sum(len(v) for v in all_events.values()):,} 事件")
+        
+        try:
+            result = xtdata.get_market_data_ex(
+                field_list=['open', 'high', 'low', 'close', 'volume'],
+                stock_list=[stock],
+                period='1d',
+                start_time=start_date,
+                end_time=end_date,
+                count=-1
+            )
+            # get_market_data_ex返回dict，需要取对应股票的DataFrame
+            if result is None or stock not in result:
+                continue
+            df = result[stock]
+            if df is None or len(df) < 35:
+                continue
+            
+            detail = xtdata.get_instrument_detail(stock, False)
+            if not detail:
+                continue
+            
+            float_vol = float(detail.get('FloatVolume', 0) if hasattr(detail, 'get') else getattr(detail, 'FloatVolume', 0))
+            if float_vol <= 0:
+                continue
+            
+            df = df.copy()
+            # 索引就是日期字符串（如'20240102'）
+            df['date_str'] = df.index.astype(str)
+            df['turnover_rate'] = df['volume'] * 100.0 / float_vol * 100.0
+            df['turnover_5d_avg'] = df['turnover_rate'].rolling(window=5, min_periods=1).mean()
+            
+            # 重置索引以便遍历
+            df = df.reset_index(drop=True)
+            
+            for row_idx in range(len(df) - max(forward_days_list)):
+                event_close = float(df['close'].iloc[row_idx])
+                turnover_5d_avg = df['turnover_5d_avg'].iloc[row_idx]
+                
+                if pd.isna(turnover_5d_avg) or turnover_5d_avg <= 0:
+                    continue
+                
+                # 计算各持有期收益
+                for n in forward_days_list:
+                    future_idx = row_idx + n
+                    future_close = float(df['close'].iloc[future_idx])
+                    ret = (future_close / event_close - 1.0) * 100.0
+                    all_events[n].append((turnover_5d_avg, ret))
+        except Exception as e:
+            continue
+    
+    total_collected = sum(len(v) for v in all_events.values())
+    print(f"\n✅ 收集完成: 共 {total_collected:,} 事件")
+    
+    if total_collected == 0:
+        print("❌ 无有效事件，请检查数据")
+        return
+    
+    # 对每个持有期分析
+    results = {}
+    for n in forward_days_list:
+        events = all_events[n]
+        if not events:
+            continue
+        
+        # 按收益排序
+        events_sorted = sorted(events, key=lambda x: x[1], reverse=True)
+        total = len(events_sorted)
+        
+        print(f"\n【{n}日持有期】总样本: {total:,}")
+        print("-" * 60)
+        
+        results[n] = {}
+        
+        for top_pct in top_pcts:
+            top_n = int(total * top_pct / 100)
+            top_events = events_sorted[:top_n]
+            
+            # 统计换手率分布
+            turnovers = [e[0] for e in top_events]
+            avg_turnover = np.mean(turnovers)
+            median_turnover = np.median(turnovers)
+            
+            # 分档统计
+            bucket_counts = {}
+            for low, high, label in get_turnover_buckets():
+                count = sum(1 for t in turnovers if low <= t < high)
+                pct = count / len(turnovers) * 100 if turnovers else 0
+                bucket_counts[label] = {'count': count, 'pct': round(pct, 1)}
+            
+            results[n][f'top_{top_pct}%'] = {
+                'avg_turnover': round(avg_turnover, 2),
+                'median_turnover': round(median_turnover, 2),
+                'avg_return': round(np.mean([e[1] for e in top_events]), 2),
+                'buckets': bucket_counts
+            }
+            
+            print(f"  前{top_pct}%高收益股 (共{top_n:,}只):")
+            print(f"    平均换手率: {avg_turnover:.2f}%")
+            print(f"    中位数换手率: {median_turnover:.2f}%")
+            print(f"    平均收益: {np.mean([e[1] for e in top_events]):.2f}%")
+            
+            # 打印主要档位
+            main_buckets = [(k, v) for k, v in bucket_counts.items() if v['pct'] > 5]
+            main_buckets.sort(key=lambda x: x[1]['pct'], reverse=True)
+            bucket_str = ', '.join([f'{k}:{v["pct"]}%' for k, v in main_buckets[:5]])
+            print(f"    换手率分布: {bucket_str}")
+    
+    # 保存结果
+    output_path = VALIDATION_DIR / "turnover_reverse_analysis.json"
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump({
+            'generated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'total_samples': {str(k): len(v) for k, v in all_events.items()},
+            'results': results
+        }, f, ensure_ascii=False, indent=2)
+    print(f"\n✅ 已保存: {output_path}")
+    
+    return results
 
 
 def main():
@@ -50,7 +349,7 @@ def main():
     
     print(f"日期范围: {start_date} ~ {end_date}")
     print(f"观察期: 1-10日")
-    print(f"5日均换手率分档: 1-5%, 5-10%, ..., 75-80%, >80%")
+    print(f"5日均换手率分档: 3-5%, 5-10%, ..., 65-70%, >70%")
     print("-" * 70)
     
     # 获取股票列表
@@ -268,4 +567,13 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+    if len(sys.argv) > 1:
+        if sys.argv[1] == '--reverse':
+            reverse_analysis()
+        elif sys.argv[1] == '--extreme':
+            extreme_analysis()
+        else:
+            main()
+    else:
+        main()
