@@ -319,8 +319,8 @@ class 动能打分引擎CoreEngine:
             high: 日内最高价（元）
             low: 日内最低价（元）
             open_price: 开盘价（元）
-            flow_5min: 最近5分钟资金流入（元）
-            flow_15min: 最近15分钟资金流入（元）
+            flow_5min: 开盘后前5分钟资金流入（元）(09:30-09:35)
+            flow_15min: 开盘后前15分钟资金流入（元）(09:30-09:45) ← 累计窗口，含flow_5min
             flow_5min_median_stock: 该股票历史5分钟资金流入中位数（元）
             space_gap_pct: 空间差百分比（上方套牢盘距离）
             float_volume_shares: 真实流通股本（股）
@@ -427,8 +427,11 @@ class 动能打分引擎CoreEngine:
         multiplier = 1.0
         
         # A. 维持能力 (Sustain Ability - 抓翻倍大妖的核心)
-        # 【CTO修复】使用safe_flow_5min确保不会除零，并限幅防止极端值
-        sustain_ratio = (flow_15min / safe_flow_5min) if safe_flow_5min > 0 else 1.0
+        # 【CTO修复20260304】累计窗口Bug修复
+        # 原: sustain_ratio = flow_15min / flow_5min (累计窗口包含关系，几乎永远>1.0)
+        # 新: 独立窗口计算 flow_next_10min = flow_15min - flow_5min (09:35-09:45独立段)
+        flow_next_10min = flow_15min - flow_5min  # 独立窗口：排除前5分钟
+        sustain_ratio = (flow_next_10min / safe_flow_5min) if safe_flow_5min > 0 else 1.0
         # 【CTO修复】限幅在-10到10之间，防止极端负值毁掉排序
         sustain_ratio = max(-10.0, min(sustain_ratio, 10.0))
         
@@ -680,6 +683,9 @@ if __name__ == "__main__":
     # 测试9: True Dragon Score - 完美起爆场景
     print("\n【测试9】True Dragon Score - 完美起爆场景")
     test_time = datetime(2026, 2, 27, 9, 35, 0)  # 早盘9:35
+    # 【CTO修复20260304】更新测试数据适配独立窗口计算
+    # flow_next_10min = flow_15min - flow_5min = 2500万 - 1000万 = 1500万
+    # sustain_ratio = 1500万 / 1000万 = 1.5 (>1.2健康)
     final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe = engine.calculate_true_dragon_score(
         net_inflow=50000000,      # 5000万净流入
         price=25.0,
@@ -687,8 +693,8 @@ if __name__ == "__main__":
         high=26.0,
         low=23.0,
         open_price=22.5,          # 开盘价
-        flow_5min=10000000,       # 5分钟流入1000万
-        flow_15min=15000000,      # 15分钟流入1500万 (sustain_ratio=1.5 > 1.2)
+        flow_5min=10000000,       # 5分钟流入1000万 (09:30-09:35)
+        flow_15min=25000000,      # 15分钟流入2500万 (09:30-09:45) → 独立段1500万
         flow_5min_median_stock=500000,  # 历史5分钟中位数50万
         space_gap_pct=0.05,       # 5%空间差 (<10%)
         float_volume_shares=100000000,  # 1亿股流通盘
@@ -709,6 +715,9 @@ if __name__ == "__main__":
     # 测试10: True Dragon Score - 骗炮陷阱场景（杂毛断头台测试）
     print("\n【测试10】True Dragon Score - 骗炮陷阱场景（杂毛断头台测试）")
     test_time2 = datetime(2026, 2, 27, 14, 30, 0)  # 尾盘14:30
+    # 【CTO修复20260304】更新测试数据：flow_15min < flow_5min 表示资金撤退
+    # flow_next_10min = flow_15min - flow_5min = 300万 - 800万 = -500万 (负值！)
+    # sustain_ratio = -500万 / 800万 = -0.625 (<1.0触发杂毛断头台)
     final_score2, sustain_ratio2, inflow_ratio2, ratio_stock2, mfe2 = engine.calculate_true_dragon_score(
         net_inflow=10000000,      # 1000万净流入
         price=25.0,
@@ -716,8 +725,8 @@ if __name__ == "__main__":
         high=26.0,
         low=23.0,
         open_price=22.5,          # 开盘价
-        flow_5min=8000000,        # 5分钟流入800万
-        flow_15min=6000000,       # 15分钟流入600万 (sustain_ratio=0.75 < 1.0，资金抽水！)
+        flow_5min=8000000,        # 5分钟流入800万 (开盘冲高)
+        flow_15min=3000000,       # 15分钟累计仅300万 → 独立段为负，资金撤退！
         flow_5min_median_stock=1000000,  # 历史5分钟中位数100万
         space_gap_pct=0.25,       # 25%空间差 (>10%)
         float_volume_shares=1000000000,  # 10亿股大流通盘
@@ -728,8 +737,9 @@ if __name__ == "__main__":
     print(f"  维持率: {sustain_ratio2:.2f} (资金抽水<1.0={sustain_ratio2<1.0})")
     print(f"  MFE: {mfe2:.2f}")
     print(f"  最终得分: {final_score2:.2f}")
-    # 验证：尾盘(0.2) + 维持差(0.1) = 0.02x致命惩罚 (杂毛断头台绞杀！)
-    assert sustain_ratio2 == 0.75, f"维持率应为0.75，实际{sustain_ratio2}"
+    # 【CTO修复20260304】sustain_ratio=-0.625 (独立段为负，资金撤退)
+    # 验证：尾盘(0.5) + 维持差(0.1) = 0.05x致命惩罚 (杂毛断头台绞杀！)
+    assert sustain_ratio2 < 0, f"维持率应为负值，实际{sustain_ratio2}"
     assert final_score2 < 20, f"骗炮陷阱应<20分(致命惩罚)，实际{final_score2}"
     print("  ✅ 通过 - 杂毛断头台已绞杀骗炮股")
     
@@ -776,6 +786,9 @@ if __name__ == "__main__":
     # 测试12: 杂毛断头台 - sustain_ratio在1.0~1.1之间的降权惩罚
     print("\n【测试12】杂毛断头台 - sustain_ratio=1.05降权惩罚测试")
     test_time3 = datetime(2026, 2, 27, 10, 15, 0)  # 上午10:15
+    # 【CTO修复20260304】更新测试数据适配独立窗口计算
+    # flow_next_10min = flow_15min - flow_5min = 2050万 - 1000万 = 1050万
+    # sustain_ratio = 1050万 / 1000万 = 1.05 (在1.0~1.1之间)
     final_score5, sustain_ratio5, _, _, _ = engine.calculate_true_dragon_score(
         net_inflow=30000000,      # 3000万净流入
         price=25.0,
@@ -784,7 +797,7 @@ if __name__ == "__main__":
         low=23.0,
         open_price=22.5,
         flow_5min=10000000,       # 5分钟流入1000万
-        flow_15min=10500000,      # 15分钟流入1050万 (sustain_ratio=1.05, 在1.0~1.1之间)
+        flow_15min=20500000,      # 15分钟流入2050万 → 独立段1050万，sustain_ratio=1.05
         flow_5min_median_stock=500000,
         space_gap_pct=0.08,
         float_volume_shares=100000000,
