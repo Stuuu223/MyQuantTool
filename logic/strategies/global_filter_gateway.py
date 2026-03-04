@@ -14,9 +14,9 @@ GlobalFilterGateway - 全局过滤网关
 
 【Boss二维铁网 - V20.2红线版 + 早盘降阈】
 1. 量能网: volume_ratio >= min_volume_multiplier (如1.5倍，动态放量) - 0/1判定
-2. 换手网: min_turnover <= turnover <= max_turnover (5%~70%，大哥起步线+死亡熔断) - 0/1判定
+2. 换手网: min_turnover <= turnover <= max_turnover (5%~300%，大哥起步线+死亡熔断) - 0/1判定
 3. 【删除】趋势网(MA5/MA10/MA20) - 完全删除，权力下放给战法Detector
-4. 【新增】死亡换手拦截: turnover > 70%直接拦截
+4. 【新增】死亡换手拦截: turnover > 300%直接拦截
 5. 【新增】甜点位标记: 8% <= turnover <= 15%注入{'tag': '换手甜点'}，绝不加分
 6. 【CTO紧急修复】早盘降阈: 09:30-09:45阈值降至60%，捕捉意愿度
 
@@ -115,7 +115,7 @@ class GlobalFilterGateway:
         【CTO红线改造说明】
         - 完全删除MA5/MA10/MA20均线判定（权力下放给战法Detector）
         - 只做0/1生死判定，无打分机制
-        - 新增死亡换手拦截(>70%)
+        - 新增死亡换手拦截(>300%)
         - 新增甜点位标记(8%-15%)，仅注入tag，绝不加分
         【CTO紧急修复】早盘降阈: 09:30-09:45阈值降至60%
         
@@ -229,22 +229,28 @@ class GlobalFilterGateway:
             stats["filters_applied"].append(f"turnover_{min_turnover:.2f}~{max_turnover}%")
             logger.info(f"  🔹 换手网: {turnover_after}/{turnover_before}只通过 (换手{min_turnover:.2f}%~{max_turnover}%)【0/1判定{'，早盘降阈' if is_early else ''}】")
         
-        # ========== 第三维：ATR势垒网（0/1判定，无打分）==========
+        # ========== 第三维：ATR势垒网（可配置：仅记录/硬过滤）==========
         # 【ATR阈值说明】
         # - 当前采用 atr_ratio >= 1.8x（研究报告推荐值）
         # - 研究样本：2026-02-27至2026-03-02（4天）
         # - 结论：atr_ratio >= 1.8时，涨停概率提升3.2倍
-        # - TODO: 后续需更大样本优化此参数
+        # - TODO: 后续需三个月样本重新估此参数
         #
         # 【物理学意义】
         # - ATR = Average True Range = 真实波幅均值
         # - atr_ratio = 今日波幅 / 20日平均真实波幅
         # - atr_ratio > 1.8 表示今日波动超过历史平均的1.8倍
         # - 高能态 = 高波动 = 资金活跃度高 = 起爆概率高
+        #
+        # 【过滤模式】(2026-03-04 CTO降级)
+        # - record_only: 仅记录到df，不拦截（当前模式）
+        # - hard_filter: 硬过滤拦截（等三个月回测后再启用）
         
         atr_ratio_min = config_manager.get('kinetic_physics.atr_ratio_min', 1.8) if config_manager else 1.8
+        atr_filter_enabled = config_manager.get('kinetic_physics.atr_filter_enabled', True) if config_manager else True
+        atr_filter_mode = config_manager.get('kinetic_physics.atr_filter_mode', 'record_only') if config_manager else 'record_only'
         
-        if true_dict and 'stock_code' in df.columns and len(df) > 0:
+        if atr_filter_enabled and true_dict and 'stock_code' in df.columns and len(df) > 0:
             try:
                 # 获取ATR数据（20日平均真实波幅）
                 df['atr_20d'] = df['stock_code'].apply(
@@ -265,38 +271,47 @@ class GlobalFilterGateway:
                     # 过滤无效值
                     df['atr_ratio'] = df['atr_ratio'].fillna(0)
                     
-                    # 应用ATR势垒过滤
                     atr_before = len(df)
-                    mask_atr = df['atr_ratio'] >= atr_ratio_min
-                    df = df[mask_atr].copy()
-                    atr_after = len(df)
-                    atr_rejected = atr_before - atr_after
+                    atr_pass_count = (df['atr_ratio'] >= atr_ratio_min).sum()
+                    atr_rejected = atr_before - atr_pass_count
                     
-                    stats["filters_applied"].append(f"atr_ratio>={atr_ratio_min}x")
-                    stats["atr_filtered"] = atr_rejected
+                    stats["filters_applied"].append(f"atr_ratio>={atr_ratio_min}x({atr_filter_mode})")
+                    stats["atr_filtered"] = atr_rejected if atr_filter_mode == 'hard_filter' else 0
                     
-                    logger.info(f"  🔹 ATR势垒网: {atr_after}/{atr_before}只通过 (ATR比率>={atr_ratio_min}x)【0/1判定，高能态过滤】")
-                    
-                    if atr_rejected > 0:
-                        # 统计被过滤股票的atr_ratio范围
-                        filtered_atr = df['atr_ratio']
-                        if len(filtered_atr) > 0:
-                            logger.info(f"     📊 通过者ATR比率范围: {filtered_atr.min():.2f}x ~ {filtered_atr.max():.2f}x")
-                        logger.info(f"     🚫 淘汰: {atr_rejected}只因ATR比率<{atr_ratio_min}x（低能态，无起爆潜力）")
+                    # 根据模式决定是否硬过滤
+                    if atr_filter_mode == 'hard_filter':
+                        # 硬过滤：拦截低能态股票
+                        mask_atr = df['atr_ratio'] >= atr_ratio_min
+                        df = df[mask_atr].copy()
+                        atr_after = len(df)
+                        logger.info(f"  🔹 ATR势垒网: {atr_after}/{atr_before}只通过 (ATR比率>={atr_ratio_min}x)【硬过滤模式】")
+                        
+                        if atr_rejected > 0:
+                            filtered_atr = df['atr_ratio']
+                            if len(filtered_atr) > 0:
+                                logger.info(f"     📊 通过者ATR比率范围: {filtered_atr.min():.2f}x ~ {filtered_atr.max():.2f}x")
+                            logger.info(f"     🚫 淘汰: {atr_rejected}只因ATR比率<{atr_ratio_min}x（低能态，无起爆潜力）")
+                    else:
+                        # 仅记录模式：不过滤，只记录到df
+                        logger.info(f"  🔹 ATR势垒网: {atr_pass_count}/{atr_before}只达标 (ATR比率>={atr_ratio_min}x)【仅记录模式，不拦截】")
+                        if atr_rejected > 0:
+                            logger.info(f"     📊 未达标: {atr_rejected}只ATR比率<{atr_ratio_min}x（待回测验证后再决定是否拦截）")
                 else:
-                    logger.warning(f"  ⚠️ ATR势垒网: 缺少high/low列，跳过ATR过滤")
+                    logger.warning(f"  ⚠️ ATR势垒网: 缺少high/low列，跳过ATR计算")
                     df['atr_ratio'] = 0.0
                     
             except Exception as e:
-                logger.warning(f"  ⚠️ ATR势垒网计算失败: {e}，跳过ATR过滤")
+                logger.warning(f"  ⚠️ ATR势垒网计算失败: {e}，跳过ATR计算")
                 df['atr_ratio'] = 0.0
         else:
-            if 'stock_code' not in df.columns:
-                logger.warning(f"  ⚠️ ATR势垒网: 缺少stock_code列，跳过ATR过滤")
+            if not atr_filter_enabled:
+                logger.info(f"  🔹 ATR势垒网: 已禁用 (atr_filter_enabled=False)")
+            elif 'stock_code' not in df.columns:
+                logger.warning(f"  ⚠️ ATR势垒网: 缺少stock_code列，跳过ATR计算")
             elif len(df) == 0:
                 logger.info(f"  🔹 ATR势垒网: 输入为空，跳过")
             else:
-                logger.warning(f"  ⚠️ ATR势垒网: 缺少true_dict，跳过ATR过滤")
+                logger.warning(f"  ⚠️ ATR势垒网: 缺少true_dict，跳过ATR计算")
             df['atr_ratio'] = 0.0
         
         # ========== 【CTO红线】甜点位标记（仅注入tag，绝不加分！） ==========
@@ -414,7 +429,7 @@ def apply_boss_filters(df, config_manager, true_dict=None, context="unknown"):
     【CTO红线声明】
     - 均线判定(MA5/MA10/MA20)已完全删除，权力下放给战法Detector
     - 只做0/1生死判定，无打分
-    - 新增死亡换手拦截(>70%)
+    - 新增死亡换手拦截(>300%)
     - 甜点位(8%-15%)仅注入tag，绝不加分
     【CTO紧急修复】早盘降阈: 09:30-09:45阈值降至60%，捕捉意愿度
     

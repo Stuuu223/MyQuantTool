@@ -26,3 +26,21 @@
 3. **探针真理：** 验证 QMT 是否连通的唯一探针是 `xtdata.get_trading_calendar('SSE')`。
 
 *(注：SectorEmotionCalculator、FullMarketScanner 等旧版冗余模块已于 V20.5 被物理斩首，严禁复活！)*
+
+---
+## 📊 参数启用状态表 (V20.5.1 - 2026-03-04)
+
+| 参数 | 状态 | 说明 |
+|------|------|------|
+| `early_scale_factor` | ✅ 已启用 | 早盘降阈系数0.6，09:30-09:45阈值降至60% |
+| `atr_ratio_min` | ✅ 已启用(仅记录) | ATR势垒阈值1.8x，当前不拦截只记录到df |
+| `atr_filter_mode` | ✅ 已启用 | 当前`record_only`，等回测后切换为`hard_filter` |
+| `min_volume_multiplier` | ✅ 已启用 | 量比阈值3.0x |
+| `turnover_rate_max` | ✅ 已启用 | 死亡换手线300% |
+| `kinetic_barrier_min` | ⏳ 占位未启用 | 公式：a(t)=60s换手率加速度，待成交动能引擎完成后启用 |
+| `micro_kinetic_window` | 🧪 实验参数 | 对应已废弃的盘口引擎，不建议使用 |
+| `micro_kinetic_min_acceleration` | 🧪 实验参数 | 对应已废弃的盘口引擎，不建议使用 |
+
+### 待办事项
+- [ ] 本周末：三个月回测框架，重新估ATR阈值
+- [ ] 下周：新建`amount_kinetic_engine.py`（基于成交金额dAmount/dt）

@@ -118,22 +118,27 @@
     "atr_ratio_min": 1.8,
     "_atr_ratio_min_comment": "ATR势垒阈值：今日波幅/20日ATR >= 1.8才算高能态（有起爆潜力）",
     "_atr_ratio_min_source": "研究样本：2026-02-27至2026-03-02，atr_ratio>=1.8时涨停概率提升3.2倍",
-    "_atr_ratio_min_todo": "TODO: 后续需更大样本优化此参数",
+    "_atr_ratio_min_todo": "TODO: 后续需三个月样本重新估此参数",
+
+    "atr_filter_enabled": true,
+    "_atr_filter_enabled_comment": "ATR势垒开关：true=启用ATR计算，false=完全禁用",
+
+    "atr_filter_mode": "record_only",
+    "_atr_filter_mode_comment": "ATR过滤模式：'record_only'=仅记录到df不拦截(当前)，'hard_filter'=硬过滤拦截。等三个月回测后再切换为hard_filter",
 
     "atr_period": 20,
     "_atr_period_comment": "ATR计算周期：20日滑动平均真实波幅",
 
     "micro_kinetic_window": 5,
-    "_micro_kinetic_window_comment": "微观动能滑动窗口：5个Tick约15秒数据",
+    "_micro_kinetic_window_comment": "【实验参数-废弃】对应已废弃的盘口引擎，不建议使用。下周新建amount_kinetic_engine.py使用60秒时间窗",
 
     "micro_kinetic_min_acceleration": 0.05,
-    "_micro_kinetic_min_acceleration_comment": "最小动能加速度：压力变化率>0.05才算买盘加速注入",
+    "_micro_kinetic_min_acceleration_comment": "【实验参数-废弃】最小动能加速度，对应已废弃的盘口引擎",
 
     "kinetic_barrier_min": 1.5,
-    "_kinetic_barrier_min_comment": "动能/势垒比阈值：dV_dt/(ATR*price) >= 1.5才算动能足以突破势垒",
-    "_kinetic_barrier_min_note": "当前未实现，为未来完整物理模型预留",
+    "_kinetic_barrier_min_comment": "【占位未启用】动能/势垒比阈值。公式定义：a(t)=60s换手率加速度，ATR_Ratio=今日波幅/20日ATR。待60秒成交动能引擎完成后启用",
 
     "early_scale_factor": 0.6,
-    "_early_scale_factor_comment": "早盘降阈系数：09:30-09:45阈值降至60%，捕捉资金意愿度"
+    "_early_scale_factor_comment": "【已启用】早盘降阈系数：09:30-09:45阈值降至60%，捕捉资金意愿度"
   }
 }

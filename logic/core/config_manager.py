@@ -306,6 +306,30 @@ class ConfigManager:
             float: 早盘阈值缩放因子，默认0.6
         """
         return self.get('kinetic_physics.early_scale_factor', 0.6)
+    
+    def get_atr_filter_enabled(self) -> bool:
+        """
+        【ATR势垒开关】获取ATR势垒是否启用
+        
+        Returns:
+            bool: True=启用ATR计算，False=完全禁用
+        """
+        return self.get('kinetic_physics.atr_filter_enabled', True)
+    
+    def get_atr_filter_mode(self) -> str:
+        """
+        【ATR过滤模式】获取ATR势垒过滤模式
+        
+        模式说明：
+        - 'record_only': 仅记录到df，不拦截（当前默认）
+        - 'hard_filter': 硬过滤，拦截低能态股票
+        
+        等三个月回测后再切换为hard_filter
+        
+        Returns:
+            str: 过滤模式，默认'record_only'
+        """
+        return self.get('kinetic_physics.atr_filter_mode', 'record_only')
 
 
 # 全局配置管理器实例
