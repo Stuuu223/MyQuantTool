@@ -15,8 +15,8 @@ ShortTermMemoryEngine - 跨日记忆衰减引擎
     - O(1)读写性能(内存缓存+延迟写入)
 
 Author: MyQuantTool Project
-Version: V1.0.0
-Date: 2026-02-27
+Version: V1.0.1 - CTO手术二（回测时序修复版）
+Date: 2026-03-04
 """
 
 import json
@@ -201,6 +201,22 @@ class ShortTermMemoryEngine:
         """获取今日日期字符串 YYYYMMDD"""
         return datetime.now().strftime('%Y%m%d')
     
+    def _validate_date_format(self, date_str: str) -> bool:
+        """
+        【CTO手术二】验证日期格式是否为 YYYYMMDD
+        
+        Args:
+            date_str: 日期字符串
+            
+        Returns:
+            是否为合法格式
+        """
+        try:
+            datetime.strptime(date_str, '%Y%m%d')
+            return True
+        except ValueError:
+            return False
+    
     def _is_trading_day_gap(self, date1: str, date2: str) -> int:
         """
         计算两个日期间的交易天数差
@@ -246,7 +262,8 @@ class ShortTermMemoryEngine:
                      turnover_rate: float,
                      blood_pct: float,
                      metadata: Optional[Dict[str, Any]] = None,
-                     force: bool = False) -> bool:
+                     force: bool = False,
+                     record_date: Optional[str] = None) -> bool:
         """
         基因写入 - 盘后结算时调用
         
@@ -255,11 +272,13 @@ class ShortTermMemoryEngine:
         
         Args:
             stock_code: 股票代码
-            gain_pct: 当日涨幅(%)
+            gain_pct: 当日涨幅(%),或动态势能分(用于_apply_memory_decay)
             turnover_rate: 当日换手率(%)
             blood_pct: 血液浓度分数(0-100)
             metadata: 额外元数据
             force: 强制写入，跳过阈值检查（CTO手术一补充）
+            record_date: 【CTO手术二】记录日期(YYYYMMDD),默认为系统今日
+                         回测时必须传入回测日期,避免时序错乱！
             
         Returns:
             是否成功写入
@@ -268,7 +287,14 @@ class ShortTermMemoryEngine:
         if not force and not self._should_write_memory(gain_pct, turnover_rate):
             return False
         
-        today = self._get_today_str()
+        # 【CTO手术二】日期参数：回测时传入 record_date，实盘时用系统当天
+        if record_date is not None:
+            if not self._validate_date_format(record_date):
+                print(f"[MemoryEngine] 错误: record_date 格式非法 '{record_date}'，必须为 YYYYMMDD")
+                return False
+            today = record_date
+        else:
+            today = self._get_today_str()
         
         with self._cache_lock:
             # 创建新的记忆基因
@@ -292,7 +318,7 @@ class ShortTermMemoryEngine:
             self._dirty = True
         
         print(f"[MemoryEngine] 基因写入: {stock_code} | "
-              f"M0={blood_pct:.2f} | 涨幅={gain_pct:.2f}% | 换手={turnover_rate:.2f}%")
+              f"M0={blood_pct:.2f} | 涨幅={gain_pct:.2f}% | 换手={turnover_rate:.2f}% | 日期={today}")
         
         self._check_auto_save()
         return True
@@ -492,7 +518,10 @@ class ShortTermMemoryEngine:
     
     def clear_all(self, confirm: bool = False) -> bool:
         """
-        清空所有记忆(危险操作)
+        【CTO手术二修复】清空所有记忆(危险操作)
+        
+        修复: 原版先 clear → save → 返回，若中间 crash 造成空库
+        新版: 锁内一次性完成 clear + dirty + save，原子化操作
         
         Args:
             confirm: 必须传入True才能执行
@@ -504,13 +533,19 @@ class ShortTermMemoryEngine:
             print("[MemoryEngine] 清空操作被拒绝: confirm=True才能执行")
             return False
         
-        with self._cache_lock:
-            self._memory_cache.clear()
-            self._dirty = True
-        
-        self._save_to_disk(force=True)
-        print("[MemoryEngine] 所有记忆已清空")
-        return True
+        # 【CTO手术二】在锁内一次性完成清空和保存，避免 crash window
+        with self._file_lock:
+            with self._cache_lock:
+                self._memory_cache.clear()
+                self._dirty = True
+                # 立即持久化（在锁保护内）
+                success = self._save_to_disk(force=True)
+                if success:
+                    print("[MemoryEngine] 所有记忆已清空")
+                    return True
+                else:
+                    print("[MemoryEngine] 清空失败: 保存到磁盘失败")
+                    return False
     
     def close(self):
         """关闭引擎,保存数据"""
@@ -559,55 +594,40 @@ def example_usage():
     DAY4 = "20260301"
     
     # -------------------------------------------------------------------------
-    # Day 0: 盘后结算 - 基因写入
+    # Day 0: 盘后结算 - 基因写入（使用 record_date）
     # -------------------------------------------------------------------------
     print(f"\n>>> Day 0 ({DAY0}) 盘后结算 - 基因写入")
     
     engine = ShortTermMemoryEngine(memory_file=test_file, auto_save=False)
     
-    # 手动创建记忆基因(绕过write_memory的日期自动获取)
-    from datetime import datetime
-    
-    def create_test_gene(stock_code, blood_pct, gain_pct, turnover_rate, date_str):
-        """创建测试记忆基因"""
-        gene = MemoryGene(
-            stock_code=stock_code,
-            initial_score=blood_pct,
-            current_score=blood_pct,
-            create_date=date_str,
-            last_active_date=date_str,
-            half_life_count=0,
-            metadata={
-                'gain_pct': gain_pct,
-                'turnover_rate': turnover_rate,
-                'write_time': datetime.now().isoformat()
-            }
-        )
-        return gene
-    
-    # 股票A: 强势涨停,写入记忆
-    engine._memory_cache["000001.SZ"] = create_test_gene(
-        "000001.SZ", 92.0, 10.02, 8.5, DAY0
+    # 【CTO手术二】使用 record_date 参数明确指定日期
+    engine.write_memory(
+        stock_code="000001.SZ",
+        gain_pct=10.02,
+        turnover_rate=8.5,
+        blood_pct=92.0,
+        force=True,
+        record_date=DAY0  # 明确指定日期
     )
-    print(f"[MemoryEngine] 基因写入: 000001.SZ | M0=92.00 | 涨幅=10.02% | 换手=8.50%")
     
-    # 股票B: 强势但未达标(<8%),不写入
-    # gain_pct=7.5不满足>8%条件,跳过
-    print(f"[MemoryEngine] 条件未满足: 000002.SZ | 涨幅=7.50% (<8%) | 跳过")
-    
-    # 股票C: 达标,写入记忆
-    engine._memory_cache["300001.SZ"] = create_test_gene(
-        "300001.SZ", 88.5, 19.8, 25.6, DAY0
+    engine.write_memory(
+        stock_code="300001.SZ",
+        gain_pct=19.8,
+        turnover_rate=25.6,
+        blood_pct=88.5,
+        force=True,
+        record_date=DAY0
     )
-    print(f"[MemoryEngine] 基因写入: 300001.SZ | M0=88.50 | 涨幅=19.80% | 换手=25.60%")
     
-    # 股票D: 达标,写入记忆
-    engine._memory_cache["600000.SH"] = create_test_gene(
-        "600000.SH", 78.0, 9.5, 6.2, DAY0
+    engine.write_memory(
+        stock_code="600000.SH",
+        gain_pct=9.5,
+        turnover_rate=6.2,
+        blood_pct=78.0,
+        force=True,
+        record_date=DAY0
     )
-    print(f"[MemoryEngine] 基因写入: 600000.SH | M0=78.00 | 涨幅=9.50% | 换手=6.20%")
     
-    engine._dirty = True
     stats = engine.get_memory_stats()
     print(f"\n当日记忆统计: {stats}")
     engine.force_save()
