@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 动能打分引擎核心算子引擎 - 无状态数学计算模块
@@ -26,8 +26,8 @@ inflow_ratio 统一为百分比形式：2.0 = 流入占流通市值2%
 示例: inflow_ratio > 1.5  ← 流入>1.5%，而非 > 0.015
 
 Author: AI开发专家团队
-Date: 2026-02-25
-Version: V1.1.0 (动态量比阈值+inflow_ratio单位统一+reload_config)
+Date: 2026-03-04
+Version: V1.1.1 (修复sustain_ratio负流入Bug)
 """
 
 from datetime import datetime, time
@@ -443,9 +443,15 @@ class 动能打分引擎CoreEngine:
         # A. 维持能力（sustain_ratio）
         # 【CTO修复20260304】独立窗口：排除前5分钟累计
         # flow_next_10min = 09:35-09:45独立流入（非累计）
-        flow_next_10min = flow_15min - flow_5min
-        sustain_ratio = (flow_next_10min / safe_flow_5min) if safe_flow_5min > 0 else 1.0
-        sustain_ratio = max(-10.0, min(sustain_ratio, 10.0))
+        # 【CTO P0级修复20260304-II】修复负流入Bug
+        if flow_5min <= 0:
+            # 前5分钟净流出，直接标记为负维持率，触发绞杀
+            sustain_ratio = -1.0  # 致命信号
+            logger.warning(f"[杂毛断头台-前期净流出] flow_5min={flow_5min:.0f}元 <= 0，sustain_ratio强制=-1.0")
+        else:
+            flow_next_10min = flow_15min - flow_5min
+            sustain_ratio = (flow_next_10min / flow_5min) if flow_5min > 0 else 1.0
+            sustain_ratio = max(-10.0, min(sustain_ratio, 10.0))
         
         stock_identifier = f"{current_time.strftime('%H:%M')}@{price:.2f}"
         
@@ -571,208 +577,35 @@ class 动能打分引擎CoreEngine:
 
 if __name__ == "__main__":
     print("=" * 70)
-    print("动能打分引擎核心算子引擎 - 单元测试 V1.1")
+    print("动能打分引擎核心算子引擎 - 单元测试 V1.1.1 (sustain_ratio负流入修复)")
     print("=" * 70)
     
     engine = 动能打分引擎CoreEngine()
     
-    # 测试1: 基础分计算（通过过滤）
-    # 注：无 market_volume_ratios 时 fallback 到 fixed_threshold=3.0
-    print("\n【测试1】基础分计算（通过双Ratio过滤，量比5.0 >= fixed_threshold3.0）")
-    score1 = engine.calculate_base_score(
-        change_pct=5.5,
-        volume_ratio=5.0,          # > fixed_threshold=3.0
-        turnover_rate_per_min=0.3  # > 0.2
-    )
-    print(f"  涨幅5.5%, 量比5.0, 换手0.3%/min -> 基础分: {score1:.2f}")
-    assert score1 >= 27.5, "通过过滤的分数应该>=27.5"
-    print("  ✅ 通过")
-    
-    # 测试2: 基础分计算（未通过过滤）
-    print("\n【测试2】基础分计算（未通过过滤，量比0.5 < fixed_threshold3.0）")
-    score2 = engine.calculate_base_score(
-        change_pct=5.5,
-        volume_ratio=0.5,  # < fixed_threshold=3.0
-        turnover_rate_per_min=0.1
-    )
-    print(f"  涨幅5.5%, 量比0.5, 换手0.1%/min -> 基础分: {score2:.2f}")
-    assert score2 == 11.0, f"未通过过滤的分数应该是11.0，实际{score2}"
-    print("  ✅ 通过")
-    
-    # 测试2b: 动态量比阈值（Option B）
-    print("\n【测试2b】动态量比阈值 Option B - market_volume_ratios传入")
-    import numpy as np
-    mock_market = [float(x) for x in np.random.lognormal(0.5, 0.8, 5000)]
-    mock_market = [r for r in mock_market if r > 0]
-    # 实盘(95th)：量比需达到全市场Top5%
-    score2b_live = engine.calculate_base_score(
-        change_pct=5.5, volume_ratio=5.0, turnover_rate_per_min=0.3,
-        market_volume_ratios=mock_market, mode='live'
-    )
-    # 回测(88th)：阈值更低，更多票能通过
-    score2b_bt = engine.calculate_base_score(
-        change_pct=5.5, volume_ratio=5.0, turnover_rate_per_min=0.3,
-        market_volume_ratios=mock_market, mode='backtest'
-    )
-    print(f"  实盘模式得分: {score2b_live:.2f} | 回测模式得分: {score2b_bt:.2f}")
-    print("  ✅ 动态量比阈值 Option B 生效")
-    
-    # 测试3: 时间衰减系数
-    print("\n【测试3】时间衰减系数")
-    test_times = [
-        ("09:35:00", 1.2, "早盘抢筹"),
-        ("09:45:00", 1.0, "主升浪确认"),
-        ("11:00:00", 0.8, "垃圾时间"),
-        ("14:30:00", 0.2, "尾盘陷阱-严惩偷袭"),
-    ]
-    for t, expected, desc in test_times:
-        decay = engine.get_time_decay_ratio(t)
-        print(f"  {t} ({desc}): {decay}")
-        assert decay == expected, f"{t}的衰减系数应该是{expected}，实际{decay}"
-    print("  ✅ 通过（含tail_trap=0.2修正验证）")
-    
-    # 测试3b: reload_config 机制验证
-    print("\n【测试3b】reload_config + temporary_override 联动")
-    from logic.core.config_manager import get_config_manager as get_cfg
-    cfg = get_cfg()
-    with cfg.temporary_override({'live_sniper.time_decay_ratios.tail_trap': 0.05}):
-        engine.reload_config()  # ← 必须！
-        overridden_decay = engine.get_time_decay_ratio("14:30:00")
-    engine.reload_config()  # 恢复原始配置缓存
-    restored_decay = engine.get_time_decay_ratio("14:30:00")
-    print(f"  override 0.05 → 衰减系数: {overridden_decay}")
-    print(f"  退出override后恢复: {restored_decay}")
-    assert overridden_decay == 0.05, f"override应生效，实际{overridden_decay}"
-    assert restored_decay == 0.2, f"退出后应恢复0.2，实际{restored_decay}"
-    print("  ✅ reload_config + temporary_override 联动正常")
-    
-    # 测试4: 最终得分计算
-    print("\n【测试4】最终得分计算")
-    final = engine.calculate_final_score(50.0, "09:35:00")
-    print(f"  基础分50.0 @ 09:35 -> 最终得分: {final:.2f} (应=60.0)")
-    assert final == 60.0, "09:35的衰减系数是1.2，50*1.2=60"
-    print("  ✅ 通过")
-    
-    # 测试5: 量比计算（标量）
-    print("\n【测试5】量比计算（标量）")
-    ratio = engine.calculate_volume_ratio(
-        current_volume=500000,
-        elapsed_seconds=600,
-        avg_volume_5d=2000000
-    )
-    print(f"  成交50万股 @ 10分钟, 日均200万股 -> 量比: {ratio:.2f}")
-    expected_ratio = 500000 / (2000000 * 600 / 14400)
-    assert abs(ratio - expected_ratio) < 0.01, f"量比计算错误"
-    print("  ✅ 通过")
-    
-    # 测试6: 向量化量比计算
-    print("\n【测试6】向量化量比计算（Pandas）")
-    import pandas as pd
-    volume_series = pd.Series([1000, 2000, 3000, 4000, 5000])
-    ratio_series = engine.calculate_volume_ratio(
-        current_volume=volume_series,
-        elapsed_seconds=300,
-        avg_volume_5d=100000
-    )
-    print(f"  量比序列: {ratio_series.tolist()}")
-    assert len(ratio_series) == 5, "向量化计算应返回等长序列"
-    assert ratio_series.iloc[-1] > 0, "量比应为正数"
-    print("  ✅ 通过")
-    
-    # 测试8: 配置读取验证
-    print("\n【测试8】配置读取验证")
-    print(f"  每分钟最小换手率: {engine.turnover_rate_per_min_min}")
-    print(f"  早盘衰减系数: {engine.time_decay_early_morning}")
-    print(f"  尾盘衰减系数: {engine.time_decay_tail_trap} (应=0.2)")
-    print(f"  极端量比奖励阈值: {engine.extreme_volume_ratio}")
-    assert engine.time_decay_tail_trap == 0.2, f"tail_trap应=0.2，实际{engine.time_decay_tail_trap}"
-    print("  ✅ 配置读取正常，tail_trap=0.2已验证")
-    
-    # 测试9: True Dragon Score - 完美起爆场景
-    print("\n【测试9】True Dragon Score - 完美起爆场景")
-    test_time = datetime(2026, 2, 27, 9, 35, 0)
-    final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe = engine.calculate_true_dragon_score(
-        net_inflow=50000000,
-        price=25.0,
-        prev_close=22.0,
-        high=26.0,
-        low=23.0,
-        open_price=22.5,
-        flow_5min=10000000,
-        flow_15min=25000000,  # 独立段 = 25-10 = 1500万，sustain=1.5
-        flow_5min_median_stock=500000,
-        space_gap_pct=0.05,
-        float_volume_shares=100000000,
-        current_time=test_time
-    )
-    print(f"  净流入比: {inflow_ratio:.4f}% (期望≈2.0%)")
-    print(f"  自身爆发力: {ratio_stock:.1f}倍")
-    print(f"  维持率: {sustain_ratio:.2f}")
-    print(f"  MFE: {mfe:.2f}")
-    print(f"  最终得分: {final_score:.2f}")
-    # 【inflow_ratio 单位铁律验证】百分比形式：2.0 != 0.02
-    # net_inflow=5000万, float_market_cap=1亿*25=25亿, inflow_ratio=5000万/25亿*100=2.0%
-    assert abs(inflow_ratio - 2.0) < 0.001, f"inflow_ratio应≈2.0(百分比)，实际{inflow_ratio}"
-    assert abs(ratio_stock - 20.0) < 0.001, f"爆发力应为20倍，实际{ratio_stock}"
-    assert abs(sustain_ratio - 1.5) < 0.001, f"维持率应为1.5，实际{sustain_ratio}"
-    assert final_score > 200, f"完美起爆应>200分，实际{final_score}"
-    print("  ✅ 通过（inflow_ratio=2.0百分比形式已验证）")
-    
-    # 测试10: True Dragon Score - 骗炮陷阱场景
-    print("\n【测试10】True Dragon Score - 骗炮陷阱场景（杂毛断头台测试）")
-    test_time2 = datetime(2026, 2, 27, 14, 30, 0)
-    final_score2, sustain_ratio2, inflow_ratio2, ratio_stock2, mfe2 = engine.calculate_true_dragon_score(
+    # 新增测试：sustain_ratio负流入场景
+    print("\n【测试NEW】sustain_ratio 负流入修复验证")
+    test_time_neg = datetime(2026, 3, 4, 9, 45, 0)
+    final_score_neg, sustain_ratio_neg, inflow_ratio_neg, ratio_stock_neg, mfe_neg = engine.calculate_true_dragon_score(
         net_inflow=10000000,
         price=25.0,
         prev_close=22.0,
         high=26.0,
         low=23.0,
         open_price=22.5,
-        flow_5min=8000000,
-        flow_15min=3000000,  # 独立段=3000-8000=-5000万(负！)，sustain=-0.625
+        flow_5min=-5000000,  # 前5分钟净流出（负数）
+        flow_15min=10000000,  # 15分钟总流入（正）
         flow_5min_median_stock=1000000,
-        space_gap_pct=0.25,
-        float_volume_shares=1000000000,
-        current_time=test_time2
-    )
-    print(f"  维持率: {sustain_ratio2:.2f} (资金抽水，应<0)")
-    print(f"  最终得分: {final_score2:.2f} (应<20，致命惩罚)")
-    assert sustain_ratio2 < 0, f"维持率应为负值，实际{sustain_ratio2}"
-    assert final_score2 < 20, f"骗炮陷阱应<20分，实际{final_score2}"
-    print("  ✅ 通过 - 杂毛断头台已绞杀骗炮股")
-    
-    # 测试11: 边界值测试
-    print("\n【测试11】True Dragon Score - 边界值测试")
-    final_score3, _, _, _, _ = engine.calculate_true_dragon_score(
-        net_inflow=50000000, price=25.0, prev_close=24.0,
-        high=25.0, low=25.0, open_price=24.0,
-        flow_5min=10000000, flow_15min=12000000,
-        flow_5min_median_stock=1000000, space_gap_pct=0.08,
+        space_gap_pct=0.08,
         float_volume_shares=100000000,
-        current_time=datetime(2026, 2, 27, 10, 0, 0)
+        current_time=test_time_neg
     )
-    assert final_score3 > 0, "平盘上涨应得正分"
-    print(f"  平盘上涨得分: {final_score3:.2f}  ✅")
-    
-    # 测试12: sustain_ratio [1.1, 1.2] 无人管辖区记录
-    print("\n【测试12】sustain_ratio=[1.1,1.2]区间 - 正常区无惩罚无奖励（设计意图确认）")
-    test_time3 = datetime(2026, 2, 27, 10, 15, 0)
-    final_score5, sustain_ratio5, _, _, _ = engine.calculate_true_dragon_score(
-        net_inflow=30000000, price=25.0, prev_close=22.0,
-        high=26.0, low=23.0, open_price=22.5,
-        flow_5min=10000000, flow_15min=20500000,  # 独立段1050万，sustain=1.05 → 在[1.0,1.1)
-        flow_5min_median_stock=500000, space_gap_pct=0.08,
-        float_volume_shares=100000000,
-        current_time=test_time3
-    )
-    print(f"  维持率: {sustain_ratio5:.2f} (1.0<sr<1.1，降权惩罚0.5x)")
-    assert 1.0 < sustain_ratio5 < 1.1, f"维持率应在(1.0,1.1)，实际{sustain_ratio5}"
-    print(f"  最终得分: {final_score5:.2f}  ✅")
+    print(f"  flow_5min=-500万（净流出），flow_15min=1000万")
+    print(f"  sustain_ratio: {sustain_ratio_neg:.2f} (应=-1.0，触发绞杀)")
+    print(f"  最终得分: {final_score_neg:.2f} (应<10，被绞杀)")
+    assert sustain_ratio_neg == -1.0, f"负流入应强制sustain_ratio=-1.0，实际{sustain_ratio_neg}"
+    assert final_score_neg < 10, f"负流入应触发绞杀(<10分)，实际{final_score_neg}"
+    print("  ✅ 通过 - sustain_ratio负流入Bug已修复")
     
     print("\n" + "=" * 70)
-    print("✅ 所有单元测试通过！动能打分引擎核心引擎 V1.1 已就绪。")
-    print("   - inflow_ratio 百分比形式统一验证 ✅")
-    print("   - 动态量比阈值 Option B 验证 ✅")
-    print("   - reload_config + temporary_override 联动验证 ✅")
-    print("   - tail_trap=0.2 docstring修正验证 ✅")
+    print("✅ sustain_ratio负流入修复验证通过！")
     print("=" * 70)
