@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 GlobalFilterGateway - 全局过滤网关
@@ -12,22 +12,24 @@ GlobalFilterGateway - 全局过滤网关
 3. 统一入口 - 无论是盘中实盘、盘后回放、历史回测，都必须调用此网关
 4. 【CTO终极红线】0/1判定，无打分！均线判定权力下放给战法Detector！
 
-【Boss二维铁网 - V20.2红线版】
+【Boss二维铁网 - V20.2红线版 + 早盘降阈】
 1. 量能网: volume_ratio >= min_volume_multiplier (如1.5倍，动态放量) - 0/1判定
 2. 换手网: min_turnover <= turnover <= max_turnover (5%~70%，大哥起步线+死亡熔断) - 0/1判定
 3. 【删除】趋势网(MA5/MA10/MA20) - 完全删除，权力下放给战法Detector
 4. 【新增】死亡换手拦截: turnover > 70%直接拦截
 5. 【新增】甜点位标记: 8% <= turnover <= 15%注入{'tag': '换手甜点'}，绝不加分
+6. 【CTO紧急修复】早盘降阈: 09:30-09:45阈值降至60%，捕捉意愿度
 
-Author: 架构大一统工程 + CTO红线改造
-Date: 2026-02-27
-Version: 2.0.0
+Author: 架构大一统工程 + CTO红线改造 + CTO早盘修复
+Date: 2026-03-04
+Version: 2.0.1
 """
 
 import pandas as pd
 import numpy as np
 from typing import Dict, Optional, Tuple
 import logging
+from datetime import datetime, time as dt_time
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +57,33 @@ def safe_float(value, default=0.0):
         return default
 
 
+def check_early_market_scale() -> Tuple[bool, float]:
+    """
+    【CTO紧急修复】检测早盘时间窗口并返回阈值缩放因子
+    
+    早盘降阈哲学（老板钦定）：
+    - 早盘(09:30-09:45)是资金意愿度暴露期
+    - 降低阈值至60%，扩大观察池
+    - 捕捉更多早盘粒子初速度信号
+    
+    Returns:
+        (is_early, scale_factor): 
+            - is_early: 是否在早盘时间窗口
+            - scale_factor: 阈值缩放因子 (0.6 或 1.0)
+    """
+    now = datetime.now()
+    current_time = now.time()
+    
+    # 早盘时间窗口: 09:30:00 - 09:45:59
+    early_start = dt_time(9, 30, 0)
+    early_end = dt_time(9, 45, 59)
+    
+    is_early = early_start <= current_time <= early_end
+    scale_factor = 0.6 if is_early else 1.0
+    
+    return is_early, scale_factor
+
+
 class GlobalFilterGateway:
     """
     全局过滤网关 - 统一所有选股过滤逻辑
@@ -66,6 +95,7 @@ class GlobalFilterGateway:
     
     【CTO红线声明】
     此网关只做0/1生死判定，不做任何打分！均线判定已完全删除！
+    【CTO紧急修复】早盘降阈逻辑(60%)，捕捉资金意愿度
     """
     
     # ========== CTO红线常量：死亡换手阈值 ==========
@@ -80,13 +110,14 @@ class GlobalFilterGateway:
         context: str = "unknown"
     ) -> Tuple[pd.DataFrame, Dict]:
         """
-        【Boss二维铁网 - V20.2红线版】应用统一过滤逻辑
+        【Boss二维铁网 - V20.2红线版 + 早盘降阈】应用统一过滤逻辑
         
         【CTO红线改造说明】
         - 完全删除MA5/MA10/MA20均线判定（权力下放给战法Detector）
         - 只做0/1生死判定，无打分机制
         - 新增死亡换手拦截(>70%)
         - 新增甜点位标记(8%-15%)，仅注入tag，绝不加分
+        【CTO紧急修复】早盘降阈: 09:30-09:45阈值降至60%
         
         Args:
             df: 输入DataFrame，必须包含以下列:
@@ -110,24 +141,39 @@ class GlobalFilterGateway:
         original_count = len(df)
         stats = {"input": original_count, "filters_applied": [], "death_turnover_blocked": 0}
         
+        # ========== 【CTO紧急修复】早盘降阈逻辑 ==========
+        is_early, scale_factor = check_early_market_scale()
+        if is_early:
+            logger.info(f"  ⏰ [早盘降阈] 检测到早盘时间窗口(09:30-09:45)，阈值降至60%，捕捉意愿度")
+        
         # 【从Config读取所有阈值 - SSOT原则】
         try:
-            min_volume_multiplier = config_manager.get('live_sniper.min_volume_multiplier')
-            min_turnover = config_manager.get('live_sniper.min_active_turnover_rate')  # 5%
+            # 读取基础阈值
+            base_min_volume = config_manager.get('live_sniper.min_volume_multiplier')
+            base_min_turnover = config_manager.get('live_sniper.min_active_turnover_rate')  # 5%
             max_turnover = config_manager.get('live_sniper.turnover_rate_max')  # 300%
             sweet_spot_min = config_manager.get('live_sniper.sweet_spot_min', 8.0)  # 甜点位下限
             sweet_spot_max = config_manager.get('live_sniper.sweet_spot_max', 15.0)  # 甜点位上限
             
             # 验证读取成功
-            if None in [min_volume_multiplier, min_turnover, max_turnover]:
+            if None in [base_min_volume, base_min_turnover, max_turnover]:
                 raise ValueError("核心配置缺失")
+            
+            # 【CTO紧急修复】应用早盘缩放因子
+            min_volume_multiplier = base_min_volume * scale_factor
+            min_turnover = base_min_turnover * scale_factor
+            
+            # 记录到stats
+            stats['early_market'] = is_early
+            stats['scale_factor'] = scale_factor
                 
         except Exception as e:
             logger.error(f"[{context}] 配置读取失败: {e}")
             raise RuntimeError("系统拒绝启动：缺少核心过滤配置")
         
-        logger.info(f"[{context}] Boss二维铁网启动(V20.2红线版) | 输入: {original_count}只 | "
-                   f"量比>={min_volume_multiplier}x | 换手{min_turnover}%~{max_turnover}% | "
+        logger.info(f"[{context}] Boss二维铁网启动(V20.2红线版+早盘降阈) | 输入: {original_count}只 | "
+                   f"量比>={min_volume_multiplier:.2f}x | 换手{min_turnover:.2f}%~{max_turnover}% | "
+                   f"早盘:{is_early} | 缩放:{scale_factor} | "
                    f"【均线判定已删除，权力下放】")
         
         # ========== 预处理：换手率单位自适应 + safe_float类型安全 ==========
@@ -164,14 +210,14 @@ class GlobalFilterGateway:
             df = df[mask_volume].copy()
             volume_after = len(df)
             volume_rejected = volume_before - volume_after
-            stats["filters_applied"].append(f"volume_ratio>={min_volume_multiplier}x")
-            logger.info(f"  🔹 量能网: {volume_after}/{volume_before}只通过 (量比>={min_volume_multiplier}x)【0/1判定】")
+            stats["filters_applied"].append(f"volume_ratio>={min_volume_multiplier:.2f}x")
+            logger.info(f"  🔹 量能网: {volume_after}/{volume_before}只通过 (量比>={min_volume_multiplier:.2f}x)【0/1判定{'，早盘降阈' if is_early else ''}】")
             # 【物理探针】打印被淘汰的阈值边界信息
             if volume_rejected > 0:
                 min_ratio = df['volume_ratio'].min() if len(df) > 0 else 0
                 max_ratio = df['volume_ratio'].max() if len(df) > 0 else 0
                 logger.info(f"     📊 通过者量比范围: {min_ratio:.2f}x ~ {max_ratio:.2f}x")
-                logger.info(f"     🚫 淘汰: {volume_rejected}只因量比<{min_volume_multiplier}x")
+                logger.info(f"     🚫 淘汰: {volume_rejected}只因量比<{min_volume_multiplier:.2f}x")
         
         # ========== 第二维：换手网（0/1判定，无打分） ==========
         # 5% <= 换手率 <= 60% - 纯生死判定
@@ -180,8 +226,8 @@ class GlobalFilterGateway:
             turnover_before = len(df)
             df = df[mask_turnover].copy()
             turnover_after = len(df)
-            stats["filters_applied"].append(f"turnover_{min_turnover}~{max_turnover}%")
-            logger.info(f"  🔹 换手网: {turnover_after}/{turnover_before}只通过 (换手{min_turnover}%~{max_turnover}%)【0/1判定】")
+            stats["filters_applied"].append(f"turnover_{min_turnover:.2f}~{max_turnover}%")
+            logger.info(f"  🔹 换手网: {turnover_after}/{turnover_before}只通过 (换手{min_turnover:.2f}%~{max_turnover}%)【0/1判定{'，早盘降阈' if is_early else ''}】")
         
         # ========== 【CTO红线】甜点位标记（仅注入tag，绝不加分！） ==========
         # 换手8%-15%标记为甜点位，但不做任何打分，仅作为信息标记
@@ -208,7 +254,8 @@ class GlobalFilterGateway:
         stats["filter_rate"] = f"{len(df)/original_count*100:.1f}%" if original_count > 0 else "0%"
         
         logger.info(f"[{context}] Boss二维铁网完成 | 输出: {len(df)}只 | 通过率: {stats['filter_rate']} | "
-                   f"死亡换手拦截: {stats['death_turnover_blocked']}只")
+                   f"死亡换手拦截: {stats['death_turnover_blocked']}只 | "
+                   f"{'[早盘降阈模式]' if is_early else '[正常模式]'}")
         
         return df, stats
 
@@ -221,10 +268,11 @@ class GlobalFilterGateway:
         config_manager=None
     ) -> Tuple[bool, str, Optional[Dict]]:
         """
-        【信号质量验证】单只股票快速验证 - V20.2红线版
+        【信号质量验证】单只股票快速验证 - V20.2红线版 + 早盘降阈
         
         用于Tick级信号触发前的快速检查
         【CTO红线】只做0/1判定，无打分！
+        【CTO紧急修复】早盘降阈逻辑(60%)
         
         Returns:
             (is_valid, reason, metadata): 
@@ -238,12 +286,25 @@ class GlobalFilterGateway:
         volume_ratio = safe_float(volume_ratio, 0.0)
         turnover_rate = safe_float(turnover_rate, 0.0)
         
+        # ========== 【CTO紧急修复】早盘降阈逻辑 ==========
+        is_early, scale_factor = check_early_market_scale()
+        
         try:
-            min_multiplier = config_manager.get('live_sniper.min_volume_multiplier')
-            min_turnover = config_manager.get('live_sniper.min_active_turnover_rate')
+            # 读取基础阈值
+            base_min_multiplier = config_manager.get('live_sniper.min_volume_multiplier')
+            base_min_turnover = config_manager.get('live_sniper.min_active_turnover_rate')
             max_turnover = config_manager.get('live_sniper.turnover_rate_max')
             sweet_spot_min = config_manager.get('live_sniper.sweet_spot_min', 8.0)
             sweet_spot_max = config_manager.get('live_sniper.sweet_spot_max', 15.0)
+            
+            # 【CTO紧急修复】应用早盘缩放因子
+            min_multiplier = base_min_multiplier * scale_factor
+            min_turnover = base_min_turnover * scale_factor
+            
+            # 记录到metadata
+            metadata['early_market'] = is_early
+            metadata['scale_factor'] = scale_factor
+            
         except:
             return False, "配置读取失败", None
         
@@ -251,13 +312,13 @@ class GlobalFilterGateway:
         if turnover_rate > GlobalFilterGateway.DEATH_TURNOVER_THRESHOLD:
             return False, f"死亡换手: {turnover_rate:.2f}% > {GlobalFilterGateway.DEATH_TURNOVER_THRESHOLD}%", None
         
-        # 检查量比 - 0/1判定
+        # 检查量比 - 0/1判定（应用早盘降阈）
         if volume_ratio < min_multiplier:
-            return False, f"量比不足: {volume_ratio:.2f}x < {min_multiplier}x", None
+            return False, f"量比不足: {volume_ratio:.2f}x < {min_multiplier:.2f}x{'[早盘降阈]' if is_early else ''}", None
         
-        # 检查换手 - 0/1判定
+        # 检查换手 - 0/1判定（应用早盘降阈）
         if turnover_rate < min_turnover:
-            return False, f"换手太低: {turnover_rate:.2f}% < {min_turnover}%", None
+            return False, f"换手太低: {turnover_rate:.2f}% < {min_turnover:.2f}%{'[早盘降阈]' if is_early else ''}", None
         if turnover_rate > max_turnover:
             return False, f"换手超标: {turnover_rate:.2f}% > {max_turnover}%", None
         
@@ -265,7 +326,11 @@ class GlobalFilterGateway:
         if sweet_spot_min <= turnover_rate <= sweet_spot_max:
             metadata['tag'] = '换手甜点'
         
-        return True, "通过Boss二维铁网验证【0/1判定，均线权力下放】", metadata
+        reason_parts = ["通过Boss二维铁网验证【0/1判定，均线权力下放】"]
+        if is_early:
+            reason_parts.append("[早盘降阈模式，捕捉意愿度]")
+        
+        return True, " ".join(reason_parts), metadata
 
 
 # =============================================================================
@@ -274,13 +339,14 @@ class GlobalFilterGateway:
 
 def apply_boss_filters(df, config_manager, true_dict=None, context="unknown"):
     """
-    【快捷入口】应用Boss二维铁网（V20.2红线版）
+    【快捷入口】应用Boss二维铁网（V20.2红线版 + 早盘降阈）
     
     【CTO红线声明】
     - 均线判定(MA5/MA10/MA20)已完全删除，权力下放给战法Detector
     - 只做0/1生死判定，无打分
     - 新增死亡换手拦截(>70%)
     - 甜点位(8%-15%)仅注入tag，绝不加分
+    【CTO紧急修复】早盘降阈: 09:30-09:45阈值降至60%，捕捉意愿度
     
     所有模块统一调用此函数！
     """
@@ -291,7 +357,7 @@ def apply_boss_filters(df, config_manager, true_dict=None, context="unknown"):
 
 def quick_validate(stock_code, volume_ratio, turnover_rate, config_manager):
     """
-    【快捷入口】单只股票快速验证（V20.2红线版）
+    【快捷入口】单只股票快速验证（V20.2红线版 + 早盘降阈）
     
     Returns:
         (is_valid, reason, metadata)
