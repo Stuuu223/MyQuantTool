@@ -1,6 +1,6 @@
 """
 全息时间机器引擎 - 连续多日回测
-自动执行连续N个交易日的回测，验证策略稳定性
+自动执行连续N个交易日的回测,验证策略稳定性
 
 Author: iFlow CLI
 Date: 2026-02-24
@@ -241,7 +241,7 @@ class TimeMachineEngine:
             logger.info("【时间机器】未指定股票池，使用UniverseBuilder粗筛...")
             from logic.data_providers.universe_builder import UniverseBuilder
             builder = UniverseBuilder(target_date=date)
-            stock_pool = builder.build()
+            stock_pool, _ = builder.build()  # 【CTO修复】接收tuple，丢弃market_ratios
             logger.info(f"【时间机器】UniverseBuilder返回: {len(stock_pool)} 只")
             
         if not stock_pool:
@@ -1279,7 +1279,7 @@ class TimeMachineEngine:
             # UniverseBuilder内部使用正确的绝对阈值3.0
             builder = UniverseBuilder(target_date=date)
             logger.info(f"【时间机器】开始调用build()...")
-            stock_pool = builder.build()
+            stock_pool, _ = builder.build()  # 【CTO修复】接收tuple，丢弃market_ratios
             
             logger.info(f"【时间机器】UniverseBuilder返回: {len(stock_pool)} 只股票")
             
@@ -1723,6 +1723,7 @@ class TimeMachineEngine:
             logger.error(f"❌ {stock_code} 时空切片计算失败: {e}")
             return None
 
+    
     
 
     
