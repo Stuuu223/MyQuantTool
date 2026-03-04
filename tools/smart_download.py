@@ -11,6 +11,7 @@
 设计原则:
   1. 日K直接读本地；不足时先自动补充，补失败才退出
   2. 常规模式：逐日 UniverseBuilder 粗筛 → 下载 Tick（量比达标票）
+     【新增】附带计算全市场量比 95th 分位数作为动态阈值写入 tick_index.json
   3. --full 模式：全市场循环投递，每100只打印一次进度
   4. --stocks 模式：绕开粗筛，直接对指定股票下载 Tick（研究用）
   5. [P0修复] download_history_data 是异步调用，ok计数必须经落盘验证
@@ -36,9 +37,9 @@ def log(msg: str) -> None:
     print(f'[{ts}] {msg}', flush=True)
 
 
-# ──────────────────────────────────────────────
+# ────────────────────────────────────────────
 # 核心：落盘验证
-# ──────────────────────────────────────────────
+# ────────────────────────────────────────────
 
 def verify_landed(stock: str, date: str, xtdata, wait_s: float = VERIFY_WAIT_S) -> bool:
     """
@@ -78,9 +79,9 @@ def batch_verify_sample(stocks: list[str], date: str, xtdata,
     return {'checked': len(targets), 'landed': landed, 'sample': sample}
 
 
-# ──────────────────────────────────────────────
+# ────────────────────────────────────────────
 # 日期工具
-# ──────────────────────────────────────────────
+# ────────────────────────────────────────────
 
 def get_trading_days(start_date: str, end_date: str, xtdata) -> list[str]:
     """优先读本地510300日K判断交易日，fallback用自然日去除周末"""
@@ -131,9 +132,9 @@ def get_last_completed_day(xtdata, fallback: str) -> str:
     return fallback
 
 
-# ──────────────────────────────────────────────
+# ────────────────────────────────────────────
 # 日K本地检查 + 自动补充（P2修复）
-# ──────────────────────────────────────────────
+# ────────────────────────────────────────────
 
 def ensure_daily_kline(xtdata, check_date: str, start_date: str, end_date: str) -> bool:
     """
@@ -178,12 +179,13 @@ def ensure_daily_kline(xtdata, check_date: str, start_date: str, end_date: str) 
     return False
 
 
-# ──────────────────────────────────────────────
+# ────────────────────────────────────────────
 # 单日下载核心（批量投递 + 完成后抽样验证）
-# ──────────────────────────────────────────────
+# ────────────────────────────────────────────
 
 def download_one_day(date: str, stocks: list[str], xtdata,
-                     full: bool, do_verify: bool = False) -> dict:
+                     full: bool, do_verify: bool = False,
+                     volume_ratio_threshold: float | None = None) -> dict:
     """
     [P0修复说明]
     download_history_data 是异步调用，立即返回None。
@@ -193,6 +195,9 @@ def download_one_day(date: str, stocks: list[str], xtdata,
       - 完成后抽样 BATCH_VERIFY_N 只验证真实落盘率
       - 落盘率写入 tick_index.json
     若需逐只精确验证，请用 download_with_verify()（--stocks模式专用）
+
+    Args:
+        volume_ratio_threshold: 【新墝】动态量比阈值，写入 tick_index.json 供回测参考
     """
     total = len(stocks)
     t0    = time.time()
@@ -235,28 +240,32 @@ def download_one_day(date: str, stocks: list[str], xtdata,
     try:
         idx_dir = Path(__file__).parent.parent / 'data' / 'tick_index'
         idx_dir.mkdir(parents=True, exist_ok=True)
+        record = {
+            'date':          date,
+            'mode':          'full' if full else 'filtered',
+            'count':         total,
+            'dispatched_ok': ok,
+            'dispatched_fail': fail,
+            'elapsed_s':     round(elapsed, 1),
+            'verify':        verify_result,
+            'timestamp':     datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'note':          '[P0] dispatched_ok=投递成功数(非落盘数)，'
+                             '落盘以verify.landed/checked为准'
+        }
+        # 【新墝】记录动态量比阈值
+        if volume_ratio_threshold is not None:
+            record['volume_ratio_threshold'] = round(volume_ratio_threshold, 4)
         with open(idx_dir / f'{date}.json', 'w', encoding='utf-8') as f:
-            json.dump({
-                'date':          date,
-                'mode':          'full' if full else 'filtered',
-                'count':         total,
-                'dispatched_ok': ok,
-                'dispatched_fail': fail,
-                'elapsed_s':     round(elapsed, 1),
-                'verify':        verify_result,   # 落盘验证结果（新增）
-                'timestamp':     datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                'note':          '[P0] dispatched_ok=投递成功数(非落盘数)，'
-                                 '落盘以verify.landed/checked为准'
-            }, f, ensure_ascii=False, indent=2)
+            json.dump(record, f, ensure_ascii=False, indent=2)
     except Exception:
         pass
 
     return {'dispatched': ok, 'fail': fail, 'verify': verify_result}
 
 
-# ──────────────────────────────────────────────
+# ────────────────────────────────────────────
 # --stocks 模式：逐只投递+验证（研究用，慢但精确）
-# ──────────────────────────────────────────────
+# ────────────────────────────────────────────
 
 def download_with_verify(date: str, stocks: list[str], xtdata) -> dict:
     """
@@ -306,9 +315,9 @@ def download_with_verify(date: str, stocks: list[str], xtdata) -> dict:
     return {'date': date, 'verified': verified, 'failed': failed, 'detail': detail}
 
 
-# ──────────────────────────────────────────────
+# ────────────────────────────────────────────
 # 主程序
-# ──────────────────────────────────────────────
+# ────────────────────────────────────────────
 
 def main():
     from xtquant import xtdata
@@ -438,23 +447,39 @@ def main():
         log(f'\n✅ FULL全量完成! 总耗时 {total_elapsed:.0f}s ({total_elapsed/60:.1f}min)')
         return
 
-    # 粗筛模式
+    # 粗筛模式 【新墝动态量比阈值】
     from logic.data_providers.universe_builder import UniverseBuilder
+    import numpy as np
+
     grand_total = 0
     grand_t0    = time.time()
     for i, date in enumerate(trading_days):
         log(f'\n>>> [{i+1}/{len(trading_days)}] {date}')
         try:
-            t0           = time.time()
-            valid_stocks = UniverseBuilder(date).build()
+            t0 = time.time()
+            valid_stocks, market_ratios = UniverseBuilder(date).build()
             log(f'  粗筛: {len(valid_stocks)}只 ({time.time()-t0:.1f}s)')
+
+            # 【新墝】计算全市场量比的 95th 分位数作为动态阈值
+            valid_ratios = [r for r in market_ratios.values() if r > 0]
+            if len(valid_ratios) >= 100:
+                vol_threshold = float(np.percentile(valid_ratios, 95))
+                log(f'  动态量比阈值(95th): {vol_threshold:.2f} '
+                    f'(样本:{len(valid_ratios)}只)')
+            else:
+                vol_threshold = 3.0  # fallback
+                log(f'  样本不足({len(valid_ratios)}<100)，量比阈值fallback到3.0')
+
         except Exception as e:
             log(f'  ❌ 粗筛失败: {e}，跳过')
             continue
+
         if not valid_stocks:
             log('  ⚠️ 粗筛后无标的，跳过')
             continue
-        download_one_day(date, valid_stocks, xtdata, full=False, do_verify=True)
+
+        download_one_day(date, valid_stocks, xtdata, full=False,
+                         do_verify=True, volume_ratio_threshold=vol_threshold)
         grand_total   += len(valid_stocks)
         total_elapsed  = time.time() - grand_t0
         remaining      = (total_elapsed / (i + 1)) * (len(trading_days) - i - 1)
