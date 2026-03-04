@@ -4,7 +4,7 @@
 
 Author: iFlow CLI
 Date: 2026-02-24
-Version: 1.2.0 - 配置管理器集成版
+Version: 1.2.1 - CTO手术二（盘后结算缩进修复版）
 """
 import pandas as pd
 from datetime import datetime, timedelta
@@ -476,63 +476,8 @@ class TimeMachineEngine:
             if self.is_pure_mode:
                 logger.info("🧪 [纯净模式] 跳过记忆衰减与写入，实盘基因库保持原状")
             else:
-                self._apply_memory_decay(date, top20)
-            
-                # ============================================================
-                # 【记忆引擎挂载】盘后结算 - 写入记忆基因
-                # 【CTO时空切割】热复盘写实盘基因库，全息回演写平行宇宙
-                # ============================================================
-                try:
-                    from logic.memory.short_term_memory import ShortTermMemoryEngine
-                    from logic.core.path_resolver import PathResolver
-                    
-                    # 【CTO核心判定】热复盘 vs 全息回演
-                    if self.is_continuous_backtest:
-                        # 全息回演 → 平行宇宙记忆库（阅后即焚）
-                        memory_file = PathResolver.get_data_dir() / 'memory' / 'ShortTermMemory_backtest.json'
-                        memory_engine = ShortTermMemoryEngine(memory_file=str(memory_file))
-                        logger.info(f"🧠 【平行宇宙】写入回测记忆库: {memory_file.name}")
-                    else:
-                        # 热复盘 → 实盘基因库（传宗接代）
-                        memory_engine = ShortTermMemoryEngine()
-                        logger.info("🧠 【基因继承】写入实盘记忆库: short_term_memory.json")
-                    
-                    # 为Top20中符合条件的股票写入记忆
-                    # 条件：涨幅>8% 且 换手>5% (ShortTermMemoryEngine内部会检查)
-                    for rank_idx, item in enumerate(top20):
-                        stock_code = item['stock_code']
-                        final_change = item.get('final_change', 0)
-                    # 估算换手率 (使用turnover_rate字段或估算)
-                    turnover_rate = item.get('turnover_rate', 5.5)  # 默认满足阈值
-                    final_score = item.get('final_score', 0)
-                    
-                    # 写入记忆 (引擎内部会检查涨幅>8%且换手>5%)
-                    memory_engine.write_memory(
-                        stock_code=stock_code,
-                        gain_pct=final_change,
-                        turnover_rate=turnover_rate,
-                        blood_pct=final_score,
-                        metadata={
-                            'date': date,
-                            'last_rank': rank_idx,  # 【CTO新增】记录排名用于动态势能评估
-                            'sustain_ratio': item.get('sustain_ratio', 0),
-                            'inflow_ratio': item.get('inflow_ratio', 0),
-                            'is_vetoed': item.get('is_vetoed', False)
-                        }
-                    )
-                    
-                    # 湮灭过期记忆(≥2天未激活)
-                    memory_engine.annihilate_expired(today=date)
-                    
-                    # 强制保存
-                    memory_engine.force_save()
-                    memory_engine.close()
-                    
-                    logger.info(f"🧠 【记忆引擎】盘后结算完成: {date} 记忆已写入")
-                    
-                except Exception as mem_e:
-                    # Graceful降级：记忆引擎失败不影响主流程
-                    logger.warning(f"⚠️ 【记忆引擎】盘后结算失败: {mem_e}")
+                # 【CTO手术二 Fix 3】传入 record_date 参数
+                self._apply_memory_decay(date, top20, record_date=date)
             
             # 【Step6: 时空对齐与全息回演UI看板】
             
@@ -1422,9 +1367,10 @@ class TimeMachineEngine:
     # _load_memory() 和 _save_memory() 已删除
     # 所有记忆操作通过 ShortTermMemoryEngine API
     
-    def _apply_memory_decay(self, current_date: str, today_top20: List[Dict]) -> Dict[str, Dict]:
+    def _apply_memory_decay(self, current_date: str, today_top20: List[Dict], record_date: Optional[str] = None) -> Dict[str, Dict]:
         """
         【CTO P0级重铸】动态势能记忆评估算法
+        【CTO手术二 Fix 3】增加 record_date 参数，回测时传入回测日期
         
         核心物理思想：
         1. 强更强(1.25x): 排名上升/维持 + 分数上升 → 奖励25%溢价
@@ -1435,10 +1381,15 @@ class TimeMachineEngine:
         Args:
             current_date: 当前日期 'YYYYMMDD'
             today_top20: 今日Top20列表 [{'stock_code': str, 'final_score': float, ...}]
+            record_date: 【CTO手术二】记录日期 'YYYYMMDD'，回测时必须传入，默认使用current_date
         
         Returns:
             更新后的记忆字典
         """
+        # 【CTO手术二 Fix 3】确定记录日期
+        if record_date is None:
+            record_date = current_date
+        
         # 【CTO手术一】封闭私写后门：使用 ShortTermMemoryEngine API
         from logic.memory.short_term_memory import ShortTermMemoryEngine
         
@@ -1514,10 +1465,10 @@ class TimeMachineEngine:
                 
                 new_memory_dict[stock_code] = {
                     'stock_code': stock_code,
-                    'date': current_date,
+                    'date': record_date,  # 【CTO手术二】使用record_date而非current_date
                     'score': round(new_score, 2),
                     'absent_days': 0,
-                    'last_decay_date': current_date,
+                    'last_decay_date': record_date,  # 【CTO手术二】使用record_date
                     'last_rank': today_rank,
                     'last_verdict': verdict
                 }
@@ -1539,7 +1490,7 @@ class TimeMachineEngine:
                 
                 mem_item['score'] = round(new_score, 2)
                 mem_item['absent_days'] = absent_days
-                mem_item['last_decay_date'] = current_date
+                mem_item['last_decay_date'] = record_date  # 【CTO手术二】使用record_date
                 mem_item['last_verdict'] = f"缺席衰减(Day {absent_days})"
                 new_memory_dict[stock_code] = mem_item
                 stats['absent_decay'] += 1
@@ -1550,10 +1501,10 @@ class TimeMachineEngine:
             if stock_code not in new_memory_dict:
                 new_memory_dict[stock_code] = {
                     'stock_code': stock_code,
-                    'date': current_date,
+                    'date': record_date,  # 【CTO手术二】使用record_date而非current_date
                     'score': item.get('final_score', 60.0),  # 初始记忆底分
                     'absent_days': 0,
-                    'last_decay_date': current_date,
+                    'last_decay_date': record_date,  # 【CTO手术二】使用record_date
                     'last_rank': rank_idx,
                     'last_verdict': '首次入榜'
                 }
@@ -1572,12 +1523,13 @@ class TimeMachineEngine:
                 turnover_rate=5.5,  # 默认满足阈值
                 blood_pct=mem_item.get('score', 60.0),
                 metadata={
-                    'date': mem_item.get('date', current_date),
+                    'date': mem_item.get('date', record_date),
                     'last_rank': mem_item.get('last_rank', 20),
                     'last_verdict': mem_item.get('last_verdict', ''),
                     'absent_days': mem_item.get('absent_days', 0)
                 },
-                force=True  # 【CTO手术一】强制写入，跳过阈值检查
+                force=True,  # 【CTO手术一】强制写入，跳过阈值检查
+                record_date=record_date  # 【CTO手术二 Fix 3】传入record_date参数
             )
         
         memory_engine.force_save()
