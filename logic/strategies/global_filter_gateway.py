@@ -12,17 +12,17 @@ GlobalFilterGateway - 全局过滤网关
 3. 统一入口 - 无论是盘中实盘、盘后回放、历史回测，都必须调用此网关
 4. 【CTO终极红线】0/1判定，无打分！均线判定权力下放给战法Detector！
 
-【Boss二维铁网 - V20.2红线版 + 早盘降阈】
-1. 量能网: volume_ratio >= min_volume_multiplier (如1.5倍，动态放量) - 0/1判定
-2. 换手网: min_turnover <= turnover <= max_turnover (5%~300%，大哥起步线+死亡熔断) - 0/1判定
-3. 【删除】趋势网(MA5/MA10/MA20) - 完全删除，权力下放给战法Detector
-4. 【新增】死亡换手拦截: turnover > 300%直接拦截
-5. 【新增】甜点位标记: 8% <= turnover <= 15%注入{'tag': '换手甜点'}，绝不加分
-6. 【CTO紧急修复】早盘降阈: 09:30-09:45阈值降至60%，捕捉意愿度
+【Boss二维铁网 - V20.3红线版 + 早盘降阈 + P0修复】
+1. 量能网: volume_ratio >= min_volume_multiplier (如3.0倍，动态放量) - 0/1判定
+2. 换手网: min_turnover <= turnover (5%起步，大哥起步线) - 0/1判定
+3. 死亡换手拦截: turnover > 150%直接拦截（游资出货完毕红线）
+4. 甜点位标记: 8% <= turnover <= 15%注入{'tag': '换手甜点'}，绝不加分
+5. 早盘降阈: 09:30-09:45阈值降至60%，捕捉意愿度
+6. 【P0修复】ATR缺数据不再伪装成低能态，保留NaN用于统计
 
-Author: 架构大一统工程 + CTO红线改造 + CTO早盘修复
+Author: 架构大一统工程 + CTO红线改造 + Boss P0修复
 Date: 2026-03-04
-Version: 2.0.1
+Version: 2.0.2
 """
 
 import pandas as pd
@@ -96,10 +96,11 @@ class GlobalFilterGateway:
     【CTO红线声明】
     此网关只做0/1生死判定，不做任何打分！均线判定已完全删除！
     【CTO紧急修复】早盘降阈逻辑(60%)，捕捉资金意愿度
+    【Boss P0修复】ATR缺数据保留NaN，死亡换手统一150%
     """
     
     # ========== CTO红线常量：死亡换手阈值 ==========
-    DEATH_TURNOVER_THRESHOLD = 300.0  # 【V20.5.0】死亡换手线统一为300%
+    DEATH_TURNOVER_THRESHOLD = 150.0  # 【V20.5.1 Boss裁决】死亡换手线统一为150%（游资出货完毕红线）
     # 甜点位阈值已迁移到config: live_sniper.sweet_spot_min / sweet_spot_max
     
     @staticmethod
@@ -110,36 +111,44 @@ class GlobalFilterGateway:
         context: str = "unknown"
     ) -> Tuple[pd.DataFrame, Dict]:
         """
-        【Boss二维铁网 - V20.2红线版 + 早盘降阈】应用统一过滤逻辑
+        【Boss二维铁网 - V20.3红线版 + 早盘降阈 + P0修复】应用统一过滤逻辑
         
         【CTO红线改造说明】
         - 完全删除MA5/MA10/MA20均线判定（权力下放给战法Detector）
         - 只做0/1生死判定，无打分机制
-        - 新增死亡换手拦截(>300%)
-        - 新增甜点位标记(8%-15%)，仅注入tag，绝不加分
+        - 死亡换手拦截统一为>150%（新股在stock_filter第一道被过滤，不会到这里）
+        - 甜点位标记(8%-15%)，仅注入tag，绝不加分
         【CTO紧急修复】早盘降阈: 09:30-09:45阈值降至60%
+        【Boss P0修复】ATR缺数据保留NaN，不伪装成低能态
         
         Args:
             df: 输入DataFrame，必须包含以下列:
                 - stock_code: 股票代码
                 - volume_ratio: 量比倍数
                 - turnover_rate: 换手率(%)
-                - 【删除】ma5, ma10, ma20: 不再检查
             config_manager: 配置管理器
-            true_dict: TrueDictionary实例（用于获取均线数据）【已废弃】
+            true_dict: TrueDictionary实例（用于获取ATR数据）
             context: 调用上下文（用于日志区分："realtime"/"replay"/"backtest"）
             
         Returns:
             Tuple[filtered_df, stats_dict]: 
-                - filtered_df: 过滤后的DataFrame（新增'tag'列标记甜点位）
-                - stats_dict: 过滤统计信息
+                - filtered_df: 过滤后的DataFrame（新增'tag'列标记甜点位，'atr_ratio'列保留NaN）
+                - stats_dict: 过滤统计信息（包含atr_data_missing计数）
         """
         if df.empty:
             logger.warning(f"[{context}] 输入数据为空，跳过过滤")
-            return df, {"input": 0, "output": 0, "filters_applied": [], "death_turnover_blocked": 0}
+            return df, {
+                "input": 0, "output": 0, "filters_applied": [], 
+                "death_turnover_blocked": 0, "atr_data_missing": 0
+            }
         
         original_count = len(df)
-        stats = {"input": original_count, "filters_applied": [], "death_turnover_blocked": 0}
+        stats = {
+            "input": original_count, 
+            "filters_applied": [], 
+            "death_turnover_blocked": 0,
+            "atr_data_missing": 0
+        }
         
         # ========== 【CTO紧急修复】早盘降阈逻辑 ==========
         is_early, scale_factor = check_early_market_scale()
@@ -151,12 +160,11 @@ class GlobalFilterGateway:
             # 读取基础阈值
             base_min_volume = config_manager.get('live_sniper.min_volume_multiplier')
             base_min_turnover = config_manager.get('live_sniper.min_active_turnover_rate')  # 5%
-            max_turnover = config_manager.get('live_sniper.turnover_rate_max')  # 300%
             sweet_spot_min = config_manager.get('live_sniper.sweet_spot_min', 8.0)  # 甜点位下限
             sweet_spot_max = config_manager.get('live_sniper.sweet_spot_max', 15.0)  # 甜点位上限
             
             # 验证读取成功
-            if None in [base_min_volume, base_min_turnover, max_turnover]:
+            if None in [base_min_volume, base_min_turnover]:
                 raise ValueError("核心配置缺失")
             
             # 【CTO紧急修复】应用早盘缩放因子
@@ -171,8 +179,8 @@ class GlobalFilterGateway:
             logger.error(f"[{context}] 配置读取失败: {e}")
             raise RuntimeError("系统拒绝启动：缺少核心过滤配置")
         
-        logger.info(f"[{context}] Boss三维铁网启动(V20.3物理重铸版+早盘降阈) | 输入: {original_count}只 | "
-                   f"量比>={min_volume_multiplier:.2f}x | 换手{min_turnover:.2f}%~{max_turnover}% | "
+        logger.info(f"[{context}] Boss三维铁网启动(V20.3物理重铸版+早盘降阈+P0修复) | 输入: {original_count}只 | "
+                   f"量比>={min_volume_multiplier:.2f}x | 换手>={min_turnover:.2f}% | 死亡换手>{GlobalFilterGateway.DEATH_TURNOVER_THRESHOLD}% | "
                    f"早盘:{is_early} | 缩放:{scale_factor} | "
                    f"【均线判定已删除，权力下放】")
         
@@ -189,8 +197,9 @@ class GlobalFilterGateway:
         if 'volume_ratio' in df.columns:
             df['volume_ratio'] = df['volume_ratio'].apply(lambda x: safe_float(x, 0.0))
         
-        # ========== 【CTO红线】死亡换手拦截 ==========
-        # turnover_rate > 70%直接拦截，永不进入候选池
+        # ========== 【Boss P0修复】死亡换手拦截 ==========
+        # turnover_rate > 150%直接拦截，永不进入候选池
+        # 新股在stock_filter第一道被过滤（需历史数据），不会走到这里
         if 'turnover_rate' in df.columns:
             death_mask = df['turnover_rate'] > GlobalFilterGateway.DEATH_TURNOVER_THRESHOLD
             death_count = death_mask.sum()
@@ -203,7 +212,7 @@ class GlobalFilterGateway:
                 df = df[~death_mask].copy()
         
         # ========== 第一维：量能网（0/1判定，无打分） ==========
-        # 量比 >= 配置倍数（如1.5倍）- 纯生死判定
+        # 量比 >= 配置倍数（如3.0倍）- 纯生死判定
         if 'volume_ratio' in df.columns:
             volume_before = len(df)
             mask_volume = df['volume_ratio'] >= min_volume_multiplier
@@ -219,17 +228,18 @@ class GlobalFilterGateway:
                 logger.info(f"     📊 通过者量比范围: {min_ratio:.2f}x ~ {max_ratio:.2f}x")
                 logger.info(f"     🚫 淘汰: {volume_rejected}只因量比<{min_volume_multiplier:.2f}x")
         
-        # ========== 第二维：换手网（0/1判定，无打分） ==========
-        # 5% <= 换手率 <= 60% - 纯生死判定
+        # ========== 第二维：换手网（0/1判定，无打分，只检查下限） ==========
+        # 换手率 >= min_turnover (5%) - 纯生死判定
+        # 上限已在死亡换手拦截处理，不重复过滤
         if 'turnover_rate' in df.columns:
-            mask_turnover = (df['turnover_rate'] >= min_turnover) & (df['turnover_rate'] <= max_turnover)
+            mask_turnover = df['turnover_rate'] >= min_turnover
             turnover_before = len(df)
             df = df[mask_turnover].copy()
             turnover_after = len(df)
-            stats["filters_applied"].append(f"turnover_{min_turnover:.2f}~{max_turnover}%")
-            logger.info(f"  🔹 换手网: {turnover_after}/{turnover_before}只通过 (换手{min_turnover:.2f}%~{max_turnover}%)【0/1判定{'，早盘降阈' if is_early else ''}】")
+            stats["filters_applied"].append(f"turnover>={min_turnover:.2f}%")
+            logger.info(f"  🔹 换手网: {turnover_after}/{turnover_before}只通过 (换手>={min_turnover:.2f}%)【0/1判定{'，早盘降阈' if is_early else ''}】")
         
-        # ========== 第三维：ATR势垒网（可配置：仅记录/硬过滤）==========
+        # ========== 第三维：ATR势垒网（可配置：仅记录/硬过滤，P0修复缺数据处理）==========
         # 【ATR阈值说明】
         # - 当前采用 atr_ratio >= 1.8x（研究报告推荐值）
         # - 研究样本：2026-02-27至2026-03-02（4天）
@@ -245,6 +255,12 @@ class GlobalFilterGateway:
         # 【过滤模式】(2026-03-04 CTO降级)
         # - record_only: 仅记录到df，不拦截（当前模式）
         # - hard_filter: 硬过滤拦截（等三个月回测后再启用）
+        #
+        # 【Boss P0修复】(2026-03-04)
+        # - prev_close缺失时返回None而非0
+        # - atr_ratio保留NaN，不填充为0
+        # - 新增stats['atr_data_missing']计数
+        # - 区分"缺数据"和"真低能态"，用于回测统计
         
         atr_ratio_min = config_manager.get('kinetic_physics.atr_ratio_min', 1.8) if config_manager else 1.8
         atr_filter_enabled = config_manager.get('kinetic_physics.atr_filter_enabled', True) if config_manager else True
@@ -256,53 +272,71 @@ class GlobalFilterGateway:
                 df['atr_20d'] = df['stock_code'].apply(
                     lambda x: true_dict.get_atr_20d(x) if hasattr(true_dict, 'get_atr_20d') else 0.05
                 )
-                # 获取前收盘价
+                
+                # 【Boss P0修复】获取前收盘价，缺失时返回None而非0
                 df['prev_close'] = df['stock_code'].apply(
-                    lambda x: true_dict.get_prev_close(x) if hasattr(true_dict, 'get_prev_close') else 0.0
+                    lambda x: true_dict.get_prev_close(x) if hasattr(true_dict, 'get_prev_close') else None
                 )
+                
+                # 【Boss P0修复】检查缺数据并标记
+                missing_mask = df['prev_close'].isna() | (df['prev_close'] == 0)
+                missing_count = missing_mask.sum()
+                if missing_count > 0:
+                    missing_codes = df[missing_mask]['stock_code'].tolist()[:5]
+                    logger.warning(f"  ⚠️ ATR势垒网: {missing_count}只股票prev_close缺失，atr_ratio=NaN - {missing_codes}{'...' if missing_count > 5 else ''}")
+                    stats['atr_data_missing'] = int(missing_count)
                 
                 # 计算今日真实波幅比率
                 # 今日TR = (high - low) / prev_close
                 # atr_ratio = 今日TR / atr_20d
                 if 'high' in df.columns and 'low' in df.columns:
-                    df['today_tr'] = (df['high'] - df['low']) / df['prev_close'].replace(0, float('nan'))
+                    # 【Boss P0修复】除以None/0会自动得NaN，保留NaN用于统计
+                    df['today_tr'] = (df['high'] - df['low']) / df['prev_close']
                     df['atr_ratio'] = df['today_tr'] / df['atr_20d'].replace(0, float('nan'))
                     
-                    # 过滤无效值
-                    df['atr_ratio'] = df['atr_ratio'].fillna(0)
+                    # 【Boss P0修复】删除fillna(0)！保留NaN，让后续统计能区分"缺数据"和"真低能态"
+                    # df['atr_ratio'] = df['atr_ratio'].fillna(0)  # ❌ 已删除！
                     
                     atr_before = len(df)
+                    # 统计时排除NaN
                     atr_pass_count = (df['atr_ratio'] >= atr_ratio_min).sum()
-                    atr_rejected = atr_before - atr_pass_count
+                    atr_rejected = (df['atr_ratio'] < atr_ratio_min).sum()  # 不包含NaN
                     
                     stats["filters_applied"].append(f"atr_ratio>={atr_ratio_min}x({atr_filter_mode})")
-                    stats["atr_filtered"] = atr_rejected if atr_filter_mode == 'hard_filter' else 0
                     
                     # 根据模式决定是否硬过滤
                     if atr_filter_mode == 'hard_filter':
-                        # 硬过滤：拦截低能态股票
+                        # 硬过滤：拦截低能态股票（NaN单独统计为"数据缺失，无法判断"）
                         mask_atr = df['atr_ratio'] >= atr_ratio_min
                         df = df[mask_atr].copy()
                         atr_after = len(df)
+                        stats["atr_filtered"] = atr_rejected
+                        
                         logger.info(f"  🔹 ATR势垒网: {atr_after}/{atr_before}只通过 (ATR比率>={atr_ratio_min}x)【硬过滤模式】")
                         
                         if atr_rejected > 0:
-                            filtered_atr = df['atr_ratio']
+                            filtered_atr = df['atr_ratio'].dropna()
                             if len(filtered_atr) > 0:
                                 logger.info(f"     📊 通过者ATR比率范围: {filtered_atr.min():.2f}x ~ {filtered_atr.max():.2f}x")
                             logger.info(f"     🚫 淘汰: {atr_rejected}只因ATR比率<{atr_ratio_min}x（低能态，无起爆潜力）")
+                        
+                        if missing_count > 0:
+                            logger.info(f"     ⚠️ 数据缺失: {missing_count}只prev_close缺失，atr_ratio=NaN（无法判断，保留）")
                     else:
-                        # 仅记录模式：不过滤，只记录到df
+                        # 仅记录模式：不过滤，只记录到df（包括NaN）
+                        stats["atr_filtered"] = 0
                         logger.info(f"  🔹 ATR势垒网: {atr_pass_count}/{atr_before}只达标 (ATR比率>={atr_ratio_min}x)【仅记录模式，不拦截】")
                         if atr_rejected > 0:
                             logger.info(f"     📊 未达标: {atr_rejected}只ATR比率<{atr_ratio_min}x（待回测验证后再决定是否拦截）")
+                        if missing_count > 0:
+                            logger.info(f"     ⚠️ 数据缺失: {missing_count}只prev_close缺失，atr_ratio=NaN（保留用于回测统计）")
                 else:
                     logger.warning(f"  ⚠️ ATR势垒网: 缺少high/low列，跳过ATR计算")
-                    df['atr_ratio'] = 0.0
+                    df['atr_ratio'] = float('nan')
                     
             except Exception as e:
                 logger.warning(f"  ⚠️ ATR势垒网计算失败: {e}，跳过ATR计算")
-                df['atr_ratio'] = 0.0
+                df['atr_ratio'] = float('nan')
         else:
             if not atr_filter_enabled:
                 logger.info(f"  🔹 ATR势垒网: 已禁用 (atr_filter_enabled=False)")
@@ -312,7 +346,7 @@ class GlobalFilterGateway:
                 logger.info(f"  🔹 ATR势垒网: 输入为空，跳过")
             else:
                 logger.warning(f"  ⚠️ ATR势垒网: 缺少true_dict，跳过ATR计算")
-            df['atr_ratio'] = 0.0
+            df['atr_ratio'] = float('nan')
         
         # ========== 【CTO红线】甜点位标记（仅注入tag，绝不加分！） ==========
         # 换手8%-15%标记为甜点位，但不做任何打分，仅作为信息标记
@@ -339,7 +373,7 @@ class GlobalFilterGateway:
         stats["filter_rate"] = f"{len(df)/original_count*100:.1f}%" if original_count > 0 else "0%"
         
         logger.info(f"[{context}] Boss二维铁网完成 | 输出: {len(df)}只 | 通过率: {stats['filter_rate']} | "
-                   f"死亡换手拦截: {stats['death_turnover_blocked']}只 | "
+                   f"死亡换手拦截: {stats['death_turnover_blocked']}只 | ATR数据缺失: {stats['atr_data_missing']}只 | "
                    f"{'[早盘降阈模式]' if is_early else '[正常模式]'}")
         
         return df, stats
@@ -353,11 +387,12 @@ class GlobalFilterGateway:
         config_manager=None
     ) -> Tuple[bool, str, Optional[Dict]]:
         """
-        【信号质量验证】单只股票快速验证 - V20.2红线版 + 早盘降阈
+        【信号质量验证】单只股票快速验证 - V20.3红线版 + 早盘降阈 + P0修复
         
         用于Tick级信号触发前的快速检查
         【CTO红线】只做0/1判定，无打分！
         【CTO紧急修复】早盘降阈逻辑(60%)
+        【Boss P0修复】死亡换手统一为150%
         
         Returns:
             (is_valid, reason, metadata): 
@@ -378,7 +413,6 @@ class GlobalFilterGateway:
             # 读取基础阈值
             base_min_multiplier = config_manager.get('live_sniper.min_volume_multiplier')
             base_min_turnover = config_manager.get('live_sniper.min_active_turnover_rate')
-            max_turnover = config_manager.get('live_sniper.turnover_rate_max')
             sweet_spot_min = config_manager.get('live_sniper.sweet_spot_min', 8.0)
             sweet_spot_max = config_manager.get('live_sniper.sweet_spot_max', 15.0)
             
@@ -393,7 +427,7 @@ class GlobalFilterGateway:
         except:
             return False, "配置读取失败", None
         
-        # 【CTO红线】死亡换手拦截 - 300%硬门槛
+        # 【Boss P0修复】死亡换手拦截 - 150%硬门槛
         if turnover_rate > GlobalFilterGateway.DEATH_TURNOVER_THRESHOLD:
             return False, f"死亡换手: {turnover_rate:.2f}% > {GlobalFilterGateway.DEATH_TURNOVER_THRESHOLD}%", None
         
@@ -401,11 +435,9 @@ class GlobalFilterGateway:
         if volume_ratio < min_multiplier:
             return False, f"量比不足: {volume_ratio:.2f}x < {min_multiplier:.2f}x{'[早盘降阈]' if is_early else ''}", None
         
-        # 检查换手 - 0/1判定（应用早盘降阈）
+        # 检查换手 - 0/1判定（应用早盘降阈，只检查下限）
         if turnover_rate < min_turnover:
             return False, f"换手太低: {turnover_rate:.2f}% < {min_turnover:.2f}%{'[早盘降阈]' if is_early else ''}", None
-        if turnover_rate > max_turnover:
-            return False, f"换手超标: {turnover_rate:.2f}% > {max_turnover}%", None
         
         # 【CTO红线】甜点位标记 - 仅注入tag，绝不加分！
         if sweet_spot_min <= turnover_rate <= sweet_spot_max:
@@ -424,14 +456,15 @@ class GlobalFilterGateway:
 
 def apply_boss_filters(df, config_manager, true_dict=None, context="unknown"):
     """
-    【快捷入口】应用Boss二维铁网（V20.2红线版 + 早盘降阈）
+    【快捷入口】应用Boss二维铁网（V20.3红线版 + 早盘降阈 + P0修复）
     
     【CTO红线声明】
     - 均线判定(MA5/MA10/MA20)已完全删除，权力下放给战法Detector
     - 只做0/1生死判定，无打分
-    - 新增死亡换手拦截(>300%)
+    - 死亡换手拦截统一为>150%（新股在stock_filter第一道被过滤）
     - 甜点位(8%-15%)仅注入tag，绝不加分
     【CTO紧急修复】早盘降阈: 09:30-09:45阈值降至60%，捕捉意愿度
+    【Boss P0修复】ATR缺数据保留NaN，不伪装成低能态
     
     所有模块统一调用此函数！
     """
@@ -442,7 +475,7 @@ def apply_boss_filters(df, config_manager, true_dict=None, context="unknown"):
 
 def quick_validate(stock_code, volume_ratio, turnover_rate, config_manager):
     """
-    【快捷入口】单只股票快速验证（V20.2红线版 + 早盘降阈）
+    【快捷入口】单只股票快速验证（V20.3红线版 + 早盘降阈 + P0修复）
     
     Returns:
         (is_valid, reason, metadata)
