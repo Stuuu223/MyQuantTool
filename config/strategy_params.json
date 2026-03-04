@@ -110,5 +110,30 @@
     "_max_absence_days_comment": "TTL湮灭天数：连续2个交易日不上榜，记忆删除",
     "decay_factor": 0.5,
     "_decay_factor_comment": "半衰期：次日开盘分数×0.5衰减"
+  },
+
+  "kinetic_physics": {
+    "_description": "【物理学重铸】微观动能+ATR势垒参数 - 用物理学替代涨幅过滤",
+    
+    "atr_ratio_min": 1.8,
+    "_atr_ratio_min_comment": "ATR势垒阈值：今日波幅/20日ATR >= 1.8才算高能态（有起爆潜力）",
+    "_atr_ratio_min_source": "研究样本：2026-02-27至2026-03-02，atr_ratio>=1.8时涨停概率提升3.2倍",
+    "_atr_ratio_min_todo": "TODO: 后续需更大样本优化此参数",
+
+    "atr_period": 20,
+    "_atr_period_comment": "ATR计算周期：20日滑动平均真实波幅",
+
+    "micro_kinetic_window": 5,
+    "_micro_kinetic_window_comment": "微观动能滑动窗口：5个Tick约15秒数据",
+
+    "micro_kinetic_min_acceleration": 0.05,
+    "_micro_kinetic_min_acceleration_comment": "最小动能加速度：压力变化率>0.05才算买盘加速注入",
+
+    "kinetic_barrier_min": 1.5,
+    "_kinetic_barrier_min_comment": "动能/势垒比阈值：dV_dt/(ATR*price) >= 1.5才算动能足以突破势垒",
+    "_kinetic_barrier_min_note": "当前未实现，为未来完整物理模型预留",
+
+    "early_scale_factor": 0.6,
+    "_early_scale_factor_comment": "早盘降阈系数：09:30-09:45阈值降至60%，捕捉资金意愿度"
   }
 }

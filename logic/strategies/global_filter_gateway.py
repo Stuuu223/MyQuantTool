@@ -171,7 +171,7 @@ class GlobalFilterGateway:
             logger.error(f"[{context}] 配置读取失败: {e}")
             raise RuntimeError("系统拒绝启动：缺少核心过滤配置")
         
-        logger.info(f"[{context}] Boss二维铁网启动(V20.2红线版+早盘降阈) | 输入: {original_count}只 | "
+        logger.info(f"[{context}] Boss三维铁网启动(V20.3物理重铸版+早盘降阈) | 输入: {original_count}只 | "
                    f"量比>={min_volume_multiplier:.2f}x | 换手{min_turnover:.2f}%~{max_turnover}% | "
                    f"早盘:{is_early} | 缩放:{scale_factor} | "
                    f"【均线判定已删除，权力下放】")
@@ -228,6 +228,76 @@ class GlobalFilterGateway:
             turnover_after = len(df)
             stats["filters_applied"].append(f"turnover_{min_turnover:.2f}~{max_turnover}%")
             logger.info(f"  🔹 换手网: {turnover_after}/{turnover_before}只通过 (换手{min_turnover:.2f}%~{max_turnover}%)【0/1判定{'，早盘降阈' if is_early else ''}】")
+        
+        # ========== 第三维：ATR势垒网（0/1判定，无打分）==========
+        # 【ATR阈值说明】
+        # - 当前采用 atr_ratio >= 1.8x（研究报告推荐值）
+        # - 研究样本：2026-02-27至2026-03-02（4天）
+        # - 结论：atr_ratio >= 1.8时，涨停概率提升3.2倍
+        # - TODO: 后续需更大样本优化此参数
+        #
+        # 【物理学意义】
+        # - ATR = Average True Range = 真实波幅均值
+        # - atr_ratio = 今日波幅 / 20日平均真实波幅
+        # - atr_ratio > 1.8 表示今日波动超过历史平均的1.8倍
+        # - 高能态 = 高波动 = 资金活跃度高 = 起爆概率高
+        
+        atr_ratio_min = config_manager.get('kinetic_physics.atr_ratio_min', 1.8) if config_manager else 1.8
+        
+        if true_dict and 'stock_code' in df.columns and len(df) > 0:
+            try:
+                # 获取ATR数据（20日平均真实波幅）
+                df['atr_20d'] = df['stock_code'].apply(
+                    lambda x: true_dict.get_atr_20d(x) if hasattr(true_dict, 'get_atr_20d') else 0.05
+                )
+                # 获取前收盘价
+                df['prev_close'] = df['stock_code'].apply(
+                    lambda x: true_dict.get_prev_close(x) if hasattr(true_dict, 'get_prev_close') else 0.0
+                )
+                
+                # 计算今日真实波幅比率
+                # 今日TR = (high - low) / prev_close
+                # atr_ratio = 今日TR / atr_20d
+                if 'high' in df.columns and 'low' in df.columns:
+                    df['today_tr'] = (df['high'] - df['low']) / df['prev_close'].replace(0, float('nan'))
+                    df['atr_ratio'] = df['today_tr'] / df['atr_20d'].replace(0, float('nan'))
+                    
+                    # 过滤无效值
+                    df['atr_ratio'] = df['atr_ratio'].fillna(0)
+                    
+                    # 应用ATR势垒过滤
+                    atr_before = len(df)
+                    mask_atr = df['atr_ratio'] >= atr_ratio_min
+                    df = df[mask_atr].copy()
+                    atr_after = len(df)
+                    atr_rejected = atr_before - atr_after
+                    
+                    stats["filters_applied"].append(f"atr_ratio>={atr_ratio_min}x")
+                    stats["atr_filtered"] = atr_rejected
+                    
+                    logger.info(f"  🔹 ATR势垒网: {atr_after}/{atr_before}只通过 (ATR比率>={atr_ratio_min}x)【0/1判定，高能态过滤】")
+                    
+                    if atr_rejected > 0:
+                        # 统计被过滤股票的atr_ratio范围
+                        filtered_atr = df['atr_ratio']
+                        if len(filtered_atr) > 0:
+                            logger.info(f"     📊 通过者ATR比率范围: {filtered_atr.min():.2f}x ~ {filtered_atr.max():.2f}x")
+                        logger.info(f"     🚫 淘汰: {atr_rejected}只因ATR比率<{atr_ratio_min}x（低能态，无起爆潜力）")
+                else:
+                    logger.warning(f"  ⚠️ ATR势垒网: 缺少high/low列，跳过ATR过滤")
+                    df['atr_ratio'] = 0.0
+                    
+            except Exception as e:
+                logger.warning(f"  ⚠️ ATR势垒网计算失败: {e}，跳过ATR过滤")
+                df['atr_ratio'] = 0.0
+        else:
+            if 'stock_code' not in df.columns:
+                logger.warning(f"  ⚠️ ATR势垒网: 缺少stock_code列，跳过ATR过滤")
+            elif len(df) == 0:
+                logger.info(f"  🔹 ATR势垒网: 输入为空，跳过")
+            else:
+                logger.warning(f"  ⚠️ ATR势垒网: 缺少true_dict，跳过ATR过滤")
+            df['atr_ratio'] = 0.0
         
         # ========== 【CTO红线】甜点位标记（仅注入tag，绝不加分！） ==========
         # 换手8%-15%标记为甜点位，但不做任何打分，仅作为信息标记
