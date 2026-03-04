@@ -5,10 +5,23 @@ UniverseBuilder - 回测候选股票池构建器
 
 《三漏斗架构》
   漏斗1 (静态过滤):  ST/北交所/科创板剔除  → 零 get_local_data 调用
-  漏斗2 (日K量价):   逐只 get_local_data(period='1d')  → 量/均价过滤
-  漏斗3 (MA趋势):    MA5>MA10>MA20 多头排列           → 可选，右侧追涨用
+  漏斗２ (日K量价):   逐只 get_local_data(period='1d')  → 量/均价过滤
+  漏斗３ (MA趋势):    MA5>MA10>MA20 多头排列           → 可选，右侧追涨用
 
-Version: 3.1.0 - BSON黑名单静默版（实证无崩溃风险）
+【API 变更 V3.2.0】
+build() 返回值: tuple[list[str], dict[str, float]]
+  - list[str]:        通过粗筛的股票代码（与 V3.1 一致）
+  - dict[str, float]: {stock: volume_ratio} 全市场量比分布（新增）
+    供 config_manager.compute_volume_ratio_threshold(ratios, mode) 消费
+
+向后兼容注意事项：
+Python 元组自动 unpack 第一元素，旧代码仍能用：
+  candidate_stocks = builder.build()  # 默认取第一元素，但丢失 market_ratios
+标准用法：
+  stocks, market_ratios = builder.build()
+  threshold = cfg.compute_volume_ratio_threshold(list(market_ratios.values()), mode='backtest')
+
+Version: 3.2.0 - 全市场量比分布伴随版
 """
 
 import os
@@ -38,7 +51,6 @@ def _load_bson_blacklist() -> set[str]:
     path = os.path.join(base_dir, 'data', 'bson_blacklist.json')
 
     if not os.path.exists(path):
-        # 实证证明：955只股票Tick回测无崩溃，黑名单不必须，静默即可
         return set()
 
     try:
@@ -61,7 +73,10 @@ class UniverseBuilder:
 
     用法:
         builder = UniverseBuilder(target_date='20260228')
-        candidates = builder.build()
+        stocks, market_ratios = builder.build()
+        threshold = cfg.compute_volume_ratio_threshold(
+            list(market_ratios.values()), mode='backtest'
+        )
     """
 
     def __init__(
@@ -73,6 +88,8 @@ class UniverseBuilder:
         self.require_ma_uptrend = require_ma_uptrend
         self._blacklist         = _load_bson_blacklist()
         self._stats: dict       = {}
+        # 【新增】存储全市场量比分布，供动态阈值计算
+        self._volume_ratios: dict[str, float] = {}
 
         from logic.core.config_manager import get_config_manager
         cfg = get_config_manager()
@@ -81,19 +98,34 @@ class UniverseBuilder:
         self.min_price            = cfg.get('stock_filter.min_price',            3.0)
         self.max_price            = cfg.get('stock_filter.max_price',            300.0)
 
-    def build(self) -> list[str]:
+    def build(self) -> tuple[list[str], dict[str, float]]:
+        """
+        构建候选股票池 + 返回全市场量比分布。
+
+        Returns:
+            tuple[list[str], dict[str, float]]:
+                - list[str]: 通过粗筛的股票代码列表
+                - dict[str, float]: {stock: volume_ratio} 全市场量比分布
+                  第一漏斗过滤的记为0.0，第二漏斗计算真实量比。
+                  第三漏斗MA过滤不影响此字典（MA是最后精筛）。
+
+        向后兼容:
+            candidate_stocks = builder.build()  # 自动unpack第一元素，但丢失market_ratios
+            stocks, ratios = builder.build()    # 标准用法
+        """
         t0 = time.perf_counter()
 
         step1 = self._funnel1_static()
-        logger.info(f'[漏斗1-静态] 通过: {len(step1)}只')
+        logger.info(f'[漏斗１-静态] 通过: {len(step1)}只')
 
         step2 = self._funnel2_daily_kline(step1)
-        logger.info(f'[漏斗2-日K]  通过: {len(step2)}只')
+        logger.info(f'[漏斗２-日K]  通过: {len(step2)}只 | '
+                    f'量比分布采集: {len(self._volume_ratios)}只')
 
         step3 = step2
         if self.require_ma_uptrend:
             step3 = self._funnel3_ma_trend(step2)
-            logger.info(f'[漏斗3-MA趋势] 通过: {len(step3)}只')
+            logger.info(f'[漏斗３-MA趋势] 通过: {len(step3)}只')
 
         elapsed_ms = (time.perf_counter() - t0) * 1000
         self._stats = {
@@ -102,22 +134,29 @@ class UniverseBuilder:
             'after_funnel2':  len(step2),
             'after_funnel3':  len(step3),
             'blacklist_size': len(self._blacklist),
+            'volume_ratios_collected': len(self._volume_ratios),  # 新增统计
             'elapsed_ms':     round(elapsed_ms, 1),
         }
-        logger.info(f'[UniverseBuilder] 完成: {len(step3)}只候选 | 耗时: {elapsed_ms:.0f}ms')
-        return step3
+        logger.info(f'[UniverseBuilder] 完成: {len(step3)}只候选 | '
+                    f'耗时: {elapsed_ms:.0f}ms | '
+                    f'量比分布: {len(self._volume_ratios)}只')
+        return step3, self._volume_ratios
 
     def _funnel1_static(self) -> list[str]:
+        """
+        第一漏斗：静态过滤（ST/北交所/科创板/BSON黑名单）。
+        同时将所有被过滤的股票记录为 volume_ratio=0.0，保证样本量。
+        """
         try:
             from xtquant import xtdata
         except ImportError:
-            logger.error('❌ [漏斗1] xtquant未安装')
+            logger.error('❌ [漏斗１] xtquant未安装')
             return []
 
         try:
             all_stocks = xtdata.get_stock_list_in_sector('沪深A股')
         except Exception as e:
-            logger.error(f'❌ [漏斗1] 获取全市场列表失败: {e}')
+            logger.error(f'❌ [漏斗１] 获取全市场列表失败: {e}')
             return []
 
         result = []
@@ -125,38 +164,44 @@ class UniverseBuilder:
 
         for stock in all_stocks:
             code = stock.split('.')[0]
+            filtered = False
 
             if stock in self._blacklist:
                 cnt['blacklist'] += 1
-                continue
+                filtered = True
 
-            if code[:2] in ('43', '83', '87', '88'):
+            elif code[:2] in ('43', '83', '87', '88'):
                 cnt['bj'] += 1
-                continue
+                filtered = True
 
-            if code.startswith('688'):
+            elif code.startswith('688'):
                 cnt['kcb'] += 1
-                continue
+                filtered = True
 
-            try:
-                detail = xtdata.get_instrument_detail(stock, False)
-                if detail:
-                    name = (
-                        detail.get('InstrumentName', '')
-                        if hasattr(detail, 'get')
-                        else getattr(detail, 'InstrumentName', '')
-                    )
-                    name_upper = name.upper()
-                    if 'ST' in name_upper or '退' in name or '摘' in name:
-                        cnt['st'] += 1
-                        continue
-            except Exception:
-                pass
+            else:
+                try:
+                    detail = xtdata.get_instrument_detail(stock, False)
+                    if detail:
+                        name = (
+                            detail.get('InstrumentName', '')
+                            if hasattr(detail, 'get')
+                            else getattr(detail, 'InstrumentName', '')
+                        )
+                        name_upper = name.upper()
+                        if 'ST' in name_upper or '退' in name or '摘' in name:
+                            cnt['st'] += 1
+                            filtered = True
+                except Exception:
+                    pass
 
-            result.append(stock)
+            if filtered:
+                # 【新增】被过滤的股票记录0.0，保证样本量
+                self._volume_ratios[stock] = 0.0
+            else:
+                result.append(stock)
 
         logger.info(
-            f'[漏斗1] 全市场{len(all_stocks)}只 '
+            f'[漏斗１] 全市场{len(all_stocks)}只 '
             f'→ 黑名单:{cnt["blacklist"]} 北交所:{cnt["bj"]} '
             f'科创板:{cnt["kcb"]} ST:{cnt["st"]} '
             f'→ 剩余: {len(result)}只'
@@ -164,10 +209,14 @@ class UniverseBuilder:
         return result
 
     def _funnel2_daily_kline(self, stock_list: list[str]) -> list[str]:
+        """
+        第二漏斗：日K量价过滤（均额/价格/换手率）。
+        【新增】同时计算每只股票的 volume_ratio = today_volume / avg_volume_5d。
+        """
         try:
             from xtquant import xtdata
         except ImportError:
-            logger.error('❌ [漏斗2] xtquant未安装，跳过')
+            logger.error('❌ [漏斗２] xtquant未安装，跳过')
             return stock_list
 
         end_date   = self.target_date
@@ -191,19 +240,33 @@ class UniverseBuilder:
 
                 if not data or stock not in data:
                     cnt_nodata += 1
+                    self._volume_ratios[stock] = 0.0  # 无数据记为0.0
                     continue
 
                 df = data[stock]
                 if df is None or len(df) < 1:
                     cnt_nodata += 1
+                    self._volume_ratios[stock] = 0.0
                     continue
 
                 import pandas as pd
                 import numpy as np
 
-                n          = min(5, len(df))
-                avg_amount = df['amount'].iloc[-n:].mean()
+                # 【新增】计算 volume_ratio = 今日成交量 / 5日均成交量
+                n = min(5, len(df))
+                if n > 0:
+                    today_volume = float(df['volume'].iloc[-1])
+                    avg_volume_5d = df['volume'].iloc[-n:].mean()
+                    if avg_volume_5d > 0 and not (pd.isna(today_volume) or np.isinf(today_volume)):
+                        volume_ratio = today_volume / avg_volume_5d
+                        self._volume_ratios[stock] = float(volume_ratio)
+                    else:
+                        self._volume_ratios[stock] = 0.0
+                else:
+                    self._volume_ratios[stock] = 0.0
 
+                # 原有过滤逻辑
+                avg_amount = df['amount'].iloc[-n:].mean()
                 if pd.isna(avg_amount) or np.isinf(avg_amount) or avg_amount < self.min_avg_amount:
                     cnt_volume += 1
                     continue
@@ -237,10 +300,11 @@ class UniverseBuilder:
 
             except Exception:
                 cnt_nodata += 1
+                self._volume_ratios[stock] = 0.0  # 异常也记为0.0
                 continue
 
         logger.info(
-            f'[漏斗2] 输入:{len(stock_list)}只 '
+            f'[漏斗２] 输入:{len(stock_list)}只 '
             f'→ 无数据:{cnt_nodata} 量不足:{cnt_volume} '
             f'价格越界:{cnt_price} 换手不足:{cnt_turnover} '
             f'→ 通过: {len(passed)}只'
@@ -248,10 +312,14 @@ class UniverseBuilder:
         return passed
 
     def _funnel3_ma_trend(self, stock_list: list[str]) -> list[str]:
+        """
+        第三漏斗：MA多头趋势过滤 (MA5>MA10>MA20)。
+        注意：此漏斗不影响 self._volume_ratios，MA是最后一步精筛。
+        """
         try:
             from xtquant import xtdata
         except ImportError:
-            logger.warning('[漏斗3] xtquant未安装，跳过MA过滤')
+            logger.warning('[漏斗３] xtquant未安装，跳过MA过滤')
             return stock_list
 
         end_date   = self.target_date
@@ -294,7 +362,7 @@ class UniverseBuilder:
                 continue
 
         logger.info(
-            f'[漏斗3] 输入:{len(stock_list)}只 '
+            f'[漏斗３] 输入:{len(stock_list)}只 '
             f'→ MA非多头:{cnt_fail} 无数据:{cnt_nodata} '
             f'→ 通过: {len(passed)}只'
         )
@@ -303,11 +371,44 @@ class UniverseBuilder:
     def get_stats(self) -> dict:
         return self._stats
 
+    def get_volume_ratios(self) -> dict[str, float]:
+        """
+        【新增 API】获取全市场量比分布字典。
+
+        Returns:
+            dict[str, float]: {stock_code: volume_ratio}
+                - 第一漏斗过滤的股票为 0.0
+                - 第二漏斗计算的真实量比（today_volume / avg_volume_5d）
+                - 第三漏斗MA过滤不影响此字典
+        """
+        return self._volume_ratios
+
 
 def build_universe(
     target_date: str,
     require_ma_uptrend: bool = False,
-) -> list[str]:
+) -> tuple[list[str], dict[str, float]]:
+    """
+    便捷函数：构建候选股票池 + 返回全市场量比分布。
+
+    Args:
+        target_date: 目标日期 (YYYYMMDD)
+        require_ma_uptrend: 是否需要MA多头趋势
+
+    Returns:
+        tuple[list[str], dict[str, float]]:
+            - list[str]: 通过粗筛的股票代码
+            - dict[str, float]: {stock: volume_ratio} 全市场量比分布
+
+    示例:
+        from logic.core.config_manager import get_config_manager
+
+        stocks, market_ratios = build_universe('20260228')
+        cfg = get_config_manager()
+        threshold = cfg.compute_volume_ratio_threshold(
+            list(market_ratios.values()), mode='backtest'
+        )
+    """
     return UniverseBuilder(
         target_date=target_date,
         require_ma_uptrend=require_ma_uptrend,
@@ -316,8 +417,28 @@ def build_universe(
 
 if __name__ == '__main__':
     print('=' * 60)
-    print('UniverseBuilder 三漏斗测试')
+    print('UniverseBuilder 三漏斗测试 V3.2.0')
     print('=' * 60)
-    result = build_universe('20260228', require_ma_uptrend=False)
-    print(f'\n最终候选: {len(result)} 只')
-    print(f'前10只: {result[:10]}')
+    stocks, market_ratios = build_universe('20260228', require_ma_uptrend=False)
+    print(f'\n最终候选: {len(stocks)} 只')
+    print(f'前10只: {stocks[:10]}')
+    print(f'\n量比分布统计:')
+    valid_ratios = [r for r in market_ratios.values() if r > 0]
+    if valid_ratios:
+        import numpy as np
+        print(f'  有效样本: {len(valid_ratios)}只')
+        print(f'  中位数: {np.median(valid_ratios):.2f}')
+        print(f'  平均值: {np.mean(valid_ratios):.2f}')
+        print(f'  95分位: {np.percentile(valid_ratios, 95):.2f}')
+        print(f'  88分位: {np.percentile(valid_ratios, 88):.2f}')
+
+        # 测试 config_manager.compute_volume_ratio_threshold()
+        from logic.core.config_manager import get_config_manager
+        cfg = get_config_manager()
+        live_threshold = cfg.compute_volume_ratio_threshold(valid_ratios, mode='live')
+        bt_threshold   = cfg.compute_volume_ratio_threshold(valid_ratios, mode='backtest')
+        print(f'\n动态阈值计算:')
+        print(f'  实盘模式(95th): {live_threshold:.2f}')
+        print(f'  回测模式(88th): {bt_threshold:.2f}')
+    else:
+        print('  无有效量比数据')
