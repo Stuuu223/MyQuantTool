@@ -1417,83 +1417,10 @@ class TimeMachineEngine:
     
     # ==================== 记忆衰减机制 ====================
     
-    def _load_memory(self) -> Dict[str, Dict]:
-        """
-        加载短期记忆 - 【CTO绝对类型锁】永远返回dict！
-        【CTO时空切割】热复盘读实盘基因库，全息回演读平行宇宙
-        
-        Returns:
-            记忆字典 {stock_code: memory_item}
-        """
-        try:
-            # 【CTO时空切割】根据模式选择记忆文件
-            if self.is_continuous_backtest:
-                memory_file = PathResolver.get_data_dir() / 'memory' / 'ShortTermMemory_backtest.json'
-            else:
-                memory_file = self.MEMORY_FILE
-            
-            if memory_file.exists():
-                with open(memory_file, 'r', encoding='utf-8') as f:
-                    content = f.read().strip()
-                    # 【CTO绝对拦截】：防死空文件变成字符串！
-                    if not content:
-                        return {}
-                    memory = json.loads(content)
-                    
-                    # 【CTO类型锁死】：只要不是字典，统统视为空！
-                    if not isinstance(memory, dict):
-                        logger.warning(f"【记忆衰减】加载的记忆数据类型异常: {type(memory)}，返回空字典")
-                        return {}
-                
-                # 自动补充缺失的字段（向后兼容旧数据结构）
-                for stock_code, mem_item in list(memory.items()):
-                    # 【CTO绝对类型锁】确保mem_item是字典！
-                    if not isinstance(mem_item, dict):
-                        del memory[stock_code]
-                        continue
-                    
-                    if 'absent_days' not in mem_item:
-                        mem_item['absent_days'] = 0
-                        logger.debug(f"【记忆衰减】{stock_code} 补充 absent_days=0")
-                    if 'last_decay_date' not in mem_item:
-                        mem_item['last_decay_date'] = mem_item.get('date', '')
-                        logger.debug(f"【记忆衰减】{stock_code} 补充 last_decay_date")
-                
-                return memory
-            return {}
-        except Exception as e:
-            logger.error(f"【记忆衰减】加载记忆异常: {e}")
-            return {}  # 永远只返回空字典！
-    
-    def _save_memory(self, memory: Dict[str, Dict]) -> bool:
-        """
-        保存短期记忆
-        【CTO时空切割】热复盘写实盘基因库，全息回演写平行宇宙
-        
-        Args:
-            memory: 记忆字典
-        
-        Returns:
-            是否保存成功
-        """
-        try:
-            # 【CTO时空切割】根据模式选择记忆文件
-            if self.is_continuous_backtest:
-                memory_file = PathResolver.get_data_dir() / 'memory' / 'ShortTermMemory_backtest.json'
-            else:
-                memory_file = self.MEMORY_FILE
-            
-            # 确保目录存在
-            memory_file.parent.mkdir(parents=True, exist_ok=True)
-            
-            with open(memory_file, 'w', encoding='utf-8') as f:
-                json.dump(memory, f, ensure_ascii=False, indent=2)
-            
-            logger.info(f"【记忆衰减】记忆已保存: {len(memory)} 条 -> {memory_file.name}")
-            return True
-        except Exception as e:
-            logger.error(f"【记忆衰减】保存记忆失败: {e}")
-            return False
+    # ==================== 记忆衰减机制 ====================
+    # 【CTO手术一：封闭私写后门】
+    # _load_memory() 和 _save_memory() 已删除
+    # 所有记忆操作通过 ShortTermMemoryEngine API
     
     def _apply_memory_decay(self, current_date: str, today_top20: List[Dict]) -> Dict[str, Dict]:
         """
@@ -1512,17 +1439,36 @@ class TimeMachineEngine:
         Returns:
             更新后的记忆字典
         """
-        # 1. 加载旧记忆
-        old_memory_dict = self._load_memory()
+        # 【CTO手术一】封闭私写后门：使用 ShortTermMemoryEngine API
+        from logic.memory.short_term_memory import ShortTermMemoryEngine
+        
+        # 1. 初始化记忆引擎
+        if self.is_continuous_backtest:
+            memory_file = PathResolver.get_data_dir() / 'memory' / 'ShortTermMemory_backtest.json'
+            memory_engine = ShortTermMemoryEngine(memory_file=str(memory_file))
+        else:
+            memory_engine = ShortTermMemoryEngine()
+        
+        # 2. 加载旧记忆（通过API而非直接读JSON）
+        old_memory_dict = {}
+        for stock_code in memory_engine.list_all():
+            mem_detail = memory_engine.get_full_memory(stock_code)
+            if mem_detail:
+                # 转换为 _apply_memory_decay 期望的格式
+                old_memory_dict[stock_code] = {
+                    'score': mem_detail.get('current_score', mem_detail.get('initial_score', 0)),
+                    'last_rank': mem_detail.get('metadata', {}).get('last_rank', 20),
+                    'absent_days': mem_detail.get('metadata', {}).get('absent_days', 0),
+                    'last_decay_date': mem_detail.get('last_active_date', ''),
+                    'last_verdict': mem_detail.get('metadata', {}).get('last_verdict', ''),
+                    'date': mem_detail.get('create_date', '')
+                }
+        
         new_memory_dict = {}
         
-        # 2. 构建今日股票映射
+        # 3. 构建今日股票映射
         today_map = {item['stock_code']: item for item in today_top20}
         today_top_codes = set(today_map.keys())
-        
-        # 3. 衰减参数（使用模块级常量，从config读取）
-        # 注意：此处使用 MEMORY_SIGNAL_MIN_SCORE 作为触发信号阈值
-        #       MEMORY_MAX_ABSENCE_DAYS 和 MEMORY_DECAY_FACTOR 已在模块顶部定义
         
         # 4. 统计计数
         stats = {
@@ -1614,8 +1560,28 @@ class TimeMachineEngine:
                 stats['new_added'] += 1
                 logger.debug(f"🧠 [记忆新生] {stock_code}: 首次打入 Top20, 写入基因库")
         
-        # 7. 保存更新后的记忆
-        self._save_memory(new_memory_dict)
+        # 7. 【CTO手术一】通过 ShortTermMemoryEngine API 保存记忆
+        # 先清空旧记忆
+        memory_engine.clear_all(confirm=True)
+        
+        # 写入新记忆
+        for stock_code, mem_item in new_memory_dict.items():
+            memory_engine.write_memory(
+                stock_code=stock_code,
+                gain_pct=mem_item.get('score', 60.0),  # 用 score 代替 gain_pct
+                turnover_rate=5.5,  # 默认满足阈值
+                blood_pct=mem_item.get('score', 60.0),
+                metadata={
+                    'date': mem_item.get('date', current_date),
+                    'last_rank': mem_item.get('last_rank', 20),
+                    'last_verdict': mem_item.get('last_verdict', ''),
+                    'absent_days': mem_item.get('absent_days', 0)
+                },
+                force=True  # 【CTO手术一】强制写入，跳过阈值检查
+            )
+        
+        memory_engine.force_save()
+        memory_engine.close()
         
         # 8. 打印统计
         print(f"\n  🧠 记忆动态进化统计:")

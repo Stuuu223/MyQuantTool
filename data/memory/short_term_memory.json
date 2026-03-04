@@ -16,5 +16,33 @@
       "inflow_ratio": 0.09154239425066403,
       "is_vetoed": false
     }
+  },
+  "TEST001.SZ": {
+    "stock_code": "TEST001.SZ",
+    "initial_score": 75.0,
+    "current_score": 75.0,
+    "create_date": "20260304",
+    "last_active_date": "20260304",
+    "half_life_count": 0,
+    "metadata": {
+      "gain_pct": 50.0,
+      "turnover_rate": 5.5,
+      "write_time": "2026-03-04T12:48:51.363978",
+      "test": true
+    }
+  },
+  "TEST002.SZ": {
+    "stock_code": "TEST002.SZ",
+    "initial_score": 60.0,
+    "current_score": 60.0,
+    "create_date": "20260304",
+    "last_active_date": "20260304",
+    "half_life_count": 0,
+    "metadata": {
+      "gain_pct": 5.0,
+      "turnover_rate": 3.0,
+      "write_time": "2026-03-04T12:48:51.363978",
+      "test": true
+    }
   }
 }

@@ -245,11 +245,12 @@ class ShortTermMemoryEngine:
                      gain_pct: float,
                      turnover_rate: float,
                      blood_pct: float,
-                     metadata: Optional[Dict[str, Any]] = None) -> bool:
+                     metadata: Optional[Dict[str, Any]] = None,
+                     force: bool = False) -> bool:
         """
         基因写入 - 盘后结算时调用
         
-        写入条件: 涨幅>8% 且 换手>5%
+        写入条件: 涨幅>8% 且 换手>5%（force=True时跳过检查）
         写入内容: blood_pct作为初始当量M0
         
         Args:
@@ -258,12 +259,13 @@ class ShortTermMemoryEngine:
             turnover_rate: 当日换手率(%)
             blood_pct: 血液浓度分数(0-100)
             metadata: 额外元数据
+            force: 强制写入，跳过阈值检查（CTO手术一补充）
             
         Returns:
             是否成功写入
         """
-        # 检查写入条件
-        if not self._should_write_memory(gain_pct, turnover_rate):
+        # 检查写入条件（force=True时跳过）
+        if not force and not self._should_write_memory(gain_pct, turnover_rate):
             return False
         
         today = self._get_today_str()
@@ -449,6 +451,32 @@ class ShortTermMemoryEngine:
         """检查是否有某股票的记忆"""
         with self._cache_lock:
             return stock_code in self._memory_cache
+    
+    def list_all(self) -> List[str]:
+        """
+        【CTO手术一补充API】返回所有记忆中的stock_code列表
+        
+        Returns:
+            股票代码列表
+        """
+        with self._cache_lock:
+            return list(self._memory_cache.keys())
+    
+    def get_full_memory(self, stock_code: str) -> Optional[Dict[str, Any]]:
+        """
+        【CTO手术一补充API】获取完整记忆字典（包含metadata）
+        
+        Args:
+            stock_code: 股票代码
+            
+        Returns:
+            完整记忆字典，无记忆返回None
+        """
+        with self._cache_lock:
+            gene = self._memory_cache.get(stock_code)
+            if gene:
+                return asdict(gene)
+            return None
     
     def get_memory_detail(self, stock_code: str) -> Optional[Dict[str, Any]]:
         """获取某股票的记忆详情"""
