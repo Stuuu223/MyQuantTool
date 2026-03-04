@@ -290,8 +290,9 @@ class GlobalFilterGateway:
                 # 今日TR = (high - low) / prev_close
                 # atr_ratio = 今日TR / atr_20d
                 if 'high' in df.columns and 'low' in df.columns:
-                    # 【Boss P0修复】除以None/0会自动得NaN，保留NaN用于统计
-                    df['today_tr'] = (df['high'] - df['low']) / df['prev_close']
+                    # 【Boss P0修复】prev_close为0或None时，先替换为NaN，避免除以0产生inf
+                    prev_close_safe = df['prev_close'].replace(0, float('nan'))
+                    df['today_tr'] = (df['high'] - df['low']) / prev_close_safe
                     df['atr_ratio'] = df['today_tr'] / df['atr_20d'].replace(0, float('nan'))
                     
                     # 【Boss P0修复】删除fillna(0)！保留NaN，让后续统计能区分"缺数据"和"真低能态"
