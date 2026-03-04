@@ -1,7 +1,7 @@
 {
   "_comment": "系统唯一参数配置 - V20.5 纯血游资起爆哲学：资金为王、顺势而为",
-  "version": "2.5",
-  "last_updated": "2026-03-03",
+  "version": "2.6",
+  "last_updated": "2026-03-04",
   
   "stock_filter": {
     "_description": "【全局股票漏斗铁律】实盘/复盘/回测/下载 全局共用，宁缺毋滥！",
@@ -41,7 +41,7 @@
     "_min_active_turnover_rate_comment": "最小活跃换手率：低于5%说明没人玩，剔除",
 
     "volume_ratio_percentile": 0.95,
-    "_volume_ratio_percentile_comment": "量比分位数：取全市场95分位作为极端放量阈值，用于触发bonus加分",
+    "_volume_ratio_percentile_comment": "【已迁移到 volume_ratio_filter 节】此字段保留向后兼容，优先使用 volume_ratio_filter.live_percentile",
 
     "sweet_spot_min": 8.0,
     "_sweet_spot_min_comment": "换手甜点位下限：8%-15%换手率标记为'换手甜点'，主力控盘适中",
@@ -72,6 +72,25 @@
       "high_turnover_bonus": 5,
       "_high_turnover_bonus_comment": "高效换手奖励：触发后+5分"
     }
+  },
+
+  "volume_ratio_filter": {
+    "_description": "【动态量比阈值 Option B】从当日全市场量比分布动态计算分位数阈值，替代静态魔法数字0.95",
+    "_design": "每日开盘后用全市场~5000只股票实时量比列表计算 numpy.percentile，阈值随市场活跃度自动伸缩",
+
+    "live_percentile": 0.95,
+    "_live_percentile_comment": "实盘：第95百分位 = 全市场量比 Top 5% 才算极端放量（严格）",
+
+    "backtest_percentile": 0.88,
+    "_backtest_percentile_comment": "回测默认：第88百分位（较宽松，捕获更多候选）。灵敏度扫描示例：temporary_override({'volume_ratio_filter.backtest_percentile': 0.90})",
+
+    "_backtest_sweep_guide": "回测灵敏度扫描推荐值: 0.88(宽松) / 0.90 / 0.92 / 0.95(实盘级严格)",
+
+    "fixed_threshold": 3.0,
+    "_fixed_threshold_comment": "兜底绝对阈值：①全市场股票数不足min_stocks_for_dynamic时启用 ②动态计算结果不得低于此值（防止极端低活跃日阈值塌缩）",
+
+    "min_stocks_for_dynamic": 100,
+    "_min_stocks_comment": "动态计算最少需要100只有效量比，否则fallback到fixed_threshold=3.0"
   },
 
   "portfolio": {

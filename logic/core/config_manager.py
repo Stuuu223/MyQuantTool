@@ -4,9 +4,32 @@
 全局配置管理器 - 统一参数管理 (SSOT - Single Source of Truth)
 CTO强制实施：所有硬编码参数必须从此管理器获取，禁止在代码中硬编码任何数字
 
+配置读写铁律（必读）
+===================
+【热路径参数 → 缓存模式】
+  在各引擎的 _load_config() 中读取并缓存为 self.xxx，O(1) 访问，Tick级热路径专用。
+  配合 engine.reload_config() + ConfigManager.temporary_override() 支持回测参数扫描。
+
+  示例：
+    # 引擎内部
+    self.tail_trap_decay = self._config.get('live_sniper.time_decay_ratios.tail_trap', 0.2)
+    # 回测扫描
+    with cfg.temporary_override({'live_sniper.time_decay_ratios.tail_trap': 0.1}):
+        engine.reload_config()   # ← 必须！刷新实例缓存
+        result = engine.run_backtest(...)
+
+【非热路径 / 动态计算参数 → 调用时读取模式】
+  不缓存为实例变量，每次调用时直接从 ConfigManager 读取。
+  temporary_override 自动生效，无需 reload_config()。
+
+  示例：compute_volume_ratio_threshold(market_ratios, mode='backtest')
+  回测扫描只需：
+    with cfg.temporary_override({'volume_ratio_filter.backtest_percentile': 0.90}):
+        threshold = cfg.compute_volume_ratio_threshold(ratios, mode='backtest')  # 自动用0.90
+
 Author: CTO
 Date: 2026-02-24
-Version: V1.0 (工业级标准化版)
+Version: V1.1 (动态量比阈值 + reload_config铁律)
 """
 
 import json
@@ -44,6 +67,21 @@ class ConfigManager:
         except Exception as e:
             raise RuntimeError(f"❌ [ConfigManager] 加载配置文件失败: {e}")
     
+    def reload_config(self) -> None:
+        """
+        【回测参数扫描专用】重新从磁盘加载 JSON 配置（线程安全）。
+
+        使用场景：
+            temporary_override 修改了 ConfigManager 的内存值后，
+            各引擎的 _load_config() 缓存不会自动更新，必须显式调用引擎的
+            reload_config() 或本方法来同步磁盘最新配置。
+
+        注意：temporary_override 内部已维护内存状态，通常不需要调用本方法；
+              本方法主要用于「实盘切换参数文件」或「重启式参数热更新」场景。
+        """
+        with self._lock:
+            self._load_config()
+    
     def _validate_critical_keys(self):
         """【CTO铁律】确保JSON配置文件已同步最新架构，拒绝静默默认值"""
         critical_keys = [
@@ -53,7 +91,6 @@ class ConfigManager:
         ]
         missing = []
         for key in critical_keys:
-            # 尝试深层读取
             keys = key.split('.')
             val = self._config
             try:
@@ -65,7 +102,6 @@ class ConfigManager:
         if missing:
             error_msg = f"❌ [配置断言失败] strategy_params.json 缺少核心键值: {missing}。请立即更新配置文件！"
             print(error_msg)
-            # 自动修复或硬报错，这里选择抛出异常逼迫修复
             raise RuntimeError(error_msg)
     
     def get(self, key_path: str, default: Any = None) -> Any:
@@ -111,26 +147,82 @@ class ConfigManager:
         
         用法:
             with cfg.temporary_override({'stock_filter.min_avg_turnover_pct': 3.0}):
+                engine.reload_config()   # ← 若引擎缓存了此参数，需调用reload_config()
                 engine.run()
             # 退出后自动恢复原始配置
+
+        【动态计算参数】如 compute_volume_ratio_threshold 在调用时读取config，
+        temporary_override 自动生效，无需 engine.reload_config():
+            with cfg.temporary_override({'volume_ratio_filter.backtest_percentile': 0.90}):
+                threshold = cfg.compute_volume_ratio_threshold(ratios, mode='backtest')  # 自动用0.90
         
         Args:
             overrides: 要覆写的配置键值对，如 {'stock_filter.min_avg_turnover_pct': 3.0}
         """
-        # 深拷贝当前配置，保留原始状态
         with self._lock:
             original_config = deepcopy(self._config)
         
         try:
-            # 通过合法setter写入覆写值
             for key_path, value in overrides.items():
                 self.set(key_path, value)
             yield self
         finally:
-            # 无论是否异常，必定恢复
             with self._lock:
                 self._config = original_config
     
+    def compute_volume_ratio_threshold(
+        self,
+        market_volume_ratios: list[float],
+        mode: str = 'live'
+    ) -> float:
+        """
+        【动态量比阈值 Option B】从当日全市场量比分布动态计算过滤阈值。
+
+        此函数每次调用时直接读取 ConfigManager（不缓存），
+        因此 temporary_override 自动生效，无需 engine.reload_config()。
+
+        回测灵敏度扫描示例：
+            # 依次验证 88% / 90% / 92% / 95% 分位数效果
+            for pct in [0.88, 0.90, 0.92, 0.95]:
+                with cfg.temporary_override({'volume_ratio_filter.backtest_percentile': pct}):
+                    threshold = cfg.compute_volume_ratio_threshold(market_ratios, mode='backtest')
+                    result = run_backtest(threshold=threshold)
+
+        Args:
+            market_volume_ratios: 当日全市场各股有效量比列表（只含正值，排除停牌/未开盘）
+            mode: 'live'   = 实盘，使用 live_percentile（默认0.95，Top5%）
+                  'backtest' = 回测，使用 backtest_percentile（默认0.88，可用override调整）
+
+        Returns:
+            float: 量比过滤阈值。
+                   ≥ fixed_threshold（3.0）保底，防止极端低活跃日阈值塌缩。
+                   数据不足 min_stocks_for_dynamic 时直接返回 fixed_threshold。
+
+        注意：
+            - 量比列表应在每日开盘后收集，通常在第一次扫描前更新一次即可
+            - 不要在每个 Tick 都重新传入完整列表，在外层缓存计算结果
+        """
+        import numpy as np
+
+        fallback     = float(self.get('volume_ratio_filter.fixed_threshold', 3.0))
+        min_stocks   = int(self.get('volume_ratio_filter.min_stocks_for_dynamic', 100))
+
+        # 数据不足时 fallback
+        valid_ratios = [r for r in market_volume_ratios if r > 0]
+        if len(valid_ratios) < min_stocks:
+            return fallback
+
+        if mode == 'live':
+            pct = float(self.get('volume_ratio_filter.live_percentile', 0.95))
+        else:  # backtest
+            pct = float(self.get('volume_ratio_filter.backtest_percentile', 0.88))
+
+        # numpy percentile 入参是 0-100，config存的是 0-1
+        dynamic_threshold = float(np.percentile(valid_ratios, pct * 100))
+
+        # 动态值不得低于兜底固定阈值
+        return max(dynamic_threshold, fallback)
+
     def get_min_volume_multiplier(self) -> float:
         """【V20.5唯一真理】获取最小量比倍数阈值 - 从 live_sniper.min_volume_multiplier 读取"""
         return self.get('live_sniper.min_volume_multiplier', 3.0)
@@ -148,14 +240,13 @@ class ConfigManager:
     
     def get_time_decay_ratios(self) -> Dict[str, float]:
         """获取时间衰减系数 (从配置文件获取，支持实盘和回演统一)"""
-        # 优先从配置文件获取，否则使用默认值
         live_sniper = self._config.get('live_sniper', {})
         ratios = live_sniper.get('time_decay_ratios', {})
         return {
-            'early_morning_rush': ratios.get('early_morning_rush', 1.2),    # 09:30-10:00 早盘冲刺
-            'morning_confirm': ratios.get('morning_confirm', 1.0),          # 10:00-10:30 上午确认
-            'noon_trash': ratios.get('noon_trash', 0.8),                    # 10:30-14:00 午间垃圾时间
-            'tail_trap': ratios.get('tail_trap', 0.5)                       # 14:00-14:55 尾盘陷阱
+            'early_morning_rush': ratios.get('early_morning_rush', 1.2),
+            'morning_confirm':    ratios.get('morning_confirm', 1.0),
+            'noon_trash':         ratios.get('noon_trash', 0.8),
+            'tail_trap':          ratios.get('tail_trap', 0.2)   # 【已修正】0.5→0.2
         }
 
 
@@ -183,9 +274,9 @@ def get_min_volume_multiplier() -> float:
 
 
 if __name__ == "__main__":
-    # 测试配置管理器
+    import numpy as np
     print("=" * 60)
-    print("全局配置管理器测试 (V20.5)")
+    print("全局配置管理器测试 (V1.1)")
     print("=" * 60)
     
     config_mgr = get_config_manager()
@@ -193,9 +284,34 @@ if __name__ == "__main__":
     print(f"最小量比倍数: {config_mgr.get_min_volume_multiplier()}x")
     print(f"换手率阈值: {config_mgr.get_turnover_rate_thresholds()}")
     print(f"时间衰减比率: {config_mgr.get_time_decay_ratios()}")
-    
-    # 测试便捷函数
     print(f"便捷函数获取: {get_param('live_sniper.min_volume_multiplier')}")
     
+    # 测试动态量比阈值
+    print("\n--- 动态量比阈值 compute_volume_ratio_threshold ---")
+    mock_ratios = [float(x) for x in np.random.lognormal(0.5, 0.8, 5000)]  # 模拟全市场分布
+    mock_ratios = [r for r in mock_ratios if r > 0]
+    live_thr  = config_mgr.compute_volume_ratio_threshold(mock_ratios, mode='live')
+    bt_thr    = config_mgr.compute_volume_ratio_threshold(mock_ratios, mode='backtest')
+    print(f"  实盘(95th)阈值   : {live_thr:.4f}")
+    print(f"  回测(88th)阈值   : {bt_thr:.4f}")
+    assert bt_thr <= live_thr, "回测阈值应<=实盘阈值"
+    print("  ✅ 通过")
+    
+    # 测试 temporary_override 对动态阈值的影响（无需reload_config）
+    print("\n--- temporary_override 自动生效测试 ---")
+    with config_mgr.temporary_override({'volume_ratio_filter.backtest_percentile': 0.90}):
+        thr_90 = config_mgr.compute_volume_ratio_threshold(mock_ratios, mode='backtest')
+    print(f"  override 0.90 → 阈值: {thr_90:.4f} (应 >= {bt_thr:.4f})")
+    assert thr_90 >= bt_thr, "90分位阈值应>=88分位阈值"
+    print("  ✅ temporary_override 自动生效，无需reload_config")
+    
+    # 测试数据不足时 fallback
+    print("\n--- 数据不足 fallback 测试 ---")
+    small_ratios = [1.5, 2.0, 3.0]  # 只有3只，< min_stocks=100
+    fallback_thr = config_mgr.compute_volume_ratio_threshold(small_ratios, mode='live')
+    assert fallback_thr == 3.0, f"数据不足时应返回fixed_threshold=3.0，实际{fallback_thr}"
+    print(f"  数据不足(3只<100只) → fallback: {fallback_thr}")
+    print("  ✅ 通过")
+    
     print("=" * 60)
-    print("✅ 配置管理器测试完成 (V20.5)")
+    print("✅ 配置管理器测试完成 (V1.1)")
