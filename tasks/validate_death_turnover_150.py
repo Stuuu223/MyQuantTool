@@ -45,11 +45,45 @@ logger = logging.getLogger(__name__)
 
 # 项目根目录
 PROJECT_ROOT = Path(__file__).parent.parent
-KLINE_CACHE_DIR = PROJECT_ROOT / "data" / "kline_cache"
 VALIDATION_OUTPUT_DIR = PROJECT_ROOT / "data" / "validation"
 
 # 确保输出目录存在
 VALIDATION_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def get_qmt_data_dirs() -> Tuple[str, str]:
+    """
+    【唯一真理源】获取QMT客户端数据目录
+    
+    QMT实际目录结构：
+    {qmt_userdata_path}/datadir/
+    ├── SZ/
+    │   ├── 86400/    # 深市日线 (000001.DAT格式)
+    │   ├── 60/       # 深市分钟线
+    │   └── 0/        # 深市Tick
+    └── SH/
+        ├── 86400/    # 沪市日线 (600000.DAT格式)
+        ├── 60/       # 沪市分钟线
+        └── 0/        # 沪市Tick
+    
+    优先级：
+    1. 环境变量 QMT_USERDATA_PATH
+    2. config.json → qmt_data_source.userdata_path
+    3. 自动探测 Windows 默认位置
+    
+    Returns:
+        Tuple[str, str]: (深市日线目录, 沪市日线目录)
+    """
+    from logic.core.config_manager import get_config_manager
+    
+    config = get_config_manager()
+    qmt_path = config.get_qmt_userdata_path()
+    
+    # QMT实际路径：{qmt_path}/datadir/{SZ,SH}/86400/
+    sz_daily = os.path.join(qmt_path, 'datadir', 'SZ', '86400')
+    sh_daily = os.path.join(qmt_path, 'datadir', 'SH', '86400')
+    
+    return sz_daily, sh_daily
 
 
 class DeathTurnoverValidator:
@@ -71,8 +105,11 @@ class DeathTurnoverValidator:
             lookback_months: 回望月数，默认3个月
         """
         self.lookback_months = lookback_months
-        self.kline_cache_dir = KLINE_CACHE_DIR
         self.validation_output_dir = VALIDATION_OUTPUT_DIR
+        
+        # 【V1.1修正】从ConfigManager获取QMT数据目录
+        # 实际路径: {qmt_userdata_path}/datadir/{SZ,SH}/86400/
+        self.sz_daily_dir, self.sh_daily_dir = get_qmt_data_dirs()
         
         # 分桶边界 (百分比)
         self.BUCKET_BOUNDARIES = [70.0, 150.0, 200.0]
@@ -83,7 +120,8 @@ class DeathTurnoverValidator:
         ]
         
         logger.info(f"初始化验证器: 回望{lookback_months}个月")
-        logger.info(f"K线缓存目录: {self.kline_cache_dir}")
+        logger.info(f"QMT深市日线目录: {self.sz_daily_dir}")
+        logger.info(f"QMT沪市日线目录: {self.sh_daily_dir}")
         logger.info(f"输出目录: {self.validation_output_dir}")
     
     def load_kline_data(self, stock_code: str) -> pd.DataFrame:

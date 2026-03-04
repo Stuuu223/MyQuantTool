@@ -44,6 +44,53 @@
 ### 👶 关于新股策略
 新股在 `stock_filter` 的第一道（`min_avg_amount=5000万` 需要历史数据）就被过滤，不会进入死亡换手判断环节。系统专注于有历史数据支撑的右侧起爆点，新股前几天的乱打行为不符合模型假设。
 
+---
+## 📂 数据目录约定 (V20.5.1)
+
+### QMT 客户端缓存（唯一真理源）
+本系统所有数据统一从 **QMT 客户端本地缓存** 读取，确保实盘/回测/验证脚本数据一致性。
+
+#### 路径配置（优先级从高到低）
+1. **环境变量**：`QMT_USERDATA_PATH`（推荐部署时设置）
+2. **config.json**：`qmt_data_source.userdata_path`（本地开发配置）
+3. **自动探测**：`E:/QMT/userdata_mini`（Windows 默认位置，最后兜底）
+
+#### 目录结构
+```
+{QMT_USERDATA_PATH}/datadir/
+├── SZ/
+│   ├── 86400/    # 深市日线 (000001.DAT 格式)
+│   ├── 60/       # 深市分钟线
+│   └── 0/        # 深市Tick (需下载)
+├── SH/
+│   ├── 86400/    # 沪市日线 (600000.DAT 格式)
+│   ├── 60/       # 沪市分钟线
+│   └── 0/        # 沪市Tick (需下载)
+```
+
+#### 用途说明
+- **实盘**：`xtdata.get_market_data_ex()` 自动读取 QMT 缓存
+- **回测/验证脚本**：通过 `ConfigManager.get_qmt_userdata_path()` 获取路径后直接读取
+- **历史数据**：首次运行时 QMT 会自动下载并缓存
+
+#### 代码示例（正确 vs 错误）
+```python
+# ❌ 错误：硬编码路径
+df = pd.read_csv('E:/QMT/userdata_mini/datadir/SZ/86400/000001.DAT')
+
+# ✅ 正确：通过 ConfigManager 统一获取
+from logic.core.config_manager import get_config_manager
+config = get_config_manager()
+qmt_path = config.get_qmt_userdata_path()
+sz_daily = os.path.join(qmt_path, 'datadir', 'SZ', '86400')
+# 注意：QMT数据为.DAT二进制格式，需用xtdata API读取
+```
+
+### 废弃说明
+- ❌ **`data/kline_cache/` 已于 V20.5 废弃**，不再维护
+- ✅ 所有历史脚本如引用该目录，必须改为读取 QMT 客户端缓存
+
+---
 ### 待办事项
 - [ ] 本周末：三个月回测框架，重新估ATR阈值
 - [ ] 本周末：日K数据验证150%死亡换手合理性

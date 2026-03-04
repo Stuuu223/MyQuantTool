@@ -330,6 +330,48 @@ class ConfigManager:
             str: 过滤模式，默认'record_only'
         """
         return self.get('kinetic_physics.atr_filter_mode', 'record_only')
+    
+    def get_qmt_userdata_path(self) -> str:
+        """
+        【唯一真理源】获取 QMT 客户端数据目录
+        
+        优先级：
+        1. 环境变量 QMT_USERDATA_PATH（部署时覆盖）
+        2. config.json → qmt_data_source.userdata_path（本地开发）
+        3. 自动探测 Windows 默认位置（最后兜底）
+        
+        Returns:
+            str: QMT userdata_mini 绝对路径
+            
+        Example:
+            >>> config = get_config_manager()
+            >>> qmt_path = config.get_qmt_userdata_path()
+            >>> sz_daily = os.path.join(qmt_path, 'datadir', 'SZ', '86400')
+        """
+        import os
+        
+        # 1. 环境变量优先（部署场景）
+        env_path = os.getenv('QMT_USERDATA_PATH')
+        if env_path and os.path.exists(env_path):
+            return env_path
+        
+        # 2. config.json 配置（本地开发）
+        config_path = self.get('qmt_data_source.userdata_path')
+        if config_path and os.path.exists(config_path):
+            return config_path
+        
+        # 3. 自动探测 Windows 默认位置（兜底）
+        default_paths = [
+            'E:/QMT/userdata_mini',
+            'D:/QMT/userdata_mini',
+            'C:/QMT/userdata_mini'
+        ]
+        for path in default_paths:
+            if os.path.exists(path):
+                return path
+        
+        # 4. 全部失败，返回默认路径（让调用方处理不存在的情况）
+        return 'E:/QMT/userdata_mini'
 
 
 # 全局配置管理器实例
