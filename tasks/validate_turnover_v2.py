@@ -25,8 +25,17 @@ VALIDATION_DIR.mkdir(parents=True, exist_ok=True)
 
 def main():
     print("=" * 70)
-    print("150% 死亡换手验证（基于 TrueDictionary）")
+    print("150% 死亡换手验证（基于 TrueDictionary 市值平替法）")
     print("=" * 70)
+    
+    # 连接QMT
+    try:
+        from xtquant import xtdata
+        xtdata.connect(port=58610)
+        print("✅ QMT连接成功")
+    except Exception as e:
+        print(f"❌ QMT连接失败: {e}")
+        return
     
     # 初始化
     cfg = get_config_manager()
@@ -48,14 +57,18 @@ def main():
     
     # 获取全市场股票列表
     try:
-        from xtquant import xtdata
-        xtdata.connect(port=58610)
         all_stocks = xtdata.get_stock_list_in_sector('沪深A股')
     except Exception as e:
         print(f"❌ 获取股票列表失败: {e}")
         return
     
     print(f"全市场股票数: {len(all_stocks)}")
+    
+    # 【CTO铁血令】先warmup TrueDictionary，加载流通股本
+    print("📦 正在预热TrueDictionary...")
+    warmup_result = truedict.warmup(all_stocks, target_date=target_date)
+    print(f"✅ 预热完成: FloatVolume={warmup_result.get('qmt', {}).get('success', 0)}只")
+    print("-" * 70)
     
     # 收集事件
     events = []

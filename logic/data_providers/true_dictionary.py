@@ -77,6 +77,7 @@ class TrueDictionary:
         self._up_stop_price: Dict[str, float] = {}  # 涨停价
         self._down_stop_price: Dict[str, float] = {}  # 跌停价
         self._avg_volume_5d: Dict[str, float] = {}  # 5日平均成交量(QMT本地计算)
+        self._avg_turnover_5d: Dict[str, float] = {}  # 5日平均换手率(市值平替法计算)
         
         # 【CTO第三维趋势网】MA均线数据缓存 - 盘前装弹时计算
         self._ma_data: Dict[str, Dict] = {}  # {stock_code: {'ma5': float, 'ma10': float, 'ma20': float}}
@@ -735,6 +736,78 @@ class TrueDictionary:
             val = self._avg_volume_5d.get(stock_code, 0.0)
             return float(val) if val is not None else 0.0
         except (ValueError, TypeError):
+            return 0.0
+    
+    def get_avg_turnover_5d(self, stock_code: str, target_date: str = None) -> float:
+        """
+        获取5日平均换手率 - 市值平替法
+        
+        【CTO市值平替法】
+        - 公式：成交额 / (流通股本 × 收盘价) × 100
+        - 优点：绕开volume单位问题，避免历史流通股本漂移
+        - 注意：使用当前的FloatVolume（误差在可接受范围内）
+        
+        Args:
+            stock_code: 股票代码
+            target_date: 目标日期(格式'YYYYMMDD')，用于回测
+            
+        Returns:
+            float: 5日平均换手率(%)
+        """
+        try:
+            # 优先从缓存读取
+            val = self._avg_turnover_5d.get(stock_code)
+            if val is not None:
+                return float(val)
+            
+            # 缓存未命中，实时计算
+            if not target_date:
+                target_date = datetime.now().strftime('%Y%m%d')
+            
+            start_date = get_nth_previous_trading_day(target_date, 22) if CALENDAR_UTILS_AVAILABLE else (datetime.strptime(target_date, '%Y%m%d') - timedelta(days=30)).strftime('%Y%m%d')
+            
+            from xtquant import xtdata
+            
+            # 获取流通股本
+            float_volume = self.get_float_volume(stock_code)
+            if float_volume <= 0:
+                return 0.0
+            
+            # 获取日K数据
+            data = xtdata.get_local_data(
+                field_list=['time', 'close', 'amount'],
+                stock_list=[stock_code],
+                period='1d',
+                start_time=start_date,
+                end_time=target_date
+            )
+            
+            if not data or stock_code not in data:
+                return 0.0
+            
+            df = data[stock_code]
+            if df is None or len(df) < 1:
+                return 0.0
+            
+            # 计算每日换手率：amount / (float_volume * close) * 100
+            df = df.copy()
+            df['turnover_rate'] = df['amount'] / (float_volume * df['close']) * 100
+            
+            # 取最近5个交易日均值
+            recent_turnover = df['turnover_rate'].tail(5)
+            avg_turnover = recent_turnover.mean()
+            
+            # 清理NaN/Inf
+            if pd.isna(avg_turnover) or np.isinf(avg_turnover):
+                return 0.0
+            
+            # 缓存结果
+            self._avg_turnover_5d[stock_code] = float(avg_turnover)
+            
+            return float(avg_turnover)
+            
+        except Exception as e:
+            logger.debug(f"[get_avg_turnover_5d] {stock_code} 计算失败: {e}")
             return 0.0
     
     def get_sectors(self, stock_code: str) -> List[str]:
