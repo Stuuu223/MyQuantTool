@@ -58,14 +58,19 @@
 #### 目录结构
 ```
 {QMT_USERDATA_PATH}/datadir/
-├── SZ/
-│   ├── 86400/    # 深市日线 (000001.DAT 格式)
-│   ├── 60/       # 深市分钟线
-│   └── 0/        # 深市Tick (需下载)
-├── SH/
-│   ├── 86400/    # 沪市日线 (600000.DAT 格式)
-│   ├── 60/       # 沪市分钟线
-│   └── 0/        # 沪市Tick (需下载)
+├── SZ/                           # 深市
+│   ├── 86400/                    # 日线（直接是.DAT文件）
+│   │   ├── 000001.DAT
+│   │   └── 000002.DAT
+│   ├── 60/                       # 分钟线（直接是.DAT文件）
+│   │   ├── 000001.DAT
+│   │   └── 000002.DAT
+│   └── 0/                        # Tick（按股票代码/日期分文件）
+│       ├── 000001/               # 股票代码目录
+│       │   ├── 20260202.dat      # 按日期的tick文件
+│       │   └── 20260203.dat
+│       └── 000002/
+└── SH/                           # 沪市（结构同上）
 ```
 
 #### 用途说明
@@ -82,7 +87,12 @@ df = pd.read_csv('E:/QMT/userdata_mini/datadir/SZ/86400/000001.DAT')
 from logic.core.config_manager import get_config_manager
 config = get_config_manager()
 qmt_path = config.get_qmt_userdata_path()
+
+# 日线路径: datadir/SZ/86400/000001.DAT
 sz_daily = os.path.join(qmt_path, 'datadir', 'SZ', '86400')
+# Tick路径: datadir/SZ/0/{股票代码}/{日期}.dat
+sz_tick = os.path.join(qmt_path, 'datadir', 'SZ', '0', '000001')
+
 # 注意：QMT数据为.DAT二进制格式，需用xtdata API读取
 ```
 
