@@ -359,7 +359,7 @@ class TimeMachineEngine:
                 # 【CTO数据断言】如果缺失率超过20%，触发断路器！
                 total_stocks = len(valid_stocks_to_process)
                 if total_stocks > 0 and (missing_count / total_stocks > 0.2):
-                    error_msg = f"❌ [Fail Fast] 数据严重缺失！{missing_count}/{total_stocks} 只股票无日K数据。请先运行 unified_downloader 下载数据！"
+                    error_msg = f"❌ [Fail Fast] 数据严重缺失！{missing_count}/{total_stocks} 只股票无日K数据。请运行 tools/smart_download.py 下载缺失数据！"
                     logger.error(error_msg)
                     print(error_msg)
                     return None  # 直接终止今日回测！

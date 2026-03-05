@@ -299,7 +299,7 @@ def assert_data_readiness(date: str, stock_list: list):
     if missing_count > 0:
         error_msg = f"❌ [致命错误] 本地 QMT 缺少 {date} 的日K结算数据！系统拒绝在致盲状态下启动打分！"
         click.echo(click.style(error_msg, fg='red', bold=True))
-        click.echo(click.style("💡 解决方案: 请运行 tools/unified_downloader.py 或在 QMT 客户端中补全数据。", fg='yellow'))
+        click.echo(click.style("💡 解决方案: 请运行 tools/smart_download.py 或在 QMT 客户端中补全数据。", fg='yellow'))
         raise SystemExit(1)
         
     click.echo(click.style(f"✅ [数据断言] {date} 基础日K数据已落盘就绪。", fg='green'))
@@ -373,7 +373,7 @@ def replay_cmd(ctx, date, pure):
         success_count = warmup_result.get('qmt', {}).get('success', 0)
         if success_count < 1000:
             click.echo(click.style(f"❌ [数据断言失败] 财务数据装弹仅成功 {success_count} 只，系统拒绝启动！", fg='red'))
-            click.echo(click.style(f"   请先运行: python tools/unified_downloader.py 下载数据", fg='yellow'))
+            click.echo(click.style(f"   请先运行: python tools/smart_download.py 下载数据", fg='yellow'))
             ctx.exit(1)
         click.echo(click.style(f"  ✅ TrueDictionary预热完成", fg='green'))
     except Exception as e:
