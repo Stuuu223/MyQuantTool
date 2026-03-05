@@ -353,37 +353,38 @@ class LiveTradingEngine:
         except Exception as e:
             logger.error(f"❌ Tick订阅失败: {e}")
     
-            def _auction_snapshot_filter(self):
-                """
-                09:25集合竞价快照初筛 - CTO第一斩 - 带火力输出的雷达版
-                
-                【架构解耦】使用QMTEventAdapter获取数据，向量化过滤：
-                1. open < prev_close（低开的，直接拉黑）
-                2. volume < 1000（竞价连1000手都没有的，没有资金关注，拉黑）  
-                3. open >= up_stop_price（开盘直接一字涨停的，买不到，拉黑）
-                
-                【CTO强化】显性输出竞价数据：
-                - 计算竞价承接力 = 竞价金额 / 流通市值
-                - 输出竞价爆量日志
-                - 保存到CSV文件
-                """
-                import pandas as pd
-                import time
-                from datetime import datetime
-                from logic.utils.calendar_utils import get_nth_previous_trading_day
-                
-                try:
-                    start_time = time.perf_counter()
-                    
-                    # 【架构解耦】使用adapter获取数据，而非直接调用xtdata
-                    if not hasattr(self, 'qmt_adapter') or self.qmt_adapter is None:
-                        logger.error("🚨 QMTEventAdapter未初始化")
-                        self._fallback_premarket_scan()
-                        return
-                    
-                    # 1. 获取全市场快照（1毫秒内完成）
-                    all_stocks = self.qmt_adapter.get_all_a_shares()
-                    if not all_stocks:                logger.error("🚨 无法获取沪深A股列表")
+    def _auction_snapshot_filter(self):
+        """
+        09:25集合竞价快照初筛 - CTO第一斩 - 带火力输出的雷达版
+        
+        【架构解耦】使用QMTEventAdapter获取数据，向量化过滤：
+        1. open < prev_close（低开的，直接拉黑）
+        2. volume < 1000（竞价连1000手都没有的，没有资金关注，拉黑）  
+        3. open >= up_stop_price（开盘直接一字涨停的，买不到，拉黑）
+        
+        【CTO强化】显性输出竞价数据：
+        - 计算竞价承接力 = 竞价金额 / 流通市值
+        - 输出竞价爆量日志
+        - 保存到CSV文件
+        """
+        import pandas as pd
+        import time
+        from datetime import datetime
+        from logic.utils.calendar_utils import get_nth_previous_trading_day
+        
+        try:
+            start_time = time.perf_counter()
+            
+            # 【架构解耦】使用adapter获取数据，而非直接调用xtdata
+            if not hasattr(self, 'qmt_adapter') or self.qmt_adapter is None:
+                logger.error("🚨 QMTEventAdapter未初始化")
+                self._fallback_premarket_scan()
+                return
+            
+            # 1. 获取全市场快照（1毫秒内完成）
+            all_stocks = self.qmt_adapter.get_all_a_shares()
+            if not all_stocks:
+                logger.error("🚨 无法获取沪深A股列表")
                 self._fallback_premarket_scan()
                 return
             
