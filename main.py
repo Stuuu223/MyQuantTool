@@ -977,16 +977,9 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, dry_run):
             click.echo(click.style("⚠️ 今日没有任何股票通过纯血游资雷达苛刻的风控漏斗！", fg='red'))
         return  # 画完大屏才能滚！
     
-    # 检查是否已收盘 (15:00后) - 禁止盘后启动实盘
-    elif now.hour >= 15:
-        click.echo(click.style(f"\n🛑 今日股市已收盘 (当前 {now.hour}:00)！禁止启动实盘监控！", fg='red', bold=True))
-        click.echo(click.style("🔄 自动生成盘后右侧起爆战报...", fg='yellow'))
-        # 执行盘后战报生成
-        from logic.backtest.time_machine_engine import TimeMachineEngine
-        engine = TimeMachineEngine()
-        result = engine.run_daily_backtest(today_str)
-        click.echo(f"\n✅ 盘后战报完成: 共评分 {len(result.get('top20', [])) if result else 0} 只股票")
-        return  # 绝对禁止继续启动实盘引擎
+    # 【CTO V5幻觉处决】删除15:00后强制调用TimeMachineEngine的逻辑！
+    # 盘后投影由LiveTradingEngine._run_radar_main_loop()处理，用get_full_tick获取定格数据
+    # 不再需要main.py层级的越权挟持！
     
     click.echo(click.style("\n🚀 启动实盘猎杀系统 (EventDriven 事件驱动模式 纯血游资雷达)", fg='green', bold=True))
     click.echo(f"📅 日期: {datetime.now().strftime('%Y-%m-%d')}")
