@@ -181,9 +181,11 @@ class TrueDictionary:
         # 【CTO全息克隆修复】：启用5日均量计算（单点查询安全！）
         avg_volume_result = self._warmup_avg_volume_from_qmt(stock_list, target_date=target_date)
         
-        # MA和ATR暂时禁用
+        # 【CTO修复】启用ATR预热（传递target_date）
+        atr_result = self._warmup_atr_data(stock_list, target_date=target_date)
+        
+        # MA暂时禁用（CTO防爆）
         ma_result = {'source': 'disabled', 'success': 0, 'failed': len(stock_list), 'note': 'CTO防爆：暂时禁用'}
-        atr_result = {'source': 'disabled', 'success': 0, 'failed': len(stock_list), 'note': 'CTO防爆：暂时禁用'}
         
         # Step 5: 数据完整性检查（只检查FloatVolume）
         integrity_check = self._check_data_integrity(stock_list)

@@ -443,13 +443,15 @@ class LiveTradingEngine:
                     )
                 logger.info("=" * 60)
             
-            # 7. 【CTO强化】保存竞价数据到CSV
-            output_path = f"data/auction_snapshot_{today_str}.csv"
+            # 7. 【CTO强化】保存竞价数据到CSV（统一目录data/auction/）
+            import os
+            os.makedirs('data/auction', exist_ok=True)
+            output_path = f"data/auction/auction_tick_live_{today_str}.csv"
             try:
                 output_df = filtered_df[['stock_code', 'open', 'prev_close', 'open_change_pct', 
                                          'volume', 'amount', 'auction_power', 'bidVol1', 'askVol1']]
                 output_df.to_csv(output_path, index=False, encoding='utf-8-sig')
-                logger.info(f"✅ 竞价数据已保存: {output_path} ({len(filtered_df)}只)")
+                logger.info(f"✅ [竞价收割] {len(filtered_df)}只股票竞价数据已落盘 -> {output_path}")
             except Exception as e:
                 logger.warning(f"⚠️ 竞价数据保存失败: {e}")
             
@@ -522,18 +524,27 @@ class LiveTradingEngine:
         """预热TrueDictionary - 获取涨停价等静态数据 - CTO加固：容错机制"""
         try:
             from logic.data_providers.true_dictionary import get_true_dictionary
+            from logic.utils.calendar_utils import get_nth_previous_trading_day
+            
             true_dict = get_true_dictionary()
+            
+            # 【CTO修复】计算target_date（上一个交易日）
+            today = datetime.now().strftime('%Y%m%d')
+            target_date = get_nth_previous_trading_day(today, 1)  # 上一个交易日
             
             # 使用当前watchlist + 扩展池进行预热
             warmup_stocks = self._get_extended_stock_pool(self.watchlist)
             
-            result = true_dict.warmup(warmup_stocks)
+            result = true_dict.warmup(warmup_stocks, target_date=target_date)
             
             if result['integrity']['is_ready']:
+                atr_count = len(true_dict._atr_20d_map) if hasattr(true_dict, '_atr_20d_map') else 0
+                prev_close_count = len(true_dict._prev_close_cache) if hasattr(true_dict, '_prev_close_cache') else 0
                 logger.info(
                     f"✅ TrueDictionary装弹完成: "
-                    f"涨停价缓存{result['qmt'].get('success', 0)}只, "
-                    f"5日均量缓存{result['tushare'].get('success', 0)}只"
+                    f"涨停价{result['qmt'].get('success', 0)}只, "
+                    f"5日均量{result['avg_volume'].get('success', 0)}只, "
+                    f"ATR{atr_count}只, prev_close{prev_close_count}只"
                 )
             else:
                 logger.warning(f"⚠️ TrueDictionary装弹不完整: 缺失率{result['integrity']['missing_rate']*100:.1f}%")
