@@ -1069,7 +1069,8 @@ class LiveTradingEngine:
                     
                     current_price = tick.get('lastPrice', 0)
                     current_volume = tick.get('volume', 0)  # 今日累计成交量
-                    pre_close = true_dict.get_prev_close(stock_code)
+                    # 【Phase1终极修复】从快照获取prev_close，不从TrueDictionary获取
+                    pre_close = tick.get('lastClose', 0)
                     
                     # 【CTO V3修复】正确的死水判断：今日累计成交量为0
                     if current_volume == 0:
