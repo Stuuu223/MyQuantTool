@@ -721,11 +721,6 @@ class LiveTradingEngine:
             df['avg_turnover_5d'] = df['stock_code'].map(true_dict.get_avg_turnover_5d)
             df['float_volume'] = df['stock_code'].map(true_dict.get_float_volume)
             
-            # 【CTO诊断】检查字段完整性
-            logger.info(f"📊 [字段诊断] avg_volume_5d有效: {(df['avg_volume_5d'] > 0).sum()}/{len(df)}")
-            logger.info(f"📊 [字段诊断] avg_turnover_5d有效: {(df['avg_turnover_5d'] > 0).sum()}/{len(df)}")
-            logger.info(f"📊 [字段诊断] float_volume有效: {(df['float_volume'] > 0).sum()}/{len(df)}")
-            
             # 4. 计算量比（时间进度加权）
             df['volume_gu'] = df['volume'] * 100  # 手→股
             
