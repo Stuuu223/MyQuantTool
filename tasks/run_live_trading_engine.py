@@ -714,6 +714,7 @@ class LiveTradingEngine:
                     'price': tick.get('lastPrice', 0) if isinstance(tick, dict) else getattr(tick, 'lastPrice', 0),
                     'volume': tick.get('volume', 0) if isinstance(tick, dict) else getattr(tick, 'volume', 0),
                     'amount': tick.get('amount', 0) if isinstance(tick, dict) else getattr(tick, 'amount', 0),
+                    'prev_close': tick.get('lastClose', 0) if isinstance(tick, dict) else getattr(tick, 'lastClose', 0),  # 直接从快照获取昨收
                 }
                 for code, tick in snapshot.items() if tick
             ])
@@ -731,6 +732,7 @@ class LiveTradingEngine:
             df['avg_volume_5d'] = df['stock_code'].map(true_dict.get_avg_volume_5d)
             df['avg_turnover_5d'] = df['stock_code'].map(true_dict.get_avg_turnover_5d)
             df['float_volume'] = df['stock_code'].map(true_dict.get_float_volume)
+            # prev_close已从快照获取，无需再从TrueDictionary获取
             
             # 4. 计算量比（时间进度加权）
             df['volume_gu'] = df['volume'] * 100  # 手→股
@@ -750,7 +752,7 @@ class LiveTradingEngine:
             df['current_turnover'] = (df['volume_gu'] / df['float_volume'].replace(0, pd.NA)) * 100
             
             # 5日均成交额 = avg_volume_5d * prev_close (近似计算)
-            df['prev_close'] = df['stock_code'].map(true_dict.get_prev_close)
+            # prev_close已在快照中获取，直接使用
             df['avg_amount_5d'] = df['avg_volume_5d'] * df['prev_close'] * 100  # 手→股→元
             
             # 【Phase1修复】不用dropna屠杀，改用fillna容错
