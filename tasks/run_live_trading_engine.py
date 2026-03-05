@@ -851,81 +851,108 @@ class LiveTradingEngine:
     
     def _start_dynamic_radar(self):
         """
-        【CTO铁血整改】启动动态雷达刷新线程
-        每3秒刷新一次看板，展示watchlist中股票的实时动能打分引擎分数
+        【CTO终极重铸】真·狩猎雷达 - 暴力轮询 + 多级降维架构
+        
+        核心改造:
+        1. 看板先行：不等待计算，立刻点亮雷达
+        2. 暴力轮询：xtdata.get_full_tick(self.watchlist) 一次性获取全量数据
+        3. 多级降维过滤：
+           - Level1: 布朗运动剔除 (volume==0 或 lastPrice==preClose)
+           - Level2: 动能打分（只对有波动的股票计算）
+        4. 战地收尸：调用 _update_daily_battle_report
+        5. 1秒刷新：从3秒改为1秒
         """
         import threading
         import os
         import time
         from datetime import datetime
+        from xtquant import xtdata
+        from logic.data_providers.true_dictionary import get_true_dictionary
+        from logic.strategies.kinetic_core_engine import 动能打分引擎CoreEngine
+        
+        # 预先获取TrueDictionary单例
+        true_dict = get_true_dictionary()
+        
+        # 预先创建动能打分引擎实例
+        core_engine = 动能打分引擎CoreEngine()
         
         def radar_loop():
+            """CTO暴力轮询雷达主循环"""
+            # 【CTO看板先行】第一帧立刻显示
+            print("\n" + "="*80)
+            print(f"📡 [真·狩猎雷达] 已锁定 {len(self.watchlist)} 只目标")
+            print("⚡ 正在捕获首轮微观动能...")
+            print("="*80)
+            
             while self.running:
                 try:
-                    # 清屏
-                    os.system('cls' if os.name == 'nt' else 'clear')
-                    
-                    # 获取当前时间
+                    loop_start = time.perf_counter()
                     now = datetime.now()
-                    time_str = now.strftime('%H:%M:%S')
                     
-                    # 打印表头
-                    print("="*100)
-                    print(f"🚀 [V20 纯血游资雷达] 动态火控看板 | 当前时间: {time_str}")
-                    print("="*100)
+                    # 【CTO第一级：毫秒级全量快照捕获】
+                    try:
+                        all_ticks = xtdata.get_full_tick(self.watchlist)
+                    except Exception as e:
+                        logger.error(f"获取全量Tick失败: {e}")
+                        time.sleep(1)
+                        continue
                     
-                    # 计算watchlist中每只股票的实时分数
-                    dragon_list = []
-                    for stock_code in self.watchlist[:20]:  # 只计算前20只
+                    if not all_ticks:
+                        time.sleep(1)
+                        continue
+                    
+                    current_top_targets = []
+                    dead_water_count = 0
+                    active_count = 0
+                    
+                    # 【CTO第二级：极速布朗运动剔除】
+                    for stock_code in self.watchlist:
+                        tick = all_ticks.get(stock_code)
+                        if not tick:
+                            continue
+                        
+                        current_price = tick.get('lastPrice', 0)
+                        current_volume = tick.get('volume', 0)
+                        pre_close = true_dict.get_prev_close(stock_code)
+                        
+                        # 布朗运动过滤：无交易或无波动
+                        if current_volume == 0 or current_price <= 0 or pre_close is None or pre_close <= 0:
+                            dead_water_count += 1
+                            continue
+                        
+                        # 无波动过滤：价格没变
+                        if abs(current_price - pre_close) < 0.001:
+                            dead_water_count += 1
+                            continue
+                        
+                        active_count += 1
+                        
+                        # 【CTO第三级：动能打分】只对有波动的股票计算
                         try:
-                            # 获取实时数据
-                            from xtquant import xtdata
-                            from logic.data_providers.true_dictionary import get_true_dictionary
-                            from logic.core.config_manager import get_config_manager
-                            
-                            true_dict = get_true_dictionary()
-                            config_manager = get_config_manager()
-                            
-                            # 获取当前价格和成交量
-                            full_tick = xtdata.get_full_tick([stock_code])
-                            if not full_tick or stock_code not in full_tick:
-                                continue
-                            
-                            tick = full_tick[stock_code]
-                            current_price = tick.get('lastPrice', 0)
-                            current_volume = tick.get('volume', 0)
-                            pre_close = true_dict.get_prev_close(stock_code)
-                            
-                            if current_price <= 0 or pre_close <= 0:
-                                continue
-                            
-                            # 计算涨幅
                             change_pct = (current_price - pre_close) / pre_close
                             
                             # 获取流通数据
                             float_volume = true_dict.get_float_volume(stock_code)
-                            float_market_cap = float_volume * pre_close if float_volume > 0 else 1.0
+                            float_market_cap = float_volume * pre_close if float_volume else 1.0
                             
-                            # 估算flow (简化)
-                            flow_5min = current_volume * 0.1  # 简化估算
+                            # 估算flow
+                            flow_5min = current_volume * 0.1
                             flow_15min = current_volume * 0.3
                             flow_5min_median = true_dict.get_avg_volume_5d(stock_code) / 240
                             
-                            # 计算Space Gap
+                            # Space Gap
                             high_60d = tick.get('high', current_price)
                             space_gap_pct = (high_60d - current_price) / high_60d if high_60d > 0 else 0.5
                             
-                            # 调用动能打分引擎验钞机
+                            # 调用动能打分引擎
                             try:
-                                from logic.strategies.动能打分引擎_core_engine import 动能打分引擎CoreEngine
-                                动能打分引擎_engine = 动能打分引擎CoreEngine()
-                                final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe = 动能打分引擎_engine.calculate_true_dragon_score(
+                                final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe = core_engine.calculate_true_dragon_score(
                                     net_inflow=flow_15min * current_price,
                                     price=current_price,
                                     prev_close=pre_close,
                                     high=current_price * 1.02,
                                     low=current_price * 0.98,
-                                    open_price=current_price,  # 【CTO修复】添加开盘价
+                                    open_price=current_price,
                                     flow_5min=flow_5min,
                                     flow_15min=flow_15min,
                                     flow_5min_median_stock=flow_5min_median if flow_5min_median > 0 else 1.0,
@@ -933,19 +960,16 @@ class LiveTradingEngine:
                                     float_volume_shares=float_volume,
                                     current_time=now.time()
                                 )
-                            except Exception as e:
+                            except Exception:
                                 # 简化计算
                                 final_score = change_pct * 100
                                 sustain_ratio = 1.0
                                 inflow_ratio = flow_15min * current_price / float_market_cap if float_market_cap > 0 else 0
                                 ratio_stock = flow_5min / flow_5min_median if flow_5min_median > 0 else 0
-                                import logging
-                                logger = logging.getLogger(__name__)
-                                logger.error(f"动能打分引擎引擎计算失败: {e}")
-                            # 纯度评级
+                            
                             purity = '极优' if space_gap_pct < 0.05 else '优' if space_gap_pct < 0.10 else '良'
                             
-                            dragon_list.append({
+                            current_top_targets.append({
                                 'code': stock_code,
                                 'score': final_score,
                                 'price': current_price,
@@ -955,31 +979,55 @@ class LiveTradingEngine:
                                 'sustain_ratio': sustain_ratio,
                                 'purity': purity
                             })
-                        except Exception as e:
+                        except Exception:
                             continue
                     
-                    # 排序
-                    dragon_list.sort(key=lambda x: x['score'], reverse=True)
+                    # 【CTO第四级：高级龙头动态渲染】
+                    if current_top_targets:
+                        current_top_targets.sort(key=lambda x: x['score'], reverse=True)
+                        top_10 = current_top_targets[:10]
+                        
+                        # 清屏 + 打印看板
+                        os.system('cls' if os.name == 'nt' else 'clear')
+                        
+                        time_str = now.strftime('%H:%M:%S')
+                        print("="*80)
+                        print(f"🚀 [真·狩猎雷达] 动态火控看板 | {time_str}")
+                        print("="*80)
+                        print(f"📊 观察池: {len(self.watchlist)}只 | 活跃: {active_count}只 | 死水: {dead_water_count}只")
+                        print("-"*80)
+                        print(f"{'排名':<4} {'代码':<12} {'🩸血量':<8} {'价格':<8} {'涨幅':<8} {'爆发':<6} {'接力':<6}")
+                        print("-"*80)
+                        
+                        for i, t in enumerate(top_10, 1):
+                            print(f"{i:<4} {t['code']:<12} {t['score']:<8.1f} {t['price']:<8.2f} {t['change']:<7.1f}% {t['ratio_stock']:<6.1f}x {t['sustain_ratio']:<6.2f}x")
+                        
+                        print("="*80)
+                        print(f"💡 按 Ctrl+C 退出 | 刷新周期: 1秒")
+                        
+                        # 【CTO战地收尸】关键调用！
+                        self._update_daily_battle_report(current_top_targets)
+                    else:
+                        # 无有效目标时也要显示
+                        os.system('cls' if os.name == 'nt' else 'clear')
+                        print("="*80)
+                        print(f"📡 [真·狩猎雷达] {now.strftime('%H:%M:%S')} | 等待目标...")
+                        print(f"📊 观察池: {len(self.watchlist)}只 | 活跃: 0 | 死水: {dead_water_count}只")
+                        print("="*80)
                     
-                    # 打印榜单
-                    print(f"{'排名':<4} {'代码':<12} {'🩸得分':<8} {'价格':<8} {'涨幅':<8} {'流入比':<8} {'爆发':<6} {'接力':<6} {'纯度':<4}")
-                    print("-"*100)
-                    for i, dragon in enumerate(dragon_list[:10], 1):
-                        print(f"{i:<4} {dragon['code']:<12} {dragon['score']:<8.1f} {dragon['price']:<8.2f} {dragon['change']:<7.1f}% {dragon['inflow_ratio']:<7.2%} {dragon['ratio_stock']:<6.1f}x {dragon['sustain_ratio']:<6.2f}x {dragon['purity']:<4}")
-                    
-                    print("="*100)
-                    print(f"💡 提示: 系统持续监控中... (按 Ctrl+C 退出)")
+                    # 【CTO物理限速器】1秒一圈
+                    elapsed = time.perf_counter() - loop_start
+                    sleep_time = max(0.1, 1.0 - elapsed)
+                    time.sleep(sleep_time)
                     
                 except Exception as e:
                     logger.error(f"雷达刷新异常: {e}")
-                
-                # 3秒刷新
-                time.sleep(3)
+                    time.sleep(1)
         
         # 启动雷达线程
         radar_thread = threading.Thread(target=radar_loop, daemon=True)
         radar_thread.start()
-        logger.info("🎯 动态雷达刷新线程已启动 (3秒刷新)")
+        logger.info("🎯 [真·狩猎雷达] 已启动 (1秒暴力轮询模式)")
     
     def _on_tick_data(self, tick_event):
         """
