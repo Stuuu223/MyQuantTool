@@ -89,6 +89,9 @@ class LiveTradingEngine:
         self.highest_scores: Dict[str, Dict] = {}  # {stock_code: {'score': float, 'time': datetime, ...}}
         self.battle_report: Dict[str, Any] = {}    # 最终战报数据
         
+        # 【CTO V4】静态机会池缓存 - 午休/盘后复盘用
+        self.last_known_top_targets: List[Dict] = []  # 最后一次计算的机会池
+        
         # 【CTO修复】初始化顺序：先EventBus，再QMTEventAdapter
         # 初始化EventBus（如果未传入）
         if self.event_bus is None:
@@ -169,17 +172,24 @@ class LiveTradingEngine:
     
     def start_session(self, enable_dynamic_radar: bool = True):
         """
-        启动交易会话 - CTO强制规范版（修复盘中启动死局）
-        时间线: 09:25(CTO第一斩) -> 09:30(开盘快照二筛) -> 09:35(火控雷达)
-        
-        CTO修复：盘中启动时必须先执行快照筛选填充watchlist！
+        启动交易会话 - CTO V4终极版（四级漏斗 + 看板先行 + 静态复盘缓存）
+        时间线: 09:25(CTO第一斩) -> 09:30(开盘粗筛) -> 盘中(细筛+动能打分)
         
         Args:
             enable_dynamic_radar: 是否启用动态雷达（默认True，仅实盘使用）
         """
+        import os
+        
+        # 【CTO V4看板绝对先行】第一帧立刻显示，不等任何操作！
+        os.system('cls' if os.name == 'nt' else 'clear')
+        print("=" * 80)
+        print("🚀 [V20 纯血游资猎杀雷达] | 引擎唤醒中...")
+        print("⏳ 正在进行全市场粗筛，请等待...")
+        print("=" * 80)
+        
         # 【CTO修复】将参数保存为实例变量，供后续函数使用
         self.enable_dynamic_radar = enable_dynamic_radar
-        logger.info("🚀 启动实盘总控引擎 (CTO第一斩版)")
+        logger.info("🚀 启动实盘总控引擎 (CTO V4四级漏斗版)")
         
         # QMT Manager已通过依赖注入保证存在，无需检查
         logger.info("✅ [LiveTradingEngine] QMT Manager已就绪，启动完整模式")
@@ -631,15 +641,17 @@ class LiveTradingEngine:
     
     def _snapshot_filter(self):
         """
-        09:30开盘快照二筛 - CTO第二斩
-        500只 → 30只（16:1淘汰）
+        【CTO V4四级漏斗】09:30开盘粗筛 - 只看量比！
         
-        核心逻辑:
-        1. 获取09:25筛选出的500只股票的开盘快照
-        2. 从TrueDictionary获取真实五日均量、流通盘
-        3. 向量化计算量比和换手率
-        4. CTO物理过滤: 量比>3 且 1%<换手率<20%
-        5. 只保留Top30给动能打分引擎引擎
+        四级漏斗设计:
+        - 一级漏斗(全市场): 5191只
+        - 二级漏斗(粗筛池): 只用volume_ratio>=3.0x，目标~900只
+        - 三级漏斗(细筛池): 换手率+ATR，盘中动态过滤，目标~100只
+        - 四级漏斗(机会池): 动能打分TOP 20-30只
+        
+        【CTO红线】
+        - 粗筛只看量比，不夹带换手率/ATR！
+        - 细筛在雷达循环中进行
         """
         import pandas as pd
         
@@ -647,6 +659,7 @@ class LiveTradingEngine:
         
         try:
             from logic.data_providers.true_dictionary import get_true_dictionary
+            from logic.core.config_manager import get_config_manager
             
             # 【架构解耦】检查adapter
             if not hasattr(self, 'qmt_adapter') or self.qmt_adapter is None:
@@ -656,7 +669,7 @@ class LiveTradingEngine:
             
             # 1. 获取09:25筛选出的股票的开盘快照
             if not self.watchlist:
-                logger.error("🚨 watchlist为空，无法进行09:30二筛")
+                logger.error("🚨 watchlist为空，无法进行09:30粗筛")
                 self._fallback_premarket_scan()
                 return
             
@@ -664,20 +677,16 @@ class LiveTradingEngine:
             
             if not snapshot:
                 logger.error("🚨 无法获取09:30开盘快照")
-                # CTO加固：容错机制 - 使用回退方案
                 self._fallback_premarket_scan()
                 return
             
-            # 2. 转换为DataFrame（向量化，无iterrows）
+            # 2. 转换为DataFrame
             df = pd.DataFrame([
                 {
                     'stock_code': code,
                     'price': tick.get('lastPrice', 0) if isinstance(tick, dict) else getattr(tick, 'lastPrice', 0),
                     'volume': tick.get('volume', 0) if isinstance(tick, dict) else getattr(tick, 'volume', 0),
                     'amount': tick.get('amount', 0) if isinstance(tick, dict) else getattr(tick, 'amount', 0),
-                    'open': tick.get('open', 0) if isinstance(tick, dict) else getattr(tick, 'open', 0),
-                    'high': tick.get('high', 0) if isinstance(tick, dict) else getattr(tick, 'high', 0),
-                    'low': tick.get('low', 0) if isinstance(tick, dict) else getattr(tick, 'low', 0),
                 }
                 for code, tick in snapshot.items() if tick
             ])
@@ -688,82 +697,50 @@ class LiveTradingEngine:
             
             original_count = len(df)
             
-            # 3. 从TrueDictionary获取真实数据（五日均量、流通盘）
+            # 3. 从TrueDictionary获取真实数据
             true_dict = get_true_dictionary()
+            config_manager = get_config_manager()
             
-            # 向量化获取数据（使用map而非iterrows）
             df['avg_volume_5d'] = df['stock_code'].map(true_dict.get_avg_volume_5d)
             df['float_volume'] = df['stock_code'].map(true_dict.get_float_volume)
             
-            # 4. 向量化计算量比和换手率（CTO规范：禁止iterrows）
-            # 【宪法第九条】量纲对齐：tick volume(手) → 股 (×100)
+            # 4. 计算量比（时间进度加权）
             df['volume_gu'] = df['volume'] * 100  # 手→股
             
-            # ⭐️ CTO裁决修复：引入时间进度加权，防止早盘量比失真
-            # 量比 = 估算全天成交量 / 5日平均成交量
-            # 其中 估算全天成交量 = 当前成交量 / 已过分钟数 * 240分钟
-            from datetime import datetime
             now = datetime.now()
             market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
             raw_minutes = (now - market_open).total_seconds() / 60
-            # CTO重塑Phase3：开盘前5分钟使用缓冲值5，防止量比虚高
-            # 【Bug修复】限制最大240分钟，防止盘后运行量比被摊薄
-            if raw_minutes < 5:
-                minutes_passed = 5  # 缓冲启动区
-                logger.info(f"⏰ 开盘缓冲期: 使用最小值5分钟计算量比")
-            else:
-                minutes_passed = min(raw_minutes, 240)  # 限制最大240分钟
+            minutes_passed = max(5, min(raw_minutes, 240))  # 缓冲5分钟，最大240分钟
             
-            # 时间进度加权：估算全天成交量 (单位：股)
+            # 估算全天成交量
             df['estimated_full_day_volume'] = df['volume_gu'] / minutes_passed * 240
             df['volume_ratio'] = df['estimated_full_day_volume'] / df['avg_volume_5d'].replace(0, pd.NA)
             
-            # 换手率 = 成交量(股) / 流通股本(股) * 100%
+            # 换手率（仅记录，不过滤！）
             df['turnover_rate'] = (df['volume_gu'] / df['float_volume'].replace(0, pd.NA)) * 100
             
-            # ⭐️ CTO终极Ratio化：计算每分钟换手率（老板钦定）
-            # 实战意义：09:35(5分钟)需>1%，10:00(30分钟)需>6%，排除盘中偷袭假起爆
-            df['turnover_rate_per_min'] = df['turnover_rate'] / minutes_passed
-            
             # 清理无效数据
-            df = df.dropna(subset=['volume_ratio', 'turnover_rate', 'turnover_rate_per_min'])
+            df = df.dropna(subset=['volume_ratio'])
             
-            # 5. 【CTO Phase1重塑】宽体观察池：0.90分位门槛，移除换手率限制
-            # 观察池是雷达标的，不是最终买入点 - 放宽进池门槛
-            from logic.core.config_manager import get_config_manager
-            
-            config_manager = get_config_manager()
-            
-            # 【架构大一统】使用GlobalFilterGateway统一过滤逻辑
-            # 无论是实盘、回放、回测，都必须走同一套Boss三维铁网！
-            from logic.strategies.global_filter_gateway import apply_boss_filters
-            
-            # 【物理探针】记录过滤前数据
             pre_filter_count = len(df)
+            
+            # ========== 【CTO V4核心】粗筛只看量比！==========
+            min_volume_multiplier = config_manager.get('live_sniper.min_volume_multiplier', 3.0)
+            
             logger.info(f"\n{'='*60}")
-            logger.info(f"🔬 【物理探针】09:30快照筛选漏斗分析")
+            logger.info(f"🔬 【四级漏斗-第二级粗筛】只用量比，不夹带换手/ATR！")
             logger.info(f"{'='*60}")
-            logger.info(f"▶ 初始输入池: {pre_filter_count} 只")
-            logger.info(f"   量比范围: {df['volume_ratio'].min():.2f}x ~ {df['volume_ratio'].max():.2f}x")
-            logger.info(f"   换手范围: {df['turnover_rate'].min():.2f}% ~ {df['turnover_rate'].max():.2f}%")
+            logger.info(f"▶ 输入池: {pre_filter_count} 只")
+            logger.info(f"▶ 量比门槛: >= {min_volume_multiplier:.1f}x")
             
-            filtered_df, stats = apply_boss_filters(
-                df=df,
-                config_manager=config_manager,
-                true_dict=true_dict,
-                context="realtime_snapshot"
-            )
+            # 只用量比过滤！
+            filtered_df = df[df['volume_ratio'] >= min_volume_multiplier].copy()
             
-            # 【物理探针】记录过滤后数据
             post_filter_count = len(filtered_df)
-            rejection_count = pre_filter_count - post_filter_count
-            rejection_rate = rejection_count / pre_filter_count * 100 if pre_filter_count > 0 else 0
             
-            logger.info(f"\n📊 【物理探针】过滤统计:")
-            logger.info(f"▶ 过滤后剩余: {post_filter_count} 只")
-            logger.info(f"🚫 被淘汰: {rejection_count} 只 ({rejection_rate:.1f}%)")
-            logger.info(f"✅ 通过率: {stats.get('filter_rate', 'N/A')}")
-            logger.info(f"📋 应用的过滤器: {stats.get('filters_applied', [])}")
+            logger.info(f"\n📊 【粗筛结果】:")
+            logger.info(f"▶ 粗筛池: {post_filter_count} 只 (目标500-900只)")
+            logger.info(f"🚫 淘汰: {pre_filter_count - post_filter_count} 只")
             logger.info(f"{'='*60}\n")
             
             # 按量比排序
@@ -771,54 +748,34 @@ class LiveTradingEngine:
             
             elapsed = (time.perf_counter() - start_time) * 1000
             
-            # 6. 【CTO重塑】放宽数量限制：50-150只观察池
-            watchlist_count = len(filtered_df)
-            
-            # 【CTO第三刀】消除观察池数量焦虑：只要>0就不警告
-            if watchlist_count == 0:
-                logger.warning(f"⚠️ 观察池为空，无法监控")
-            elif watchlist_count < 10:
-                logger.info(f"💡 观察池数量较少: {watchlist_count}只")
+            # 数量提示
+            if post_filter_count == 0:
+                logger.warning(f"⚠️ 粗筛池为空！量比门槛{min_volume_multiplier:.1f}x可能过高")
+            elif post_filter_count < 100:
+                logger.info(f"💡 粗筛池数量较少: {post_filter_count}只")
             else:
-                logger.info(f"✅ 观察池已就绪: {watchlist_count}只")
+                logger.info(f"✅ 粗筛池已就绪: {post_filter_count}只")
             
-            self.watchlist = filtered_df['stock_code'].tolist()[:150]  # 最多150只
+            # 【CTO V4】粗筛池上限放宽到900只
+            self.watchlist = filtered_df['stock_code'].tolist()[:900]
             
-            # ⭐️ 记录Ratio化参数（CTO封板要求）
-            # 【修复】从config读取min_volume_multiplier，而非假设变量存在
-            min_volume_multiplier = config_manager.get('live_sniper.min_volume_multiplier', 1.5)
-            logger.info(f"🔪 CTO第二斩完成: {original_count}只 → {len(self.watchlist)}只，耗时{elapsed:.2f}ms")
-            logger.info(f"   ⏱️ 开盘已运行: {minutes_passed:.1f}分钟 | 量比倍数门槛: {min_volume_multiplier:.2f}x (动态Ratio)")
-            logger.info(f"   📊 【CTO源码清剿】观察池使用纯动态倍数（>= {min_volume_multiplier}x），Zero Magic Number！")
+            logger.info(f"🔪 CTO四级漏斗-粗筛完成: {original_count}只 → {len(self.watchlist)}只，耗时{elapsed:.2f}ms")
             
-            # 【CTO强制回显】必须在终端显示观察池状态！
+            # 终端回显
             import click
             click.echo(f"\n{'='*60}")
-            click.echo(f"📢 [CTO物理透视] 09:30盘中快照筛选完毕！")
-            click.echo(f"🎯 成功越过 {min_volume_multiplier:.1f}x 量比门槛的股票数量: {len(self.watchlist)} 只")
-            if len(self.watchlist) == 0:
-                click.echo(click.style("❌ 致命警报：观察池为0！所有股票均被过滤，雷达无目标可盯！", fg="red"))
-                click.echo(click.style(f"   请检查 {min_volume_multiplier:.1f}x 量比门槛是否过高，或今日行情是否极其低迷", fg="yellow"))
-            elif len(self.watchlist) < 10:
-                click.echo(click.style(f"⚠️ 观察池数量较少: {len(self.watchlist)}只", fg="yellow"))
-            else:
-                click.echo(click.style(f"✅ 观察池已就绪: {len(self.watchlist)}只", fg="green"))
+            click.echo(f"📢 [四级漏斗-粗筛] 量比>={min_volume_multiplier:.1f}x")
+            click.echo(f"🎯 粗筛池: {len(self.watchlist)} 只")
             click.echo(f"{'='*60}\n")
             
-            # 7. 记录详细日志（Top5）
-            if len(filtered_df) > 0:
-                top5 = filtered_df.head(5)
-                for _, row in top5.iterrows():
-                    logger.info(f"  🎯 {row['stock_code']}: 量比{row['volume_ratio']:.1f}, 换手{row['turnover_rate']:.1f}%, 每分钟{row['turnover_rate_per_min']:.2f}%")
-            
-            # 8. 启动09:35火控雷达定时器
-            logger.info("🎯 09:30二筛完成，等待09:35启动火控雷达...")
-            timer = threading.Timer(300.0, self._fire_control_mode)  # 5分钟后09:35
+            # 启动雷达
+            logger.info("🎯 粗筛完成，等待09:35启动火控雷达...")
+            timer = threading.Timer(300.0, self._fire_control_mode)
             timer.daemon = True
             timer.start()
             
         except Exception as e:
-            logger.error(f"❌ 09:30开盘二筛失败: {e}")
+            logger.error(f"❌ 09:30开盘粗筛失败: {e}")
             import traceback
             logger.error(traceback.format_exc())
     
@@ -849,14 +806,15 @@ class LiveTradingEngine:
         """【CTO清理】初始化交易相关组件 - 纯血游资架构"""
         logger.debug("🎯 [纯血游资雷达] 交易组件初始化完成（精简模式）")
     
-    def _print_fire_control_panel(self, top_targets, initial_loading=False, pool_stats=None):
+    def _print_fire_control_panel(self, top_targets, initial_loading=False, pool_stats=None, is_rest=False):
         """
-        【CTO V3】终极漏斗看板UI - 降维打击层次感
+        【CTO V4】终极漏斗看板UI - 降维打击层次感 + 复盘模式
         
         Args:
             top_targets: TOP目标列表
             initial_loading: 是否首次加载
             pool_stats: 池统计 {'total', 'active', 'up', 'down', 'filtered'}
+            is_rest: 是否午休/盘后复盘模式
         """
         import os
         from datetime import datetime
@@ -865,7 +823,10 @@ class LiveTradingEngine:
         now_str = datetime.now().strftime('%H:%M:%S')
         
         print("=" * 80)
-        print(f"🚀 [V20 纯血游资猎杀雷达] | 极速轮询模式 | {now_str}")
+        if is_rest:
+            print(f"🚀 [V20 纯血游资猎杀雷达] | 📋 午休复盘模式 | {now_str}")
+        else:
+            print(f"🚀 [V20 纯血游资猎杀雷达] | 极速轮询模式 | {now_str}")
         print("=" * 80)
         
         if initial_loading:
@@ -879,17 +840,25 @@ class LiveTradingEngine:
             print(f"📈 [池内情绪] 涨: {pool_stats['up']}家 | 跌: {pool_stats['down']}家 | 死水/停牌: {pool_stats['filtered']}家")
             print("-" * 80)
         
+        if is_rest:
+            print("📋 [机会池缓存] 最后一次计算的TOP 10:")
         print(f"{'排名':<4} {'代码':<12} {'🩸血量':<10} {'价格':<8} {'涨跌幅':<8} {'流入比':<8}")
         print("-" * 80)
         
         if not top_targets:
-            print("  (当前无股票达到评分基础线，或正处于休盘期)")
+            if is_rest:
+                print("  (暂无机会池数据，等待盘中计算)")
+            else:
+                print("  (当前无股票达到评分基础线，或正处于休盘期)")
         else:
             for i, t in enumerate(top_targets, 1):
                 print(f"{i:<4} {t['code']:<12} {t['score']:<10.1f} {t['price']:<8.2f} {t['change']:<+7.1f}% {t['inflow_ratio']:<8.4f}")
         
         print("=" * 80)
-        print("💡 提示: 系统1秒极速刷新中... (按 Ctrl+C 退出并生成最终战报)")
+        if is_rest:
+            print("💡 [复盘模式] 保留最后机会池数据，等待下午开盘... (按 Ctrl+C 退出)")
+        else:
+            print("💡 提示: 系统1秒极速刷新中... (按 Ctrl+C 退出并生成最终战报)")
     
     def _run_radar_main_loop(self):
         """
@@ -934,19 +903,25 @@ class LiveTradingEngine:
                 now = datetime.now()
                 current_time = now.time()
                 
-                # 午休时间（11:30-13:00）或收盘后（15:00后）显示等待状态
+                # 【CTO V4】午休时间（11:30-13:00）显示复盘模式
                 if time_type(11, 30) <= current_time < time_type(13, 0):
-                    self._print_fire_control_panel([], initial_loading=False, pool_stats={
-                        'total': len(self.watchlist),
-                        'active': 0,
-                        'up': 0,
-                        'down': 0,
-                        'filtered': len(self.watchlist)
-                    })
-                    print("\n⏸️ 当前为午休时间 (11:30-13:00)，等待下午开盘...")
+                    self._print_fire_control_panel(
+                        self.last_known_top_targets, 
+                        initial_loading=False, 
+                        pool_stats={
+                            'total': len(self.watchlist),
+                            'active': 0,
+                            'up': 0,
+                            'down': 0,
+                            'filtered': len(self.watchlist)
+                        },
+                        is_rest=True
+                    )
+                    print("\n⏸️ [午休复盘模式] 保留最后机会池数据，等待下午开盘...")
                     time.sleep(5)
                     continue
                 
+                # 收盘后（15:00后）
                 if current_time >= time_type(15, 0):
                     logger.info("📅 已收盘，生成最终战报...")
                     self._generate_final_battle_report()
@@ -992,7 +967,6 @@ class LiveTradingEngine:
                     pre_close = true_dict.get_prev_close(stock_code)
                     
                     # 【CTO V3修复】正确的死水判断：今日累计成交量为0
-                    # 注意：不是价格不变，而是完全没有交易
                     if current_volume == 0:
                         pool_stats['filtered'] += 1
                         continue
@@ -1009,24 +983,42 @@ class LiveTradingEngine:
                     
                     pool_stats['active'] += 1
                     
-                    # 【CTO第三级：动能打分】只对有交易的股票计算
+                    # 【CTO V4第三级：细筛 - 换手率+ATR】盘中动态过滤
+                    try:
+                        float_volume = true_dict.get_float_volume(stock_code)
+                        volume_gu = current_volume * 100  # 手→股
+                        turnover_rate = (volume_gu / float_volume * 100) if float_volume else 0
+                        
+                        # 换手率细筛：>5% 且 <150%
+                        if turnover_rate < 5.0:
+                            continue  # 换手不足，跳过
+                        if turnover_rate >= 150.0:
+                            continue  # 死亡换手，跳过
+                        
+                        # ATR势垒（可选，从true_dict获取）
+                        atr_20d = true_dict.get_atr_20d(stock_code)
+                        if atr_20d and atr_20d > 0:
+                            today_tr = tick.get('high', current_price) - tick.get('low', current_price)
+                            if today_tr > 0:
+                                atr_ratio = today_tr / atr_20d
+                                if atr_ratio < 1.8:
+                                    continue  # ATR势垒不足，跳过
+                    except Exception:
+                        pass  # 细筛失败不阻塞，继续计算
+                    
+                    # 【CTO第四级：动能打分】
                     try:
                         change_pct = (current_price - pre_close) / pre_close
                         
-                        # 获取流通数据
-                        float_volume = true_dict.get_float_volume(stock_code)
                         float_market_cap = float_volume * pre_close if float_volume else 1.0
                         
-                        # 估算flow
                         flow_5min = current_volume * 0.1
                         flow_15min = current_volume * 0.3
                         flow_5min_median = true_dict.get_avg_volume_5d(stock_code) / 240
                         
-                        # Space Gap
                         high_60d = tick.get('high', current_price)
                         space_gap_pct = (high_60d - current_price) / high_60d if high_60d > 0 else 0.5
                         
-                        # 调用动能打分引擎
                         try:
                             final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe = core_engine.calculate_true_dragon_score(
                                 net_inflow=flow_15min * current_price,
@@ -1043,7 +1035,6 @@ class LiveTradingEngine:
                                 current_time=now.time()
                             )
                         except Exception:
-                            # 简化计算
                             final_score = change_pct * 100
                             sustain_ratio = 1.0
                             inflow_ratio = flow_15min * current_price / float_market_cap if float_market_cap > 0 else 0
@@ -1061,9 +1052,13 @@ class LiveTradingEngine:
                     except Exception:
                         continue
                 
-                # 【CTO第四级：降维渲染与战报更新】
+                # 【CTO第五级：机会池排序】
                 current_top_targets.sort(key=lambda x: x['score'], reverse=True)
                 top_10 = current_top_targets[:10]
+                
+                # 【CTO V4关键】更新静态机会池缓存！
+                if top_10:
+                    self.last_known_top_targets = top_10
                 
                 # 主线程强制刷屏
                 self._print_fire_control_panel(top_10, initial_loading=False, pool_stats=pool_stats)
