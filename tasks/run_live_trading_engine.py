@@ -718,6 +718,7 @@ class LiveTradingEngine:
             config_manager = get_config_manager()
             
             df['avg_volume_5d'] = df['stock_code'].map(true_dict.get_avg_volume_5d)
+            df['avg_turnover_5d'] = df['stock_code'].map(true_dict.get_avg_turnover_5d)
             df['float_volume'] = df['stock_code'].map(true_dict.get_float_volume)
             
             # 4. 计算量比（时间进度加权）
@@ -732,25 +733,42 @@ class LiveTradingEngine:
             df['estimated_full_day_volume'] = df['volume_gu'] / minutes_passed * 240
             df['volume_ratio'] = df['estimated_full_day_volume'] / df['avg_volume_5d'].replace(0, pd.NA)
             
-            # 换手率（仅记录，不过滤！）
-            df['turnover_rate'] = (df['volume_gu'] / df['float_volume'].replace(0, pd.NA)) * 100
+            # 开盘瞬时换手率（用于过滤死亡换手派发）
+            df['current_turnover'] = (df['volume_gu'] / df['float_volume'].replace(0, pd.NA)) * 100
+            
+            # 5日均成交额 = avg_volume_5d * prev_close (近似计算)
+            df['prev_close'] = df['stock_code'].map(true_dict.get_prev_close)
+            df['avg_amount_5d'] = df['avg_volume_5d'] * df['prev_close'] * 100  # 手→股→元
             
             # 清理无效数据
-            df = df.dropna(subset=['volume_ratio'])
+            df = df.dropna(subset=['volume_ratio', 'avg_turnover_5d', 'avg_amount_5d'])
             
             pre_filter_count = len(df)
             
-            # ========== 【CTO V4核心】粗筛只看量比！==========
+            # ========== 【CTO V5完善】多维粗筛护城河！==========
             min_volume_multiplier = config_manager.get('live_sniper.min_volume_multiplier', 3.0)
+            min_avg_amount_5d = config_manager.get('stock_filter.min_avg_amount', 50000000.0)  # 默认5000万
+            min_avg_turnover_5d = config_manager.get('stock_filter.min_avg_turnover_pct', 5.0)  # 默认5%
+            max_open_turnover = 30.0  # 开盘换手率>30%视为死亡派发
             
             logger.info(f"\n{'='*60}")
-            logger.info(f"🔬 【四级漏斗-第二级粗筛】只用量比，不夹带换手/ATR！")
+            logger.info(f"🔬 【四级漏斗-第二级粗筛】多维护城河生效！")
             logger.info(f"{'='*60}")
             logger.info(f"▶ 输入池: {pre_filter_count} 只")
             logger.info(f"▶ 量比门槛: >= {min_volume_multiplier:.1f}x")
+            logger.info(f"▶ 5日均额门槛: >= {min_avg_amount_5d/10000:.0f}万")
+            logger.info(f"▶ 5日均换手门槛: >= {min_avg_turnover_5d:.1f}%")
+            logger.info(f"▶ 死亡换手拦截: 开盘换手 < {max_open_turnover:.0f}%")
             
-            # 只用量比过滤！
-            filtered_df = df[df['volume_ratio'] >= min_volume_multiplier].copy()
+            # 多维复合过滤
+            mask = (
+                (df['volume_ratio'] >= min_volume_multiplier) &
+                (df['avg_amount_5d'] >= min_avg_amount_5d) &
+                (df['avg_turnover_5d'] >= min_avg_turnover_5d) &
+                (df['current_turnover'] < max_open_turnover)
+            )
+            
+            filtered_df = df[mask].copy()
             
             post_filter_count = len(filtered_df)
             
