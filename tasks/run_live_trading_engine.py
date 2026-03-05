@@ -325,16 +325,21 @@ class LiveTradingEngine:
     
     def _auction_snapshot_filter(self):
         """
-        09:25集合竞价快照初筛 - CTO第一斩 - CTO加固：容错机制
-        5000只 → 500只（10:1淘汰）
+        09:25集合竞价快照初筛 - CTO第一斩 - 带火力输出的雷达版
         
         【架构解耦】使用QMTEventAdapter获取数据，向量化过滤：
         1. open < prev_close（低开的，直接拉黑）
         2. volume < 1000（竞价连1000手都没有的，没有资金关注，拉黑）  
         3. open >= up_stop_price（开盘直接一字涨停的，买不到，拉黑）
+        
+        【CTO强化】显性输出竞价数据：
+        - 计算竞价承接力 = 竞价金额 / 流通市值
+        - 输出竞价爆量日志
+        - 保存到CSV文件
         """
         import pandas as pd
         import time
+        from datetime import datetime
         
         try:
             start_time = time.perf_counter()
@@ -356,17 +361,21 @@ class LiveTradingEngine:
             
             if not snapshot:
                 logger.error("🚨 无法获取09:25集合竞价快照")
-                # CTO加固：容错机制 - 使用回退方案
                 self._fallback_premarket_scan()
                 return
             
-            # 2. 转换为DataFrame进行向量化过滤（禁止iterrows）
+            # 2. 转换为DataFrame，增加竞价Tick关键字段
             df = pd.DataFrame([
                 {
                     'stock_code': code,
                     'open': tick.get('open', 0) if isinstance(tick, dict) else getattr(tick, 'open', 0),
                     'volume': tick.get('volume', 0) if isinstance(tick, dict) else getattr(tick, 'volume', 0),
+                    'amount': tick.get('amount', 0) if isinstance(tick, dict) else getattr(tick, 'amount', 0),
                     'prev_close': tick.get('preClose', 0) if isinstance(tick, dict) else getattr(tick, 'preClose', 0),
+                    'bidVol1': tick.get('bidVol1', 0) if isinstance(tick, dict) else getattr(tick, 'bidVol1', 0),
+                    'askVol1': tick.get('askVol1', 0) if isinstance(tick, dict) else getattr(tick, 'askVol1', 0),
+                    'bid1': tick.get('bid1', 0) if isinstance(tick, dict) else getattr(tick, 'bid1', 0),
+                    'ask1': tick.get('ask1', 0) if isinstance(tick, dict) else getattr(tick, 'ask1', 0),
                 }
                 for code, tick in snapshot.items() if tick
             ])
@@ -377,19 +386,27 @@ class LiveTradingEngine:
             
             original_count = len(df)
             
-            # 3. 从TrueDictionary获取涨停价（禁止假数据）
+            # 3. 从TrueDictionary获取涨停价和流通市值
             from logic.data_providers.true_dictionary import get_true_dictionary
             true_dict = get_true_dictionary()
             
-            # 向量化获取涨停价
+            # 向量化获取涨停价和流通市值
             df['up_stop_price'] = df['stock_code'].map(
                 lambda x: true_dict.get_up_stop_price(x) if true_dict else 0.0
             )
+            df['float_volume'] = df['stock_code'].map(
+                lambda x: true_dict.get_float_volume(x) if true_dict else 0.0
+            )
             
-            # 4. CTO物理过滤规则（向量化，禁止循环）
-            # 规则1: 低开剔除（open < prev_close）
-            # 规则2: 无量剔除（volume < 1000）
-            # 规则3: 一字板剔除（open >= up_stop_price）
+            # 4. 计算竞价承接力 = 竞价金额 / 流通市值
+            # amount单位是元，float_volume单位是股，需要转换
+            df['auction_power'] = df.apply(
+                lambda row: row['amount'] / (row['float_volume'] * row['open']) * 100 
+                if row['float_volume'] > 0 and row['open'] > 0 else 0.0,
+                axis=1
+            )
+            
+            # 5. CTO物理过滤规则（向量化）
             mask = (
                 (df['open'] >= df['prev_close']) &      # 非低开（高开或平开）
                 (df['volume'] >= 1000) &                 # 有量（>=1000手）
@@ -398,15 +415,45 @@ class LiveTradingEngine:
             
             filtered_df = df[mask].copy()
             
-            # 按开盘涨幅排序（高开幅度大的优先）
+            # 按竞价承接力排序（承接力强的优先）
+            filtered_df = filtered_df.sort_values('auction_power', ascending=False)
+            
+            # 计算开盘涨幅
             filtered_df['open_change_pct'] = (
                 (filtered_df['open'] - filtered_df['prev_close']) / filtered_df['prev_close'] * 100
             )
-            filtered_df = filtered_df.sort_values('open_change_pct', ascending=False)
             
             elapsed = (time.perf_counter() - start_time) * 1000
             
-            # 5. 更新watchlist为初筛结果（限制500只）
+            # 6. 【CTO强化】输出竞价爆量日志
+            today_str = datetime.now().strftime('%Y%m%d')
+            
+            # 竞价承接力TOP10（承接力 > 0.5%）
+            high_power = filtered_df[filtered_df['auction_power'] > 0.5].head(10)
+            if len(high_power) > 0:
+                logger.info("=" * 60)
+                logger.info(f"🔥 竞价爆量榜 (09:25集合竞价承接力TOP)")
+                logger.info("=" * 60)
+                for _, row in high_power.iterrows():
+                    logger.info(
+                        f"🔥 [{row['stock_code']}] "
+                        f"竞价金额={row['amount']/10000:.1f}万 "
+                        f"承接力={row['auction_power']:.3f}% "
+                        f"高开={row['open_change_pct']:.2f}%"
+                    )
+                logger.info("=" * 60)
+            
+            # 7. 【CTO强化】保存竞价数据到CSV
+            output_path = f"data/auction_snapshot_{today_str}.csv"
+            try:
+                output_df = filtered_df[['stock_code', 'open', 'prev_close', 'open_change_pct', 
+                                         'volume', 'amount', 'auction_power', 'bidVol1', 'askVol1']]
+                output_df.to_csv(output_path, index=False, encoding='utf-8-sig')
+                logger.info(f"✅ 竞价数据已保存: {output_path} ({len(filtered_df)}只)")
+            except Exception as e:
+                logger.warning(f"⚠️ 竞价数据保存失败: {e}")
+            
+            # 8. 更新watchlist为初筛结果（限制500只）
             self.watchlist = filtered_df['stock_code'].tolist()[:500]
             
             logger.info(
@@ -426,7 +473,6 @@ class LiveTradingEngine:
             
         except Exception as e:
             logger.error(f"❌ 09:25快照初筛失败: {e}")
-            # 熔断：如果初筛失败，回退到基础股票池但限制数量
             logger.warning("⚠️ 初筛失败，回退到基础股票池（限制100只）")
             self._fallback_premarket_scan()
 
