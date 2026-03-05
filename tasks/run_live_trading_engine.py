@@ -747,9 +747,10 @@ class LiveTradingEngine:
             
             # ========== 【CTO V5完善】多维粗筛护城河！==========
             min_volume_multiplier = config_manager.get('live_sniper.min_volume_multiplier', 3.0)
-            min_avg_amount_5d = config_manager.get('stock_filter.min_avg_amount', 50000000.0)  # 默认5000万
-            min_avg_turnover_5d = config_manager.get('stock_filter.min_avg_turnover_pct', 5.0)  # 默认5%
-            max_open_turnover = 30.0  # 开盘换手率>30%视为死亡派发
+            # 【CTO建议】宽松阈值：3000万均额 + 1%换手，放大捕获范围
+            min_avg_amount_5d = 30000000.0  # 3000万（CTO建议）
+            min_avg_turnover_5d = 1.0       # 1%（CTO建议）
+            max_open_turnover = 30.0        # 开盘换手率>30%视为死亡派发
             
             logger.info(f"\n{'='*60}")
             logger.info(f"🔬 【四级漏斗-第二级粗筛】多维护城河生效！")
