@@ -966,20 +966,27 @@ class LiveTradingEngine:
         # 【CTO V5】盘后投影标志位：记录是否已执行过盘后最终计算
         has_run_after_hours = False
         
+        # 【CTO V7】盘后判断：避免不必要的订阅
+        now_init = datetime.now()
+        current_time_init = now_init.time()
+        is_after_hours_init = current_time_init >= time_type(15, 0)
+        
         # 【CTO V3看板绝对先行】第一帧立刻显示
         self._print_fire_control_panel([], initial_loading=True)
         
-        # 【CTO核心护城河：分批唤醒QMT底层缓存，拒绝瞬间拥堵！】
+        # 【CTO V7闪电起步：分批唤醒QMT底层缓存，盘后跳过订阅！】
         if self.watchlist:
             logger.info(f"🔄 正在分批唤醒 {len(self.watchlist)} 只股票的 QMT 底层缓存...")
-            batch_size = 100  # 每批100只
+            batch_size = 50  # 【CTO V7】降至50只，更安全
             for i in range(0, len(self.watchlist), batch_size):
                 batch = self.watchlist[i:i+batch_size]
                 try:
-                    # 订阅并拉取一次，建立C++到Python的内存桥梁
-                    xtdata.subscribe_whole_quote(batch)
+                    # 【CTO V7】盘后无需订阅，直接拉快照；盘中才需订阅
+                    if not is_after_hours_init:
+                        xtdata.subscribe_whole_quote(batch)
+                    # 轻碰一下接口，建立内存通道即可
                     xtdata.get_full_tick(batch)
-                    time.sleep(0.3)  # 必须给底层喘息时间！
+                    time.sleep(0.1)  # 【CTO V7】必须让底盘呼吸！
                 except Exception as e:
                     logger.warning(f"批次 {i//batch_size + 1} 唤醒失败: {e}")
             logger.info("✅ 缓存唤醒完毕，雷达正式起转！")
