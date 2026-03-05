@@ -57,7 +57,7 @@ os.environ['NO_PROXY'] = '*'
 # ==========================================================
 
 # 🔥 [P0] 加载环境变量：必须在所有业务模块import之前！
-# 原因：true_dictionary.py等模块依赖TUSHARE_TOKEN等环境变量
+# 注：已全面弃用Tushare，使用QMT本地数据
 from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parent / '.env')
@@ -170,7 +170,7 @@ def cli(ctx, version):
 @click.option('--end_date', callback=validate_date,
               help='结束日期 (YYYYMMDD格式)，用于连续回测')
 @click.option('--universe', '-u',
-              help='股票池: 单只股票、CSV文件路径，或使用"TUSHARE"实时粗筛')
+              help='股票池: 单只股票或CSV文件路径（QMT本地数据）')
 @click.option('--output', '-o', default='data/backtest_results',
               help='输出目录 (默认: data/backtest_results)')
 @click.option('--save', is_flag=True, help='保存结果到文件')
@@ -223,13 +223,12 @@ def backtest_cmd(ctx, date, start_date, end_date, universe, output, save):
         engine = TimeMachineEngine(initial_capital=20000.0)
 
         if start_date and end_date:
-            # 连续回测模式
-            stock_pool_path = universe if universe and Path(universe).exists() else 'TUSHARE'
+            # 连续回测模式 - 100% QMT本地数据
+            stock_pool_path = universe if universe and Path(universe).exists() else None
             results = engine.run_continuous_backtest(
                 start_date=start_date,
                 end_date=end_date,
-                stock_pool_path=stock_pool_path,
-                use_tushare=True
+                stock_pool_path=stock_pool_path
             )
 
             # 输出结果
@@ -423,10 +422,8 @@ def replay_cmd(ctx, date, pure):
               help='最大扫描股票数 (默认: 100)')
 @click.option('--output', '-o', default='data/scan_results',
               help='输出目录 (默认: data/scan_results)')
-@click.option('--source', type=click.Choice(['qmt', 'tushare']), default='qmt',
-              help='数据源 (默认: qmt)')
 @click.pass_context
-def scan_cmd(ctx, date, mode, max_stocks, output, source):
+def scan_cmd(ctx, date, mode, max_stocks, output):
     """
     全市场扫描
     
