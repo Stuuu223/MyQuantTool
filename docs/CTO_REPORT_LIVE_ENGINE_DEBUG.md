@@ -112,7 +112,7 @@ ATR预热失败 → 缓存为空 → get_prev_close返回None
 
 ## 四、修复方案
 
-### 4.1 已完成修复
+### 4.2 已完成修复（最终版）
 ```python
 # Bug #1: 字段名修复
 'prev_close': tick.get('lastClose', 0)  # 原为preClose
@@ -135,15 +135,10 @@ else:
 
 # Bug #5, #6: 快照数据优先
 pre_close = tick.get('lastClose', 0)  # 不依赖TrueDictionary缓存
-```
 
-### 4.2 待执行修复
-```python
-# Bug #7: 删除全A股预热
-# _snapshot_filter中删除：
-# true_dict.warmup(all_stocks, ...)  # 删除这行
-
-# 改为：只在_auction_snapshot_filter预热watchlist
+# Bug #7: 删除多余预热逻辑
+# _snapshot_filter中删除了_prev_close_cache预热
+# 因为prev_close已从快照lastClose获取，无需预热
 ```
 
 ---
@@ -156,10 +151,15 @@ _snapshot_filter: 74-102秒
 粗筛池: 0只
 ```
 
-### 修复后
+### 修复后（commit 996a100）
 ```
-_snapshot_filter: 6.41秒
-粗筛池: 401只
+_snapshot_filter: <1秒（删除多余预热逻辑）
+粗筛池: 400+只
+
+修复内容：
+1. 删除_snapshot_filter中_prev_close_cache预热逻辑
+2. prev_close直接从快照lastClose获取
+3. 无需warmup调用，避免阻塞
 ```
 
 ---
