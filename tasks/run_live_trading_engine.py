@@ -485,8 +485,8 @@ class LiveTradingEngine:
             except Exception as e:
                 logger.warning(f"⚠️ 竞价数据保存失败: {e}")
             
-            # 8. 更新watchlist为初筛结果（限制500只）
-            self.watchlist = filtered_df['stock_code'].tolist()[:500]
+            # 8. 更新watchlist为初筛结果（CTO处决：删除Magic Number截断！）
+            self.watchlist = filtered_df['stock_code'].tolist()
             
             logger.info(
                 f"🔪 CTO第一斩完成: {original_count}只 → {len(self.watchlist)}只 "
@@ -772,8 +772,8 @@ class LiveTradingEngine:
             else:
                 logger.info(f"✅ 粗筛池已就绪: {post_filter_count}只")
             
-            # 【CTO V4】粗筛池上限放宽到900只
-            self.watchlist = filtered_df['stock_code'].tolist()[:900]
+            # 【CTO V5处决】删除粗筛池上限截断！真实漏斗由量比决定！
+            self.watchlist = filtered_df['stock_code'].tolist()
             
             logger.info(f"🔪 CTO四级漏斗-粗筛完成: {original_count}只 → {len(self.watchlist)}只，耗时{elapsed:.2f}ms")
             
@@ -909,13 +909,20 @@ class LiveTradingEngine:
         # 【CTO V3看板绝对先行】第一帧立刻显示
         self._print_fire_control_panel([], initial_loading=True)
         
-        # 强行激活QMT底层缓存
+        # 【CTO核心护城河：分批唤醒QMT底层缓存，拒绝瞬间拥堵！】
         if self.watchlist:
-            try:
-                xtdata.get_full_tick(self.watchlist)
-                time.sleep(0.5)
-            except Exception as e:
-                logger.error(f"激活QMT缓存失败: {e}")
+            self.logger.info(f"🔄 正在分批唤醒 {len(self.watchlist)} 只股票的 QMT 底层缓存...")
+            batch_size = 100  # 每批100只
+            for i in range(0, len(self.watchlist), batch_size):
+                batch = self.watchlist[i:i+batch_size]
+                try:
+                    # 订阅并拉取一次，建立C++到Python的内存桥梁
+                    xtdata.subscribe_whole_quote(batch)
+                    xtdata.get_full_tick(batch)
+                    time.sleep(0.3)  # 必须给底层喘息时间！
+                except Exception as e:
+                    self.logger.warning(f"批次 {i//batch_size + 1} 唤醒失败: {e}")
+            self.logger.info("✅ 缓存唤醒完毕，雷达正式起转！")
         
         logger.info("⚡ 主线程雷达循环开启！")
         
@@ -1789,6 +1796,15 @@ class LiveTradingEngine:
         """停止引擎 - CTO战地收尸版"""
         logger.info("🛑 停止实盘总控引擎...")
         self.running = False
+        
+        # 【CTO核心护城河】释放QMT底层内存，防止内存泄漏！
+        if self.watchlist:
+            try:
+                from xtquant import xtdata
+                xtdata.unsubscribe_whole_quote(self.watchlist)
+                logger.info(f"✅ 已释放 {len(self.watchlist)} 只股票的QMT订阅")
+            except Exception as e:
+                logger.warning(f"⚠️ 取消订阅失败: {e}")
         
         # 停止事件总线
         if self.event_bus:
