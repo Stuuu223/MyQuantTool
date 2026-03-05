@@ -971,7 +971,7 @@ class LiveTradingEngine:
         
         # 【CTO核心护城河：分批唤醒QMT底层缓存，拒绝瞬间拥堵！】
         if self.watchlist:
-            self.logger.info(f"🔄 正在分批唤醒 {len(self.watchlist)} 只股票的 QMT 底层缓存...")
+            logger.info(f"🔄 正在分批唤醒 {len(self.watchlist)} 只股票的 QMT 底层缓存...")
             batch_size = 100  # 每批100只
             for i in range(0, len(self.watchlist), batch_size):
                 batch = self.watchlist[i:i+batch_size]
@@ -981,8 +981,8 @@ class LiveTradingEngine:
                     xtdata.get_full_tick(batch)
                     time.sleep(0.3)  # 必须给底层喘息时间！
                 except Exception as e:
-                    self.logger.warning(f"批次 {i//batch_size + 1} 唤醒失败: {e}")
-            self.logger.info("✅ 缓存唤醒完毕，雷达正式起转！")
+                    logger.warning(f"批次 {i//batch_size + 1} 唤醒失败: {e}")
+            logger.info("✅ 缓存唤醒完毕，雷达正式起转！")
         
         logger.info("⚡ 主线程雷达循环开启！")
         
