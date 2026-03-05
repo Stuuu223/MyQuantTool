@@ -85,6 +85,10 @@ class LiveTradingEngine:
         self.kinetic_engines: Dict[str, Any] = {}
         self._init_kinetic_engine()
         
+        # 【CTO战地收尸】今日战报追踪
+        self.highest_scores: Dict[str, Dict] = {}  # {stock_code: {'score': float, 'time': datetime, ...}}
+        self.battle_report: Dict[str, Any] = {}    # 最终战报数据
+        
         # 【CTO修复】初始化顺序：先EventBus，再QMTEventAdapter
         # 初始化EventBus（如果未传入）
         if self.event_bus is None:
@@ -1641,7 +1645,7 @@ class LiveTradingEngine:
             logger.error(f"❌ 当前截面快照筛选失败: {e}")
 
     def stop(self):
-        """停止引擎"""
+        """停止引擎 - CTO战地收尸版"""
         logger.info("🛑 停止实盘总控引擎...")
         self.running = False
         
@@ -1653,7 +1657,92 @@ class LiveTradingEngine:
         if hasattr(self, 'trader') and self.trader:
             self.trader.disconnect()
         
+        # 【CTO战地收尸】生成最终战报
+        self._generate_final_battle_report()
+        
         logger.info("✅ 实盘总控引擎已停止")
+    
+    def _update_daily_battle_report(self, current_scores: list):
+        """
+        【CTO战地收尸】更新今日战报 - 维护每个股票的最高分记录
+        
+        Args:
+            current_scores: 当前打分列表 [{'code': str, 'score': float, ...}, ...]
+        """
+        for item in current_scores:
+            code = item.get('code', '')
+            score = item.get('score', 0)
+            
+            if not code:
+                continue
+            
+            # 更新最高分记录
+            if code not in self.highest_scores or score > self.highest_scores[code].get('score', 0):
+                self.highest_scores[code] = {
+                    'code': code,
+                    'score': score,
+                    'time': datetime.now().strftime('%H:%M:%S'),
+                    'price': item.get('price', 0),
+                    'change': item.get('change', 0),
+                    'inflow_ratio': item.get('inflow_ratio', 0),
+                    'ratio_stock': item.get('ratio_stock', 0),
+                    'sustain_ratio': item.get('sustain_ratio', 0),
+                    'purity': item.get('purity', '')
+                }
+    
+    def _generate_final_battle_report(self):
+        """
+        【CTO战地收尸】生成最终战报 - 退出必留痕
+        
+        输出：
+        1. data/battle_reports/battle_report_{date}.json
+        2. 终端打印TOP 3战神榜
+        """
+        if not self.highest_scores:
+            logger.info("📊 今日无战报数据（观察池为空或无打分记录）")
+            return
+        
+        import json
+        import os
+        from pathlib import Path
+        
+        # 创建战报目录
+        report_dir = Path('data/battle_reports')
+        report_dir.mkdir(parents=True, exist_ok=True)
+        
+        today = datetime.now().strftime('%Y%m%d')
+        report_path = report_dir / f'battle_report_{today}.json'
+        
+        # 按分数排序
+        final_list = sorted(self.highest_scores.values(), key=lambda x: x.get('score', 0), reverse=True)
+        
+        # 生成战报数据
+        report_data = {
+            'date': today,
+            'generated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'total_targets': len(final_list),
+            'top_targets': final_list[:50]  # 只保存前50名
+        }
+        
+        # 保存JSON
+        try:
+            with open(report_path, 'w', encoding='utf-8') as f:
+                json.dump(report_data, f, ensure_ascii=False, indent=4)
+            logger.info(f"✅ 战地收官报告已生成 -> {report_path}")
+        except Exception as e:
+            logger.error(f"❌ 战报保存失败: {e}")
+        
+        # 终端打印战神榜
+        print("\n" + "=" * 60)
+        print("🏆 今日战神榜 TOP 10")
+        print("=" * 60)
+        print(f"{'排名':<4} {'代码':<12} {'最高血量':<10} {'时间':<10} {'涨幅':<8}")
+        print("-" * 60)
+        for i, target in enumerate(final_list[:10], 1):
+            print(f"{i:<4} {target['code']:<12} {target['score']:<10.1f} {target['time']:<10} {target.get('change', 0):<8.2f}%")
+        print("=" * 60)
+        print(f"📊 总计追踪: {len(final_list)} 只股票")
+        print(f"💾 完整战报: {report_path}")
 
 
 # 便捷函数
