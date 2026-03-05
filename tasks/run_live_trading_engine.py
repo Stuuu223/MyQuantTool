@@ -742,13 +742,37 @@ class LiveTradingEngine:
             df['prev_close'] = df['stock_code'].map(true_dict.get_prev_close)
             df['avg_amount_5d'] = df['avg_volume_5d'] * df['prev_close'] * 100  # 手→股→元
             
-            # 清理无效数据
-            df = df.dropna(subset=['volume_ratio', 'avg_turnover_5d', 'avg_amount_5d'])
+            # 【Phase1修复】不用dropna屠杀，改用fillna容错
+            # 缺失数据用安全默认值填充，保留股票
+            import numpy as np
+            df['volume_ratio'] = df['volume_ratio'].fillna(1.0)
+            df['avg_turnover_5d'] = df['avg_turnover_5d'].fillna(1.0)
+            df['avg_amount_5d'] = df['avg_amount_5d'].fillna(0.0)
+            df['current_turnover'] = df['current_turnover'].fillna(0.0)
+            
+            # 清理无穷大
+            df.replace([np.inf, -np.inf], np.nan, inplace=True)
+            df['volume_ratio'] = df['volume_ratio'].fillna(1.0)
             
             pre_filter_count = len(df)
             
-            # ========== 【CTO V5完善】多维粗筛护城河！==========
-            min_volume_multiplier = config_manager.get('live_sniper.min_volume_multiplier', 3.0)
+            # ========== 【Phase1修复】动态阈值：盘后降低门槛！==========
+            base_volume_multiplier = config_manager.get('live_sniper.min_volume_multiplier', 3.0)
+            
+            # 【时间效应补偿】盘后量比回归，需要降低阈值
+            if minutes_passed >= 240:
+                # 盘后模式：量比是全天真实值，降低阈值到1.5x
+                min_volume_multiplier = 1.5
+                mode_tag = "盘后投影"
+            elif minutes_passed >= 120:
+                # 午后模式：量比部分回归，阈值2.0x
+                min_volume_multiplier = 2.0
+                mode_tag = "午后修正"
+            else:
+                # 早盘模式：量比脉冲期，保持原阈值
+                min_volume_multiplier = base_volume_multiplier
+                mode_tag = "早盘脉冲"
+            
             # 【CTO建议】宽松阈值：3000万均额 + 1%换手，放大捕获范围
             min_avg_amount_5d = 30000000.0  # 3000万（CTO建议）
             min_avg_turnover_5d = 1.0       # 1%（CTO建议）
@@ -757,8 +781,9 @@ class LiveTradingEngine:
             logger.info(f"\n{'='*60}")
             logger.info(f"🔬 【四级漏斗-第二级粗筛】多维护城河生效！")
             logger.info(f"{'='*60}")
+            logger.info(f"▶ 运行模式: {mode_tag} (已过{minutes_passed:.0f}分钟)")
             logger.info(f"▶ 输入池: {pre_filter_count} 只")
-            logger.info(f"▶ 量比门槛: >= {min_volume_multiplier:.1f}x")
+            logger.info(f"▶ 量比门槛: >= {min_volume_multiplier:.1f}x (动态调整)")
             logger.info(f"▶ 5日均额门槛: >= {min_avg_amount_5d/10000:.0f}万")
             logger.info(f"▶ 5日均换手门槛: >= {min_avg_turnover_5d:.1f}%")
             logger.info(f"▶ 死亡换手拦截: 开盘换手 < {max_open_turnover:.0f}%")
@@ -801,7 +826,7 @@ class LiveTradingEngine:
             # 终端回显
             import click
             click.echo(f"\n{'='*60}")
-            click.echo(f"📢 [四级漏斗-粗筛] 量比>={min_volume_multiplier:.1f}x")
+            click.echo(f"📢 [四级漏斗-粗筛] {mode_tag}模式 | 量比>={min_volume_multiplier:.1f}x")
             click.echo(f"🎯 粗筛池: {len(self.watchlist)} 只")
             click.echo(f"{'='*60}\n")
             
