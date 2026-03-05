@@ -823,49 +823,88 @@ class LiveTradingEngine:
             logger.error(traceback.format_exc())
     
     def _fire_control_mode(self):
-        """高频监控模式 - Tick订阅+实时算分 - CTO强制规范版"""
+        """
+        【CTO V3终极重铸】高频监控模式 - 主线程直接接管！
+        
+        废除后台线程！雷达心跳必须在主线程！
+        """
         # CTO修复：检查watchlist是否已初始化
         if not self.watchlist:
             logger.warning("⚠️ 股票池未初始化，跳过高频监控模式")
             logger.info("💡 提示：系统持续监控中，等待右侧起爆信号...")
-            # CTO修复：不再自杀，系统持续运行等待自动补网
             return
         
-        logger.info(f"🎯 高频监控已激活: {len(self.watchlist)} 只目标 (通过QMT回调接收数据)")
+        logger.info(f"🎯 高频监控已激活: {len(self.watchlist)} 只目标 (主线程直接轮询)")
         
         # 初始化交易相关组件
         self._init_trading_components()
         
-        # 【CTO铁血整改】根据实例变量决定是否启动动态雷达
+        # 【CTO V3】直接在主线程运行雷达循环！
         if self.enable_dynamic_radar:
-            logger.info("📡 启动动态雷达刷新线程...")
-            self._start_dynamic_radar()
+            self._run_radar_main_loop()
         else:
             logger.info("📊 静态模式：跳过动态雷达")
     
     def _init_trading_components(self):
         """【CTO清理】初始化交易相关组件 - 纯血游资架构"""
-        # 【CTO说明】V18的warfare_core/trade_gatekeeper等模块已被纯血游资架构废除
-        # 相关功能已整合到动能打分引擎CoreEngine和GlobalFilterGateway
         logger.debug("🎯 [纯血游资雷达] 交易组件初始化完成（精简模式）")
     
-    def _start_dynamic_radar(self):
+    def _print_fire_control_panel(self, top_targets, initial_loading=False, pool_stats=None):
         """
-        【CTO终极重铸】真·狩猎雷达 - 暴力轮询 + 多级降维架构
+        【CTO V3】终极漏斗看板UI - 降维打击层次感
+        
+        Args:
+            top_targets: TOP目标列表
+            initial_loading: 是否首次加载
+            pool_stats: 池统计 {'total', 'active', 'up', 'down', 'filtered'}
+        """
+        import os
+        from datetime import datetime
+        
+        os.system('cls' if os.name == 'nt' else 'clear')
+        now_str = datetime.now().strftime('%H:%M:%S')
+        
+        print("=" * 80)
+        print(f"🚀 [V20 纯血游资猎杀雷达] | 极速轮询模式 | {now_str}")
+        print("=" * 80)
+        
+        if initial_loading:
+            print("\n📡 雷达已锁定目标，正在捕获首轮微观动能数据...")
+            print("⏳ 数据加载中 (Loading...)...\n")
+            print("=" * 80)
+            return
+        
+        if pool_stats:
+            print(f"🎯 [狩猎漏斗] 基础池: 5191家 -> 粗筛池: {pool_stats['total']}家 -> 活跃监测: {pool_stats['active']}家")
+            print(f"📈 [池内情绪] 涨: {pool_stats['up']}家 | 跌: {pool_stats['down']}家 | 死水/停牌: {pool_stats['filtered']}家")
+            print("-" * 80)
+        
+        print(f"{'排名':<4} {'代码':<12} {'🩸血量':<10} {'价格':<8} {'涨跌幅':<8} {'流入比':<8}")
+        print("-" * 80)
+        
+        if not top_targets:
+            print("  (当前无股票达到评分基础线，或正处于休盘期)")
+        else:
+            for i, t in enumerate(top_targets, 1):
+                print(f"{i:<4} {t['code']:<12} {t['score']:<10.1f} {t['price']:<8.2f} {t['change']:<+7.1f}% {t['inflow_ratio']:<8.4f}")
+        
+        print("=" * 80)
+        print("💡 提示: 系统1秒极速刷新中... (按 Ctrl+C 退出并生成最终战报)")
+    
+    def _run_radar_main_loop(self):
+        """
+        【CTO V3终极重铸】真·狩猎雷达 - 主线程直接轮询版
         
         核心改造:
-        1. 看板先行：不等待计算，立刻点亮雷达
-        2. 暴力轮询：xtdata.get_full_tick(self.watchlist) 一次性获取全量数据
-        3. 多级降维过滤：
-           - Level1: 布朗运动剔除 (volume==0 或 lastPrice==preClose)
-           - Level2: 动能打分（只对有波动的股票计算）
-        4. 战地收尸：调用 _update_daily_battle_report
-        5. 1秒刷新：从3秒改为1秒
+        1. 废除threading后台线程，主线程直接while循环
+        2. 看板先行：initial_loading参数
+        3. 漏斗UI：pool_stats统计
+        4. 正确死水判断：今日累计volume==0（不是价格不变）
+        5. 1秒刷新
         """
-        import threading
         import os
         import time
-        from datetime import datetime
+        from datetime import datetime, time as time_type
         from xtquant import xtdata
         from logic.data_providers.true_dictionary import get_true_dictionary
         from logic.strategies.kinetic_core_engine import 动能打分引擎CoreEngine
@@ -876,158 +915,173 @@ class LiveTradingEngine:
         # 预先创建动能打分引擎实例
         core_engine = 动能打分引擎CoreEngine()
         
-        def radar_loop():
-            """CTO暴力轮询雷达主循环"""
-            # 【CTO看板先行】第一帧立刻显示
-            print("\n" + "="*80)
-            print(f"📡 [真·狩猎雷达] 已锁定 {len(self.watchlist)} 只目标")
-            print("⚡ 正在捕获首轮微观动能...")
-            print("="*80)
-            
-            while self.running:
-                try:
-                    loop_start = time.perf_counter()
-                    now = datetime.now()
-                    
-                    # 【CTO第一级：毫秒级全量快照捕获】
-                    try:
-                        all_ticks = xtdata.get_full_tick(self.watchlist)
-                    except Exception as e:
-                        logger.error(f"获取全量Tick失败: {e}")
-                        time.sleep(1)
-                        continue
-                    
-                    if not all_ticks:
-                        time.sleep(1)
-                        continue
-                    
-                    current_top_targets = []
-                    dead_water_count = 0
-                    active_count = 0
-                    
-                    # 【CTO第二级：极速布朗运动剔除】
-                    for stock_code in self.watchlist:
-                        tick = all_ticks.get(stock_code)
-                        if not tick:
-                            continue
-                        
-                        current_price = tick.get('lastPrice', 0)
-                        current_volume = tick.get('volume', 0)
-                        pre_close = true_dict.get_prev_close(stock_code)
-                        
-                        # 布朗运动过滤：无交易或无波动
-                        if current_volume == 0 or current_price <= 0 or pre_close is None or pre_close <= 0:
-                            dead_water_count += 1
-                            continue
-                        
-                        # 无波动过滤：价格没变
-                        if abs(current_price - pre_close) < 0.001:
-                            dead_water_count += 1
-                            continue
-                        
-                        active_count += 1
-                        
-                        # 【CTO第三级：动能打分】只对有波动的股票计算
-                        try:
-                            change_pct = (current_price - pre_close) / pre_close
-                            
-                            # 获取流通数据
-                            float_volume = true_dict.get_float_volume(stock_code)
-                            float_market_cap = float_volume * pre_close if float_volume else 1.0
-                            
-                            # 估算flow
-                            flow_5min = current_volume * 0.1
-                            flow_15min = current_volume * 0.3
-                            flow_5min_median = true_dict.get_avg_volume_5d(stock_code) / 240
-                            
-                            # Space Gap
-                            high_60d = tick.get('high', current_price)
-                            space_gap_pct = (high_60d - current_price) / high_60d if high_60d > 0 else 0.5
-                            
-                            # 调用动能打分引擎
-                            try:
-                                final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe = core_engine.calculate_true_dragon_score(
-                                    net_inflow=flow_15min * current_price,
-                                    price=current_price,
-                                    prev_close=pre_close,
-                                    high=current_price * 1.02,
-                                    low=current_price * 0.98,
-                                    open_price=current_price,
-                                    flow_5min=flow_5min,
-                                    flow_15min=flow_15min,
-                                    flow_5min_median_stock=flow_5min_median if flow_5min_median > 0 else 1.0,
-                                    space_gap_pct=space_gap_pct,
-                                    float_volume_shares=float_volume,
-                                    current_time=now.time()
-                                )
-                            except Exception:
-                                # 简化计算
-                                final_score = change_pct * 100
-                                sustain_ratio = 1.0
-                                inflow_ratio = flow_15min * current_price / float_market_cap if float_market_cap > 0 else 0
-                                ratio_stock = flow_5min / flow_5min_median if flow_5min_median > 0 else 0
-                            
-                            purity = '极优' if space_gap_pct < 0.05 else '优' if space_gap_pct < 0.10 else '良'
-                            
-                            current_top_targets.append({
-                                'code': stock_code,
-                                'score': final_score,
-                                'price': current_price,
-                                'change': change_pct * 100,
-                                'inflow_ratio': inflow_ratio,
-                                'ratio_stock': ratio_stock,
-                                'sustain_ratio': sustain_ratio,
-                                'purity': purity
-                            })
-                        except Exception:
-                            continue
-                    
-                    # 【CTO第四级：高级龙头动态渲染】
-                    if current_top_targets:
-                        current_top_targets.sort(key=lambda x: x['score'], reverse=True)
-                        top_10 = current_top_targets[:10]
-                        
-                        # 清屏 + 打印看板
-                        os.system('cls' if os.name == 'nt' else 'clear')
-                        
-                        time_str = now.strftime('%H:%M:%S')
-                        print("="*80)
-                        print(f"🚀 [真·狩猎雷达] 动态火控看板 | {time_str}")
-                        print("="*80)
-                        print(f"📊 观察池: {len(self.watchlist)}只 | 活跃: {active_count}只 | 死水: {dead_water_count}只")
-                        print("-"*80)
-                        print(f"{'排名':<4} {'代码':<12} {'🩸血量':<8} {'价格':<8} {'涨幅':<8} {'爆发':<6} {'接力':<6}")
-                        print("-"*80)
-                        
-                        for i, t in enumerate(top_10, 1):
-                            print(f"{i:<4} {t['code']:<12} {t['score']:<8.1f} {t['price']:<8.2f} {t['change']:<7.1f}% {t['ratio_stock']:<6.1f}x {t['sustain_ratio']:<6.2f}x")
-                        
-                        print("="*80)
-                        print(f"💡 按 Ctrl+C 退出 | 刷新周期: 1秒")
-                        
-                        # 【CTO战地收尸】关键调用！
-                        self._update_daily_battle_report(current_top_targets)
-                    else:
-                        # 无有效目标时也要显示
-                        os.system('cls' if os.name == 'nt' else 'clear')
-                        print("="*80)
-                        print(f"📡 [真·狩猎雷达] {now.strftime('%H:%M:%S')} | 等待目标...")
-                        print(f"📊 观察池: {len(self.watchlist)}只 | 活跃: 0 | 死水: {dead_water_count}只")
-                        print("="*80)
-                    
-                    # 【CTO物理限速器】1秒一圈
-                    elapsed = time.perf_counter() - loop_start
-                    sleep_time = max(0.1, 1.0 - elapsed)
-                    time.sleep(sleep_time)
-                    
-                except Exception as e:
-                    logger.error(f"雷达刷新异常: {e}")
-                    time.sleep(1)
+        # 【CTO V3看板绝对先行】第一帧立刻显示
+        self._print_fire_control_panel([], initial_loading=True)
         
-        # 启动雷达线程
-        radar_thread = threading.Thread(target=radar_loop, daemon=True)
-        radar_thread.start()
-        logger.info("🎯 [真·狩猎雷达] 已启动 (1秒暴力轮询模式)")
+        # 强行激活QMT底层缓存
+        if self.watchlist:
+            try:
+                xtdata.get_full_tick(self.watchlist)
+                time.sleep(0.5)
+            except Exception as e:
+                logger.error(f"激活QMT缓存失败: {e}")
+        
+        logger.info("⚡ 主线程雷达循环开启！")
+        
+        try:
+            while self.running:
+                # 检查交易时间
+                now = datetime.now()
+                current_time = now.time()
+                
+                # 午休时间（11:30-13:00）或收盘后（15:00后）显示等待状态
+                if time_type(11, 30) <= current_time < time_type(13, 0):
+                    self._print_fire_control_panel([], initial_loading=False, pool_stats={
+                        'total': len(self.watchlist),
+                        'active': 0,
+                        'up': 0,
+                        'down': 0,
+                        'filtered': len(self.watchlist)
+                    })
+                    print("\n⏸️ 当前为午休时间 (11:30-13:00)，等待下午开盘...")
+                    time.sleep(5)
+                    continue
+                
+                if current_time >= time_type(15, 0):
+                    logger.info("📅 已收盘，生成最终战报...")
+                    self._generate_final_battle_report()
+                    break
+                
+                loop_start = time.perf_counter()
+                
+                if not self.watchlist:
+                    logger.warning("观察池为空，等待...")
+                    time.sleep(5)
+                    continue
+                
+                # 【CTO第一级：全量快照捕获】
+                try:
+                    all_ticks = xtdata.get_full_tick(self.watchlist)
+                except Exception as e:
+                    logger.error(f"获取全量Tick失败: {e}")
+                    time.sleep(1)
+                    continue
+                
+                if not all_ticks:
+                    time.sleep(1)
+                    continue
+                
+                current_top_targets = []
+                pool_stats = {
+                    'total': len(self.watchlist),
+                    'active': 0,
+                    'up': 0,
+                    'down': 0,
+                    'filtered': 0
+                }
+                
+                # 【CTO第二级：极速布朗运动分类】
+                for stock_code in self.watchlist:
+                    tick = all_ticks.get(stock_code)
+                    if not tick:
+                        pool_stats['filtered'] += 1
+                        continue
+                    
+                    current_price = tick.get('lastPrice', 0)
+                    current_volume = tick.get('volume', 0)  # 今日累计成交量
+                    pre_close = true_dict.get_prev_close(stock_code)
+                    
+                    # 【CTO V3修复】正确的死水判断：今日累计成交量为0
+                    # 注意：不是价格不变，而是完全没有交易
+                    if current_volume == 0:
+                        pool_stats['filtered'] += 1
+                        continue
+                    
+                    if current_price <= 0 or pre_close is None or pre_close <= 0:
+                        pool_stats['filtered'] += 1
+                        continue
+                    
+                    # 统计涨跌
+                    if current_price >= pre_close:
+                        pool_stats['up'] += 1
+                    else:
+                        pool_stats['down'] += 1
+                    
+                    pool_stats['active'] += 1
+                    
+                    # 【CTO第三级：动能打分】只对有交易的股票计算
+                    try:
+                        change_pct = (current_price - pre_close) / pre_close
+                        
+                        # 获取流通数据
+                        float_volume = true_dict.get_float_volume(stock_code)
+                        float_market_cap = float_volume * pre_close if float_volume else 1.0
+                        
+                        # 估算flow
+                        flow_5min = current_volume * 0.1
+                        flow_15min = current_volume * 0.3
+                        flow_5min_median = true_dict.get_avg_volume_5d(stock_code) / 240
+                        
+                        # Space Gap
+                        high_60d = tick.get('high', current_price)
+                        space_gap_pct = (high_60d - current_price) / high_60d if high_60d > 0 else 0.5
+                        
+                        # 调用动能打分引擎
+                        try:
+                            final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe = core_engine.calculate_true_dragon_score(
+                                net_inflow=flow_15min * current_price,
+                                price=current_price,
+                                prev_close=pre_close,
+                                high=current_price * 1.02,
+                                low=current_price * 0.98,
+                                open_price=current_price,
+                                flow_5min=flow_5min,
+                                flow_15min=flow_15min,
+                                flow_5min_median_stock=flow_5min_median if flow_5min_median > 0 else 1.0,
+                                space_gap_pct=space_gap_pct,
+                                float_volume_shares=float_volume,
+                                current_time=now.time()
+                            )
+                        except Exception:
+                            # 简化计算
+                            final_score = change_pct * 100
+                            sustain_ratio = 1.0
+                            inflow_ratio = flow_15min * current_price / float_market_cap if float_market_cap > 0 else 0
+                            ratio_stock = flow_5min / flow_5min_median if flow_5min_median > 0 else 0
+                        
+                        current_top_targets.append({
+                            'code': stock_code,
+                            'score': final_score,
+                            'price': current_price,
+                            'change': change_pct * 100,
+                            'inflow_ratio': inflow_ratio,
+                            'ratio_stock': ratio_stock,
+                            'sustain_ratio': sustain_ratio
+                        })
+                    except Exception:
+                        continue
+                
+                # 【CTO第四级：降维渲染与战报更新】
+                current_top_targets.sort(key=lambda x: x['score'], reverse=True)
+                top_10 = current_top_targets[:10]
+                
+                # 主线程强制刷屏
+                self._print_fire_control_panel(top_10, initial_loading=False, pool_stats=pool_stats)
+                
+                # 战地收尸
+                self._update_daily_battle_report(current_top_targets)
+                
+                # 【CTO物理限速器】1秒一圈
+                elapsed = time.perf_counter() - loop_start
+                sleep_time = max(0.1, 1.0 - elapsed)
+                time.sleep(sleep_time)
+                
+        except KeyboardInterrupt:
+            logger.info("🛑 用户中断，生成战报...")
+            self._generate_final_battle_report()
+        except Exception as e:
+            logger.error(f"雷达循环异常: {e}")
+            self._generate_final_battle_report()
     
     def _on_tick_data(self, tick_event):
         """
