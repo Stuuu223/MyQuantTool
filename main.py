@@ -1087,45 +1087,31 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, dry_run):
         # 初始化引擎变量，防止作用域错误
         engine = None
         
-        # 收盘后：禁止启动实盘，引导用户使用 replay 命令
-        if now > market_close:
-            click.echo(click.style(f"🛑 股市已收盘 (当前 {now.strftime('%H:%M')})！禁止启动实盘监控！", fg='red', bold=True))
-            click.echo(click.style("💡 如需复盘今日行情，请运行: python main.py replay", fg='yellow'))
-            return
-        
-        # 截停时间后到收盘前：不进行交易，等待收盘
-        elif now > cutoff_dt:
-            click.echo(click.style(f"⚠️ 已进入尾盘垃圾时间，停止盯盘，等待收盘出战报...", fg='yellow'))
-            click.echo(click.style("💡 提示：系统将在收盘后自动生成今日战报", fg='yellow'))
-            time.sleep(3)
-            return
+        # 【CTO V5斩首】删除收盘后拦截逻辑！
+        # 盘后投影模式：15:00后依然进入LiveTradingEngine，用get_full_tick获取定格Tick
+        # 收盘后不再return，继续往下执行！
         
         # ==================================================================
         # [CTO-FIX P0] 开盘前窗口（06:00 ~ 09:30）
         # 原始Bug：sleep(3)后 engine=None，程序静默退出，竞价+开盘全部跳过
         # 修复：sleep后立即创建engine并调用start_session()，进入保活循环
         # ==================================================================
-        elif now < market_open:
-            if now.hour < 6:  # 凌晨测试模式
-                click.echo(click.style(f"🌙 凌晨测试模式，禁止启动实盘引擎！", fg='red'))
-                click.echo(click.style("💡 如需复盘昨日行情，请运行: python main.py replay", fg='yellow'))
-                return
-            else:
-                # [P0修复] 06:00~09:30 竞价窗口：创建engine，等待开盘，不退出！
-                wait_seconds = (market_open - now).seconds
-                click.echo(click.style(
-                    f"⏳ 盘前装载模式 (距09:30开盘 {wait_seconds}秒)，创建引擎等待竞价...",
-                    fg='cyan'
-                ))
-                click.echo("\n⚡ Step 2: 挂载 EventDriven 引擎 (盘前模式)...")
-                engine = _create_engine()
-                # start_session 内部会设置 Timer 等到 09:25 触发竞价快照
-                engine.start_session()
-                click.echo(click.style("✅ 引擎已挂载，等待09:25竞价快照 → 09:30开盘信号", fg='green'))
-                click.echo(click.style("🛑 按 Ctrl+C 安全退出", fg='yellow'))
-                # 不 return！继续落到下面的 Step 4 保活循环
+        if now < market_open:
+            # [P0修复] 06:00~09:30 竞价窗口：创建engine，等待开盘，不退出！
+            wait_seconds = (market_open - now).seconds
+            click.echo(click.style(
+                f"⏳ 盘前装载模式 (距09:30开盘 {wait_seconds}秒)，创建引擎等待竞价...",
+                fg='cyan'
+            ))
+            click.echo("\n⚡ Step 2: 挂载 EventDriven 引擎 (盘前模式)...")
+            engine = _create_engine()
+            # start_session 内部会设置 Timer 等到 09:25 触发竞价快照
+            engine.start_session()
+            click.echo(click.style("✅ 引擎已挂载，等待09:25竞价快照 → 09:30开盘信号", fg='green'))
+            click.echo(click.style("🛑 按 Ctrl+C 安全退出", fg='yellow'))
+            # 不 return！继续落到下面的 Step 4 保活循环
         
-        # 交易时间内：启动实时监控模式
+        # 交易时间内或盘后：启动监控/投影模式
         else:
             click.echo("\n⚡ Step 2: 挂载 EventDriven 引擎...")
             engine = _create_engine()
