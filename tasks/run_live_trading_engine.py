@@ -401,7 +401,7 @@ class LiveTradingEngine:
                     'open': tick.get('open', 0) if isinstance(tick, dict) else getattr(tick, 'open', 0),
                     'volume': tick.get('volume', 0) if isinstance(tick, dict) else getattr(tick, 'volume', 0),
                     'amount': tick.get('amount', 0) if isinstance(tick, dict) else getattr(tick, 'amount', 0),
-                    'prev_close': tick.get('preClose', 0) if isinstance(tick, dict) else getattr(tick, 'preClose', 0),
+                    'prev_close': tick.get('lastClose', 0) if isinstance(tick, dict) else getattr(tick, 'lastClose', 0),
                     'bidVol1': tick.get('bidVol1', 0) if isinstance(tick, dict) else getattr(tick, 'bidVol1', 0),
                     'askVol1': tick.get('askVol1', 0) if isinstance(tick, dict) else getattr(tick, 'askVol1', 0),
                     'bid1': tick.get('bid1', 0) if isinstance(tick, dict) else getattr(tick, 'bid1', 0),
@@ -731,7 +731,9 @@ class LiveTradingEngine:
             
             # 估算全天成交量
             df['estimated_full_day_volume'] = df['volume_gu'] / minutes_passed * 240
-            df['volume_ratio'] = df['estimated_full_day_volume'] / df['avg_volume_5d'].replace(0, pd.NA)
+            # 【CTO修复】avg_volume_5d单位是手，需要乘100转成股
+            df['avg_volume_5d_gu'] = df['avg_volume_5d'] * 100
+            df['volume_ratio'] = df['estimated_full_day_volume'] / df['avg_volume_5d_gu'].replace(0, pd.NA)
             
             # 开盘瞬时换手率（用于过滤死亡换手派发）
             df['current_turnover'] = (df['volume_gu'] / df['float_volume'].replace(0, pd.NA)) * 100
@@ -1729,7 +1731,7 @@ class LiveTradingEngine:
                     'open': tick.get('open', 0) if isinstance(tick, dict) else getattr(tick, 'open', 0),
                     'high': tick.get('high', 0) if isinstance(tick, dict) else getattr(tick, 'high', 0),
                     'low': tick.get('low', 0) if isinstance(tick, dict) else getattr(tick, 'low', 0),
-                    'prev_close': tick.get('preClose', 0) if isinstance(tick, dict) else getattr(tick, 'preClose', 0),
+                    'prev_close': tick.get('lastClose', 0) if isinstance(tick, dict) else getattr(tick, 'lastClose', 0),
                 }
                 for code, tick in snapshot.items() if tick
             ])

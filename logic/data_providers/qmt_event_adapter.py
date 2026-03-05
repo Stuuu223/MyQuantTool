@@ -171,7 +171,7 @@ class QMTEventAdapter:
         - open -> open
         - high -> high
         - low -> low
-        - preClose -> prev_close
+        - lastClose -> prev_close
         - time -> timestamp
         
         Args:
@@ -189,7 +189,7 @@ class QMTEventAdapter:
             'open': float(raw_tick.get('open', 0)),
             'high': float(raw_tick.get('high', 0)),
             'low': float(raw_tick.get('low', 0)),
-            'prev_close': float(raw_tick.get('preClose', 0)),
+            'prev_close': float(raw_tick.get('lastClose', 0)),  # 修复：lastClose而非preClose
             'timestamp': str(raw_tick.get('time', ''))
         }
     
