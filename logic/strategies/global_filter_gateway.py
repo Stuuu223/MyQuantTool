@@ -297,23 +297,33 @@ class GlobalFilterGateway:
                 # 【Boss P0修复 + 疑点#4修复】检查缺数据并标记（prev_close或atr_20d任一缺）
                 missing_mask = df['prev_close'].isna() | (df['prev_close'] == 0) | df['atr_20d'].isna() | (df['atr_20d'] == 0)
                 missing_count = missing_mask.sum()
-                if missing_count > 0:
-                    missing_codes = df[missing_mask]['stock_code'].tolist()[:5]
-                    logger.warning(f"  ⚠️ ATR势垒网: {missing_count}只股票prev_close/atr_20d缺失，atr_ratio=NaN - {missing_codes}{'...' if missing_count > 5 else ''}")
-                    stats['atr_data_missing'] = int(missing_count)
+                stats['atr_data_missing'] = int(missing_count)
                 
                 # 计算今日真实波幅比率
                 # 今日TR = (high - low) / prev_close
                 # atr_ratio = 今日TR / atr_20d
                 if 'high' in df.columns and 'low' in df.columns:
-                    # 【Boss P0修复】prev_close为0或None时，先替换为NaN，避免除以0产生inf
-                    prev_close_safe = df['prev_close'].replace(0, float('nan'))
-                    df['today_tr'] = (df['high'] - df['low']) / prev_close_safe
-                    # 【疑点#4修复】atr_20d为0或None时也替换为NaN
-                    df['atr_ratio'] = df['today_tr'] / df['atr_20d'].replace(0, float('nan'))
+                    # 【CTO修复】使用numpy.where处理NaN，缺失数据用1.0默认值
+                    import numpy as np
                     
-                    # 【Boss P0修复】删除fillna(0)！保留NaN，让后续统计能区分"缺数据"和"真低能态"
-                    # df['atr_ratio'] = df['atr_ratio'].fillna(0)  # ❌ 已删除！
+                    # prev_close为0或NaN时，today_tr=0（无法计算）
+                    prev_close_safe = df['prev_close'].replace(0, float('nan'))
+                    df['today_tr'] = np.where(
+                        prev_close_safe.notna(),
+                        (df['high'] - df['low']) / prev_close_safe,
+                        0.0
+                    )
+                    
+                    # atr_20d为0或NaN时，atr_ratio=1.0（默认市场平均水平，放行！）
+                    df['atr_ratio'] = np.where(
+                        (df['atr_20d'].notna()) & (df['atr_20d'] > 0) & (df['today_tr'] > 0),
+                        df['today_tr'] / df['atr_20d'],
+                        1.0  # 【CTO修复】缺失数据默认1.0，代表市场平均水平，放行！
+                    )
+                    
+                    # 【CTO修复】简化警告：只打印缺失数量，不打印具体代码
+                    if missing_count > 0:
+                        logger.info(f"  🔹 ATR势垒网: {missing_count}只股票数据缺失，使用默认值1.0x（市场平均水平）")
                     
                     atr_before = len(df)
                     # 统计时排除NaN
@@ -341,13 +351,11 @@ class GlobalFilterGateway:
                         if missing_count > 0:
                             logger.info(f"     ⚠️ 数据缺失: {missing_count}只prev_close/atr_20d缺失，atr_ratio=NaN（无法判断，保留）")
                     else:
-                        # 仅记录模式：不过滤，只记录到df（包括NaN）
+                        # 仅记录模式：不过滤，只记录到df
                         stats["atr_filtered"] = 0
                         logger.info(f"  🔹 ATR势垒网: {atr_pass_count}/{atr_before}只达标 (ATR比率>={atr_ratio_min}x)【仅记录模式，不拦截】")
                         if atr_rejected > 0:
                             logger.info(f"     📊 未达标: {atr_rejected}只ATR比率<{atr_ratio_min}x（待回测验证后再决定是否拦截）")
-                        if missing_count > 0:
-                            logger.info(f"     ⚠️ 数据缺失: {missing_count}只prev_close/atr_20d缺失，atr_ratio=NaN（保留用于回测统计）")
                 else:
                     logger.warning(f"  ⚠️ ATR势垒网: 缺少high/low列，跳过ATR计算")
                     df['atr_ratio'] = float('nan')
