@@ -677,6 +677,17 @@ class LiveTradingEngine:
             from logic.data_providers.true_dictionary import get_true_dictionary
             from logic.core.config_manager import get_config_manager
             
+            # 【Phase1修复】盘后运行时必须预热TrueDictionary！
+            # 否则prev_close_cache为空，avg_amount_5d计算失败
+            true_dict = get_true_dictionary()
+            if not true_dict._prev_close_cache:
+                logger.info("🔄 [TrueDictionary] 盘后预热中...")
+                today = datetime.now().strftime('%Y%m%d')
+                # 预热全部A股，确保prev_close_cache被填充
+                all_stocks = self.qmt_adapter.get_all_a_shares()
+                if all_stocks:
+                    true_dict.warmup(all_stocks, target_date=today, force=False)
+            
             # 【架构解耦】检查adapter
             if not hasattr(self, 'qmt_adapter') or self.qmt_adapter is None:
                 logger.error("🚨 QMTEventAdapter未初始化")
