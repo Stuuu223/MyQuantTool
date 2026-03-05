@@ -277,20 +277,29 @@ class LiveTradingEngine:
             seconds_to_open = (market_open - current_time).total_seconds()
             if seconds_to_open > 0:
                 logger.info(f"⏰ 等待{seconds_to_open:.0f}秒到09:30开盘...")
-                timer = threading.Timer(seconds_to_open, self._snapshot_filter)
-                timer.daemon = True
-                timer.start()
-            else:
-                self._snapshot_filter()
+                # 【CTO V5修复】等待期间显示缓存面板
+                self._print_fire_control_panel([], initial_loading=True)
+                import time
+                time.sleep(seconds_to_open)
+            
+            # 【CTO V5修复】直接调用粗筛，不再用Timer
+            self._snapshot_filter()
+            
+            # 【CTO V5修复】直接进入雷达循环！
+            if self.watchlist and self.enable_dynamic_radar:
+                self._setup_qmt_callbacks()
+                self._run_radar_main_loop()
             return
         
         # 如果还没到09:25，等待到09:25执行第一斩
         seconds_to_auction = (auction_end - current_time).total_seconds()
         if seconds_to_auction > 0:
             logger.info(f"⏰ 等待{seconds_to_auction:.0f}秒到09:25集合竞价结束...")
-            auction_timer = threading.Timer(seconds_to_auction, self._execute_auction_filter)
-            auction_timer.daemon = True
-            auction_timer.start()
+            # 【CTO V5修复】等待期间显示缓存面板
+            self._print_fire_control_panel([], initial_loading=True)
+            import time
+            time.sleep(seconds_to_auction)
+            self._execute_auction_filter()
         else:
             self._execute_auction_filter()
     
@@ -306,12 +315,19 @@ class LiveTradingEngine:
         
         if seconds_to_open > 0:
             logger.info(f"⏰ 09:25初筛完成，等待{seconds_to_open:.0f}秒到09:30开盘...")
-            timer = threading.Timer(seconds_to_open, self._snapshot_filter)
-            timer.daemon = True
-            timer.start()
-        else:
-            logger.info("🎯 已到09:30，立即启动开盘快照过滤...")
-            self._snapshot_filter()
+            # 【CTO V5修复】等待期间显示缓存面板
+            self._print_fire_control_panel([], initial_loading=True)
+            import time
+            time.sleep(seconds_to_open)
+        
+        # 【CTO V5修复】直接调用粗筛，不再用Timer
+        logger.info("🎯 已到09:30，立即启动开盘快照过滤...")
+        self._snapshot_filter()
+        
+        # 【CTO V5修复】直接进入雷达循环！
+        if self.watchlist and self.enable_dynamic_radar:
+            self._setup_qmt_callbacks()
+            self._run_radar_main_loop()
     
     def _setup_qmt_callbacks(self):
         """
@@ -768,11 +784,9 @@ class LiveTradingEngine:
             click.echo(f"🎯 粗筛池: {len(self.watchlist)} 只")
             click.echo(f"{'='*60}\n")
             
-            # 启动雷达
-            logger.info("🎯 粗筛完成，等待09:35启动火控雷达...")
-            timer = threading.Timer(300.0, self._fire_control_mode)
-            timer.daemon = True
-            timer.start()
+            # 【CTO V5修复】删除Timer等待，直接return让start_session控制流程！
+            # 粗筛完成后由start_session决定下一步（直接进入雷达循环）
+            return
             
         except Exception as e:
             logger.error(f"❌ 09:30开盘粗筛失败: {e}")
