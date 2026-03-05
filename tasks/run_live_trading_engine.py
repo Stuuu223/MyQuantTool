@@ -820,15 +820,16 @@ class LiveTradingEngine:
         """【CTO清理】初始化交易相关组件 - 纯血游资架构"""
         logger.debug("🎯 [纯血游资雷达] 交易组件初始化完成（精简模式）")
     
-    def _print_fire_control_panel(self, top_targets, initial_loading=False, pool_stats=None, is_rest=False):
+    def _print_fire_control_panel(self, top_targets, initial_loading=False, pool_stats=None, is_rest=False, msg=None):
         """
-        【CTO V4】终极漏斗看板UI - 降维打击层次感 + 复盘模式
+        【CTO V5】终极漏斗看板UI - 降维打击层次感 + 复盘模式 + 盘后投影
         
         Args:
             top_targets: TOP目标列表
             initial_loading: 是否首次加载
             pool_stats: 池统计 {'total', 'active', 'up', 'down', 'filtered'}
             is_rest: 是否午休/盘后复盘模式
+            msg: 自定义消息（如"[盘后定格投影]"）
         """
         import os
         from datetime import datetime
@@ -837,7 +838,9 @@ class LiveTradingEngine:
         now_str = datetime.now().strftime('%H:%M:%S')
         
         print("=" * 80)
-        if is_rest:
+        if msg:
+            print(f"🚀 [V20 纯血游资猎杀雷达] | {msg} | {now_str}")
+        elif is_rest:
             print(f"🚀 [V20 纯血游资猎杀雷达] | 📋 午休复盘模式 | {now_str}")
         else:
             print(f"🚀 [V20 纯血游资猎杀雷达] | 极速轮询模式 | {now_str}")
@@ -854,14 +857,14 @@ class LiveTradingEngine:
             print(f"📈 [池内情绪] 涨: {pool_stats['up']}家 | 跌: {pool_stats['down']}家 | 死水/停牌: {pool_stats['filtered']}家")
             print("-" * 80)
         
-        if is_rest:
-            print("📋 [机会池缓存] 最后一次计算的TOP 10:")
+        if is_rest or msg:
+            print("📋 [机会池] TOP 10:")
         print(f"{'排名':<4} {'代码':<12} {'🩸血量':<10} {'价格':<8} {'涨跌幅':<8} {'流入比':<8}")
         print("-" * 80)
         
         if not top_targets:
-            if is_rest:
-                print("  (暂无机会池数据，等待盘中计算)")
+            if is_rest or msg:
+                print("  (暂无机会池数据)")
             else:
                 print("  (当前无股票达到评分基础线，或正处于休盘期)")
         else:
@@ -869,7 +872,9 @@ class LiveTradingEngine:
                 print(f"{i:<4} {t['code']:<12} {t['score']:<10.1f} {t['price']:<8.2f} {t['change']:<+7.1f}% {t['inflow_ratio']:<8.4f}")
         
         print("=" * 80)
-        if is_rest:
+        if msg:
+            print(f"💡 {msg} - 数据已定格，仅供复盘审阅 (按 Ctrl+C 退出)")
+        elif is_rest:
             print("💡 [复盘模式] 保留最后机会池数据，等待下午开盘... (按 Ctrl+C 退出)")
         else:
             print("💡 提示: 系统1秒极速刷新中... (按 Ctrl+C 退出并生成最终战报)")
@@ -898,6 +903,9 @@ class LiveTradingEngine:
         # 预先创建动能打分引擎实例
         core_engine = 动能打分引擎CoreEngine()
         
+        # 【CTO V5】盘后投影标志位：记录是否已执行过盘后最终计算
+        has_run_after_hours = False
+        
         # 【CTO V3看板绝对先行】第一帧立刻显示
         self._print_fire_control_panel([], initial_loading=True)
         
@@ -917,8 +925,9 @@ class LiveTradingEngine:
                 now = datetime.now()
                 current_time = now.time()
                 
-                # 【CTO V4】午休时间（11:30-13:00）显示复盘模式
-                if time_type(11, 30) <= current_time < time_type(13, 0):
+                # 【CTO V5】午休期间：保持挂起，显示缓存
+                is_lunch_break = time_type(11, 30) <= current_time < time_type(13, 0)
+                if is_lunch_break and self.last_known_top_targets:
                     self._print_fire_control_panel(
                         self.last_known_top_targets, 
                         initial_loading=False, 
@@ -935,12 +944,28 @@ class LiveTradingEngine:
                     time.sleep(5)
                     continue
                 
-                # 收盘后（15:00后）
-                if current_time >= time_type(15, 0):
-                    logger.info("📅 已收盘，生成最终战报...")
-                    self._generate_final_battle_report()
-                    break
+                # 【CTO V5】盘后期间 (15:00后)：执行一次最终计算然后定格展示
+                is_after_hours = current_time >= time_type(15, 0)
+                if is_after_hours and has_run_after_hours:
+                    # 已经算过最终分数了，直接展示最终定格面板
+                    self._print_fire_control_panel(
+                        self.last_known_top_targets,
+                        initial_loading=False,
+                        pool_stats={
+                            'total': len(self.watchlist),
+                            'active': 0,
+                            'up': 0,
+                            'down': 0,
+                            'filtered': len(self.watchlist)
+                        },
+                        msg="📋 盘后定格投影 - 今天的最终战果"
+                    )
+                    time.sleep(10)
+                    continue
                 
+                # ----------------------------------------------------
+                # 如果是盘中，或者是盘后的【第一次】循环，向下执行硬核打分！
+                # ----------------------------------------------------
                 loop_start = time.perf_counter()
                 
                 if not self.watchlist:
@@ -1073,6 +1098,11 @@ class LiveTradingEngine:
                 # 【CTO V4关键】更新静态机会池缓存！
                 if top_10:
                     self.last_known_top_targets = top_10
+                
+                # 【CTO V5】如果这是盘后的第一次计算，标记完成，以后不再重复算
+                if is_after_hours:
+                    has_run_after_hours = True
+                    logger.info("✅ 盘后最终 Tick 快照计算完成，投影定格！")
                 
                 # 主线程强制刷屏
                 self._print_fire_control_panel(top_10, initial_loading=False, pool_stats=pool_stats)
