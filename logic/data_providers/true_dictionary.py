@@ -85,6 +85,9 @@ class TrueDictionary:
         # 【CTO ATR股性突变雷达】20日ATR数据缓存 - 盘前装弹时计算
         self._atr_20d_map: Dict[str, float] = {}  # {stock_code: atr_20d_value}
         
+        # 【CTO修复】前收盘价缓存 - ATR计算需要
+        self._prev_close_cache: Dict[str, float] = {}  # {stock_code: prev_close}
+        
         # 板块映射 - 本地配置或QMT数据
         self._sector_map: Dict[str, List[str]] = {}  # 股票->板块列表
         
@@ -545,6 +548,8 @@ class TrueDictionary:
                                 
                                 if pd.notna(atr_20d) and atr_20d > 0:
                                     self._atr_20d_map[stock_code] = float(atr_20d)
+                                    # 【CTO修复】同时保存prev_close
+                                    self._prev_close_cache[stock_code] = float(df['close'].iloc[-1])
                                     success += 1
                                 else:
                                     failed += 1
@@ -601,6 +606,18 @@ class TrueDictionary:
             float: 20日ATR值,查不到返回默认值0.05 (表示5%的日波动)
         """
         return self._atr_20d_map.get(stock_code, 0.05)
+    
+    def get_prev_close(self, stock_code: str) -> Optional[float]:
+        """
+        【CTO修复】获取股票的前收盘价
+        
+        Args:
+            stock_code: 股票代码
+            
+        Returns:
+            float: 前收盘价，查不到返回None
+        """
+        return self._prev_close_cache.get(stock_code)
 
     def _warmup_qmt_data(self, stock_list: List[str]) -> Dict:
         """
