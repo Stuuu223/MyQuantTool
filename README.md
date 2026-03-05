@@ -102,6 +102,38 @@ sz_tick = os.path.join(qmt_path, 'datadir', 'SZ', '0', '000001')
 - ✅ 所有历史脚本如引用该目录，必须改为读取 QMT 客户端缓存
 
 ---
+## 🐛 历史 Bug 记录 (血泪教训)
+
+### 2026-03-05: 快照字段名 + 量比单位双杀 Bug
+
+**Bug #1: 快照字段名错误**
+- **现象**: 粗筛池固定4000+只，量比中位数75.89（异常放大）
+- **根因**: QMT快照中昨收价字段是`lastClose`，代码用的是`preClose`
+- **影响**: `prev_close`全是0，第一斩过滤完全失效
+- **修复位置**: `qmt_event_adapter.py:192`, `run_live_trading_engine.py:404,1732`
+
+**Bug #2: 量比单位错误**
+- **现象**: 所有股票量比都>3.0，无筛选效果
+- **根因**: `avg_volume_5d`单位是手，`volume_gu`单位是股，量比=股/手放大100倍
+- **修复**: `avg_volume_5d_gu = avg_volume_5d * 100`
+
+```python
+# ❌ 错误代码
+df['volume_ratio'] = df['estimated_full_day_volume'] / df['avg_volume_5d']
+# 股 / 手 = 放大100倍！
+
+# ✅ 正确代码
+df['avg_volume_5d_gu'] = df['avg_volume_5d'] * 100  # 手→股
+df['volume_ratio'] = df['estimated_full_day_volume'] / df['avg_volume_5d_gu']
+```
+
+**教训**: QMT量纲铁律必须严格遵守：
+- 日K volume: **手**
+- FloatVolume: **股**
+- 快照 volume: **手**
+- 快照昨收: **lastClose**（不是preClose！）
+
+---
 ### 待办事项
 - [ ] 本周末：三个月回测框架，重新估ATR阈值
 - [ ] 本周末：日K数据验证150%死亡换手合理性
