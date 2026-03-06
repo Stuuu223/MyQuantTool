@@ -1044,35 +1044,28 @@ class LiveTradingEngine:
         # 【CTO V18极限压榨】静态常数预编译快查表！
         # 一天不变的值（pre_close, float_volume, avg_amount_5d）只在启动时算一次！
         # 空间换时间：O(1)字典查找，循环内零冗余计算
+        # 【CTO V23终极修复】昨收价从tick获取，流通股本用默认值兜底！
         logger.info("[FAST] 正在预编译静态指标快查表 (O(1) 复杂度)...")
         static_cache = {}
-        cache_miss_count = 0
+        default_float_volume = 1000000000.0  # 10亿股默认值
+        
         for stock in self.watchlist:
-            pre_close = true_dict.get_prev_close(stock)
+            # 【CTO V23】昨收价预热没用！tick.lastClose才是真理源！
+            # pre_close = true_dict.get_prev_close(stock)  # 废弃！
+            
             fv = true_dict.get_float_volume(stock)
             avg_vol_5d = true_dict.get_avg_volume_5d(stock)
             
-            # 【CTO V21健壮性检查】关键数据缺失时跳过，记录警告
+            # 【CTO V23健壮性修复】流通股本缺失时用默认值，绝不跳过股票！
             if not fv or fv <= 0:
-                cache_miss_count += 1
-                continue  # 流通股本缺失，跳过此股票（后续走兜底逻辑）
-            
-            # 流通市值 = 流通股本 * 昨收
-            float_market_cap = fv * pre_close if fv and pre_close else 1.0
-            # 5日均成交额 = 5日均量(手) * 100 * 昨收
-            avg_amount_5d = avg_vol_5d * 100 * pre_close if avg_vol_5d and pre_close else 1.0
+                fv = default_float_volume
             
             static_cache[stock] = {
-                'pre_close': pre_close,
                 'float_volume': fv,
-                'float_market_cap': float_market_cap,
-                'avg_amount_5d': avg_amount_5d,
-                'avg_volume_5d': avg_vol_5d
+                'avg_volume_5d': avg_vol_5d or 1.0
             }
         
-        if cache_miss_count > 0:
-            logger.warning(f"[WARN] {cache_miss_count}只股票缓存数据缺失，将使用兜底逻辑")
-        logger.info(f"[OK] 静态快查表编译完成: {len(static_cache)} 只股票 (共{len(self.watchlist)}只)")
+        logger.info(f"[OK] 静态快查表编译完成: {len(static_cache)} 只股票")
         
         # 【CTO V3看板绝对先行】第一帧立刻显示
         self._print_fire_control_panel([], initial_loading=True)
@@ -1187,20 +1180,31 @@ class LiveTradingEngine:
                     # 原Bug：if not s_data: continue 直接杀掉了87只股票
                     # 修复：缓存缺失时兜底现场计算，绝不物理删除！
                     # 【CTO V21修复】get默认值对None无效！必须用or！
+                    # 【CTO V23终极修复】昨收价优先从tick获取！流通股本用默认值兜底！
+                    
+                    # 【CTO V23】昨收价：tick的lastClose最可靠，绝不用预热！
+                    pre_close = tick.get('lastClose', 0)
+                    if pre_close <= 0:
+                        pre_close = tick.get('lastPrice', 1.0)  # 再拿不到用现价
+                    
                     s_data = static_cache.get(stock_code)
-                    if s_data:
-                        pre_close = s_data.get('pre_close') or tick.get('lastClose', 0)
-                        float_volume = s_data.get('float_volume') or 1.0
-                        float_market_cap = s_data.get('float_market_cap') or 1.0
-                        avg_amount_5d = s_data.get('avg_amount_5d') or 1.0
+                    if s_data and s_data.get('float_volume') and s_data.get('float_volume') > 0:
+                        float_volume = s_data.get('float_volume')
                         avg_volume_5d = s_data.get('avg_volume_5d') or 1.0
                     else:
-                        # 【CTO V20兜底】缓存缺失，现场去取！
-                        pre_close = tick.get('lastClose', 0)
-                        float_volume = true_dict.get_float_volume(stock_code) or 1.0
+                        # 【CTO V23绝对物理兜底】
+                        # 如果QMT彻底断联，用默认10亿股兜底！绝不让程序因除零崩溃！
+                        fv = true_dict.get_float_volume(stock_code)
+                        if not fv or fv <= 0:
+                            logger.debug(f"[WARN] {stock_code} 流通盘获取失败，启用10亿股强行兜底！")
+                            float_volume = 1000000000.0  # 10亿股默认值
+                        else:
+                            float_volume = fv
                         avg_volume_5d = true_dict.get_avg_volume_5d(stock_code) or 1.0
-                        float_market_cap = float_volume * pre_close if float_volume > 0 and pre_close > 0 else 1.0
-                        avg_amount_5d = avg_volume_5d * 100 * pre_close if avg_volume_5d > 0 and pre_close > 0 else 1.0
+                    
+                    # 【CTO V23】动态计算市值和成交额（基于tick的实时昨收价）
+                    float_market_cap = float_volume * pre_close if float_volume > 0 and pre_close > 0 else 1.0
+                    avg_amount_5d = avg_volume_5d * 100 * pre_close if avg_volume_5d > 0 and pre_close > 0 else 1.0
                     
                     # 【CTO V3修复】正确的死水判断：今日累计成交量为0
                     if current_volume == 0:
