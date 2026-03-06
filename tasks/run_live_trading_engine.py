@@ -905,6 +905,7 @@ class LiveTradingEngine:
             msg: 自定义消息（如"[盘后定格投影]"）
         """
         import os
+        import click  # 【CTO V10】必须导入！
         from datetime import datetime
         
         os.system('cls' if os.name == 'nt' else 'clear')
@@ -945,11 +946,22 @@ class LiveTradingEngine:
                 color = 'red' if i <= 3 else 'white'
                 bold = i <= 3
                 
-                score_str = f"{t['score']:<9.2f}"
-                pct_str = f"{t['change']:<+7.2f}%"
-                inflow_str = f"{t.get('inflow_ratio', 0)*100:.2f}%"
-                sustain_str = f"{t.get('sustain_ratio', 0):.2f}x"
-                mfe_str = f"{t.get('mfe', 0):.2f}"
+                # 分数保护
+                score_str = f"{t.get('score', 0):<9.2f}"
+                pct_str = f"{t.get('change', 0):<+7.2f}%"
+                
+                # 【CTO V10 物理截断】防止流入比、Sustain 和 MFE 在早盘爆表！
+                raw_inflow = t.get('inflow_ratio', 0)
+                raw_sustain = t.get('sustain_ratio', 0)
+                raw_mfe = t.get('mfe', 0)
+                
+                # 限制最大显示值，防止破坏排版
+                safe_sustain = min(max(raw_sustain, -99.9), 99.9)
+                safe_mfe = min(max(raw_mfe, -99.9), 99.9)
+                
+                inflow_str = f"{raw_inflow*100:.2f}%"
+                sustain_str = f"{safe_sustain:.2f}x"
+                mfe_str = f"{safe_mfe:.2f}"
                 purity_str = str(t.get('purity', '-'))
                 
                 row = f"{i:<5} {t['code']:<10} {score_str} {t['price']:<7.2f} {pct_str:<9} {inflow_str:<9} {sustain_str:<8} {mfe_str:<7} {purity_str:<7}"
