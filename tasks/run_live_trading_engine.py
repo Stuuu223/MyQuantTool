@@ -1113,17 +1113,30 @@ class LiveTradingEngine:
                     
                     pool_stats['active'] += 1
                     
-                    # 【CTO V4第三级：细筛 - 换手率+ATR】盘中动态过滤
+                    # 【CTO V9第三级：细筛 - 时间加权换手率】
+                    # 数据支撑：V3报告显示T0换手中位4.96%，T-1换手中位3.69%
                     try:
                         float_volume = true_dict.get_float_volume(stock_code)
                         volume_gu = current_volume * 100  # 手→股
-                        turnover_rate = (volume_gu / float_volume * 100) if float_volume else 0
+                        current_turnover = (volume_gu / float_volume * 100) if float_volume else 0
                         
-                        # 换手率细筛：>5% 且 <70%（死亡换手线）
-                        if turnover_rate < 5.0:
-                            continue  # 换手不足，跳过
-                        if turnover_rate >= 70.0:
+                        # 【CTO V9】时间加权预估全天换手率
+                        minutes_elapsed = (now.hour * 60 + now.minute) - (9 * 60 + 30)
+                        minutes_elapsed = max(1, min(minutes_elapsed, 240))
+                        est_full_day_turnover = current_turnover / minutes_elapsed * 240
+                        
+                        # 1. 过滤未启动的死水 (预估全天换手 < 3.5%)
+                        # 参考：V3报告T-1换手中位3.69%，T0换手中位4.96%
+                        if est_full_day_turnover < 3.5:
+                            continue  # 换手不足，未进入启动区
+                        
+                        # 2. 过滤死亡派发陷阱
+                        # 条件A：预估全天换手 > 70%（死亡换手线）
+                        # 条件B：开盘30分钟内换手就 > 15%（极速派发）
+                        if est_full_day_turnover > 70.0:
                             continue  # 死亡换手，跳过
+                        if minutes_elapsed <= 30 and current_turnover > 15.0:
+                            continue  # 开盘极速派发，跳过
                         
                         # ATR势垒（可选，从true_dict获取）
                         atr_20d = true_dict.get_atr_20d(stock_code)
