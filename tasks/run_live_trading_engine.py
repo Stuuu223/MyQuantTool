@@ -244,16 +244,16 @@ class LiveTradingEngine:
             else:
                 logger.info(f"[FAST] 使用现有watchlist: {len(self.watchlist)} 只")
             
-            # Step 2: 执行第二斩（开盘快照筛选），筛选强势股
-            logger.info("[FAST] Step 2: 执行开盘快照二筛...")
-            self._snapshot_filter()
-            
-            # 【CTO V12修复】热启动时必须预热TrueDictionary！
-            # 否则float_volume=0导致所有股票被剔除
-            logger.info("[FAST] Step 2.5: 预热TrueDictionary...")
+            # 【CTO V24修复】预热必须在快照筛选之前！
+            # 否则TrueDictionary没有数据，avg_volume_5d=0，全部被过滤！
+            logger.info("[FAST] Step 2: 预热TrueDictionary（必须在快照筛选之前！）...")
             self._warmup_true_dictionary()
             
-            # Step 3: 检查watchlist是否填充成功
+            # Step 3: 执行第三斩（开盘快照筛选），筛选强势股
+            logger.info("[FAST] Step 3: 执行开盘快照三筛...")
+            self._snapshot_filter()
+            
+            # Step 4: 检查watchlist是否填充成功
             if not self.watchlist:
                 logger.warning("[ERR] 快照筛选未找到目标股票，系统进入待机模式")
                 logger.info("[INFO] 提示：可能当前没有符合量比>0.95分位数的强势股")
@@ -263,11 +263,11 @@ class LiveTradingEngine:
                 self._start_auto_replenishment()
                 return
             
-            # Step 4: 订阅Tick数据（在watchlist填充后）
+            # Step 5: 订阅Tick数据（在watchlist填充后）
             logger.info("[DATA] 订阅目标股票Tick数据...")
             self._setup_qmt_callbacks()
             
-            # Step 5: 进入高频监控模式
+            # Step 6: 进入高频监控模式
             logger.info(f"[TARGET] 进入高频监控模式，锁定右侧起爆目标 {len(self.watchlist)} 只目标")
             
             # 【CTO暴怒扒皮第一棒】强制高亮输出Watchlist数量
@@ -785,10 +785,13 @@ class LiveTradingEngine:
             # 【Phase1修复】不用dropna屠杀，改用fillna容错
             # 缺失数据用安全默认值填充，保留股票
             # 【CTO V7修复】消除Pandas FutureWarning
+            # 【CTO V24修复】默认值必须能让股票通过粗筛！
+            # avg_amount_5d默认值改为5000万（刚好满足门槛）
+            # avg_turnover_5d默认值改为2.5%（刚好满足门槛）
             import numpy as np
             df['volume_ratio'] = df['volume_ratio'].fillna(1.0).infer_objects(copy=False)
-            df['avg_turnover_5d'] = df['avg_turnover_5d'].fillna(1.0).infer_objects(copy=False)
-            df['avg_amount_5d'] = df['avg_amount_5d'].fillna(0.0).infer_objects(copy=False)
+            df['avg_turnover_5d'] = df['avg_turnover_5d'].fillna(2.5).infer_objects(copy=False)  # 【CTO V24】刚好满足门槛
+            df['avg_amount_5d'] = df['avg_amount_5d'].fillna(50000000.0).infer_objects(copy=False)  # 【CTO V24】5000万刚好满足门槛
             df['current_turnover'] = df['current_turnover'].fillna(0.0).infer_objects(copy=False)
             
             # 清理无穷大
