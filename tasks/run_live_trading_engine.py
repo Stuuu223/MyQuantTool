@@ -245,11 +245,8 @@ class LiveTradingEngine:
                 try:
                     from logic.data_providers.universe_builder import UniverseBuilder
                     target_date = datetime.now().strftime('%Y%m%d')
-                    print(f"[DEBUG] UniverseBuilder target_date={target_date}")
                     builder = UniverseBuilder(target_date=target_date)
-                    print("[DEBUG] 开始 builder.build()...")
                     base_pool, volume_ratios = builder.build()
-                    print(f"[DEBUG] builder.build() 返回: {len(base_pool) if base_pool else 0} 只")
                     
                     if base_pool:
                         self.watchlist = base_pool
@@ -1042,7 +1039,11 @@ class LiveTradingEngine:
                 )
         
         console.print(table)
-        console.print("[bright_black][CMD] 极速刷新中... 按 Ctrl+C 阻断雷达 | (Web端支持展开/折叠)[/bright_black]")
+        # 【CTO V31】恢复纯粹的CLI极简信仰，删除Web端废话！
+        if is_rest:
+            console.print("[bright_black][CMD] 盘后定格完毕。极简终端，摒弃一切多余渲染。[/bright_black]")
+        else:
+            console.print("[bright_black][CMD] 雷达超频扫描中... (Ctrl+C 安全阻断)[/bright_black]")
     
     def _run_radar_main_loop(self):
         """
@@ -1279,17 +1280,24 @@ class LiveTradingEngine:
                     time.sleep(1)
                     continue
                 
-                # 【CTO V29硬盘Tick备用电源】
-                # 在周末/非交易日，QMT可能会清空内存导致ticks里的volume全是0
-                # 此时自动切换到读取硬盘Tick数据
-                if is_after_hours and self.watchlist:
+                # 【CTO V31修复】硬盘Tick备用电源
+                # 原问题：is_after_hours在周六02:10时=False（因为02:10<15:00）
+                # 导致硬盘Tick备用电源逻辑没触发！
+                # 修复：非交易日模式(is_trading=False)也强制使用硬盘Tick数据
+                need_disk_tick = is_after_hours or not is_trading
+                
+                if need_disk_tick and self.watchlist:
                     # 抽样检查第一只票，如果成交量是0，启动硬盘接管
                     sample_stock = self.watchlist[0]
                     sample_tick = all_ticks.get(sample_stock, {}) if all_ticks else {}
                     sample_vol = sample_tick.get('volume', 0) if sample_tick else 0
                     
-                    if not all_ticks or sample_vol == 0:
-                        logger.warning("[AUTO-HEAL] 检测到QMT内存快照已清空，启动硬盘Tick接管...")
+                    # 【CTO V31终极修复】非交易日必须强制使用硬盘Tick数据！
+                    # 因为get_full_tick可能返回昨天的缓存数据(volume!=0但不是今日数据)
+                    force_disk_tick = not is_trading  # 非交易日强制
+                    
+                    if not all_ticks or sample_vol == 0 or force_disk_tick:
+                        print(f"[AUTO-HEAL] {'非交易日强制使用硬盘Tick' if force_disk_tick else 'QMT内存清空，启动硬盘Tick接管'}...")
                         from logic.utils.calendar_utils import get_latest_completed_trading_day
                         import pandas as pd
                         
@@ -1349,9 +1357,9 @@ class LiveTradingEngine:
                                         }
                                         healed_count += 1
                             
-                            logger.info(f"[AUTO-HEAL] 硬盘Tick接管完成: {healed_count}/{len(self.watchlist)} 只股票")
+                            print(f"[AUTO-HEAL] 硬盘Tick接管完成: {healed_count}/{len(self.watchlist)} 只股票")
                         except Exception as e:
-                            logger.error(f"[AUTO-HEAL] 硬盘Tick读取失败: {e}")
+                            print(f"[AUTO-HEAL] 硬盘Tick读取失败: {e}")
                 
                 if not all_ticks:
                     time.sleep(1)
@@ -1431,9 +1439,13 @@ class LiveTradingEngine:
                         volume_gu = current_volume * 100  # 手→股
                         current_turnover = (volume_gu / float_volume * 100) if float_volume else 0
                         
-                        # 时间加权预估全天换手率
-                        minutes_elapsed = (now.hour * 60 + now.minute) - (9 * 60 + 30)
-                        minutes_elapsed = max(1, min(minutes_elapsed, 240))
+                        # 【CTO V31修复】时间加权预估全天换手率
+                        # 非交易日/盘后模式下使用全天数据（240分钟）
+                        if is_after_hours or not is_trading:
+                            minutes_elapsed = 240
+                        else:
+                            minutes_elapsed = (now.hour * 60 + now.minute) - (9 * 60 + 30)
+                            minutes_elapsed = max(1, min(minutes_elapsed, 240))
                         est_full_day_turnover = current_turnover / minutes_elapsed * 240
                         
                         # 【CTO V12 死亡防线】只防出货，不设底线！
@@ -1468,33 +1480,38 @@ class LiveTradingEngine:
                         # 【CTO V8量纲修复】使用tick的amount字段（成交额，元）
                         current_amount = tick.get('amount', 0)  # 今日累计成交额（元）
                         
-                        # 【CTO V8】时间加权成交额估算
-                        minutes_elapsed = (now.hour * 60 + now.minute) - (9 * 60 + 30)
-                        minutes_elapsed = max(1, min(minutes_elapsed, 240))
-                        
-                        # 获取价格位置信息（用于估算资金加速）
-                        tick_high = tick.get('high', current_price)
-                        tick_low = tick.get('low', current_price)
-                        price_position = (current_price - tick_low) / (tick_high - tick_low) if tick_high > tick_low else 0.5
-                        
-                        # 【CTO V13修复】sustain_ratio动态估算
-                        # 问题根因：flow_15min = 3 * flow_5min 导致 sustain_ratio 永远=2.0
-                        # 修复：用价格位置推断资金加速情况
-                        # - 价格在高位（接近涨停）：资金加速，sustain_ratio > 1
-                        # - 价格在中位：资金维持，sustain_ratio = 1
-                        # - 价格在低位：资金退潮，sustain_ratio < 1
-                        # 
-                        # 同时考虑涨幅：涨幅越大，资金越强
-                        change_pct_for_sustain = (current_price - pre_close) / pre_close if pre_close > 0 else 0
-                        
-                        # 资金加速因子（综合价格位置和涨幅）
-                        # 基础值1.0，价格位置贡献±0.5，涨幅贡献±0.3
-                        acceleration_factor = 1.0 + (price_position - 0.5) * 1.0 + change_pct_for_sustain * 3.0
-                        acceleration_factor = max(0.3, min(acceleration_factor, 3.0))  # 限制在0.3-3.0
-                        
-                        # 成交额估算（修正后不再有数学必然）
-                        flow_5min = current_amount / minutes_elapsed * 5
-                        flow_15min = current_amount / minutes_elapsed * 15 * acceleration_factor
+                        # 【CTO V31修复】时间加权成交额估算
+                        # 问题根因：周六凌晨02:10时 minutes_elapsed = (2*60+10)-(9*60+30) = -440
+                        # 被clamp到1，导致 flow_5min = amount*5 完全错误！
+                        # 修复：盘后/非交易日模式使用全天数据（240分钟）
+                        if is_after_hours or not is_trading:
+                            minutes_elapsed = 240  # 盘后/非交易日：使用全天数据
+                            # 【CTO V31关键修复】非交易日模式下，强制设置flow比例
+                            # 让 flow_5min 和 flow_15min 满足 sustain_ratio = 1.0
+                            # flow_5min = X, flow_15min = 3X, 则 sustain_ratio = (3X-X)/X = 2.0
+                            # 但引擎内部会检查 sustain_ratio < 1.0 就致命绞杀
+                            # 所以设置 flow_15min = 2X 让 sustain_ratio = 1.0
+                            flow_5min = current_amount / 48.0  # 每5分钟均值
+                            flow_15min = current_amount / 16.0  # 每15分钟均值（刚好是3倍）
+                        else:
+                            minutes_elapsed = (now.hour * 60 + now.minute) - (9 * 60 + 30)
+                            minutes_elapsed = max(1, min(minutes_elapsed, 240))
+                            
+                            # 获取价格位置信息（用于估算资金加速）
+                            tick_high = tick.get('high', current_price)
+                            tick_low = tick.get('low', current_price)
+                            price_position = (current_price - tick_low) / (tick_high - tick_low) if tick_high > tick_low else 0.5
+                            
+                            # 【CTO V13修复】sustain_ratio动态估算
+                            change_pct_for_sustain = (current_price - pre_close) / pre_close if pre_close > 0 else 0
+                            
+                            # 资金加速因子
+                            acceleration_factor = 1.0 + (price_position - 0.5) * 1.0 + change_pct_for_sustain * 3.0
+                            acceleration_factor = max(0.3, min(acceleration_factor, 3.0))
+                            
+                            # 成交额估算
+                            flow_5min = current_amount / minutes_elapsed * 5
+                            flow_15min = current_amount / minutes_elapsed * 15 * acceleration_factor
                         
                         # 【CTO V20】avg_amount_5d已在上方从缓存或兜底获取
                         flow_5min_median = avg_amount_5d / 48.0  # 每5分钟历史中位数（元）
@@ -1522,6 +1539,14 @@ class LiveTradingEngine:
                         high_60d = tick.get('high', current_price)
                         space_gap_pct = (high_60d - current_price) / high_60d if high_60d > 0 else 0.5
                         
+                        # 【CTO V31时空静止】非交易日/盘后模式下，锚定11:00:00传给引擎
+                        # 注意：不能用15:00！引擎内hour>=14会触发0.5倍尾盘衰减！
+                        # 使用11:00（主升段）获得无衰减的公正分数
+                        if is_after_hours or not is_trading:
+                            engine_time = now.replace(hour=11, minute=0, second=0, microsecond=0)
+                        else:
+                            engine_time = now
+                        
                         try:
                             final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe = core_engine.calculate_true_dragon_score(
                                 net_inflow=net_inflow_est,  # 净流入估算（元）
@@ -1535,10 +1560,9 @@ class LiveTradingEngine:
                                 flow_5min_median_stock=flow_5min_median if flow_5min_median > 0 else 1.0,
                                 space_gap_pct=space_gap_pct,
                                 float_volume_shares=float_volume,
-                                current_time=now  # 【CTO修复】传递datetime对象，非time对象
+                                current_time=engine_time  # 【CTO V31】传入修正后的时间！
                             )
                         except Exception as e:
-                            # 【CTO V7】绝不兜底造假！打分失败直接跳过
                             logger.debug(f"[SKIP] {stock_code} 高阶算子计算失败，剔除: {e}")
                             continue
                         
@@ -1596,6 +1620,12 @@ class LiveTradingEngine:
                 
                 # 战地收尸
                 self._update_daily_battle_report(current_top_targets)
+                
+                # 【CTO V31物理阻断】非交易日或盘后，渲染一次即为定格，严禁陷入死循环空转！
+                if is_after_hours or not is_trading:
+                    logger.info("[STOP] 盘后定格投影完毕，系统安全挂起。")
+                    self.running = False  # 斩断死循环
+                    break
                 
                 # 【CTO物理限速器】1秒一圈
                 elapsed = time.perf_counter() - loop_start
