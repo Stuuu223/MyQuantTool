@@ -222,14 +222,27 @@ class LiveTradingEngine:
         if current_time >= market_open:
             logger.warning("[HOT-START] 越过开盘集合竞价，执行全局截面扫描...")
             
-            # Step 1: 先执行第一斩（集合竞价筛选），填充初始watchlist
-            logger.info("[FAST] Step 1: 执行集合竞价快照初筛...")
-            self._auction_snapshot_filter()
-            
+            # 【CTO V17零秒点火】直接用UniverseBuilder拿底池，跳过全市场扫描！
+            # 原逻辑：_auction_snapshot_filter() 全市场5191只扫描，卡3分钟
+            # 新逻辑：UniverseBuilder三漏斗筛选，毫秒级完成
             if not self.watchlist:
-                logger.warning("[WARN] 第一斩未找到目标股票，尝试全市场快照...")
-                # 备用：直接使用全市场快照
-                self._fallback_premarket_scan()
+                logger.info("[FAST] Step 1: 从UniverseBuilder装载静态物理底池...")
+                try:
+                    from logic.data_providers.universe_builder import UniverseBuilder
+                    builder = UniverseBuilder(target_date=datetime.now().strftime('%Y%m%d'))
+                    base_pool, volume_ratios = builder.build()
+                    
+                    if base_pool:
+                        self.watchlist = base_pool
+                        self.logger.info(f"[OK] 静态底池装载完成: {len(self.watchlist)} 只标的")
+                    else:
+                        logger.error("[ERR] 底池装载失败！")
+                        self._fallback_premarket_scan()
+                except Exception as e:
+                    logger.error(f"[ERR] UniverseBuilder失败: {e}")
+                    self._fallback_premarket_scan()
+            else:
+                logger.info(f"[FAST] 使用现有watchlist: {len(self.watchlist)} 只")
             
             # Step 2: 执行第二斩（开盘快照筛选），筛选强势股
             logger.info("[FAST] Step 2: 执行开盘快照二筛...")
@@ -1004,6 +1017,30 @@ class LiveTradingEngine:
         current_time_init = now_init.time()
         is_after_hours_init = current_time_init >= time_type(15, 0)
         
+        # 【CTO V18极限压榨】静态常数预编译快查表！
+        # 一天不变的值（pre_close, float_volume, avg_amount_5d）只在启动时算一次！
+        # 空间换时间：O(1)字典查找，循环内零冗余计算
+        logger.info("[FAST] 正在预编译静态指标快查表 (O(1) 复杂度)...")
+        static_cache = {}
+        for stock in self.watchlist:
+            pre_close = true_dict.get_prev_close(stock)
+            fv = true_dict.get_float_volume(stock)
+            avg_vol_5d = true_dict.get_avg_volume_5d(stock)
+            
+            # 流通市值 = 流通股本 * 昨收
+            float_market_cap = fv * pre_close if fv and pre_close else 1.0
+            # 5日均成交额 = 5日均量(手) * 100 * 昨收
+            avg_amount_5d = avg_vol_5d * 100 * pre_close if avg_vol_5d and pre_close else 1.0
+            
+            static_cache[stock] = {
+                'pre_close': pre_close,
+                'float_volume': fv,
+                'float_market_cap': float_market_cap,
+                'avg_amount_5d': avg_amount_5d,
+                'avg_volume_5d': avg_vol_5d
+            }
+        logger.info(f"[OK] 静态快查表编译完成: {len(static_cache)} 只股票")
+        
         # 【CTO V3看板绝对先行】第一帧立刻显示
         self._print_fire_control_panel([], initial_loading=True)
         
@@ -1112,8 +1149,14 @@ class LiveTradingEngine:
                     
                     current_price = tick.get('lastPrice', 0)
                     current_volume = tick.get('volume', 0)  # 今日累计成交量
-                    # 【Phase1终极修复】从快照获取prev_close，不从TrueDictionary获取
-                    pre_close = tick.get('lastClose', 0)
+                    # 【CTO V18极速调用】O(1)获取预编译静态数据
+                    s_data = static_cache.get(stock_code)
+                    if not s_data:
+                        pool_stats['filtered'] += 1
+                        continue
+                    
+                    # 使用缓存中的昨收（更可靠）
+                    pre_close = s_data['pre_close'] or tick.get('lastClose', 0)
                     
                     # 【CTO V3修复】正确的死水判断：今日累计成交量为0
                     if current_volume == 0:
@@ -1136,7 +1179,8 @@ class LiveTradingEngine:
                     # V12哲学：时间加权换手只能做上限防守，不能做下限门槛
                     # 真龙可能缩量锁筹，只要不触发派发防线，一律放行给引擎打分！
                     try:
-                        float_volume = true_dict.get_float_volume(stock_code)
+                        # 【CTO V18极速调用】从缓存获取流通股本
+                        float_volume = s_data['float_volume']
                         volume_gu = current_volume * 100  # 手→股
                         current_turnover = (volume_gu / float_volume * 100) if float_volume else 0
                         
@@ -1154,7 +1198,7 @@ class LiveTradingEngine:
                         if minutes_elapsed <= 30 and current_turnover > 15.0:
                             continue  # 开盘极速派发，跳过
                         
-                        # 3. ATR势垒（可选）
+                        # 3. ATR势垒（可选）- 这个需要动态计算，保留
                         atr_20d = true_dict.get_atr_20d(stock_code)
                         if atr_20d and atr_20d > 0:
                             today_tr = tick.get('high', current_price) - tick.get('low', current_price)
@@ -1172,8 +1216,8 @@ class LiveTradingEngine:
                     try:
                         change_pct = (current_price - pre_close) / pre_close
                         
-                        # 【CTO V8量纲修复】流通市值 = 流通股本(股) * 昨收(元)
-                        float_market_cap = float_volume * pre_close if float_volume else 1.0
+                        # 【CTO V18极速调用】从缓存获取流通市值
+                        float_market_cap = s_data['float_market_cap']
                         
                         # 【CTO V8量纲修复】使用tick的amount字段（成交额，元）
                         current_amount = tick.get('amount', 0)  # 今日累计成交额（元）
@@ -1206,9 +1250,8 @@ class LiveTradingEngine:
                         flow_5min = current_amount / minutes_elapsed * 5
                         flow_15min = current_amount / minutes_elapsed * 15 * acceleration_factor
                         
-                        # 历史中位数：使用5日均量估算
-                        avg_vol_5d = true_dict.get_avg_volume_5d(stock_code)  # 手
-                        avg_amount_5d = avg_vol_5d * 100 * pre_close if avg_vol_5d else 1.0  # 元
+                        # 【CTO V18极速调用】历史中位数从缓存获取，不再调用true_dict！
+                        avg_amount_5d = s_data['avg_amount_5d']
                         flow_5min_median = avg_amount_5d / 48.0  # 每5分钟历史中位数（元）
                         
                         # 【CTO V15终极修复】动态净流入估算
@@ -1227,8 +1270,8 @@ class LiveTradingEngine:
                         # 估算真实净流入（元）
                         net_inflow_est = current_amount * power_ratio * 0.5
                         
-                        # 【CTO V15修复】不再信任旧的float_market_cap，使用修复后的float_volume
-                        float_market_cap = float_volume * pre_close if float_volume and pre_close else 1.0
+                        # 【CTO V18极速调用】float_market_cap已在缓存中
+                        # float_market_cap = s_data['float_market_cap']  # 已在上面使用
                         
                         # 【CTO修复】使用tick真实high/low计算动态MFE
                         high_60d = tick.get('high', current_price)
