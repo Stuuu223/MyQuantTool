@@ -758,15 +758,16 @@ class LiveTradingEngine:
             
             # 【Phase1修复】不用dropna屠杀，改用fillna容错
             # 缺失数据用安全默认值填充，保留股票
+            # 【CTO V7修复】消除Pandas FutureWarning
             import numpy as np
-            df['volume_ratio'] = df['volume_ratio'].fillna(1.0)
-            df['avg_turnover_5d'] = df['avg_turnover_5d'].fillna(1.0)
-            df['avg_amount_5d'] = df['avg_amount_5d'].fillna(0.0)
-            df['current_turnover'] = df['current_turnover'].fillna(0.0)
+            df['volume_ratio'] = df['volume_ratio'].fillna(1.0).infer_objects(copy=False)
+            df['avg_turnover_5d'] = df['avg_turnover_5d'].fillna(1.0).infer_objects(copy=False)
+            df['avg_amount_5d'] = df['avg_amount_5d'].fillna(0.0).infer_objects(copy=False)
+            df['current_turnover'] = df['current_turnover'].fillna(0.0).infer_objects(copy=False)
             
             # 清理无穷大
             df.replace([np.inf, -np.inf], np.nan, inplace=True)
-            df['volume_ratio'] = df['volume_ratio'].fillna(1.0)
+            df['volume_ratio'] = df['volume_ratio'].fillna(1.0).infer_objects(copy=False)
             
             pre_filter_count = len(df)
             
@@ -919,7 +920,9 @@ class LiveTradingEngine:
         
         if is_rest or msg:
             print("📋 [机会池] TOP 10:")
-        print(f"{'排名':<4} {'代码':<12} {'🩸血量':<10} {'价格':<8} {'涨跌幅':<8} {'流入比':<8}")
+        
+        # 【CTO V7】工业级全息大屏 - 高阶算子展示
+        print(f"{'RANK':<5} {'TARGET':<10} {'🩸BLOOD':<8} {'PRICE':<7} {'CHG%':<7} {'INFLOW%':<8} {'SUSTAIN':<8} {'MFE':<6}")
         print("-" * 80)
         
         if not top_targets:
@@ -929,7 +932,12 @@ class LiveTradingEngine:
                 print("  (当前无股票达到评分基础线，或正处于休盘期)")
         else:
             for i, t in enumerate(top_targets, 1):
-                print(f"{i:<4} {t['code']:<12} {t['score']:<10.1f} {t['price']:<8.2f} {t['change']:<+7.1f}% {t['inflow_ratio']:<8.4f}")
+                # 格式化高阶算子
+                inflow_str = f"{t.get('inflow_ratio', 0)*100:.2f}%"
+                sustain_str = f"{t.get('sustain_ratio', 0):.2f}x"
+                mfe_str = f"{t.get('mfe', 0):.1f}"
+                
+                print(f"{i:<5} {t['code']:<10} {t['score']:<8.1f} {t['price']:<7.2f} {t['change']:<+6.1f}% {inflow_str:<8} {sustain_str:<8} {mfe_str:<6}")
         
         print("=" * 80)
         if msg:
@@ -1124,18 +1132,37 @@ class LiveTradingEngine:
                     try:
                         change_pct = (current_price - pre_close) / pre_close
                         
+                        # 【CTO V7量纲修复】流通市值 = 流通股本(股) * 昨收(元)
                         float_market_cap = float_volume * pre_close if float_volume else 1.0
                         
-                        flow_5min = current_volume * 0.1
-                        flow_15min = current_volume * 0.3
-                        flow_5min_median = true_dict.get_avg_volume_5d(stock_code) / 240
+                        # 【CTO V7量纲修复】使用tick的amount字段（成交额，元）
+                        # QMT tick.amount 是今日累计成交额（元）
+                        current_amount = tick.get('amount', 0)  # 今日累计成交额（元）
+                        
+                        # 近似估算：5分钟/15分钟流入 = 全天成交额 * 时间占比
+                        # 注意：这是估算值，不是真正的净流入
+                        flow_5min = current_amount * (5.0 / 240.0)  # 5分钟成交额
+                        flow_15min = current_amount * (15.0 / 240.0)  # 15分钟成交额
+                        
+                        # 历史中位数：使用5日均量估算
+                        avg_vol_5d = true_dict.get_avg_volume_5d(stock_code)  # 手
+                        avg_amount_5d = avg_vol_5d * 100 * pre_close if avg_vol_5d else 1.0  # 元
+                        flow_5min_median = avg_amount_5d / 240.0  # 每分钟历史中位数（元）
+                        
+                        # 【CTO V7量纲修复】使用成交额而非成交量
+                        current_amount = tick.get('amount', 0)  # 今日累计成交额（元）
+                        flow_5min = current_amount / 240 * 5 if current_amount > 0 else 0  # 估算5分钟成交额
+                        flow_15min = current_amount / 240 * 15 if current_amount > 0 else 0  # 估算15分钟成交额
+                        
+                        # 净流入估算：成交额 * 涨幅方向（简化版）
+                        net_inflow_est = flow_15min * (1 if change_pct >= 0 else -1)
                         
                         high_60d = tick.get('high', current_price)
                         space_gap_pct = (high_60d - current_price) / high_60d if high_60d > 0 else 0.5
                         
                         try:
                             final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe = core_engine.calculate_true_dragon_score(
-                                net_inflow=flow_15min * current_price,
+                                net_inflow=net_inflow_est,  # 净流入估算（元）
                                 price=current_price,
                                 prev_close=pre_close,
                                 high=current_price * 1.02,
@@ -1148,12 +1175,12 @@ class LiveTradingEngine:
                                 float_volume_shares=float_volume,
                                 current_time=now.time()
                             )
-                        except Exception:
-                            final_score = change_pct * 100
-                            sustain_ratio = 1.0
-                            inflow_ratio = flow_15min * current_price / float_market_cap if float_market_cap > 0 else 0
-                            ratio_stock = flow_5min / flow_5min_median if flow_5min_median > 0 else 0
+                        except Exception as e:
+                            # 【CTO V7】绝不兜底造假！打分失败直接跳过
+                            logger.debug(f"🚫 {stock_code} 高阶算子计算失败，剔除: {e}")
+                            continue
                         
+                        # 【CTO V7】完整记录高阶算子
                         current_top_targets.append({
                             'code': stock_code,
                             'score': final_score,
@@ -1161,7 +1188,8 @@ class LiveTradingEngine:
                             'change': change_pct * 100,
                             'inflow_ratio': inflow_ratio,
                             'ratio_stock': ratio_stock,
-                            'sustain_ratio': sustain_ratio
+                            'sustain_ratio': sustain_ratio,
+                            'mfe': mfe  # 资金效率指标
                         })
                     except Exception:
                         continue
@@ -1865,14 +1893,10 @@ class LiveTradingEngine:
         logger.info("🛑 停止实盘总控引擎...")
         self.running = False
         
-        # 【CTO核心护城河】释放QMT底层内存，防止内存泄漏！
+        # 【CTO V7修复】QMT无需手动取消订阅，进程退出时自动释放
+        # 原unsubscribe_whole_quote是幻觉函数，QMT官方无此方法
         if self.watchlist:
-            try:
-                from xtquant import xtdata
-                xtdata.unsubscribe_whole_quote(self.watchlist)
-                logger.info(f"✅ 已释放 {len(self.watchlist)} 只股票的QMT订阅")
-            except Exception as e:
-                logger.warning(f"⚠️ 取消订阅失败: {e}")
+            logger.info(f"✅ 系统安全退出，{len(self.watchlist)} 只股票订阅由操作系统回收")
         
         # 停止事件总线
         if self.event_bus:
