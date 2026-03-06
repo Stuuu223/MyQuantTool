@@ -1149,14 +1149,24 @@ class LiveTradingEngine:
                     
                     current_price = tick.get('lastPrice', 0)
                     current_volume = tick.get('volume', 0)  # 今日累计成交量
-                    # 【CTO V18极速调用】O(1)获取预编译静态数据
-                    s_data = static_cache.get(stock_code)
-                    if not s_data:
-                        pool_stats['filtered'] += 1
-                        continue
                     
-                    # 使用缓存中的昨收（更可靠）
-                    pre_close = s_data['pre_close'] or tick.get('lastClose', 0)
+                    # 【CTO V20手术一】废除"缓存不到就杀人"的弱智拦截！
+                    # 原Bug：if not s_data: continue 直接杀掉了87只股票
+                    # 修复：缓存缺失时兜底现场计算，绝不物理删除！
+                    s_data = static_cache.get(stock_code)
+                    if s_data:
+                        pre_close = s_data.get('pre_close') or tick.get('lastClose', 0)
+                        float_volume = s_data.get('float_volume', 1.0)
+                        float_market_cap = s_data.get('float_market_cap', 1.0)
+                        avg_amount_5d = s_data.get('avg_amount_5d', 1.0)
+                        avg_volume_5d = s_data.get('avg_volume_5d', 1.0)
+                    else:
+                        # 【CTO V20兜底】缓存缺失，现场去取！
+                        pre_close = tick.get('lastClose', 0)
+                        float_volume = true_dict.get_float_volume(stock_code) or 1.0
+                        avg_volume_5d = true_dict.get_avg_volume_5d(stock_code) or 1.0
+                        float_market_cap = float_volume * pre_close if float_volume > 0 and pre_close > 0 else 1.0
+                        avg_amount_5d = avg_volume_5d * 100 * pre_close if avg_volume_5d > 0 and pre_close > 0 else 1.0
                     
                     # 【CTO V3修复】正确的死水判断：今日累计成交量为0
                     if current_volume == 0:
@@ -1179,8 +1189,7 @@ class LiveTradingEngine:
                     # V12哲学：时间加权换手只能做上限防守，不能做下限门槛
                     # 真龙可能缩量锁筹，只要不触发派发防线，一律放行给引擎打分！
                     try:
-                        # 【CTO V18极速调用】从缓存获取流通股本
-                        float_volume = s_data['float_volume']
+                        # 【CTO V20】float_volume已在上方从缓存或兜底获取
                         volume_gu = current_volume * 100  # 手→股
                         current_turnover = (volume_gu / float_volume * 100) if float_volume else 0
                         
@@ -1216,8 +1225,7 @@ class LiveTradingEngine:
                     try:
                         change_pct = (current_price - pre_close) / pre_close
                         
-                        # 【CTO V18极速调用】从缓存获取流通市值
-                        float_market_cap = s_data['float_market_cap']
+                        # 【CTO V20】float_market_cap已在上方从缓存或兜底获取
                         
                         # 【CTO V8量纲修复】使用tick的amount字段（成交额，元）
                         current_amount = tick.get('amount', 0)  # 今日累计成交额（元）
@@ -1250,8 +1258,7 @@ class LiveTradingEngine:
                         flow_5min = current_amount / minutes_elapsed * 5
                         flow_15min = current_amount / minutes_elapsed * 15 * acceleration_factor
                         
-                        # 【CTO V18极速调用】历史中位数从缓存获取，不再调用true_dict！
-                        avg_amount_5d = s_data['avg_amount_5d']
+                        # 【CTO V20】avg_amount_5d已在上方从缓存或兜底获取
                         flow_5min_median = avg_amount_5d / 48.0  # 每5分钟历史中位数（元）
                         
                         # 【CTO V15终极修复】动态净流入估算
@@ -1302,17 +1309,21 @@ class LiveTradingEngine:
                         # purity判断基于真实流入比，阈值0.05=5%
                         purity_tag = "PURE" if inflow_ratio > 0.05 else ("MIX" if inflow_ratio > 0 else "DUMP")
                         
-                        current_top_targets.append({
-                            'code': stock_code,
-                            'score': final_score,
-                            'price': current_price,
-                            'change': change_pct * 100,
-                            'inflow_ratio': inflow_ratio,  # 【CTO V15】真实值，绝不造假！
-                            'ratio_stock': ratio_stock,
-                            'sustain_ratio': sustain_ratio,
-                            'mfe': mfe,  # 资金效率指标
-                            'purity': purity_tag  # 【CTO V9】纯度标签
-                        })
+                        # 【CTO V20垃圾隔离防线】
+                        # 1. 决不允许不及格的票（<50分）上榜！
+                        # 2. 决不允许纯出货（DUMP）的票上榜！
+                        if final_score >= 50.0 and purity_tag != "DUMP":
+                            current_top_targets.append({
+                                'code': stock_code,
+                                'score': final_score,
+                                'price': current_price,
+                                'change': change_pct * 100,
+                                'inflow_ratio': inflow_ratio,  # 【CTO V15】真实值，绝不造假！
+                                'ratio_stock': ratio_stock,
+                                'sustain_ratio': sustain_ratio,
+                                'mfe': mfe,  # 资金效率指标
+                                'purity': purity_tag  # 【CTO V9】纯度标签
+                            })
                     except Exception:
                         continue
                 
