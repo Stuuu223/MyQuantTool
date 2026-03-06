@@ -64,7 +64,7 @@ class LiveTradingEngine:
         """
         # CTO强制：QMT Manager必须由外部注入！
         if qmt_manager is None:
-            logger.error("❌ [LiveTradingEngine] CTO命令：没有券商通道，不准开机！")
+            logger.error("[ERR] [LiveTradingEngine] CTO命令：没有券商通道，不准开机！")
             raise RuntimeError(
                 "致命错误：QMT Manager缺失！\n"
                 "CTO命令：实盘引擎拒绝空转！\n"
@@ -100,7 +100,7 @@ class LiveTradingEngine:
         # 【架构解耦】初始化QMT事件适配器（需要event_bus已就绪）
         self._init_qmt_adapter()
         
-        logger.info("✅ [LiveTradingEngine] 初始化完成 - QMT Manager已注入")
+        logger.info("[OK] [LiveTradingEngine] 初始化完成 - QMT Manager已注入")
     
     def _init_kinetic_engine(self):
         """【CTO挂载】初始化微积分形态学引擎管理器 - 时空对齐"""
@@ -108,9 +108,9 @@ class LiveTradingEngine:
             from logic.execution.kinetic_engine import KineticEngine
             self.kinetic_engine_class = KineticEngine
             self.kinetic_engines = {}  # {stock_code: engine_instance}
-            logger.info("🎯 [时空对齐] KineticEngine微积分引擎管理器已挂载")
+            logger.info("[TARGET] [时空对齐] KineticEngine微积分引擎管理器已挂载")
         except Exception as e:
-            logger.error(f"❌ KineticEngine挂载失败: {e}")
+            logger.error(f"[ERR] KineticEngine挂载失败: {e}")
             self.kinetic_engine_class = None
             self.kinetic_engines = {}
     
@@ -122,7 +122,7 @@ class LiveTradingEngine:
             try:
                 self.kinetic_engines[stock_code] = self.kinetic_engine_class(stock_code)
             except Exception as e:
-                logger.debug(f"⚠️ 创建KineticEngine失败 {stock_code}: {e}")
+                logger.debug(f"[WARN] 创建KineticEngine失败 {stock_code}: {e}")
                 return None
         return self.kinetic_engines[stock_code]
     
@@ -131,27 +131,27 @@ class LiveTradingEngine:
         try:
             from logic.data_providers.event_bus import create_event_bus
             self.event_bus = create_event_bus(max_queue_size=20000, max_workers=10)
-            logger.debug("🎯 EventBus 已初始化")
+            logger.debug("[TARGET] EventBus 已初始化")
         except Exception as e:
-            logger.error(f"❌ EventBus 初始化失败: {e}")
+            logger.error(f"[ERR] EventBus 初始化失败: {e}")
             raise RuntimeError(f"EventBus初始化失败: {e}")
         
         # 【CTO修复连环雷2】FullMarketScanner已废弃，用UniverseBuilder替代！
         # 原因：FullMarketScanner模块不存在，导致self.scanner=None
         # 修复：直接使用UniverseBuilder的粗筛能力
         self.scanner = None  # 标记为None，后续用UniverseBuilder
-        logger.info("🎯 [纯血游资雷达] 使用UniverseBuilder替代FullMarketScanner进行粗筛")
+        logger.info("[TARGET] [纯血游资雷达] 使用UniverseBuilder替代FullMarketScanner进行粗筛")
         
         try:
             from logic.data_providers.event_bus import create_event_bus
             self.event_bus = create_event_bus(max_queue_size=20000, max_workers=10)  # 扩大队列容量和工作线程
-            logger.debug("🎯 EventBus 已加载")
+            logger.debug("[TARGET] EventBus 已加载")
         except ImportError:
             self.event_bus = None
-            logger.error("❌ EventBus 加载失败")
+            logger.error("[ERR] EventBus 加载失败")
         except Exception as e:
             self.event_bus = None
-            logger.error(f"❌ EventBus 初始化异常: {e}")    
+            logger.error(f"[ERR] EventBus 初始化异常: {e}")    
     def _init_qmt_adapter(self):
         """
         【架构解耦】初始化QMT事件适配器
@@ -162,12 +162,12 @@ class LiveTradingEngine:
             from logic.data_providers.qmt_event_adapter import QMTEventAdapter
             self.qmt_adapter = QMTEventAdapter(event_bus=self.event_bus)
             if self.qmt_adapter.initialize():
-                logger.info("✅ [LiveTradingEngine] QMTEventAdapter 初始化成功")
+                logger.info("[OK] [LiveTradingEngine] QMTEventAdapter 初始化成功")
             else:
-                logger.error("❌ [LiveTradingEngine] QMTEventAdapter 初始化失败")
+                logger.error("[ERR] [LiveTradingEngine] QMTEventAdapter 初始化失败")
                 self.qmt_adapter = None
         except Exception as e:
-            logger.error(f"❌ [LiveTradingEngine] QMTEventAdapter 创建失败: {e}")
+            logger.error(f"[ERR] [LiveTradingEngine] QMTEventAdapter 创建失败: {e}")
             self.qmt_adapter = None
     
     def start_session(self, enable_dynamic_radar: bool = True):
@@ -183,19 +183,19 @@ class LiveTradingEngine:
         # 【CTO V4看板绝对先行】第一帧立刻显示，不等任何操作！
         os.system('cls' if os.name == 'nt' else 'clear')
         print("=" * 80)
-        print("🚀 [V20 纯血游资猎杀雷达] | 引擎唤醒中...")
-        print("⏳ 正在进行全市场粗筛，请等待...")
+        print("[RADAR] [V20 纯血游资猎杀雷达] | 引擎唤醒中...")
+        print(" 正在进行全市场粗筛，请等待...")
         print("=" * 80)
         
         # 【CTO修复】将参数保存为实例变量，供后续函数使用
         self.enable_dynamic_radar = enable_dynamic_radar
-        logger.info("🚀 启动实盘总控引擎 (CTO V4四级漏斗版)")
+        logger.info("[RADAR] 启动实盘总控引擎 (CTO V4四级漏斗版)")
         
         # QMT Manager已通过依赖注入保证存在，无需检查
-        logger.info("✅ [LiveTradingEngine] QMT Manager已就绪，启动完整模式")
+        logger.info("[OK] [LiveTradingEngine] QMT Manager已就绪，启动完整模式")
         
         if self.event_bus is None:
-            logger.error("❌ [LiveTradingEngine] EventBus缺失，会话启动失败！")
+            logger.error("[ERR] [LiveTradingEngine] EventBus缺失，会话启动失败！")
             raise RuntimeError("致命错误：EventBus缺失，会话启动失败！")
         
         self.running = True
@@ -212,14 +212,14 @@ class LiveTradingEngine:
         
         # CTO修复：盘中启动时必须先执行快照筛选！
         if current_time >= market_open:
-            logger.warning("⚠️ 当前时间已过09:30开盘，执行盘中补网...")
+            logger.warning("[WARN] 当前时间已过09:30开盘，执行盘中补网...")
             
             # Step 1: 先执行第一斩（集合竞价筛选），填充初始watchlist
             logger.info("🔄 Step 1: 执行集合竞价快照初筛...")
             self._auction_snapshot_filter()
             
             if not self.watchlist:
-                logger.warning("⚠️ 第一斩未找到目标股票，尝试全市场快照...")
+                logger.warning("[WARN] 第一斩未找到目标股票，尝试全市场快照...")
                 # 备用：直接使用全市场快照
                 self._fallback_premarket_scan()
             
@@ -229,8 +229,8 @@ class LiveTradingEngine:
             
             # Step 3: 检查watchlist是否填充成功
             if not self.watchlist:
-                logger.warning("❌ 快照筛选未找到目标股票，系统进入待机模式")
-                logger.info("💡 提示：可能当前没有符合量比>0.95分位数的强势股")
+                logger.warning("[ERR] 快照筛选未找到目标股票，系统进入待机模式")
+                logger.info("[INFO] 提示：可能当前没有符合量比>0.95分位数的强势股")
                 logger.info("🔄 系统将持续运行，等待下一分钟自动补网...")
                 # CTO修复：不再自杀，系统持续运行等待自动补网
                 # 启动自动补网机制
@@ -238,11 +238,11 @@ class LiveTradingEngine:
                 return
             
             # Step 4: 订阅Tick数据（在watchlist填充后）
-            logger.info("📡 订阅目标股票Tick数据...")
+            logger.info("[DATA] 订阅目标股票Tick数据...")
             self._setup_qmt_callbacks()
             
             # Step 5: 进入高频监控模式
-            logger.info(f"🎯 进入高频监控模式，锁定右侧起爆目标 {len(self.watchlist)} 只目标")
+            logger.info(f"[TARGET] 进入高频监控模式，锁定右侧起爆目标 {len(self.watchlist)} 只目标")
             
             # 【CTO暴怒扒皮第一棒】强制高亮输出Watchlist数量
             watchlist_count = len(self.watchlist)
@@ -251,18 +251,18 @@ class LiveTradingEngine:
             if watchlist_count > 0:
                 logger.info(f"📊 [CTO强制审计] 观察池前5只股票: {self.watchlist[:5]}")
             else:
-                logger.error(f"❌ [CTO强制审计] 观察池为空！0.90分位的宽体雷达失效！")
+                logger.error(f"[ERR] [CTO强制审计] 观察池为空！0.90分位的宽体雷达失效！")
             logger.info("=" * 60)
             
             # 【CTO强制回显】终端控制台输出
             import click
             click.echo(f"\n{'='*60}")
             click.echo(f"📢 [CTO物理透视] 盘中补网完毕！")
-            click.echo(f"🎯 成功进入观察池的股票数量: {watchlist_count} 只")
+            click.echo(f"[TARGET] 成功进入观察池的股票数量: {watchlist_count} 只")
             if watchlist_count > 0:
-                click.echo(click.style(f"✅ 观察池前5只: {self.watchlist[:5]}", fg="green"))
+                click.echo(click.style(f"[OK] 观察池前5只: {self.watchlist[:5]}", fg="green"))
             else:
-                click.echo(click.style("❌ 致命警报：观察池为0！所有股票均被过滤！", fg="red"))
+                click.echo(click.style("[ERR] 致命警报：观察池为0！所有股票均被过滤！", fg="red"))
             click.echo(f"{'='*60}\n")
             
             self._fire_control_mode()
@@ -270,7 +270,7 @@ class LiveTradingEngine:
         
         # 如果已过09:25但未到09:30，执行快照初筛
         if current_time >= auction_end:
-            logger.info("🎯 已过09:25，立即执行CTO第一斩...")
+            logger.info("[TARGET] 已过09:25，立即执行CTO第一斩...")
             self._premarket_scan()  # 内部调用_auction_snapshot_filter
             
             # 计算到09:30的剩余时间
@@ -305,7 +305,7 @@ class LiveTradingEngine:
     
     def _execute_auction_filter(self):
         """执行09:25集合竞价初筛"""
-        logger.info("🔪 09:25 - CTO第一斩：集合竞价快照初筛...")
+        logger.info("[CTO] 09:25 - CTO第一斩：集合竞价快照初筛...")
         self._premarket_scan()  # 内部调用_auction_snapshot_filter
         
         # 计算到09:30的剩余时间
@@ -321,7 +321,7 @@ class LiveTradingEngine:
             time.sleep(seconds_to_open)
         
         # 【CTO V5修复】直接调用粗筛，不再用Timer
-        logger.info("🎯 已到09:30，立即启动开盘快照过滤...")
+        logger.info("[TARGET] 已到09:30，立即启动开盘快照过滤...")
         self._snapshot_filter()
         
         # 【CTO V5修复】直接进入雷达循环！
@@ -338,20 +338,20 @@ class LiveTradingEngine:
         """
         # CTO修复：检查watchlist是否已初始化
         if not self.watchlist:
-            logger.warning("⚠️ watchlist未初始化，跳过Tick订阅")
+            logger.warning("[WARN] watchlist未初始化，跳过Tick订阅")
             return
             
         # 检查adapter是否就绪
         if not hasattr(self, 'qmt_adapter') or self.qmt_adapter is None:
-            logger.error("❌ QMTEventAdapter未初始化，无法订阅Tick")
+            logger.error("[ERR] QMTEventAdapter未初始化，无法订阅Tick")
             return
             
         # 【架构解耦】通过adapter订阅，主引擎保持纯粹
         try:
             subscribed_count = self.qmt_adapter.subscribe_ticks(self.watchlist)
-            logger.info(f"✅ Tick订阅完成: {subscribed_count}/{len(self.watchlist)} 只股票")
+            logger.info(f"[OK] Tick订阅完成: {subscribed_count}/{len(self.watchlist)} 只股票")
         except Exception as e:
-            logger.error(f"❌ Tick订阅失败: {e}")
+            logger.error(f"[ERR] Tick订阅失败: {e}")
     
     def _auction_snapshot_filter(self):
         """
@@ -490,15 +490,15 @@ class LiveTradingEngine:
                 output_df = filtered_df[['stock_code', 'open', 'prev_close', 'open_change_pct', 
                                          'volume', 'amount', 'auction_power', 'bidVol1', 'askVol1']]
                 output_df.to_csv(output_path, index=False, encoding='utf-8-sig')
-                logger.info(f"✅ [竞价收割] {len(filtered_df)}只股票竞价数据已落盘 -> {output_path}")
+                logger.info(f"[OK] [竞价收割] {len(filtered_df)}只股票竞价数据已落盘 -> {output_path}")
             except Exception as e:
-                logger.warning(f"⚠️ 竞价数据保存失败: {e}")
+                logger.warning(f"[WARN] 竞价数据保存失败: {e}")
             
             # 8. 更新watchlist为初筛结果（CTO处决：删除Magic Number截断！）
             self.watchlist = filtered_df['stock_code'].tolist()
             
             logger.info(
-                f"🔪 CTO第一斩完成: {original_count}只 → {len(self.watchlist)}只 "
+                f"[CTO] CTO第一斩完成: {original_count}只 → {len(self.watchlist)}只 "
                 f"({len(self.watchlist)/original_count*100:.1f}%),耗时{elapsed:.2f}ms"
             )
             
@@ -513,8 +513,8 @@ class LiveTradingEngine:
             )
             
         except Exception as e:
-            logger.error(f"❌ 09:25快照初筛失败: {e}")
-            logger.warning("⚠️ 初筛失败，回退到基础股票池（限制100只）")
+            logger.error(f"[ERR] 09:25快照初筛失败: {e}")
+            logger.warning("[WARN] 初筛失败，回退到基础股票池（限制100只）")
             self._fallback_premarket_scan()
 
     def _fallback_premarket_scan(self):
@@ -522,18 +522,18 @@ class LiveTradingEngine:
         【CTO修复】回退方案：使用QMTEventAdapter快照获取基础股票池
         严禁使用UniverseBuilder（它是盘前工具，依赖日K线）
         """
-        logger.warning("⚠️ 执行QMT快照回退方案...")
+        logger.warning("[WARN] 执行QMT快照回退方案...")
         
         try:
             # 使用QMTEventAdapter获取全市场快照
             if not hasattr(self, 'qmt_adapter') or self.qmt_adapter is None:
-                logger.error("❌ QMTEventAdapter未初始化，回退失败")
+                logger.error("[ERR] QMTEventAdapter未初始化，回退失败")
                 self.watchlist = []
                 return
             
             all_stocks = self.qmt_adapter.get_all_a_shares()
             if not all_stocks:
-                logger.error("❌ 无法获取股票列表")
+                logger.error("[ERR] 无法获取股票列表")
                 self.watchlist = []
                 return
             
@@ -543,10 +543,10 @@ class LiveTradingEngine:
                 self.watchlist = list(snapshot.keys())[:100]
                 logger.info(f"📊 QMT快照回退完成: {len(self.watchlist)} 只候选")
             else:
-                logger.error("❌ 快照获取失败")
+                logger.error("[ERR] 快照获取失败")
                 self.watchlist = []
         except Exception as e:
-            logger.error(f"❌ 回退方案失败: {e}")
+            logger.error(f"[ERR] 回退方案失败: {e}")
             self.watchlist = []
 
     def _premarket_scan(self):
@@ -580,17 +580,17 @@ class LiveTradingEngine:
                 atr_count = len(true_dict._atr_20d_map) if hasattr(true_dict, '_atr_20d_map') else 0
                 prev_close_count = len(true_dict._prev_close_cache) if hasattr(true_dict, '_prev_close_cache') else 0
                 logger.info(
-                    f"✅ TrueDictionary装弹完成: "
+                    f"[OK] TrueDictionary装弹完成: "
                     f"涨停价{result['qmt'].get('success', 0)}只, "
                     f"5日均量{result['avg_volume'].get('success', 0)}只, "
                     f"ATR{atr_count}只, prev_close{prev_close_count}只"
                 )
             else:
-                logger.warning(f"⚠️ TrueDictionary装弹不完整: 缺失率{result['integrity']['missing_rate']*100:.1f}%")
+                logger.warning(f"[WARN] TrueDictionary装弹不完整: 缺失率{result['integrity']['missing_rate']*100:.1f}%")
                 
         except Exception as e:
-            logger.error(f"❌ TrueDictionary预热失败: {e}")
-            logger.warning("💡 提示：将使用实时数据获取，可能影响性能")
+            logger.error(f"[ERR] TrueDictionary预热失败: {e}")
+            logger.warning("[INFO] 提示：将使用实时数据获取，可能影响性能")
     
     def _get_extended_stock_pool(self, universe: List[str]) -> List[str]:
         """
@@ -633,7 +633,7 @@ class LiveTradingEngine:
             logger.debug(f"获取扩展股票池失败: {e}")
         
         result = list(extended)
-        logger.info(f"📦 扩展股票池: {len(result)} 只 (基础池 {len(universe)} 只)")
+        logger.info(f"[BOX] 扩展股票池: {len(result)} 只 (基础池 {len(universe)} 只)")
         return result
     
     def _normalize_stock_code(self, code: str) -> Optional[str]:
@@ -801,14 +801,14 @@ class LiveTradingEngine:
             max_open_turnover = 30.0        # 开盘换手率>30%视为死亡派发
             
             logger.info(f"\n{'='*60}")
-            logger.info(f"🔬 【四级漏斗-第二级粗筛】CTO V7牛市参数生效！")
+            logger.info(f"[FILTER] 【四级漏斗-第二级粗筛】CTO V7牛市参数生效！")
             logger.info(f"{'='*60}")
-            logger.info(f"▶ 运行模式: {mode_tag} (已过{minutes_passed:.0f}分钟)")
-            logger.info(f"▶ 输入池: {pre_filter_count} 只")
-            logger.info(f"▶ 量比门槛: >= {min_volume_multiplier:.2f}x (90th分位+1.5x下限)")
-            logger.info(f"▶ 5日均额门槛: >= {min_avg_amount_5d/10000:.0f}万 (牛市经验)")
-            logger.info(f"▶ 5日均换手门槛: >= {min_avg_turnover_5d:.1f}% (暗流期捕捉)")
-            logger.info(f"▶ 死亡换手拦截: 开盘换手 < {max_open_turnover:.0f}%")
+            logger.info(f"> 运行模式: {mode_tag} (已过{minutes_passed:.0f}分钟)")
+            logger.info(f"> 输入池: {pre_filter_count} 只")
+            logger.info(f"> 量比门槛: >= {min_volume_multiplier:.2f}x (90th分位+1.5x下限)")
+            logger.info(f"> 5日均额门槛: >= {min_avg_amount_5d/10000:.0f}万 (牛市经验)")
+            logger.info(f"> 5日均换手门槛: >= {min_avg_turnover_5d:.1f}% (暗流期捕捉)")
+            logger.info(f"> 死亡换手拦截: 开盘换手 < {max_open_turnover:.0f}%")
             
             # 多维复合过滤
             mask = (
@@ -823,7 +823,7 @@ class LiveTradingEngine:
             post_filter_count = len(filtered_df)
             
             logger.info(f"\n📊 【粗筛结果】:")
-            logger.info(f"▶ 粗筛池: {post_filter_count} 只 (目标500-900只)")
+            logger.info(f"> 粗筛池: {post_filter_count} 只 (目标500-900只)")
             logger.info(f"🚫 淘汰: {pre_filter_count - post_filter_count} 只")
             logger.info(f"{'='*60}\n")
             
@@ -834,22 +834,22 @@ class LiveTradingEngine:
             
             # 数量提示
             if post_filter_count == 0:
-                logger.warning(f"⚠️ 粗筛池为空！量比门槛{min_volume_multiplier:.1f}x可能过高")
+                logger.warning(f"[WARN] 粗筛池为空！量比门槛{min_volume_multiplier:.1f}x可能过高")
             elif post_filter_count < 100:
-                logger.info(f"💡 粗筛池数量较少: {post_filter_count}只")
+                logger.info(f"[INFO] 粗筛池数量较少: {post_filter_count}只")
             else:
-                logger.info(f"✅ 粗筛池已就绪: {post_filter_count}只")
+                logger.info(f"[OK] 粗筛池已就绪: {post_filter_count}只")
             
             # 【CTO V5处决】删除粗筛池上限截断！真实漏斗由量比决定！
             self.watchlist = filtered_df['stock_code'].tolist()
             
-            logger.info(f"🔪 CTO四级漏斗-粗筛完成: {original_count}只 → {len(self.watchlist)}只，耗时{elapsed:.2f}ms")
+            logger.info(f"[CTO] CTO四级漏斗-粗筛完成: {original_count}只 → {len(self.watchlist)}只，耗时{elapsed:.2f}ms")
             
             # 终端回显
             import click
             click.echo(f"\n{'='*60}")
             click.echo(f"📢 [四级漏斗-粗筛] {mode_tag}模式 | 量比>={min_volume_multiplier:.1f}x")
-            click.echo(f"🎯 粗筛池: {len(self.watchlist)} 只")
+            click.echo(f"[TARGET] 粗筛池: {len(self.watchlist)} 只")
             click.echo(f"{'='*60}\n")
             
             # 【CTO V5修复】删除Timer等待，直接return让start_session控制流程！
@@ -857,7 +857,7 @@ class LiveTradingEngine:
             return
             
         except Exception as e:
-            logger.error(f"❌ 09:30开盘粗筛失败: {e}")
+            logger.error(f"[ERR] 09:30开盘粗筛失败: {e}")
             import traceback
             logger.error(traceback.format_exc())
     
@@ -869,11 +869,11 @@ class LiveTradingEngine:
         """
         # CTO修复：检查watchlist是否已初始化
         if not self.watchlist:
-            logger.warning("⚠️ 股票池未初始化，跳过高频监控模式")
-            logger.info("💡 提示：系统持续监控中，等待右侧起爆信号...")
+            logger.warning("[WARN] 股票池未初始化，跳过高频监控模式")
+            logger.info("[INFO] 提示：系统持续监控中，等待右侧起爆信号...")
             return
         
-        logger.info(f"🎯 高频监控已激活: {len(self.watchlist)} 只目标 (主线程直接轮询)")
+        logger.info(f"[TARGET] 高频监控已激活: {len(self.watchlist)} 只目标 (主线程直接轮询)")
         
         # 初始化交易相关组件
         self._init_trading_components()
@@ -886,7 +886,7 @@ class LiveTradingEngine:
     
     def _init_trading_components(self):
         """【CTO清理】初始化交易相关组件 - 纯血游资架构"""
-        logger.debug("🎯 [纯血游资雷达] 交易组件初始化完成（精简模式）")
+        logger.debug("[TARGET] [纯血游资雷达] 交易组件初始化完成（精简模式）")
     
     def _print_fire_control_panel(self, top_targets, initial_loading=False, pool_stats=None, is_rest=False, msg=None):
         """
@@ -905,54 +905,55 @@ class LiveTradingEngine:
         os.system('cls' if os.name == 'nt' else 'clear')
         now_str = datetime.now().strftime('%H:%M:%S')
         
-        print("=" * 80)
+        print("=" * 100)
         if msg:
-            print(f"🚀 [V20 纯血游资猎杀雷达] | {msg} | {now_str}")
+            print(f"[V20 纯血游资猎杀雷达] | {msg} | {now_str}")
         elif is_rest:
-            print(f"🚀 [V20 纯血游资猎杀雷达] | 📋 午休复盘模式 | {now_str}")
+            print(f"[V20 纯血游资猎杀雷达] | [静态复盘模式] | {now_str}")
         else:
-            print(f"🚀 [V20 纯血游资猎杀雷达] | 极速轮询模式 | {now_str}")
-        print("=" * 80)
+            print(f"[V20 纯血游资猎杀雷达] | [极速高频模式] | {now_str}")
+        print("=" * 100)
         
         if initial_loading:
-            print("\n📡 雷达已锁定目标，正在捕获首轮微观动能数据...")
-            print("⏳ 数据加载中 (Loading...)...\n")
-            print("=" * 80)
+            print("\n[RADAR] 已锁定目标，正在捕获首轮微观动能数据...")
+            print("[LOADING] 数据加载中...\n")
+            print("=" * 100)
             return
         
         if pool_stats:
-            print(f"🎯 [狩猎漏斗] 基础池: 5191家 -> 粗筛池: {pool_stats['total']}家 -> 活跃监测: {pool_stats['active']}家")
-            print(f"📈 [池内情绪] 涨: {pool_stats['up']}家 | 跌: {pool_stats['down']}家 | 死水/停牌: {pool_stats['filtered']}家")
-            print("-" * 80)
+            print(f"[漏斗统计] 基础池: 5191只 -> 粗筛防线: {pool_stats['total']}只 -> 活跃决断: {pool_stats['active']}只")
+            print(f"[战场情绪] 封板/红盘: {pool_stats['up']}只 | 绿盘/水下: {pool_stats['down']}只 | 淘汰/死水: {pool_stats['filtered']}只")
+            print("-" * 100)
         
         if is_rest or msg:
-            print("📋 [机会池] TOP 10:")
+            print("[机会池] TOP 10:")
         
-        # 【CTO V7】工业级全息大屏 - 高阶算子展示
-        print(f"{'RANK':<5} {'TARGET':<10} {'🩸BLOOD':<8} {'PRICE':<7} {'CHG%':<7} {'INFLOW%':<8} {'SUSTAIN':<8} {'MFE':<6}")
-        print("-" * 80)
+        # 【CTO V8】工业级全息大屏 - 纯ASCII极简版
+        print(f"{'RANK':<5} {'TARGET':<10} {'SCORE':<9} {'PRICE':<7} {'CHG%':<8} {'INFLOW%':<8} {'SUSTAIN':<8} {'MFE':<7} {'PURITY':<8}")
+        print("-" * 100)
         
         if not top_targets:
             if is_rest or msg:
                 print("  (暂无机会池数据)")
             else:
-                print("  (当前无股票达到评分基础线，或正处于休盘期)")
+                print("  (当前无目标穿透三维防线，或处于数据静默期...)")
         else:
             for i, t in enumerate(top_targets, 1):
                 # 格式化高阶算子
                 inflow_str = f"{t.get('inflow_ratio', 0)*100:.2f}%"
                 sustain_str = f"{t.get('sustain_ratio', 0):.2f}x"
-                mfe_str = f"{t.get('mfe', 0):.1f}"
+                mfe_str = f"{t.get('mfe', 0):.2f}"
+                purity_str = str(t.get('purity', '-'))
                 
-                print(f"{i:<5} {t['code']:<10} {t['score']:<8.1f} {t['price']:<7.2f} {t['change']:<+6.1f}% {inflow_str:<8} {sustain_str:<8} {mfe_str:<6}")
+                print(f"{i:<5} {t['code']:<10} {t['score']:<9.2f} {t['price']:<7.2f} {t['change']:<+7.2f}% {inflow_str:<8} {sustain_str:<8} {mfe_str:<7} {purity_str:<8}")
         
-        print("=" * 80)
+        print("=" * 100)
         if msg:
-            print(f"💡 {msg} - 数据已定格，仅供复盘审阅 (按 Ctrl+C 退出)")
+            print(f"[INFO] {msg} - 数据已定格，仅供复盘审阅 (按 Ctrl+C 退出)")
         elif is_rest:
-            print("💡 [复盘模式] 保留最后机会池数据，等待下午开盘... (按 Ctrl+C 退出)")
+            print("[INFO] 复盘模式 - 保留最后机会池数据，等待下午开盘... (按 Ctrl+C 退出)")
         else:
-            print("💡 提示: 系统1秒极速刷新中... (按 Ctrl+C 退出并生成最终战报)")
+            print("[CMD] 1秒极速刷新... 按 Ctrl+C 生成收官战报")
     
     def _run_radar_main_loop(self):
         """
@@ -1004,9 +1005,9 @@ class LiveTradingEngine:
                     time.sleep(0.1)  # 【CTO V7】必须让底盘呼吸！
                 except Exception as e:
                     logger.warning(f"批次 {i//batch_size + 1} 唤醒失败: {e}")
-            logger.info("✅ 缓存唤醒完毕，雷达正式起转！")
+            logger.info("[OK] 缓存唤醒完毕，雷达正式起转！")
         
-        logger.info("⚡ 主线程雷达循环开启！")
+        logger.info("[FAST] 主线程雷达循环开启！")
         
         try:
             while self.running:
@@ -1047,7 +1048,7 @@ class LiveTradingEngine:
                             'down': 0,
                             'filtered': len(self.watchlist)
                         },
-                        msg="📋 盘后定格投影 - 今天的最终战果"
+                        msg="[LIST] 盘后定格投影 - 今天的最终战果"
                     )
                     time.sleep(10)
                     continue
@@ -1121,7 +1122,7 @@ class LiveTradingEngine:
                         # 换手率细筛：>5% 且 <70%（死亡换手线）
                         if turnover_rate < 5.0:
                             continue  # 换手不足，跳过
-                        if turnover_rate >= 150.0:
+                        if turnover_rate >= 70.0:
                             continue  # 死亡换手，跳过
                         
                         # ATR势垒（可选，从true_dict获取）
@@ -1139,30 +1140,34 @@ class LiveTradingEngine:
                     try:
                         change_pct = (current_price - pre_close) / pre_close
                         
-                        # 【CTO V7量纲修复】流通市值 = 流通股本(股) * 昨收(元)
+                        # 【CTO V8量纲修复】流通市值 = 流通股本(股) * 昨收(元)
                         float_market_cap = float_volume * pre_close if float_volume else 1.0
                         
-                        # 【CTO V7量纲修复】使用tick的amount字段（成交额，元）
-                        # QMT tick.amount 是今日累计成交额（元）
+                        # 【CTO V8量纲修复】使用tick的amount字段（成交额，元）
                         current_amount = tick.get('amount', 0)  # 今日累计成交额（元）
                         
-                        # 近似估算：5分钟/15分钟流入 = 全天成交额 * 时间占比
-                        # 注意：这是估算值，不是真正的净流入
-                        flow_5min = current_amount * (5.0 / 240.0)  # 5分钟成交额
-                        flow_15min = current_amount * (15.0 / 240.0)  # 15分钟成交额
+                        # 【CTO V8】时间加权成交额估算（考虑早盘放量）
+                        # 早盘成交量通常占全天的比例更高
+                        minutes_elapsed = (now.hour * 60 + now.minute) - (9 * 60 + 30)
+                        minutes_elapsed = max(1, min(minutes_elapsed, 240))
+                        avg_amount_per_min = current_amount / minutes_elapsed
+                        
+                        # 估算5分钟和15分钟成交额
+                        flow_5min = avg_amount_per_min * 5
+                        flow_15min = avg_amount_per_min * 15
                         
                         # 历史中位数：使用5日均量估算
                         avg_vol_5d = true_dict.get_avg_volume_5d(stock_code)  # 手
                         avg_amount_5d = avg_vol_5d * 100 * pre_close if avg_vol_5d else 1.0  # 元
-                        flow_5min_median = avg_amount_5d / 240.0  # 每分钟历史中位数（元）
+                        flow_5min_median = avg_amount_5d / 48.0  # 每5分钟历史中位数（元）
                         
-                        # 【CTO V7量纲修复】使用成交额而非成交量
-                        current_amount = tick.get('amount', 0)  # 今日累计成交额（元）
-                        flow_5min = current_amount / 240 * 5 if current_amount > 0 else 0  # 估算5分钟成交额
-                        flow_15min = current_amount / 240 * 15 if current_amount > 0 else 0  # 估算15分钟成交额
-                        
-                        # 净流入估算：成交额 * 涨幅方向（简化版）
-                        net_inflow_est = flow_15min * (1 if change_pct >= 0 else -1)
+                        # 【CTO V8】净流入估算优化：
+                        # 使用涨幅比例估算买卖力量差
+                        # 假设：涨幅5%时，买入资金约占成交额的52.5%（净流入≈成交额*2.5%）
+                        # 涨幅越大，净流入占比越高
+                        inflow_ratio_est = change_pct * 0.5  # 简化估算：涨幅的50%转化为净流入比例
+                        inflow_ratio_est = max(-0.3, min(inflow_ratio_est, 0.3))  # 限制在±30%
+                        net_inflow_est = current_amount * inflow_ratio_est  # 净流入（元）
                         
                         high_60d = tick.get('high', current_price)
                         space_gap_pct = (high_60d - current_price) / high_60d if high_60d > 0 else 0.5
@@ -1184,7 +1189,7 @@ class LiveTradingEngine:
                             )
                         except Exception as e:
                             # 【CTO V7】绝不兜底造假！打分失败直接跳过
-                            logger.debug(f"🚫 {stock_code} 高阶算子计算失败，剔除: {e}")
+                            logger.debug(f"[SKIP] {stock_code} 高阶算子计算失败，剔除: {e}")
                             continue
                         
                         # 【CTO V7】完整记录高阶算子
@@ -1212,7 +1217,7 @@ class LiveTradingEngine:
                 # 【CTO V5】如果这是盘后的第一次计算，标记完成，以后不再重复算
                 if is_after_hours:
                     has_run_after_hours = True
-                    logger.info("✅ 盘后最终 Tick 快照计算完成，投影定格！")
+                    logger.info("[OK] 盘后最终 Tick 快照计算完成，投影定格！")
                 
                 # 主线程强制刷屏
                 self._print_fire_control_panel(top_10, initial_loading=False, pool_stats=pool_stats)
@@ -1226,7 +1231,7 @@ class LiveTradingEngine:
                 time.sleep(sleep_time)
                 
         except KeyboardInterrupt:
-            logger.info("🛑 用户中断，生成战报...")
+            logger.info("[STOP] 用户中断，生成战报...")
             self._generate_final_battle_report()
         except Exception as e:
             logger.error(f"雷达循环异常: {e}")
@@ -1255,7 +1260,7 @@ class LiveTradingEngine:
         
         # CTO加固：容错机制
         if not self.running:
-            logger.warning("⚠️ [CTO透视] 引擎未运行，丢弃Tick")
+            logger.warning("[WARN] [CTO透视] 引擎未运行，丢弃Tick")
             return
         
         stock_code = tick_event.stock_code
@@ -1287,7 +1292,7 @@ class LiveTradingEngine:
             avg_volume_5d = true_dict.get_avg_volume_5d(stock_code)
             
             if avg_volume_5d <= 0:
-                logger.debug(f"⚠️ {stock_code} 5日均量无效，跳过")
+                logger.debug(f"[WARN] {stock_code} 5日均量无效，跳过")
                 return
             
             # 估算全天成交量 = 当前成交量 / 已过分钟数 * 240分钟
@@ -1321,7 +1326,7 @@ class LiveTradingEngine:
                 logger.debug(f"🚫 {stock_code} 换手率不足: {turnover_rate:.2f}% < {turnover_thresholds['per_minute_min']:.2f}%")
                 return  # 换手率不达标，放弃开火
             
-            logger.info(f"✅ {stock_code} 换手率通过: {turnover_rate:.2f}%/min")
+            logger.info(f"[OK] {stock_code} 换手率通过: {turnover_rate:.2f}%/min")
             
             # ============================================================
             # Phase 2 Step 5: 微观防线检查
@@ -1375,7 +1380,7 @@ class LiveTradingEngine:
                 logger.info(f"🚫 {stock_code} 动能打分引擎得分不足: {score:.2f} < 70")
                 return  # 得分不足，放弃开火
             
-            logger.info(f"🎯 {stock_code} 动能打分引擎高分通过: {score:.2f}")
+            logger.info(f"[TARGET] {stock_code} 动能打分引擎高分通过: {score:.2f}")
             
             # ============================================================
             # Phase 2 Step 7: 拔枪射击！
@@ -1383,7 +1388,7 @@ class LiveTradingEngine:
             self._execute_trade(stock_code, tick_data, score)
             
         except Exception as e:
-            logger.error(f"❌ Tick事件处理失败 ({stock_code}): {e}")
+            logger.error(f"[ERR] Tick事件处理失败 ({stock_code}): {e}")
             import traceback
             logger.error(traceback.format_exc())
     
@@ -1448,7 +1453,7 @@ class LiveTradingEngine:
         """
         # 检查TradeGatekeeper是否可用
         if not self.trade_gatekeeper:
-            logger.warning(f"⚠️ {stock_code} TradeGatekeeper未初始化，跳过微观防线")
+            logger.warning(f"[WARN] {stock_code} TradeGatekeeper未初始化，跳过微观防线")
             return True  # 容错：未初始化时默认通过
         
         try:
@@ -1483,14 +1488,14 @@ class LiveTradingEngine:
             micro_ok = capital_flow_ok and sector_resonance_ok
             
             if micro_ok:
-                logger.info(f"✅ {stock_code} 微观防线检查通过")
+                logger.info(f"[OK] {stock_code} 微观防线检查通过")
             else:
                 logger.info(f"🚫 {stock_code} 微观防线拦截: 资金={capital_flow_ok}, 板块={sector_resonance_ok}")
             
             return micro_ok
             
         except Exception as e:
-            logger.error(f"❌ {stock_code} 微观防线检查异常: {e}")
+            logger.error(f"[ERR] {stock_code} 微观防线检查异常: {e}")
             return True  # 容错：异常时默认通过
     
     def _calculate_signal_score(self, stock_code: str, tick_data: Dict[str, Any]) -> float:
@@ -1561,21 +1566,21 @@ class LiveTradingEngine:
                 current_time=now
             )
             
-            logger.debug(f"🎯 {stock_code} V20.5动能得分: {base_score:.2f}, sustain={sustain_ratio:.2f}, mfe={mfe_score:.2f}")
+            logger.debug(f"[TARGET] {stock_code} V20.5动能得分: {base_score:.2f}, sustain={sustain_ratio:.2f}, mfe={mfe_score:.2f}")
             return base_score
             
         except Exception as e:
-            logger.error(f"❌ {stock_code} V20.5动能算分失败: {e}")
+            logger.error(f"[ERR] {stock_code} V20.5动能算分失败: {e}")
             return 0.0
             
             # 应用记忆multiplier
             final_score = base_score * memory_multiplier
             
-            logger.debug(f"🎯 {stock_code} 动能算分: base={base_score:.2f}, memory_mult={memory_multiplier:.2f}, final={final_score:.2f}")
+            logger.debug(f"[TARGET] {stock_code} 动能算分: base={base_score:.2f}, memory_mult={memory_multiplier:.2f}, final={final_score:.2f}")
             return final_score
             
         except Exception as e:
-            logger.error(f"❌ {stock_code} 动能算分失败: {e}")
+            logger.error(f"[ERR] {stock_code} 动能算分失败: {e}")
             return 0.0
     
     def _execute_trade(self, stock_code: str, tick_data: Dict[str, Any], score: float):
@@ -1588,7 +1593,7 @@ class LiveTradingEngine:
             score: 动能打分引擎得分
         """
         if not self.trader:
-            logger.warning(f"⚠️ {stock_code} 交易接口未连接，跳过执行")
+            logger.warning(f"[WARN] {stock_code} 交易接口未连接，跳过执行")
             return
         
         try:
@@ -1609,7 +1614,7 @@ class LiveTradingEngine:
             logger.info(f"💰 {stock_code} 交易结果: {result}")
             
         except Exception as e:
-            logger.error(f"❌ {stock_code} 交易执行失败: {e}")
+            logger.error(f"[ERR] {stock_code} 交易执行失败: {e}")
 
     def format_dragon_report(self, rank: int, stock_code: str, stock_name: str,
                             final_score: float, inflow_ratio: float,
@@ -1634,7 +1639,7 @@ class LiveTradingEngine:
             str: 格式化后的龙榜行
         """
         purity = '极优' if space_gap_pct < 0.05 else '优' if space_gap_pct < 0.10 else '良'
-        return f"{rank}. [{stock_code} {stock_name}] 🩸得分: {final_score:.1f} | 流入比: {inflow_ratio:.1%} | 自身爆发: {ratio_stock:.1f}x | 接力(Sustain): {sustain_ratio:.2f}x | MFE: {mfe:.2f} | 纯度: {purity} | [标签: {tag}]"
+        return f"{rank}. [{stock_code} {stock_name}] 得分: {final_score:.1f} | 流入比: {inflow_ratio:.1%} | 自身爆发: {ratio_stock:.1f}x | 接力(Sustain): {sustain_ratio:.2f}x | MFE: {mfe:.2f} | 纯度: {purity} | [标签: {tag}]"
 
     def calculate_time_slice_flows(self, stock_code: str, date: str = None) -> Optional[Dict]:
         """
@@ -1673,12 +1678,12 @@ class LiveTradingEngine:
             )
             
             if not tick_data or normalized_code not in tick_data:
-                logger.warning(f"⚠️ {stock_code} 无Tick数据")
+                logger.warning(f"[WARN] {stock_code} 无Tick数据")
                 return None
             
             df = tick_data[normalized_code]
             if df.empty or len(df) < 10:
-                logger.warning(f"⚠️ {stock_code} Tick数据不足")
+                logger.warning(f"[WARN] {stock_code} Tick数据不足")
                 return None
             
             # 转换时间戳为可读时间
@@ -1692,7 +1697,7 @@ class LiveTradingEngine:
             # 【时空切片1】截取 09:30-09:35 计算真实 flow_5min
             df_5min = df[(df['time_str'] >= '09:30:00') & (df['time_str'] <= '09:35:00')].copy()
             if df_5min.empty:
-                logger.warning(f"⚠️ {stock_code} 09:30-09:35 无数据")
+                logger.warning(f"[WARN] {stock_code} 09:30-09:35 无数据")
                 return None
             
             # 计算5分钟资金流入（简化：用amount增量）
@@ -1705,7 +1710,7 @@ class LiveTradingEngine:
             # 【时空切片2】截取 09:30-09:45 计算真实 flow_15min
             df_15min = df[(df['time_str'] >= '09:30:00') & (df['time_str'] <= '09:45:00')].copy()
             if df_15min.empty:
-                logger.warning(f"⚠️ {stock_code} 09:30-09:45 无数据")
+                logger.warning(f"[WARN] {stock_code} 09:30-09:45 无数据")
                 return None
             
             if 'amount' in df_15min.columns:
@@ -1713,7 +1718,7 @@ class LiveTradingEngine:
             else:
                 flow_15min = (df_15min['lastPrice'] * df_15min['volume'] * 100).sum()
             
-            logger.debug(f"✅ {stock_code} 时空切片: 5min={flow_5min/1e8:.2f}亿, 15min={flow_15min/1e8:.2f}亿")
+            logger.debug(f"[OK] {stock_code} 时空切片: 5min={flow_5min/1e8:.2f}亿, 15min={flow_15min/1e8:.2f}亿")
             
             return {
                 'flow_5min': float(flow_5min),
@@ -1723,7 +1728,7 @@ class LiveTradingEngine:
             }
             
         except Exception as e:
-            logger.error(f"❌ {stock_code} 时空切片计算失败: {e}")
+            logger.error(f"[ERR] {stock_code} 时空切片计算失败: {e}")
             return None
 
     def _check_trade_signal(self, stock_code: str, score: float, tick_data: Dict[str, Any]):
@@ -1732,7 +1737,7 @@ class LiveTradingEngine:
         
         保留此方法用于向后兼容，新逻辑已全部迁移至_on_tick_data
         """
-        logger.debug(f"⚠️ _check_trade_signal已废弃，请使用新的Tick级开火流程")
+        logger.debug(f"[WARN] _check_trade_signal已废弃，请使用新的Tick级开火流程")
         # 新逻辑已在_on_tick_data中实现，此方法不再被调用
     
 
@@ -1761,20 +1766,20 @@ class LiveTradingEngine:
                             
                             # 如果筛选到股票，进入高频监控模式
                             if self.watchlist:
-                                logger.info(f"🎯 自动补网成功，发现 {len(self.watchlist)} 只目标")
+                                logger.info(f"[TARGET] 自动补网成功，发现 {len(self.watchlist)} 只目标")
                                 self._fire_control_mode()
                     
                     # 每分钟检查一次
                     time.sleep(60)
                     
                 except Exception as e:
-                    logger.error(f"❌ 自动补网循环异常: {e}")
+                    logger.error(f"[ERR] 自动补网循环异常: {e}")
                     time.sleep(60)  # 出错后也继续运行
         
         # 启动自动补网线程
         replenish_thread = threading.Thread(target=auto_replenish_loop, daemon=True)
         replenish_thread.start()
-        logger.info("✅ 自动补网定时器已启动")
+        logger.info("[OK] 自动补网定时器已启动")
 
     def _process_snapshot_at_0930(self):
         """
@@ -1858,7 +1863,7 @@ class LiveTradingEngine:
                 if min_volume_multiplier is None:
                     raise ValueError("配置缺失: live_sniper.min_volume_multiplier")
             except Exception as e:
-                logger.error(f"❌ [CTO强制审计] 配置读取失败: {e}")
+                logger.error(f"[ERR] [CTO强制审计] 配置读取失败: {e}")
                 raise RuntimeError("系统拒绝启动：缺少核心配置 live_sniper.min_volume_multiplier")
             
             # 【CTO源码清剿】纯动态倍数过滤：量比 >= 配置倍数（如1.5倍）
@@ -1877,33 +1882,33 @@ class LiveTradingEngine:
             
             # 【CTO第三刀】消除观察池数量焦虑：只要>0就不警告
             if watchlist_count == 0:
-                logger.warning(f"⚠️ 观察池为空，无法监控")
+                logger.warning(f"[WARN] 观察池为空，无法监控")
             elif watchlist_count < 10:
-                logger.info(f"💡 观察池数量较少: {watchlist_count}只")
+                logger.info(f"[INFO] 观察池数量较少: {watchlist_count}只")
             else:
-                logger.info(f"✅ 观察池已就绪: {watchlist_count}只")
+                logger.info(f"[OK] 观察池已就绪: {watchlist_count}只")
             
             self.watchlist = filtered_df['stock_code'].tolist()[:150]  # 最多150只
             
-            logger.info(f"✅ 当前截面筛选完成: {len(self.watchlist)} 只目标")
+            logger.info(f"[OK] 当前截面筛选完成: {len(self.watchlist)} 只目标")
             
             if len(self.watchlist) > 0:
                 top5 = filtered_df.head(5)
                 for _, row in top5.iterrows():
-                    logger.info(f"  🎯 {row['stock_code']}: 量比{row['volume_ratio']:.2f}")
+                    logger.info(f"  [TARGET] {row['stock_code']}: 量比{row['volume_ratio']:.2f}")
             
         except Exception as e:
-            logger.error(f"❌ 当前截面快照筛选失败: {e}")
+            logger.error(f"[ERR] 当前截面快照筛选失败: {e}")
 
     def stop(self):
         """停止引擎 - CTO战地收尸版"""
-        logger.info("🛑 停止实盘总控引擎...")
+        logger.info("[STOP] 停止实盘总控引擎...")
         self.running = False
         
         # 【CTO V7修复】QMT无需手动取消订阅，进程退出时自动释放
         # 原unsubscribe_whole_quote是幻觉函数，QMT官方无此方法
         if self.watchlist:
-            logger.info(f"✅ 系统安全退出，{len(self.watchlist)} 只股票订阅由操作系统回收")
+            logger.info(f"[OK] 系统安全退出，{len(self.watchlist)} 只股票订阅由操作系统回收")
         
         # 停止事件总线
         if self.event_bus:
@@ -1916,7 +1921,7 @@ class LiveTradingEngine:
         # 【CTO战地收尸】生成最终战报
         self._generate_final_battle_report()
         
-        logger.info("✅ 实盘总控引擎已停止")
+        logger.info("[OK] 实盘总控引擎已停止")
     
     def _update_daily_battle_report(self, current_scores: list):
         """
@@ -1984,9 +1989,9 @@ class LiveTradingEngine:
         try:
             with open(report_path, 'w', encoding='utf-8') as f:
                 json.dump(report_data, f, ensure_ascii=False, indent=4)
-            logger.info(f"✅ 战地收官报告已生成 -> {report_path}")
+            logger.info(f"[OK] 战地收官报告已生成 -> {report_path}")
         except Exception as e:
-            logger.error(f"❌ 战报保存失败: {e}")
+            logger.error(f"[ERR] 战报保存失败: {e}")
         
         # 终端打印战神榜
         print("\n" + "=" * 60)
@@ -2020,15 +2025,15 @@ if __name__ == "__main__":
     # 创建引擎
     engine = create_live_trading_engine()
     
-    print("🚀 引擎创建完成")
-    print("💡 注意: 该测试仅验证组件加载，不执行实际交易")
+    print("[RADAR] 引擎创建完成")
+    print("[INFO] 注意: 该测试仅验证组件加载，不执行实际交易")
     
     # 模拟启动（不实际运行）
     try:
         engine._init_trading_components()
-        print("✅ 交易组件加载测试完成")
+        print("[OK] 交易组件加载测试完成")
     except Exception as e:
-        print(f"⚠️ 组件加载测试失败: {e}")
+        print(f"[WARN] 组件加载测试失败: {e}")
     
-    print("\n✅ 实盘总控引擎测试完成")
-    print("🎯 修复版已准备就绪")
+    print("\n[OK] 实盘总控引擎测试完成")
+    print("[TARGET] 修复版已准备就绪")
