@@ -1,38 +1,38 @@
 {
     "date": "20260306",
-    "generated_at": "2026-03-06 22:17:31",
+    "generated_at": "2026-03-06 22:27:30",
     "total_targets": 3,
     "top_targets": [
         {
             "code": "600227.SH",
-            "score": 108.0,
-            "time": "21:14:10",
+            "score": 81.39,
+            "time": "22:17:46",
             "price": 3.29,
             "change": 10.033444816053505,
             "inflow_ratio": 5.256542356247835,
-            "ratio_stock": 50.0,
+            "ratio_stock": 2.679974560216906,
             "sustain_ratio": 4.403010033444815,
             "purity": 78.94736842105262
         },
         {
             "code": "600545.SH",
-            "score": 108.0,
-            "time": "21:14:10",
+            "score": 80.87,
+            "time": "22:17:46",
             "price": 4.15,
             "change": 10.079575596816985,
             "inflow_ratio": 4.920543576887075,
-            "ratio_stock": 50.0,
+            "ratio_stock": 2.441542393810887,
             "sustain_ratio": 4.407161803713528,
             "purity": 100.0
         },
         {
             "code": "600452.SH",
-            "score": 101.05,
-            "time": "21:14:10",
+            "score": 73.13,
+            "time": "22:17:46",
             "price": 15.55,
             "change": 7.389502762430941,
             "inflow_ratio": 2.691456617928972,
-            "ratio_stock": 50.0,
+            "ratio_stock": 2.071365967795464,
             "sustain_ratio": 3.6825377661013046,
             "purity": 74.82517482517486
         }

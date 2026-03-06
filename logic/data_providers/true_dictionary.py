@@ -271,6 +271,7 @@ class TrueDictionary:
             
             # 【CTO单点爆破】：一只一只查！防爆！防C++崩溃！
             all_data = {}
+            missing_stocks = []  # 【CTO V24】记录缺失数据的股票
             logger.info(f"📦 [CTO单点爆破] 单只获取日K数据计算5日均量...")
             
             for stock in stock_list:
@@ -282,11 +283,39 @@ class TrueDictionary:
                         start_time=start_date,
                         end_time=end_date
                     )
-                    if single_data and stock in single_data:
+                    if single_data and stock in single_data and single_data[stock] is not None and len(single_data[stock]) > 0:
                         all_data[stock] = single_data[stock]
+                    else:
+                        missing_stocks.append(stock)  # 【CTO V24】记录缺失
                 except Exception as e:
-                    # 有毒的票直接跳过！
+                    missing_stocks.append(stock)  # 【CTO V24】异常也记录
                     continue
+            
+            # 【CTO V24 自愈式下载】本地没数据就当场下载，绝不静默丢弃！
+            if missing_stocks:
+                logger.warning(f"[AUTO-HEAL] {len(missing_stocks)}只股票本地K线缺失，立即从服务器拉取补充！")
+                for stock in missing_stocks:
+                    try:
+                        xtdata.download_history_data(stock, period='1d', start_time=start_date, end_time=end_date)
+                    except Exception as e:
+                        logger.debug(f"[AUTO-HEAL] {stock} 下载失败: {e}")
+                time.sleep(0.2)  # 等待下载完成
+                
+                # 再次读取刚才下载的数据
+                for stock in missing_stocks:
+                    try:
+                        single_data = xtdata.get_local_data(
+                            field_list=['time', 'volume'],
+                            stock_list=[stock],
+                            period='1d',
+                            start_time=start_date,
+                            end_time=end_date
+                        )
+                        if single_data and stock in single_data and single_data[stock] is not None and len(single_data[stock]) > 0:
+                            all_data[stock] = single_data[stock]
+                            logger.debug(f"[AUTO-HEAL] {stock} 数据已修复")
+                    except Exception:
+                        continue
             
             # 【调试日志】检查all_data返回状态
             logger.info(f"[调试] xtdata.get_local_data返回: type={type(all_data)}, "
@@ -307,10 +336,13 @@ class TrueDictionary:
                 
                 for stock_code, df in all_data.items():
                     # 【Bug修复】原代码要求len(df)>=5过于严格，导致春节等假期后数据不足时全部失败
-                    # 修正：只要有至少1天数据就计算均值（使用所有可用数据）
+                    # 【CTO V24节假日防爆】：使用.tail(5)确保只取最近5个交易日！
+                    # 哪怕中间跨了春节/国庆，tail(5)只取最后5行（即最近5个交易日）
                     if df is not None and len(df) >= 1:
-                        # 计算所有可用数据的成交量均值（不限于5天）
-                        avg_volume = df['volume'].mean()
+                        # 【CTO V24修复】精确取最近5个交易日的均值！
+                        # 原逻辑用所有数据均值，会稀释最新信号！
+                        n_days = min(5, len(df))  # 数据不足5天时用全部
+                        avg_volume = df['volume'].tail(n_days).mean()  # 【CTO V24】精确5日！
                         # 【CTO铁血清洗】：绝不允许NaN或Inf进入系统缓存！
                         if pd.isna(avg_volume) or np.isinf(avg_volume):
                             avg_volume = 0.0
