@@ -158,6 +158,13 @@ def diagnose_radar():
         
         print(f"  tick_high: {tick_high}, tick_low: {tick_low}")
         
+        # CTO V13修复：acceleration_factor避免sustain_ratio=2.0数学必然
+        price_position = (current_price - tick_low) / (tick_high - tick_low) if tick_high > tick_low else 0.5
+        change_pct_for_sustain = (current_price - pre_close) / pre_close if pre_close > 0 else 0
+        acceleration_factor = 1.0 + (price_position - 0.5) * 1.0 + change_pct_for_sustain * 3.0
+        acceleration_factor = max(0.3, min(acceleration_factor, 3.0))
+        print(f"  price_position: {price_position:.2f}, acceleration_factor: {acceleration_factor:.2f}")
+        
         try:
             final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe = core_engine.calculate_true_dragon_score(
                 net_inflow=net_inflow_est,
@@ -167,11 +174,11 @@ def diagnose_radar():
                 low=tick_low,
                 open_price=tick.get('open', current_price),
                 flow_5min=current_amount / 240 * 5,
-                flow_15min=current_amount / 240 * 15,
+                flow_15min=current_amount / 240 * 15 * acceleration_factor,  # CTO V13修复
                 flow_5min_median_stock=1.0,
                 space_gap_pct=0.5,
                 float_volume_shares=float_volume,
-                current_time=now.time()
+                current_time=now  # CTO V13修复：传入datetime而非datetime.time
             )
             print(f"  [SCORE] final={final_score:.2f}, sustain={sustain_ratio:.2f}, mfe={mfe:.2f}")
         except Exception as e:

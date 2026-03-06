@@ -97,6 +97,9 @@ class LiveTradingEngine:
         # 【CTO V4】静态机会池缓存 - 午休/盘后复盘用
         self.last_known_top_targets: List[Dict] = []  # 最后一次计算的机会池
         
+        # 【CTO V13】pool_stats缓存 - 盘中无数据时显示上一次统计
+        self.last_known_pool_stats: Dict[str, int] = {}
+        
         # 【CTO修复】初始化顺序：先EventBus，再QMTEventAdapter
         # 初始化EventBus（如果未传入）
         if self.event_bus is None:
@@ -909,7 +912,9 @@ class LiveTradingEngine:
         import click
         from datetime import datetime
         
-        os.system('cls' if os.name == 'nt' else 'clear')
+        # 【CTO V13】盘后投影模式不清屏，静默追加
+        if not is_rest:
+            os.system('cls' if os.name == 'nt' else 'clear')
         now_str = datetime.now().strftime('%H:%M:%S')
         
         # 顶部护甲
@@ -1169,15 +1174,33 @@ class LiveTradingEngine:
                         # 【CTO V8量纲修复】使用tick的amount字段（成交额，元）
                         current_amount = tick.get('amount', 0)  # 今日累计成交额（元）
                         
-                        # 【CTO V8】时间加权成交额估算（考虑早盘放量）
-                        # 早盘成交量通常占全天的比例更高
+                        # 【CTO V8】时间加权成交额估算
                         minutes_elapsed = (now.hour * 60 + now.minute) - (9 * 60 + 30)
                         minutes_elapsed = max(1, min(minutes_elapsed, 240))
-                        avg_amount_per_min = current_amount / minutes_elapsed
                         
-                        # 估算5分钟和15分钟成交额
-                        flow_5min = avg_amount_per_min * 5
-                        flow_15min = avg_amount_per_min * 15
+                        # 获取价格位置信息（用于估算资金加速）
+                        tick_high = tick.get('high', current_price)
+                        tick_low = tick.get('low', current_price)
+                        price_position = (current_price - tick_low) / (tick_high - tick_low) if tick_high > tick_low else 0.5
+                        
+                        # 【CTO V13修复】sustain_ratio动态估算
+                        # 问题根因：flow_15min = 3 * flow_5min 导致 sustain_ratio 永远=2.0
+                        # 修复：用价格位置推断资金加速情况
+                        # - 价格在高位（接近涨停）：资金加速，sustain_ratio > 1
+                        # - 价格在中位：资金维持，sustain_ratio = 1
+                        # - 价格在低位：资金退潮，sustain_ratio < 1
+                        # 
+                        # 同时考虑涨幅：涨幅越大，资金越强
+                        change_pct_for_sustain = (current_price - pre_close) / pre_close if pre_close > 0 else 0
+                        
+                        # 资金加速因子（综合价格位置和涨幅）
+                        # 基础值1.0，价格位置贡献±0.5，涨幅贡献±0.3
+                        acceleration_factor = 1.0 + (price_position - 0.5) * 1.0 + change_pct_for_sustain * 3.0
+                        acceleration_factor = max(0.3, min(acceleration_factor, 3.0))  # 限制在0.3-3.0
+                        
+                        # 成交额估算（修正后不再有数学必然）
+                        flow_5min = current_amount / minutes_elapsed * 5
+                        flow_15min = current_amount / minutes_elapsed * 15 * acceleration_factor
                         
                         # 历史中位数：使用5日均量估算
                         avg_vol_5d = true_dict.get_avg_volume_5d(stock_code)  # 手
@@ -1244,13 +1267,20 @@ class LiveTradingEngine:
                 if top_10:
                     self.last_known_top_targets = top_10
                 
+                # 【CTO V13】更新pool_stats缓存，解决盘中无数据时显示0的问题
+                if pool_stats.get('active', 0) > 0:
+                    self.last_known_pool_stats = pool_stats.copy()
+                elif self.last_known_pool_stats:
+                    # 当前无数据，使用缓存
+                    pool_stats = self.last_known_pool_stats.copy()
+                
                 # 【CTO V5】如果这是盘后的第一次计算，标记完成，以后不再重复算
                 if is_after_hours:
                     has_run_after_hours = True
                     logger.info("[OK] 盘后最终 Tick 快照计算完成，投影定格！")
                 
-                # 主线程强制刷屏
-                self._print_fire_control_panel(top_10, initial_loading=False, pool_stats=pool_stats)
+                # 主线程刷屏（盘后模式静默，不清屏）
+                self._print_fire_control_panel(top_10, initial_loading=False, pool_stats=pool_stats, is_rest=is_after_hours)
                 
                 # 战地收尸
                 self._update_daily_battle_report(current_top_targets)
