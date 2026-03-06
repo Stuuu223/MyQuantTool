@@ -232,6 +232,11 @@ class LiveTradingEngine:
             logger.info("[FAST] Step 2: 执行开盘快照二筛...")
             self._snapshot_filter()
             
+            # 【CTO V12修复】热启动时必须预热TrueDictionary！
+            # 否则float_volume=0导致所有股票被剔除
+            logger.info("[FAST] Step 2.5: 预热TrueDictionary...")
+            self._warmup_true_dictionary()
+            
             # Step 3: 检查watchlist是否填充成功
             if not self.watchlist:
                 logger.warning("[ERR] 快照筛选未找到目标股票，系统进入待机模式")
@@ -1206,7 +1211,7 @@ class LiveTradingEngine:
                                 flow_5min_median_stock=flow_5min_median if flow_5min_median > 0 else 1.0,
                                 space_gap_pct=space_gap_pct,
                                 float_volume_shares=float_volume,
-                                current_time=now.time()
+                                current_time=now  # 【CTO修复】传递datetime对象，非time对象
                             )
                         except Exception as e:
                             # 【CTO V7】绝不兜底造假！打分失败直接跳过
