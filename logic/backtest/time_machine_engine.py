@@ -481,6 +481,37 @@ class TimeMachineEngine:
             
             # 【Step6: 时空对齐与全息回演UI看板】
             
+            # 【CTO V28垃圾隔离防线】在构建榜单前过滤垃圾
+            # 条件：score >= 50 AND sustain_ratio > 0 AND inflow_ratio > -0.05
+            filtered_top20 = []
+            for item in top20:
+                final_score = item.get('final_score', 0)
+                sustain_ratio = item.get('sustain_ratio', 0)
+                inflow_ratio = item.get('inflow_ratio', 0)
+                is_vetoed = item.get('is_vetoed', False)
+                
+                # 垃圾隔离三道防线
+                if final_score < 50.0:
+                    logger.debug(f"[垃圾隔离] {item.get('stock_code')} 分数{final_score:.1f}<50，剔除")
+                    continue
+                if sustain_ratio <= 0:
+                    logger.debug(f"[垃圾隔离] {item.get('stock_code')} 接力{sustain_ratio:.2f}<=0，剔除")
+                    continue
+                if inflow_ratio < -0.05:
+                    logger.debug(f"[垃圾隔离] {item.get('stock_code')} 流入{inflow_ratio:.2f}%<-0.05%，剔除")
+                    continue
+                if is_vetoed:
+                    logger.debug(f"[垃圾隔离] {item.get('stock_code')} 被veto标记，剔除")
+                    continue
+                
+                filtered_top20.append(item)
+            
+            logger.info(f"【垃圾隔离】{len(top20)}只 → {len(filtered_top20)}只 (剔除{len(top20)-len(filtered_top20)}只垃圾)")
+            top20 = filtered_top20[:20]  # 重新取Top20
+            
+            # 【CTO V28 Fix】更新daily_result中的top20
+            daily_result['top20'] = top20
+            
             # 构建dragon数据格式适配大屏
             dragons_for_dashboard = []
             for item in top20:
@@ -549,6 +580,8 @@ class TimeMachineEngine:
         
         前置条件：UniverseBuilder已过滤掉沪市股票
         深市股票的Tick数据健康，可以安全调用get_local_data
+        
+        【CTO V28自愈下载】本地无Tick时自动从QMT服务器下载
         """
         try:
             from xtquant import xtdata
@@ -567,9 +600,27 @@ class TimeMachineEngine:
                 end_time=date
             )
             
+            # 【CTO V28自愈下载】本地无数据时自动下载
             if not data or normalized_code not in data or data[normalized_code].empty:
-                logger.warning(f"【时间机器】{date} {stock_code} 本地无Tick切片，跳过")
-                return None
+                logger.warning(f"【时间机器】{date} {stock_code} 本地无Tick切片，尝试自愈下载...")
+                try:
+                    xtdata.download_history_data(normalized_code, period='tick', start_time=date, end_time=date)
+                    # 重新读取
+                    data = xtdata.get_local_data(
+                        field_list=['time', 'lastPrice', 'volume', 'amount', 'lastClose', 'open'],
+                        stock_list=[normalized_code],
+                        period='tick',
+                        start_time=date,
+                        end_time=date
+                    )
+                    if data and normalized_code in data and not data[normalized_code].empty:
+                        logger.info(f"【时间机器】{stock_code} 自愈下载成功！")
+                    else:
+                        logger.warning(f"【时间机器】{date} {stock_code} 自愈下载后仍无数据，跳过")
+                        return None
+                except Exception as dl_e:
+                    logger.warning(f"【时间机器】{stock_code} 自愈下载失败: {dl_e}")
+                    return None
                 
             df = data[normalized_code].copy()
             

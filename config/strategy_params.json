@@ -6,7 +6,8 @@
   "stock_filter": {
     "_description": "【全局股票漏斗铁律】实盘/复盘/回测/下载 全局共用，宁缺毋滥！",
     "min_avg_amount": 50000000.0,
-    "min_avg_turnover_pct": 5.0,
+    "min_avg_turnover_pct": 2.5,
+    "_min_avg_turnover_pct_comment": "【CTO V25 SSOT】统一换手门槛2.5%，基于V3连板研究：T-1换手中位3.69%，T0首板4.96%，暗流期基因门槛",
     "min_intraday_turnover_pct": 5.0,
     "min_volume_multiplier": 3.0,
     "min_price": 3.0,

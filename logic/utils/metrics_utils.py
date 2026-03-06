@@ -381,7 +381,7 @@ def batch_calc_sustain(current_prices: List[float],
 
 def render_battle_dashboard(data_list, title="战报", clear_screen=False):
     """
-    【CTO安全渲染】：绝对兜底，不准报错，更不准静默吞没！
+    【CTO V28 Rich工业大屏】原地刷新，永不滚屏！
     """
     # 【CTO安全渲染】空列表保护
     if not data_list:
@@ -393,47 +393,113 @@ def render_battle_dashboard(data_list, title="战报", clear_screen=False):
         import os
         os.system('cls' if os.name == 'nt' else 'clear')
     
-    print(f"\n{'='*100}")
-    print(f"🚀 {title}")
-    print(f"{'='*100}")
-    print(f"{'排名':<4} {'代码':<10} {'得分':<6} {'价格':<6} {'流入比':<6} {'爆发':<6} {'接力':<6} {'MFE':<6}")
-    print(f"{'-'*100}")
-    
-    for i, item in enumerate(data_list, 1):
-        # 【CTO安全渲染】：绝对兜底，不准报错
-        code = item.get('code', item.get('stock_code', 'N/A'))
-        score = item.get('score', item.get('final_score', 0.0))
-        price = item.get('price', 0.0)
-        inflow = item.get('inflow_ratio', 0.0)
-        ratio = item.get('ratio_stock', 0.0)
-        sustain = item.get('sustain_ratio', 0.0)
-        mfe = item.get('mfe', 0.0)
+    # 【CTO V28】使用Rich库替代print
+    try:
+        from rich.console import Console
+        from rich.table import Table
+        from rich.panel import Panel
         
-        # 【CTO安全渲染】强制数值转换，防止类型爆炸
-        try:
-            score = float(score) if score is not None else 0.0
-        except (ValueError, TypeError):
-            score = 0.0
-        try:
-            price = float(price) if price is not None else 0.0
-        except (ValueError, TypeError):
-            price = 0.0
-        try:
-            inflow = float(inflow) if inflow is not None else 0.0
-        except (ValueError, TypeError):
-            inflow = 0.0
-        try:
-            ratio = float(ratio) if ratio is not None else 0.0
-        except (ValueError, TypeError):
-            ratio = 0.0
-        try:
-            sustain = float(sustain) if sustain is not None else 0.0
-        except (ValueError, TypeError):
-            sustain = 0.0
-        try:
-            mfe = float(mfe) if mfe is not None else 0.0
-        except (ValueError, TypeError):
-            mfe = 0.0
+        console = Console()
         
-        print(f"{i:<4} {code:<10} {score:<6.2f} {price:<6.2f} {inflow:<6.2f} {ratio:<6.2f} {sustain:<6.2f} {mfe:<6.2f}")
-    print(f"{'='*100}\n")
+        # 构建Rich Table
+        table = Table(show_header=True, header_style="bold magenta", style="cyan", expand=False)
+        table.add_column("RANK", justify="center", width=4)
+        table.add_column("TARGET", justify="center", width=10, style="bold white")
+        table.add_column("SCORE", justify="right", width=7, style="bold red")
+        table.add_column("PRICE", justify="right", width=7)
+        table.add_column("CHG%", justify="right", width=8)
+        table.add_column("INFLOW%", justify="right", width=9)
+        table.add_column("SUSTAIN", justify="right", width=8)
+        table.add_column("MFE", justify="right", width=6)
+        
+        for i, item in enumerate(data_list, 1):
+            # 【CTO安全渲染】：绝对兜底，不准报错
+            code = item.get('code', item.get('stock_code', 'N/A'))
+            score = item.get('score', item.get('final_score', 0.0))
+            price = item.get('price', 0.0)
+            change = item.get('change', item.get('final_change', 0.0))
+            inflow = item.get('inflow_ratio', 0.0)
+            sustain = item.get('sustain_ratio', 0.0)
+            mfe = item.get('mfe', 0.0)
+            
+            # 【CTO安全渲染】强制数值转换，防止类型爆炸
+            try:
+                score = float(score) if score is not None else 0.0
+            except (ValueError, TypeError):
+                score = 0.0
+            try:
+                price = float(price) if price is not None else 0.0
+            except (ValueError, TypeError):
+                price = 0.0
+            try:
+                change = float(change) if change is not None else 0.0
+            except (ValueError, TypeError):
+                change = 0.0
+            try:
+                inflow = float(inflow) if inflow is not None else 0.0
+            except (ValueError, TypeError):
+                inflow = 0.0
+            try:
+                sustain = float(sustain) if sustain is not None else 0.0
+            except (ValueError, TypeError):
+                sustain = 0.0
+            try:
+                mfe = float(mfe) if mfe is not None else 0.0
+            except (ValueError, TypeError):
+                mfe = 0.0
+            
+            # 【CTO V28】量化纯度颜色渲染
+            if score >= 80:
+                score_style = "bold red"  # 纯正攻击
+            elif score >= 50:
+                score_style = "bold yellow"  # 温和上涨
+            elif score >= 20:
+                score_style = "white"  # 震荡
+            else:
+                score_style = "green"  # 砸盘出货
+            
+            # 涨跌幅颜色
+            if change > 0:
+                change_style = "bold red"
+            elif change < 0:
+                change_style = "bold green"
+            else:
+                change_style = "white"
+            
+            # 限制MFE范围
+            mfe = max(-99.9, min(mfe, 99.9))
+            
+            table.add_row(
+                str(i),
+                code,
+                f"[{score_style}]{score:.1f}[/]",
+                f"{price:.2f}",
+                f"[{change_style}]{change:+.2f}%[/]",
+                f"{inflow:.2f}%",
+                f"{sustain:.2f}",
+                f"{mfe:.1f}"
+            )
+        
+        # 打印标题和表格
+        console.print(Panel(f"🚀 {title}", style="bold yellow"))
+        console.print(table)
+        
+    except ImportError:
+        # 【降级】Rich库不可用时使用print
+        print(f"\n{'='*100}")
+        print(f"🚀 {title}")
+        print(f"{'='*100}")
+        print(f"{'排名':<4} {'代码':<10} {'得分':<6} {'价格':<6} {'流入比':<6} {'爆发':<6} {'接力':<6} {'MFE':<6}")
+        print(f"{'-'*100}")
+        
+        for i, item in enumerate(data_list, 1):
+            code = item.get('code', item.get('stock_code', 'N/A'))
+            score = item.get('score', item.get('final_score', 0.0))
+            price = item.get('price', 0.0)
+            inflow = item.get('inflow_ratio', 0.0)
+            ratio = item.get('ratio_stock', 0.0)
+            sustain = item.get('sustain_ratio', 0.0)
+            mfe = item.get('mfe', 0.0)
+            
+            print(f"{i:<4} {code:<10} {score:<6.2f} {price:<6.2f} {inflow:<6.2f} {ratio:<6.2f} {sustain:<6.2f} {mfe:<6.2f}")
+        print(f"{'='*100}\n")

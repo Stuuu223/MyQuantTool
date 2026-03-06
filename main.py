@@ -940,48 +940,23 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, dry_run):
     now = datetime.now()
     today_str = now.strftime('%Y%m%d')
     
-    # 检查今天是否为交易日 - 绝对禁止非交易日启动实盘
-    if not is_trading_day(today_str):
-        click.echo(click.style(f"\n🛑 今天 ({today_str}) 是非交易日！禁止启动实盘火控雷达！", fg='red', bold=True))
-        click.echo(click.style("🔄 自动为您切换至【历史热复盘模式】...", fg='yellow'))
-        
-        from logic.backtest.time_machine_engine import TimeMachineEngine
-        from logic.utils.calendar_utils import get_latest_completed_trading_day
-        from logic.utils.metrics_utils import render_battle_dashboard  # 【CTO强制】导入大屏渲染
-        
-        prev_date = get_latest_completed_trading_day()
-        click.echo(click.style(f"📅 复盘日期: {prev_date}", fg='cyan'))
-        
-        engine = TimeMachineEngine()
-        result = engine.run_daily_backtest(prev_date)
-        
-        click.echo(f"\n✅ 热复盘完成: 共评分 {len(result.get('top20', [])) if result else 0} 只股票")
-        
-        # 【CTO物理钉死】：立刻、马上把大屏画出来！
-        if result and result.get('top20'):
-            dashboard_data = []
-            for item in result['top20'][:20]:
-                dashboard_data.append({
-                    'code': item.get('stock_code', ''),
-                    'score': item.get('final_score', 0),
-                    'price': item.get('real_close', item.get('price_0940', 0)),
-                    'change': item.get('final_change', item.get('change_pct', 0)),
-                    'inflow_ratio': item.get('inflow_ratio', 0),
-                    'ratio_stock': item.get('ratio_stock', 0),
-                    'sustain_ratio': item.get('sustain_ratio', 0),
-                    'mfe': item.get('mfe', 0),
-                    'tag': item.get('tag', '复盘')
-                })
-            render_battle_dashboard(dashboard_data, title=f"[{prev_date}] 热复盘真龙看板(纯血游资雷达高阶算子版)", clear_screen=False)
-        else:
-            click.echo(click.style("⚠️ 今日没有任何股票通过纯血游资雷达苛刻的风控漏斗！", fg='red'))
-        return  # 画完大屏才能滚！
-    
-    # 【CTO V5幻觉处决】删除15:00后强制调用TimeMachineEngine的逻辑！
-    # 盘后投影由LiveTradingEngine._run_radar_main_loop()处理，用get_full_tick获取定格数据
+    # 【CTO V27】废除"非交易日禁止启动"的逻辑！
+    # 原因：用户需要盘后定格投影，LiveTradingEngine已经实现了这个功能！
+    # 非交易日/盘后 → LiveTradingEngine进入"盘后定格投影"模式
     # 不再需要main.py层级的越权挟持！
     
-    click.echo(click.style("\n🚀 启动实盘猎杀系统 (EventDriven 事件驱动模式 纯血游资雷达)", fg='green', bold=True))
+    # 检查是否为交易日，仅用于提示
+    is_trading = is_trading_day(today_str)
+    current_hour = now.hour
+    
+    if not is_trading:
+        click.echo(click.style(f"\n📅 今天 ({today_str}) 是非交易日", fg='yellow'))
+        click.echo(click.style("🔄 将进入【盘后定格投影模式】，显示最近交易日的最终战果...", fg='cyan'))
+    elif current_hour >= 15:
+        click.echo(click.style(f"\n⏰ 当前时间已过15:00", fg='yellow'))
+        click.echo(click.style("🔄 将进入【盘后定格投影模式】，显示今日最终战果...", fg='cyan'))
+    else:
+        click.echo(click.style(f"\n🚀 启动实盘猎杀系统 (EventDriven 事件驱动模式)", fg='green', bold=True))
     click.echo(f"📅 日期: {datetime.now().strftime('%Y-%m-%d')}")
     click.echo(f"📊 模式: {'模拟盘' if mode == 'paper' else '实盘交易'}")
     click.echo(f"💰 最大持仓: {max_positions}")

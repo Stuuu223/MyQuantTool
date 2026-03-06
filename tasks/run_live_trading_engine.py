@@ -180,7 +180,7 @@ class LiveTradingEngine:
     
     def start_session(self, enable_dynamic_radar: bool = True):
         """
-        启动交易会话 - CTO V4终极版（四级漏斗 + 看板先行 + 静态复盘缓存）
+        启动交易会话 - CTO V30终极版（非交易日路由 + 四级漏斗 + 看板先行）
         时间线: 09:25(CTO第一斩) -> 09:30(开盘粗筛) -> 盘中(细筛+动能打分)
         
         Args:
@@ -218,40 +218,67 @@ class LiveTradingEngine:
         market_open = current_time.replace(hour=9, minute=30, second=0, microsecond=0)
         auction_end = current_time.replace(hour=9, minute=25, second=0, microsecond=0)
         
+        # 【CTO V30非交易日路由修复】
+        # 问题根因：周六运行时，seconds_to_auction=(09:25-01:38)约28000秒是正数
+        # 程序会sleep等待8小时到"09:25"，但周六根本没有交易！
+        # 修复：检测到非交易日时，直接跳转到盘中热启动逻辑，执行盘后定格投影模式
+        from logic.utils.calendar_utils import is_trading_day, get_latest_completed_trading_day
+        today_str = current_time.strftime('%Y%m%d')
+        is_today_trading = is_trading_day(today_str)
+        
+        if not is_today_trading:
+            print(f"📅 [CTO V30] 今日 {today_str} 是非交易日（周六/周日/节假日）")
+            print("🔄 自动切换到盘后定格投影模式...")
+            # 强制进入盘中热启动分支，执行盘后投影
+            # 跳过所有时间判断，直接执行粗筛+监控
+            logger.warning("[NON-TRADING] 非交易日，执行盘后定格投影模式...")
         # CTO修复：盘中启动时必须先执行快照筛选！
-        if current_time >= market_open:
+        if current_time >= market_open or not is_today_trading:
             logger.warning("[HOT-START] 越过开盘集合竞价，执行全局截面扫描...")
             
             # 【CTO V17零秒点火】直接用UniverseBuilder拿底池，跳过全市场扫描！
             # 原逻辑：_auction_snapshot_filter() 全市场5191只扫描，卡3分钟
             # 新逻辑：UniverseBuilder三漏斗筛选，毫秒级完成
             if not self.watchlist:
+                print("[FAST] Step 1: 从UniverseBuilder装载静态物理底池...")
                 logger.info("[FAST] Step 1: 从UniverseBuilder装载静态物理底池...")
                 try:
                     from logic.data_providers.universe_builder import UniverseBuilder
-                    builder = UniverseBuilder(target_date=datetime.now().strftime('%Y%m%d'))
+                    target_date = datetime.now().strftime('%Y%m%d')
+                    print(f"[DEBUG] UniverseBuilder target_date={target_date}")
+                    builder = UniverseBuilder(target_date=target_date)
+                    print("[DEBUG] 开始 builder.build()...")
                     base_pool, volume_ratios = builder.build()
+                    print(f"[DEBUG] builder.build() 返回: {len(base_pool) if base_pool else 0} 只")
                     
                     if base_pool:
                         self.watchlist = base_pool
-                        self.logger.info(f"[OK] 静态底池装载完成: {len(self.watchlist)} 只标的")
+                        print(f"[OK] 静态底池装载完成: {len(self.watchlist)} 只标的")
+                        logger.info(f"[OK] 静态底池装载完成: {len(self.watchlist)} 只标的")
                     else:
+                        print("[ERR] 底池装载失败！")
                         logger.error("[ERR] 底池装载失败！")
                         self._fallback_premarket_scan()
                 except Exception as e:
+                    print(f"[ERR] UniverseBuilder失败: {e}")
                     logger.error(f"[ERR] UniverseBuilder失败: {e}")
                     self._fallback_premarket_scan()
             else:
+                print(f"[FAST] 使用现有watchlist: {len(self.watchlist)} 只")
                 logger.info(f"[FAST] 使用现有watchlist: {len(self.watchlist)} 只")
             
             # 【CTO V24修复】预热必须在快照筛选之前！
             # 否则TrueDictionary没有数据，avg_volume_5d=0，全部被过滤！
+            print("[FAST] Step 2: 预热TrueDictionary（必须在快照筛选之前！）...")
             logger.info("[FAST] Step 2: 预热TrueDictionary（必须在快照筛选之前！）...")
             self._warmup_true_dictionary()
+            print("[FAST] Step 2: 预热完成")
             
             # Step 3: 执行第三斩（开盘快照筛选），筛选强势股
+            print("[FAST] Step 3: 执行开盘快照三筛...")
             logger.info("[FAST] Step 3: 执行开盘快照三筛...")
             self._snapshot_filter()
+            print(f"[FAST] Step 3: 快照筛选完成, watchlist={len(self.watchlist) if self.watchlist else 0} 只")
             
             # Step 4: 检查watchlist是否填充成功
             if not self.watchlist:
@@ -294,6 +321,10 @@ class LiveTradingEngine:
             self._fire_control_mode()
             return
         
+        # 【CTO V30】非交易日时跳过所有时间判断，直接返回（已在上面处理）
+        if not is_today_trading:
+            return  # 非交易日已在上面处理，这里直接返回
+            
         # 如果已过09:25但未到09:30，执行快照初筛
         if current_time >= auction_end:
             logger.info("[TARGET] 已过09:25，立即执行CTO第一斩...")
@@ -823,20 +854,21 @@ class LiveTradingEngine:
                 # 早盘模式：量比脉冲期，使用90th分位
                 mode_tag = "早盘脉冲"
             
-            # 【CTO V12 暴力美学参数】5000万均额 + 2.5%换手
-            # V3报告：T-1换手中位3.69%，低于2.5%的基本是不起波澜的弱势股！
-            min_avg_amount_5d = 50000000.0  # 5000万（CTO暴力参数）
-            min_avg_turnover_5d = 2.5       # 2.5%（CTO V12：只为暴力基因服务！）
-            max_open_turnover = 30.0        # 开盘换手率>30%视为死亡派发
+            # 【CTO V25 统一配置读取】废除硬编码，全部从strategy_params.json读取！
+            # stock_filter.min_avg_amount: 5000万均额
+            # stock_filter.min_avg_turnover_pct: 2.5%换手（暗流期基因）
+            min_avg_amount_5d = config_manager.get('stock_filter.min_avg_amount', 50000000.0)
+            min_avg_turnover_5d = config_manager.get('stock_filter.min_avg_turnover_pct', 2.5)
+            max_open_turnover = 30.0  # 开盘换手率>30%视为死亡派发
             
             logger.info(f"\n{'='*60}")
-            logger.info(f"[FILTER] 【四级漏斗-第二级粗筛】CTO V12暴力参数生效！")
+            logger.info(f"[FILTER] 【四级漏斗-第二级粗筛】CTO V25统一配置生效！")
             logger.info(f"{'='*60}")
             logger.info(f"> 运行模式: {mode_tag} (已过{minutes_passed:.0f}分钟)")
             logger.info(f"> 输入池: {pre_filter_count} 只")
             logger.info(f"> 量比门槛: >= {min_volume_multiplier:.2f}x (90th分位+1.5x下限)")
-            logger.info(f"> 5日均额门槛: >= {min_avg_amount_5d/10000:.0f}万 (暴力基因)")
-            logger.info(f"> 5日均换手门槛: >= {min_avg_turnover_5d:.1f}% (只为暴力服务)")
+            logger.info(f"> 5日均额门槛: >= {min_avg_amount_5d/10000:.0f}万 (从配置读取)")
+            logger.info(f"> 5日均换手门槛: >= {min_avg_turnover_5d:.1f}% (从配置读取)")
             logger.info(f"> 死亡换手拦截: 开盘换手 < {max_open_turnover:.0f}%")
             
             # 多维复合过滤
@@ -1014,7 +1046,7 @@ class LiveTradingEngine:
     
     def _run_radar_main_loop(self):
         """
-        【CTO V3终极重铸】真·狩猎雷达 - 主线程直接轮询版
+        【CTO V30终极重铸】真·狩猎雷达 - 主线程直接轮询版
         
         核心改造:
         1. 废除threading后台线程，主线程直接while循环
@@ -1022,13 +1054,40 @@ class LiveTradingEngine:
         3. 漏斗UI：pool_stats统计
         4. 正确死水判断：今日累计volume==0（不是价格不变）
         5. 1秒刷新
+        6. 【CTO V30】插桩打点法：每步print+flush，杜绝静默卡死
         """
         import os
+        import sys
         import time
         from datetime import datetime, time as time_type
         from xtquant import xtdata
         from logic.data_providers.true_dictionary import get_true_dictionary
         from logic.strategies.kinetic_core_engine import 动能打分引擎CoreEngine
+        
+        # ==========================================
+        # 【CTO V30】Step 1: 环境侦测 + 插桩打点
+        # ==========================================
+        from logic.utils.calendar_utils import is_trading_day, get_latest_completed_trading_day
+        from datetime import datetime as dt
+        
+        today_str = dt.now().strftime('%Y%m%d')
+        is_trading = is_trading_day(today_str)
+        is_after_hours_init = dt.now().hour >= 15
+        
+        print(f">>> [INIT] 环境侦测: {'交易日' if is_trading else '非交易日'} | 盘后: {is_after_hours_init}")
+        sys.stdout.flush()
+        
+        # ==========================================
+        # 【CTO V30】Step 2: 第一帧画面（强行刷新缓冲区！）
+        # ==========================================
+        self._print_fire_control_panel([], initial_loading=True)
+        sys.stdout.flush()
+        
+        # ==========================================
+        # 【CTO V30】Step 3: 预编译静态指标快查表
+        # ==========================================
+        print(">>> [INIT] 正在预编译静态指标快查表 (O(1) 复杂度)...")
+        sys.stdout.flush()
         
         # 预先获取TrueDictionary单例
         true_dict = get_true_dictionary()
@@ -1039,23 +1098,11 @@ class LiveTradingEngine:
         # 【CTO V5】盘后投影标志位：记录是否已执行过盘后最终计算
         has_run_after_hours = False
         
-        # 【CTO V7】盘后判断：避免不必要的订阅
-        now_init = datetime.now()
-        current_time_init = now_init.time()
-        is_after_hours_init = current_time_init >= time_type(15, 0)
-        
         # 【CTO V18极限压榨】静态常数预编译快查表！
-        # 一天不变的值（pre_close, float_volume, avg_amount_5d）只在启动时算一次！
-        # 空间换时间：O(1)字典查找，循环内零冗余计算
-        # 【CTO V23终极修复】昨收价从tick获取，流通股本用默认值兜底！
-        logger.info("[FAST] 正在预编译静态指标快查表 (O(1) 复杂度)...")
         static_cache = {}
         default_float_volume = 1000000000.0  # 10亿股默认值
         
         for stock in self.watchlist:
-            # 【CTO V23】昨收价预热没用！tick.lastClose才是真理源！
-            # pre_close = true_dict.get_prev_close(stock)  # 废弃！
-            
             fv = true_dict.get_float_volume(stock)
             avg_vol_5d = true_dict.get_avg_volume_5d(stock)
             
@@ -1068,29 +1115,105 @@ class LiveTradingEngine:
                 'avg_volume_5d': avg_vol_5d or 1.0
             }
         
-        logger.info(f"[OK] 静态快查表编译完成: {len(static_cache)} 只股票")
+        print(f">>> [INIT] 静态快查表编译完成: {len(static_cache)} 只股票")
+        sys.stdout.flush()
         
-        # 【CTO V3看板绝对先行】第一帧立刻显示
-        self._print_fire_control_panel([], initial_loading=True)
-        
-        # 【CTO V7闪电起步：分批唤醒QMT底层缓存，盘后跳过订阅！】
+        # ==========================================
+        # 【CTO V30】Step 4: 周末/盘后防御性 Tick 检查
+        # ==========================================
         if self.watchlist:
-            logger.info(f"🔄 正在分批唤醒 {len(self.watchlist)} 只股票的 QMT 底层缓存...")
+            last_trading_day = get_latest_completed_trading_day()
+            
+            # 条件1：非交易日或周末
+            is_non_trading_day = not is_trading
+            # 条件2：盘后模式（交易日但已收盘）
+            is_after_hours_mode = is_trading and is_after_hours_init
+            
+            # 只在非交易日或盘后模式下检查Tick数据
+            need_check_tick = is_non_trading_day or is_after_hours_mode
+            
+            if need_check_tick:
+                print(f">>> [INIT] 启动硬盘 Tick 兜底防线，目标日期: {last_trading_day}")
+                sys.stdout.flush()
+                
+                # 抽样检查本地Tick数据完整性（检查10只更可靠）
+                sample_stocks = self.watchlist[:min(10, len(self.watchlist))]
+                local_ticks = xtdata.get_local_data(
+                    field_list=['lastPrice', 'volume'],
+                    stock_list=sample_stocks,
+                    period='tick',
+                    start_time=last_trading_day,
+                    end_time=last_trading_day
+                )
+                
+                # 统计有效数据数量
+                valid_count = 0
+                for st in sample_stocks:
+                    if local_ticks and st in local_ticks and local_ticks[st] is not None:
+                        if hasattr(local_ticks[st], '__len__') and len(local_ticks[st]) > 0:
+                            valid_count += 1
+                
+                print(f"📊 Tick数据抽样检查: {valid_count}/{len(sample_stocks)} 只有数据")
+                sys.stdout.flush()
+                
+                # 只有数据缺失时才下载
+                if valid_count < len(sample_stocks):
+                    missing_ratio = (len(sample_stocks) - valid_count) / len(sample_stocks)
+                    print("=" * 60)
+                    print(f"⚠️ 检测到Tick数据缺失 ({missing_ratio*100:.0f}%)，启动自动下载...")
+                    print(f"📅 目标日期: {last_trading_day}")
+                    print(f"📊 需下载: {len(self.watchlist)}只")
+                    print("=" * 60)
+                    sys.stdout.flush()
+                    
+                    # 【CTO V29自动下载】
+                    download_count = 0
+                    for st in self.watchlist:
+                        try:
+                            xtdata.download_history_data(st, period='tick', start_time=last_trading_day, end_time=last_trading_day)
+                            download_count += 1
+                            if download_count % 500 == 0:
+                                print(f"[AUTO-DOWNLOAD] 已投递 {download_count}/{len(self.watchlist)} 只...")
+                                sys.stdout.flush()
+                        except Exception as e:
+                            pass
+                    
+                    print(f"[AUTO-DOWNLOAD] 投递完成，等待落盘...")
+                    sys.stdout.flush()
+                    time.sleep(3)  # 等待下载完成
+                    print(f"[AUTO-DOWNLOAD] ✅ Tick数据下载完成！")
+                    sys.stdout.flush()
+                else:
+                    print(f"✅ Tick数据完整，跳过下载")
+                    sys.stdout.flush()
+            
+            # ==========================================
+            # 【CTO V30】Step 5: 唤醒底盘
+            # ==========================================
+            print(f">>> [INIT] 开始分批唤醒 {len(self.watchlist)} 只股票的 QMT 底层缓存...")
+            sys.stdout.flush()
+            
             batch_size = 50  # 【CTO V7】降至50只，更安全
             for i in range(0, len(self.watchlist), batch_size):
                 batch = self.watchlist[i:i+batch_size]
                 try:
-                    # 【CTO V7】盘后无需订阅，直接拉快照；盘中才需订阅
-                    if not is_after_hours_init:
+                    # 【CTO V7】盘中才需订阅，非交易日/盘后跳过
+                    if is_trading and not is_after_hours_init:
                         xtdata.subscribe_whole_quote(batch)
                     # 轻碰一下接口，建立内存通道即可
                     xtdata.get_full_tick(batch)
                     time.sleep(0.1)  # 【CTO V7】必须让底盘呼吸！
                 except Exception as e:
-                    logger.warning(f"批次 {i//batch_size + 1} 唤醒失败: {e}")
-            logger.info("[OK] 缓存唤醒完毕，雷达正式起转！")
+                    pass
+            
+            print(">>> [INIT] 引擎握手完毕！进入超频雷达主循环！")
+            sys.stdout.flush()
         
-        logger.info("[FAST] 主线程雷达循环开启！")
+        # ==========================================
+        # 【CTO V30】正式进入死循环
+        # ==========================================
+        print(">>> [LOOP] 主线程雷达循环开启！")
+        sys.stdout.flush()
         
         try:
             while self.running:
@@ -1155,6 +1278,80 @@ class LiveTradingEngine:
                     logger.error(f"获取全量Tick失败: {e}")
                     time.sleep(1)
                     continue
+                
+                # 【CTO V29硬盘Tick备用电源】
+                # 在周末/非交易日，QMT可能会清空内存导致ticks里的volume全是0
+                # 此时自动切换到读取硬盘Tick数据
+                if is_after_hours and self.watchlist:
+                    # 抽样检查第一只票，如果成交量是0，启动硬盘接管
+                    sample_stock = self.watchlist[0]
+                    sample_tick = all_ticks.get(sample_stock, {}) if all_ticks else {}
+                    sample_vol = sample_tick.get('volume', 0) if sample_tick else 0
+                    
+                    if not all_ticks or sample_vol == 0:
+                        logger.warning("[AUTO-HEAL] 检测到QMT内存快照已清空，启动硬盘Tick接管...")
+                        from logic.utils.calendar_utils import get_latest_completed_trading_day
+                        import pandas as pd
+                        
+                        last_trading_day = get_latest_completed_trading_day()
+                        logger.info(f"[AUTO-HEAL] 读取硬盘Tick数据: {last_trading_day}")
+                        
+                        try:
+                            # 批量获取本地Tick数据
+                            local_ticks = xtdata.get_local_data(
+                                field_list=['lastPrice', 'volume', 'amount', 'lastClose', 'high', 'low', 'open'],
+                                stock_list=self.watchlist,
+                                period='tick',
+                                start_time=last_trading_day,
+                                end_time=last_trading_day
+                            )
+                            
+                            # 检查是否有缺失数据
+                            missing_stocks = []
+                            for st in self.watchlist:
+                                if not local_ticks or st not in local_ticks or local_ticks[st] is None or len(local_ticks[st]) == 0:
+                                    missing_stocks.append(st)
+                            
+                            # 【CTO V29自动下载】如果缺失，自动从QMT服务器下载
+                            if missing_stocks:
+                                logger.warning(f"[AUTO-HEAL] 本地缺失{len(missing_stocks)}只股票Tick数据，启动自动下载...")
+                                for st in missing_stocks:
+                                    try:
+                                        xtdata.download_history_data(st, period='tick', start_time=last_trading_day, end_time=last_trading_day)
+                                    except Exception as dl_e:
+                                        logger.debug(f"[AUTO-HEAL] {st} 下载失败: {dl_e}")
+                                time.sleep(2)  # 等待下载完成
+                                
+                                # 重新读取
+                                local_ticks = xtdata.get_local_data(
+                                    field_list=['lastPrice', 'volume', 'amount', 'lastClose', 'high', 'low', 'open'],
+                                    stock_list=self.watchlist,
+                                    period='tick',
+                                    start_time=last_trading_day,
+                                    end_time=last_trading_day
+                                )
+                            
+                            # 将硬盘数据组装成get_full_tick的字典格式
+                            healed_count = 0
+                            for st in self.watchlist:
+                                if local_ticks and st in local_ticks and local_ticks[st] is not None:
+                                    df = pd.DataFrame(local_ticks[st])
+                                    if not df.empty:
+                                        last_row = df.iloc[-1]
+                                        all_ticks[st] = {
+                                            'lastPrice': float(last_row.get('lastPrice', 0)),
+                                            'volume': int(last_row.get('volume', 0)),
+                                            'amount': float(last_row.get('amount', 0)),
+                                            'lastClose': float(last_row.get('lastClose', 0)),
+                                            'high': float(last_row.get('high', last_row.get('lastPrice', 0))),
+                                            'low': float(last_row.get('low', last_row.get('lastPrice', 0))),
+                                            'open': float(last_row.get('open', last_row.get('lastPrice', 0)))
+                                        }
+                                        healed_count += 1
+                            
+                            logger.info(f"[AUTO-HEAL] 硬盘Tick接管完成: {healed_count}/{len(self.watchlist)} 只股票")
+                        except Exception as e:
+                            logger.error(f"[AUTO-HEAL] 硬盘Tick读取失败: {e}")
                 
                 if not all_ticks:
                     time.sleep(1)

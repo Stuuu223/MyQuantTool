@@ -94,7 +94,7 @@ class UniverseBuilder:
         from logic.core.config_manager import get_config_manager
         cfg = get_config_manager()
         self.min_avg_amount       = cfg.get('stock_filter.min_avg_amount',       50_000_000.0)
-        self.min_avg_turnover_pct = cfg.get('stock_filter.min_avg_turnover_pct', 5.0)
+        self.min_avg_turnover_pct = cfg.get('stock_filter.min_avg_turnover_pct', 2.5)  # 【CTO V25】默认值改为2.5%
         self.min_price            = cfg.get('stock_filter.min_price',            3.0)
         self.max_price            = cfg.get('stock_filter.max_price',            300.0)
 
@@ -212,6 +212,8 @@ class UniverseBuilder:
         """
         第二漏斗：日K量价过滤（均额/价格/换手率）。
         【新增】同时计算每只股票的 volume_ratio = today_volume / avg_volume_5d。
+        【CTO V25】实装自愈下载：本地没数据就当场下载！
+        【CTO V26优化】减少sleep时间，批量检查后统一下载
         """
         try:
             from xtquant import xtdata
@@ -227,7 +229,13 @@ class UniverseBuilder:
         cnt_volume   = 0
         cnt_price    = 0
         cnt_turnover = 0
+        cnt_autoheal = 0  # 【CTO V25】自愈下载计数
 
+        # 【CTO V26优化】第一步：批量检查所有股票数据
+        # 单独获取比批量更快（QMT接口特性）
+        all_data = {}
+        missing_stocks = []
+        
         for stock in stock_list:
             try:
                 data = xtdata.get_local_data(
@@ -237,72 +245,103 @@ class UniverseBuilder:
                     start_time=start_date,
                     end_time=end_date
                 )
-
-                if not data or stock not in data:
-                    cnt_nodata += 1
-                    self._volume_ratios[stock] = 0.0  # 无数据记为0.0
-                    continue
-
-                df = data[stock]
-                if df is None or len(df) < 1:
-                    cnt_nodata += 1
-                    self._volume_ratios[stock] = 0.0
-                    continue
-
-                import pandas as pd
-                import numpy as np
-
-                # 【新增】计算 volume_ratio = 今日成交量 / 5日均成交量
-                n = min(5, len(df))
-                if n > 0:
-                    today_volume = float(df['volume'].iloc[-1])
-                    avg_volume_5d = df['volume'].iloc[-n:].mean()
-                    if avg_volume_5d > 0 and not (pd.isna(today_volume) or np.isinf(today_volume)):
-                        volume_ratio = today_volume / avg_volume_5d
-                        self._volume_ratios[stock] = float(volume_ratio)
-                    else:
-                        self._volume_ratios[stock] = 0.0
+                if data and stock in data and data[stock] is not None and len(data[stock]) >= 5:
+                    all_data[stock] = data[stock]
                 else:
-                    self._volume_ratios[stock] = 0.0
+                    missing_stocks.append(stock)
+            except Exception:
+                missing_stocks.append(stock)
 
-                # 原有过滤逻辑
-                avg_amount = df['amount'].iloc[-n:].mean()
-                if pd.isna(avg_amount) or np.isinf(avg_amount) or avg_amount < self.min_avg_amount:
-                    cnt_volume += 1
-                    continue
-
-                last_close = float(df['close'].iloc[-1])
-                if not (self.min_price <= last_close <= self.max_price):
-                    cnt_price += 1
-                    continue
-
+        # 【CTO V26优化】第二步：批量下载缺失数据的股票（减少sleep）
+        if missing_stocks:
+            logger.info(f'[AUTO-HEAL] 发现 {len(missing_stocks)} 只股票日K缺失，启动批量下载...')
+            for stock in missing_stocks:
                 try:
-                    detail = xtdata.get_instrument_detail(stock, False)
-                    if detail:
-                        float_shares = float(
-                            detail.get('FloatVolume', 0)
-                            if hasattr(detail, 'get')
-                            else getattr(detail, 'FloatVolume', 0)
-                        )
-                    else:
-                        float_shares = 0.0
-
-                    if float_shares > 0:
-                        float_mkt_cap    = float_shares * last_close
-                        avg_turnover_pct = (avg_amount / float_mkt_cap) * 100.0
-                        if avg_turnover_pct < self.min_avg_turnover_pct:
-                            cnt_turnover += 1
-                            continue
+                    xtdata.download_history_data(stock, period='1d', start_time=start_date, end_date=end_date)
+                    cnt_autoheal += 1
+                except Exception:
+                    pass
+            
+            # 统一等待磁盘写入
+            time.sleep(0.5)  # 一次性等待，而非每只都等
+            
+            # 重新获取下载后的数据
+            for stock in missing_stocks:
+                try:
+                    data = xtdata.get_local_data(
+                        field_list=['close', 'volume', 'amount'],
+                        stock_list=[stock],
+                        period='1d',
+                        start_time=start_date,
+                        end_time=end_date
+                    )
+                    if data and stock in data and data[stock] is not None:
+                        all_data[stock] = data[stock]
                 except Exception:
                     pass
 
-                passed.append(stock)
+        # 【CTO V26优化】第三步：使用已获取的数据进行过滤
+        import pandas as pd
+        import numpy as np
 
-            except Exception:
+        for stock in stock_list:
+            df = all_data.get(stock)
+            
+            if df is None or len(df) < 1:
                 cnt_nodata += 1
-                self._volume_ratios[stock] = 0.0  # 异常也记为0.0
+                self._volume_ratios[stock] = 0.0
                 continue
 
+            # 【新增】计算 volume_ratio = 今日成交量 / 5日均成交量
+            n = min(5, len(df))
+            if n > 0:
+                today_volume = float(df['volume'].iloc[-1])
+                avg_volume_5d = df['volume'].iloc[-n:].mean()
+                if avg_volume_5d > 0 and not (pd.isna(today_volume) or np.isinf(today_volume)):
+                    volume_ratio = today_volume / avg_volume_5d
+                    self._volume_ratios[stock] = float(volume_ratio)
+                else:
+                    self._volume_ratios[stock] = 0.0
+            else:
+                self._volume_ratios[stock] = 0.0
+
+            # 原有过滤逻辑
+            avg_amount = df['amount'].iloc[-n:].mean()
+            if pd.isna(avg_amount) or np.isinf(avg_amount) or avg_amount < self.min_avg_amount:
+                cnt_volume += 1
+                continue
+
+            last_close = float(df['close'].iloc[-1])
+            if not (self.min_price <= last_close <= self.max_price):
+                cnt_price += 1
+                continue
+
+            try:
+                detail = xtdata.get_instrument_detail(stock, False)
+                if detail:
+                    float_shares = float(
+                        detail.get('FloatVolume', 0)
+                        if hasattr(detail, 'get')
+                        else getattr(detail, 'FloatVolume', 0)
+                    )
+                else:
+                    float_shares = 0.0
+
+                if float_shares > 0:
+                    float_mkt_cap    = float_shares * last_close
+                    avg_turnover_pct = (avg_amount / float_mkt_cap) * 100.0
+                    if avg_turnover_pct < self.min_avg_turnover_pct:
+                        cnt_turnover += 1
+                        continue
+            except Exception:
+                pass
+
+            passed.append(stock)
+
+        # 【CTO V25】自愈下载统计日志
+        if cnt_autoheal > 0:
+            logger.info(f'[AUTO-HEAL] 漏斗2自愈下载: {cnt_autoheal}只股票补齐日K数据')
+        
         logger.info(
             f'[漏斗２] 输入:{len(stock_list)}只 '
             f'→ 无数据:{cnt_nodata} 量不足:{cnt_volume} '
