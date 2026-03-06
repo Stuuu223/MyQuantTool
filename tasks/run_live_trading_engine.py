@@ -1053,16 +1053,18 @@ class LiveTradingEngine:
                 is_after_hours = current_time >= time_type(15, 0)
                 if is_after_hours and has_run_after_hours:
                     # 已经算过最终分数了，直接展示最终定格面板
+                    # 【CTO V14修复】使用缓存的pool_stats，而非硬编码全0字典
+                    cached_stats = self.last_known_pool_stats if self.last_known_pool_stats else {
+                        'total': len(self.watchlist),
+                        'active': 0,
+                        'up': 0,
+                        'down': 0,
+                        'filtered': len(self.watchlist)
+                    }
                     self._print_fire_control_panel(
                         self.last_known_top_targets,
                         initial_loading=False,
-                        pool_stats={
-                            'total': len(self.watchlist),
-                            'active': 0,
-                            'up': 0,
-                            'down': 0,
-                            'filtered': len(self.watchlist)
-                        },
+                        pool_stats=cached_stats,
                         msg="[LIST] 盘后定格投影 - 今天的最终战果"
                     )
                     time.sleep(10)
@@ -1241,16 +1243,20 @@ class LiveTradingEngine:
                             logger.debug(f"[SKIP] {stock_code} 高阶算子计算失败，剔除: {e}")
                             continue
                         
+                        # 【CTO V14 物理常识卡控】防止量纲计算失误导致 inflow 超过 100%
+                        # A股单日净流入占流通市值极少超过15%，上限卡控在30%
+                        safe_inflow_ratio = min(max(inflow_ratio, -0.30), 0.30)
+                        
                         # 【CTO V9】破除死锁：允许负分上榜，展示相对强弱！
-                        # 不再限制 final_score > 0，让市场告诉我们谁是最强者
-                        purity_tag = "PURE" if inflow_ratio > 1.0 else ("MIX" if inflow_ratio > 0 else "DUMP")
+                        # 【CTO V14修复】purity判断基于安全流入比，阈值0.05=5%
+                        purity_tag = "PURE" if safe_inflow_ratio > 0.05 else ("MIX" if safe_inflow_ratio > 0 else "DUMP")
                         
                         current_top_targets.append({
                             'code': stock_code,
                             'score': final_score,
                             'price': current_price,
                             'change': change_pct * 100,
-                            'inflow_ratio': inflow_ratio,
+                            'inflow_ratio': safe_inflow_ratio,  # 【CTO V14】使用安全范围内的流入比
                             'ratio_stock': ratio_stock,
                             'sustain_ratio': sustain_ratio,
                             'mfe': mfe,  # 资金效率指标

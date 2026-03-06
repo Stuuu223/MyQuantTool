@@ -180,7 +180,11 @@ def diagnose_radar():
                 float_volume_shares=float_volume,
                 current_time=now  # CTO V13修复：传入datetime而非datetime.time
             )
-            print(f"  [SCORE] final={final_score:.2f}, sustain={sustain_ratio:.2f}, mfe={mfe:.2f}")
+            print(f"  [SCORE] final={final_score:.2f}, sustain={sustain_ratio:.2f}, inflow={inflow_ratio:.4f}, mfe={mfe:.2f}")
+            
+            # CTO V14验证：inflow_ratio物理卡控
+            if abs(inflow_ratio) > 0.30:
+                print(f"  [WARN] inflow_ratio={inflow_ratio:.4f} 超过物理限制30%!")
         except Exception as e:
             print(f"  [ERR] 打分失败: {e}")
     
