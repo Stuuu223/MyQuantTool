@@ -799,20 +799,20 @@ class LiveTradingEngine:
                 # 早盘模式：量比脉冲期，使用90th分位
                 mode_tag = "早盘脉冲"
             
-            # 【CTO V7 Phase4】牛市经验参数：5000万均额 + 1.5%换手
-            # 参考：V3报告T-1换手中位3.69%，5%换手会把真龙扼杀！
-            min_avg_amount_5d = 50000000.0  # 5000万（CTO V7牛市参数）
-            min_avg_turnover_5d = 1.5       # 1.5%（CTO V7牛市参数，绝不能用5%）
+            # 【CTO V12 暴力美学参数】5000万均额 + 2.5%换手
+            # V3报告：T-1换手中位3.69%，低于2.5%的基本是不起波澜的弱势股！
+            min_avg_amount_5d = 50000000.0  # 5000万（CTO暴力参数）
+            min_avg_turnover_5d = 2.5       # 2.5%（CTO V12：只为暴力基因服务！）
             max_open_turnover = 30.0        # 开盘换手率>30%视为死亡派发
             
             logger.info(f"\n{'='*60}")
-            logger.info(f"[FILTER] 【四级漏斗-第二级粗筛】CTO V7牛市参数生效！")
+            logger.info(f"[FILTER] 【四级漏斗-第二级粗筛】CTO V12暴力参数生效！")
             logger.info(f"{'='*60}")
             logger.info(f"> 运行模式: {mode_tag} (已过{minutes_passed:.0f}分钟)")
             logger.info(f"> 输入池: {pre_filter_count} 只")
             logger.info(f"> 量比门槛: >= {min_volume_multiplier:.2f}x (90th分位+1.5x下限)")
-            logger.info(f"> 5日均额门槛: >= {min_avg_amount_5d/10000:.0f}万 (牛市经验)")
-            logger.info(f"> 5日均换手门槛: >= {min_avg_turnover_5d:.1f}% (暗流期捕捉)")
+            logger.info(f"> 5日均额门槛: >= {min_avg_amount_5d/10000:.0f}万 (暴力基因)")
+            logger.info(f"> 5日均换手门槛: >= {min_avg_turnover_5d:.1f}% (只为暴力服务)")
             logger.info(f"> 死亡换手拦截: 开盘换手 < {max_open_turnover:.0f}%")
             
             # 多维复合过滤
@@ -895,80 +895,70 @@ class LiveTradingEngine:
     
     def _print_fire_control_panel(self, top_targets, initial_loading=False, pool_stats=None, is_rest=False, msg=None):
         """
-        【CTO V5】终极漏斗看板UI - 降维打击层次感 + 复盘模式 + 盘后投影
+        【CTO V12】暴力猎杀雷达 - 黑客级全息大屏
         
-        Args:
-            top_targets: TOP目标列表
-            initial_loading: 是否首次加载
-            pool_stats: 池统计 {'total', 'active', 'up', 'down', 'filtered'}
-            is_rest: 是否午休/盘后复盘模式
-            msg: 自定义消息（如"[盘后定格投影]"）
+        哲学：只为最暴力的右侧一波流服务（3天30%，10天翻倍）
+        排版：ASCII边框 + 颜色高亮 + 冷酷数据矩阵
         """
         import os
-        import click  # 【CTO V10】必须导入！
+        import click
         from datetime import datetime
         
         os.system('cls' if os.name == 'nt' else 'clear')
         now_str = datetime.now().strftime('%H:%M:%S')
         
-        # 【CTO V9】黑客级全息大屏 - click颜色渲染
-        click.secho(f"{'='*100}", fg='cyan')
+        # 顶部护甲
+        click.secho(f"+{'='*98}+", fg='cyan', bold=True)
         if msg:
-            click.secho(f"[V20 纯血游资猎杀雷达] | {msg:<40} | {now_str}", fg='cyan', bold=True)
+            click.secho(f"| [V20 暴力猎杀雷达] | {msg:<48} | {now_str} |", fg='cyan', bold=True)
         elif is_rest:
-            click.secho(f"[V20 纯血游资猎杀雷达] | [静态复盘投影模式]               | {now_str}", fg='yellow', bold=True)
+            click.secho(f"| [V20 暴力猎杀雷达] | [静态投影复盘]                                     | {now_str} |", fg='yellow', bold=True)
         else:
-            click.secho(f"[V20 纯血游资猎杀雷达] | [极速高频狙击模式]               | {now_str}", fg='green', bold=True)
-        click.secho(f"{'='*100}", fg='cyan')
+            click.secho(f"| [V20 暴力猎杀雷达] | [极速高频狙击]                                     | {now_str} |", fg='green', bold=True)
+        click.secho(f"+{'='*98}+", fg='cyan')
         
         if initial_loading:
-            click.secho(f">>> 正在连接 QMT 物理核心，初始化高阶算子，请稍候...", fg='yellow')
-            click.secho(f"{'='*100}", fg='cyan')
+            click.secho(f"| >>> 正在连接 QMT 物理内存，装载高阶算子...                                    |", fg='yellow')
+            click.secho(f"+{'='*98}+", fg='cyan')
             return
         
         if pool_stats:
-            stat_str1 = f"[漏斗统计] 基础池: 5191只 -> 粗筛池: {pool_stats.get('total', 0)}只 -> 活跃侦测: {pool_stats.get('active', 0)}只"
-            stat_str2 = f"[战场情绪] 封板/红盘: {pool_stats.get('up', 0)}只 | 绿盘/水下: {pool_stats.get('down', 0)}只 | 剔除: {pool_stats.get('filtered', 0)}只"
-            click.secho(f"{stat_str1}", fg='white')
-            click.secho(f"{stat_str2}", fg='white')
-            click.secho(f"{'-'*100}", fg='cyan')
+            passed = pool_stats.get('passed_fine_filter', pool_stats.get('active', 0))
+            s1 = f"* 猎杀漏斗: 5191只 -> 粗筛: {pool_stats.get('total', 0)}只 -> 活跃: {pool_stats.get('active', 0)}只 -> 过细筛: {passed}只"
+            s2 = f"* 战场情绪: 红盘/封板: {pool_stats.get('up', 0)}只 | 水下/绿盘: {pool_stats.get('down', 0)}只 | 派发剔除: {pool_stats.get('active', 0) - passed}只"
+            click.secho(f"| {s1:<96} |", fg='white')
+            click.secho(f"| {s2:<96} |", fg='white')
+            click.secho(f"+{'='*98}+", fg='cyan')
         
         # 核心算子表头
-        header = f"{'RANK':<5} {'TARGET':<10} {'SCORE':<9} {'PRICE':<7} {'CHG%':<8} {'INFLOW%':<9} {'SUSTAIN':<8} {'MFE':<7} {'PURITY':<7}"
+        header = f"| {'RANK':<4} {'TARGET':<10} {'SCORE':<8} {'PRICE':<7} {'CHG%':<8} {'INFLOW%':<9} {'SUSTAIN':<8} {'MFE':<7} {'PURITY':<7} |"
         click.secho(header, fg='magenta', bold=True)
-        click.secho(f"{'-'*100}", fg='cyan')
+        click.secho(f"+{'-'*98}+", fg='cyan')
         
         if not top_targets:
-            click.secho(f"  (当前雷达网内未捕获有效动能标的...)", fg='bright_black')
+            click.secho(f"| (雷达网内暂无高维动能目标，持续静默扫描中...)                                 |", fg='bright_black')
         else:
             for i, t in enumerate(top_targets, 1):
-                # 颜色逻辑：前三名红色高亮
                 color = 'red' if i <= 3 else 'white'
                 bold = i <= 3
                 
-                # 分数保护
-                score_str = f"{t.get('score', 0):<9.2f}"
+                score_str = f"{t.get('score', 0):<8.1f}"
                 pct_str = f"{t.get('change', 0):<+7.2f}%"
+                inflow_str = f"{t.get('inflow_ratio', 0)*100:.2f}%"
                 
-                # 【CTO V10 物理截断】防止流入比、Sustain 和 MFE 在早盘爆表！
-                raw_inflow = t.get('inflow_ratio', 0)
-                raw_sustain = t.get('sustain_ratio', 0)
-                raw_mfe = t.get('mfe', 0)
+                # MFE和Sustain的物理截断防爆表
+                safe_sustain = min(max(t.get('sustain_ratio', 0), -99.9), 99.9)
+                safe_mfe = min(max(t.get('mfe', 0), -99.9), 99.9)
                 
-                # 限制最大显示值，防止破坏排版
-                safe_sustain = min(max(raw_sustain, -99.9), 99.9)
-                safe_mfe = min(max(raw_mfe, -99.9), 99.9)
-                
-                inflow_str = f"{raw_inflow*100:.2f}%"
                 sustain_str = f"{safe_sustain:.2f}x"
-                mfe_str = f"{safe_mfe:.2f}"
+                mfe_str = f"{safe_mfe:.1f}"
                 purity_str = str(t.get('purity', '-'))
                 
-                row = f"{i:<5} {t['code']:<10} {score_str} {t['price']:<7.2f} {pct_str:<9} {inflow_str:<9} {sustain_str:<8} {mfe_str:<7} {purity_str:<7}"
+                row = f"| {i:<4} {t['code']:<10} {score_str} {t['price']:<7.2f} {pct_str:<9} {inflow_str:<9} {sustain_str:<8} {mfe_str:<7} {purity_str:<7} |"
                 click.secho(row, fg=color, bold=bold)
         
-        click.secho(f"{'='*100}", fg='cyan')
-        click.secho("[CMD] Ctrl+C 阻断雷达并生成最终战报 | 引擎: 极速内存直读", fg='bright_black')
+        click.secho(f"+{'='*98}+", fg='cyan')
+        click.secho("[CMD] 极速刷新中... 按 Ctrl+C 阻断雷达", fg='bright_black')
     
     def _run_radar_main_loop(self):
         """
@@ -1128,32 +1118,29 @@ class LiveTradingEngine:
                     
                     pool_stats['active'] += 1
                     
-                    # 【CTO V9第三级：细筛 - 时间加权换手率】
-                    # 数据支撑：V3报告显示T0换手中位4.96%，T-1换手中位3.69%
+                    # 【CTO V12第三级：细筛 - 只防出货，不设底线！】
+                    # V12哲学：时间加权换手只能做上限防守，不能做下限门槛
+                    # 真龙可能缩量锁筹，只要不触发派发防线，一律放行给引擎打分！
                     try:
                         float_volume = true_dict.get_float_volume(stock_code)
                         volume_gu = current_volume * 100  # 手→股
                         current_turnover = (volume_gu / float_volume * 100) if float_volume else 0
                         
-                        # 【CTO V9】时间加权预估全天换手率
+                        # 时间加权预估全天换手率
                         minutes_elapsed = (now.hour * 60 + now.minute) - (9 * 60 + 30)
                         minutes_elapsed = max(1, min(minutes_elapsed, 240))
                         est_full_day_turnover = current_turnover / minutes_elapsed * 240
                         
-                        # 1. 过滤未启动的死水 (预估全天换手 < 3.5%)
-                        # 参考：V3报告T-1换手中位3.69%，T0换手中位4.96%
-                        if est_full_day_turnover < 3.5:
-                            continue  # 换手不足，未进入启动区
+                        # 【CTO V12 死亡防线】只防出货，不设底线！
+                        # 1. 绝对死亡线：全天换手 > 70%
+                        if current_turnover >= 70.0 or est_full_day_turnover > 100.0:
+                            continue  # 死亡换手/绞肉机，跳过
                         
-                        # 2. 过滤死亡派发陷阱
-                        # 条件A：预估全天换手 > 70%（死亡换手线）
-                        # 条件B：开盘30分钟内换手就 > 15%（极速派发）
-                        if est_full_day_turnover > 70.0:
-                            continue  # 死亡换手，跳过
+                        # 2. 极速派发线：开盘30分钟内换手 > 15%
                         if minutes_elapsed <= 30 and current_turnover > 15.0:
                             continue  # 开盘极速派发，跳过
                         
-                        # ATR势垒（可选，从true_dict获取）
+                        # 3. ATR势垒（可选）
                         atr_20d = true_dict.get_atr_20d(stock_code)
                         if atr_20d and atr_20d > 0:
                             today_tr = tick.get('high', current_price) - tick.get('low', current_price)
@@ -1161,6 +1148,9 @@ class LiveTradingEngine:
                                 atr_ratio = today_tr / atr_20d
                                 if atr_ratio < 1.8:
                                     continue  # ATR势垒不足，跳过
+                        
+                        # 放行！进入引擎打分环节
+                        pool_stats['passed_fine_filter'] = pool_stats.get('passed_fine_filter', 0) + 1
                     except Exception:
                         pass  # 细筛失败不阻塞，继续计算
                     
