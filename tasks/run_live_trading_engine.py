@@ -954,7 +954,9 @@ class LiveTradingEngine:
                 
                 score_str = f"{t.get('score', 0):<8.1f}"
                 pct_str = f"{t.get('change', 0):<+7.2f}%"
-                inflow_str = f"{t.get('inflow_ratio', 0)*100:.2f}%"
+                # 【CTO V16修复】inflow_ratio引擎返回的已经是百分比形式（7.43表示7.43%）
+                # 不需要再乘100，直接显示
+                inflow_str = f"{t.get('inflow_ratio', 0):.2f}%"
                 
                 # MFE和Sustain的物理截断防爆表
                 safe_sustain = min(max(t.get('sustain_ratio', 0), -99.9), 99.9)
