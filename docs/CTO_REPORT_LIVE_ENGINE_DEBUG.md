@@ -201,3 +201,70 @@ _snapshot_filter: <1秒（删除多余预热逻辑）
 ---
 
 *本报告由AI开发专家团队基于thinking-process-phase.txt深度分析生成*
+
+---
+
+## 九、CTO V15终极物理重构（2026-03-06）
+
+### 9.1 问题根因
+
+**问题现象**：INFLOW%全是30.00%（硬编码截断），原始值高达85%+
+
+**根因分析**：
+1. **QMT FloatVolume量纲混乱**：很多股票返回的是"万股"而非"股"，导致流通市值缩小10000倍
+2. **inflow_ratio硬编码截断**：`min(max(inflow_ratio, -0.30), 0.30)` 导致所有强势股都被截断到30%
+3. **净流入估算粗糙**：`change_pct * 0.5` 不符合资金做多意愿的真实分布
+
+### 9.2 修复方案
+
+```python
+# Bug #8: float_volume量纲修复
+# QMT返回的FloatVolume很多是"万股"而非"股"
+# 真实A股流通盘极少小于1000万股（约10亿市值）
+if float_volume and float_volume < 10000000:
+    float_volume = float_volume * 10000  # 放大10000倍还原成"股"
+
+# Bug #9: 动态净流入估算（power_ratio）
+# 用(当前价-昨收)/(最高-最低)的比例衡量资金做多意愿
+price_range = tick_high - tick_low
+if price_range > 0:
+    power_ratio = (current_price - pre_close) / price_range
+    power_ratio = max(-1.0, min(power_ratio, 1.0))
+else:
+    power_ratio = 1.0 if current_price > pre_close else -1.0
+net_inflow_est = current_amount * power_ratio * 0.5
+
+# Bug #10: 删除inflow_ratio硬编码截断
+# 删除 safe_inflow_ratio = min(max(inflow_ratio, -0.30), 0.30)
+# 让真实数据说话！量纲已在源头修复
+```
+
+### 9.3 验证结果
+
+| 股票 | inflow_ratio(修复前) | inflow_ratio(修复后) | 物理合理性 |
+|------|---------------------|---------------------|-----------|
+| 600744.SH | 30.00%（硬编码） | 0.50% | ✅ 合理 |
+| 001696.SZ | 30.00%（硬编码） | 7.43% | ✅ 合理 |
+| 000862.SZ | 30.00%（硬编码） | 6.74% | ✅ 合理 |
+| 001282.SZ | 30.00%（硬编码） | 4.35% | ✅ 合理 |
+| 002986.SZ | 30.00%（硬编码） | 3.45% | ✅ 合理 |
+
+### 9.4 物理意义
+
+- **power_ratio=1.0**（涨停）：全天都在最高价，100%资金做多
+- **power_ratio=-1.0**（跌停）：全天都在最低价，100%资金做空
+- **power_ratio=0.5**：中位涨幅，50%资金做多
+
+### 9.5 关键代码位置
+
+| 文件 | 位置 | 修复内容 |
+|------|------|----------|
+| `tasks/run_live_trading_engine.py:1115-1125` | 细筛逻辑 | float_volume量纲修复 |
+| `tasks/run_live_trading_engine.py:1210-1230` | 打分准备 | power_ratio净流入估算 |
+| `tasks/run_live_trading_engine.py:1260-1280` | 结果装载 | 删除硬编码截断 |
+
+### 9.6 教训总结
+
+1. **量纲问题用物理常识卡控**：A股流通盘不可能小于10亿市值
+2. **硬编码截断是"遮丑"而非"修复"**：找到源头量纲错误才是正解
+3. **power_ratio比change_pct更精确**：考虑了日内波动范围

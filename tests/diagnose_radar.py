@@ -117,7 +117,16 @@ def diagnose_radar():
         
         # 获取流通股本
         float_volume = true_dict.get_float_volume(stock)
-        print(f"  float_volume: {float_volume} 股")
+        print(f"  float_volume(原始): {float_volume}")
+        
+        # 【CTO V15终极修复】量纲对齐！
+        # QMT返回的FloatVolume很多是"万股"而非"股"
+        # 真实A股流通盘极少小于1000万股（约10亿市值）
+        if float_volume and float_volume < 10000000:
+            float_volume = float_volume * 10000
+            print(f"  float_volume(修复后): {float_volume} 股 [放大10000倍]")
+        else:
+            print(f"  float_volume: {float_volume} 股")
         
         if float_volume <= 0:
             print(f"  [SKIP] float_volume<=0，剔除")
@@ -149,14 +158,20 @@ def diagnose_radar():
         change_pct = (current_price - pre_close) / pre_close if pre_close > 0 else 0
         float_market_cap = float_volume * pre_close if float_volume else 1.0
         
-        inflow_ratio_est = change_pct * 0.5
-        inflow_ratio_est = max(-0.3, min(inflow_ratio_est, 0.3))
-        net_inflow_est = current_amount * inflow_ratio_est
-        
         tick_high = tick.get('high', current_price)
         tick_low = tick.get('low', current_price)
         
-        print(f"  tick_high: {tick_high}, tick_low: {tick_low}")
+        # 【CTO V15终极修复】动态净流入估算
+        # 用(当前价-昨收)/(最高-最低)的比例衡量资金做多意愿
+        price_range = tick_high - tick_low
+        if price_range > 0:
+            power_ratio = (current_price - pre_close) / price_range
+            power_ratio = max(-1.0, min(power_ratio, 1.0))
+        else:
+            power_ratio = 1.0 if current_price > pre_close else -1.0
+        
+        net_inflow_est = current_amount * power_ratio * 0.5
+        print(f"  tick_high: {tick_high}, tick_low: {tick_low}, power_ratio: {power_ratio:.2f}")
         
         # CTO V13修复：acceleration_factor避免sustain_ratio=2.0数学必然
         price_position = (current_price - tick_low) / (tick_high - tick_low) if tick_high > tick_low else 0.5
@@ -174,17 +189,15 @@ def diagnose_radar():
                 low=tick_low,
                 open_price=tick.get('open', current_price),
                 flow_5min=current_amount / 240 * 5,
-                flow_15min=current_amount / 240 * 15 * acceleration_factor,  # CTO V13修复
+                flow_15min=current_amount / 240 * 15 * acceleration_factor,
                 flow_5min_median_stock=1.0,
                 space_gap_pct=0.5,
                 float_volume_shares=float_volume,
-                current_time=now  # CTO V13修复：传入datetime而非datetime.time
+                current_time=now
             )
-            print(f"  [SCORE] final={final_score:.2f}, sustain={sustain_ratio:.2f}, inflow={inflow_ratio:.4f}, mfe={mfe:.2f}")
-            
-            # CTO V14验证：inflow_ratio物理卡控
-            if abs(inflow_ratio) > 0.30:
-                print(f"  [WARN] inflow_ratio={inflow_ratio:.4f} 超过物理限制30%!")
+            # 【CTO V15】不再硬编码截断，展示真实值
+            # 注意：inflow_ratio已经是百分比形式（7.41表示7.41%）
+            print(f"  [SCORE] final={final_score:.2f}, sustain={sustain_ratio:.2f}, inflow={inflow_ratio:.2f}%, mfe={mfe:.2f}")
         except Exception as e:
             print(f"  [ERR] 打分失败: {e}")
     

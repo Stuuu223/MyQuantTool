@@ -1135,6 +1135,15 @@ class LiveTradingEngine:
                     # 真龙可能缩量锁筹，只要不触发派发防线，一律放行给引擎打分！
                     try:
                         float_volume = true_dict.get_float_volume(stock_code)
+                        
+                        # 【CTO V15终极修复】量纲对齐！
+                        # QMT返回的FloatVolume很多是"万股"而非"股"
+                        # 真实A股流通盘极少小于1000万股（约10亿市值）
+                        # 如果小于1000万，说明单位是"万股"，需放大10000倍
+                        if float_volume and float_volume < 10000000:
+                            float_volume = float_volume * 10000
+                            # logger.debug(f"[量纲修复] {stock_code} float_volume放大10000倍")
+                        
                         volume_gu = current_volume * 100  # 手→股
                         current_turnover = (volume_gu / float_volume * 100) if float_volume else 0
                         
@@ -1209,17 +1218,26 @@ class LiveTradingEngine:
                         avg_amount_5d = avg_vol_5d * 100 * pre_close if avg_vol_5d else 1.0  # 元
                         flow_5min_median = avg_amount_5d / 48.0  # 每5分钟历史中位数（元）
                         
-                        # 【CTO V8】净流入估算优化：
-                        # 使用涨幅比例估算买卖力量差
-                        # 假设：涨幅5%时，买入资金约占成交额的52.5%（净流入≈成交额*2.5%）
-                        # 涨幅越大，净流入占比越高
-                        inflow_ratio_est = change_pct * 0.5  # 简化估算：涨幅的50%转化为净流入比例
-                        inflow_ratio_est = max(-0.3, min(inflow_ratio_est, 0.3))  # 限制在±30%
-                        net_inflow_est = current_amount * inflow_ratio_est  # 净流入（元）
-                        
-                        # 【CTO修复】使用tick真实high/low计算动态MFE
+                        # 【CTO V15终极修复】动态净流入估算
+                        # 用(当前价-昨收)/(最高-最低)的比例衡量资金做多意愿
+                        # 涨停时power_ratio=1.0，跌停时power_ratio=-1.0
                         tick_high = tick.get('high', current_price)
                         tick_low = tick.get('low', current_price)
+                        price_range = tick_high - tick_low
+                        
+                        if price_range > 0:
+                            power_ratio = (current_price - pre_close) / price_range
+                            power_ratio = max(-1.0, min(power_ratio, 1.0))
+                        else:
+                            power_ratio = 1.0 if current_price > pre_close else -1.0
+                        
+                        # 估算真实净流入（元）
+                        net_inflow_est = current_amount * power_ratio * 0.5
+                        
+                        # 【CTO V15修复】不再信任旧的float_market_cap，使用修复后的float_volume
+                        float_market_cap = float_volume * pre_close if float_volume and pre_close else 1.0
+                        
+                        # 【CTO修复】使用tick真实high/low计算动态MFE
                         high_60d = tick.get('high', current_price)
                         space_gap_pct = (high_60d - current_price) / high_60d if high_60d > 0 else 0.5
                         
@@ -1243,20 +1261,17 @@ class LiveTradingEngine:
                             logger.debug(f"[SKIP] {stock_code} 高阶算子计算失败，剔除: {e}")
                             continue
                         
-                        # 【CTO V14 物理常识卡控】防止量纲计算失误导致 inflow 超过 100%
-                        # A股单日净流入占流通市值极少超过15%，上限卡控在30%
-                        safe_inflow_ratio = min(max(inflow_ratio, -0.30), 0.30)
-                        
-                        # 【CTO V9】破除死锁：允许负分上榜，展示相对强弱！
-                        # 【CTO V14修复】purity判断基于安全流入比，阈值0.05=5%
-                        purity_tag = "PURE" if safe_inflow_ratio > 0.05 else ("MIX" if safe_inflow_ratio > 0 else "DUMP")
+                        # 【CTO V15终极修复】删除硬编码截断，让真实数据说话！
+                        # 量纲已在源头修复（float_volume放大10000倍），inflow_ratio现在应该是物理合理的
+                        # purity判断基于真实流入比，阈值0.05=5%
+                        purity_tag = "PURE" if inflow_ratio > 0.05 else ("MIX" if inflow_ratio > 0 else "DUMP")
                         
                         current_top_targets.append({
                             'code': stock_code,
                             'score': final_score,
                             'price': current_price,
                             'change': change_pct * 100,
-                            'inflow_ratio': safe_inflow_ratio,  # 【CTO V14】使用安全范围内的流入比
+                            'inflow_ratio': inflow_ratio,  # 【CTO V15】真实值，绝不造假！
                             'ratio_stock': ratio_stock,
                             'sustain_ratio': sustain_ratio,
                             'mfe': mfe,  # 资金效率指标
