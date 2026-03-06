@@ -1137,15 +1137,6 @@ class LiveTradingEngine:
                     # 真龙可能缩量锁筹，只要不触发派发防线，一律放行给引擎打分！
                     try:
                         float_volume = true_dict.get_float_volume(stock_code)
-                        
-                        # 【CTO V15终极修复】量纲对齐！
-                        # QMT返回的FloatVolume很多是"万股"而非"股"
-                        # 真实A股流通盘极少小于1000万股（约10亿市值）
-                        # 如果小于1000万，说明单位是"万股"，需放大10000倍
-                        if float_volume and float_volume < 10000000:
-                            float_volume = float_volume * 10000
-                            # logger.debug(f"[量纲修复] {stock_code} float_volume放大10000倍")
-                        
                         volume_gu = current_volume * 100  # 手→股
                         current_turnover = (volume_gu / float_volume * 100) if float_volume else 0
                         
