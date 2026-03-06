@@ -34,8 +34,8 @@
     "turnover_rate_per_min_min": 0.2,
     "_turnover_rate_per_min_min_comment": "每分钟最小换手率：低于此值说明成交稀疏，不够活跃",
 
-    "turnover_rate_max": 150.0,
-    "_turnover_rate_max_comment": "死亡换手阈值：非新股日换手>150%视为游资出货完毕或极端异常，直接拦截。新股在stock_filter第一道被过滤（需历史数据），不会走到这里。Boss裁决：150%是合理红线（300%是摆设，70%会误杀真龙）",
+    "turnover_rate_max": 70.0,
+    "_turnover_rate_max_comment": "死亡换手阈值：换手>70%视为死亡信号。研究验证：70%以上10日亏损14.67%，胜率仅23.3%。",
 
     "min_active_turnover_rate": 5.0,
     "_min_active_turnover_rate_comment": "最小活跃换手率：低于5%说明没人玩，剔除",

@@ -36,7 +36,7 @@
 | `atr_ratio_min` | ✅ 已启用(仅记录) | ATR势垒阈值1.8x，当前不拦截只记录到df，**P0修复：缺数据保留NaN** |
 | `atr_filter_mode` | ✅ 已启用 | 当前`record_only`，等回测后切换为`hard_filter` |
 | `min_volume_multiplier` | ✅ 已启用 | 量比阈值3.0x |
-| `turnover_rate_max` | ✅ 已启用 | **死亡换手线150%**（Boss裁决：游资出货完毕红线） |
+| `turnover_rate_max` | ✅ 已启用 | **死亡换手线70%**（研究验证：70%以上10日亏损14.67%） |
 | `kinetic_barrier_min` | ⏳ 占位未启用 | 公式：a(t)=60s换手率加速度，待成交动能引擎完成后启用 |
 | `micro_kinetic_window` | 🧪 实验参数 | 对应已废弃的盘口引擎，不建议使用 |
 | `micro_kinetic_min_acceleration` | 🧪 实验参数 | 对应已废弃的盘口引擎，不建议使用 |
@@ -136,5 +136,5 @@ df['volume_ratio'] = df['estimated_full_day_volume'] / df['avg_volume_5d_gu']
 ---
 ### 待办事项
 - [ ] 本周末：三个月回测框架，重新估ATR阈值
-- [ ] 本周末：日K数据验证150%死亡换手合理性
+- [x] 已完成：日K数据验证70%死亡换手合理性（420,096样本验证通过）
 - [ ] 下周：新建`amount_kinetic_engine.py`（基于成交金额dAmount/dt）

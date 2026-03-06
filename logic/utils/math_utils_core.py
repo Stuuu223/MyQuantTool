@@ -154,7 +154,7 @@ def filter_by_turnover_range(
     
     【Boss战略参数】
     - min_turnover = 5.0: 大哥起步线（无5%不妖股）
-    - max_turnover = 300.0: 死亡换手熔断（V20.5.0：300%统一阈值）
+    - max_turnover = 70.0: 死亡换手熔断（V20.5.2：70%统一阈值）
     
     Args:
         df: DataFrame

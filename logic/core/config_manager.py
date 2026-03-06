@@ -233,8 +233,8 @@ class ConfigManager:
             'min_avg_turnover_pct': self.get('stock_filter.min_avg_turnover_pct', 3.0),
             'min_intraday_turnover_pct': self.get('stock_filter.min_intraday_turnover_pct', 5.0),
             'per_minute_min': self.get('live_sniper.turnover_rate_per_min_min', 0.2),
-            'total_max': self.get('live_sniper.turnover_rate_max', 300.0),
-            'death_turnover_rate': self.get('live_sniper.death_turnover_rate', 300.0),
+            'total_max': self.get('live_sniper.turnover_rate_max', 70.0),
+            'death_turnover_rate': self.get('live_sniper.death_turnover_rate', 70.0),
             'min_active_turnover_rate': self.get('live_sniper.min_active_turnover_rate', 3.0)
         }
     

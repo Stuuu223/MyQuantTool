@@ -15,7 +15,7 @@ GlobalFilterGateway - 全局过滤网关
 【Boss二维铁网 - V20.3红线版 + 早盘降阈 + P0修复 + CTO疑点修复】
 1. 量能网: volume_ratio >= min_volume_multiplier (如3.0倍，动态放量) - 0/1判定
 2. 换手网: min_turnover <= turnover (5%起步，大哥起步线) - 0/1判定
-3. 死亡换手拦截: turnover >= 150%直接拦截（游资出货完毕红线）
+3. 死亡换手拦截: turnover >= 70%直接拦截（研究验证：70%以上10日亏损14.67%）
 4. 甜点位标记: 8% <= turnover <= 15%注入{'tag': '换手甜点'}，绝不加分
 5. 早盘降阈: 09:30-09:45阈值降至60%，捕捉意愿度（固定UTC+8时区）
 6. 【P0修复】ATR缺数据不再伪装成低能态，保留NaN用于统计
@@ -100,12 +100,12 @@ class GlobalFilterGateway:
     【CTO红线声明】
     此网关只做0/1生死判定，不做任何打分！均线判定已完全删除！
     【CTO紧急修复】早盘降阈逻辑(60%)，捕捉资金意愿度
-    【Boss P0修复】ATR缺数据保留NaN，死亡换手统一150%
-    【CTO疑点修复】死亡换手>=150%，单位自适应<1.0，ATR无magic number，时区修复
+    【Boss P0修复】ATR缺数据保留NaN，死亡换手统一70%
+    【CTO疑点修复】死亡换手>=70%，单位自适应<1.0，ATR无magic number，时区修复
     """
     
     # ========== CTO红线常量：死亡换手阈值 ==========
-    DEATH_TURNOVER_THRESHOLD = 150.0  # 【V20.5.1 Boss裁决】死亡换手线统一为150%（游资出货完毕红线）
+    DEATH_TURNOVER_THRESHOLD = 70.0  # 【V20.5.2】死亡换手线统一为70%（研究验证：70%以上10日亏损14.67%）
     # 甜点位阈值已迁移到config: live_sniper.sweet_spot_min / sweet_spot_max
     
     @staticmethod
@@ -121,7 +121,7 @@ class GlobalFilterGateway:
         【CTO红线改造说明】
         - 完全删除MA5/MA10/MA20均线判定（权力下放给战法Detector）
         - 只做0/1生死判定，无打分机制
-        - 死亡换手拦截统一为>=150%（新股在stock_filter第一道被过滤，不会到这里）
+        - 死亡换手拦截统一为>=70%（新股在stock_filter第一道被过滤，不会到这里）
         - 甜点位标记(8%-15%)，仅注入tag，绝不加分
         【CTO紧急修复】早盘降阈: 09:30-09:45阈值降至60%
         【Boss P0修复】ATR缺数据保留NaN，不伪装成低能态
@@ -208,7 +208,7 @@ class GlobalFilterGateway:
             df['volume_ratio'] = df['volume_ratio'].apply(lambda x: safe_float(x, 0.0))
         
         # ========== 【疑点#1修复】死亡换手拦截 - `>` → `>=` ==========
-        # turnover_rate >= 150%直接拦截，永不进入候选池
+        # turnover_rate >= 70%直接拦截，永不进入候选池
         # 新股在stock_filter第一道被过滤（需历史数据），不会走到这里
         # 【Boss裁决】150%是游资出货完毕红线，150.0%本身就应拦截
         if 'turnover_rate' in df.columns:
@@ -418,7 +418,7 @@ class GlobalFilterGateway:
         用于Tick级信号触发前的快速检查
         【CTO红线】只做0/1判定，无打分！
         【CTO紧急修复】早盘降阈逻辑(60%)
-        【Boss P0修复】死亡换手统一为150%
+        【Boss P0修复】死亡换手统一为70%
         【疑点#2修复】死亡换手 `>` → `>=`
         
         Returns:
@@ -454,7 +454,7 @@ class GlobalFilterGateway:
         except:
             return False, "配置读取失败", None
         
-        # 【疑点#2修复】死亡换手拦截 - 150%硬门槛，`>` → `>=`
+        # 【疑点#2修复】死亡换手拦截 - 70%硬门槛，`>` → `>=`
         if turnover_rate >= GlobalFilterGateway.DEATH_TURNOVER_THRESHOLD:
             return False, f"死亡换手: {turnover_rate:.2f}% >= {GlobalFilterGateway.DEATH_TURNOVER_THRESHOLD}%", None
         
@@ -488,7 +488,7 @@ def apply_boss_filters(df, config_manager, true_dict=None, context="unknown"):
     【CTO红线声明】
     - 均线判定(MA5/MA10/MA20)已完全删除，权力下放给战法Detector
     - 只做0/1生死判定，无打分
-    - 死亡换手拦截统一为>=150%（新股在stock_filter第一道被过滤）
+    - 死亡换手拦截统一为>=70%（新股在stock_filter第一道被过滤）
     - 甜点位(8%-15%)仅注入tag，绝不加分
     【CTO紧急修复】早盘降阈: 09:30-09:45阈值降至60%，捕捉意愿度
     【Boss P0修复】ATR缺数据保留NaN，不伪装成低能态
