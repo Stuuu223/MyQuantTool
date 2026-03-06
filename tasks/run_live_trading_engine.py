@@ -771,36 +771,43 @@ class LiveTradingEngine:
             
             pre_filter_count = len(df)
             
-            # ========== 【Phase1修复】动态阈值：盘后降低门槛！==========
-            base_volume_multiplier = config_manager.get('live_sniper.min_volume_multiplier', 3.0)
+            # ========== 【CTO V7 Phase4】牛市经验参数对齐！==========
+            # 数据支撑：连板首板V3报告显示T-1换手中位3.69%，T0换手中位4.96%
+            # 粗筛必须捕捉"暗流期"（换手从<3%异动至>3.5%但价格未动）
             
-            # 【时间效应补偿】盘后量比回归，需要降低阈值
+            # 【量比动态分位】取全市场90th分位，防止熊市数据塌缩
+            volume_ratio_90th = df['volume_ratio'].quantile(0.90)
+            min_volume_multiplier = max(volume_ratio_90th, 1.5)  # 绝对物理下限1.5x
+            
+            # 【时间效应补偿】午后量比回归，需要降低分位数门槛
             if minutes_passed >= 240:
-                # 盘后模式：量比是全天真实值，降低阈值到1.5x
-                min_volume_multiplier = 1.5
+                # 盘后模式：量比是全天真实值，使用70th分位
+                volume_ratio_70th = df['volume_ratio'].quantile(0.70)
+                min_volume_multiplier = max(volume_ratio_70th, 1.5)
                 mode_tag = "盘后投影"
             elif minutes_passed >= 120:
-                # 午后模式：量比部分回归，阈值2.0x
-                min_volume_multiplier = 2.0
+                # 午后模式：量比部分回归，使用80th分位
+                volume_ratio_80th = df['volume_ratio'].quantile(0.80)
+                min_volume_multiplier = max(volume_ratio_80th, 1.5)
                 mode_tag = "午后修正"
             else:
-                # 早盘模式：量比脉冲期，保持原阈值
-                min_volume_multiplier = base_volume_multiplier
+                # 早盘模式：量比脉冲期，使用90th分位
                 mode_tag = "早盘脉冲"
             
-            # 【CTO建议】宽松阈值：3000万均额 + 1%换手，放大捕获范围
-            min_avg_amount_5d = 30000000.0  # 3000万（CTO建议）
-            min_avg_turnover_5d = 1.0       # 1%（CTO建议）
+            # 【CTO V7 Phase4】牛市经验参数：5000万均额 + 1.5%换手
+            # 参考：V3报告T-1换手中位3.69%，5%换手会把真龙扼杀！
+            min_avg_amount_5d = 50000000.0  # 5000万（CTO V7牛市参数）
+            min_avg_turnover_5d = 1.5       # 1.5%（CTO V7牛市参数，绝不能用5%）
             max_open_turnover = 30.0        # 开盘换手率>30%视为死亡派发
             
             logger.info(f"\n{'='*60}")
-            logger.info(f"🔬 【四级漏斗-第二级粗筛】多维护城河生效！")
+            logger.info(f"🔬 【四级漏斗-第二级粗筛】CTO V7牛市参数生效！")
             logger.info(f"{'='*60}")
             logger.info(f"▶ 运行模式: {mode_tag} (已过{minutes_passed:.0f}分钟)")
             logger.info(f"▶ 输入池: {pre_filter_count} 只")
-            logger.info(f"▶ 量比门槛: >= {min_volume_multiplier:.1f}x (动态调整)")
-            logger.info(f"▶ 5日均额门槛: >= {min_avg_amount_5d/10000:.0f}万")
-            logger.info(f"▶ 5日均换手门槛: >= {min_avg_turnover_5d:.1f}%")
+            logger.info(f"▶ 量比门槛: >= {min_volume_multiplier:.2f}x (90th分位+1.5x下限)")
+            logger.info(f"▶ 5日均额门槛: >= {min_avg_amount_5d/10000:.0f}万 (牛市经验)")
+            logger.info(f"▶ 5日均换手门槛: >= {min_avg_turnover_5d:.1f}% (暗流期捕捉)")
             logger.info(f"▶ 死亡换手拦截: 开盘换手 < {max_open_turnover:.0f}%")
             
             # 多维复合过滤
