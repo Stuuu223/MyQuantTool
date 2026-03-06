@@ -1103,7 +1103,7 @@ class LiveTradingEngine:
                         volume_gu = current_volume * 100  # 手→股
                         turnover_rate = (volume_gu / float_volume * 100) if float_volume else 0
                         
-                        # 换手率细筛：>5% 且 <150%
+                        # 换手率细筛：>5% 且 <70%（死亡换手线）
                         if turnover_rate < 5.0:
                             continue  # 换手不足，跳过
                         if turnover_rate >= 150.0:

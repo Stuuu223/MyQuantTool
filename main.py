@@ -922,7 +922,7 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, dry_run):
     - 所有数据必须QMT原生，禁止任何外网请求！
     - Tushare已物理剥离，改用QMT本地数据
     - 依赖注入模式：QMT实例从main.py传入引擎
-    - 换手率死亡拦截上限：300%（统一标准，禁止擅自改回70%）
+    - 换手率死亡拦截上限：70%（统一标准，研究验证：70%以上10日亏损14.67%）
     
     示例:
         python main.py live --mode paper          # 模拟盘测试
@@ -990,7 +990,7 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, dry_run):
     min_vol = config_manager.get('live_sniper.min_volume_multiplier', 3.0)
     click.echo(f"📊 绝对量比阈值: {min_vol}x (配置文件驱动)")
     click.echo(f"⏰ 截停时间: {cutoff_time}")
-    click.echo(click.style(f"🔒 换手率死亡拦截上限: 300%（CTO统一标准）", fg='yellow'))
+    click.echo(click.style(f"🔒 换手率死亡拦截上限: 70%（研究验证：70%以上10日亏损14.67%）", fg='yellow'))
     if dry_run:
         click.echo(click.style("🧪 干运行模式(不实际下单)", fg='yellow'))
     
