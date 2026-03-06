@@ -23,6 +23,11 @@ import os
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 import logging
+import warnings
+
+# 【CTO V9 强制屏蔽】物理级消灭 Pandas 的向下转型警告
+warnings.filterwarnings('ignore', category=FutureWarning)
+warnings.filterwarnings('ignore', category=DeprecationWarning)
 
 # CTO Step6: 时空对齐需要pandas处理Tick数据
 try:
@@ -212,10 +217,10 @@ class LiveTradingEngine:
         
         # CTO修复：盘中启动时必须先执行快照筛选！
         if current_time >= market_open:
-            logger.warning("[WARN] 当前时间已过09:30开盘，执行盘中补网...")
+            logger.warning("[HOT-START] 越过开盘集合竞价，执行全局截面扫描...")
             
             # Step 1: 先执行第一斩（集合竞价筛选），填充初始watchlist
-            logger.info("🔄 Step 1: 执行集合竞价快照初筛...")
+            logger.info("[FAST] Step 1: 执行集合竞价快照初筛...")
             self._auction_snapshot_filter()
             
             if not self.watchlist:
@@ -224,16 +229,16 @@ class LiveTradingEngine:
                 self._fallback_premarket_scan()
             
             # Step 2: 执行第二斩（开盘快照筛选），筛选强势股
-            logger.info("🔄 Step 2: 执行开盘快照二筛...")
+            logger.info("[FAST] Step 2: 执行开盘快照二筛...")
             self._snapshot_filter()
             
             # Step 3: 检查watchlist是否填充成功
             if not self.watchlist:
                 logger.warning("[ERR] 快照筛选未找到目标股票，系统进入待机模式")
                 logger.info("[INFO] 提示：可能当前没有符合量比>0.95分位数的强势股")
-                logger.info("🔄 系统将持续运行，等待下一分钟自动补网...")
-                # CTO修复：不再自杀，系统持续运行等待自动补网
-                # 启动自动补网机制
+                logger.info("[FAST] 系统将持续运行，等待下一分钟自动热扫描...")
+                # CTO修复：不再自杀，系统持续运行等待自动热扫描
+                # 启动自动热扫描机制
                 self._start_auto_replenishment()
                 return
             
@@ -247,17 +252,17 @@ class LiveTradingEngine:
             # 【CTO暴怒扒皮第一棒】强制高亮输出Watchlist数量
             watchlist_count = len(self.watchlist)
             logger.info("=" * 60)
-            logger.info(f"🚨 [CTO强制审计] 盘中补网结束！当前真实观察池数量: {watchlist_count}只")
+            logger.info(f"[CTO] 热启动扫描完成！当前真实观察池数量: {watchlist_count}只")
             if watchlist_count > 0:
-                logger.info(f"📊 [CTO强制审计] 观察池前5只股票: {self.watchlist[:5]}")
+                logger.info(f"[CTO] 观察池前5只股票: {self.watchlist[:5]}")
             else:
-                logger.error(f"[ERR] [CTO强制审计] 观察池为空！0.90分位的宽体雷达失效！")
+                logger.error(f"[ERR] [CTO] 观察池为空！0.90分位的宽体雷达失效！")
             logger.info("=" * 60)
             
             # 【CTO强制回显】终端控制台输出
             import click
             click.echo(f"\n{'='*60}")
-            click.echo(f"📢 [CTO物理透视] 盘中补网完毕！")
+            click.echo(f"[CTO] 热启动扫描完毕！")
             click.echo(f"[TARGET] 成功进入观察池的股票数量: {watchlist_count} 只")
             if watchlist_count > 0:
                 click.echo(click.style(f"[OK] 观察池前5只: {self.watchlist[:5]}", fg="green"))
@@ -905,55 +910,53 @@ class LiveTradingEngine:
         os.system('cls' if os.name == 'nt' else 'clear')
         now_str = datetime.now().strftime('%H:%M:%S')
         
-        print("=" * 100)
+        # 【CTO V9】黑客级全息大屏 - click颜色渲染
+        click.secho(f"{'='*100}", fg='cyan')
         if msg:
-            print(f"[V20 纯血游资猎杀雷达] | {msg} | {now_str}")
+            click.secho(f"[V20 纯血游资猎杀雷达] | {msg:<40} | {now_str}", fg='cyan', bold=True)
         elif is_rest:
-            print(f"[V20 纯血游资猎杀雷达] | [静态复盘模式] | {now_str}")
+            click.secho(f"[V20 纯血游资猎杀雷达] | [静态复盘投影模式]               | {now_str}", fg='yellow', bold=True)
         else:
-            print(f"[V20 纯血游资猎杀雷达] | [极速高频模式] | {now_str}")
-        print("=" * 100)
+            click.secho(f"[V20 纯血游资猎杀雷达] | [极速高频狙击模式]               | {now_str}", fg='green', bold=True)
+        click.secho(f"{'='*100}", fg='cyan')
         
         if initial_loading:
-            print("\n[RADAR] 已锁定目标，正在捕获首轮微观动能数据...")
-            print("[LOADING] 数据加载中...\n")
-            print("=" * 100)
+            click.secho(f">>> 正在连接 QMT 物理核心，初始化高阶算子，请稍候...", fg='yellow')
+            click.secho(f"{'='*100}", fg='cyan')
             return
         
         if pool_stats:
-            print(f"[漏斗统计] 基础池: 5191只 -> 粗筛防线: {pool_stats['total']}只 -> 活跃决断: {pool_stats['active']}只")
-            print(f"[战场情绪] 封板/红盘: {pool_stats['up']}只 | 绿盘/水下: {pool_stats['down']}只 | 淘汰/死水: {pool_stats['filtered']}只")
-            print("-" * 100)
+            stat_str1 = f"[漏斗统计] 基础池: 5191只 -> 粗筛池: {pool_stats.get('total', 0)}只 -> 活跃侦测: {pool_stats.get('active', 0)}只"
+            stat_str2 = f"[战场情绪] 封板/红盘: {pool_stats.get('up', 0)}只 | 绿盘/水下: {pool_stats.get('down', 0)}只 | 剔除: {pool_stats.get('filtered', 0)}只"
+            click.secho(f"{stat_str1}", fg='white')
+            click.secho(f"{stat_str2}", fg='white')
+            click.secho(f"{'-'*100}", fg='cyan')
         
-        if is_rest or msg:
-            print("[机会池] TOP 10:")
-        
-        # 【CTO V8】工业级全息大屏 - 纯ASCII极简版
-        print(f"{'RANK':<5} {'TARGET':<10} {'SCORE':<9} {'PRICE':<7} {'CHG%':<8} {'INFLOW%':<8} {'SUSTAIN':<8} {'MFE':<7} {'PURITY':<8}")
-        print("-" * 100)
+        # 核心算子表头
+        header = f"{'RANK':<5} {'TARGET':<10} {'SCORE':<9} {'PRICE':<7} {'CHG%':<8} {'INFLOW%':<9} {'SUSTAIN':<8} {'MFE':<7} {'PURITY':<7}"
+        click.secho(header, fg='magenta', bold=True)
+        click.secho(f"{'-'*100}", fg='cyan')
         
         if not top_targets:
-            if is_rest or msg:
-                print("  (暂无机会池数据)")
-            else:
-                print("  (当前无目标穿透三维防线，或处于数据静默期...)")
+            click.secho(f"  (当前雷达网内未捕获有效动能标的...)", fg='bright_black')
         else:
             for i, t in enumerate(top_targets, 1):
-                # 格式化高阶算子
+                # 颜色逻辑：前三名红色高亮
+                color = 'red' if i <= 3 else 'white'
+                bold = i <= 3
+                
+                score_str = f"{t['score']:<9.2f}"
+                pct_str = f"{t['change']:<+7.2f}%"
                 inflow_str = f"{t.get('inflow_ratio', 0)*100:.2f}%"
                 sustain_str = f"{t.get('sustain_ratio', 0):.2f}x"
                 mfe_str = f"{t.get('mfe', 0):.2f}"
                 purity_str = str(t.get('purity', '-'))
                 
-                print(f"{i:<5} {t['code']:<10} {t['score']:<9.2f} {t['price']:<7.2f} {t['change']:<+7.2f}% {inflow_str:<8} {sustain_str:<8} {mfe_str:<7} {purity_str:<8}")
+                row = f"{i:<5} {t['code']:<10} {score_str} {t['price']:<7.2f} {pct_str:<9} {inflow_str:<9} {sustain_str:<8} {mfe_str:<7} {purity_str:<7}"
+                click.secho(row, fg=color, bold=bold)
         
-        print("=" * 100)
-        if msg:
-            print(f"[INFO] {msg} - 数据已定格，仅供复盘审阅 (按 Ctrl+C 退出)")
-        elif is_rest:
-            print("[INFO] 复盘模式 - 保留最后机会池数据，等待下午开盘... (按 Ctrl+C 退出)")
-        else:
-            print("[CMD] 1秒极速刷新... 按 Ctrl+C 生成收官战报")
+        click.secho(f"{'='*100}", fg='cyan')
+        click.secho("[CMD] Ctrl+C 阻断雷达并生成最终战报 | 引擎: 极速内存直读", fg='bright_black')
     
     def _run_radar_main_loop(self):
         """
@@ -1205,7 +1208,10 @@ class LiveTradingEngine:
                             logger.debug(f"[SKIP] {stock_code} 高阶算子计算失败，剔除: {e}")
                             continue
                         
-                        # 【CTO V7】完整记录高阶算子
+                        # 【CTO V9】破除死锁：允许负分上榜，展示相对强弱！
+                        # 不再限制 final_score > 0，让市场告诉我们谁是最强者
+                        purity_tag = "PURE" if inflow_ratio > 1.0 else ("MIX" if inflow_ratio > 0 else "DUMP")
+                        
                         current_top_targets.append({
                             'code': stock_code,
                             'score': final_score,
@@ -1214,7 +1220,8 @@ class LiveTradingEngine:
                             'inflow_ratio': inflow_ratio,
                             'ratio_stock': ratio_stock,
                             'sustain_ratio': sustain_ratio,
-                            'mfe': mfe  # 资金效率指标
+                            'mfe': mfe,  # 资金效率指标
+                            'purity': purity_tag  # 【CTO V9】纯度标签
                         })
                     except Exception:
                         continue
@@ -1756,7 +1763,7 @@ class LiveTradingEngine:
 
     def _start_auto_replenishment(self):
         """
-        CTO强制：启动自动补网定时器
+        CTO强制：启动自动热扫描定时器
         每分钟检查一次，如果watchlist为空则执行快照筛选
         """
         import threading
@@ -1774,25 +1781,25 @@ class LiveTradingEngine:
                     if market_open.time() <= current_time.time() <= market_close.time():
                         # 如果watchlist为空，执行快照筛选
                         if not self.watchlist:
-                            logger.info("🔄 自动补网：执行快照筛选...")
+                            logger.info("[FAST] 自动热扫描：执行快照筛选...")
                             self._snapshot_filter()
                             
                             # 如果筛选到股票，进入高频监控模式
                             if self.watchlist:
-                                logger.info(f"[TARGET] 自动补网成功，发现 {len(self.watchlist)} 只目标")
+                                logger.info(f"[TARGET] 自动热扫描成功，发现 {len(self.watchlist)} 只目标")
                                 self._fire_control_mode()
                     
                     # 每分钟检查一次
                     time.sleep(60)
                     
                 except Exception as e:
-                    logger.error(f"[ERR] 自动补网循环异常: {e}")
+                    logger.error(f"[ERR] 自动热扫描循环异常: {e}")
                     time.sleep(60)  # 出错后也继续运行
         
-        # 启动自动补网线程
+        # 启动自动热扫描线程
         replenish_thread = threading.Thread(target=auto_replenish_loop, daemon=True)
         replenish_thread.start()
-        logger.info("[OK] 自动补网定时器已启动")
+        logger.info("[OK] 自动热扫描定时器已启动")
 
     def _process_snapshot_at_0930(self):
         """
