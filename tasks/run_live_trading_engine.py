@@ -1187,6 +1187,9 @@ class LiveTradingEngine:
                         inflow_ratio_est = max(-0.3, min(inflow_ratio_est, 0.3))  # 限制在±30%
                         net_inflow_est = current_amount * inflow_ratio_est  # 净流入（元）
                         
+                        # 【CTO修复】使用tick真实high/low计算动态MFE
+                        tick_high = tick.get('high', current_price)
+                        tick_low = tick.get('low', current_price)
                         high_60d = tick.get('high', current_price)
                         space_gap_pct = (high_60d - current_price) / high_60d if high_60d > 0 else 0.5
                         
@@ -1195,9 +1198,9 @@ class LiveTradingEngine:
                                 net_inflow=net_inflow_est,  # 净流入估算（元）
                                 price=current_price,
                                 prev_close=pre_close,
-                                high=current_price * 1.02,
-                                low=current_price * 0.98,
-                                open_price=current_price,
+                                high=tick_high,  # 【CTO修复】使用tick真实high
+                                low=tick_low,    # 【CTO修复】使用tick真实low
+                                open_price=tick.get('open', current_price),  # 【CTO修复】使用tick真实open
                                 flow_5min=flow_5min,
                                 flow_15min=flow_15min,
                                 flow_5min_median_stock=flow_5min_median if flow_5min_median > 0 else 1.0,
