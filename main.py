@@ -589,9 +589,12 @@ def scan_cmd(ctx, date):
             quant_purity = min(max(raw_purity, -1.0), 1.0) * 100
             
             # 7. 调用打分引擎
+            # 【CTO V49修复】net_inflow公式与run_live_trading_engine.py对齐！
+            # 旧公式: (current_amount/240*15)*purity = 全天额÷16×purity (低估8倍)
+            # 新公式: current_amount*power_ratio*0.5 = 与实盘引擎一致
             try:
                 result = core_engine.calculate_true_dragon_score(
-                    net_inflow=(current_amount / 240.0 * 15) * raw_purity,
+                    net_inflow=current_amount * raw_purity * 0.5,  # V49: 对齐实盘引擎
                     price=current_price,
                     prev_close=pre_close,
                     high=tick_high,
