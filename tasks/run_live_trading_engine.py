@@ -948,102 +948,12 @@ class LiveTradingEngine:
     
     def _print_fire_control_panel(self, top_targets, initial_loading=False, pool_stats=None, is_rest=False, msg=None):
         """
-        【CTO V21】Rich库全息大屏 - 永不滚屏的动态终端UI
+        【CTO V34】UI渲染代理 - 调用metrics_utils中的render_live_dashboard
         
-        哲学：只为最暴力的右侧一波流服务（3天30%，10天翻倍）
-        改进：Rich Table替代ASCII边框，原地刷新不滚屏
+        实现UI与逻辑分离，实盘引擎只负责传数据，不负责画表格
         """
-        import os
-        from datetime import datetime
-        from rich.console import Console
-        from rich.table import Table
-        from rich.panel import Panel
-        
-        console = Console()
-        
-        # 【CTO V13】盘后投影模式不清屏，静默追加
-        if not is_rest:
-            os.system('cls' if os.name == 'nt' else 'clear')
-        now_str = datetime.now().strftime('%H:%M:%S')
-        
-        # 标题栏
-        if msg:
-            title_str = f"🚀 [V20 暴力猎杀雷达] | {msg} | {now_str}"
-        elif is_rest:
-            title_str = f"🚀 [V20 暴力猎杀雷达] | [静态投影复盘] | {now_str}"
-        else:
-            title_str = f"🚀 [V20 暴力猎杀雷达] | [极速高频狙击] | {now_str}"
-        
-        console.print(Panel(title_str, style="bold cyan", expand=False))
-        
-        if initial_loading:
-            console.print("[yellow]>>> 正在连接 QMT 物理内存，装载高阶算子...[/yellow]")
-            return
-        
-        # 战场统计
-        if pool_stats:
-            passed = pool_stats.get('passed_fine_filter', pool_stats.get('active', 0))
-            console.print(f"[white]* 猎杀漏斗: 5191只 → 粗筛: {pool_stats.get('total', 0)}只 → 活跃: {pool_stats.get('active', 0)}只 → 过细筛: {passed}只[/white]")
-            console.print(f"[white]* 战场情绪: 红盘/封板: {pool_stats.get('up', 0)}只 | 水下/绿盘: {pool_stats.get('down', 0)}只 | 派发剔除: {pool_stats.get('active', 0) - passed}只[/white]")
-        
-        # 【CTO V21】Rich Table核心算子矩阵
-        table = Table(show_header=True, header_style="bold magenta", style="cyan", expand=False)
-        table.add_column("RANK", justify="center", width=4)
-        table.add_column("TARGET", justify="center", width=10, style="bold white")
-        table.add_column("SCORE", justify="right", width=7, style="bold red")
-        table.add_column("PRICE", justify="right", width=7)
-        table.add_column("CHG%", justify="right", width=8)
-        table.add_column("INFLOW%", justify="right", width=9)
-        table.add_column("SUSTAIN", justify="right", width=8)
-        table.add_column("MFE", justify="right", width=6)
-        table.add_column("PURITY%", justify="right", width=8)  # 【CTO V21】量化纯度
-        
-        if not top_targets:
-            table.add_row("...", "暂无目标", "...", "...", "...", "...", "...", "...", "...")
-        else:
-            for i, t in enumerate(top_targets, 1):
-                # 前三名红色高亮
-                row_style = "bold red" if i <= 3 else None
-                
-                # 【CTO V21】量化纯度渲染
-                # +80%以上 = 红色（纯正攻击）
-                # +20%~80% = 黄色（温和上涨）
-                # -20%~+20% = 白色（震荡）
-                # -20%以下 = 绿色（砸盘出货）
-                p_val = t.get('purity', 0)
-                if p_val >= 80:
-                    p_color = "bold red"
-                elif p_val >= 20:
-                    p_color = "yellow"
-                elif p_val >= -20:
-                    p_color = "white"
-                else:
-                    p_color = "green"
-                purity_str = f"[{p_color}]{p_val:+.1f}%[/{p_color}]"
-                
-                # MFE和Sustain的物理截断防爆表
-                safe_sustain = min(max(t.get('sustain_ratio', 0), -99.9), 99.9)
-                safe_mfe = min(max(t.get('mfe', 0), -99.9), 99.9)
-                
-                table.add_row(
-                    str(i),
-                    t['code'],
-                    f"{t.get('score', 0):.1f}",
-                    f"{t['price']:.2f}",
-                    f"{t.get('change', 0):+.2f}%",
-                    f"{t.get('inflow_ratio', 0):.2f}%",
-                    f"{safe_sustain:.2f}x",
-                    f"{safe_mfe:.1f}",
-                    purity_str,
-                    style=row_style
-                )
-        
-        console.print(table)
-        # 【CTO V31】恢复纯粹的CLI极简信仰，删除Web端废话！
-        if is_rest:
-            console.print("[bright_black][CMD] 盘后定格完毕。极简终端，摒弃一切多余渲染。[/bright_black]")
-        else:
-            console.print("[bright_black][CMD] 雷达超频扫描中... (Ctrl+C 安全阻断)[/bright_black]")
+        from logic.utils.metrics_utils import render_live_dashboard
+        render_live_dashboard(top_targets, pool_stats, is_rest, msg, initial_loading)
     
     def _run_radar_main_loop(self):
         """
@@ -1099,23 +1009,8 @@ class LiveTradingEngine:
         # 【CTO V5】盘后投影标志位：记录是否已执行过盘后最终计算
         has_run_after_hours = False
         
-        # 【CTO V18极限压榨】静态常数预编译快查表！
-        static_cache = {}
-        default_float_volume = 1000000000.0  # 10亿股默认值
-        
-        for stock in self.watchlist:
-            fv = true_dict.get_float_volume(stock)
-            avg_vol_5d = true_dict.get_avg_volume_5d(stock)
-            
-            # 【CTO V23健壮性修复】流通股本缺失时用默认值，绝不跳过股票！
-            if not fv or fv <= 0:
-                fv = default_float_volume
-            
-            static_cache[stock] = {
-                'float_volume': fv,
-                'avg_volume_5d': avg_vol_5d or 1.0
-            }
-        
+        # 【CTO V34】静态常数预编译快查表 - 剥离到TrueDictionary.build_static_cache
+        static_cache = true_dict.build_static_cache(self.watchlist)
         print(f">>> [INIT] 静态快查表编译完成: {len(static_cache)} 只股票")
         sys.stdout.flush()
         

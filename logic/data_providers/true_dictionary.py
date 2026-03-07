@@ -772,6 +772,37 @@ class TrueDictionary:
         except (ValueError, TypeError):
             return 0.0
     
+    def build_static_cache(self, stock_list: List[str], default_float_volume: float = 1000000000.0) -> Dict:
+        """
+        【CTO V34】构建静态常数预编译快查表
+        
+        从run_live_trading_engine.py剥离，实现预热层与逻辑分离
+        
+        Args:
+            stock_list: 股票代码列表
+            default_float_volume: 流通股本默认值（10亿股）
+            
+        Returns:
+            Dict: {stock_code: {'float_volume': float, 'avg_volume_5d': float}}
+        """
+        static_cache = {}
+        
+        for stock in stock_list:
+            fv = self.get_float_volume(stock)
+            avg_vol_5d = self.get_avg_volume_5d(stock)
+            
+            # 【CTO V23健壮性修复】流通股本缺失时用默认值，绝不跳过股票！
+            if not fv or fv <= 0:
+                fv = default_float_volume
+            
+            static_cache[stock] = {
+                'float_volume': fv,
+                'avg_volume_5d': avg_vol_5d or 1.0
+            }
+        
+        logger.info(f"[TrueDictionary] 静态快查表编译完成: {len(static_cache)} 只股票")
+        return static_cache
+    
     def get_avg_turnover_5d(self, stock_code: str, target_date: str = None) -> float:
         """
         获取5日平均换手率 - 市值平替法
