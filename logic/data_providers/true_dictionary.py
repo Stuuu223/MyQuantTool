@@ -291,31 +291,14 @@ class TrueDictionary:
                     missing_stocks.append(stock)  # 【CTO V24】异常也记录
                     continue
             
-            # 【CTO V24 自愈式下载】本地没数据就当场下载，绝不静默丢弃！
+            # 【CTO V33终极净身令】删除阻塞式下载循环！
+            # 问题根因：download_history_data在QMT限流时会无限挂起
+            # 修复：缺失数据直接跳过，不阻塞实盘引擎！
             if missing_stocks:
-                logger.warning(f"[AUTO-HEAL] {len(missing_stocks)}只股票本地K线缺失，立即从服务器拉取补充！")
-                for stock in missing_stocks:
-                    try:
-                        xtdata.download_history_data(stock, period='1d', start_time=start_date, end_time=end_date)
-                    except Exception as e:
-                        logger.debug(f"[AUTO-HEAL] {stock} 下载失败: {e}")
-                time.sleep(0.2)  # 等待下载完成
-                
-                # 再次读取刚才下载的数据
-                for stock in missing_stocks:
-                    try:
-                        single_data = xtdata.get_local_data(
-                            field_list=['time', 'volume'],
-                            stock_list=[stock],
-                            period='1d',
-                            start_time=start_date,
-                            end_time=end_date
-                        )
-                        if single_data and stock in single_data and single_data[stock] is not None and len(single_data[stock]) > 0:
-                            all_data[stock] = single_data[stock]
-                            logger.debug(f"[AUTO-HEAL] {stock} 数据已修复")
-                    except Exception:
-                        continue
+                logger.warning(f'⚠️ [防空警报] {len(missing_stocks)}只股票本地K线缺失！')
+                logger.warning(f'🚫 为防止实盘引擎被网络卡死，系统拒绝现场下载，这些股票将被物理隔离。')
+                logger.warning(f'💡 请在盘后运行：python tools/smart_download.py 补充弹药！')
+                # 不下载！缺失的票在后续df is None判断中自然会被过滤掉
             
             # 【调试日志】检查all_data返回状态
             logger.info(f"[调试] xtdata.get_local_data返回: type={type(all_data)}, "

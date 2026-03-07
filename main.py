@@ -940,23 +940,57 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, dry_run):
     now = datetime.now()
     today_str = now.strftime('%Y%m%d')
     
-    # 【CTO V27】废除"非交易日禁止启动"的逻辑！
-    # 原因：用户需要盘后定格投影，LiveTradingEngine已经实现了这个功能！
-    # 非交易日/盘后 → LiveTradingEngine进入"盘后定格投影"模式
-    # 不再需要main.py层级的越权挟持！
+    # 【CTO V33终极净身令】非交易日物理隔离！
+    # 问题根因：非交易日进入LiveTradingEngine会触发：
+    # 1. UniverseBuilder循环download卡死
+    # 2. TrueDictionary循环download卡死
+    # 3. sustain_ratio数学坍缩为4.40x
+    # 修复：非交易日直接读取战报JSON，绝对不进入实盘引擎！
     
-    # 检查是否为交易日，仅用于提示
     is_trading = is_trading_day(today_str)
     current_hour = now.hour
     
     if not is_trading:
-        click.echo(click.style(f"\n📅 今天 ({today_str}) 是非交易日", fg='yellow'))
-        click.echo(click.style("🔄 将进入【盘后定格投影模式】，显示最近交易日的最终战果...", fg='cyan'))
-    elif current_hour >= 15:
+        # 【CTO V33】非交易日：直接读取战报JSON，物理阻断引擎启动
+        click.echo(click.style(f"\n📅 今天 ({today_str}) 是非交易日（周六/周日/节假日）", fg='yellow'))
+        prev_date = get_latest_completed_trading_day()
+        report_file = f"data/battle_reports/battle_report_{prev_date}.json"
+        
+        import os
+        import json
+        
+        if os.path.exists(report_file):
+            click.echo(click.style(f"🔄 正在为您提取 {prev_date} 的历史定格战报...", fg='cyan'))
+            try:
+                with open(report_file, 'r', encoding='utf-8') as f:
+                    report = json.load(f)
+                
+                top_targets = report.get('top_targets', [])
+                click.echo(f"\n{'='*60}")
+                click.echo(f"🏆 [{prev_date}] 盘后最终战果定格投影")
+                click.echo(f"{'='*60}")
+                click.echo(f"{'排名':<4} {'代码':<12} {'最高分':<10} {'涨幅':<8}")
+                click.echo("-" * 60)
+                for i, t in enumerate(top_targets[:15], 1):
+                    click.echo(f"{i:<4} {t.get('code', 'N/A'):<12} {t.get('score', 0):<10.1f} {t.get('change', 0):<8.2f}%")
+                click.echo(f"{'='*60}")
+                click.echo(f"📊 共 {len(top_targets)} 只标的")
+            except Exception as e:
+                click.echo(click.style(f"❌ 读取战报失败: {e}", fg='red'))
+        else:
+            click.echo(click.style(f"❌ 找不到 {prev_date} 的历史战报文件: {report_file}", fg='red'))
+            click.echo(click.style("💡 若要复盘历史数据，请使用系统自带的【全息回测】功能：", fg='cyan'))
+            click.echo("   python main.py backtest --date YYYYMMDD")
+        
+        click.echo(click.style("\n✅ 非交易日模式：系统安全阻断，拒绝进入实盘引擎！", fg='green'))
+        return  # 【CTO V33】物理阻断！连LiveTradingEngine的实例化都不做！
+    
+    if current_hour >= 15:
         click.echo(click.style(f"\n⏰ 当前时间已过15:00", fg='yellow'))
         click.echo(click.style("🔄 将进入【盘后定格投影模式】，显示今日最终战果...", fg='cyan'))
     else:
         click.echo(click.style(f"\n🚀 启动实盘猎杀系统 (EventDriven 事件驱动模式)", fg='green', bold=True))
+    
     click.echo(f"📅 日期: {datetime.now().strftime('%Y-%m-%d')}")
     click.echo(f"📊 模式: {'模拟盘' if mode == 'paper' else '实盘交易'}")
     click.echo(f"💰 最大持仓: {max_positions}")

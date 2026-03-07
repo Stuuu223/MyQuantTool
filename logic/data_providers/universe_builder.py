@@ -252,33 +252,15 @@ class UniverseBuilder:
             except Exception:
                 missing_stocks.append(stock)
 
-        # 【CTO V26优化】第二步：批量下载缺失数据的股票（减少sleep）
+        # 【CTO V33终极净身令】删除阻塞式下载循环！
+        # 问题根因：download_history_data在QMT限流时会无限挂起
+        # 修复：缺失数据直接跳过，不阻塞实盘引擎！
+        # 用户应该在盘后用 tools/smart_download.py 补充弹药
         if missing_stocks:
-            logger.info(f'[AUTO-HEAL] 发现 {len(missing_stocks)} 只股票日K缺失，启动批量下载...')
-            for stock in missing_stocks:
-                try:
-                    xtdata.download_history_data(stock, period='1d', start_time=start_date, end_date=end_date)
-                    cnt_autoheal += 1
-                except Exception:
-                    pass
-            
-            # 统一等待磁盘写入
-            time.sleep(0.5)  # 一次性等待，而非每只都等
-            
-            # 重新获取下载后的数据
-            for stock in missing_stocks:
-                try:
-                    data = xtdata.get_local_data(
-                        field_list=['close', 'volume', 'amount'],
-                        stock_list=[stock],
-                        period='1d',
-                        start_time=start_date,
-                        end_time=end_date
-                    )
-                    if data and stock in data and data[stock] is not None:
-                        all_data[stock] = data[stock]
-                except Exception:
-                    pass
+            logger.warning(f'⚠️ [防空警报] 发现 {len(missing_stocks)} 只股票日K数据缺失！')
+            logger.warning(f'🚫 为防止实盘引擎被网络卡死，系统拒绝现场下载，这些股票将被物理隔离。')
+            logger.warning(f'💡 请在盘后运行：python tools/smart_download.py 补充弹药！')
+            # 不下载！缺失的票在后续df is None判断中自然会被过滤掉
 
         # 【CTO V26优化】第三步：使用已获取的数据进行过滤
         import pandas as pd
