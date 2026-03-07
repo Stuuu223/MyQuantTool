@@ -1203,35 +1203,40 @@ class LiveTradingEngine:
                     self.volume_history[stock_code].append(current_volume)
                     
                     # R2: L1价格推力探测器（ΔV/ΔP）- 放量滞涨一票否决
-                    if len(self.volume_history[stock_code]) >= 20:  # 至少20个采样点
-                        old_vol = self.volume_history[stock_code][0]
-                        old_price = self.tick_history[stock_code][0]['price']
+                    # 【CTO强制修正】修复量纲错误：用增量/增量比较，而非增量/累计比较
+                    if len(self.volume_history[stock_code]) >= 20:  # 至少20个采样点（约1分钟）
+                        history_list = list(self.volume_history[stock_code])
+                        # 计算过去一段时间的"平均每Tick新增成交量"（增量/增量比较）
+                        tick_vols = [history_list[i] - history_list[i-1] for i in range(1, len(history_list))]
+                        avg_tick_vol = sum(tick_vols) / len(tick_vols) if tick_vols else 1.0
                         
-                        if old_vol > 0 and old_price > 0:
-                            delta_vol = current_volume - old_vol  # 成交量增量（手）
-                            delta_price_pct = (current_price - old_price) / old_price * 100
-                            
-                            # 计算平均3分钟成交量基准
-                            avg_vol_3min = sum(self.volume_history[stock_code]) / len(self.volume_history[stock_code])
-                            
-                            # 物理探测：成交量暴增（做功极大）但价格几乎不动（摩擦力极大）
-                            if delta_vol > (avg_vol_3min * 3) and abs(delta_price_pct) < 0.5:
-                                logger.critical(f"[L1探针] {stock_code} 做功被摩擦力吞噬，放量滞涨，绝对诱多！")
-                                pool_stats['filtered'] += 1
-                                continue
+                        # 当前Tick的新增成交量
+                        current_tick_vol = current_volume - history_list[-1]
+                        delta_price_pct = (current_price - self.tick_history[stock_code][0]['price']) / self.tick_history[stock_code][0]['price'] * 100
+                        
+                        # 正确逻辑：当前Tick成交量是过去1分钟平均的10倍以上（极度爆量），但价格涨幅极小
+                        if avg_tick_vol > 0 and (current_tick_vol > avg_tick_vol * 10) and abs(delta_price_pct) < 0.2:
+                            logger.warning(f"[L1探针] {stock_code} 瞬间爆天量({current_tick_vol:.0f}>10x{avg_tick_vol:.0f})但滞涨({delta_price_pct:.2f}%)，摩擦力极大，剔除！")
+                            pool_stats['filtered'] += 1
+                            continue
                     
                     # R3: Stair vs Spike二阶微积分防御（Δ²p）
-                    if len(self.tick_history[stock_code]) >= 3:
-                        prices = [t['price'] for t in list(self.tick_history[stock_code])[-3:]]
-                        if all(p > 0 for p in prices):
-                            # v1 = p(t-1) - p(t-2), v2 = p(t) - p(t-1)
-                            v1 = prices[-2] - prices[-3]
-                            v2 = prices[-1] - prices[-2]
-                            acceleration = v2 - v1  # Δ²p
+                    # 【CTO强制修正】修复采样频率：用分钟级大切片，而非相邻3秒Tick
+                    history_prices = list(self.tick_history[stock_code])
+                    if len(history_prices) >= 60:  # 必须攒够3分钟数据（60个Tick，假设3秒/Tick）
+                        # 切片采样：取现在(p0)，1.5分钟前(p1)，3分钟前(p2)
+                        p_now = current_price
+                        p_1_5min = history_prices[-30]['price']  # 30个Tick前 ≈ 1.5分钟
+                        p_3min = history_prices[0]['price']       # 60个Tick前 ≈ 3分钟
+                        
+                        if p_1_5min > 0 and p_3min > 0:
+                            v1 = p_1_5min - p_3min   # 前半段推力（1.5分钟）
+                            v2 = p_now - p_1_5min    # 后半段推力（1.5分钟）
+                            acceleration = v2 - v1   # 宏观二阶加速度
                             
-                            # Spike骗炮检测：旱地拔葱后失去托力，自由落体
-                            if v1 > 0 and acceleration < 0 and current_price < (prices[-3] * 1.01):
-                                logger.warning(f"[重力异常] {stock_code} 检出Spike尖刺骗炮轨迹(Δ²p={acceleration:.3f})，过滤！")
+                            # Spike骗炮检测：前半段猛拉，后半段掉头砸盘，跌破起涨点
+                            if v1 > 0 and acceleration < 0 and current_price < p_3min:
+                                logger.warning(f"[重力异常] {stock_code} 检出真实Spike尖刺骗炮(v1={v1:.2f}, v2={v2:.2f})，一票否决！")
                                 pool_stats['filtered'] += 1
                                 continue
                     
