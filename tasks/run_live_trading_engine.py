@@ -101,6 +101,10 @@ class LiveTradingEngine:
         # 【CTO V13】pool_stats缓存 - 盘中无数据时显示上一次统计
         self.last_known_pool_stats: Dict[str, int] = {}
         
+        # 【CTO Phase4.1】龙空龙宏观断电乘数 - 市场活跃水位计
+        # 0.0 = 硬件级熔断，禁止买入；1.0 = 正常
+        self._macro_multiplier: float = 1.0
+        
         # 【CTO修复】初始化顺序：先EventBus，再QMTEventAdapter
         # 初始化EventBus（如果未传入）
         if self.event_bus is None:
@@ -1129,6 +1133,14 @@ class LiveTradingEngine:
                     time.sleep(5)
                     continue
                 
+                # 【CTO Phase4.1 龙空龙】水位断电保护
+                active_pool_size = len(self.watchlist)
+                if active_pool_size < 20:
+                    self._macro_multiplier = 0.0  # 触发硬件级熔断，禁止买入
+                    logger.critical(f"🧊 [龙空龙警报] 市场活跃池仅 {active_pool_size} 只，流动性枯竭！系统强行拔电源，禁止任何买入！")
+                else:
+                    self._macro_multiplier = 1.0  # 正常
+                
                 # 【CTO第一级：全量快照捕获】
                 try:
                     all_ticks = xtdata.get_full_tick(self.watchlist)
@@ -1916,6 +1928,11 @@ class LiveTradingEngine:
             logger.warning(f"[WARN] {stock_code} 交易接口未连接，跳过执行")
             return
         
+        # 【CTO Phase4.1 龙空龙】宏观断电保护
+        if self._macro_multiplier == 0.0:
+            logger.warning(f"[龙空龙断电] {stock_code} 市场流动性枯竭，系统禁止买入！")
+            return
+        
         try:
             price = tick_data.get('price', 0.0) or 0.0
             pre_close = tick_data.get('lastClose', tick_data.get('prev_close', price)) or price
@@ -1931,12 +1948,25 @@ class LiveTradingEngine:
             # 现价距离涨停价<1分钱即判定为物理封板
             is_limit_up = (price >= limit_up_price - 0.011)
             
-            if change_pct > 8.5 and not is_limit_up:
-                logger.warning(f"[EV拦截] {stock_code} 已处 {change_pct:.1f}% 高位且未封板，盈亏比极度恶化，放弃！")
+            # 【CTO修复】计算涨幅百分比
+            change_pct = ((price - pre_close) / pre_close * 100.0) if pre_close > 0 else 0.0
+            
+            # 【CTO V35同步】动态danger_pct阈值：主板8.5%/创业板科创板17%/北交所25%
+            # 解决用主板标尺惩罚创业板的问题！
+            if stock_code.startswith(('30', '68')):  # 创业板/科创板
+                danger_pct_threshold = 17.0
+            elif stock_code.startswith(('8', '4')):  # 北交所
+                danger_pct_threshold = 25.0
+            else:  # 主板
+                danger_pct_threshold = 8.5
+            
+            if change_pct > danger_pct_threshold and not is_limit_up:
+                logger.warning(f"[EV拦截] {stock_code} 已处 {change_pct:.1f}% 高位且未封板(阈值{danger_pct_threshold}%)，盈亏比极度恶化，放弃！")
                 return
             
             # 【CTO V33照妖镜】2. 向上扫单排队（获取确定性）
             # 不用tick price，用卖一价扫单
+            ask_price1 = tick_data.get('askPrice1', 0.0) or 0.0
             order_price = ask_price1 if ask_price1 > 0 else price
             
             # 【CTO V33照妖镜】3. 流动性防骗炮护城河

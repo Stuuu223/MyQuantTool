@@ -410,12 +410,19 @@ class 动能打分引擎CoreEngine:
         
         float_market_cap = float_volume_shares * price
         
+        # 【CTO Phase3.1】海拔权重：越靠近涨停板，做功越难，意向度越高
+        # 水下-5%权重0.5，+9%权重1.9，奖励高位做功的资金意向度
+        current_altitude = (price - prev_close) / prev_close if prev_close > 0 else 0
+        altitude_weight = max(0.2, 1.0 + (current_altitude * 10.0))
+        weighted_inflow = net_inflow * altitude_weight
+        
         # 第一步：【CTO V51 里氏震级模型】无上限乘法动能！
         # 废除加法凑分，改用乘法爆发：base_power = 流入占比 × 放量倍数
         # 让龙中龙自然冲破天花板，无需硬性上限！
         
         # 1. 流入占比百分比（保留极端值裁剪防止溢出）
-        inflow_ratio_pct = (net_inflow / float_market_cap * 100.0) if float_market_cap > 1000 else 0.0
+        # 【CTO Phase3.1】使用weighted_inflow计算，奖励高位做功
+        inflow_ratio_pct = (weighted_inflow / float_market_cap * 100.0) if float_market_cap > 1000 else 0.0
         inflow_ratio_pct = min(max(inflow_ratio_pct, -50.0), 50.0)  # 仅防溢出，非打分上限
         inflow_ratio = inflow_ratio_pct  # 返回百分比形式
         
@@ -521,6 +528,22 @@ class 动能打分引擎CoreEngine:
         if change_pct > danger_pct and not is_limit_up:
             multiplier *= 0.3
             logger.warning(f"[照妖镜] {stock_code} 高位无力封板/烂板(涨幅{change_pct*100:.1f}%>阈值{danger_pct*100:.1f}%)，动能衰竭，分数打7折！")
+        
+        # 【CTO Phase3.2】摩擦力决战区：空间差0~5%，面临突破前高
+        in_friction_zone = (0.0 <= space_gap_pct <= 0.05)
+        is_violent_inflow = (inflow_ratio_pct > 5.0)  # 极度爆量
+        
+        if in_friction_zone and is_violent_inflow:
+            if is_limit_up:
+                # 史诗级真龙：顶着抛压硬上，且封死涨停
+                multiplier *= 3.0
+                logger.info(f"🔥 [史诗级真龙] {stock_code} 爆量({inflow_ratio_pct:.1f}%)摧毁阻力位！无视摩擦力封板，乘数起飞！")
+                if mfe < 0:
+                    mfe = abs(mfe)  # 强行翻转低效率的MFE（此处mfe尚未计算，需在MFE计算后处理）
+            else:
+                # 放量滞涨骗炮：爆量了但封不住，死刑
+                multiplier *= 0.1
+                logger.warning(f"💀 [摩擦力绞杀] {stock_code} 阻力位爆量({inflow_ratio_pct:.1f}%)但未能破局，动能枯竭，一票否决！")
         
         # 【CTO照妖镜】F. 真龙升天器：极致封板强度奖励（资金意向度）
         # 封单金额直接转化为动能乘数，让真龙脱颖而出！
