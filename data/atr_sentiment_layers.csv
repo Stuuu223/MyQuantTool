@@ -1,0 +1,4 @@
+﻿sentiment,days,optimal_threshold,precision,recall,f1
+高情绪,46,2.5,26.5,41.0,32.1
+中情绪,122,2.6,24.7,39.6,30.3
+低情绪,13,3.0,15.4,28.8,20.1
