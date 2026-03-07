@@ -348,7 +348,9 @@ class 动能打分引擎CoreEngine:
         is_limit_up: bool = False,  # 当前是否触及涨停价
         limit_up_queue_amount: float = 0.0,  # 涨停板买一封单金额（元）
         # 【CTO V34】模式参数
-        mode: str = "live"  # "live"实盘模式(有尾盘衰减) / "scan"扫描模式(无衰减)
+        mode: str = "live",  # "live"实盘模式(有尾盘衰减) / "scan"扫描模式(无衰减)
+        # 【CTO V35】股票代码参数（用于动态danger_pct）
+        stock_code: str = ""  # 股票代码，用于识别板块计算危险阈值
     ) -> tuple[float, float, float, float, float]:
         """
         【V20.5 Boss终极钦定：动能与势能的双Ratio验钞机 + VWAP洗盘容错】
@@ -506,11 +508,19 @@ class 动能打分引擎CoreEngine:
                 multiplier *= 0.5
         
         # 【CTO照妖镜】E. 杂毛现形器：高位未封板惩罚（日内盈亏比断崖）
-        # 涨幅>8.5%却封不住板，盈亏比极度恶化，必须重罚！
+        # 【CTO V35修复】动态danger_pct：主板8.5%/创业板科创板17%/北交所25%
+        # 解决用主板标尺惩罚创业板的问题！
+        if stock_code.startswith(('30', '68')):  # 创业板、科创板 (20%涨停)
+            danger_pct = 0.17  # 17%以上未封板视为危险
+        elif stock_code.startswith(('8', '4')):  # 北交所 (30%涨停)
+            danger_pct = 0.25  # 25%以上未封板视为危险
+        else:  # 主板 (10%涨停)
+            danger_pct = 0.085  # 8.5%
+        
         change_pct = (price - prev_close) / prev_close if prev_close > 0 else 0
-        if change_pct > 0.085 and not is_limit_up:
+        if change_pct > danger_pct and not is_limit_up:
             multiplier *= 0.3
-            logger.warning(f"[照妖镜] {stock_identifier} 高位无力封板/烂板(涨幅{change_pct*100:.1f}%)，动能衰竭，分数打7折！")
+            logger.warning(f"[照妖镜] {stock_code} 高位无力封板/烂板(涨幅{change_pct*100:.1f}%>阈值{danger_pct*100:.1f}%)，动能衰竭，分数打7折！")
         
         # 【CTO照妖镜】F. 真龙升天器：极致封板强度奖励（资金意向度）
         # 封单金额直接转化为动能乘数，让真龙脱颖而出！

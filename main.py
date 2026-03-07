@@ -640,7 +640,8 @@ def scan_cmd(ctx, date):
                     current_time=actual_time,  # 【CTO V34】使用真实时间
                     is_limit_up=is_limit_up,  # 【CTO V34】涨停状态
                     limit_up_queue_amount=limit_up_queue_amount,  # 【CTO V34】封单金额
-                    mode="scan"  # 【CTO V34】scan模式跳过时间衰减
+                    mode="scan",  # 【CTO V34】scan模式跳过时间衰减
+                    stock_code=stock  # 【CTO V35】股票代码用于动态danger_pct
                 )
                 
                 # 解包tuple

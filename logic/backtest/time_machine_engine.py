@@ -1049,7 +1049,8 @@ class TimeMachineEngine:
                                 float_volume_shares=float_volume,
                                 current_time=mock_now,
                                 total_amount=cumulative_amount,  # 【Boss钦定】传入累计成交额
-                                total_volume=cumulative_volume   # 【Boss钦定】传入累计成交量
+                                total_volume=cumulative_volume,   # 【Boss钦定】传入累计成交量
+                                stock_code=stock_code  # 【CTO V35】股票代码用于动态danger_pct
                             )
                         except Exception as kinetic_e:
                             print(f"【DEBUG】动能打分引擎算分异常: {type(kinetic_e).__name__}: {kinetic_e}")

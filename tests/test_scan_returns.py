@@ -1,5 +1,5 @@
 """
-CTO V34 照妖镜修复版 - 榜单收益回撤测试
+CTO V35 照妖镜修复版 - 榜单收益回撤测试
 
 扫描20260225-20260305各榜单，追踪所有标的到0306的：
 1. 期间最大收益
@@ -7,16 +7,22 @@ CTO V34 照妖镜修复版 - 榜单收益回撤测试
 3. 截至0306的收益
 4. 截至0306的回撤
 
-V34修复清单（CTO验尸报告）：
+V35修复清单：
+- 动态danger_pct：主板8.5%/创业板17%/北交所25%（解决用主板标尺惩罚创业板）
+
+V34修复清单：
 - 毒瘤一修复：废除时间冻结(09:45)，改用mode="scan"跳过尾盘衰减
 - 毒瘤二修复：涨停检测改用绝对价格推导(limit_up_price=pre_close*1.10/1.20)
-- 毒瘤三待修：flow_5min线性估算（测试文件暂保留，实盘引擎需重构）
 
-V33照妖镜核心特性：
-- 砸碎sustain_ratio和mfe的上限阻尼
-- 实装safe_median绝对物理基线（MIN_BASE_FLOW=200万）
-- 杂毛现形器：高位未封板×0.3惩罚
-- 真龙升天器：封板强度奖励×(1.5~4.5)
+⚠️ 【CTO阴阳测试免责声明】⚠️
+本脚本仅为Scan榜单静态探测，代表"如果按榜单买入并持有到截止日"的理论收益。
+不包含以下实盘防守逻辑：
+1. EV盈亏比拦截闸（涨幅>8.5%未封板不执行）
+2. 黄金3分钟生死观察队列（3分钟抗重力测试）
+3. 流动性防骗炮护城河（卖盘真空区过滤）
+
+因此，本测试结果≠真实实盘胜率，仅供榜单质量评估使用。
+真实实盘胜率需要通过Live模式Tick级回演验证。
 
 用法:
     python tests/test_scan_returns.py
@@ -170,7 +176,8 @@ def get_top_stocks(date: str, top_n: int = 20) -> List[Dict]:
                     current_time=actual_time,
                     is_limit_up=is_limit_up,  # 【CTO V33】涨停状态
                     limit_up_queue_amount=limit_up_queue_amount,  # 【CTO V33】封单金额
-                    mode="scan"  # 【CTO V34】scan模式跳过时间衰减
+                    mode="scan",  # 【CTO V34】scan模式跳过时间衰减
+                    stock_code=stock  # 【CTO V35】股票代码用于动态danger_pct
                 )
                 
                 if isinstance(result, tuple) and len(result) >= 5:
@@ -288,9 +295,9 @@ def calculate_returns(stock: str, entry_date: str, end_date: str) -> Dict:
 
 def main():
     print("=" * 80)
-    print("📊 CTO V34 照妖镜修复版 - 榜单收益回撤测试")
+    print("📊 CTO V35 照妖镜修复版 - 榜单收益回撤测试")
     print(f"   测试范围: {START_DATE} ~ {END_DATE}")
-    print("   核心修复: 封板绝对价格推导 + 废除时间冻结 + scan模式分离")
+    print("   核心修复: 动态danger_pct + 封板绝对价格推导 + 废除时间冻结")
     print("=" * 80)
     
     # 检查日K数据
@@ -378,8 +385,13 @@ def main():
     
     # 统计汇总
     print("\n" + "=" * 80)
-    print("📊 V34 照妖镜修复版 汇总统计")
+    print("📊 V35 照妖镜修复版 汇总统计")
     print("=" * 80)
+    
+    # 【CTO阴阳测试免责声明】
+    print("\n⚠️  【免责声明】本测试仅为Scan榜单静态探测，不代表真实实盘胜率！")
+    print("   未包含：EV盈亏比拦截、黄金3分钟观察、流动性防骗炮护城河")
+    print("   真实胜率需通过Live模式Tick级回演验证。\n")
     
     if results:
         max_returns = [r['max_return'] for r in results if r['max_return'] is not None]

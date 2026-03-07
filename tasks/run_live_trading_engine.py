@@ -1365,7 +1365,8 @@ class LiveTradingEngine:
                                 current_time=engine_time,  # 真实时间
                                 is_limit_up=is_limit_up,  # 【CTO V33】涨停状态
                                 limit_up_queue_amount=limit_up_queue_amount,  # 【CTO V33】封单金额
-                                mode=engine_mode  # 【CTO V34】scan跳过衰减/live应用衰减
+                                mode=engine_mode,  # 【CTO V34】scan跳过衰减/live应用衰减
+                                stock_code=stock_code  # 【CTO V35】股票代码用于动态danger_pct
                             )
                         except Exception as e:
                             logger.debug(f"[SKIP] {stock_code} 高阶算子计算失败，剔除: {e}")
@@ -1876,7 +1877,8 @@ class LiveTradingEngine:
                 current_time=now,
                 is_limit_up=is_limit_up,  # 【CTO V33】涨停状态
                 limit_up_queue_amount=limit_up_queue_amount,  # 【CTO V33】封单金额
-                mode="live"  # 【CTO V34】黄金3分钟队列用live模式
+                mode="live",  # 【CTO V34】黄金3分钟队列用live模式
+                stock_code=stock_code  # 【CTO V35】股票代码用于动态danger_pct
             )
             
             logger.debug(f"[TARGET] {stock_code} V20.5动能得分: {base_score:.2f}, sustain={sustain_ratio:.2f}, mfe={mfe_score:.2f}")
