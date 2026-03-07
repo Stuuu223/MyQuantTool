@@ -123,16 +123,14 @@ class UniverseBuilder:
         # 【CTO V47】强制执行漏斗3（空间差排雷），替代被否决的MA均线
         step3 = self._funnel3_space_gap_filter(step2)
         
-        # 【CTO V47铁律】强锁300只内存上限！
+        # 【CTO V50】废除[:300]硬编码！
+        # 让90th分位防线在scan_cmd中执行压缩
         # 如果漏斗3过滤后数量为0，兜底用漏斗2结果
         if not step3 or len(step3) == 0:
-            logger.warning("[WARN] 漏斗3(空间防线)全军覆没！兜底前300活跃标的！")
-            sorted_step2 = sorted(step2, key=lambda x: self._volume_ratios.get(x, 0), reverse=True)
-            final_pool = sorted_step2[:300]
+            logger.warning("[WARN] 漏斗3(空间防线)全军覆没！兜底用漏斗2结果！")
+            final_pool = sorted(step2, key=lambda x: self._volume_ratios.get(x, 0), reverse=True)
         else:
-            # 即使通过空间差，依然强锁300只上限
-            sorted_step3 = sorted(step3, key=lambda x: self._volume_ratios.get(x, 0), reverse=True)
-            final_pool = sorted_step3[:300]
+            final_pool = sorted(step3, key=lambda x: self._volume_ratios.get(x, 0), reverse=True)
 
         elapsed_ms = (time.perf_counter() - t0) * 1000
         self._stats = {
@@ -145,7 +143,7 @@ class UniverseBuilder:
             'volume_ratios_collected': len(self._volume_ratios),
             'elapsed_ms':     round(elapsed_ms, 1),
         }
-        logger.info(f'[UniverseBuilder] 完成: {len(final_pool)}只候选(强锁300上限) | '
+        logger.info(f'[UniverseBuilder] 完成: {len(final_pool)}只候选 | '
                     f'耗时: {elapsed_ms:.0f}ms')
         return final_pool, self._volume_ratios
 

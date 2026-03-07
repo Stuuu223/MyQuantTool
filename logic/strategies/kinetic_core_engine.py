@@ -406,13 +406,20 @@ class 动能打分引擎CoreEngine:
         inflow_ratio_pct = (net_inflow / float_market_cap * 100.0) if float_market_cap > 1000 else 0.0
         inflow_ratio_pct = min(max(inflow_ratio_pct, -50.0), 50.0)
         inflow_ratio = inflow_ratio_pct  # 返回百分比形式
-        kinetic_score = min(30.0, (inflow_ratio_pct / 1.0) * 30.0) if inflow_ratio_pct > 0 else 0.0
         
-        # 2. 势能打分：相对自身历史爆发力 (权重30分)
+        # 【CTO V50修复】砸碎kinetic_score天花板！
+        # 旧公式: inflow>=1%就撞天花板(30分)，导致7.43%和2.38%没区别
+        # 新公式: 放大系数5.0，让INFLOW%差异体现！
+        # 7.43% → 7.43*5*30/1.0 = 1114 → min(40, 1114) = 40分
+        # 2.38% → 2.38*5*30/1.0 = 357 → min(40, 357) = 35.7分... 还是要再改
+        # 正确公式: kinetic_score = min(inflow_ratio_pct * 5.0, 40.0) 直接给分！
+        kinetic_score = min(inflow_ratio_pct * 5.0, 40.0) if inflow_ratio_pct > 0 else 0.0
+        
+        # 2. 势能打分：相对自身历史爆发力 (权重30分 → 20分)
         safe_flow_5min = flow_5min if flow_5min > 0 else (flow_15min / 3.0 if flow_15min > 0 else 1.0)
         ratio_stock = safe_flow_5min / flow_5min_median_stock if flow_5min_median_stock > 0 else 1.0
         ratio_stock = max(0.01, min(ratio_stock, 50.0))
-        potential_score = min(30.0, (ratio_stock / 15.0) * 30.0)
+        potential_score = min(20.0, (ratio_stock / 15.0) * 20.0)  # 上限从30改为20
         
         # 3. 价格动能强度：日内K线推力 (权重40分)
         if high == low:

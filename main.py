@@ -454,13 +454,26 @@ def scan_cmd(ctx, date):
         # Step 1: 获取粗筛底池
         click.echo("\n📦 Step 1: 获取粗筛底池...")
         builder = UniverseBuilder(target_date=target_date)
-        base_pool, _ = builder.build()
+        base_pool, volume_ratios = builder.build()
         
         if not base_pool:
             click.echo(click.style("❌ 底池获取失败", fg='red'))
             return
         
         click.echo(f"   粗筛底池: {len(base_pool)} 只")
+        
+        # 【CTO V50核心】90th分位动态量比防线！
+        # 这是19:44榜单"91只尖刀"的终极秘密！
+        # 只保留量比排在全市场前10%的标的！
+        if volume_ratios and len(volume_ratios) > 0:
+            import numpy as np
+            vr_values = [v for v in volume_ratios.values() if v > 0]
+            if vr_values:
+                vr_90th = np.percentile(vr_values, 90)
+                min_vr_threshold = max(vr_90th, 1.5)  # 物理下限1.5x
+                # 过滤：只保留量比>=90th分位的尖刀！
+                base_pool = [s for s in base_pool if volume_ratios.get(s, 0) >= min_vr_threshold]
+                click.echo(f"   🔪 [90th分位截断] 量比>={min_vr_threshold:.2f}x → {len(base_pool)} 只尖刀")
         
         # Step 2: 预热TrueDictionary
         click.echo("\n📦 Step 2: 预热TrueDictionary...")
@@ -482,7 +495,10 @@ def scan_cmd(ctx, date):
             'downloaded': 0
         }
         
-        frozen_time = dt_class.combine(dt_class.today(), time_type(15, 0, 0))
+        # 【CTO V50修复】冻结时间从15:00改为09:45！
+        # 15:00会触发尾盘腰斩(multiplier*=0.5)，导致涨停股全员90分
+        # 09:45是morning_confirm区间，无衰减，对齐19:44榜单！
+        frozen_time = dt_class.combine(dt_class.today(), time_type(9, 45, 0))
         
         # 【CTO V40 核心内存救赎】一只一只读，读完就释放！
         for i, stock in enumerate(base_pool):
