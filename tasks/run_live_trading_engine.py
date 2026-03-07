@@ -1480,34 +1480,31 @@ class LiveTradingEngine:
                         # 【CTO V8量纲修复】使用tick的amount字段（成交额，元）
                         current_amount = tick.get('amount', 0)  # 今日累计成交额（元）
                         
-                        # 【CTO V31修复】时间加权成交额估算
-                        # 问题根因：周六凌晨02:10时 minutes_elapsed = (2*60+10)-(9*60+30) = -440
-                        # 被clamp到1，导致 flow_5min = amount*5 完全错误！
-                        # 修复：盘后/非交易日模式使用全天数据（240分钟）
+                        # 【CTO V32终极修复】统一flow计算逻辑，非交易日也使用acceleration_factor！
+                        # 问题根因：V31硬编码flow_15min=3*flow_5min导致sustain_ratio全员2.0
+                        # 修复：无论盘中还是盘后，都用价格位置和涨幅估算acceleration_factor
+                        
+                        # 获取价格位置信息（用于估算资金加速）- 所有模式统一计算
+                        tick_high = tick.get('high', current_price)
+                        tick_low = tick.get('low', current_price)
+                        price_position = (current_price - tick_low) / (tick_high - tick_low) if tick_high > tick_low else 0.5
+                        
+                        # 【CTO V13修复】sustain_ratio动态估算 - 所有模式统一计算
+                        change_pct_for_sustain = (current_price - pre_close) / pre_close if pre_close > 0 else 0
+                        
+                        # 资金加速因子 - 物理公式，打破硬编码魔咒！
+                        acceleration_factor = 1.0 + (price_position - 0.5) * 1.0 + change_pct_for_sustain * 3.0
+                        acceleration_factor = max(0.3, min(acceleration_factor, 3.0))
+                        
                         if is_after_hours or not is_trading:
-                            minutes_elapsed = 240  # 盘后/非交易日：使用全天数据
-                            # 【CTO V31关键修复】非交易日模式下，强制设置flow比例
-                            # 让 flow_5min 和 flow_15min 满足 sustain_ratio = 1.0
-                            # flow_5min = X, flow_15min = 3X, 则 sustain_ratio = (3X-X)/X = 2.0
-                            # 但引擎内部会检查 sustain_ratio < 1.0 就致命绞杀
-                            # 所以设置 flow_15min = 2X 让 sustain_ratio = 1.0
+                            # 盘后/非交易日：使用全天数据（240分钟）
+                            minutes_elapsed = 240
                             flow_5min = current_amount / 48.0  # 每5分钟均值
-                            flow_15min = current_amount / 16.0  # 每15分钟均值（刚好是3倍）
+                            # 【CTO V32关键修复】带上acceleration_factor，让sustain_ratio动态变化！
+                            flow_15min = current_amount / 16.0 * acceleration_factor  # 破除2.0魔咒
                         else:
                             minutes_elapsed = (now.hour * 60 + now.minute) - (9 * 60 + 30)
                             minutes_elapsed = max(1, min(minutes_elapsed, 240))
-                            
-                            # 获取价格位置信息（用于估算资金加速）
-                            tick_high = tick.get('high', current_price)
-                            tick_low = tick.get('low', current_price)
-                            price_position = (current_price - tick_low) / (tick_high - tick_low) if tick_high > tick_low else 0.5
-                            
-                            # 【CTO V13修复】sustain_ratio动态估算
-                            change_pct_for_sustain = (current_price - pre_close) / pre_close if pre_close > 0 else 0
-                            
-                            # 资金加速因子
-                            acceleration_factor = 1.0 + (price_position - 0.5) * 1.0 + change_pct_for_sustain * 3.0
-                            acceleration_factor = max(0.3, min(acceleration_factor, 3.0))
                             
                             # 成交额估算
                             flow_5min = current_amount / minutes_elapsed * 5
@@ -1539,11 +1536,16 @@ class LiveTradingEngine:
                         high_60d = tick.get('high', current_price)
                         space_gap_pct = (high_60d - current_price) / high_60d if high_60d > 0 else 0.5
                         
-                        # 【CTO V31时空静止】非交易日/盘后模式下，锚定11:00:00传给引擎
-                        # 注意：不能用15:00！引擎内hour>=14会触发0.5倍尾盘衰减！
-                        # 使用11:00（主升段）获得无衰减的公正分数
+                        # 【CTO V32时空静止】非交易日/盘后模式下，锚定09:45:00传给引擎
+                        # 引擎时间衰减逻辑：
+                        # - 09:30-09:40: early_morning_rush = 1.2（早盘溢价）
+                        # - 09:40-10:30: morning_confirm = 1.0（无衰减！）
+                        # - 10:30-14:00: noon_trash = 0.8（打折）
+                        # - 14:00-14:55: tail_trap = 0.2（腰斩）
+                        # - 14:55之后: 0.0（归零）
+                        # 所以必须传入09:45获得无衰减的公正分数！
                         if is_after_hours or not is_trading:
-                            engine_time = now.replace(hour=11, minute=0, second=0, microsecond=0)
+                            engine_time = now.replace(hour=9, minute=45, second=0, microsecond=0)
                         else:
                             engine_time = now
                         
@@ -1625,6 +1627,7 @@ class LiveTradingEngine:
                 if is_after_hours or not is_trading:
                     logger.info("[STOP] 盘后定格投影完毕，系统安全挂起。")
                     self.running = False  # 斩断死循环
+                    self._skip_final_report = True  # 【CTO V32】跳过stop中的战报打印，避免重复
                     break
                 
                 # 【CTO物理限速器】1秒一圈
@@ -2320,8 +2323,12 @@ class LiveTradingEngine:
         if hasattr(self, 'trader') and self.trader:
             self.trader.disconnect()
         
-        # 【CTO战地收尸】生成最终战报
-        self._generate_final_battle_report()
+        # 【CTO V32】非交易日模式下跳过战报打印（已在_print_fire_control_panel打印过）
+        if not getattr(self, '_skip_final_report', False):
+            # 【CTO战地收尸】生成最终战报
+            self._generate_final_battle_report()
+        else:
+            logger.info("[OK] 非交易日模式：跳过最终战报打印（已在看板显示）")
         
         logger.info("[OK] 实盘总控引擎已停止")
     
