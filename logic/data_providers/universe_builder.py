@@ -82,10 +82,8 @@ class UniverseBuilder:
     def __init__(
         self,
         target_date: str,
-        require_ma_uptrend: bool = False,
     ):
         self.target_date        = target_date
-        self.require_ma_uptrend = require_ma_uptrend
         self._blacklist         = _load_bson_blacklist()
         self._stats: dict       = {}
         # 【新增】存储全市场量比分布，供动态阈值计算
@@ -122,10 +120,19 @@ class UniverseBuilder:
         logger.info(f'[漏斗２-日K]  通过: {len(step2)}只 | '
                     f'量比分布采集: {len(self._volume_ratios)}只')
 
-        step3 = step2
-        if self.require_ma_uptrend:
-            step3 = self._funnel3_ma_trend(step2)
-            logger.info(f'[漏斗３-MA趋势] 通过: {len(step3)}只')
+        # 【CTO V47】强制执行漏斗3（空间差排雷），替代被否决的MA均线
+        step3 = self._funnel3_space_gap_filter(step2)
+        
+        # 【CTO V47铁律】强锁300只内存上限！
+        # 如果漏斗3过滤后数量为0，兜底用漏斗2结果
+        if not step3 or len(step3) == 0:
+            logger.warning("[WARN] 漏斗3(空间防线)全军覆没！兜底前300活跃标的！")
+            sorted_step2 = sorted(step2, key=lambda x: self._volume_ratios.get(x, 0), reverse=True)
+            final_pool = sorted_step2[:300]
+        else:
+            # 即使通过空间差，依然强锁300只上限
+            sorted_step3 = sorted(step3, key=lambda x: self._volume_ratios.get(x, 0), reverse=True)
+            final_pool = sorted_step3[:300]
 
         elapsed_ms = (time.perf_counter() - t0) * 1000
         self._stats = {
@@ -133,14 +140,14 @@ class UniverseBuilder:
             'after_funnel1':  len(step1),
             'after_funnel2':  len(step2),
             'after_funnel3':  len(step3),
+            'final_pool':     len(final_pool),
             'blacklist_size': len(self._blacklist),
-            'volume_ratios_collected': len(self._volume_ratios),  # 新增统计
+            'volume_ratios_collected': len(self._volume_ratios),
             'elapsed_ms':     round(elapsed_ms, 1),
         }
-        logger.info(f'[UniverseBuilder] 完成: {len(step3)}只候选 | '
-                    f'耗时: {elapsed_ms:.0f}ms | '
-                    f'量比分布: {len(self._volume_ratios)}只')
-        return step3, self._volume_ratios
+        logger.info(f'[UniverseBuilder] 完成: {len(final_pool)}只候选(强锁300上限) | '
+                    f'耗时: {elapsed_ms:.0f}ms')
+        return final_pool, self._volume_ratios
 
     def _funnel1_static(self) -> list[str]:
         """
@@ -332,48 +339,77 @@ class UniverseBuilder:
         )
         return passed
 
-    def _funnel3_ma_trend(self, stock_list: list[str]) -> list[str]:
+    def _funnel3_space_gap_filter(self, stock_list: list[str]) -> list[str]:
         """
-        第三漏斗：MA多头趋势过滤 (MA5>MA10>MA20)。
-        注意：此漏斗不影响 self._volume_ratios，MA是最后一步精筛。
+        【CTO V47 第三斩】空间差排雷兵（替代被否决的MA滞后防线）
+        
+        物理意义：寻找上方抛压真空的标的。计算现价距离过去60日高点的空间差。
+        - space_gap <= 15%: 上方套牢盘可控，放行
+        - space_gap > 15%: 深水区诈尸，一票否决
+        
+        注意：此漏斗不影响 self._volume_ratios
         """
         try:
             from xtquant import xtdata
         except ImportError:
-            logger.warning('[漏斗３] xtquant未安装，跳过MA过滤')
+            logger.warning('[漏斗３] xtquant未安装，跳过空间差过滤')
             return stock_list
 
-        end_date   = self.target_date
-        start_date = get_nth_previous_trading_day(self.target_date, 42)
+        start_date = get_nth_previous_trading_day(self.target_date, 60)
+        
+        # 批量获取60日数据（优化：一次性获取所有股票）
+        try:
+            history_data = xtdata.get_local_data(
+                field_list=['high', 'close'],
+                stock_list=stock_list,
+                period='1d',
+                start_time=start_date,
+                end_time=self.target_date
+            )
+        except Exception as e:
+            logger.warning(f'[漏斗３] 批量获取失败，退回逐只查询: {e}')
+            history_data = None
 
         passed     = []
         cnt_fail   = 0
         cnt_nodata = 0
-
+        
         for stock in stock_list:
             try:
-                data = xtdata.get_local_data(
-                    field_list=['close'],
-                    stock_list=[stock],
-                    period='1d',
-                    start_time=start_date,
-                    end_time=end_date
-                )
-                if not data or stock not in data:
+                if history_data and stock in history_data:
+                    df = history_data[stock]
+                else:
+                    # 退回逐只查询
+                    data = xtdata.get_local_data(
+                        field_list=['high', 'close'],
+                        stock_list=[stock],
+                        period='1d',
+                        start_time=start_date,
+                        end_time=self.target_date
+                    )
+                    if not data or stock not in data:
+                        cnt_nodata += 1
+                        continue
+                    df = data[stock]
+                
+                if df is None or len(df) < 10:
                     cnt_nodata += 1
                     continue
 
-                df = data[stock]
-                if df is None or len(df) < 20:
+                # 60日最高价（抛压天顶）
+                high_60d = float(df['high'].max())
+                # 最新收盘价（当前位置）
+                current_close = float(df.iloc[-1]['close'])
+                
+                if high_60d <= 0:
                     cnt_nodata += 1
                     continue
-
-                closes = df['close'].values
-                ma5    = closes[-5:].mean()
-                ma10   = closes[-10:].mean()
-                ma20   = closes[-20:].mean()
-
-                if ma5 > ma10 > ma20:
+                
+                # 空间差 = (前高 - 现价) / 前高
+                space_gap_pct = (high_60d - current_close) / high_60d
+                
+                # 【CTO核心阈值】距离前高 <= 15% 才放行
+                if space_gap_pct <= 0.15:
                     passed.append(stock)
                 else:
                     cnt_fail += 1
@@ -383,8 +419,8 @@ class UniverseBuilder:
                 continue
 
         logger.info(
-            f'[漏斗３] 输入:{len(stock_list)}只 '
-            f'→ MA非多头:{cnt_fail} 无数据:{cnt_nodata} '
+            f'[漏斗３-空间差] 输入:{len(stock_list)}只 '
+            f'→ 深水区:{cnt_fail} 无数据:{cnt_nodata} '
             f'→ 通过: {len(passed)}只'
         )
         return passed
@@ -407,18 +443,16 @@ class UniverseBuilder:
 
 def build_universe(
     target_date: str,
-    require_ma_uptrend: bool = False,
 ) -> tuple[list[str], dict[str, float]]:
     """
     便捷函数：构建候选股票池 + 返回全市场量比分布。
 
     Args:
         target_date: 目标日期 (YYYYMMDD)
-        require_ma_uptrend: 是否需要MA多头趋势
 
     Returns:
         tuple[list[str], dict[str, float]]:
-            - list[str]: 通过粗筛的股票代码
+            - list[str]: 通过粗筛的股票代码（最多300只）
             - dict[str, float]: {stock: volume_ratio} 全市场量比分布
 
     示例:
@@ -432,15 +466,14 @@ def build_universe(
     """
     return UniverseBuilder(
         target_date=target_date,
-        require_ma_uptrend=require_ma_uptrend,
     ).build()
 
 
 if __name__ == '__main__':
     print('=' * 60)
-    print('UniverseBuilder 三漏斗测试 V3.2.0')
+    print('UniverseBuilder 三漏斗测试 V47 (空间差排雷兵)')
     print('=' * 60)
-    stocks, market_ratios = build_universe('20260228', require_ma_uptrend=False)
+    stocks, market_ratios = build_universe('20260228')
     print(f'\n最终候选: {len(stocks)} 只')
     print(f'前10只: {stocks[:10]}')
     print(f'\n量比分布统计:')

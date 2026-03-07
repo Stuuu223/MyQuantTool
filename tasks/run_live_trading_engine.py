@@ -499,40 +499,65 @@ class LiveTradingEngine:
                 axis=1
             )
             
-            # 5. CTO物理过滤规则（向量化）
-            mask = (
-                (df['open'] >= df['prev_close']) &      # 非低开（高开或平开）
-                (df['volume'] >= 1000) &                 # 有量（>=1000手）
-                (df['open'] < df['up_stop_price'])       # 非一字板（可以买入）
+            # 5. 【CTO V46】竞价MFE物理探针（废除涨跌幅歧视！）
+            # 不再歧视低开，只看资金做功效率（MFE）
+            from logic.utils.price_utils import check_auction_validity, calculate_auction_mfe
+            
+            df['auction_valid'] = df.apply(
+                lambda row: check_auction_validity(
+                    {
+                        'lastPrice': row['open'],
+                        'amount': row['amount'],
+                        'lastClose': row['prev_close'],
+                        'high': row.get('high', row['open']),
+                        'low': row.get('low', row['open'])
+                    },
+                    row['float_volume']
+                ),
+                axis=1
             )
             
-            filtered_df = df[mask].copy()
+            # 计算MFE值用于排序
+            df['auction_mfe'] = df.apply(
+                lambda row: calculate_auction_mfe(
+                    {
+                        'lastPrice': row['open'],
+                        'amount': row['amount'],
+                        'lastClose': row['prev_close']
+                    },
+                    row['float_volume']
+                ),
+                axis=1
+            )
             
-            # 按竞价承接力排序（承接力强的优先）
-            filtered_df = filtered_df.sort_values('auction_power', ascending=False)
+            # 过滤：只保留通过MFE考核的
+            filtered_df = df[df['auction_valid']].copy()
             
-            # 计算开盘涨幅
+            # 按MFE排序（做功效率高的优先）
+            filtered_df = filtered_df.sort_values('auction_mfe', ascending=False)
+            
+            # 计算开盘涨幅（仅用于展示，不过滤）
             filtered_df['open_change_pct'] = (
                 (filtered_df['open'] - filtered_df['prev_close']) / filtered_df['prev_close'] * 100
             )
             
             elapsed = (time.perf_counter() - start_time) * 1000
             
-            # 6. 【CTO强化】输出竞价爆量日志
+            # 6. 【CTO V46强化】输出竞价MFE爆量榜
             today_str = datetime.now().strftime('%Y%m%d')
             
-            # 竞价承接力TOP10（承接力 > 0.5%）
-            high_power = filtered_df[filtered_df['auction_power'] > 0.5].head(10)
-            if len(high_power) > 0:
+            # MFE TOP10（MFE > 5）
+            high_mfe = filtered_df[filtered_df['auction_mfe'] > 5].head(10)
+            if len(high_mfe) > 0:
                 logger.info("=" * 60)
-                logger.info(f"🔥 竞价爆量榜 (09:25集合竞价承接力TOP)")
+                logger.info(f"🔥 竞价MFE榜 (09:25资金做功效率TOP)")
                 logger.info("=" * 60)
-                for _, row in high_power.iterrows():
+                for _, row in high_mfe.iterrows():
                     logger.info(
                         f"🔥 [{row['stock_code']}] "
+                        f"MFE={row['auction_mfe']:.1f} "
                         f"竞价金额={row['amount']/10000:.1f}万 "
-                        f"承接力={row['auction_power']:.3f}% "
-                        f"高开={row['open_change_pct']:.2f}%"
+                        f"涨跌={row['open_change_pct']:+.2f}%"
                     )
                 logger.info("=" * 60)
             
