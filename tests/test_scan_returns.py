@@ -116,10 +116,11 @@ def get_top_stocks(date: str, top_n: int = 10) -> List[Dict]:
                 raw_purity = (current_price - pre_close) / price_range if price_range > 0 else (1.0 if current_price > pre_close else -1.0)
                 
                 from datetime import datetime as dt_class
-                frozen_time = dt_class.combine(dt_class.today(), time_type(15, 0, 0))
+                # 【CTO V50】冻结时间改为09:45，消除尾盘腰斩
+                frozen_time = dt_class.combine(dt_class.today(), time_type(9, 45, 0))
                 
                 result = core_engine.calculate_true_dragon_score(
-                    net_inflow=(current_amount / 240.0 * 15) * raw_purity,
+                    net_inflow=current_amount * raw_purity * 0.5,  # V49: 对齐实盘引擎
                     price=current_price,
                     prev_close=pre_close,
                     high=tick_high,
