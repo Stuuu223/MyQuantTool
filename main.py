@@ -417,9 +417,12 @@ def replay_cmd(ctx, date, pure):
 @click.pass_context
 def scan_cmd(ctx, date):
     """
-    📊 [CTO V38] 定格沙盘扫描：读取硬盘Tick，100%对齐实盘
+    📊 [CTO V40] Tick级精准定格沙盘，100%对齐实盘
     
-    用途：非交易日/周末验证实盘与回测一致性
+    【V40正本清源】
+    - 废弃日K降维打击，恢复Tick级毫米精度
+    - O(1)内存逐只加载，8G电脑如丝般顺滑
+    - 在线自愈：缺什么下什么
     
     示例:
         \b
@@ -437,13 +440,15 @@ def scan_cmd(ctx, date):
     from xtquant import xtdata
     import pandas as pd
     from datetime import time as time_type
+    from datetime import datetime as dt_class
+    import time
+    import sys
     
-    # 确定目标日期
     target_date = date or get_latest_completed_trading_day()
     
-    click.echo(click.style(f"\n🔍 启动【定格沙盘扫描】", fg='cyan', bold=True))
+    click.echo(click.style(f"\n🔍 启动【Tick级定格沙盘扫描】", fg='cyan', bold=True))
     click.echo(f"📅 目标日期: {target_date}")
-    click.echo(f"💡 模式: 读取硬盘Tick，物理冻结时间15:00")
+    click.echo(f"💡 模式: 逐只读取Tick，物理冻结时间15:00")
     
     try:
         # Step 1: 获取粗筛底池
@@ -462,84 +467,87 @@ def scan_cmd(ctx, date):
         true_dict = get_true_dictionary()
         true_dict.warmup(base_pool, target_date=target_date)
         
-        # Step 3: 极速读取本地日K快照 (O(1)内存开销)
-        # 【CTO V39关键修复】
-        # 1. 废弃'tick'改用'1d'：Tick的amount是单笔增量，日K是全天累计
-        # 2. 使用更宽日期范围：取最近5个交易日，避免本地数据落后
-        # 3. 取最新可用日期的数据
-        click.echo("\n📦 Step 3: 极速读取本地日K快照...")
+        # Step 3: Tick级高维遍历 (O(1)内存！)
+        click.echo("\n📦 Step 3: 开始 Tick 级高维遍历 (单只加载，零内存压迫)...")
         
-        # 计算日期范围：最近10天，确保覆盖最新交易日
-        from datetime import timedelta
-        start_date = (datetime.strptime(target_date, '%Y%m%d') - timedelta(days=10)).strftime('%Y%m%d')
-        
-        local_data = xtdata.get_local_data(
-            field_list=['open', 'high', 'low', 'close', 'volume', 'amount', 'preClose'],
-            stock_list=base_pool,
-            period='1d',
-            start_time=start_date,  # 使用更宽的起始日期
-            end_time=target_date
-        )
-        
-        # 检测本地最新可用日期
-        sample_stock = base_pool[0] if base_pool else None
-        actual_date = target_date
-        if sample_stock and local_data and sample_stock in local_data:
-            sample_df = pd.DataFrame(local_data[sample_stock])
-            if not sample_df.empty:
-                actual_date = str(sample_df.index[-1])
-                if actual_date != target_date:
-                    click.echo(f"   ⚠️ 本地数据最新日期: {actual_date} (目标: {target_date})")
-        
-        click.echo(f"   日K数据读取完成，使用日期: {actual_date}")
-        
-        # Step 4: 执行与实盘100%一致的打分逻辑
-        click.echo("\n📦 Step 4: 执行打分引擎...")
         core_engine = 动能打分引擎CoreEngine()
-        
         current_top_targets = []
         pool_stats = {
             'total': len(base_pool),
             'active': 0,
             'up': 0,
             'down': 0,
-            'filtered': 0
+            'filtered': 0,
+            'tick_missing': 0,
+            'downloaded': 0
         }
         
-        for stock in base_pool:
-            # 检查数据是否存在
-            if not local_data or stock not in local_data or local_data[stock] is None:
+        frozen_time = dt_class.combine(dt_class.today(), time_type(15, 0, 0))
+        
+        # 【CTO V40 核心内存救赎】一只一只读，读完就释放！
+        for i, stock in enumerate(base_pool):
+            # 进度条
+            if i % 100 == 0:
+                print(f"   进度: {i}/{len(base_pool)}...", end='\r')
+                sys.stdout.flush()
+            
+            # 1. 先尝试读本地 Tick
+            local_data = xtdata.get_local_data(
+                field_list=[], 
+                stock_list=[stock], 
+                period='tick', 
+                start_time=target_date, 
+                end_time=target_date
+            )
+            
+            # 2. 【自愈防线】如果没 Tick，当场下载！因为 Scan 是离线任务，可以等！
+            if not local_data or stock not in local_data or local_data[stock] is None or (hasattr(local_data[stock], 'empty') and local_data[stock].empty):
+                try:
+                    xtdata.download_history_data(stock, period='tick', start_time=target_date, end_time=target_date)
+                    time.sleep(0.05)  # 微小停顿防封
+                    local_data = xtdata.get_local_data(
+                        field_list=[], 
+                        stock_list=[stock], 
+                        period='tick', 
+                        start_time=target_date, 
+                        end_time=target_date
+                    )
+                    pool_stats['downloaded'] += 1
+                except Exception:
+                    pass
+            
+            # 3. 检查数据有效性
+            if not local_data or stock not in local_data:
+                pool_stats['filtered'] += 1
+                pool_stats['tick_missing'] += 1
+                continue
+            
+            df = local_data[stock]
+            if df is None or (hasattr(df, 'empty') and df.empty):
+                pool_stats['filtered'] += 1
+                pool_stats['tick_missing'] += 1
+                continue
+            
+            # 4. 提取收盘最后一笔 Tick 的精准状态
+            try:
+                tick = df.iloc[-1]
+            except (IndexError, KeyError):
                 pool_stats['filtered'] += 1
                 continue
             
-            df = pd.DataFrame(local_data[stock])
-            if df.empty:
-                pool_stats['filtered'] += 1
-                continue
-            
-            # 【CTO V39】取最新日期的数据，而不是精确匹配target_date
-            row = df.iloc[-1]
-            data_date = str(df.index[-1])
-            
-            # 可选：只使用actual_date的数据（严格模式）
-            # if data_date != actual_date:
-            #     pool_stats['filtered'] += 1
-            #     continue
-            
-            # 获取日K数据（amount是全天累计金额！）
-            current_price = float(row.get('close', 0))
-            current_amount = float(row.get('amount', 0))
-            pre_close = float(row.get('preClose', 0))
+            current_price = float(tick.get('lastPrice', 0))
+            current_amount = float(tick.get('amount', 0))  # 这是精准的全天累计 Amount！
+            pre_close = float(tick.get('lastClose', 0))
             
             if pre_close <= 0:
                 pre_close = true_dict.get_prev_close(stock) or current_price
             
-            tick_high = float(row.get('high', current_price))
-            tick_low = float(row.get('low', current_price))
-            open_price = float(row.get('open', current_price))
+            tick_high = float(tick.get('high', current_price))
+            tick_low = float(tick.get('low', current_price))
+            open_price = float(tick.get('open', current_price))
             
             # 基本有效性检查
-            if current_price <= 0 or current_amount <= 0:
+            if current_price <= 0:
                 pool_stats['filtered'] += 1
                 continue
             
@@ -550,14 +558,14 @@ def scan_cmd(ctx, date):
                 pool_stats['down'] += 1
             pool_stats['active'] += 1
             
-            # === 核心算子：与实盘100%保持一致 ===
+            # === 核心算子：与实盘100%一字不差！ ===
             # 1. 价格位置
             price_position = (current_price - tick_low) / (tick_high - tick_low) if tick_high > tick_low else 0.5
             
             # 2. 涨跌幅
             change_pct = (current_price - pre_close) / pre_close if pre_close > 0 else 0
             
-            # 3. 加速度因子（打破硬编码魔咒！）
+            # 3. 加速度因子
             acceleration_factor = 1.0 + (price_position - 0.5) * 1.0 + change_pct * 3.0
             acceleration_factor = max(0.3, min(acceleration_factor, 3.0))
             
@@ -582,12 +590,6 @@ def scan_cmd(ctx, date):
             
             # 7. 调用打分引擎
             try:
-                # 【CTO V39修复】current_time必须是datetime类型！
-                from datetime import datetime as dt_class
-                frozen_time = dt_class.combine(dt_class.today(), time_type(15, 0, 0))
-                
-                # 【CTO V39修复】calculate_true_dragon_score返回tuple，不是dict！
-                # 返回值顺序：final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe
                 result = core_engine.calculate_true_dragon_score(
                     net_inflow=(current_amount / 240.0 * 15) * raw_purity,
                     price=current_price,
@@ -600,7 +602,7 @@ def scan_cmd(ctx, date):
                     flow_5min_median_stock=1.0,
                     space_gap_pct=0.5,
                     float_volume_shares=fv,
-                    current_time=frozen_time  # 【物理冻结】防早盘溢价
+                    current_time=frozen_time
                 )
                 
                 # 解包tuple
@@ -626,22 +628,28 @@ def scan_cmd(ctx, date):
                         'mfe': mfe,
                         'purity': quant_purity
                     })
-            except Exception as e:
+            except Exception:
                 pool_stats['filtered'] += 1
                 continue
         
-        # Step 5: 排序渲染
+        print(f"   进度: {len(base_pool)}/{len(base_pool)} 完成！                      ")
+        
+        # Step 4: 排序渲染
         current_top_targets.sort(key=lambda x: x.get('score', 0), reverse=True)
         pool_stats['passed_fine_filter'] = len(current_top_targets)
         
         click.echo(f"\n📊 打分完成: {len(current_top_targets)} 只通过防线")
+        if pool_stats['downloaded'] > 0:
+            click.echo(f"   📥 在线自愈: 补充下载 {pool_stats['downloaded']} 只Tick数据")
+        if pool_stats['tick_missing'] > 0:
+            click.echo(f"   ⚠️ Tick缺失: {pool_stats['tick_missing']} 只被过滤")
         
         # 渲染Rich工业大屏
         render_live_dashboard(
             current_top_targets[:10],
             pool_stats=pool_stats,
             is_rest=True,
-            msg=f"[沙盘扫描] {target_date} 静态定格"
+            msg=f"[Tick级精准沙盘] {target_date} 静态定格"
         )
         
         click.echo(click.style("\n✅ 沙盘扫描完成", fg='green'))
@@ -1110,17 +1118,21 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, dry_run):
     is_trading = is_trading_day(today_str)
     current_hour = now.hour
     
+    # 【CTO V40 老板钦定架构】非交易日，或交易日已过 15:00，绝对封杀 Live！
     if not is_trading:
         click.echo(click.style(f"\n📅 今天 ({today_str}) 是非交易日（周六/周日/节假日）", fg='yellow'))
-        click.echo(click.style("🚫 【CTO V38铁律】实盘引擎拒绝启动！", fg='red', bold=True))
-        click.echo(click.style("💡 请使用 scan 模式读取本地硬盘数据进行沙盘对齐：", fg='cyan'))
+        click.echo(click.style("🚫 【CTO V40架构铁律】实盘火控雷达已物理上锁！", fg='red', bold=True))
+        click.echo(click.style("💡 老板指令：盘后定格与全息推演，请直接使用 Scan 模式：", fg='cyan'))
         click.echo("   python main.py scan")
-        return  # 物理阻断！
+        return  # 💥物理阻断！
     elif current_hour >= 15:
-        click.echo(click.style(f"\n⏰ 当前时间已过15:00", fg='yellow'))
-        click.echo(click.style("🔄 将进入【盘后定格投影模式】，显示今日最终战果...", fg='cyan'))
-    else:
-        click.echo(click.style(f"\n🚀 启动实盘猎杀系统 (EventDriven 事件驱动模式)", fg='green', bold=True))
+        click.echo(click.style(f"\n⏰ 当前时间已过15:00，实盘交易时段已结束", fg='yellow'))
+        click.echo(click.style("🚫 【CTO V40架构铁律】实盘火控雷达已物理上锁！", fg='red', bold=True))
+        click.echo(click.style("💡 老板指令：盘后定格与全息推演，请直接使用 Scan 模式：", fg='cyan'))
+        click.echo("   python main.py scan")
+        return  # 💥物理阻断！连JSON都不读，直接让用户去执行scan！
+    
+    click.echo(click.style(f"\n🚀 启动实盘猎杀系统 (EventDriven 事件驱动模式)", fg='green', bold=True))
     
     click.echo(f"📅 日期: {datetime.now().strftime('%Y-%m-%d')}")
     click.echo(f"📊 模式: {'模拟盘' if mode == 'paper' else '实盘交易'}")
