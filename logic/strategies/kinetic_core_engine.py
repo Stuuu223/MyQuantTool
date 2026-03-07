@@ -343,7 +343,12 @@ class 动能打分引擎CoreEngine:
         float_volume_shares: float,
         current_time: datetime,
         total_amount: float = 0.0,
-        total_volume: float = 0.0
+        total_volume: float = 0.0,
+        # 【CTO照妖镜】封板质检核心参数
+        is_limit_up: bool = False,  # 当前是否触及涨停价
+        limit_up_queue_amount: float = 0.0,  # 涨停板买一封单金额（元）
+        # 【CTO V34】模式参数
+        mode: str = "live"  # "live"实盘模式(有尾盘衰减) / "scan"扫描模式(无衰减)
     ) -> tuple[float, float, float, float, float]:
         """
         【V20.5 Boss终极钦定：动能与势能的双Ratio验钞机 + VWAP洗盘容错】
@@ -363,6 +368,8 @@ class 动能打分引擎CoreEngine:
             current_time: 当前时间（datetime对象）
             total_amount: 总成交额（元），用于VWAP计算
             total_volume: 总成交量（股），用于VWAP计算
+            is_limit_up: 当前是否触及涨停价（用于封板质检）
+            limit_up_queue_amount: 涨停板买一封单金额（元），用于计算封板强度
         
         Returns:
             tuple: (final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe)
@@ -389,6 +396,8 @@ class 动能打分引擎CoreEngine:
         float_volume_shares = safe_float(float_volume_shares, 0.0)
         total_amount = safe_float(total_amount, 0.0)
         total_volume = safe_float(total_volume, 0.0)
+        # 【CTO照妖镜】封板质检参数处理
+        limit_up_queue_amount = safe_float(limit_up_queue_amount, 0.0)
         
         if price <= 0:
             raise ValueError(f"当前价格必须>0，当前值: {price}")
@@ -409,9 +418,12 @@ class 动能打分引擎CoreEngine:
         inflow_ratio = inflow_ratio_pct  # 返回百分比形式
         
         # 2. 相对历史放量倍数（放大历史爆发力）
+        # 【CTO核心注入】强制200万的5分钟成交额物理底线，绞杀僵尸股分母陷阱！
+        MIN_BASE_FLOW = 2000000.0  # 200万底线
         safe_flow_5min = flow_5min if flow_5min > 0 else (flow_15min / 3.0 if flow_15min > 0 else 1.0)
-        ratio_stock = safe_flow_5min / flow_5min_median_stock if flow_5min_median_stock > 0 else 1.0
-        ratio_stock = max(0.01, min(ratio_stock, 100.0))  # 防溢出上限100倍
+        safe_median = max(flow_5min_median_stock, MIN_BASE_FLOW)
+        ratio_stock = safe_flow_5min / safe_median
+        ratio_stock = max(0.01, ratio_stock)  # 移除min(..., 100.0)向上压制！
         
         # 3. 价格推力（日内强度0-1）
         if high == low:
@@ -458,7 +470,8 @@ class 动能打分引擎CoreEngine:
         else:
             flow_next_10min = flow_15min - flow_5min
             sustain_ratio = (flow_next_10min / flow_5min) if flow_5min > 0 else 1.0
-            sustain_ratio = max(-10.0, min(sustain_ratio, 10.0))
+            # 【CTO照妖镜】砸碎向上阻尼！只保留防负溢出，让真龙数据直接爆表！
+            sustain_ratio = max(-1.0, sustain_ratio)  # 向上无顶！
         
         stock_identifier = f"{current_time.strftime('%H:%M')}@{price:.2f}"
         
@@ -481,10 +494,31 @@ class 动能打分引擎CoreEngine:
             multiplier *= 1.2
         
         # D. 早盘时间坚决度
-        if current_time.hour == 9 and current_time.minute <= 40:
-            multiplier *= 1.2
-        elif current_time.hour >= 14:
-            multiplier *= 0.5
+        # 【CTO V34修复】scan模式下跳过时间衰减，废除"时间冻结"毒瘤！
+        if mode == "scan":
+            # Scan模式：盘后扫描榜单，不应用时间衰减，让真龙以真实数据排序
+            pass
+        else:
+            # Live模式：实盘交易，应用时间衰减
+            if current_time.hour == 9 and current_time.minute <= 40:
+                multiplier *= 1.2
+            elif current_time.hour >= 14:
+                multiplier *= 0.5
+        
+        # 【CTO照妖镜】E. 杂毛现形器：高位未封板惩罚（日内盈亏比断崖）
+        # 涨幅>8.5%却封不住板，盈亏比极度恶化，必须重罚！
+        change_pct = (price - prev_close) / prev_close if prev_close > 0 else 0
+        if change_pct > 0.085 and not is_limit_up:
+            multiplier *= 0.3
+            logger.warning(f"[照妖镜] {stock_identifier} 高位无力封板/烂板(涨幅{change_pct*100:.1f}%)，动能衰竭，分数打7折！")
+        
+        # 【CTO照妖镜】F. 真龙升天器：极致封板强度奖励（资金意向度）
+        # 封单金额直接转化为动能乘数，让真龙脱颖而出！
+        if is_limit_up and limit_up_queue_amount > 0:
+            # 每1亿封单增加1.0乘数权重，上限3.0（即3亿封单拿满）
+            queue_bonus = min(3.0, limit_up_queue_amount / 100_000_000.0)
+            multiplier *= (1.5 + queue_bonus)
+            logger.info(f"[真龙确立] {stock_identifier} 强势封板，封单额{limit_up_queue_amount/10000:.0f}万，乘数飙升！")
         
         # 第五步：MFE效率算子
         if inflow_ratio_pct <= 0:
@@ -493,7 +527,8 @@ class 动能打分引擎CoreEngine:
             upward_thrust = ((price - low) + (high - open_price)) / 2
             price_range_pct = upward_thrust / prev_close if prev_close > 0 else 0.0
             mfe = price_range_pct / (inflow_ratio_pct / 100.0)
-            mfe = max(-100.0, min(mfe, 100.0))
+            # 【CTO照妖镜】砸碎向上阻尼！只保留防负溢出，让真龙数据直接爆表！
+            mfe = max(-10.0, mfe)  # 向上无顶！
         
         # 第六步：最终得分（无上限里氏震级！）
         final_score = round(base_power * multiplier, 2)

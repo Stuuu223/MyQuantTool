@@ -495,10 +495,9 @@ def scan_cmd(ctx, date):
             'downloaded': 0
         }
         
-        # 【CTO V50修复】冻结时间从15:00改为09:45！
-        # 15:00会触发尾盘腰斩(multiplier*=0.5)，导致涨停股全员90分
-        # 09:45是morning_confirm区间，无衰减，对齐19:44榜单！
-        frozen_time = dt_class.combine(dt_class.today(), time_type(9, 45, 0))
+        # 【CTO V34修复】废除时间冻结毒瘤！改用mode="scan"跳过衰减
+        # 使用真实收盘时间15:00，通过mode参数控制衰减逻辑
+        actual_time = dt_class.combine(dt_class.today(), time_type(15, 0, 0))
         
         # 【CTO V40 核心内存救赎】一只一只读，读完就释放！
         for i, stock in enumerate(base_pool):
@@ -604,6 +603,23 @@ def scan_cmd(ctx, date):
                 raw_purity = 1.0 if current_price > pre_close else -1.0
             quant_purity = min(max(raw_purity, -1.0), 1.0) * 100
             
+            # 【CTO V34照妖镜修复】涨停检测用绝对价格推导
+            if stock.startswith(('30', '68')):  # 创业板、科创板 20%
+                limit_up_price = round(pre_close * 1.20, 2)
+            elif stock.startswith(('8', '4')):  # 北交所 30%
+                limit_up_price = round(pre_close * 1.30, 2)
+            else:  # 主板 10%
+                limit_up_price = round(pre_close * 1.10, 2)
+            is_limit_up = (current_price >= limit_up_price - 0.011)
+            # 封单金额：尝试从盘口获取，默认5000万
+            ask_price1 = float(tick.get('askPrice1', 0.0) or 0.0)
+            bid_price1 = float(tick.get('bidPrice1', 0.0) or 0.0)
+            bid_vol1 = int(tick.get('bidVol1', 0) or 0) * 100
+            if is_limit_up:
+                limit_up_queue_amount = (bid_price1 * bid_vol1) if (bid_price1 > 0 and bid_vol1 > 0) else 50000000.0
+            else:
+                limit_up_queue_amount = 0.0
+            
             # 7. 调用打分引擎
             # 【CTO V49修复】net_inflow公式与run_live_trading_engine.py对齐！
             # 旧公式: (current_amount/240*15)*purity = 全天额÷16×purity (低估8倍)
@@ -621,7 +637,10 @@ def scan_cmd(ctx, date):
                     flow_5min_median_stock=1.0,
                     space_gap_pct=0.5,
                     float_volume_shares=fv,
-                    current_time=frozen_time
+                    current_time=actual_time,  # 【CTO V34】使用真实时间
+                    is_limit_up=is_limit_up,  # 【CTO V34】涨停状态
+                    limit_up_queue_amount=limit_up_queue_amount,  # 【CTO V34】封单金额
+                    mode="scan"  # 【CTO V34】scan模式跳过时间衰减
                 )
                 
                 # 解包tuple

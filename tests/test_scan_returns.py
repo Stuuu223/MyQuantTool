@@ -1,11 +1,22 @@
 """
-CTO V48 榜单收益回撤测试
+CTO V34 照妖镜修复版 - 榜单收益回撤测试
 
 扫描20260225-20260305各榜单，追踪所有标的到0306的：
 1. 期间最大收益
 2. 期间最大回撤
 3. 截至0306的收益
 4. 截至0306的回撤
+
+V34修复清单（CTO验尸报告）：
+- 毒瘤一修复：废除时间冻结(09:45)，改用mode="scan"跳过尾盘衰减
+- 毒瘤二修复：涨停检测改用绝对价格推导(limit_up_price=pre_close*1.10/1.20)
+- 毒瘤三待修：flow_5min线性估算（测试文件暂保留，实盘引擎需重构）
+
+V33照妖镜核心特性：
+- 砸碎sustain_ratio和mfe的上限阻尼
+- 实装safe_median绝对物理基线（MIN_BASE_FLOW=200万）
+- 杂毛现形器：高位未封板×0.3惩罚
+- 真龙升天器：封板强度奖励×(1.5~4.5)
 
 用法:
     python tests/test_scan_returns.py
@@ -38,9 +49,9 @@ TRADING_DAYS = [
 ]
 
 
-def get_top_stocks(date: str, top_n: int = 10) -> List[Dict]:
+def get_top_stocks(date: str, top_n: int = 20) -> List[Dict]:
     """
-    获取指定日期的Top N股票榜单
+    获取指定日期的Top N股票榜单（V33照妖镜版本）
     
     返回: [{'code': '600354.SH', 'score': 90.0, 'price': 7.63, ...}, ...]
     """
@@ -97,6 +108,30 @@ def get_top_stocks(date: str, top_n: int = 10) -> List[Dict]:
                 tick_low = float(tick.get('low', current_price))
                 open_price = float(tick.get('open', current_price))
                 
+                # 【CTO V34照妖镜修复】用绝对价格推导判断涨停（解决盘后askPrice1被清空的问题）
+                # 涨停价计算：主板10%，创业板/科创板20%，北交所30%
+                if stock.startswith(('30', '68')):  # 创业板、科创板 20%
+                    limit_up_price = round(pre_close * 1.20, 2)
+                elif stock.startswith(('8', '4')):  # 北交所 30%
+                    limit_up_price = round(pre_close * 1.30, 2)
+                else:  # 主板 10%
+                    limit_up_price = round(pre_close * 1.10, 2)
+                # 现价距离涨停价<1分钱即判定为物理封板
+                is_limit_up = (current_price >= limit_up_price - 0.011)
+                
+                # 封单金额：尝试从盘口获取，若无法获取则给默认值
+                ask_price1 = float(tick.get('askPrice1', 0.0) or 0.0)
+                bid_price1 = float(tick.get('bidPrice1', 0.0) or 0.0)
+                bid_vol1 = int(tick.get('bidVol1', 0) or 0) * 100  # 手转股
+                if is_limit_up:
+                    if bid_price1 > 0 and bid_vol1 > 0:
+                        limit_up_queue_amount = bid_price1 * bid_vol1
+                    else:
+                        # 盘口数据缺失时，给一个默认封单（防止真龙被误判）
+                        limit_up_queue_amount = 50000000.0  # 默认5000万封单
+                else:
+                    limit_up_queue_amount = 0.0
+                
                 # 计算参数
                 price_position = (current_price - tick_low) / (tick_high - tick_low) if tick_high > tick_low else 0.5
                 change_pct = (current_price - pre_close) / pre_close
@@ -116,9 +151,10 @@ def get_top_stocks(date: str, top_n: int = 10) -> List[Dict]:
                 raw_purity = (current_price - pre_close) / price_range if price_range > 0 else (1.0 if current_price > pre_close else -1.0)
                 
                 from datetime import datetime as dt_class
-                # 【CTO V50】冻结时间改为09:45，消除尾盘腰斩
-                frozen_time = dt_class.combine(dt_class.today(), time_type(9, 45, 0))
+                # 【CTO V34修复】废除时间冻结毒瘤！使用实际时间+mode=scan跳过衰减
+                actual_time = dt_class.combine(dt_class.today(), time_type(15, 0, 0))  # 使用实际收盘时间
                 
+                # 【CTO V33】调用引擎，传入涨停状态和封单金额
                 result = core_engine.calculate_true_dragon_score(
                     net_inflow=current_amount * raw_purity * 0.5,  # V49: 对齐实盘引擎
                     price=current_price,
@@ -131,7 +167,10 @@ def get_top_stocks(date: str, top_n: int = 10) -> List[Dict]:
                     flow_5min_median_stock=1.0,
                     space_gap_pct=0.5,
                     float_volume_shares=fv,
-                    current_time=frozen_time
+                    current_time=actual_time,
+                    is_limit_up=is_limit_up,  # 【CTO V33】涨停状态
+                    limit_up_queue_amount=limit_up_queue_amount,  # 【CTO V33】封单金额
+                    mode="scan"  # 【CTO V34】scan模式跳过时间衰减
                 )
                 
                 if isinstance(result, tuple) and len(result) >= 5:
@@ -150,7 +189,9 @@ def get_top_stocks(date: str, top_n: int = 10) -> List[Dict]:
                         'inflow_ratio': min(max(inflow_ratio, -50.0), 50.0),
                         'sustain_ratio': sustain_ratio,
                         'mfe': mfe,
-                        'purity': quant_purity
+                        'purity': quant_purity,
+                        'is_limit_up': is_limit_up,  # 【CTO V33】新增
+                        'limit_up_queue_amount': limit_up_queue_amount  # 【CTO V33】新增
                     })
                     
             except Exception as e:
@@ -247,8 +288,9 @@ def calculate_returns(stock: str, entry_date: str, end_date: str) -> Dict:
 
 def main():
     print("=" * 80)
-    print("📊 CTO V48 榜单收益回撤测试")
+    print("📊 CTO V34 照妖镜修复版 - 榜单收益回撤测试")
     print(f"   测试范围: {START_DATE} ~ {END_DATE}")
+    print("   核心修复: 封板绝对价格推导 + 废除时间冻结 + scan模式分离")
     print("=" * 80)
     
     # 检查日K数据
@@ -280,7 +322,9 @@ def main():
         
         if top_stocks:
             daily_results[date] = top_stocks
-            print(f"   ✅ {date}: Top1 {top_stocks[0]['code']} {top_stocks[0]['score']:.1f}分")
+            # 统计封板数量
+            limit_up_count = sum(1 for s in top_stocks if s.get('is_limit_up', False))
+            print(f"   ✅ {date}: Top1 {top_stocks[0]['code']} {top_stocks[0]['score']:.1f}分 (封板{limit_up_count}/{len(top_stocks)}只)")
             
             # 记录股票首次出现
             for stock_info in top_stocks:
@@ -289,7 +333,9 @@ def main():
                     all_stocks_data[code] = {
                         'first_seen': date,
                         'entry_price': stock_info['price'],
-                        'entry_score': stock_info['score']
+                        'entry_score': stock_info['score'],
+                        'is_limit_up': stock_info.get('is_limit_up', False),
+                        'limit_up_queue': stock_info.get('limit_up_queue_amount', 0)
                     }
         else:
             print(f"   ⚠️ {date}: 无结果")
@@ -309,6 +355,8 @@ def main():
                 'first_seen': info['first_seen'],
                 'entry_price': info['entry_price'],
                 'entry_score': info['entry_score'],
+                'is_limit_up': info['is_limit_up'],
+                'limit_up_queue': info['limit_up_queue'],
                 **returns
             })
     
@@ -316,35 +364,68 @@ def main():
     results.sort(key=lambda x: x['max_return'] or 0, reverse=True)
     
     # 输出结果
-    print("\n" + "=" * 120)
+    print("\n" + "=" * 140)
     print("📈 收益回撤分析结果 (按最大收益排序)")
-    print("=" * 120)
-    print(f"{'股票':<12} {'首次出现':<12} {'入场价':<10} {'入场分':<8} {'最大收益%':<12} {'最大回撤%':<12} {'最终收益%':<12} {'最终回撤%':<12}")
-    print("-" * 120)
+    print("=" * 140)
+    print(f"{'股票':<12} {'首次出现':<12} {'入场价':<10} {'入场分':<10} {'封板':<6} {'最大收益%':<12} {'最大回撤%':<12} {'最终收益%':<12} {'最终回撤%':<12}")
+    print("-" * 140)
     
     for r in results[:30]:  # 显示Top 30
-        print(f"{r['code']:<12} {r['first_seen']:<12} {r['entry_price']:<10.2f} {r['entry_score']:<8.1f} "
+        limit_tag = "✅" if r['is_limit_up'] else "❌"
+        print(f"{r['code']:<12} {r['first_seen']:<12} {r['entry_price']:<10.2f} {r['entry_score']:<10.1f} {limit_tag:<6} "
               f"{r['max_return']:>+11.2f}% {r['max_drawdown']:>11.2f}% "
               f"{r['final_return']:>+11.2f}% {r['final_drawdown']:>11.2f}%")
     
     # 统计汇总
     print("\n" + "=" * 80)
-    print("📊 汇总统计")
+    print("📊 V34 照妖镜修复版 汇总统计")
     print("=" * 80)
     
     if results:
         max_returns = [r['max_return'] for r in results if r['max_return'] is not None]
         final_returns = [r['final_return'] for r in results if r['final_return'] is not None]
         max_drawdowns = [r['max_drawdown'] for r in results if r['max_drawdown'] is not None]
+        entry_scores = [r['entry_score'] for r in results]
         
+        # 封板股统计
+        limit_up_stocks = [r for r in results if r['is_limit_up']]
+        non_limit_up_stocks = [r for r in results if not r['is_limit_up']]
+        
+        print(f"\n【整体统计】")
+        print(f"样本数量: {len(results)}")
+        print(f"分数范围: {min(entry_scores):.1f} ~ {max(entry_scores):.1f}")
         print(f"平均最大收益: {sum(max_returns)/len(max_returns):.2f}%")
         print(f"平均最终收益: {sum(final_returns)/len(final_returns):.2f}%")
         print(f"平均最大回撤: {sum(max_drawdowns)/len(max_drawdowns):.2f}%")
         print(f"正收益比例: {sum(1 for r in final_returns if r > 0)/len(final_returns)*100:.1f}%")
         print(f"涨幅>10%比例: {sum(1 for r in max_returns if r > 10)/len(max_returns)*100:.1f}%")
+        
+        print(f"\n【封板照妖镜效果】")
+        if limit_up_stocks:
+            limit_returns = [r['max_return'] for r in limit_up_stocks]
+            limit_final = [r['final_return'] for r in limit_up_stocks]
+            print(f"封板股数量: {len(limit_up_stocks)} ({len(limit_up_stocks)/len(results)*100:.1f}%)")
+            print(f"封板股平均最大收益: {sum(limit_returns)/len(limit_returns):.2f}%")
+            print(f"封板股平均最终收益: {sum(limit_final)/len(limit_final):.2f}%")
+        
+        if non_limit_up_stocks:
+            non_limit_returns = [r['max_return'] for r in non_limit_up_stocks]
+            non_limit_final = [r['final_return'] for r in non_limit_up_stocks]
+            print(f"非封板股数量: {len(non_limit_up_stocks)} ({len(non_limit_up_stocks)/len(results)*100:.1f}%)")
+            print(f"非封板股平均最大收益: {sum(non_limit_returns)/len(non_limit_returns):.2f}%")
+            print(f"非封板股平均最终收益: {sum(non_limit_final)/len(non_limit_final):.2f}%")
+        
+        # 分数分布
+        print(f"\n【分数分布】")
+        score_bins = [(0, 100), (100, 300), (300, 500), (500, 1000), (1000, float('inf'))]
+        for low, high in score_bins:
+            count = sum(1 for s in entry_scores if low <= s < high)
+            if count > 0:
+                high_str = str(int(high)) if high < float('inf') else "∞"
+                print(f"  {low}-{high_str}分: {count}只 ({count/len(results)*100:.1f}%)")
     
     # 保存结果
-    output_path = 'data/validation/scan_returns_analysis.csv'
+    output_path = 'data/validation/scan_returns_v34.csv'
     import os
     os.makedirs('data/validation', exist_ok=True)
     

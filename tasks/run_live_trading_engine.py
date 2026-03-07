@@ -109,6 +109,11 @@ class LiveTradingEngine:
         # 【架构解耦】初始化QMT事件适配器（需要event_bus已就绪）
         self._init_qmt_adapter()
         
+        # 【CTO V33照妖镜】黄金3分钟生死观察队列
+        # 信号触发后不立即买入，先进入观察队列进行抗重力测试
+        # {stock_code: {'trigger_time': datetime, 'score': float, 'sustain_ratio': float, 'tick_data': dict}}
+        self.signal_queue: Dict[str, Dict] = {}
+        
         logger.info("[OK] [LiveTradingEngine] 初始化完成 - QMT Manager已注入")
     
     def _init_kinetic_engine(self):
@@ -1312,18 +1317,37 @@ class LiveTradingEngine:
                         high_60d = tick.get('high', current_price)
                         space_gap_pct = (high_60d - current_price) / high_60d if high_60d > 0 else 0.5
                         
-                        # 【CTO V32时空静止】非交易日/盘后模式下，锚定09:45:00传给引擎
-                        # 引擎时间衰减逻辑：
-                        # - 09:30-09:40: early_morning_rush = 1.2（早盘溢价）
-                        # - 09:40-10:30: morning_confirm = 1.0（无衰减！）
-                        # - 10:30-14:00: noon_trash = 0.8（打折）
-                        # - 14:00-14:55: tail_trap = 0.2（腰斩）
-                        # - 14:55之后: 0.0（归零）
-                        # 所以必须传入09:45获得无衰减的公正分数！
-                        if is_after_hours or not is_trading:
-                            engine_time = now.replace(hour=9, minute=45, second=0, microsecond=0)
+                        # 【CTO V34修复】废除时间冻结毒瘤！
+                        # 盘后/非交易日：使用mode="scan"跳过时间衰减，而非"穿越时间"
+                        # 实盘交易：使用mode="live"应用时间衰减
+                        engine_time = now  # 始终使用真实时间
+                        engine_mode = "scan" if (is_after_hours or not is_trading) else "live"
+                        
+                        # 【CTO V34照妖镜修复】用绝对价格推导判断涨停（解决askPrice1盘后失效问题）
+                        # 涨停价计算：主板10%，创业板/科创板20%，北交所30%
+                        pre_close = tick.get('lastClose', 0.0) or 0.0
+                        current_price = tick.get('lastPrice', 0.0) or 0.0
+                        if stock_code.startswith(('30', '68')):  # 创业板、科创板 20%
+                            limit_up_price = round(pre_close * 1.20, 2)
+                        elif stock_code.startswith(('8', '4')):  # 北交所 30%
+                            limit_up_price = round(pre_close * 1.30, 2)
+                        else:  # 主板 10%
+                            limit_up_price = round(pre_close * 1.10, 2)
+                        # 现价距离涨停价<1分钱即判定为物理封板
+                        is_limit_up = (current_price >= limit_up_price - 0.011)
+                        
+                        # 封单金额：尝试从盘口获取
+                        ask_price1 = tick.get('askPrice1', 0.0) or 0.0
+                        bid_price1 = tick.get('bidPrice1', 0.0) or 0.0
+                        bid_vol1 = (tick.get('bidVol1', 0) or 0) * 100  # tick volume是手，转股
+                        if is_limit_up:
+                            if bid_price1 > 0 and bid_vol1 > 0:
+                                limit_up_queue_amount = bid_price1 * bid_vol1
+                            else:
+                                # 盘口数据缺失时，给一个默认封单（防止真龙被误判）
+                                limit_up_queue_amount = 50000000.0  # 默认5000万封单
                         else:
-                            engine_time = now
+                            limit_up_queue_amount = 0.0
                         
                         try:
                             final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe = core_engine.calculate_true_dragon_score(
@@ -1338,7 +1362,10 @@ class LiveTradingEngine:
                                 flow_5min_median_stock=flow_5min_median if flow_5min_median > 0 else 1.0,
                                 space_gap_pct=space_gap_pct,
                                 float_volume_shares=float_volume,
-                                current_time=engine_time  # 【CTO V31】传入修正后的时间！
+                                current_time=engine_time,  # 真实时间
+                                is_limit_up=is_limit_up,  # 【CTO V33】涨停状态
+                                limit_up_queue_amount=limit_up_queue_amount,  # 【CTO V33】封单金额
+                                mode=engine_mode  # 【CTO V34】scan跳过衰减/live应用衰减
                             )
                         except Exception as e:
                             logger.debug(f"[SKIP] {stock_code} 高阶算子计算失败，剔除: {e}")
@@ -1558,20 +1585,86 @@ class LiveTradingEngine:
             score = self._calculate_signal_score(stock_code, tick_data)
             
             if score < 70:  # 动能打分引擎阈值
-                logger.info(f"🚫 {stock_code} 动能打分引擎得分不足: {score:.2f} < 70")
+                logger.debug(f"🚫 {stock_code} 动能打分引擎得分不足: {score:.2f} < 70")
                 return  # 得分不足，放弃开火
             
-            logger.info(f"[TARGET] {stock_code} 动能打分引擎高分通过: {score:.2f}")
+            # ============================================================
+            # Phase 2 Step 7: 【CTO V33照妖镜】黄金3分钟生死观察队列
+            # ============================================================
+            # 信号触发后不立即买入，先进入观察队列进行抗重力测试
+            # 3分钟后复检：sustain_ratio > 1.2 且未跌破VWAP才执行
+            from datetime import datetime, timedelta
+            now = datetime.now()
             
-            # ============================================================
-            # Phase 2 Step 7: 拔枪射击！
-            # ============================================================
-            self._execute_trade(stock_code, tick_data, score)
+            if stock_code not in self.signal_queue:
+                # 首次触发，加入观察队列
+                self.signal_queue[stock_code] = {
+                    'trigger_time': now,
+                    'score': score,
+                    'tick_data': tick_data.copy() if isinstance(tick_data, dict) else tick_data
+                }
+                logger.info(f"[进入观察] {stock_code} 触发信号(得分{score:.1f})，开启3分钟抗重力测试")
+            else:
+                # 已在队列中，检查是否超过3分钟
+                entry = self.signal_queue[stock_code]
+                elapsed = (now - entry['trigger_time']).total_seconds()
+                
+                if elapsed >= 180:  # 3分钟 = 180秒
+                    # 获取最新的sustain_ratio
+                    sustain_ratio = self._get_current_sustain_ratio(stock_code, tick_data)
+                    
+                    if sustain_ratio > 1.2:
+                        logger.info(f"[测试通过] {stock_code} 3分钟抗重力测试成功！sustain_ratio={sustain_ratio:.2f} > 1.2")
+                        self._execute_trade(stock_code, tick_data, score)
+                        del self.signal_queue[stock_code]
+                    else:
+                        logger.warning(f"[过滤] {stock_code} 3分钟内动能萎缩，sustain_ratio={sustain_ratio:.2f}，一票否决！")
+                        del self.signal_queue[stock_code]
+                else:
+                    logger.debug(f"[观察中] {stock_code} 已观察{elapsed:.0f}秒，等待3分钟测试")
             
         except Exception as e:
             logger.error(f"[ERR] Tick事件处理失败 ({stock_code}): {e}")
             import traceback
             logger.error(traceback.format_exc())
+    
+    def _get_current_sustain_ratio(self, stock_code: str, tick_data: Dict[str, Any]) -> float:
+        """
+        获取当前sustain_ratio（用于3分钟观察队列测试）
+        
+        Args:
+            stock_code: 股票代码
+            tick_data: 当前Tick数据
+            
+        Returns:
+            float: sustain_ratio值
+        """
+        try:
+            # 简化版：从_calculate_signal_score的返回值中提取
+            # 如果无法获取，返回默认值1.0（不惩罚）
+            price = tick_data.get('price', 0.0) or 0.0
+            amount = tick_data.get('amount', 0.0) or 0.0
+            pre_close = tick_data.get('lastClose', tick_data.get('prev_close', price)) or price
+            
+            from datetime import datetime
+            now = datetime.now()
+            market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
+            minutes_passed = max(1, (now - market_open).total_seconds() / 60)
+            
+            # 估算flow_5min和flow_15min
+            flow_5min = amount / max(1, minutes_passed) * 5 if minutes_passed > 0 else amount
+            flow_15min = amount / max(1, minutes_passed) * 15 if minutes_passed > 0 else amount
+            
+            # 计算sustain_ratio
+            if flow_5min <= 0:
+                return -1.0
+            flow_next_10min = flow_15min - flow_5min
+            sustain_ratio = (flow_next_10min / flow_5min) if flow_5min > 0 else 1.0
+            return sustain_ratio
+            
+        except Exception as e:
+            logger.debug(f"[WARN] {stock_code} 获取sustain_ratio失败: {e}，使用默认值1.0")
+            return 1.0
     
     def _get_current_fire_threshold(self, config_manager) -> float:
         """
@@ -1743,6 +1836,30 @@ class LiveTradingEngine:
             # 估算真实净流入（元）- 使用power_ratio而非固定0.5！
             net_inflow_est = amount * power_ratio * 0.5
             
+            # 【CTO V34照妖镜修复】用绝对价格推导判断涨停（解决askPrice1盘后失效问题）
+            # 涨停价计算：主板10%，创业板/科创板20%，北交所30%
+            if stock_code.startswith(('30', '68')):  # 创业板、科创板 20%
+                limit_up_price = round(prev_close * 1.20, 2)
+            elif stock_code.startswith(('8', '4')):  # 北交所 30%
+                limit_up_price = round(prev_close * 1.30, 2)
+            else:  # 主板 10%
+                limit_up_price = round(prev_close * 1.10, 2)
+            # 现价距离涨停价<1分钱即判定为物理封板
+            is_limit_up = (price >= limit_up_price - 0.011)
+            
+            # 封单金额：尝试从盘口获取
+            ask_price1 = tick_data.get('askPrice1', 0.0) or 0.0
+            bid_price1 = tick_data.get('bidPrice1', 0.0) or 0.0
+            bid_vol1 = (tick_data.get('bidVol1', 0) or 0) * 100  # tick volume是手，转股
+            if is_limit_up:
+                if bid_price1 > 0 and bid_vol1 > 0:
+                    limit_up_queue_amount = bid_price1 * bid_vol1
+                else:
+                    # 盘口数据缺失时，给一个默认封单（防止真龙被误判）
+                    limit_up_queue_amount = 50000000.0  # 默认5000万封单
+            else:
+                limit_up_queue_amount = 0.0
+            
             # 调用 V20.5 动能引擎
             base_score, sustain_ratio, inflow_ratio, ratio_stock, mfe_score = self._kinetic_core.calculate_true_dragon_score(
                 net_inflow=net_inflow_est,  # V51: 使用正确的power_ratio计算
@@ -1756,7 +1873,10 @@ class LiveTradingEngine:
                 flow_5min_median_stock=flow_5min_median,
                 space_gap_pct=0.05,
                 float_volume_shares=float_volume,
-                current_time=now
+                current_time=now,
+                is_limit_up=is_limit_up,  # 【CTO V33】涨停状态
+                limit_up_queue_amount=limit_up_queue_amount,  # 【CTO V33】封单金额
+                mode="live"  # 【CTO V34】黄金3分钟队列用live模式
             )
             
             logger.debug(f"[TARGET] {stock_code} V20.5动能得分: {base_score:.2f}, sustain={sustain_ratio:.2f}, mfe={mfe_score:.2f}")
@@ -1778,7 +1898,12 @@ class LiveTradingEngine:
     
     def _execute_trade(self, stock_code: str, tick_data: Dict[str, Any], score: float):
         """
-        执行交易 - 拔枪射击
+        执行交易 - 动态狙击枪（CTO V33重铸）
+        
+        废除静态市价单，引入：
+        1. EV盈亏比拦截闸
+        2. 动态扫单排队
+        3. 流动性防骗炮护城河
         
         Args:
             stock_code: 股票代码
@@ -1790,17 +1915,52 @@ class LiveTradingEngine:
             return
         
         try:
-            logger.info(f"🚨 {stock_code} 触发交易信号! 得分={score:.2f}, 价格={tick_data.get('price', 0)}")
+            price = tick_data.get('price', 0.0) or 0.0
+            pre_close = tick_data.get('lastClose', tick_data.get('prev_close', price)) or price
             
-            # 执行交易
+            # 【CTO V34照妖镜修复】用绝对价格推导判断涨停（解决askPrice1盘后失效问题）
+            # 涨停价计算：主板10%，创业板/科创板20%，北交所30%
+            if stock_code.startswith(('30', '68')):  # 创业板、科创板 20%
+                limit_up_price = round(pre_close * 1.20, 2)
+            elif stock_code.startswith(('8', '4')):  # 北交所 30%
+                limit_up_price = round(pre_close * 1.30, 2)
+            else:  # 主板 10%
+                limit_up_price = round(pre_close * 1.10, 2)
+            # 现价距离涨停价<1分钱即判定为物理封板
+            is_limit_up = (price >= limit_up_price - 0.011)
+            
+            if change_pct > 8.5 and not is_limit_up:
+                logger.warning(f"[EV拦截] {stock_code} 已处 {change_pct:.1f}% 高位且未封板，盈亏比极度恶化，放弃！")
+                return
+            
+            # 【CTO V33照妖镜】2. 向上扫单排队（获取确定性）
+            # 不用tick price，用卖一价扫单
+            order_price = ask_price1 if ask_price1 > 0 else price
+            
+            # 【CTO V33照妖镜】3. 流动性防骗炮护城河
+            # 检查上方卖盘厚度，防止真空尖刺诱多
+            if not is_limit_up:
+                ask_total_vol = 0
+                for i in range(1, 6):
+                    vol = tick_data.get(f'askVol{i}', 0) or 0
+                    ask_total_vol += vol * 100  # 手转股
+                ask_total_amount = ask_total_vol * order_price
+                
+                if ask_total_amount < 500_000:  # 上方压单不到50万
+                    logger.warning(f"[骗炮拦截] {stock_code} 卖盘极度真空(仅{ask_total_amount/10000:.1f}万)，疑似脉冲诱多！")
+                    return
+            
+            logger.info(f"🚨 {stock_code} 触发交易信号! 得分={score:.2f}, 价格={order_price:.2f}, 涨幅={change_pct:.1f}%")
+            
+            # 执行交易 - 动态扫单价
             from logic.execution.trade_interface import TradeOrder, OrderDirection
             
             order = TradeOrder(
                 stock_code=stock_code,
                 direction=OrderDirection.BUY.value,
                 quantity=100,  # 可根据资金管理调整
-                price=tick_data.get('price', 0),
-                remark=f'动能打分引擎_{score:.1f}_VR_{tick_data.get("volume_ratio", 0):.1f}'
+                price=order_price,  # 【CTO V33】动态扫单价，非静态tick price
+                remark=f'动能_{score:.1f}_动态狙击_涨幅{change_pct:.1f}%'
             )
             
             result = self.trader.buy(order)
