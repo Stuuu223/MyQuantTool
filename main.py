@@ -408,79 +408,197 @@ def replay_cmd(ctx, date, pure):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 扫描命令
+# 扫描命令 - V38定格沙盘模式
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @cli.command(name='scan')
 @click.option('--date', '-d', callback=validate_date,
-              help='交易日期 (YYYYMMDD格式，默认今天)')
-@click.option('--mode', '-m', 
-              type=click.Choice(['premarket', 'intraday', 'postmarket', 'full', 'triple_funnel']),
-              default='full',
-              help='扫描模式 (默认: full)')
-@click.option('--max-stocks', type=int, default=100,
-              help='最大扫描股票数 (默认: 100)')
-@click.option('--output', '-o', default='data/scan_results',
-              help='输出目录 (默认: data/scan_results)')
+              help='交易日期 (YYYYMMDD格式，默认最近交易日)')
 @click.pass_context
-def scan_cmd(ctx, date, mode, max_stocks, output):
+def scan_cmd(ctx, date):
     """
-    全市场扫描
+    📊 [CTO V38] 定格沙盘扫描：读取硬盘Tick，100%对齐实盘
+    
+    用途：非交易日/周末验证实盘与回测一致性
     
     示例:
         \b
-        # 盘前扫描
-        python main.py scan --mode premarket
+        # 扫描最近交易日
+        python main.py scan
         
-        # 盘中扫描
-        python main.py scan --mode intraday
-        
-        # 盘后扫描
-        python main.py scan --date 20260105 --mode postmarket
-        
-        # 三漏斗扫描
-        python main.py scan --mode triple_funnel --max-stocks 200
+        # 扫描指定日期
+        python main.py scan --date 20260306
     """
-    date = date or datetime.now().strftime('%Y%m%d')
+    from logic.utils.calendar_utils import get_latest_completed_trading_day
+    from logic.data_providers.universe_builder import UniverseBuilder
+    from logic.data_providers.true_dictionary import get_true_dictionary
+    from logic.strategies.kinetic_core_engine import 动能打分引擎CoreEngine
+    from logic.utils.metrics_utils import render_live_dashboard
+    from xtquant import xtdata
+    import pandas as pd
+    from datetime import time as time_type
     
-    click.echo(click.style(f"\n🔍 启动市场扫描", fg='green', bold=True))
-    click.echo(f"📅 日期: {date}")
-    click.echo(f"📊 模式: {mode}")
-    click.echo(f"📈 最大股票数: {max_stocks}")
-    click.echo(f"💾 输出: {output}")
+    # 确定目标日期
+    target_date = date or get_latest_completed_trading_day()
+    
+    click.echo(click.style(f"\n🔍 启动【定格沙盘扫描】", fg='cyan', bold=True))
+    click.echo(f"📅 目标日期: {target_date}")
+    click.echo(f"💡 模式: 读取硬盘Tick，物理冻结时间15:00")
     
     try:
-        if mode == 'triple_funnel':
-            # 三漏斗扫描
-            from tasks.run_triple_funnel_scan import main as triple_funnel_main
-            
-            # 构造sys.argv
-            original_argv = sys.argv
-            sys.argv = ['run_triple_funnel_scan.py', '--mode', 'post-market', '--max-stocks', str(max_stocks)]
-            triple_funnel_main()
-            sys.argv = original_argv
-            
-        elif mode in ['premarket', 'intraday', 'postmarket']:
-            # 全市场扫描
-            from tasks.run_full_market_scan import main as full_market_scan_main
-            
-            original_argv = sys.argv
-            sys.argv = ['run_full_market_scan.py', '--mode', mode]
-            full_market_scan_main()
-            sys.argv = original_argv
-            
-        else:  # full
-            # 完整扫描流程
-            from logic.strategies.full_market_scanner import FullMarketScanner
-            
-            scanner = FullMarketScanner()
-            results = scanner.scan_with_risk_management(mode='full', max_stocks=max_stocks)
-            
-            click.echo(f"\n📊 扫描结果:")
-            click.echo(f"  机会池: {len(results.get('opportunities', []))} 只")
-            click.echo(f"  观察池: {len(results.get('watchlist', []))} 只")
+        # Step 1: 获取粗筛底池
+        click.echo("\n📦 Step 1: 获取粗筛底池...")
+        builder = UniverseBuilder(target_date=target_date)
+        base_pool, _ = builder.build()
         
-        click.echo(click.style("\n✅ 扫描完成", fg='green'))
+        if not base_pool:
+            click.echo(click.style("❌ 底池获取失败", fg='red'))
+            return
+        
+        click.echo(f"   粗筛底池: {len(base_pool)} 只")
+        
+        # Step 2: 预热TrueDictionary
+        click.echo("\n📦 Step 2: 预热TrueDictionary...")
+        true_dict = get_true_dictionary()
+        true_dict.warmup(base_pool, target_date=target_date)
+        
+        # Step 3: 批量读取硬盘Tick（极速，绝不卡死）
+        click.echo("\n📦 Step 3: 批量读取硬盘Tick...")
+        local_data = xtdata.get_local_data(
+            field_list=['lastPrice', 'volume', 'amount', 'lastClose', 'high', 'low', 'open'],
+            stock_list=base_pool,
+            period='tick',
+            start_time=target_date,
+            end_time=target_date
+        )
+        
+        click.echo(f"   Tick数据读取完成")
+        
+        # Step 4: 执行与实盘100%一致的打分逻辑
+        click.echo("\n📦 Step 4: 执行打分引擎...")
+        core_engine = 动能打分引擎CoreEngine()
+        
+        current_top_targets = []
+        pool_stats = {
+            'total': len(base_pool),
+            'active': 0,
+            'up': 0,
+            'down': 0,
+            'filtered': 0
+        }
+        
+        for stock in base_pool:
+            # 检查数据是否存在
+            if not local_data or stock not in local_data or local_data[stock] is None:
+                pool_stats['filtered'] += 1
+                continue
+            
+            df = pd.DataFrame(local_data[stock])
+            if df.empty:
+                pool_stats['filtered'] += 1
+                continue
+            
+            # 获取收盘最后一笔Tick
+            tick = df.iloc[-1]
+            current_price = float(tick.get('lastPrice', 0))
+            current_amount = float(tick.get('amount', 0))
+            pre_close = float(tick.get('lastClose', 0))
+            
+            if pre_close <= 0:
+                pre_close = current_price
+            
+            tick_high = float(tick.get('high', current_price))
+            tick_low = float(tick.get('low', current_price))
+            open_price = float(tick.get('open', current_price))
+            
+            # 统计红绿盘
+            if current_price >= pre_close:
+                pool_stats['up'] += 1
+            else:
+                pool_stats['down'] += 1
+            pool_stats['active'] += 1
+            
+            # === 核心算子：与实盘100%保持一致 ===
+            # 1. 价格位置
+            price_position = (current_price - tick_low) / (tick_high - tick_low) if tick_high > tick_low else 0.5
+            
+            # 2. 涨跌幅
+            change_pct = (current_price - pre_close) / pre_close if pre_close > 0 else 0
+            
+            # 3. 加速度因子（打破硬编码魔咒！）
+            acceleration_factor = 1.0 + (price_position - 0.5) * 1.0 + change_pct * 3.0
+            acceleration_factor = max(0.3, min(acceleration_factor, 3.0))
+            
+            # 4. 【物理冻结】沙盘模式强制按全天240分钟算！
+            flow_5min = current_amount / 240.0 * 5
+            flow_15min = current_amount / 240.0 * 15 * acceleration_factor
+            
+            # 5. 流通市值
+            fv = true_dict.get_float_volume(stock)
+            if not fv or fv <= 0:
+                fv = 1000000000.0
+            elif fv < 10000000:
+                fv *= 10000
+            
+            # 6. 纯度量化
+            price_range = tick_high - tick_low
+            if price_range > 0:
+                raw_purity = (current_price - pre_close) / price_range
+            else:
+                raw_purity = 1.0 if current_price > pre_close else -1.0
+            quant_purity = min(max(raw_purity, -1.0), 1.0) * 100
+            
+            # 7. 调用打分引擎
+            try:
+                score_data = core_engine.calculate_true_dragon_score(
+                    net_inflow=(current_amount / 240.0 * 15) * raw_purity,
+                    price=current_price,
+                    prev_close=pre_close,
+                    high=tick_high,
+                    low=tick_low,
+                    open_price=open_price,
+                    flow_5min=flow_5min,
+                    flow_15min=flow_15min,
+                    flow_5min_median_stock=1.0,
+                    space_gap_pct=0.5,
+                    float_volume_shares=fv,
+                    current_time=time_type(15, 0, 0)  # 【物理冻结】防早盘溢价
+                )
+                
+                score = score_data.get('final_score', 0)
+                inflow = min(max(score_data.get('inflow_ratio', 0), -0.3), 0.3)
+                
+                # 防线：50分 + 非严重出货
+                if score >= 50.0 and quant_purity > -50.0:
+                    current_top_targets.append({
+                        'code': stock,
+                        'score': score,
+                        'price': current_price,
+                        'change': change_pct * 100,
+                        'inflow_ratio': inflow,
+                        'sustain_ratio': score_data.get('sustain_ratio', 1.0),
+                        'mfe': score_data.get('mfe', 0),
+                        'purity': quant_purity
+                    })
+            except Exception as e:
+                pool_stats['filtered'] += 1
+                continue
+        
+        # Step 5: 排序渲染
+        current_top_targets.sort(key=lambda x: x.get('score', 0), reverse=True)
+        pool_stats['passed_fine_filter'] = len(current_top_targets)
+        
+        click.echo(f"\n📊 打分完成: {len(current_top_targets)} 只通过防线")
+        
+        # 渲染Rich工业大屏
+        render_live_dashboard(
+            current_top_targets[:10],
+            pool_stats=pool_stats,
+            is_rest=True,
+            msg=f"[沙盘扫描] {target_date} 静态定格"
+        )
+        
+        click.echo(click.style("\n✅ 沙盘扫描完成", fg='green'))
         
     except KeyboardInterrupt:
         click.echo(click.style("\n⚠️ 用户中断扫描", fg='yellow'))
@@ -940,16 +1058,18 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, dry_run):
     now = datetime.now()
     today_str = now.strftime('%Y%m%d')
     
-    # 【CTO V35创世令】周末沙盘模式！
-    # V33的"读JSON"是错误的！读的是脏数据，且UI丑陋！
-    # 修复：非交易日也启动引擎，使用硬盘Tick数据进行沙盘推演！
+    # 【CTO V38四维架构】live模式只连QMT内存，非交易日物理阻断！
+    # 周末/节假日请使用scan模式读取硬盘Tick数据对齐实盘
     
     is_trading = is_trading_day(today_str)
     current_hour = now.hour
     
     if not is_trading:
         click.echo(click.style(f"\n📅 今天 ({today_str}) 是非交易日（周六/周日/节假日）", fg='yellow'))
-        click.echo(click.style("🔄 将启动【周末定格沙盘模式】，使用硬盘Tick数据重新演练...", fg='cyan'))
+        click.echo(click.style("🚫 【CTO V38铁律】实盘引擎拒绝启动！", fg='red', bold=True))
+        click.echo(click.style("💡 请使用 scan 模式读取本地硬盘数据进行沙盘对齐：", fg='cyan'))
+        click.echo("   python main.py scan")
+        return  # 物理阻断！
     elif current_hour >= 15:
         click.echo(click.style(f"\n⏰ 当前时间已过15:00", fg='yellow'))
         click.echo(click.style("🔄 将进入【盘后定格投影模式】，显示今日最终战果...", fg='cyan'))

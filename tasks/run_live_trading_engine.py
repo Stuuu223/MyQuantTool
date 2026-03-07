@@ -1015,79 +1015,26 @@ class LiveTradingEngine:
         sys.stdout.flush()
         
         # ==========================================
-        # 【CTO V30】Step 4: 周末/盘后防御性 Tick 检查
+        # 【CTO V38】Step 4: 唤醒底盘（删除周末防御逻辑，live只连QMT内存）
         # ==========================================
-        if self.watchlist:
-            last_trading_day = get_latest_completed_trading_day()
-            
-            # 条件1：非交易日或周末
-            is_non_trading_day = not is_trading
-            # 条件2：盘后模式（交易日但已收盘）
-            is_after_hours_mode = is_trading and is_after_hours_init
-            
-            # 只在非交易日或盘后模式下检查Tick数据
-            need_check_tick = is_non_trading_day or is_after_hours_mode
-            
-            if need_check_tick:
-                print(f">>> [INIT] 启动硬盘 Tick 兜底防线，目标日期: {last_trading_day}")
-                sys.stdout.flush()
-                
-                # 抽样检查本地Tick数据完整性（检查10只更可靠）
-                sample_stocks = self.watchlist[:min(10, len(self.watchlist))]
-                local_ticks = xtdata.get_local_data(
-                    field_list=['lastPrice', 'volume'],
-                    stock_list=sample_stocks,
-                    period='tick',
-                    start_time=last_trading_day,
-                    end_time=last_trading_day
-                )
-                
-                # 统计有效数据数量
-                valid_count = 0
-                for st in sample_stocks:
-                    if local_ticks and st in local_ticks and local_ticks[st] is not None:
-                        if hasattr(local_ticks[st], '__len__') and len(local_ticks[st]) > 0:
-                            valid_count += 1
-                
-                print(f"📊 Tick数据抽样检查: {valid_count}/{len(sample_stocks)} 只有数据")
-                sys.stdout.flush()
-                
-                # 只有数据缺失时才下载
-                if valid_count < len(sample_stocks):
-                    missing_ratio = (len(sample_stocks) - valid_count) / len(sample_stocks)
-                    print("=" * 60)
-                    print(f"⚠️ 检测到Tick数据缺失 ({missing_ratio*100:.0f}%)")
-                    print(f"📅 目标日期: {last_trading_day}")
-                    print("💡 请在盘后运行: python tools/smart_download.py 补充弹药！")
-                    print("=" * 60)
-                    sys.stdout.flush()
-                    # 【CTO V35】删除自动下载逻辑，避免阻塞引擎！
-                    # 缺失的票在后续循环中自然被过滤
-                else:
-                    print(f"✅ Tick数据完整，跳过下载")
-                    sys.stdout.flush()
-            
-            # ==========================================
-            # 【CTO V30】Step 5: 唤醒底盘
-            # ==========================================
-            print(f">>> [INIT] 开始分批唤醒 {len(self.watchlist)} 只股票的 QMT 底层缓存...")
-            sys.stdout.flush()
-            
-            batch_size = 50  # 【CTO V7】降至50只，更安全
-            for i in range(0, len(self.watchlist), batch_size):
-                batch = self.watchlist[i:i+batch_size]
-                try:
-                    # 【CTO V7】盘中才需订阅，非交易日/盘后跳过
-                    if is_trading and not is_after_hours_init:
-                        xtdata.subscribe_whole_quote(batch)
-                    # 轻碰一下接口，建立内存通道即可
-                    xtdata.get_full_tick(batch)
-                    time.sleep(0.1)  # 【CTO V7】必须让底盘呼吸！
-                except Exception as e:
-                    pass
-            
-            print(">>> [INIT] 引擎握手完毕！进入超频雷达主循环！")
-            sys.stdout.flush()
+        print(f">>> [INIT] 开始分批唤醒 {len(self.watchlist)} 只股票的 QMT 底层缓存...")
+        sys.stdout.flush()
+        
+        batch_size = 50  # 【CTO V7】降至50只，更安全
+        for i in range(0, len(self.watchlist), batch_size):
+            batch = self.watchlist[i:i+batch_size]
+            try:
+                # 【CTO V7】盘中才需订阅，非交易日/盘后跳过
+                if is_trading and not is_after_hours_init:
+                    xtdata.subscribe_whole_quote(batch)
+                # 轻碰一下接口，建立内存通道即可
+                xtdata.get_full_tick(batch)
+                time.sleep(0.1)  # 【CTO V7】必须让底盘呼吸！
+            except Exception as e:
+                pass
+        
+        print(">>> [INIT] 引擎握手完毕！进入超频雷达主循环！")
+        sys.stdout.flush()
         
         # ==========================================
         # 【CTO V30】正式进入死循环
@@ -1159,74 +1106,12 @@ class LiveTradingEngine:
                     time.sleep(1)
                     continue
                 
-                # 【CTO V31修复】硬盘Tick备用电源
-                # 原问题：is_after_hours在周六02:10时=False（因为02:10<15:00）
-                # 导致硬盘Tick备用电源逻辑没触发！
-                # 修复：非交易日模式(is_trading=False)也强制使用硬盘Tick数据
-                need_disk_tick = is_after_hours or not is_trading
-                
-                if need_disk_tick and self.watchlist:
-                    # 抽样检查第一只票，如果成交量是0，启动硬盘接管
-                    sample_stock = self.watchlist[0]
-                    sample_tick = all_ticks.get(sample_stock, {}) if all_ticks else {}
-                    sample_vol = sample_tick.get('volume', 0) if sample_tick else 0
-                    
-                    # 【CTO V31终极修复】非交易日必须强制使用硬盘Tick数据！
-                    # 因为get_full_tick可能返回昨天的缓存数据(volume!=0但不是今日数据)
-                    force_disk_tick = not is_trading  # 非交易日强制
-                    
-                    if not all_ticks or sample_vol == 0 or force_disk_tick:
-                        print(f"[AUTO-HEAL] {'非交易日强制使用硬盘Tick' if force_disk_tick else 'QMT内存清空，启动硬盘Tick接管'}...")
-                        from logic.utils.calendar_utils import get_latest_completed_trading_day
-                        import pandas as pd
-                        
-                        last_trading_day = get_latest_completed_trading_day()
-                        logger.info(f"[AUTO-HEAL] 读取硬盘Tick数据: {last_trading_day}")
-                        
-                        try:
-                            # 批量获取本地Tick数据
-                            local_ticks = xtdata.get_local_data(
-                                field_list=['lastPrice', 'volume', 'amount', 'lastClose', 'high', 'low', 'open'],
-                                stock_list=self.watchlist,
-                                period='tick',
-                                start_time=last_trading_day,
-                                end_time=last_trading_day
-                            )
-                            
-                            # 检查是否有缺失数据
-                            missing_stocks = []
-                            for st in self.watchlist:
-                                if not local_ticks or st not in local_ticks or local_ticks[st] is None or len(local_ticks[st]) == 0:
-                                    missing_stocks.append(st)
-                            
-                            # 【CTO V35】缺失数据直接跳过，不阻塞引擎！
-                            if missing_stocks:
-                                logger.warning(f"[AUTO-HEAL] 本地缺失{len(missing_stocks)}只股票Tick数据，已跳过")
-                                logger.warning("💡 请在盘后运行: python tools/smart_download.py 补充弹药！")
-                            
-                            # 将硬盘数据组装成get_full_tick的字典格式
-                            healed_count = 0
-                            for st in self.watchlist:
-                                if local_ticks and st in local_ticks and local_ticks[st] is not None:
-                                    df = pd.DataFrame(local_ticks[st])
-                                    if not df.empty:
-                                        last_row = df.iloc[-1]
-                                        all_ticks[st] = {
-                                            'lastPrice': float(last_row.get('lastPrice', 0)),
-                                            'volume': int(last_row.get('volume', 0)),
-                                            'amount': float(last_row.get('amount', 0)),
-                                            'lastClose': float(last_row.get('lastClose', 0)),
-                                            'high': float(last_row.get('high', last_row.get('lastPrice', 0))),
-                                            'low': float(last_row.get('low', last_row.get('lastPrice', 0))),
-                                            'open': float(last_row.get('open', last_row.get('lastPrice', 0)))
-                                        }
-                                        healed_count += 1
-                            
-                            print(f"[AUTO-HEAL] 硬盘Tick接管完成: {healed_count}/{len(self.watchlist)} 只股票")
-                        except Exception as e:
-                            print(f"[AUTO-HEAL] 硬盘Tick读取失败: {e}")
-                
+                # 【CTO V38】live模式只连QMT内存！
+                # 如果返回空数据，说明是非交易日或QMT未启动
+                # 不再尝试读取硬盘Tick，直接提示用户使用scan模式
                 if not all_ticks:
+                    logger.error("❌ QMT内存返回空Tick数据！")
+                    logger.error("💡 如果是非交易日，请使用: python main.py scan")
                     time.sleep(1)
                     continue
                 
