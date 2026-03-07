@@ -614,7 +614,9 @@ def scan_cmd(ctx, date):
                     inflow_ratio = 0
                     mfe = 0
                 
-                inflow = min(max(inflow_ratio, -0.3), 0.3)
+                # 【CTO V48修复】inflow_ratio是百分比形式(7.43=7.43%)，不要误限制！
+                # 只做极端值裁剪，保留真实占比
+                inflow = min(max(inflow_ratio, -50.0), 50.0)
                 
                 # 防线：50分 + 非严重出货
                 if score >= 50.0 and quant_purity > -50.0:
