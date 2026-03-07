@@ -462,17 +462,20 @@ def scan_cmd(ctx, date):
         true_dict = get_true_dictionary()
         true_dict.warmup(base_pool, target_date=target_date)
         
-        # Step 3: 批量读取硬盘Tick（极速，绝不卡死）
-        click.echo("\n📦 Step 3: 批量读取硬盘Tick...")
+        # Step 3: 极速读取本地日K快照 (O(1)内存开销)
+        # 【CTO V39关键修复】废弃'tick'改用'1d'：
+        # 1. Tick的amount是单笔增量(如最后一笔5万)，日K的amount是全天累计(如5亿)
+        # 2. Tick数据2262只×4000行=900万行撑爆内存，日K只有2262行
+        click.echo("\n📦 Step 3: 极速读取本地日K快照...")
         local_data = xtdata.get_local_data(
-            field_list=['lastPrice', 'volume', 'amount', 'lastClose', 'high', 'low', 'open'],
+            field_list=['open', 'high', 'low', 'close', 'volume', 'amount', 'preClose'],
             stock_list=base_pool,
-            period='tick',
+            period='1d',
             start_time=target_date,
             end_time=target_date
         )
         
-        click.echo(f"   Tick数据读取完成")
+        click.echo(f"   日K数据读取完成")
         
         # Step 4: 执行与实盘100%一致的打分逻辑
         click.echo("\n📦 Step 4: 执行打分引擎...")
@@ -498,18 +501,18 @@ def scan_cmd(ctx, date):
                 pool_stats['filtered'] += 1
                 continue
             
-            # 获取收盘最后一笔Tick
-            tick = df.iloc[-1]
-            current_price = float(tick.get('lastPrice', 0))
-            current_amount = float(tick.get('amount', 0))
-            pre_close = float(tick.get('lastClose', 0))
+            # 获取日K数据（amount是全天累计金额！）
+            row = df.iloc[-1]
+            current_price = float(row.get('close', 0))
+            current_amount = float(row.get('amount', 0))
+            pre_close = float(row.get('preClose', 0))
             
             if pre_close <= 0:
-                pre_close = current_price
+                pre_close = true_dict.get_prev_close(stock) or current_price
             
-            tick_high = float(tick.get('high', current_price))
-            tick_low = float(tick.get('low', current_price))
-            open_price = float(tick.get('open', current_price))
+            tick_high = float(row.get('high', current_price))
+            tick_low = float(row.get('low', current_price))
+            open_price = float(row.get('open', current_price))
             
             # 统计红绿盘
             if current_price >= pre_close:
