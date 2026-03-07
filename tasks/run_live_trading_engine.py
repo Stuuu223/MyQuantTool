@@ -1056,29 +1056,13 @@ class LiveTradingEngine:
                 if valid_count < len(sample_stocks):
                     missing_ratio = (len(sample_stocks) - valid_count) / len(sample_stocks)
                     print("=" * 60)
-                    print(f"⚠️ 检测到Tick数据缺失 ({missing_ratio*100:.0f}%)，启动自动下载...")
+                    print(f"⚠️ 检测到Tick数据缺失 ({missing_ratio*100:.0f}%)")
                     print(f"📅 目标日期: {last_trading_day}")
-                    print(f"📊 需下载: {len(self.watchlist)}只")
+                    print("💡 请在盘后运行: python tools/smart_download.py 补充弹药！")
                     print("=" * 60)
                     sys.stdout.flush()
-                    
-                    # 【CTO V29自动下载】
-                    download_count = 0
-                    for st in self.watchlist:
-                        try:
-                            xtdata.download_history_data(st, period='tick', start_time=last_trading_day, end_time=last_trading_day)
-                            download_count += 1
-                            if download_count % 500 == 0:
-                                print(f"[AUTO-DOWNLOAD] 已投递 {download_count}/{len(self.watchlist)} 只...")
-                                sys.stdout.flush()
-                        except Exception as e:
-                            pass
-                    
-                    print(f"[AUTO-DOWNLOAD] 投递完成，等待落盘...")
-                    sys.stdout.flush()
-                    time.sleep(3)  # 等待下载完成
-                    print(f"[AUTO-DOWNLOAD] ✅ Tick数据下载完成！")
-                    sys.stdout.flush()
+                    # 【CTO V35】删除自动下载逻辑，避免阻塞引擎！
+                    # 缺失的票在后续循环中自然被过滤
                 else:
                     print(f"✅ Tick数据完整，跳过下载")
                     sys.stdout.flush()
@@ -1215,24 +1199,10 @@ class LiveTradingEngine:
                                 if not local_ticks or st not in local_ticks or local_ticks[st] is None or len(local_ticks[st]) == 0:
                                     missing_stocks.append(st)
                             
-                            # 【CTO V29自动下载】如果缺失，自动从QMT服务器下载
+                            # 【CTO V35】缺失数据直接跳过，不阻塞引擎！
                             if missing_stocks:
-                                logger.warning(f"[AUTO-HEAL] 本地缺失{len(missing_stocks)}只股票Tick数据，启动自动下载...")
-                                for st in missing_stocks:
-                                    try:
-                                        xtdata.download_history_data(st, period='tick', start_time=last_trading_day, end_time=last_trading_day)
-                                    except Exception as dl_e:
-                                        logger.debug(f"[AUTO-HEAL] {st} 下载失败: {dl_e}")
-                                time.sleep(2)  # 等待下载完成
-                                
-                                # 重新读取
-                                local_ticks = xtdata.get_local_data(
-                                    field_list=['lastPrice', 'volume', 'amount', 'lastClose', 'high', 'low', 'open'],
-                                    stock_list=self.watchlist,
-                                    period='tick',
-                                    start_time=last_trading_day,
-                                    end_time=last_trading_day
-                                )
+                                logger.warning(f"[AUTO-HEAL] 本地缺失{len(missing_stocks)}只股票Tick数据，已跳过")
+                                logger.warning("💡 请在盘后运行: python tools/smart_download.py 补充弹药！")
                             
                             # 将硬盘数据组装成get_full_tick的字典格式
                             healed_count = 0
