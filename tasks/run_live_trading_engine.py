@@ -1730,9 +1730,21 @@ class LiveTradingEngine:
             else:
                 flow_5min_median = flow_5min / 10
             
+            # 【CTO V51修复】计算power_ratio（资金做多意愿）
+            # 与_run_radar_main_loop保持100%一致！
+            price_range = high - low
+            if price_range > 0:
+                power_ratio = (price - prev_close) / price_range
+                power_ratio = max(-1.0, min(power_ratio, 1.0))
+            else:
+                power_ratio = 1.0 if price > prev_close else -1.0
+            
+            # 估算真实净流入（元）- 使用power_ratio而非固定0.5！
+            net_inflow_est = amount * power_ratio * 0.5
+            
             # 调用 V20.5 动能引擎
             base_score, sustain_ratio, inflow_ratio, ratio_stock, mfe_score = self._kinetic_core.calculate_true_dragon_score(
-                net_inflow=amount * 0.5,  # 简化：假设50%为净流入
+                net_inflow=net_inflow_est,  # V51: 使用正确的power_ratio计算
                 price=price,
                 prev_close=prev_close,
                 high=high,

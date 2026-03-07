@@ -399,37 +399,37 @@ class 动能打分引擎CoreEngine:
         
         float_market_cap = float_volume_shares * price
         
-        # 第一步：True Base Score (满分100)
+        # 第一步：【CTO V51 里氏震级模型】无上限乘法动能！
+        # 废除加法凑分，改用乘法爆发：base_power = 流入占比 × 放量倍数
+        # 让龙中龙自然冲破天花板，无需硬性上限！
         
-        # 1. 动能打分：净流入占流通市值比例百分比 (权重30分)
-        # 【inflow_ratio 单位铁律】统一百分比，2.0 = 流入2%
+        # 1. 流入占比百分比（保留极端值裁剪防止溢出）
         inflow_ratio_pct = (net_inflow / float_market_cap * 100.0) if float_market_cap > 1000 else 0.0
-        inflow_ratio_pct = min(max(inflow_ratio_pct, -50.0), 50.0)
+        inflow_ratio_pct = min(max(inflow_ratio_pct, -50.0), 50.0)  # 仅防溢出，非打分上限
         inflow_ratio = inflow_ratio_pct  # 返回百分比形式
         
-        # 【CTO V50修复】砸碎kinetic_score天花板！
-        # 旧公式: inflow>=1%就撞天花板(30分)，导致7.43%和2.38%没区别
-        # 新公式: 放大系数5.0，让INFLOW%差异体现！
-        # 7.43% → 7.43*5*30/1.0 = 1114 → min(40, 1114) = 40分
-        # 2.38% → 2.38*5*30/1.0 = 357 → min(40, 357) = 35.7分... 还是要再改
-        # 正确公式: kinetic_score = min(inflow_ratio_pct * 5.0, 40.0) 直接给分！
-        kinetic_score = min(inflow_ratio_pct * 5.0, 40.0) if inflow_ratio_pct > 0 else 0.0
-        
-        # 2. 势能打分：相对自身历史爆发力 (权重30分 → 20分)
+        # 2. 相对历史放量倍数（放大历史爆发力）
         safe_flow_5min = flow_5min if flow_5min > 0 else (flow_15min / 3.0 if flow_15min > 0 else 1.0)
         ratio_stock = safe_flow_5min / flow_5min_median_stock if flow_5min_median_stock > 0 else 1.0
-        ratio_stock = max(0.01, min(ratio_stock, 50.0))
-        potential_score = min(20.0, (ratio_stock / 15.0) * 20.0)  # 上限从30改为20
+        ratio_stock = max(0.01, min(ratio_stock, 100.0))  # 防溢出上限100倍
         
-        # 3. 价格动能强度：日内K线推力 (权重40分)
+        # 3. 价格推力（日内强度0-1）
         if high == low:
-            momentum_score = 40.0 if price > prev_close else 0.0
+            price_strength = 1.0 if price > prev_close else 0.0
         else:
-            day_strength = (price - low) / (high - low)
-            day_strength = max(0.0, min(day_strength, 1.0))
-            momentum_score = day_strength * 40.0
+            price_strength = (price - low) / (high - low)
+            price_strength = max(0.0, min(price_strength, 1.0))
         
-        base_score = kinetic_score + potential_score + momentum_score
+        # 【CTO V51核心】乘法动能模型 = 流入% × 放量倍数 × 价格推力
+        # 无上限！行情越热，真龙与杂毛的分数差越大！
+        if inflow_ratio_pct > 0:
+            base_power = inflow_ratio_pct * ratio_stock * price_strength
+        else:
+            # 净流出时给基础分但不爆发
+            base_power = abs(inflow_ratio_pct) * 0.5  # 基础分，不爆发
+        
+        # 加上基础分（涨停板基础加成）
+        base_power += 40.0 if price > prev_close and price_strength >= 0.99 else 0.0
         
         # 第二步：出货拦截（净流出封顶40分）
         is_net_outflow = inflow_ratio_pct <= 0
@@ -442,7 +442,7 @@ class 动能打分引擎CoreEngine:
                 vwap_penalty = 20.0
                 logger.debug(f"[VWAP洗盘容错] 价格{price:.2f} < VWAP{vwap:.2f}, 重罚-20分")
         
-        base_score = max(0.0, base_score - vwap_penalty)
+        base_power = max(0.0, base_power - vwap_penalty)
         
         # 第四步：神级乘数区
         multiplier = 1.0
@@ -495,12 +495,13 @@ class 动能打分引擎CoreEngine:
             mfe = price_range_pct / (inflow_ratio_pct / 100.0)
             mfe = max(-100.0, min(mfe, 100.0))
         
-        # 第六步：最终得分
-        final_score = round(base_score * multiplier, 2)
+        # 第六步：最终得分（无上限里氏震级！）
+        final_score = round(base_power * multiplier, 2)
         
+        # 净流出惩罚：减半而非封顶，让流出股也有区分度
         if is_net_outflow:
-            final_score = min(final_score, 40.0)
-            logger.debug(f"[出货拦截] {stock_identifier} 净流出，分数封顶40分")
+            final_score = final_score * 0.5
+            logger.debug(f"[出货拦截] {stock_identifier} 净流出，分数减半")
         
         return final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe
     
