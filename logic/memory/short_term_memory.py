@@ -1,3 +1,4 @@
+﻿# -*- coding: utf-8 -*-
 """
 ShortTermMemoryEngine - 跨日记忆衰减引擎
 

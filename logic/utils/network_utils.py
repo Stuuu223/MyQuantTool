@@ -1,3 +1,4 @@
+﻿# -*- coding: utf-8 -*-
 import socket
 import requests
 from requests.adapters import HTTPAdapter

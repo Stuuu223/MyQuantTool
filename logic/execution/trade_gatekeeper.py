@@ -1,3 +1,4 @@
+﻿# -*- coding: utf-8 -*-
 """
 交易守门人（Trade Gatekeeper）- CTO加固版
 

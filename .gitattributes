@@ -1,7 +1,9 @@
 # 统一换行策略（Windows 兼容）
 
+# Python 文件：UTF-8 编码 + LF 换行（解决GBK乱码问题）
+*.py text eol=lf working-tree-encoding=utf-8
+
 # 文本文件使用 LF 换行
-*.py text eol=lf
 *.json text eol=lf
 *.md text eol=lf
 *.txt text eol=lf
