@@ -118,6 +118,14 @@ class LiveTradingEngine:
         # {stock_code: {'trigger_time': datetime, 'score': float, 'sustain_ratio': float, 'tick_data': dict}}
         self.signal_queue: Dict[str, Dict] = {}
         
+        # 【CTO架构重铸令R2/R3】L1价格推力探测器 + 微积分形态学
+        # tick_history: 保存过去60个Tick（假设3秒/Tick，约3分钟微观轨迹）
+        # volume_history: 保存过去60个成交量快照
+        from collections import deque
+        self.tick_history: Dict[str, deque] = {}       # {stock_code: deque(maxlen=60)}
+        self.volume_history: Dict[str, deque] = {}     # {stock_code: deque(maxlen=60)}
+        self._TICK_HISTORY_MAXLEN = 60  # 约3分钟微观轨迹
+        
         logger.info("[OK] [LiveTradingEngine] 初始化完成 - QMT Manager已注入")
     
     def _init_kinetic_engine(self):
@@ -1176,6 +1184,57 @@ class LiveTradingEngine:
                     
                     current_price = tick.get('lastPrice', 0)
                     current_volume = tick.get('volume', 0)  # 今日累计成交量
+                    
+                    # ============================================================
+                    # 【CTO架构重铸令R2/R3】L1价格推力探测器 + 微积分形态学
+                    # ============================================================
+                    from collections import deque
+                    
+                    # 初始化历史队列
+                    if stock_code not in self.tick_history:
+                        self.tick_history[stock_code] = deque(maxlen=self._TICK_HISTORY_MAXLEN)
+                        self.volume_history[stock_code] = deque(maxlen=self._TICK_HISTORY_MAXLEN)
+                    
+                    # 更新历史队列
+                    self.tick_history[stock_code].append({
+                        'price': current_price,
+                        'timestamp': now
+                    })
+                    self.volume_history[stock_code].append(current_volume)
+                    
+                    # R2: L1价格推力探测器（ΔV/ΔP）- 放量滞涨一票否决
+                    if len(self.volume_history[stock_code]) >= 20:  # 至少20个采样点
+                        old_vol = self.volume_history[stock_code][0]
+                        old_price = self.tick_history[stock_code][0]['price']
+                        
+                        if old_vol > 0 and old_price > 0:
+                            delta_vol = current_volume - old_vol  # 成交量增量（手）
+                            delta_price_pct = (current_price - old_price) / old_price * 100
+                            
+                            # 计算平均3分钟成交量基准
+                            avg_vol_3min = sum(self.volume_history[stock_code]) / len(self.volume_history[stock_code])
+                            
+                            # 物理探测：成交量暴增（做功极大）但价格几乎不动（摩擦力极大）
+                            if delta_vol > (avg_vol_3min * 3) and abs(delta_price_pct) < 0.5:
+                                logger.critical(f"[L1探针] {stock_code} 做功被摩擦力吞噬，放量滞涨，绝对诱多！")
+                                pool_stats['filtered'] += 1
+                                continue
+                    
+                    # R3: Stair vs Spike二阶微积分防御（Δ²p）
+                    if len(self.tick_history[stock_code]) >= 3:
+                        prices = [t['price'] for t in list(self.tick_history[stock_code])[-3:]]
+                        if all(p > 0 for p in prices):
+                            # v1 = p(t-1) - p(t-2), v2 = p(t) - p(t-1)
+                            v1 = prices[-2] - prices[-3]
+                            v2 = prices[-1] - prices[-2]
+                            acceleration = v2 - v1  # Δ²p
+                            
+                            # Spike骗炮检测：旱地拔葱后失去托力，自由落体
+                            if v1 > 0 and acceleration < 0 and current_price < (prices[-3] * 1.01):
+                                logger.warning(f"[重力异常] {stock_code} 检出Spike尖刺骗炮轨迹(Δ²p={acceleration:.3f})，过滤！")
+                                pool_stats['filtered'] += 1
+                                continue
+                    
                     
                     # 【CTO V20手术一】废除"缓存不到就杀人"的弱智拦截！
                     # 原Bug：if not s_data: continue 直接杀掉了87只股票

@@ -435,6 +435,8 @@ class 动能打分引擎CoreEngine:
         ratio_stock = max(0.01, ratio_stock)  # 移除min(..., 100.0)向上压制！
         
         # 3. 价格推力（日内强度0-1）
+        # 【CTO重铸令R4】此为价格相对位置参考，非真实动能！
+        # 真实做功效率由MFE计算（第五步）
         if high == low:
             price_strength = 1.0 if price > prev_close else 0.0
         else:
@@ -449,8 +451,23 @@ class 动能打分引擎CoreEngine:
             # 净流出时给基础分但不爆发
             base_power = abs(inflow_ratio_pct) * 0.5  # 基础分，不爆发
         
-        # 加上基础分（涨停板基础加成）
-        base_power += 40.0 if price > prev_close and price_strength >= 0.99 else 0.0
+        # 【CTO重铸令R4】废除伪动能涨停板基础加成！
+        # 原逻辑：base_power += 40.0 if price_strength >= 0.99 else 0.0
+        # 新逻辑：MFE对数放大器替代（真实做功效率）
+        # MFE计算移到此处（需要先计算upward_thrust）
+        if inflow_ratio_pct > 0:
+            upward_thrust = ((price - low) + (high - open_price)) / 2
+            price_range_pct = upward_thrust / prev_close if prev_close > 0 else 0.0
+            mfe_raw = price_range_pct / (inflow_ratio_pct / 100.0)
+            mfe = max(-10.0, mfe_raw)  # 防负溢出
+            # MFE对数放大器：MFE越高，盘口越轻，得分指数级飙升
+            # MFE=1 → +10分, MFE=5 → +23分, MFE=10 → +33分
+            if mfe > 0:
+                mfe_bonus = 10.0 * (1.0 + np.log10(max(mfe, 0.1)))
+                base_power += mfe_bonus
+                logger.debug(f"[MFE做功溢价] {stock_code} MFE={mfe:.2f}, 奖励+{mfe_bonus:.1f}分")
+        else:
+            mfe = -100.0
         
         # 第二步：出货拦截（净流出封顶40分）
         is_net_outflow = inflow_ratio_pct <= 0
@@ -554,14 +571,15 @@ class 动能打分引擎CoreEngine:
             logger.info(f"[真龙确立] {stock_identifier} 强势封板，封单额{limit_up_queue_amount/10000:.0f}万，乘数飙升！")
         
         # 第五步：MFE效率算子
-        if inflow_ratio_pct <= 0:
-            mfe = -100.0
-        else:
-            upward_thrust = ((price - low) + (high - open_price)) / 2
-            price_range_pct = upward_thrust / prev_close if prev_close > 0 else 0.0
-            mfe = price_range_pct / (inflow_ratio_pct / 100.0)
-            # 【CTO照妖镜】砸碎向上阻尼！只保留防负溢出，让真龙数据直接爆表！
-            mfe = max(-10.0, mfe)  # 向上无顶！
+        # 【CTO重铸令R4】MFE已在base_power计算时提前计算并用于对数放大器
+        # 此处仅为兜底，确保mfe有值
+        if 'mfe' not in dir() or mfe is None:
+            if inflow_ratio_pct <= 0:
+                mfe = -100.0
+            else:
+                upward_thrust = ((price - low) + (high - open_price)) / 2
+                price_range_pct = upward_thrust / prev_close if prev_close > 0 else 0.0
+                mfe = max(-10.0, price_range_pct / (inflow_ratio_pct / 100.0))
         
         # 第六步：最终得分（无上限里氏震级！）
         final_score = round(base_power * multiplier, 2)
