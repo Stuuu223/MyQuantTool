@@ -463,19 +463,35 @@ def scan_cmd(ctx, date):
         true_dict.warmup(base_pool, target_date=target_date)
         
         # Step 3: 极速读取本地日K快照 (O(1)内存开销)
-        # 【CTO V39关键修复】废弃'tick'改用'1d'：
-        # 1. Tick的amount是单笔增量(如最后一笔5万)，日K的amount是全天累计(如5亿)
-        # 2. Tick数据2262只×4000行=900万行撑爆内存，日K只有2262行
+        # 【CTO V39关键修复】
+        # 1. 废弃'tick'改用'1d'：Tick的amount是单笔增量，日K是全天累计
+        # 2. 使用更宽日期范围：取最近5个交易日，避免本地数据落后
+        # 3. 取最新可用日期的数据
         click.echo("\n📦 Step 3: 极速读取本地日K快照...")
+        
+        # 计算日期范围：最近10天，确保覆盖最新交易日
+        from datetime import timedelta
+        start_date = (datetime.strptime(target_date, '%Y%m%d') - timedelta(days=10)).strftime('%Y%m%d')
+        
         local_data = xtdata.get_local_data(
             field_list=['open', 'high', 'low', 'close', 'volume', 'amount', 'preClose'],
             stock_list=base_pool,
             period='1d',
-            start_time=target_date,
+            start_time=start_date,  # 使用更宽的起始日期
             end_time=target_date
         )
         
-        click.echo(f"   日K数据读取完成")
+        # 检测本地最新可用日期
+        sample_stock = base_pool[0] if base_pool else None
+        actual_date = target_date
+        if sample_stock and local_data and sample_stock in local_data:
+            sample_df = pd.DataFrame(local_data[sample_stock])
+            if not sample_df.empty:
+                actual_date = str(sample_df.index[-1])
+                if actual_date != target_date:
+                    click.echo(f"   ⚠️ 本地数据最新日期: {actual_date} (目标: {target_date})")
+        
+        click.echo(f"   日K数据读取完成，使用日期: {actual_date}")
         
         # Step 4: 执行与实盘100%一致的打分逻辑
         click.echo("\n📦 Step 4: 执行打分引擎...")
@@ -501,8 +517,16 @@ def scan_cmd(ctx, date):
                 pool_stats['filtered'] += 1
                 continue
             
-            # 获取日K数据（amount是全天累计金额！）
+            # 【CTO V39】取最新日期的数据，而不是精确匹配target_date
             row = df.iloc[-1]
+            data_date = str(df.index[-1])
+            
+            # 可选：只使用actual_date的数据（严格模式）
+            # if data_date != actual_date:
+            #     pool_stats['filtered'] += 1
+            #     continue
+            
+            # 获取日K数据（amount是全天累计金额！）
             current_price = float(row.get('close', 0))
             current_amount = float(row.get('amount', 0))
             pre_close = float(row.get('preClose', 0))
@@ -513,6 +537,11 @@ def scan_cmd(ctx, date):
             tick_high = float(row.get('high', current_price))
             tick_low = float(row.get('low', current_price))
             open_price = float(row.get('open', current_price))
+            
+            # 基本有效性检查
+            if current_price <= 0 or current_amount <= 0:
+                pool_stats['filtered'] += 1
+                continue
             
             # 统计红绿盘
             if current_price >= pre_close:
@@ -553,7 +582,13 @@ def scan_cmd(ctx, date):
             
             # 7. 调用打分引擎
             try:
-                score_data = core_engine.calculate_true_dragon_score(
+                # 【CTO V39修复】current_time必须是datetime类型！
+                from datetime import datetime as dt_class
+                frozen_time = dt_class.combine(dt_class.today(), time_type(15, 0, 0))
+                
+                # 【CTO V39修复】calculate_true_dragon_score返回tuple，不是dict！
+                # 返回值顺序：final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe
+                result = core_engine.calculate_true_dragon_score(
                     net_inflow=(current_amount / 240.0 * 15) * raw_purity,
                     price=current_price,
                     prev_close=pre_close,
@@ -565,11 +600,19 @@ def scan_cmd(ctx, date):
                     flow_5min_median_stock=1.0,
                     space_gap_pct=0.5,
                     float_volume_shares=fv,
-                    current_time=time_type(15, 0, 0)  # 【物理冻结】防早盘溢价
+                    current_time=frozen_time  # 【物理冻结】防早盘溢价
                 )
                 
-                score = score_data.get('final_score', 0)
-                inflow = min(max(score_data.get('inflow_ratio', 0), -0.3), 0.3)
+                # 解包tuple
+                if isinstance(result, tuple) and len(result) >= 5:
+                    score, sustain_ratio, inflow_ratio, ratio_stock, mfe = result[:5]
+                else:
+                    score = 0
+                    sustain_ratio = 1.0
+                    inflow_ratio = 0
+                    mfe = 0
+                
+                inflow = min(max(inflow_ratio, -0.3), 0.3)
                 
                 # 防线：50分 + 非严重出货
                 if score >= 50.0 and quant_purity > -50.0:
@@ -579,8 +622,8 @@ def scan_cmd(ctx, date):
                         'price': current_price,
                         'change': change_pct * 100,
                         'inflow_ratio': inflow,
-                        'sustain_ratio': score_data.get('sustain_ratio', 1.0),
-                        'mfe': score_data.get('mfe', 0),
+                        'sustain_ratio': sustain_ratio,
+                        'mfe': mfe,
                         'purity': quant_purity
                     })
             except Exception as e:
