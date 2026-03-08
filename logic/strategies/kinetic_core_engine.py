@@ -611,8 +611,23 @@ class 动能打分引擎CoreEngine:
         
         logger.info(f"🧬 [海马体] {stock_code} 记忆乘数={memory_multiplier:.2f}x")
         
+        # ==================== 【CTO V43】换手率纯度乘数 ====================
+        # 解决"一字板霸榜"问题：惩罚缩量一字板，奖励充分换手的真龙
+        turnover_multiplier = 1.0
+        if float_volume_shares > 0 and total_volume > 0:
+            turnover_pct = (total_volume / float_volume_shares) * 100
+            if is_limit_up:
+                if turnover_pct < 2.0:
+                    # 缩量一字板庄股/一波流，降权！
+                    turnover_multiplier = 0.5
+                    logger.warning(f"[一字板惩罚] {stock_code} 涨停但换手率仅{turnover_pct:.1f}%，疑似庄股，分数打5折！")
+                elif 5.0 <= turnover_pct <= 20.0:
+                    # 充分换手的分歧转一致真龙，爆分奖励！
+                    turnover_multiplier = 1.5
+                    logger.info(f"🔥 [换手龙] {stock_code} 涨停+换手率{turnover_pct:.1f}%，极品真龙，乘数×1.5！")
+        
         # 应用乘数和加分
-        final_score = round(base_power * multiplier * memory_multiplier, 2)
+        final_score = round(base_power * multiplier * memory_multiplier * turnover_multiplier, 2)
         
         # 【T3: Spike极刑】动能枯竭直接返回，不入场
         # sustain_ratio < 1.0 = 当前流入低于历史中位数 = 骗炮信号

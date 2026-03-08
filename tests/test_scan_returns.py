@@ -193,7 +193,14 @@ def get_top_stocks(date: str, top_n: int = 20) -> List[Dict]:
                             day_before_close = float(daily_df['close'].iloc[-3]) if len(daily_df) >= 3 else yesterday_close
                             if day_before_close > 0:
                                 yesterday_change = (yesterday_close - day_before_close) / day_before_close * 100
-                                is_yesterday_limit_up = yesterday_change >= 9.8
+                                # 【CTO V43】动态涨停阈值：主板9.5%/创业板科创板19.5%/北交所29.5%
+                                if stock.startswith(('30', '68')):  # 创业板/科创板 20CM
+                                    limit_up_threshold = 19.5
+                                elif stock.startswith(('8', '4')):  # 北交所 30CM
+                                    limit_up_threshold = 29.5
+                                else:  # 主板 10CM
+                                    limit_up_threshold = 9.5
+                                is_yesterday_limit_up = yesterday_change >= limit_up_threshold
                             
                             # 【CTO V42】计算昨日量比（暴动基因）
                             yesterday_vol = float(daily_df['volume'].iloc[-2])
@@ -326,15 +333,18 @@ def calculate_returns(stock: str, entry_date: str, end_date: str, entry_score: f
         # ==========================================
         # 【CTO V39】T+N卖点防守斧闭环
         # ==========================================
-        max_price = entry_close
-        exit_reason = '持仓到期'
-        exit_price = None
-        
-        # 获取entry_date在df中的位置
+        # 【CTO V43关键修复】max_price必须初始化为入场当天的high！
+        # 否则入场当天已经大涨的情况会被遗漏，导致高水位止盈失效！
         try:
             entry_loc = df.index.get_loc(entry_idx)
+            entry_row = df.iloc[entry_loc]
+            max_price = max(entry_close, float(entry_row['high']))  # 入场当天最高价
         except:
+            max_price = entry_close
             entry_loc = 0
+        
+        exit_reason = '持仓到期'
+        exit_price = None
         
         # 从T+1开始遍历
         for i in range(entry_loc + 1, len(df)):
@@ -375,35 +385,61 @@ def calculate_returns(stock: str, entry_date: str, end_date: str, entry_score: f
                 exit_reason = '天量大阴线(主力崩塌)'
                 break
             
-            # 【法则2：阶级隔离防线（高保真盘中模拟）】
+            # 【法则2：阶级隔离防线（高水位Trailing Stop）】
+            # 【CTO V43核心修复】废除"用收盘价判断"的死人回测！
+            # 核心物理意义：不看收盘价！只画一条隐形的"止盈线"。
+            # 只要这根K线的【最低价(low)】击穿了这根线，意味着盘中必然触发了市价卖单！
             entry_score_val = float(entry_score) if entry_score else 0.0
             max_profit_pct = (max_price - entry_close) / entry_close
             
+            # ==================== 高水位动态止盈线（Trailing Stop）====================
+            trailing_stop_price = 0.0
+            
             if entry_score_val >= 3000.0:
-                # 👑 真龙阶级（拥有龙头豁免权）
-                # 真龙允许宽幅震荡，但如果盘中出现极端瀑布(最高点回撤超20%)，被动止盈
-                if max_profit_pct > 0.20 and (high - low) / high > 0.20:
-                    exit_price = high * 0.85  # 模拟在最高点回撤15%的位置触发
-                    exit_reason = '真龙日内瀑布(高位被动止盈)'
-                    break
-                
-                # 只有双重跌破昨天的MA5和当日VWAP才判定动能枯竭
+                # 👑 真龙阶级（大格局：允许最高15%的回撤洗盘）
+                if max_profit_pct > 0.30:
+                    trailing_stop_price = max_price * 0.85  # 赚30%以上，给15%回撤空间
+                elif max_profit_pct > 0.15:
+                    trailing_stop_price = max_price * 0.90  # 赚15%以上，给10%回撤空间
+            else:
+                # 🪖 平民阶级（随时跑路：赚10%就不允许绿盘）
+                if max_profit_pct > 0.20:
+                    trailing_stop_price = max_price * 0.90  # 赚20%，回撤10%必走
+                elif max_profit_pct > 0.10:
+                    trailing_stop_price = max_price * 0.94  # 赚10%，回撤6%落袋为安
+            
+            # 【CTO V43关键修复】trailing_stop不能低于入场价！
+            # 否则入场后价格已经高于止盈线，止盈条件永远不会触发
+            # 至少保本：trailing_stop_price = max(trailing_stop_price, entry_close)
+            # 或者保住5%利润：trailing_stop_price = max(trailing_stop_price, entry_close * 1.05)
+            if trailing_stop_price > 0:
+                trailing_stop_price = max(trailing_stop_price, entry_close * 1.02)  # 至少保住2%利润
+            
+            # ==================== 盘中瞬时击发判定 ====================
+            # 【关键物理模拟】一旦当天的最低价(low)刺穿了保护线！
+            if trailing_stop_price > 0 and low <= trailing_stop_price:
+                # 【CTO V43修复】处理开盘跳空灾难！
+                # 如果开盘直接跳空低开，核在止盈价之下，你只能以开盘价逃命！
+                if open_p <= trailing_stop_price:
+                    exit_price = open_p
+                    exit_reason = '开盘跳空被核(动态止盈失效)'
+                else:
+                    # 如果开盘在止盈价之上，盘中跌破，需要加上1.5%的市价单恐慌滑点！
+                    exit_price = trailing_stop_price * 0.985
+                    exit_reason = '盘中触发高水位止盈(含滑点)'
+                break
+            
+            # ==================== 止损兜底逻辑（VWAP/MA5防线）====================
+            if entry_score_val >= 3000.0:
+                # 真龙：只有双重跌破昨天的MA5和当日VWAP才判定动能枯竭
                 if close < ma5_yest and close < vwap:
-                    # 【核心修复】模拟盘中跌破VWAP时直接斩仓，而不是等收盘！
+                    # 模拟盘中跌破VWAP时直接斩仓
                     exit_price = open_p if open_p < vwap else vwap * 0.985
                     exit_reason = '真龙动能枯竭(盘中双破止损)'
                     break
             else:
-                # 🪖 平民阶级（跟风杂毛，随刃而行）
-                # 平民必须有强力的日内移动止盈！最高赚过10%，日内回落超7%立刻落袋
-                if max_profit_pct > 0.10 and (high - close) / high > 0.07:
-                    exit_price = high * 0.93  # 模拟盘中回落7%时触发
-                    exit_reason = '平民高位动态止盈'
-                    break
-                
-                # 只要跌破当天的VWAP，跟风资金溃散，一键清仓！
+                # 平民：只要跌破当天的VWAP，一键清仓！
                 if close < vwap:
-                    # 【核心修复】模拟盘中越过VWAP瞬间发单，外加1.5%恐慌滑点
                     exit_price = open_p if open_p < vwap else vwap * 0.985
                     exit_reason = '平民破位(盘中跌破VWAP)'
                     break
