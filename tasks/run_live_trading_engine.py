@@ -115,8 +115,12 @@ class LiveTradingEngine:
         
         # 【CTO V33照妖镜】黄金3分钟生死观察队列
         # 信号触发后不立即买入，先进入观察队列进行抗重力测试
-        # {stock_code: {'trigger_time': datetime, 'score': float, 'sustain_ratio': float, 'tick_data': dict}}
+        # {stock_code: {'trigger_frame': int, 'score': float, 'sustain_ratio': float, 'tick_data': dict}}
         self.signal_queue: Dict[str, Dict] = {}
+        
+        # 【CTO V39战役三】统一时间流 - 用Tick帧数替代绝对时间！
+        # 假设系统3秒推一个Tick，3分钟=60帧。彻底消灭datetime.now()时间流速精神分裂！
+        self.global_tick_frame: int = 0
         
         # 【CTO架构重铸令R2/R3】L1价格推力探测器 + 微积分形态学
         # tick_history: 保存过去60个Tick（假设3秒/Tick，约3分钟微观轨迹）
@@ -1087,6 +1091,9 @@ class LiveTradingEngine:
         
         try:
             while self.running:
+                # 【CTO V39战役三】统一时间流 - Tick帧计数！
+                self.global_tick_frame += 1
+                
                 # 检查交易时间
                 now = datetime.now()
                 current_time = now.time()
@@ -1671,36 +1678,35 @@ class LiveTradingEngine:
             # Phase 2 Step 7: 【CTO V33照妖镜】黄金3分钟生死观察队列
             # ============================================================
             # 信号触发后不立即买入，先进入观察队列进行抗重力测试
-            # 3分钟后复检：sustain_ratio > 1.2 且未跌破VWAP才执行
-            from datetime import datetime, timedelta
-            now = datetime.now()
+            # 【CTO V39战役三】3分钟=60帧抗重力测试
+            # 假设系统3秒推一个Tick，60帧≈3分钟
             
             if stock_code not in self.signal_queue:
                 # 首次触发，加入观察队列
                 self.signal_queue[stock_code] = {
-                    'trigger_time': now,
+                    'trigger_frame': self.global_tick_frame,  # 【CTO V39】用帧数替代时间！
                     'score': score,
                     'tick_data': tick_data.copy() if isinstance(tick_data, dict) else tick_data
                 }
-                logger.info(f"[进入观察] {stock_code} 触发信号(得分{score:.1f})，开启3分钟抗重力测试")
+                logger.info(f"[进入观察] {stock_code} 触发信号(得分{score:.1f})，开启60帧抗重力测试")
             else:
-                # 已在队列中，检查是否超过3分钟
+                # 已在队列中，检查是否超过60帧
                 entry = self.signal_queue[stock_code]
-                elapsed = (now - entry['trigger_time']).total_seconds()
+                frames_elapsed = self.global_tick_frame - entry['trigger_frame']
                 
-                if elapsed >= 180:  # 3分钟 = 180秒
+                if frames_elapsed >= 60:  # 【CTO V39】60帧≈3分钟
                     # 获取最新的sustain_ratio
                     sustain_ratio = self._get_current_sustain_ratio(stock_code, tick_data)
                     
                     if sustain_ratio > 1.2:
-                        logger.info(f"[测试通过] {stock_code} 3分钟抗重力测试成功！sustain_ratio={sustain_ratio:.2f} > 1.2")
+                        logger.info(f"[测试通过] {stock_code} 扛过{frames_elapsed}帧抗重力测试！sustain_ratio={sustain_ratio:.2f}")
                         self._execute_trade(stock_code, tick_data, score)
                         del self.signal_queue[stock_code]
                     else:
-                        logger.warning(f"[过滤] {stock_code} 3分钟内动能萎缩，sustain_ratio={sustain_ratio:.2f}，一票否决！")
+                        logger.warning(f"[过滤] {stock_code} 动能萎缩，sustain_ratio={sustain_ratio:.2f}，一票否决！")
                         del self.signal_queue[stock_code]
                 else:
-                    logger.debug(f"[观察中] {stock_code} 已观察{elapsed:.0f}秒，等待3分钟测试")
+                    logger.debug(f"[观察中] {stock_code} 已观察{frames_elapsed}帧，等待60帧测试")
             
         except Exception as e:
             logger.error(f"[ERR] Tick事件处理失败 ({stock_code}): {e}")

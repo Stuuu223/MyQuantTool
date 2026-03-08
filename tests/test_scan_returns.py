@@ -44,7 +44,7 @@ from typing import Dict, List, Tuple
 # ============================================================================
 # 【CTO V37】版本号 - 输出文件自动命名
 # ============================================================================
-VERSION = 'V38'  # 每次重大修改时更新此版本号
+VERSION = 'V39'  # 每次重大修改时更新此版本号
 
 # 测试日期范围
 START_DATE = '20260225'
@@ -231,11 +231,16 @@ def calculate_returns(stock: str, entry_date: str, end_date: str) -> Dict:
     """
     计算股票从entry_date到end_date的收益回撤
     
+    【CTO V39战役四】实装T+N卖点防守斧闭环！
+    - 止损斧：T+N跌破当日VWAP清仓（主力撤退）
+    - 移动止盈斧：浮盈>15%且回撤30%利润清仓
+    
     返回: {
         'max_return': 最大收益率,
         'max_drawdown': 最大回撤率,
         'final_return': 截至end_date收益率,
-        'final_drawdown': 截至end_date回撤率
+        'final_drawdown': 截至end_date回撤率,
+        'exit_reason': 离场原因（新增）
     }
     """
     try:
@@ -251,17 +256,19 @@ def calculate_returns(stock: str, entry_date: str, end_date: str) -> Dict:
         )
         
         if not data or stock not in data:
-            return {'max_return': None, 'max_drawdown': None, 'final_return': None, 'final_drawdown': None}
+            return {'max_return': None, 'max_drawdown': None, 'final_return': None, 'final_drawdown': None, 'exit_reason': None}
         
         df = pd.DataFrame(data[stock])
         if df.empty or len(df) == 0:
-            return {'max_return': None, 'max_drawdown': None, 'final_return': None, 'final_drawdown': None}
+            return {'max_return': None, 'max_drawdown': None, 'final_return': None, 'final_drawdown': None, 'exit_reason': None}
         
         # 找到entry_date的收盘价作为基准
         entry_close = None
+        entry_idx = None
         for idx in df.index:
             if str(idx) == entry_date:
                 entry_close = float(df.loc[idx, 'close'])
+                entry_idx = idx
                 break
         
         if entry_close is None or entry_close <= 0:
@@ -269,25 +276,75 @@ def calculate_returns(stock: str, entry_date: str, end_date: str) -> Dict:
             for idx in df.index:
                 if str(idx) >= entry_date:
                     entry_close = float(df.loc[idx, 'close'])
+                    entry_idx = idx
                     break
         
         if entry_close is None or entry_close <= 0:
-            return {'max_return': None, 'max_drawdown': None, 'final_return': None, 'final_drawdown': None}
+            return {'max_return': None, 'max_drawdown': None, 'final_return': None, 'final_drawdown': None, 'exit_reason': None}
         
-        # 计算期间收益和回撤
+        # ==========================================
+        # 【CTO V39】T+N卖点防守斧闭环
+        # ==========================================
         max_price = entry_close
-        min_price = entry_close
-        final_close = entry_close
+        exit_reason = '持仓到期'
+        exit_price = None
         
-        for idx in df.index:
-            if str(idx) >= entry_date:
-                high = float(df.loc[idx, 'high'])
-                low = float(df.loc[idx, 'low'])
-                close = float(df.loc[idx, 'close'])
-                
-                max_price = max(max_price, high)
-                min_price = min(min_price, low)
-                final_close = close
+        # 获取entry_date在df中的位置
+        try:
+            entry_loc = df.index.get_loc(entry_idx)
+        except:
+            entry_loc = 0
+        
+        # 从T+1开始遍历
+        for i in range(entry_loc + 1, len(df)):
+            row = df.iloc[i]
+            open_p = float(row['open'])
+            high = float(row['high'])
+            low = float(row['low'])
+            close = float(row['close'])
+            
+            # 更新持仓期间最高价
+            if high > max_price:
+                max_price = high
+            
+            # 【卖点铁律1】止损斧：跌破当日VWAP（近似计算）
+            vwap = (open_p + close + high + low) / 4.0
+            if close < vwap:
+                exit_price = close
+                exit_reason = '破均线止损'
+                break
+            
+            # 【卖点铁律2】移动止盈斧：浮盈>15%且回撤30%利润
+            max_profit_pct = (max_price - entry_close) / entry_close
+            current_profit_pct = (close - entry_close) / entry_close
+            
+            if max_profit_pct > 0.15:
+                # 如果吃掉了最高利润的30%以上
+                if (max_profit_pct - current_profit_pct) / max_profit_pct > 0.3:
+                    exit_price = close
+                    exit_reason = '移动止盈'
+                    break
+        
+        # 计算最终结果
+        if exit_price is not None:
+            # 触发了防守斧
+            final_close = exit_price
+            # 重新计算max_price（从entry到exit）
+            max_price_in_period = entry_close
+            for i in range(entry_loc, min(entry_loc + len(df), len(df))):
+                if i >= len(df):
+                    break
+                row = df.iloc[i]
+                max_price_in_period = max(max_price_in_period, float(row['high']))
+            max_price = max_price_in_period
+        else:
+            # 持仓到最后一日
+            final_close = float(df.iloc[-1]['close'])
+        
+        min_price = entry_close
+        for i in range(entry_loc, len(df)):
+            row = df.iloc[i]
+            min_price = min(min_price, float(row['low']))
         
         max_return = (max_price - entry_close) / entry_close * 100
         max_drawdown = (entry_close - min_price) / entry_close * 100
@@ -300,11 +357,12 @@ def calculate_returns(stock: str, entry_date: str, end_date: str) -> Dict:
             'max_return': round(max_return, 2),
             'max_drawdown': round(max_drawdown, 2),
             'final_return': round(final_return, 2),
-            'final_drawdown': round(final_drawdown, 2)
+            'final_drawdown': round(final_drawdown, 2),
+            'exit_reason': exit_reason
         }
         
     except Exception as e:
-        return {'max_return': None, 'max_drawdown': None, 'final_return': None, 'final_drawdown': None}
+        return {'max_return': None, 'max_drawdown': None, 'final_return': None, 'final_drawdown': None, 'exit_reason': None}
 
 
 def main():
