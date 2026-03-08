@@ -241,8 +241,10 @@ def get_top_stocks(date: str, top_n: int = 20) -> List[Dict]:
             except Exception as e:
                 continue
         
-        # 排序取Top N
-        results.sort(key=lambda x: x['score'], reverse=True)
+        # 【CTO战役破壁令】多维物理排序法则
+        # 1. 最终得分降序 2. MFE降序 3. sustain_ratio降序
+        # 彻底剿灭同分时按字母排序的荒谬设定！
+        results.sort(key=lambda x: (x['score'], x['mfe'], x['sustain_ratio']), reverse=True)
         return results[:top_n]
         
     except Exception as e:

@@ -593,7 +593,20 @@ class 动能打分引擎CoreEngine:
                 mfe = max(-10.0, price_range_pct / (inflow_ratio_pct / 100.0))
         
         # 第六步：最终得分（无上限里氏震级！）
-        final_score = round(base_power * multiplier, 2)
+        # 【CTO终极战役】真龙基因溢价
+        memory_multiplier = 1.0
+        if is_yesterday_limit_up:
+            memory_multiplier = 2.0  # 昨日涨停，纯血真龙基因！
+            logger.info(f"🔥 [真龙基因] {stock_code} 昨日涨停，基因溢价×2.0！")
+        
+        # 应用乘数和加分
+        final_score = round(base_power * multiplier * memory_multiplier, 2)
+        
+        # 【T3: Spike极刑】动能枯竭直接返回，不入场
+        # sustain_ratio < 1.0 = 当前流入低于历史中位数 = 骗炮信号
+        if sustain_ratio < 1.0:
+            logger.info(f"💀 [Spike极刑] {stock_code} sustain_ratio={sustain_ratio:.2f}<1.0，动能枯竭，一票否决！")
+            return 0.0, sustain_ratio, inflow_ratio, ratio_stock, mfe
         
         # 净流出惩罚：减半而非封顶，让流出股也有区分度
         if is_net_outflow:
