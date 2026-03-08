@@ -323,7 +323,25 @@ class UniverseBuilder:
             except Exception:
                 pass
 
-            passed.append(stock)
+            # 【CTO破晓战役】暴躁门槛：右侧交易只抓明火！
+            # 满足基础流动性后，今天必须"极其暴躁"才能进池
+            today_open = float(df['open'].iloc[-1])
+            pre_close = float(df['close'].iloc[-2]) if len(df) > 1 else today_open
+            today_change_pct = ((last_close - pre_close) / pre_close * 100.0) if pre_close > 0 else 0.0
+            
+            # 昨日涨停判断
+            yesterday_close = float(df['close'].iloc[-2]) if len(df) > 1 else pre_close
+            yesterday_open = float(df['open'].iloc[-2]) if len(df) > 1 else yesterday_close
+            yesterday_change = ((yesterday_close - yesterday_open) / yesterday_open * 100.0) if yesterday_open > 0 else 0.0
+            is_yesterday_limit_up = yesterday_change >= 9.8  # 近似涨停
+            
+            # 暴躁门槛：涨幅>5% OR 量比>3.0 OR 昨日涨停
+            volume_ratio = self._volume_ratios.get(stock, 0.0)
+            if today_change_pct > 5.0 or volume_ratio > 3.0 or is_yesterday_limit_up:
+                passed.append(stock)
+            else:
+                # 不满足暴躁门槛，记录但不计入过滤统计（这是主动筛选）
+                self._volume_ratios[stock] = 0.0  # 标记为不活跃
 
         # 【CTO V25】自愈下载统计日志
         if cnt_autoheal > 0:

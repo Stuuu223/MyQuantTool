@@ -244,11 +244,11 @@ def calculate_returns(stock: str, entry_date: str, end_date: str) -> Dict:
     }
     """
     try:
-        # 获取日K数据
+        # 获取日K数据（【CTO破晓战役】添加amount/volume用于真实VWAP）
         start_date = (datetime.strptime(entry_date, '%Y%m%d') - timedelta(days=5)).strftime('%Y%m%d')
         
         data = xtdata.get_local_data(
-            field_list=['open', 'high', 'low', 'close'],
+            field_list=['open', 'high', 'low', 'close', 'amount', 'volume'],
             stock_list=[stock],
             period='1d',
             start_time=start_date,
@@ -307,11 +307,23 @@ def calculate_returns(stock: str, entry_date: str, end_date: str) -> Dict:
             if high > max_price:
                 max_price = high
             
-            # 【卖点铁律1】止损斧：跌破当日VWAP（近似计算）
-            vwap = (open_p + close + high + low) / 4.0
+            # 【卖点铁律1】止损斧：跌破当日真实VWAP（【CTO破晓战役】废除骗人(O+H+L+C)/4！）
+            amount = float(row.get('amount', 0))
+            volume = float(row.get('volume', 0))
+            # QMT日K的volume单位是手，需要*100转股；amount单位是元
+            if volume > 0 and amount > 0:
+                vwap = amount / (volume * 100)  # 真实VWAP = 成交额/成交量(股)
+                # 验证：VWAP应该在日内高低点之间
+                if not (low <= vwap <= high):
+                    vwap = amount / volume  # 降级：直接用volume（可能是股）
+                    if not (low <= vwap <= high):
+                        vwap = (open_p + close + high + low) / 4.0  # 最终兜底
+            else:
+                vwap = (open_p + close + high + low) / 4.0  # 数据缺失兜底
+            
             if close < vwap:
                 exit_price = close
-                exit_reason = '破均线止损'
+                exit_reason = '破真实VWAP止损'
                 break
             
             # 【卖点铁律2】移动止盈斧：浮盈>15%且回撤30%利润
@@ -322,7 +334,12 @@ def calculate_returns(stock: str, entry_date: str, end_date: str) -> Dict:
                 # 如果吃掉了最高利润的30%以上
                 if (max_profit_pct - current_profit_pct) / max_profit_pct > 0.3:
                     exit_price = close
-                    exit_reason = '移动止盈'
+                    exit_reason = '高位移动止盈'
+                    break
+            elif max_profit_pct > 0.08:  # 【CTO破晓战役】利润曾经超过8%，绝不容忍变回零！
+                if current_profit_pct < 0.03:
+                    exit_price = close
+                    exit_reason = '防守保本出局'
                     break
         
         # 计算最终结果

@@ -1594,21 +1594,23 @@ class LiveTradingEngine:
             current_volume_ratio = estimated_full_day_volume / avg_volume_5d
             
             # ============================================================
-            # Phase 2 Step 3: 开火门槛 - 0.95分位（严格）
+            # Phase 2 Step 3: 开火门槛 - 黄金起爆点(15倍极值)
             # ============================================================
             from logic.core.config_manager import get_config_manager
             config_manager = get_config_manager()
-            fire_threshold = self._get_current_fire_threshold(config_manager)
             
-            # 只有当量比突破0.95分位才继续处理（开火权下放）
-            if current_volume_ratio < fire_threshold:
+            # 【CTO破晓战役】黄金起爆点：15倍绝对阈值！
+            # Boss用38592样本+336只连板纯血妖股研究得出的黄金标准
+            GOLDEN_VOLUME_RATIO_THRESHOLD = 15.0  # 瞬时量比必须>15倍才能起爆
+            
+            if current_volume_ratio < GOLDEN_VOLUME_RATIO_THRESHOLD:
                 # 【CTO强制透视】记录被静默丢弃的Tick（每500条打印一次，避免刷屏）
                 self._debug_below_threshold_count = getattr(self, '_debug_below_threshold_count', 0) + 1
                 if self._debug_below_threshold_count % 500 == 0:
-                    logger.debug(f"🚫 [CTO透视] 累计{self._debug_below_threshold_count}条Tick未达量比门槛({current_volume_ratio:.2f}x < {fire_threshold:.2f}x)")
-                return  # 未达开火门槛，静默丢弃
+                    logger.debug(f"🚫 [CTO透视] 累计{self._debug_below_threshold_count}条Tick未达黄金起爆点({current_volume_ratio:.2f}x < {GOLDEN_VOLUME_RATIO_THRESHOLD:.2f}x)")
+                return  # 未达黄金起爆点，静默丢弃
             
-            logger.info(f"🔥 {stock_code} 触发量比阈值: {current_volume_ratio:.2f}x >= {fire_threshold:.2f}x")
+            logger.info(f"🔥 {stock_code} 触发黄金起爆点: {current_volume_ratio:.2f}x >= {GOLDEN_VOLUME_RATIO_THRESHOLD:.2f}x")
             
             # ============================================================
             # Phase 2 Step 4: 换手率检查（开火时才检查）
@@ -1688,13 +1690,13 @@ class LiveTradingEngine:
                     'score': score,
                     'tick_data': tick_data.copy() if isinstance(tick_data, dict) else tick_data
                 }
-                logger.info(f"[进入观察] {stock_code} 触发信号(得分{score:.1f})，开启60帧抗重力测试")
+                logger.info(f"[进入观察] {stock_code} 触发信号(得分{score:.1f})，开启180帧(真实3分钟)抗重力测试")
             else:
-                # 已在队列中，检查是否超过60帧
+                # 已在队列中，检查是否超过180帧(真实3分钟)
                 entry = self.signal_queue[stock_code]
                 frames_elapsed = self.global_tick_frame - entry['trigger_frame']
                 
-                if frames_elapsed >= 60:  # 【CTO V39】60帧≈3分钟
+                if frames_elapsed >= 180:  # 【CTO破晓战役】180帧=真实3分钟！主循环1秒1圈
                     # 获取最新的sustain_ratio
                     sustain_ratio = self._get_current_sustain_ratio(stock_code, tick_data)
                     
@@ -1706,7 +1708,7 @@ class LiveTradingEngine:
                         logger.warning(f"[过滤] {stock_code} 动能萎缩，sustain_ratio={sustain_ratio:.2f}，一票否决！")
                         del self.signal_queue[stock_code]
                 else:
-                    logger.debug(f"[观察中] {stock_code} 已观察{frames_elapsed}帧，等待60帧测试")
+                    logger.debug(f"[观察中] {stock_code} 已观察{frames_elapsed}帧，等待180帧(3分钟)测试")
             
         except Exception as e:
             logger.error(f"[ERR] Tick事件处理失败 ({stock_code}): {e}")
@@ -1801,7 +1803,7 @@ class LiveTradingEngine:
     
     def _micro_defense_check(self, stock_code: str, tick_data: Dict[str, Any]) -> bool:
         """
-        微观防线检查 - 三道防线验证
+        微观防线检查 - 四道防线验证
         
         Args:
             stock_code: 股票代码
@@ -1816,6 +1818,28 @@ class LiveTradingEngine:
             return True  # 容错：未初始化时默认通过
         
         try:
+            # ============================================================
+            # 【CTO破晓战役】L1放量滞涨探针：主力派发信号！
+            # ============================================================
+            # 5分钟内换手率爆出天量但价格未能推高1%以上 = 主力在派发
+            if stock_code in self.tick_history and len(self.tick_history[stock_code]) >= 20:  # 至少1分钟历史
+                tick_hist = list(self.tick_history[stock_code])
+                # 取约5分钟前的价格（假设3秒/Tick，100个Tick≈5分钟）
+                if len(tick_hist) >= 100:
+                    old_price = tick_hist[-100].get('price', 0) if isinstance(tick_hist[-100], dict) else tick_hist[-100]
+                    current_price = tick_data.get('price', 0)
+                    
+                    if old_price > 0 and current_price > 0:
+                        price_change_pct = abs(current_price - old_price) / old_price * 100
+                        
+                        # 获取换手率
+                        turnover_rate = tick_data.get('turnover_rate', 0)
+                        
+                        # L1探针：换手率>0.5%/min（天量）但价格涨幅<1%
+                        if turnover_rate > 0.5 and price_change_pct < 1.0:
+                            logger.warning(f"💀 [L1探针] {stock_code} 放量滞涨！换手{turnover_rate:.2f}%/min但价格仅涨{price_change_pct:.2f}%，主力派发信号！")
+                            return False
+            
             # 防守斧：资金流检查
             capital_flow_ok = getattr(self.trade_gatekeeper, 'check_capital_flow', lambda *args: True)(
                 stock_code, tick_data.get('volume_ratio', 0), tick_data

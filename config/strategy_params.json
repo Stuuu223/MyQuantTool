@@ -5,14 +5,15 @@
   
   "stock_filter": {
     "_description": "【全局股票漏斗铁律】实盘/复盘/回测/下载 全局共用，宁缺毋滥！",
-    "min_avg_amount": 50000000.0,
-    "min_avg_turnover_pct": 2.5,
-    "_min_avg_turnover_pct_comment": "【CTO V25 SSOT】统一换手门槛2.5%，基于V3连板研究：T-1换手中位3.69%，T0首板4.96%，暗流期基因门槛",
+    "min_avg_amount": 150000000.0,
+    "_min_avg_amount_comment": "【CTO破晓战役】牛市3万亿时代，1.5亿均额才配进角斗场！5000万=垃圾回收站",
+    "min_avg_turnover_pct": 5.0,
+    "_min_avg_turnover_pct_comment": "【CTO破晓战役】5%均换手是底线！没有5%底仓换手说明资金根本不活跃",
     "min_intraday_turnover_pct": 5.0,
     "min_volume_multiplier": 3.0,
     "min_price": 3.0,
     "max_price": 300.0,
-    "notes": "5000万均额保底 + 5%均换手粗筛 + 5%盘中换手快筛 + 今日量比大于5日均量3倍"
+    "notes": "1.5亿均额保底 + 5%均换手粗筛 + 5%盘中换手快筛 + 今日量比大于5日均量3倍"
   },
 
   "system_and_risk": {
