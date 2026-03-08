@@ -227,20 +227,24 @@ def get_top_stocks(date: str, top_n: int = 20) -> List[Dict]:
         return []
 
 
-def calculate_returns(stock: str, entry_date: str, end_date: str) -> Dict:
+def calculate_returns(stock: str, entry_date: str, end_date: str, entry_score: float = 0.0) -> Dict:
     """
     计算股票从entry_date到end_date的收益回撤
     
-    【CTO V39战役四】实装T+N卖点防守斧闭环！
-    - 止损斧：T+N跌破当日VWAP清仓（主力撤退）
-    - 移动止盈斧：浮盈>15%且回撤30%利润清仓
+    【CTO V40终极天网】动能衰竭止盈法！
+    - 天量大阴线：主力崩塌信号
+    - 动能枯竭：双破MA5与VWAP
+    
+    【CTO战役收官】双轨制阶级卖点！
+    - 真龙阶级(>=3000分)：双破MA5和VWAP才止损
+    - 平民阶级(<3000分)：跌破VWAP就止损
     
     返回: {
         'max_return': 最大收益率,
         'max_drawdown': 最大回撤率,
         'final_return': 截至end_date收益率,
         'final_drawdown': 截至end_date回撤率,
-        'exit_reason': 离场原因（新增）
+        'exit_reason': 离场原因
     }
     """
     try:
@@ -334,12 +338,22 @@ def calculate_returns(stock: str, entry_date: str, end_date: str) -> Dict:
                 exit_reason = '天量大阴线(主力崩塌)'
                 break
             
-            # 法则2：双重断头台（动能彻底枯竭）
-            # 现象：收盘价不仅跌破5日线(趋势破坏)，还跌破当日VWAP(日内资金放弃抵抗)，清仓！
-            if close < ma5 and close < vwap:
-                exit_price = close
-                exit_reason = '动能枯竭(双破MA5与VWAP)'
-                break
+            # 【法则2：阶级隔离防线】真龙给格局，杂毛斩立决！
+            entry_score_val = float(entry_score) if entry_score else 0.0
+            if entry_score_val >= 3000.0:
+                # 👑 真龙阶级（得分>=3000）：拥有龙头豁免权！
+                # 允许日内宽幅洗盘，只有双重跌破 MA5 和 VWAP 才判定动能枯竭
+                if close < ma5 and close < vwap:
+                    exit_price = close
+                    exit_reason = '真龙动能枯竭(双破MA5与VWAP)'
+                    break
+            else:
+                # 🪖 平民阶级（得分<3000）：跟风杂毛，毫无格局可言！
+                # 只要收盘跌破当天的 VWAP，说明跟风资金溃散，毫不犹豫一键清仓！
+                if close < vwap:
+                    exit_price = close
+                    exit_reason = '平民破位(跌破VWAP止损)'
+                    break
         
         # 计算最终结果
         if exit_price is not None:
@@ -442,7 +456,7 @@ def main():
     results = []
     
     for stock, info in all_stocks_data.items():
-        returns = calculate_returns(stock, info['first_seen'], END_DATE)
+        returns = calculate_returns(stock, info['first_seen'], END_DATE, info.get('entry_score', 0.0))
         
         if returns['max_return'] is not None:
             results.append({

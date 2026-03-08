@@ -330,7 +330,8 @@ class UniverseBuilder:
             
             # 日内动能净值（Price Momentum Ratio）
             # 反映资金强顶最高点的决绝度，而非绝对涨幅
-            price_momentum = (last_close - today_low) / (today_high - today_low) if today_high > today_low else 0.0
+            # 【CTO战役收官】一字板(today_high==today_low)是最强动能，给满分1.0！
+            price_momentum = (last_close - today_low) / (today_high - today_low) if today_high > today_low else 1.0
             
             # 涨停遗传基因（昨日是否涨停）
             pre_close = float(df['close'].iloc[-2]) if len(df) > 1 else last_close

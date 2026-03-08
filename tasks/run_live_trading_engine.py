@@ -1845,7 +1845,8 @@ class LiveTradingEngine:
                         float_volume = true_dict.get_float_volume(stock_code)
                     
                     if float_volume > 0:
-                        delta_turnover = (delta_volume / float_volume) * 100  # 增量换手率(%)
+                        # 【CTO战役收官】修复量纲：delta_volume(手) * 100 = 股，再 / float_volume(股) * 100 = %
+                        delta_turnover = (delta_volume * 10000) / float_volume if float_volume > 0 else 0.0
                         
                         # L1探针：5分钟内爆出天量换手(>0.5%)，但价格完全推不动(<0.5%)
                         # 说明抛压极大，主力在派发！一票否决！
