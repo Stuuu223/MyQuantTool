@@ -244,7 +244,7 @@ class UniverseBuilder:
         for stock in stock_list:
             try:
                 data = xtdata.get_local_data(
-                    field_list=['close', 'volume', 'amount'],
+                    field_list=['open', 'high', 'low', 'close', 'volume', 'amount'],  # 【CTO终极天网】添加high/low用于计算日内动能净值
                     stock_list=[stock],
                     period='1d',
                     start_time=start_date,
