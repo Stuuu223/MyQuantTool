@@ -1,5 +1,5 @@
 """
-CTO V35 照妖镜修复版 - 榜单收益回撤测试
+CTO V37 势能修复版 - 榜单收益回撤测试
 
 扫描20260225-20260305各榜单，追踪所有标的到0306的：
 1. 期间最大收益
@@ -7,12 +7,16 @@ CTO V35 照妖镜修复版 - 榜单收益回撤测试
 3. 截至0306的收益
 4. 截至0306的回撤
 
+V37修复清单：
+- 势能造假修复：flow_5min_median_stock从1.0改为动态市值估算(fv*0.0004)
+- 物理假设：A股日均换手率2%，5分钟占全天1/48
+
 V35修复清单：
-- 动态danger_pct：主板8.5%/创业板17%/北交所25%（解决用主板标尺惩罚创业板）
+- 动态danger_pct：主板8.5%/创业板17%/北交所25%
 
 V34修复清单：
-- 毒瘤一修复：废除时间冻结(09:45)，改用mode="scan"跳过尾盘衰减
-- 毒瘤二修复：涨停检测改用绝对价格推导(limit_up_price=pre_close*1.10/1.20)
+- 废除时间冻结(09:45)，改用mode="scan"跳过尾盘衰减
+- 涨停检测改用绝对价格推导
 
 ⚠️ 【CTO阴阳测试免责声明】⚠️
 本脚本仅为Scan榜单静态探测，代表"如果按榜单买入并持有到截止日"的理论收益。
@@ -36,6 +40,11 @@ from datetime import datetime, timedelta
 from xtquant import xtdata
 import pandas as pd
 from typing import Dict, List, Tuple
+
+# ============================================================================
+# 【CTO V37】版本号 - 输出文件自动命名
+# ============================================================================
+VERSION = 'V37'  # 每次重大修改时更新此版本号
 
 # 测试日期范围
 START_DATE = '20260225'
@@ -390,7 +399,7 @@ def main():
     
     # 统计汇总
     print("\n" + "=" * 80)
-    print("📊 V35 照妖镜修复版 汇总统计")
+    print(f"📊 {VERSION} 势能修复版 汇总统计")
     print("=" * 80)
     
     # 【CTO阴阳测试免责声明】
@@ -441,8 +450,8 @@ def main():
                 high_str = str(int(high)) if high < float('inf') else "∞"
                 print(f"  {low}-{high_str}分: {count}只 ({count/len(results)*100:.1f}%)")
     
-    # 保存结果
-    output_path = 'data/validation/scan_returns_v34.csv'
+    # 保存结果 - 【CTO V37】动态版本号文件名
+    output_path = f'data/validation/scan_returns_{VERSION.lower()}.csv'
     import os
     os.makedirs('data/validation', exist_ok=True)
     
