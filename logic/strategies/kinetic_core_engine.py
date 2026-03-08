@@ -350,7 +350,9 @@ class 动能打分引擎CoreEngine:
         # 【CTO V34】模式参数
         mode: str = "live",  # "live"实盘模式(有尾盘衰减) / "scan"扫描模式(无衰减)
         # 【CTO V35】股票代码参数（用于动态danger_pct）
-        stock_code: str = ""  # 股票代码，用于识别板块计算危险阈值
+        stock_code: str = "",  # 股票代码，用于识别板块计算危险阈值
+        # 【CTO终极战役】基因记忆参数
+        is_yesterday_limit_up: bool = False  # 昨日是否涨停（纯血真龙基因）
     ) -> tuple[float, float, float, float, float]:
         """
         【V20.5 Boss终极钦定：动能与势能的双Ratio验钞机 + VWAP洗盘容错】
@@ -508,7 +510,7 @@ class 动能打分引擎CoreEngine:
         stock_identifier = f"{current_time.strftime('%H:%M')}@{price:.2f}"
         
         if sustain_ratio > 1.2:
-            multiplier *= 1.5  # 健康阶梯推升
+            multiplier *= 1.1  # 【CTO修复】防止叠乘倒挂，从1.5改为1.1
         elif sustain_ratio < 1.0:
             multiplier *= 0.1  # 资金退潮：杂毛断头台绞杀
             logger.warning(f"[杂毛断头台-致命绞杀] {stock_identifier} sustain_ratio={sustain_ratio:.2f} < 1.0")
@@ -518,12 +520,15 @@ class 动能打分引擎CoreEngine:
         # [1.1, 1.2] 区间：资金维持正常但未加速，multiplier不变（设计意图：观察等待）
         
         # B. 筹码纯度（空间差 < 10% 抛压轻）
+        # 【CTO修复】从乘法改为加法，防止叠乘倒挂
+        bonus_score = 0.0
         if space_gap_pct < 0.10:
-            multiplier *= 1.2
+            bonus_score += 10.0  # 加法而非乘法
         
         # C. 吸血效应（流入比例 > 1.5% ← 百分比形式）
+        # 【CTO修复】从乘法改为加法，防止叠乘倒挂
         if inflow_ratio_pct > 1.5:
-            multiplier *= 1.2
+            bonus_score += 15.0  # 加法而非乘法
         
         # D. 早盘时间坚决度
         # 【CTO V34修复】scan模式下跳过时间衰减，废除"时间冻结"毒瘤！

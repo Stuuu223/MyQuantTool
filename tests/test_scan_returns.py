@@ -174,6 +174,28 @@ def get_top_stocks(date: str, top_n: int = 20) -> List[Dict]:
                 # 正常的5分钟成交额（中位数）大约是：流通市值 * 2% / 48 ≈ 流通市值 * 0.0004
                 dynamic_median_flow = fv * 0.0004 if fv > 0 else 1.0
                 
+                # 【CTO终极战役】判断昨日涨停（真龙基因）
+                # 从日K数据获取昨日收盘价
+                daily_data = xtdata.get_local_data(
+                    field_list=['close'],
+                    stock_list=[stock],
+                    period='1d',
+                    start_time=(datetime.strptime(date, '%Y%m%d') - __import__('datetime').timedelta(days=10)).strftime('%Y%m%d'),
+                    end_time=date
+                )
+                is_yesterday_limit_up = False
+                if daily_data and stock in daily_data:
+                    daily_df = pd.DataFrame(daily_data[stock])
+                    if len(daily_df) >= 2:
+                        try:
+                            yesterday_close = float(daily_df['close'].iloc[-2])
+                            day_before_close = float(daily_df['close'].iloc[-3]) if len(daily_df) >= 3 else yesterday_close
+                            if day_before_close > 0:
+                                yesterday_change = (yesterday_close - day_before_close) / day_before_close * 100
+                                is_yesterday_limit_up = yesterday_change >= 9.8
+                        except:
+                            pass
+                
                 # 【CTO V33】调用引擎，传入涨停状态和封单金额
                 result = core_engine.calculate_true_dragon_score(
                     net_inflow=current_amount * raw_purity * 0.5,  # V49: 对齐实盘引擎
@@ -191,7 +213,8 @@ def get_top_stocks(date: str, top_n: int = 20) -> List[Dict]:
                     is_limit_up=is_limit_up,  # 【CTO V33】涨停状态
                     limit_up_queue_amount=limit_up_queue_amount,  # 【CTO V33】封单金额
                     mode="scan",  # 【CTO V34】scan模式跳过时间衰减
-                    stock_code=stock  # 【CTO V35】股票代码用于动态danger_pct
+                    stock_code=stock,  # 【CTO V35】股票代码用于动态danger_pct
+                    is_yesterday_limit_up=is_yesterday_limit_up  # 【CTO终极战役】真龙基因
                 )
                 
                 if isinstance(result, tuple) and len(result) >= 5:
@@ -325,34 +348,50 @@ def calculate_returns(stock: str, entry_date: str, end_date: str, entry_score: f
             else:
                 vwap = (open_p + close + high + low) / 4.0  # 数据缺失兜底
             
-            # 【CTO终极天网】MA5宏观动能线
-            ma5 = df['close'].iloc[max(0, i-4):i+1].astype(float).mean()
+            # 【CTO终极天网】MA5动能支撑线（必须用前5天均值，不含今日！）
+            ma5_yest = df['close'].iloc[max(0, i-5):i].astype(float).mean() if i > 0 else open_p
             
-            # ================= 动能衰竭离场法则（随刃而行） =================
+            # ================= 高保真盘中模拟离场法则 =================
             
-            # 法则1：高位天量大阴线（主力崩塌）
-            # 现象：放出昨天2倍以上巨量，且收盘暴跌（低于开盘3%以上），无论盈亏立刻逃命！
-            yesterday_vol = float(df['volume'].iloc[i-1]) if i > entry_loc else volume
+            # 法则1：天量大阴线（主力崩塌，无视阶级）
+            yesterday_vol = float(df['volume'].iloc[i-1]) if i > 0 else volume
             if volume > (yesterday_vol * 2.0) and close < (open_p * 0.97):
-                exit_price = close
+                # 这种通常是盘中一路单边下杀，均价成交
+                exit_price = vwap * 0.98
                 exit_reason = '天量大阴线(主力崩塌)'
                 break
             
-            # 【法则2：阶级隔离防线】真龙给格局，杂毛斩立决！
+            # 【法则2：阶级隔离防线（高保真盘中模拟）】
             entry_score_val = float(entry_score) if entry_score else 0.0
+            max_profit_pct = (max_price - entry_close) / entry_close
+            
             if entry_score_val >= 3000.0:
-                # 👑 真龙阶级（得分>=3000）：拥有龙头豁免权！
-                # 允许日内宽幅洗盘，只有双重跌破 MA5 和 VWAP 才判定动能枯竭
-                if close < ma5 and close < vwap:
-                    exit_price = close
-                    exit_reason = '真龙动能枯竭(双破MA5与VWAP)'
+                # 👑 真龙阶级（拥有龙头豁免权）
+                # 真龙允许宽幅震荡，但如果盘中出现极端瀑布(最高点回撤超20%)，被动止盈
+                if max_profit_pct > 0.20 and (high - low) / high > 0.20:
+                    exit_price = high * 0.85  # 模拟在最高点回撤15%的位置触发
+                    exit_reason = '真龙日内瀑布(高位被动止盈)'
+                    break
+                
+                # 只有双重跌破昨天的MA5和当日VWAP才判定动能枯竭
+                if close < ma5_yest and close < vwap:
+                    # 【核心修复】模拟盘中跌破VWAP时直接斩仓，而不是等收盘！
+                    exit_price = open_p if open_p < vwap else vwap * 0.985
+                    exit_reason = '真龙动能枯竭(盘中双破止损)'
                     break
             else:
-                # 🪖 平民阶级（得分<3000）：跟风杂毛，毫无格局可言！
-                # 只要收盘跌破当天的 VWAP，说明跟风资金溃散，毫不犹豫一键清仓！
+                # 🪖 平民阶级（跟风杂毛，随刃而行）
+                # 平民必须有强力的日内移动止盈！最高赚过10%，日内回落超7%立刻落袋
+                if max_profit_pct > 0.10 and (high - close) / high > 0.07:
+                    exit_price = high * 0.93  # 模拟盘中回落7%时触发
+                    exit_reason = '平民高位动态止盈'
+                    break
+                
+                # 只要跌破当天的VWAP，跟风资金溃散，一键清仓！
                 if close < vwap:
-                    exit_price = close
-                    exit_reason = '平民破位(跌破VWAP止损)'
+                    # 【核心修复】模拟盘中越过VWAP瞬间发单，外加1.5%恐慌滑点
+                    exit_price = open_p if open_p < vwap else vwap * 0.985
+                    exit_reason = '平民破位(盘中跌破VWAP)'
                     break
         
         # 计算最终结果

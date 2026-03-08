@@ -630,6 +630,30 @@ def scan_cmd(ctx, date):
             # 正常的5分钟成交额（中位数）大约是：流通市值 * 2% / 48 ≈ 流通市值 * 0.0004
             dynamic_median_flow = fv * 0.0004 if fv > 0 else 1.0
             
+            # 【CTO终极战役】判断昨日涨停（真龙基因）
+            is_yesterday_limit_up = False
+            try:
+                daily_data = xtdata.get_local_data(
+                    field_list=['close'],
+                    stock_list=[stock],
+                    period='1d',
+                    start_time=(datetime.strptime(scan_date, '%Y%m%d') - timedelta(days=10)).strftime('%Y%m%d'),
+                    end_time=scan_date
+                )
+                if daily_data and stock in daily_data:
+                    daily_df = pd.DataFrame(daily_data[stock])
+                    if len(daily_df) >= 2:
+                        try:
+                            yesterday_close = float(daily_df['close'].iloc[-2])
+                            day_before_close = float(daily_df['close'].iloc[-3]) if len(daily_df) >= 3 else yesterday_close
+                            if day_before_close > 0:
+                                yesterday_change = (yesterday_close - day_before_close) / day_before_close * 100
+                                is_yesterday_limit_up = yesterday_change >= 9.8
+                        except:
+                            pass
+            except:
+                pass
+            
             try:
                 result = core_engine.calculate_true_dragon_score(
                     net_inflow=current_amount * raw_purity * 0.5,  # V49: 对齐实盘引擎
@@ -647,7 +671,8 @@ def scan_cmd(ctx, date):
                     is_limit_up=is_limit_up,  # 【CTO V34】涨停状态
                     limit_up_queue_amount=limit_up_queue_amount,  # 【CTO V34】封单金额
                     mode="scan",  # 【CTO V34】scan模式跳过时间衰减
-                    stock_code=stock  # 【CTO V35】股票代码用于动态danger_pct
+                    stock_code=stock,  # 【CTO V35】股票代码用于动态danger_pct
+                    is_yesterday_limit_up=is_yesterday_limit_up  # 【CTO终极战役】真龙基因
                 )
                 
                 # 解包tuple
