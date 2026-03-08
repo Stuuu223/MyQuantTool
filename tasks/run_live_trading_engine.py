@@ -1202,10 +1202,11 @@ class LiveTradingEngine:
                         self.tick_history[stock_code] = deque(maxlen=self._TICK_HISTORY_MAXLEN)
                         self.volume_history[stock_code] = deque(maxlen=self._TICK_HISTORY_MAXLEN)
                     
-                    # 更新历史队列
+                    # 更新历史队列（【CTO终极天网】存储current_volume用于计算增量换手！）
                     self.tick_history[stock_code].append({
                         'price': current_price,
-                        'timestamp': now
+                        'timestamp': now,
+                        'volume': current_volume  # 总成交量（用于计算增量换手）
                     })
                     self.volume_history[stock_code].append(current_volume)
                     
@@ -1819,25 +1820,37 @@ class LiveTradingEngine:
         
         try:
             # ============================================================
-            # 【CTO破晓战役】L1放量滞涨探针：主力派发信号！
+            # 【CTO终极天网】L1放量滞涨探针：主力派发信号！
             # ============================================================
-            # 5分钟内换手率爆出天量但价格未能推高1%以上 = 主力在派发
-            if stock_code in self.tick_history and len(self.tick_history[stock_code]) >= 20:  # 至少1分钟历史
+            # 用增量换手（delta_turnover）而非累计换手！这才是真实区间做功！
+            if stock_code in self.tick_history and len(self.tick_history[stock_code]) >= 100:  # 约5分钟历史
                 tick_hist = list(self.tick_history[stock_code])
-                # 取约5分钟前的价格（假设3秒/Tick，100个Tick≈5分钟）
-                if len(tick_hist) >= 100:
-                    old_price = tick_hist[-100].get('price', 0) if isinstance(tick_hist[-100], dict) else tick_hist[-100]
-                    current_price = tick_data.get('price', 0)
+                old_tick = tick_hist[-100] if isinstance(tick_hist[-100], dict) else {'price': tick_hist[-100], 'volume': 0}
+                old_price = old_tick.get('price', 0)
+                old_volume = old_tick.get('volume', 0)
+                
+                current_price = tick_data.get('price', 0)
+                current_volume = tick_data.get('volume', 0)  # 这是总成交量
+                
+                if old_price > 0 and current_price > 0 and old_volume > 0:
+                    price_change_pct = abs(current_price - old_price) / old_price * 100
                     
-                    if old_price > 0 and current_price > 0:
-                        price_change_pct = abs(current_price - old_price) / old_price * 100
+                    # 【CTO核心修复】计算真实增量换手！
+                    # 增量换手 = (当前总量 - 5分钟前总量) / 流通股本 * 100%
+                    delta_volume = current_volume - old_volume
+                    float_volume = true_dict.get_float_volume(stock_code) if 'true_dict' in dir() else 0
+                    if float_volume <= 0:
+                        from logic.data_providers.true_dictionary import get_true_dictionary
+                        true_dict = get_true_dictionary()
+                        float_volume = true_dict.get_float_volume(stock_code)
+                    
+                    if float_volume > 0:
+                        delta_turnover = (delta_volume / float_volume) * 100  # 增量换手率(%)
                         
-                        # 获取换手率
-                        turnover_rate = tick_data.get('turnover_rate', 0)
-                        
-                        # L1探针：换手率>0.5%/min（天量）但价格涨幅<1%
-                        if turnover_rate > 0.5 and price_change_pct < 1.0:
-                            logger.warning(f"💀 [L1探针] {stock_code} 放量滞涨！换手{turnover_rate:.2f}%/min但价格仅涨{price_change_pct:.2f}%，主力派发信号！")
+                        # L1探针：5分钟内爆出天量换手(>0.5%)，但价格完全推不动(<0.5%)
+                        # 说明抛压极大，主力在派发！一票否决！
+                        if delta_turnover > 0.5 and price_change_pct < 0.5:
+                            logger.warning(f"💀 [L1探针] {stock_code} 5分钟放巨量({delta_turnover:.2f}%)但滞涨({price_change_pct:.2f}%)，摩擦力极大！一票否决！")
                             return False
             
             # 防守斧：资金流检查

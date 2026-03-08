@@ -44,7 +44,7 @@ from typing import Dict, List, Tuple
 # ============================================================================
 # 【CTO V37】版本号 - 输出文件自动命名
 # ============================================================================
-VERSION = 'V39'  # 每次重大修改时更新此版本号
+VERSION = 'V40'  # 【CTO终极天网】全链路无量纲化 - 纯物理学驱动
 
 # 测试日期范围
 START_DATE = '20260225'
@@ -321,26 +321,25 @@ def calculate_returns(stock: str, entry_date: str, end_date: str) -> Dict:
             else:
                 vwap = (open_p + close + high + low) / 4.0  # 数据缺失兜底
             
-            if close < vwap:
+            # 【CTO终极天网】MA5宏观动能线
+            ma5 = df['close'].iloc[max(0, i-4):i+1].astype(float).mean()
+            
+            # ================= 动能衰竭离场法则（随刃而行） =================
+            
+            # 法则1：高位天量大阴线（主力崩塌）
+            # 现象：放出昨天2倍以上巨量，且收盘暴跌（低于开盘3%以上），无论盈亏立刻逃命！
+            yesterday_vol = float(df['volume'].iloc[i-1]) if i > entry_loc else volume
+            if volume > (yesterday_vol * 2.0) and close < (open_p * 0.97):
                 exit_price = close
-                exit_reason = '破真实VWAP止损'
+                exit_reason = '天量大阴线(主力崩塌)'
                 break
             
-            # 【卖点铁律2】移动止盈斧：浮盈>15%且回撤30%利润
-            max_profit_pct = (max_price - entry_close) / entry_close
-            current_profit_pct = (close - entry_close) / entry_close
-            
-            if max_profit_pct > 0.15:
-                # 如果吃掉了最高利润的30%以上
-                if (max_profit_pct - current_profit_pct) / max_profit_pct > 0.3:
-                    exit_price = close
-                    exit_reason = '高位移动止盈'
-                    break
-            elif max_profit_pct > 0.08:  # 【CTO破晓战役】利润曾经超过8%，绝不容忍变回零！
-                if current_profit_pct < 0.03:
-                    exit_price = close
-                    exit_reason = '防守保本出局'
-                    break
+            # 法则2：双重断头台（动能彻底枯竭）
+            # 现象：收盘价不仅跌破5日线(趋势破坏)，还跌破当日VWAP(日内资金放弃抵抗)，清仓！
+            if close < ma5 and close < vwap:
+                exit_price = close
+                exit_reason = '动能枯竭(双破MA5与VWAP)'
+                break
         
         # 计算最终结果
         if exit_price is not None:
@@ -474,7 +473,7 @@ def main():
     
     # 统计汇总
     print("\n" + "=" * 80)
-    print(f"📊 {VERSION} 势能修复版 汇总统计")
+    print(f"📊 {VERSION} 终极天网版 汇总统计")
     print("=" * 80)
     
     # 【CTO阴阳测试免责声明】
