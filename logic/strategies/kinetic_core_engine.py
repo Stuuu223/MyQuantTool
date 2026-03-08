@@ -460,10 +460,13 @@ class 动能打分引擎CoreEngine:
             price_range_pct = upward_thrust / prev_close if prev_close > 0 else 0.0
             mfe_raw = price_range_pct / (inflow_ratio_pct / 100.0)
             mfe = max(-10.0, mfe_raw)  # 防负溢出
-            # MFE对数放大器：MFE越高，盘口越轻，得分指数级飙升
-            # MFE=1 → +10分, MFE=5 → +23分, MFE=10 → +33分
+            # 【CTO修正】MFE对数放大器：绝对安全的指数放大器
+            # 原公式缺陷：mfe=0.1时log10(0.1)=-1.0可能导致加分异常
+            # 新公式：MFE>1时给奖励，极差效率不给分，且加权系数从10提升到15
+            # MFE=1 → +0分, MFE=5 → +10.5分, MFE=10 → +15分
             if mfe > 0:
-                mfe_bonus = 10.0 * (1.0 + np.log10(max(mfe, 0.1)))
+                import math
+                mfe_bonus = 15.0 * math.log10(max(mfe * 10.0, 1.0))
                 base_power += mfe_bonus
                 logger.debug(f"[MFE做功溢价] {stock_code} MFE={mfe:.2f}, 奖励+{mfe_bonus:.1f}分")
         else:

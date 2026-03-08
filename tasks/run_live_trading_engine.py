@@ -1234,8 +1234,10 @@ class LiveTradingEngine:
                             v2 = p_now - p_1_5min    # 后半段推力（1.5分钟）
                             acceleration = v2 - v1   # 宏观二阶加速度
                             
-                            # Spike骗炮检测：前半段猛拉，后半段掉头砸盘，跌破起涨点
-                            if v1 > 0 and acceleration < 0 and current_price < p_3min:
+                            # 【CTO修正】Spike骗炮检测：必须满足v2<0(正在砸盘)，才能定性为Spike！
+                            # 原逻辑缺陷：acceleration<0只说明速度放缓，正常洗盘也会发生
+                            # 新逻辑：v1>0(前半段拉升) + v2<0(后半段砸盘) + acceleration<0(减速) + 跌破起涨点
+                            if v1 > 0 and v2 < 0 and acceleration < 0 and current_price < p_3min:
                                 logger.warning(f"[重力异常] {stock_code} 检出真实Spike尖刺骗炮(v1={v1:.2f}, v2={v2:.2f})，一票否决！")
                                 pool_stats['filtered'] += 1
                                 continue
