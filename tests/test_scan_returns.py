@@ -174,16 +174,17 @@ def get_top_stocks(date: str, top_n: int = 20) -> List[Dict]:
                 # 正常的5分钟成交额（中位数）大约是：流通市值 * 2% / 48 ≈ 流通市值 * 0.0004
                 dynamic_median_flow = fv * 0.0004 if fv > 0 else 1.0
                 
-                # 【CTO终极战役】判断昨日涨停（真龙基因）
-                # 从日K数据获取昨日收盘价
+                # 【CTO终极战役】判断昨日涨停（真龙基因）+ 暴动基因
+                # 从日K数据获取昨日收盘价和成交量
                 daily_data = xtdata.get_local_data(
-                    field_list=['close'],
+                    field_list=['close', 'volume'],
                     stock_list=[stock],
                     period='1d',
                     start_time=(datetime.strptime(date, '%Y%m%d') - __import__('datetime').timedelta(days=10)).strftime('%Y%m%d'),
                     end_time=date
                 )
                 is_yesterday_limit_up = False
+                yesterday_vol_ratio = 1.0  # 默认值
                 if daily_data and stock in daily_data:
                     daily_df = pd.DataFrame(daily_data[stock])
                     if len(daily_df) >= 2:
@@ -193,6 +194,16 @@ def get_top_stocks(date: str, top_n: int = 20) -> List[Dict]:
                             if day_before_close > 0:
                                 yesterday_change = (yesterday_close - day_before_close) / day_before_close * 100
                                 is_yesterday_limit_up = yesterday_change >= 9.8
+                            
+                            # 【CTO V42】计算昨日量比（暴动基因）
+                            yesterday_vol = float(daily_df['volume'].iloc[-2])
+                            # 5日平均成交量（不含昨日）
+                            if len(daily_df) >= 7:
+                                avg_vol_5d_yest = daily_df['volume'].iloc[-7:-2].mean()
+                            else:
+                                avg_vol_5d_yest = yesterday_vol
+                            if avg_vol_5d_yest > 0:
+                                yesterday_vol_ratio = yesterday_vol / avg_vol_5d_yest
                         except:
                             pass
                 
@@ -214,7 +225,8 @@ def get_top_stocks(date: str, top_n: int = 20) -> List[Dict]:
                     limit_up_queue_amount=limit_up_queue_amount,  # 【CTO V33】封单金额
                     mode="scan",  # 【CTO V34】scan模式跳过时间衰减
                     stock_code=stock,  # 【CTO V35】股票代码用于动态danger_pct
-                    is_yesterday_limit_up=is_yesterday_limit_up  # 【CTO终极战役】真龙基因
+                    is_yesterday_limit_up=is_yesterday_limit_up,  # 【CTO终极战役】涨停基因
+                    yesterday_vol_ratio=yesterday_vol_ratio  # 【CTO V42】暴动基因
                 )
                 
                 if isinstance(result, tuple) and len(result) >= 5:

@@ -352,7 +352,8 @@ class 动能打分引擎CoreEngine:
         # 【CTO V35】股票代码参数（用于动态danger_pct）
         stock_code: str = "",  # 股票代码，用于识别板块计算危险阈值
         # 【CTO终极战役】基因记忆参数
-        is_yesterday_limit_up: bool = False  # 昨日是否涨停（纯血真龙基因）
+        is_yesterday_limit_up: bool = False,  # 昨日是否涨停（纯血真龙基因）
+        yesterday_vol_ratio: float = 1.0  # 昨日量比（用于暴动基因检测）
     ) -> tuple[float, float, float, float, float]:
         """
         【V20.5 Boss终极钦定：动能与势能的双Ratio验钞机 + VWAP洗盘容错】
@@ -593,11 +594,22 @@ class 动能打分引擎CoreEngine:
                 mfe = max(-10.0, price_range_pct / (inflow_ratio_pct / 100.0))
         
         # 第六步：最终得分（无上限里氏震级！）
-        # 【CTO终极战役】真龙基因溢价
+        # ================= 跨日基因遗传算法（海马体完整版）=================
         memory_multiplier = 1.0
+        
+        # 1. 昨日涨停基因（绝对霸权）
         if is_yesterday_limit_up:
-            memory_multiplier = 2.0  # 昨日涨停，纯血真龙基因！
-            logger.info(f"🔥 [真龙基因] {stock_code} 昨日涨停，基因溢价×2.0！")
+            memory_multiplier += 1.0  # 直接赋予100%的基础霸权溢价
+            logger.info(f"🔥 [涨停基因] {stock_code} 昨日涨停，霸权溢价+1.0！")
+        
+        # 2. 昨日暴动基因（昨日量比极高，资金深度介入）
+        # 半衰期模型：昨日量比>3时，施加0.5的衰减系数（阈值降低以捕获更多信号）
+        if yesterday_vol_ratio > 3.0:
+            genetic_bonus = min(yesterday_vol_ratio * 0.1, 1.0) * 0.5
+            memory_multiplier += genetic_bonus
+            logger.info(f"🧠 [暴动基因] {stock_code} 昨日量比={yesterday_vol_ratio:.1f}，遗传溢价+{genetic_bonus:.2f}！")
+        
+        logger.info(f"🧬 [海马体] {stock_code} 记忆乘数={memory_multiplier:.2f}x")
         
         # 应用乘数和加分
         final_score = round(base_power * multiplier * memory_multiplier, 2)
