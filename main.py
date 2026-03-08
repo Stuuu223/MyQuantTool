@@ -881,17 +881,34 @@ def download_cmd(ctx, date, data_type, universe, workers):
         
         # 执行下载 - 使用QmtDataManager
         from logic.data_providers.qmt_manager import QmtDataManager
+        import time
         
         manager = QmtDataManager()
         
         if stock_list:
             click.echo(f"开始下载 {len(stock_list)} 只股票的Tick数据...")
-            results = manager.download_tick_data(
-                stock_list=stock_list[:200],  # 限制最多200只
-                trade_date=date,
-                use_vip=True,
-                check_existing=True
-            )
+            
+            # 【CTO V38修复】废除[:200]一刀切！改用batch_size循环+冷却机制
+            batch_size = 200
+            results = {}
+            total_batches = (len(stock_list) + batch_size - 1) // batch_size
+            
+            for i in range(0, len(stock_list), batch_size):
+                batch = stock_list[i:i + batch_size]
+                batch_num = i // batch_size + 1
+                click.echo(f"正在下载第 {batch_num}/{total_batches} 批 ({len(batch)}只)...")
+                
+                batch_res = manager.download_tick_data(
+                    stock_list=batch,
+                    trade_date=date,
+                    use_vip=True,
+                    check_existing=True
+                )
+                results.update(batch_res)
+                
+                # 批次间休息2秒，防止QMT服务端把我们踢下线
+                if i + batch_size < len(stock_list):
+                    time.sleep(2.0)
             
             success = sum(1 for r in results.values() if r.success)
             failed = sum(1 for r in results.values() if not r.success)

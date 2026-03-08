@@ -475,15 +475,18 @@ class 动能打分引擎CoreEngine:
         # 第二步：出货拦截（净流出封顶40分）
         is_net_outflow = inflow_ratio_pct <= 0
         
-        # 第三步：VWAP洗盘容错（跌破VWAP -20分，不清零）
-        vwap_penalty = 0.0
+        # 第三步：VWAP洗盘容错（里氏震级下的乘数惩罚机制）
+        # 【CTO V38修复】废除机械的-20分！改为乘数降维打击
+        # 8000分真龙跌破VWAP变4000分(仍可上榜)，500分杂毛变250分(滚出Top20)
+        vwap_multiplier = 1.0
         if total_volume > 0 and total_amount > 0:
             vwap = total_amount / total_volume
             if price < vwap and vwap > 0:
-                vwap_penalty = 20.0
-                logger.debug(f"[VWAP洗盘容错] 价格{price:.2f} < VWAP{vwap:.2f}, 重罚-20分")
+                # 跌破日内均线，重力大于升力，基础动能直接腰斩！
+                vwap_multiplier = 0.5
+                logger.debug(f"[VWAP洗盘容错] {stock_code} 价格{price:.2f} < VWAP{vwap:.2f}, 动能腰斩打5折！")
         
-        base_power = max(0.0, base_power - vwap_penalty)
+        base_power = base_power * vwap_multiplier
         
         # 第四步：神级乘数区
         multiplier = 1.0
