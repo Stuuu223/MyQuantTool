@@ -160,6 +160,11 @@ def get_top_stocks(date: str, top_n: int = 20) -> List[Dict]:
                 # 【CTO V34修复】废除时间冻结毒瘤！使用实际时间+mode=scan跳过衰减
                 actual_time = dt_class.combine(dt_class.today(), time_type(15, 0, 0))  # 使用实际收盘时间
                 
+                # 【CTO V37】动态势能基准估算（废除1.0硬编码造假！）
+                # 物理假设：A股正常标的，平均每日换手率约2%。全天240分钟，5分钟占1/48。
+                # 正常的5分钟成交额（中位数）大约是：流通市值 * 2% / 48 ≈ 流通市值 * 0.0004
+                dynamic_median_flow = fv * 0.0004 if fv > 0 else 1.0
+                
                 # 【CTO V33】调用引擎，传入涨停状态和封单金额
                 result = core_engine.calculate_true_dragon_score(
                     net_inflow=current_amount * raw_purity * 0.5,  # V49: 对齐实盘引擎
@@ -170,7 +175,7 @@ def get_top_stocks(date: str, top_n: int = 20) -> List[Dict]:
                     open_price=open_price,
                     flow_5min=flow_5min,
                     flow_15min=flow_15min,
-                    flow_5min_median_stock=1.0,
+                    flow_5min_median_stock=dynamic_median_flow,  # 【CTO V37】动态估算基准！
                     space_gap_pct=0.5,
                     float_volume_shares=fv,
                     current_time=actual_time,

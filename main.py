@@ -624,6 +624,12 @@ def scan_cmd(ctx, date):
             # 【CTO V49修复】net_inflow公式与run_live_trading_engine.py对齐！
             # 旧公式: (current_amount/240*15)*purity = 全天额÷16×purity (低估8倍)
             # 新公式: current_amount*power_ratio*0.5 = 与实盘引擎一致
+            
+            # 【CTO V37】动态势能基准估算（废除1.0硬编码造假！）
+            # 物理假设：A股正常标的，平均每日换手率约2%。全天240分钟，5分钟占1/48。
+            # 正常的5分钟成交额（中位数）大约是：流通市值 * 2% / 48 ≈ 流通市值 * 0.0004
+            dynamic_median_flow = fv * 0.0004 if fv > 0 else 1.0
+            
             try:
                 result = core_engine.calculate_true_dragon_score(
                     net_inflow=current_amount * raw_purity * 0.5,  # V49: 对齐实盘引擎
@@ -634,7 +640,7 @@ def scan_cmd(ctx, date):
                     open_price=open_price,
                     flow_5min=flow_5min,
                     flow_15min=flow_15min,
-                    flow_5min_median_stock=1.0,
+                    flow_5min_median_stock=dynamic_median_flow,  # 【CTO V37】动态估算基准！
                     space_gap_pct=0.5,
                     float_volume_shares=fv,
                     current_time=actual_time,  # 【CTO V34】使用真实时间
