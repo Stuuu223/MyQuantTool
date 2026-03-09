@@ -146,6 +146,11 @@ class LiveTradingEngine:
         # 假设系统3秒推一个Tick，3分钟=60帧。彻底消灭datetime.now()时间流速精神分裂！
         self.global_tick_frame: int = 0
         
+        # 【CTO V53时间沙盒】统一时间获取入口
+        # - Live模式：返回系统当前时间
+        # - Scan模式：返回模拟时间（由Tick时间戳驱动）
+        self._mock_time: Optional[datetime] = None
+        
         # 【CTO架构重铸令R2/R3】L1价格推力探测器 + 微积分形态学
         # tick_history: 保存过去60个Tick（假设3秒/Tick，约3分钟微观轨迹）
         # volume_history: 保存过去60个成交量快照
@@ -155,6 +160,33 @@ class LiveTradingEngine:
         self._TICK_HISTORY_MAXLEN = 60  # 约3分钟微观轨迹
         
         logger.info("[OK] [LiveTradingEngine] 初始化完成 - QMT Manager已注入")
+    
+    # ==================== 【CTO V53时间沙盒】统一时间获取入口 ====================
+    
+    def get_current_time(self) -> datetime:
+        """
+        【CTO V53时间沙盒】统一时间获取入口
+        
+        - Live模式：返回系统当前时间
+        - Scan模式：返回模拟时间（由Tick时间戳驱动）
+        
+        Returns:
+            datetime: 当前时间（Live）或模拟时间（Scan）
+        """
+        if self.mode == "scan" and self._mock_time is not None:
+            return self._mock_time
+        return datetime.now()
+    
+    def set_mock_time(self, tick_time: datetime):
+        """
+        【CTO V53时间沙盒】设置模拟时间（Scan模式专用）
+        
+        Args:
+            tick_time: Tick数据携带的时间戳
+        """
+        self._mock_time = tick_time
+    
+    # ==========================================================================
     
     def _init_kinetic_engine(self):
         """【CTO挂载】初始化微积分形态学引擎管理器 - 时空对齐"""
@@ -1973,7 +2005,7 @@ class LiveTradingEngine:
                         # 【CTO纠偏令】L1探针修复：早盘15分钟内放行，价格必须下跌才算派发！
                         # 早盘是主力爆量建仓期，换手率高是正常的，不能用死板阈值误杀！
                         from datetime import datetime, time as time_type
-                        now = datetime.now()
+                        now = self.get_current_time()  # 【CTO V53时间沙盒】统一时间获取
                         current_time = now.time()
                         
                         # 只有在 09:45 之后，才启动 L1 探针 (给足早盘爆量建仓的时间)
@@ -2681,7 +2713,8 @@ class LiveTradingEngine:
         report_dir = Path('data/battle_reports')
         report_dir.mkdir(parents=True, exist_ok=True)
         
-        today = datetime.now().strftime('%Y%m%d')
+        current_time = self.get_current_time()  # 【CTO V53时间沙盒】统一时间获取
+        today = current_time.strftime('%Y%m%d')
         report_path = report_dir / f'battle_report_{today}.json'
         
         # 按分数排序
@@ -2690,7 +2723,7 @@ class LiveTradingEngine:
         # 生成战报数据
         report_data = {
             'date': today,
-            'generated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'generated_at': current_time.strftime('%Y-%m-%d %H:%M:%S'),  # 【CTO V53时间沙盒】
             'total_targets': len(final_list),
             'top_targets': final_list[:50]  # 只保存前50名
         }

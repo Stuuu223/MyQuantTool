@@ -448,6 +448,14 @@ class 动能打分引擎CoreEngine:
         # 【彻底废除归零逻辑】算出来是多少就是多少！真龙的数据原汁原味！
         inflow_ratio = inflow_ratio_pct  # 返回百分比形式
         
+        # 【CTO V53大力出奇迹】资金绝对霸权！
+        # inflow_ratio_pct > 10% = 净流入占流通市值超过10%
+        # 主力花天价吃筹码，无视一切摩擦力与时间衰减！
+        is_force_override = False  # 标志变量，后续在最终得分计算前应用
+        if inflow_ratio_pct > 10.0:
+            logger.info(f"🔥 [大力出奇迹] {stock_code} 净流入占比{inflow_ratio_pct:.1f}%！无视一切摩擦力与时间衰减！")
+            is_force_override = True  # 设置标志
+        
         # 2. 相对历史放量倍数（放大历史爆发力）
         # 【CTO核心注入】强制200万的5分钟成交额物理底线，绞杀僵尸股分母陷阱！
         MIN_BASE_FLOW = 2000000.0  # 200万底线
@@ -573,28 +581,29 @@ class 动能打分引擎CoreEngine:
             elif current_time.hour >= 14:
                 multiplier *= 0.5
         
-        # 【CTO V52战役一】彻底废除烂板惩罚！
-        # 真龙在8%~9%是最危险也是最有爆发力的时刻，绝不能因为"还没封板"就强行扣分！
-        # 替换为【高位做功奖励】：如果在高位还能维持强流入，说明主力在花天价吃筹码（强一致性）
-        change_pct = (price - prev_close) / prev_close if prev_close > 0 else 0
-        bonus_score = 0.0  # 新增：奖励分数变量
-        
-        # 动态高位阈值：主板8%/创业板科创板16%/北交所24%
-        if stock_code.startswith(('30', '68')):
-            high_threshold = 0.16
-        elif stock_code.startswith(('8', '4')):
-            high_threshold = 0.24
+        # 【CTO V53宪法】废除魔法数字，实装无量纲动能净值！
+        # price_momentum = (Current_Price - Low) / (High - Low)
+        # > 0.90 表示逼空起爆临界状态（死死咬住日内最高点）
+        if high > low:
+            price_momentum = (price - low) / (high - low)
         else:
-            high_threshold = 0.08
+            price_momentum = 1.0 if price > prev_close else 0.0
         
-        if change_pct > high_threshold and not is_limit_up:
-            # 高位未封板，但如果维持强流入，奖励而非惩罚！
-            if inflow_ratio_pct > 2.0:
+        is_detonation_critical = (price_momentum > 0.90)  # 动能净值>90% = 起爆临界
+        
+        # 计算涨跌幅（仅用于日志输出，不参与决策！）
+        change_pct = (price - prev_close) / prev_close if prev_close > 0 else 0
+        
+        # 势能爆发点判定：只要姿态完美且推力极高（或绝对流入极深），一律保送！
+        if is_detonation_critical and not is_limit_up:
+            if inflow_ratio_pct > 5.0:  # 5%以上流入 = 真金白银推升
+                logger.info(f"🚀 [势能起爆] {stock_code} 动能净值{price_momentum*100:.1f}%，流入{inflow_ratio_pct:.1f}%！保送冲锋！")
+                # 强制解除尾盘打折等任何负面压制
+                multiplier = max(multiplier, 2.0)
                 bonus_score += 500.0
-                logger.info(f"🔥 [冲刺真龙] {stock_code} {change_pct*100:.1f}%以上维持{inflow_ratio_pct:.1f}%强流入，霸气冲板！加{bonus_score}分！")
-            elif inflow_ratio_pct > 1.0:
+            elif inflow_ratio_pct > 2.0:  # 2%以上流入 = 有资金托底
                 bonus_score += 200.0
-                logger.info(f"💪 [高位坚挺] {stock_code} {change_pct*100:.1f}%维持流入，主力护盘！加{bonus_score}分！")
+                logger.info(f"💪 [高位坚挺] {stock_code} 动能净值{price_momentum*100:.1f}%，流入{inflow_ratio_pct:.1f}%！加{bonus_score}分！")
         
         # 【CTO Phase3.2】摩擦力决战区：空间差0~5%，面临突破前高
         in_friction_zone = (0.0 <= space_gap_pct <= 0.05)
@@ -663,6 +672,14 @@ class 动能打分引擎CoreEngine:
                     # 充分换手的分歧转一致真龙，爆分奖励！
                     turnover_multiplier = 1.5
                     logger.info(f"🔥 [换手龙] {stock_code} 涨停+换手率{turnover_pct:.1f}%，极品真龙，乘数×1.5！")
+        
+        # 【CTO V53大力出奇迹】应用特权（在所有乘数计算完成后）
+        if is_force_override:
+            # 1. 赋予极高基础加分
+            bonus_score += 1000.0
+            # 2. 强制拉升乘数
+            multiplier = max(multiplier, 3.0)
+            logger.info(f"🔥 [大力出奇迹生效] {stock_code} 最终乘数={multiplier:.2f}x，加分+1000！")
         
         # 应用乘数和加分（含高位做功奖励bonus_score）
         final_score = round(base_power * multiplier * memory_multiplier * turnover_multiplier + bonus_score, 2)
