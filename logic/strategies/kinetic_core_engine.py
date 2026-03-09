@@ -415,19 +415,17 @@ class 动能打分引擎CoreEngine:
         
         float_market_cap = float_volume_shares * price
         
-        # 【CTO Phase3.1】海拔权重：越靠近涨停板，做功越难，意向度越高
-        # 水下-5%权重0.5，+9%权重1.9，奖励高位做功的资金意向度
-        current_altitude = (price - prev_close) / prev_close if prev_close > 0 else 0
-        altitude_weight = max(0.2, 1.0 + (current_altitude * 10.0))
-        weighted_inflow = net_inflow * altitude_weight
+        # 【P0修复】删除altitude_weight海拔权重，涨停股资金流入不再被夸大
+        # 物理真理：net_inflow就是net_inflow，不需要根据涨幅加权
+        # 原代码：altitude_weight = 1.0 + (current_altitude * 10.0)，涨停股×2倍，严重失真！
         
         # 第一步：【CTO V51 里氏震级模型】无上限乘法动能！
         # 废除加法凑分，改用乘法爆发：base_power = 流入占比 × 放量倍数
         # 让龙中龙自然冲破天花板，无需硬性上限！
         
-        # 1. 流入占比百分比（保留极端值裁剪防止溢出）
-        # 【CTO Phase3.1】使用weighted_inflow计算，奖励高位做功
-        inflow_ratio_pct = (weighted_inflow / float_market_cap * 100.0) if float_market_cap > 1000 else 0.0
+        # 1. 流入占比百分比（使用真实net_inflow，不再乘以altitude_weight）
+        # 【P0修复】使用net_inflow直接计算，不再加权
+        inflow_ratio_pct = (net_inflow / float_market_cap * 100.0) if float_market_cap > 1000 else 0.0
         
         # 【CTO纠偏令】废除归零，实装量纲自适应校准仪！
         # 物理常识：A股目前最小的流通市值也在 3亿~5亿人民币左右
@@ -555,31 +553,32 @@ class 动能打分引擎CoreEngine:
             logger.warning(f"[资金退潮] {stock_identifier} sustain_ratio={sustain_ratio:.2f}<1.0，降权至0.3")
         # [1.0, 5.0] 区间：资金维持正常，multiplier不变
         
-        # B. 筹码纯度（空间差 < 10% 抛压轻）
-        # 【CTO修复】从乘法改为加法，防止叠乘倒挂
+        # B. 【CTO修复】筹码纯度指数衰减模型
+        # 原设计: space_gap < 10% 给 +10分（硬编码阈值）
+        # 新设计: μ = 15 * exp(-space_gap * α)，α=20集中度系数
+        # space_gap=0%: 15分, 5%: 5.5分, 10%: 2.0分，连续渐变而非断崖
+        import math
         bonus_score = 0.0
-        if space_gap_pct < 0.10:
-            bonus_score += 10.0  # 加法而非乘法
+        alpha = 20.0  # 套牢盘集中度系数，可调参数
+        purity_multiplier = math.exp(-space_gap_pct * alpha)
+        bonus_score += 15.0 * purity_multiplier
         
         # C. 吸血效应（流入比例 > 1.5% ← 百分比形式）
         # 【CTO修复】从乘法改为加法，防止叠乘倒挂
         if inflow_ratio_pct > 1.5:
             bonus_score += 15.0  # 加法而非乘法
         
-        # D. 【CTO V46】真正的横向虹吸效应！
-        # 计算的是该股从全候选池抢了多少血！
-        # vampire_ratio_pct = 该股净流入 / 全候选池总净流入
+        # D. 【CTO修复】横向虹吸效应权重重新标定
+        # 原设计+1500/+800/+300相对于base_power(0.5-50分)极端失衡
+        # 新设计: +50/+30/+15，与base_power匹配，避免扭曲分数梯队
         if vampire_ratio_pct > 5.0:
-            # 单只票抽干了全候选池5%以上的活跃资金！触发吸血霸权！
-            bonus_score += 1500.0  # 绝对的龙头霸权加分
-            logger.info(f"🦇 [横向虹吸] {stock_code} 抽血占比{vampire_ratio_pct:.2f}%，触发吸血霸权！")
+            bonus_score += 50.0  # 吸血霸权，但不再一锤定音
+            logger.info(f"🦇 [横向虹吸] {stock_code} 抽血{vampire_ratio_pct:.2f}%，+50分")
         elif vampire_ratio_pct > 3.0:
-            # 抽血3-5%，次级霸权
-            bonus_score += 800.0
-            logger.info(f"🦇 [横向虹吸] {stock_code} 抽血占比{vampire_ratio_pct:.2f}%，次级霸权！")
+            bonus_score += 30.0
+            logger.info(f"🦇 [横向虹吸] {stock_code} 抽血{vampire_ratio_pct:.2f}%，+30分")
         elif vampire_ratio_pct > 1.0:
-            # 抽血1-3%，小霸权
-            bonus_score += 300.0
+            bonus_score += 15.0
         
         # D. 早盘时间坚决度
         # 【CTO V34修复】scan模式下跳过时间衰减，废除"时间冻结"毒瘤！
@@ -609,13 +608,13 @@ class 动能打分引擎CoreEngine:
         # 势能爆发点判定：只要姿态完美且推力极高（或绝对流入极深），一律保送！
         if is_detonation_critical and not is_limit_up:
             if inflow_ratio_pct > 5.0:  # 5%以上流入 = 真金白银推升
-                logger.info(f"🚀 [势能起爆] {stock_code} 动能净值{price_momentum*100:.1f}%，流入{inflow_ratio_pct:.1f}%！保送冲锋！")
+                logger.info(f"🚀 [势能起爆] {stock_code} 动能净值{price_momentum*100:.1f}%，流入{inflow_ratio_pct:.1f}%！")
                 # 强制解除尾盘打折等任何负面压制
                 multiplier = max(multiplier, 2.0)
-                bonus_score += 500.0
+                bonus_score += 25.0  # 【CTO修复】从+500压缩到+25
             elif inflow_ratio_pct > 2.0:  # 2%以上流入 = 有资金托底
-                bonus_score += 200.0
-                logger.info(f"💪 [高位坚挺] {stock_code} 动能净值{price_momentum*100:.1f}%，流入{inflow_ratio_pct:.1f}%！加{bonus_score}分！")
+                bonus_score += 10.0  # 【CTO修复】从+200压缩到+10
+                logger.info(f"💪 [高位坚挺] {stock_code} 动能净值{price_momentum*100:.1f}%，流入{inflow_ratio_pct:.1f}%！+10分")
         
         # 【CTO Phase3.2】摩擦力决战区：空间差0~5%，面临突破前高
         in_friction_zone = (0.0 <= space_gap_pct <= 0.05)
@@ -686,12 +685,11 @@ class 动能打分引擎CoreEngine:
                     logger.info(f"🔥 [换手龙] {stock_code} 涨停+换手率{turnover_pct:.1f}%，极品真龙，乘数×1.5！")
         
         # 【CTO V53大力出奇迹】应用特权（在所有乘数计算完成后）
+        # 【CTO修复】 bonus从+1000压缩到+40，与base_power量级匹配
+        # 移除强制乘数3.0，避免与Spike极刑冲突（物理上互斥）
         if is_force_override:
-            # 1. 赋予极高基础加分
-            bonus_score += 1000.0
-            # 2. 强制拉升乘数
-            multiplier = max(multiplier, 3.0)
-            logger.info(f"🔥 [大力出奇迹生效] {stock_code} 最终乘数={multiplier:.2f}x，加分+1000！")
+            bonus_score += 40.0  # 【CTO修复】从+1000压缩到+40
+            logger.info(f"🔥 [大力出奇迹] {stock_code} 流入{inflow_ratio_pct:.1f}%且MFE>{mfe:.2f}，+40分")
         
         # 应用乘数和加分（含高位做功奖励bonus_score）
         final_score = round(base_power * multiplier * memory_multiplier * turnover_multiplier + bonus_score, 2)

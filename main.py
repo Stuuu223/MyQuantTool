@@ -417,74 +417,54 @@ def replay_cmd(ctx, date, pure):
 @click.pass_context
 def scan_cmd(ctx, date):
     """
-    📊 [CTO V52] Tick级精准定格沙盘，灵魂统一架构
+    📊 [CTO V58] Tick级定格沙盘 - 绝对同质同源架构
     
-    【V52灵魂统一】
-    - scan模式使用MockQmtAdapter，历史Tick伪装实时流
-    - 与Live模式共享同一套LiveTradingEngine逻辑
-    - 绝对同质同源：Scan和Live的物理判断100%一致！
+    【P0修复】彻底废除200行独立循环，接入run_historical_stream！
+    - scan模式与Live模式共享同一套LiveTradingEngine逻辑
+    - MockQmtAdapter伪装实时流，历史Tick泵入引擎打分
+    - 物理判断100%一致，消灭Scan与Live的差异！
     
     示例:
         \b
-        # 扫描最近交易日
         python main.py scan
-        
-        # 扫描指定日期
         python main.py scan --date 20260306
     """
     from logic.utils.calendar_utils import get_latest_completed_trading_day
-    from logic.data_providers.universe_builder import UniverseBuilder
-    from logic.data_providers.true_dictionary import get_true_dictionary
-    from logic.strategies.kinetic_core_engine import 动能打分引擎CoreEngine
-    from logic.utils.metrics_utils import render_live_dashboard
-    from xtquant import xtdata
-    import pandas as pd
-    from datetime import time as time_type
-    from datetime import datetime as dt_class
-    import time
-    import sys
+    from tasks.run_live_trading_engine import LiveTradingEngine
+    from logic.data_providers.mock_qmt_adapter import MockQmtAdapter
     
     target_date = date or get_latest_completed_trading_day()
     
-    click.echo(click.style(f"\n🔍 启动【Tick级定格沙盘扫描】", fg='cyan', bold=True))
+    click.echo(click.style(f"\n🔍 启动【Tick级定格沙盘扫描 - V58同源架构】", fg='cyan', bold=True))
     click.echo(f"📅 目标日期: {target_date}")
-    click.echo(f"💡 模式: 逐只读取Tick，物理冻结时间15:00")
+    click.echo(f"💡 模式: MockQmtAdapter + run_historical_stream，与实盘100%同源")
     
     try:
-        # Step 1: 获取粗筛底池
-        click.echo("\n📦 Step 1: 获取粗筛底池...")
-        builder = UniverseBuilder(target_date=target_date)
-        base_pool, volume_ratios = builder.build()
+        # 【P0修复】使用MockQmtAdapter伪装实时流
+        click.echo("\n📦 Step 1: 初始化MockQmtAdapter...")
+        mock_adapter = MockQmtAdapter(target_date=target_date)
+        mock_adapter.initialize()
+        click.echo(f"   ✅ MockQmtAdapter就绪")
         
+        # 【P0修复】使用LiveTradingEngine的run_historical_stream
+        click.echo("\n📦 Step 2: 启动LiveTradingEngine...")
+        engine = LiveTradingEngine(qmt_manager=mock_adapter, mode='scan')
+        click.echo(f"   ✅ Engine就绪 (mode=scan)")
+        
+        # 【P0修复】构建tick_stream（收盘最后一笔tick）
+        click.echo("\n📦 Step 3: 构建Tick流...")
+        tick_stream = []
+        from xtquant import xtdata
+        base_pool = mock_adapter.watchlist if hasattr(mock_adapter, 'watchlist') and mock_adapter.watchlist else []
         if not base_pool:
-            click.echo(click.style("❌ 底池获取失败", fg='red'))
-            return
+            # 如果没有watchlist，从UniverseBuilder获取
+            from logic.data_providers.universe_builder import UniverseBuilder
+            builder = UniverseBuilder(target_date=target_date)
+            base_pool, _ = builder.build()
         
-        click.echo(f"   粗筛底池: {len(base_pool)} 只")
+        click.echo(f"   底池规模: {len(base_pool)} 只")
         
-        # 【CTO V50核心】90th分位动态量比防线！
-        # 这是19:44榜单"91只尖刀"的终极秘密！
-        # 只保留量比排在全市场前10%的标的！
-        if volume_ratios and len(volume_ratios) > 0:
-            import numpy as np
-            vr_values = [v for v in volume_ratios.values() if v > 0]
-            if vr_values:
-                vr_90th = np.percentile(vr_values, 90)
-                min_vr_threshold = max(vr_90th, 1.5)  # 物理下限1.5x
-                # 过滤：只保留量比>=90th分位的尖刀！
-                base_pool = [s for s in base_pool if volume_ratios.get(s, 0) >= min_vr_threshold]
-                click.echo(f"   🔪 [90th分位截断] 量比>={min_vr_threshold:.2f}x → {len(base_pool)} 只尖刀")
-        
-        # Step 2: 预热TrueDictionary
-        click.echo("\n📦 Step 2: 预热TrueDictionary...")
-        true_dict = get_true_dictionary()
-        true_dict.warmup(base_pool, target_date=target_date)
-        
-        # 【CTO V46】Step 2.5: 第一遍循环计算全候选池总净流入（横向虹吸基准）
-        click.echo("\n📦 Step 2.5: 计算横向虹吸基准...")
-        market_total_inflow = 0.0
-        first_pass_data = {}  # 缓存第一遍扫描的数据，避免第二遍重复读
-        
+        # 获取每只股票的最后一笔Tick
         for stock in base_pool:
             try:
                 local_data = xtdata.get_local_data(
@@ -494,313 +474,25 @@ def scan_cmd(ctx, date):
                     start_time=target_date, 
                     end_time=target_date
                 )
-                
                 if local_data and stock in local_data:
                     df = local_data[stock]
-                    if df is not None and not (hasattr(df, 'empty') and df.empty):
-                        tick = df.iloc[-1]
-                        current_amount = float(tick.get('amount', 0))
-                        current_price = float(tick.get('lastPrice', 0))
-                        pre_close = float(tick.get('lastClose', 0))
-                        tick_high = float(tick.get('high', current_price))
-                        tick_low = float(tick.get('low', current_price))
-                        
-                        if current_price > 0 and pre_close > 0 and tick_high > tick_low:
-                            raw_purity = (current_price - pre_close) / (tick_high - tick_low)
-                            raw_purity = min(raw_purity, 1.0)  # 【Boss修复】限制不超过1.0，防止涨停股净流入被夸大
-                            net_inflow = current_amount * raw_purity * 0.5
-                            
-                            # 【CTO纠偏令】废除归零，实装量纲自适应校准仪！
-                            float_volume = true_dict.get_float_volume(stock) or 1000000000.0
-                            float_market_cap = float_volume * current_price
-                            
-                            # 【量纲自适应校准算子】
-                            calibrated_market_cap = float_market_cap
-                            if float_market_cap > 0:
-                                if float_market_cap < 20000000:  # 小于2000万，单位是"万股"
-                                    calibrated_market_cap = float_market_cap * 10000
-                                elif float_market_cap < 200000000:  # 小于2亿，单位是"手"
-                                    calibrated_market_cap = float_market_cap * 100
-                            
-                            # 用校准后的市值计算真实流入占比（不再归零！）
-                            if calibrated_market_cap > 0 and abs(net_inflow) / calibrated_market_cap * 100.0 > 80.0:
-                                # 超过80%才可能是真正的数据异常，但也不归零，只记录警告
-                                logger.warning(f"⚠️ {stock} INFLOW={abs(net_inflow)/calibrated_market_cap*100.0:.2f}% 较高，但未归零")
-                            
-                            if net_inflow > 0:
-                                market_total_inflow += net_inflow
-                            # 缓存数据供第二遍使用
-                            first_pass_data[stock] = {
-                                'amount': current_amount,
-                                'price': current_price,
-                                'pre_close': pre_close,
-                                'high': tick_high,
-                                'low': tick_low,
-                                'net_inflow': net_inflow,
-                                'tick_df': df
-                            }
+                    if df is not None and not (hasattr(df, 'empty') and df.empty) and len(df) > 0:
+                        tick = df.iloc[-1].to_dict()
+                        tick['stock_code'] = stock
+                        tick['datetime'] = f"{target_date}150000"  # 收盘时间
+                        tick_stream.append(tick)
             except Exception:
                 continue
         
-        market_total_inflow = max(market_total_inflow, 1000000.0)  # 防零
-        click.echo(f"   🦇 全候选池总净流入: {market_total_inflow/100000000:.2f}亿元")
+        click.echo(f"   有效Tick: {len(tick_stream)} 笔")
         
-        # Step 3: Tick级高维遍历 (O(1)内存！) - 第二遍循环
-        click.echo("\n📦 Step 3: 开始 Tick 级高维遍历 (含横向虹吸)...")
+        if len(tick_stream) == 0:
+            click.echo(click.style("❌ 无有效Tick数据，扫描终止", fg='red'))
+            return
         
-        core_engine = 动能打分引擎CoreEngine()
-        current_top_targets = []
-        pool_stats = {
-            'total': len(base_pool),
-            'active': 0,
-            'up': 0,
-            'down': 0,
-            'filtered': 0,
-            'tick_missing': 0,
-            'downloaded': 0
-        }
-        
-        # 【CTO V34修复】废除时间冻结毒瘤！改用mode="scan"跳过衰减
-        # 使用真实收盘时间15:00，通过mode参数控制衰减逻辑
-        actual_time = dt_class.combine(dt_class.today(), time_type(15, 0, 0))
-        
-        # 【CTO V40 核心内存救赎】一只一只读，读完就释放！
-        for i, stock in enumerate(base_pool):
-            # 进度条
-            if i % 100 == 0:
-                print(f"   进度: {i}/{len(base_pool)}...", end='\r')
-                sys.stdout.flush()
-            
-            # 1. 先尝试读本地 Tick
-            local_data = xtdata.get_local_data(
-                field_list=[], 
-                stock_list=[stock], 
-                period='tick', 
-                start_time=target_date, 
-                end_time=target_date
-            )
-            
-            # 2. 【自愈防线】如果没 Tick，当场下载！因为 Scan 是离线任务，可以等！
-            if not local_data or stock not in local_data or local_data[stock] is None or (hasattr(local_data[stock], 'empty') and local_data[stock].empty):
-                try:
-                    xtdata.download_history_data(stock, period='tick', start_time=target_date, end_time=target_date)
-                    time.sleep(0.05)  # 微小停顿防封
-                    local_data = xtdata.get_local_data(
-                        field_list=[], 
-                        stock_list=[stock], 
-                        period='tick', 
-                        start_time=target_date, 
-                        end_time=target_date
-                    )
-                    pool_stats['downloaded'] += 1
-                except Exception:
-                    pass
-            
-            # 3. 检查数据有效性
-            if not local_data or stock not in local_data:
-                pool_stats['filtered'] += 1
-                pool_stats['tick_missing'] += 1
-                continue
-            
-            df = local_data[stock]
-            if df is None or (hasattr(df, 'empty') and df.empty):
-                pool_stats['filtered'] += 1
-                pool_stats['tick_missing'] += 1
-                continue
-            
-            # 4. 提取收盘最后一笔 Tick 的精准状态
-            try:
-                tick = df.iloc[-1]
-            except (IndexError, KeyError):
-                pool_stats['filtered'] += 1
-                continue
-            
-            current_price = float(tick.get('lastPrice', 0))
-            current_amount = float(tick.get('amount', 0))  # 这是精准的全天累计 Amount！
-            pre_close = float(tick.get('lastClose', 0))
-            
-            if pre_close <= 0:
-                pre_close = true_dict.get_prev_close(stock) or current_price
-            
-            tick_high = float(tick.get('high', current_price))
-            tick_low = float(tick.get('low', current_price))
-            open_price = float(tick.get('open', current_price))
-            
-            # 基本有效性检查
-            if current_price <= 0:
-                pool_stats['filtered'] += 1
-                continue
-            
-            # 统计红绿盘
-            if current_price >= pre_close:
-                pool_stats['up'] += 1
-            else:
-                pool_stats['down'] += 1
-            pool_stats['active'] += 1
-            
-            # === 核心算子：与实盘100%一字不差！ ===
-            # 1. 价格位置
-            price_position = (current_price - tick_low) / (tick_high - tick_low) if tick_high > tick_low else 0.5
-            
-            # 2. 涨跌幅
-            change_pct = (current_price - pre_close) / pre_close if pre_close > 0 else 0
-            
-            # 3. 加速度因子
-            acceleration_factor = 1.0 + (price_position - 0.5) * 1.0 + change_pct * 3.0
-            acceleration_factor = max(0.3, min(acceleration_factor, 3.0))
-            
-            # 4. 【物理冻结】沙盘模式强制按全天240分钟算！
-            flow_5min = current_amount / 240.0 * 5
-            flow_15min = current_amount / 240.0 * 15 * acceleration_factor
-            
-            # 5. 流通市值
-            fv = true_dict.get_float_volume(stock)
-            if not fv or fv <= 0:
-                fv = 1000000000.0
-            elif fv < 10000000:
-                fv *= 10000
-            
-            # 6. 纯度量化
-            price_range = tick_high - tick_low
-            if price_range > 0:
-                raw_purity = (current_price - pre_close) / price_range
-            else:
-                raw_purity = 1.0 if current_price > pre_close else -1.0
-            quant_purity = min(max(raw_purity, -1.0), 1.0) * 100
-            
-            # 【CTO V34照妖镜修复】涨停检测用绝对价格推导
-            if stock.startswith(('30', '68')):  # 创业板、科创板 20%
-                limit_up_price = round(pre_close * 1.20, 2)
-            elif stock.startswith(('8', '4')):  # 北交所 30%
-                limit_up_price = round(pre_close * 1.30, 2)
-            else:  # 主板 10%
-                limit_up_price = round(pre_close * 1.10, 2)
-            is_limit_up = (current_price >= limit_up_price - 0.011)
-            # 封单金额：尝试从盘口获取，默认5000万
-            ask_price1 = float(tick.get('askPrice1', 0.0) or 0.0)
-            bid_price1 = float(tick.get('bidPrice1', 0.0) or 0.0)
-            bid_vol1 = int(tick.get('bidVol1', 0) or 0) * 100
-            if is_limit_up:
-                limit_up_queue_amount = (bid_price1 * bid_vol1) if (bid_price1 > 0 and bid_vol1 > 0) else 50000000.0
-            else:
-                limit_up_queue_amount = 0.0
-            
-            # 7. 调用打分引擎
-            # 【CTO V49修复】net_inflow公式与run_live_trading_engine.py对齐！
-            # 旧公式: (current_amount/240*15)*purity = 全天额÷16×purity (低估8倍)
-            # 新公式: current_amount*power_ratio*0.5 = 与实盘引擎一致
-            
-            # 【CTO V37】动态势能基准估算（废除1.0硬编码造假！）
-            # 物理假设：A股正常标的，平均每日换手率约2%。全天240分钟，5分钟占1/48。
-            # 正常的5分钟成交额（中位数）大约是：流通市值 * 2% / 48 ≈ 流通市值 * 0.0004
-            dynamic_median_flow = fv * 0.0004 if fv > 0 else 1.0
-            
-            # 【CTO终极战役】判断昨日涨停（真龙基因）
-            is_yesterday_limit_up = False
-            try:
-                daily_data = xtdata.get_local_data(
-                    field_list=['close'],
-                    stock_list=[stock],
-                    period='1d',
-                    start_time=(datetime.strptime(target_date, '%Y%m%d') - timedelta(days=10)).strftime('%Y%m%d'),
-                    end_time=target_date
-                )
-                if daily_data and stock in daily_data:
-                    daily_df = pd.DataFrame(daily_data[stock])
-                    if len(daily_df) >= 2:
-                        try:
-                            yesterday_close = float(daily_df['close'].iloc[-2])
-                            day_before_close = float(daily_df['close'].iloc[-3]) if len(daily_df) >= 3 else yesterday_close
-                            if day_before_close > 0:
-                                yesterday_change = (yesterday_close - day_before_close) / day_before_close * 100
-                                is_yesterday_limit_up = yesterday_change >= 9.8
-                        except:
-                            pass
-            except:
-                pass
-            
-            # 【CTO V46】计算横向虹吸比例（该股净流入/全候选池总流入）
-            vampire_ratio_pct = 0.0
-            if market_total_inflow > 0:
-                cached_data = first_pass_data.get(stock, {})
-                stock_net_inflow = cached_data.get('net_inflow', current_amount * raw_purity * 0.5)
-                if stock_net_inflow > 0:
-                    vampire_ratio_pct = (stock_net_inflow / market_total_inflow) * 100.0
-                    vampire_ratio_pct = min(vampire_ratio_pct, 100.0)  # 上限100%
-            
-            # 【Boss修复】限制raw_purity不超过1.0
-            raw_purity = min(raw_purity, 1.0)
-            
-            try:
-                result = core_engine.calculate_true_dragon_score(
-                    net_inflow=current_amount * raw_purity * 0.5,  # V49: 对齐实盘引擎
-                    price=current_price,
-                    prev_close=pre_close,
-                    high=tick_high,
-                    low=tick_low,
-                    open_price=open_price,
-                    flow_5min=flow_5min,
-                    flow_15min=flow_15min,
-                    flow_5min_median_stock=dynamic_median_flow,  # 【CTO V37】动态估算基准！
-                    space_gap_pct=0.5,
-                    float_volume_shares=fv,
-                    current_time=actual_time,  # 【CTO V34】使用真实时间
-                    is_limit_up=is_limit_up,  # 【CTO V34】涨停状态
-                    limit_up_queue_amount=limit_up_queue_amount,  # 【CTO V34】封单金额
-                    mode="scan",  # 【CTO V34】scan模式跳过时间衰减
-                    stock_code=stock,  # 【CTO V35】股票代码用于动态danger_pct
-                    is_yesterday_limit_up=is_yesterday_limit_up,  # 【CTO终极战役】真龙基因
-                    vampire_ratio_pct=vampire_ratio_pct  # 【CTO V46】横向虹吸效应
-                )
-                
-                # 解包tuple
-                if isinstance(result, tuple) and len(result) >= 5:
-                    score, sustain_ratio, inflow_ratio, ratio_stock, mfe = result[:5]
-                else:
-                    score = 0
-                    sustain_ratio = 1.0
-                    inflow_ratio = 0
-                    mfe = 0
-                
-                # 【CTO V48修复】inflow_ratio是百分比形式(7.43=7.43%)
-                # 【CTO V52】彻底移除截断，让真龙数据原汁原味展示！
-                inflow = inflow_ratio
-                
-                # 防线：50分 + 非严重出货
-                if score >= 50.0 and quant_purity > -50.0:
-                    current_top_targets.append({
-                        'code': stock,
-                        'score': score,
-                        'price': current_price,
-                        'change': change_pct * 100,
-                        'inflow_ratio': inflow,
-                        'sustain_ratio': sustain_ratio,
-                        'mfe': mfe,
-                        'purity': quant_purity
-                    })
-            except Exception:
-                pool_stats['filtered'] += 1
-                continue
-        
-        print(f"   进度: {len(base_pool)}/{len(base_pool)} 完成！                      ")
-        
-        # Step 4: 排序渲染
-        current_top_targets.sort(key=lambda x: x.get('score', 0), reverse=True)
-        pool_stats['passed_fine_filter'] = len(current_top_targets)
-        
-        click.echo(f"\n📊 打分完成: {len(current_top_targets)} 只通过防线")
-        if pool_stats['downloaded'] > 0:
-            click.echo(f"   📥 在线自愈: 补充下载 {pool_stats['downloaded']} 只Tick数据")
-        if pool_stats['tick_missing'] > 0:
-            click.echo(f"   ⚠️ Tick缺失: {pool_stats['tick_missing']} 只被过滤")
-        
-        # 渲染Rich工业大屏
-        render_live_dashboard(
-            current_top_targets[:10],
-            pool_stats=pool_stats,
-            is_rest=True,
-            msg=f"[Tick级精准沙盘] {target_date} 静态定格"
-        )
+        # 【P0修复】调用run_historical_stream直线喷射引擎
+        click.echo("\n📦 Step 4: 启动直线喷射引擎...")
+        engine.run_historical_stream(tick_stream)
         
         click.echo(click.style("\n✅ 沙盘扫描完成", fg='green'))
         
