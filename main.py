@@ -507,6 +507,7 @@ def scan_cmd(ctx, date):
                         
                         if current_price > 0 and pre_close > 0 and tick_high > tick_low:
                             raw_purity = (current_price - pre_close) / (tick_high - tick_low)
+                            raw_purity = min(raw_purity, 1.0)  # 【Boss修复】限制不超过1.0，防止涨停股净流入被夸大
                             net_inflow = current_amount * raw_purity * 0.5
                             
                             # 【CTO纠偏令】废除归零，实装量纲自适应校准仪！
@@ -726,6 +727,9 @@ def scan_cmd(ctx, date):
                 if stock_net_inflow > 0:
                     vampire_ratio_pct = (stock_net_inflow / market_total_inflow) * 100.0
                     vampire_ratio_pct = min(vampire_ratio_pct, 100.0)  # 上限100%
+            
+            # 【Boss修复】限制raw_purity不超过1.0
+            raw_purity = min(raw_purity, 1.0)
             
             try:
                 result = core_engine.calculate_true_dragon_score(
