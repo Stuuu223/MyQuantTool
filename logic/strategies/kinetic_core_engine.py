@@ -461,7 +461,7 @@ class 动能打分引擎CoreEngine:
         safe_flow_5min = flow_5min if flow_5min > 0 else (flow_15min / 3.0 if flow_15min > 0 else 1.0)
         safe_median = max(flow_5min_median_stock, MIN_BASE_FLOW)
         ratio_stock = safe_flow_5min / safe_median
-        ratio_stock = max(0.01, ratio_stock)  # 移除min(..., 100.0)向上压制！
+        ratio_stock = max(0.01, min(ratio_stock, 10.0))  # 【CTO V54】封顶10倍，防止乘法爆炸！
         
         # 3. 价格推力（日内强度0-1）
         # 【CTO重铸令R4】此为价格相对位置参考，非真实动能！
@@ -501,12 +501,12 @@ class 动能打分引擎CoreEngine:
         else:
             mfe = -100.0
         
-        # 【CTO V53大力出奇迹】资金绝对霸权！非线性市值自适应阈值！
+        # 【CTO V54大力出奇迹】资金绝对霸权！修正数学公式！
         # 物理原理：质量越大，惯性越大，需要的推力比例越小
-        # 小盘股(30亿)：10%流入 = 3亿真金白银，极难！
-        # 大盘股(200亿)：5%流入 = 10亿，已是天量！
-        # 百亿市值递减公式：miracle_threshold = max(3.0, 10.0 - 市值/100亿*0.5)
-        miracle_threshold = max(3.0, 10.0 - float_market_cap_yi * 0.5)  # 每百亿递减5%
+        # 正确的市值衰减公式：每增加100亿市值，阈值下降1.5%
+        # 50亿: 10 - 0.75 = 9.25% | 200亿: 10 - 3 = 7% | 500亿: 10 - 7.5 = 2.5% -> 兜底3.0%
+        cap_penalty = (float_market_cap_yi / 100.0) * 1.5  # 百亿级别衰减
+        miracle_threshold = max(3.0, 10.0 - cap_penalty)
         
         is_force_override = False  # 标志变量，后续在最终得分计算前应用
         if inflow_ratio_pct > miracle_threshold and mfe > 0.5:
@@ -538,6 +538,7 @@ class 动能打分引擎CoreEngine:
         MIN_BASE_FLOW = 2000000.0  # 200万底线防微盘骗炮
         safe_median_15min = max(flow_5min_median_stock * 3.0, MIN_BASE_FLOW * 3.0)
         sustain_ratio = flow_15min / safe_median_15min if safe_median_15min > 0 else 1.0
+        sustain_ratio = min(sustain_ratio, 8.0)  # 【CTO V54】封顶8倍，防止乘法爆炸！
         
         stock_identifier = f"{current_time.strftime('%H:%M')}@{price:.2f}"
         
