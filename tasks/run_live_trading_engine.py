@@ -307,7 +307,7 @@ class LiveTradingEngine:
         self.event_bus.subscribe('tick', self._on_tick_data)
         
         # 获取当前时间
-        current_time = datetime.now()
+        current_time = self.get_current_time()
         market_open = current_time.replace(hour=9, minute=30, second=0, microsecond=0)
         auction_end = current_time.replace(hour=9, minute=25, second=0, microsecond=0)
         
@@ -337,7 +337,7 @@ class LiveTradingEngine:
                 logger.info("[FAST] Step 1: 从UniverseBuilder装载静态物理底池...")
                 try:
                     from logic.data_providers.universe_builder import UniverseBuilder
-                    target_date = datetime.now().strftime('%Y%m%d')
+                    target_date = self.get_current_time().strftime('%Y%m%d')
                     builder = UniverseBuilder(target_date=target_date)
                     base_pool, volume_ratios = builder.build()
                     
@@ -456,7 +456,7 @@ class LiveTradingEngine:
         self._premarket_scan()  # 内部调用_auction_snapshot_filter
         
         # 计算到09:30的剩余时间
-        current_time = datetime.now()
+        current_time = self.get_current_time()
         market_open = current_time.replace(hour=9, minute=30, second=0, microsecond=0)
         seconds_to_open = (market_open - current_time).total_seconds()
         
@@ -572,7 +572,7 @@ class LiveTradingEngine:
             if not true_dict._float_volume or not true_dict._up_stop_price:
                 logger.info("🔄 [TrueDictionary] 第一斩前预热中...")
                 from logic.utils.calendar_utils import get_nth_previous_trading_day
-                today = datetime.now().strftime('%Y%m%d')
+                today = self.get_current_time().strftime('%Y%m%d')
                 target_date = get_nth_previous_trading_day(today, 1)
                 true_dict.warmup(df['stock_code'].tolist(), target_date=target_date, force=False)
             
@@ -637,7 +637,7 @@ class LiveTradingEngine:
             elapsed = (time.perf_counter() - start_time) * 1000
             
             # 6. 【CTO V46强化】输出竞价MFE爆量榜
-            today_str = datetime.now().strftime('%Y%m%d')
+            today_str = self.get_current_time().strftime('%Y%m%d')
             
             # MFE TOP10（MFE > 5）
             high_mfe = filtered_df[filtered_df['auction_mfe'] > 5].head(10)
@@ -740,7 +740,7 @@ class LiveTradingEngine:
             true_dict = get_true_dictionary()
             
             # 【CTO修复】计算target_date（上一个交易日）
-            today = datetime.now().strftime('%Y%m%d')
+            today = self.get_current_time().strftime('%Y%m%d')
             target_date = get_nth_previous_trading_day(today, 1)  # 上一个交易日
             
             # 使用当前watchlist + 扩展池进行预热
@@ -910,7 +910,7 @@ class LiveTradingEngine:
             # 4. 计算量比（时间进度加权）
             df['volume_gu'] = df['volume'] * 100  # 手→股
             
-            now = datetime.now()
+            now = self.get_current_time()
             market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
             raw_minutes = (now - market_open).total_seconds() / 60
             minutes_passed = max(5, min(raw_minutes, 240))  # 缓冲5分钟，最大240分钟
@@ -1166,7 +1166,7 @@ class LiveTradingEngine:
                 self.global_tick_frame += 1
                 
                 # 检查交易时间
-                now = datetime.now()
+                now = self.get_current_time()
                 current_time = now.time()
                 
                 # 【CTO V5】午休期间：保持挂起，显示缓存
@@ -1732,7 +1732,7 @@ class LiveTradingEngine:
             # ============================================================
             from logic.data_providers.true_dictionary import get_true_dictionary
             
-            now = datetime.now()
+            now = self.get_current_time()
             market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
             minutes_passed = max(1, (now - market_open).total_seconds() / 60)
             
@@ -1889,7 +1889,7 @@ class LiveTradingEngine:
             pre_close = tick_data.get('lastClose', tick_data.get('prev_close', price)) or price
             
             from datetime import datetime
-            now = datetime.now()
+            now = self.get_current_time()
             market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
             minutes_passed = max(1, (now - market_open).total_seconds() / 60)
             
@@ -1938,7 +1938,7 @@ class LiveTradingEngine:
         """
         from datetime import datetime
         
-        now = datetime.now()
+        now = self.get_current_time()
         market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
         minutes_passed = max(1, (now - market_open).total_seconds() / 60)
         
@@ -2093,7 +2093,7 @@ class LiveTradingEngine:
             
             # 计算5分钟和15分钟资金流（简化版）
             from datetime import datetime
-            now = datetime.now()
+            now = self.get_current_time()
             market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
             minutes_passed = max(1, (now - market_open).total_seconds() / 60)
             
@@ -2319,7 +2319,7 @@ class LiveTradingEngine:
             
             # 默认使用今天
             if date is None:
-                date = datetime.now().strftime('%Y%m%d')
+                date = self.get_current_time().strftime('%Y%m%d')
             
             # 标准化代码
             normalized_code = self._normalize_stock_code(stock_code)
@@ -2409,7 +2409,7 @@ class LiveTradingEngine:
         def auto_replenish_loop():
             while self.running:
                 try:
-                    current_time = datetime.now()
+                    current_time = self.get_current_time()
                     market_open = current_time.replace(hour=9, minute=30, second=0, microsecond=0)
                     market_close = current_time.replace(hour=15, minute=0, second=0, microsecond=0)
                     
@@ -2497,7 +2497,7 @@ class LiveTradingEngine:
             # ⭐️ CTO裁决修复：引入时间进度加权，防止盘中量比失真
             # 量比 = 估算全天成交量 / 5日平均成交量
             # 其中 估算全天成交量 = 当前成交量 / 已过分钟数 * 240分钟
-            now = datetime.now()
+            now = self.get_current_time()
             market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
             raw_minutes = (now - market_open).total_seconds() / 60
             # CTO重塑Phase3：开盘前5分钟使用缓冲值5，防止量比虚高
@@ -2602,7 +2602,7 @@ class LiveTradingEngine:
         from logic.execution.exit_manager import ExitManager
         
         if entry_time is None:
-            entry_time = datetime.now().strftime('%Y%m%d')
+            entry_time = self.get_current_time().strftime('%Y%m%d')
         
         self.positions[stock_code] = ExitManager(
             entry_price=entry_price,
@@ -2648,7 +2648,7 @@ class LiveTradingEngine:
                 'lastPrice': float(tick.get('lastPrice', 0)),
                 'amount': float(tick.get('amount', 0)),
                 'volume': float(tick.get('volume', 0)),
-                'time': datetime.now().strftime('%Y%m%d%H%M%S')
+                'time': self.get_current_time().strftime('%Y%m%d%H%M%S')
             }
             
             # 调用统一的卖点守门人
@@ -2684,7 +2684,7 @@ class LiveTradingEngine:
                 self.highest_scores[code] = {
                     'code': code,
                     'score': score,
-                    'time': datetime.now().strftime('%H:%M:%S'),
+                    'time': self.get_current_time().strftime('%H:%M:%S'),
                     'price': item.get('price', 0),
                     'change': item.get('change', 0),
                     'inflow_ratio': item.get('inflow_ratio', 0),
