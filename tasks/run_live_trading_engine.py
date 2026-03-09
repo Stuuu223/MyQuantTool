@@ -271,8 +271,21 @@ class LiveTradingEngine:
             # 2. 直接喂入雷达核心算子，不经过任何线程与队列！
             stock_code = tick.get('stock_code', '')
             if stock_code in self.watchlist or not self.watchlist:
-                # 构造tick_event格式
-                tick_event = type('TickEvent', (), {'stock_code': stock_code, 'data': tick})()
+                # 【CTO物理级对齐】将字典数据打散映射为对象属性
+                # _on_tick_data直接访问tick_event.price/volume/amount等属性
+                class MockTickEvent:
+                    def __init__(self, sc, d):
+                        self.stock_code = sc
+                        self.price = float(d.get('lastPrice', 0))
+                        self.volume = float(d.get('volume', 0))
+                        self.amount = float(d.get('amount', 0))
+                        self.open = float(d.get('open', 0))
+                        self.high = float(d.get('high', 0))
+                        self.low = float(d.get('low', 0))
+                        self.prev_close = float(d.get('lastClose', 0))
+                        self.data = d  # 保留原始字典用于兼容
+                
+                tick_event = MockTickEvent(stock_code, tick)
                 self._on_tick_data(tick_event)
                 processed_count += 1
         
