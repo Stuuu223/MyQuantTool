@@ -228,7 +228,7 @@ def get_top_stocks(date: str, top_n: int = 20) -> List[Dict]:
                     flow_5min=flow_5min,
                     flow_15min=flow_15min,
                     flow_5min_median_stock=dynamic_median_flow,  # 【CTO V37】动态估算基准！
-                    space_gap_pct=0.5,
+                    space_gap_pct=0.05,  # 【CTO修复】5%纯净水域默认值，释放系统活力
                     float_volume_shares=fv,
                     current_time=actual_time,
                     is_limit_up=is_limit_up,  # 【CTO V33】涨停状态
@@ -395,9 +395,20 @@ def calculate_returns(stock: str, entry_date: str, end_date: str, entry_score: f
         else:
             final_close = float(df_after.iloc[-1]['price']) if len(df_after) > 0 else entry_close
         
-        # 计算持仓期间的最高价和最低价
-        # 【关键修复】用iloc切片，entry_loc是iloc位置
-        df_period = df_tick.iloc[entry_loc:]
+        # 【CTO修复】计算持仓期间的最高价和最低价
+        # 如果中途止损/止盈了，最大收益只看买入到离场之间的行情
+        if exit_price is not None:
+            # 找到退出点的iloc位置
+            exit_positions = df_tick[df_tick['price'] == exit_price].index.tolist()
+            if exit_positions:
+                exit_loc = df_tick.index.get_loc(exit_positions[0])
+                df_period = df_tick.iloc[entry_loc : exit_loc + 1]
+            else:
+                df_period = df_tick.iloc[entry_loc:]
+        else:
+            # 如果拿到收盘，就看全程
+            df_period = df_tick.iloc[entry_loc:]
+        
         max_price_period = df_period['price'].max()
         min_price_period = df_period['price'].min()
         

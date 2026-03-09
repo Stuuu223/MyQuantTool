@@ -142,19 +142,9 @@ class ExitManager:
             self.current_day = tick_day
             logger.debug(f"[ExitManager] {self.stock_code} 跨日重置VWAP基准: {tick_day}")
         
-        # 4. 判断amount/volume是累计还是增量
-        # 如果当前值比之前累计值大很多，说明是累计值
-        # 如果当前值比之前累计值小，说明是增量值
-        if amount > self.daily_amount * 1.5:  # 可能是累计值
-            # 直接使用累计值
-            self.daily_amount = amount
-            self.daily_volume = volume
-        else:
-            # 增量累加
-            amount_inc = amount
-            volume_inc = volume
-            self.daily_amount += amount_inc
-            self.daily_volume += volume_inc
+        # 【CTO修复】QMT底层送过来的 amount 和 volume 本身就是全天累计绝对值，无需任何增量运算！
+        self.daily_amount = amount
+        self.daily_volume = volume
         
         # 5. 计算实时VWAP
         if self.daily_volume > 0:

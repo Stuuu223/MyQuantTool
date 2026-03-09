@@ -204,6 +204,10 @@ class LiveTradingEngine:
         if self.mode != 'scan':
             logger.warning("[WARN] run_historical_stream() 仅适用于Scan模式，Live模式请使用 start_session()")
         
+        # 【CTO 补天指令：强制开机！】
+        # 跳过 start_session 后必须强制接通引擎电源，否则 _on_tick_data 会拒收所有 Tick！
+        self.is_running = True
+        
         logger.info(f"🚀 [Time Machine] 启动超频时间沙盒，准备暴力泵入 {len(tick_stream)} 个Tick...")
         
         # 强行预热底层字典（无需等待9点15）
