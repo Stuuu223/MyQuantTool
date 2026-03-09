@@ -209,9 +209,23 @@ class LiveTradingEngine:
         # 强行预热底层字典（无需等待9点15）
         self._init_qmt_adapter()
         
-        # 确保TrueDictionary预热完成
-        if self.true_dict:
-            self.true_dict.warm_up()
+        # ================= CTO 铁血重铸版 =================
+        # 【CTO 补天】强制获取单例 TrueDictionary 并挂载
+        from logic.data_providers.true_dictionary import get_true_dictionary
+        if not hasattr(self, 'true_dict') or not self.true_dict:
+            self.true_dict = get_true_dictionary()
+
+        # 进行沙盘日期安全预热
+        if hasattr(self, 'mode') and self.mode == 'scan':
+            # 获取沙盘运行日期（兼容 Mock 适配器）
+            mock_target_date = getattr(self.qmt_manager, 'target_date', None) 
+            # 从 Universe 获取底池，否则全市场预热会内存爆炸
+            from logic.data_providers.universe_builder import UniverseBuilder
+            base_pool, _ = UniverseBuilder(target_date=mock_target_date).build()
+            
+            logger.info(f"📦 [TrueDictionary] 正在预热底池 {len(base_pool)} 只股票的静态数据...")
+            self.true_dict.warmup(base_pool, target_date=mock_target_date)
+        # ==================================================
         
         # 执行开盘粗筛，构建watchlist
         self._snapshot_filter()
