@@ -417,12 +417,12 @@ def replay_cmd(ctx, date, pure):
 @click.pass_context
 def scan_cmd(ctx, date):
     """
-    📊 [CTO V40] Tick级精准定格沙盘，100%对齐实盘
+    📊 [CTO V52] Tick级精准定格沙盘，灵魂统一架构
     
-    【V40正本清源】
-    - 废弃日K降维打击，恢复Tick级毫米精度
-    - O(1)内存逐只加载，8G电脑如丝般顺滑
-    - 在线自愈：缺什么下什么
+    【V52灵魂统一】
+    - scan模式使用MockQmtAdapter，历史Tick伪装实时流
+    - 与Live模式共享同一套LiveTradingEngine逻辑
+    - 绝对同质同源：Scan和Live的物理判断100%一致！
     
     示例:
         \b
@@ -509,15 +509,22 @@ def scan_cmd(ctx, date):
                             raw_purity = (current_price - pre_close) / (tick_high - tick_low)
                             net_inflow = current_amount * raw_purity * 0.5
                             
-                            # 【CTO战役一】量纲校验 - 如果净流入占比超过20%，说明数据异常！
+                            # 【CTO纠偏令】废除归零，实装量纲自适应校准仪！
                             float_volume = true_dict.get_float_volume(stock) or 1000000000.0
                             float_market_cap = float_volume * current_price
+                            
+                            # 【量纲自适应校准算子】
+                            calibrated_market_cap = float_market_cap
                             if float_market_cap > 0:
-                                raw_inflow_pct = abs(net_inflow) / float_market_cap * 100.0
-                                if raw_inflow_pct > 20.0:
-                                    # 【CTO战役一核心】量纲灾难时，净流入强制归零！
-                                    logger.error(f"🚨 [量纲灾难] {stock} 原始INFLOW高达{raw_inflow_pct:.2f}%！净流入强制归零！")
-                                    net_inflow = 0.0
+                                if float_market_cap < 20000000:  # 小于2000万，单位是"万股"
+                                    calibrated_market_cap = float_market_cap * 10000
+                                elif float_market_cap < 200000000:  # 小于2亿，单位是"手"
+                                    calibrated_market_cap = float_market_cap * 100
+                            
+                            # 用校准后的市值计算真实流入占比（不再归零！）
+                            if calibrated_market_cap > 0 and abs(net_inflow) / calibrated_market_cap * 100.0 > 80.0:
+                                # 超过80%才可能是真正的数据异常，但也不归零，只记录警告
+                                logger.warning(f"⚠️ {stock} INFLOW={abs(net_inflow)/calibrated_market_cap*100.0:.2f}% 较高，但未归零")
                             
                             if net_inflow > 0:
                                 market_total_inflow += net_inflow
@@ -751,9 +758,9 @@ def scan_cmd(ctx, date):
                     inflow_ratio = 0
                     mfe = 0
                 
-                # 【CTO V48修复】inflow_ratio是百分比形式(7.43=7.43%)，不要误限制！
-                # 只做极端值裁剪，保留真实占比
-                inflow = min(max(inflow_ratio, -50.0), 50.0)
+                # 【CTO V48修复】inflow_ratio是百分比形式(7.43=7.43%)
+                # 【CTO V52】彻底移除截断，让真龙数据原汁原味展示！
+                inflow = inflow_ratio
                 
                 # 防线：50分 + 非严重出货
                 if score >= 50.0 and quant_purity > -50.0:

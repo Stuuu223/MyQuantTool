@@ -429,13 +429,23 @@ class 动能打分引擎CoreEngine:
         # 【CTO Phase3.1】使用weighted_inflow计算，奖励高位做功
         inflow_ratio_pct = (weighted_inflow / float_market_cap * 100.0) if float_market_cap > 1000 else 0.0
         
-        # 【CTO决战级修复】物理极值熔断！流入占比不可能超过20%！
-        # 如果超过20%，说明数据异常（如量纲错误或假数据）
-        # 【CTO战役一核心】宁可杀错，不能让错乱数据霸榜！净流入强制归零！
-        if abs(inflow_ratio_pct) > 20.0:
-            logger.error(f"🚨 [量纲灾难] {stock_code} INFLOW高达{inflow_ratio_pct:.2f}%！强制归零！金额={net_inflow:.0f}, 市值={float_market_cap:.0f}")
-            inflow_ratio_pct = 0.0
-            net_inflow = 0.0  # 同时清零净流入
+        # 【CTO纠偏令】废除归零，实装量纲自适应校准仪！
+        # 物理常识：A股目前最小的流通市值也在 3亿~5亿人民币左右
+        # 如果算出来的流通市值异常，说明QMT返回的单位不一致（股/手/万股）
+        # 【量纲自适应校准算子】
+        calibrated_float_market_cap = float_market_cap
+        if float_market_cap > 0:
+            if float_market_cap < 20000000:  # 小于2000万，单位极大可能是"万股"
+                calibrated_float_market_cap = float_market_cap * 10000
+                logger.debug(f"📐 [量纲校准] {stock_code} 识别为万股单位，市值自动放大10000倍")
+            elif float_market_cap < 200000000:  # 小于2亿，单位极大可能是"手"
+                calibrated_float_market_cap = float_market_cap * 100
+                logger.debug(f"📐 [量纲校准] {stock_code} 识别为手单位，市值自动放大100倍")
+        
+        # 用校准后的市值重新计算流入占比
+        if calibrated_float_market_cap > 0:
+            inflow_ratio_pct = (weighted_inflow / calibrated_float_market_cap * 100.0)
+        # 【彻底废除归零逻辑】算出来是多少就是多少！真龙的数据原汁原味！
         inflow_ratio = inflow_ratio_pct  # 返回百分比形式
         
         # 2. 相对历史放量倍数（放大历史爆发力）
@@ -563,20 +573,28 @@ class 动能打分引擎CoreEngine:
             elif current_time.hour >= 14:
                 multiplier *= 0.5
         
-        # 【CTO照妖镜】E. 杂毛现形器：高位未封板惩罚（日内盈亏比断崖）
-        # 【CTO V35修复】动态danger_pct：主板8.5%/创业板科创板17%/北交所25%
-        # 解决用主板标尺惩罚创业板的问题！
-        if stock_code.startswith(('30', '68')):  # 创业板、科创板 (20%涨停)
-            danger_pct = 0.17  # 17%以上未封板视为危险
-        elif stock_code.startswith(('8', '4')):  # 北交所 (30%涨停)
-            danger_pct = 0.25  # 25%以上未封板视为危险
-        else:  # 主板 (10%涨停)
-            danger_pct = 0.085  # 8.5%
-        
+        # 【CTO V52战役一】彻底废除烂板惩罚！
+        # 真龙在8%~9%是最危险也是最有爆发力的时刻，绝不能因为"还没封板"就强行扣分！
+        # 替换为【高位做功奖励】：如果在高位还能维持强流入，说明主力在花天价吃筹码（强一致性）
         change_pct = (price - prev_close) / prev_close if prev_close > 0 else 0
-        if change_pct > danger_pct and not is_limit_up:
-            multiplier *= 0.3
-            logger.warning(f"[照妖镜] {stock_code} 高位无力封板/烂板(涨幅{change_pct*100:.1f}%>阈值{danger_pct*100:.1f}%)，动能衰竭，分数打7折！")
+        bonus_score = 0.0  # 新增：奖励分数变量
+        
+        # 动态高位阈值：主板8%/创业板科创板16%/北交所24%
+        if stock_code.startswith(('30', '68')):
+            high_threshold = 0.16
+        elif stock_code.startswith(('8', '4')):
+            high_threshold = 0.24
+        else:
+            high_threshold = 0.08
+        
+        if change_pct > high_threshold and not is_limit_up:
+            # 高位未封板，但如果维持强流入，奖励而非惩罚！
+            if inflow_ratio_pct > 2.0:
+                bonus_score += 500.0
+                logger.info(f"🔥 [冲刺真龙] {stock_code} {change_pct*100:.1f}%以上维持{inflow_ratio_pct:.1f}%强流入，霸气冲板！加{bonus_score}分！")
+            elif inflow_ratio_pct > 1.0:
+                bonus_score += 200.0
+                logger.info(f"💪 [高位坚挺] {stock_code} {change_pct*100:.1f}%维持流入，主力护盘！加{bonus_score}分！")
         
         # 【CTO Phase3.2】摩擦力决战区：空间差0~5%，面临突破前高
         in_friction_zone = (0.0 <= space_gap_pct <= 0.05)
@@ -646,8 +664,8 @@ class 动能打分引擎CoreEngine:
                     turnover_multiplier = 1.5
                     logger.info(f"🔥 [换手龙] {stock_code} 涨停+换手率{turnover_pct:.1f}%，极品真龙，乘数×1.5！")
         
-        # 应用乘数和加分
-        final_score = round(base_power * multiplier * memory_multiplier * turnover_multiplier, 2)
+        # 应用乘数和加分（含高位做功奖励bonus_score）
+        final_score = round(base_power * multiplier * memory_multiplier * turnover_multiplier + bonus_score, 2)
         
         # 【T3: Spike极刑】动能枯竭直接返回，不入场
         # sustain_ratio < 1.0 = 当前流入低于历史中位数 = 骗炮信号

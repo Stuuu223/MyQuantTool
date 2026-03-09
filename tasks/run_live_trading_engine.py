@@ -57,27 +57,42 @@ class LiveTradingEngine:
     - 使用依赖注入模式，从main.py传入QMT实例
     - 移除简化模式容错，QMT缺失必须崩溃
     - 实盘不容沙子，没有QMT就是玩具！
+    
+    【CTO V52战役三】灵魂统一架构：
+    - mode="live": 实盘模式，使用真实QMT适配器
+    - mode="scan": 沙盘模式，使用MockQmtAdapter伪装历史Tick
+    - 绝对同质同源：Scan和Live使用完全相同的引擎逻辑！
     """
     
-    def __init__(self, qmt_manager=None, event_bus=None, volume_percentile: float = 1.5):
+    def __init__(self, qmt_manager=None, event_bus=None, volume_percentile: float = 1.5, 
+                 mode: str = "live", target_date: str = None):
         """
         初始化引擎 - CTO强制：依赖注入模式
         
         Args:
-            qmt_manager: QMT管理器实例（必须传入）
+            qmt_manager: QMT管理器实例（live模式必须传入）
             event_bus: 事件总线实例（可选，内部创建）
             volume_percentile: 量比分位数阈值
+            mode: 运行模式 "live"(实盘) 或 "scan"(沙盘回测)
+            target_date: 目标日期 (scan模式必需，格式: 'YYYYMMDD')
         """
-        # CTO强制：QMT Manager必须由外部注入！
-        if qmt_manager is None:
-            logger.error("[ERR] [LiveTradingEngine] CTO命令：没有券商通道，不准开机！")
-            raise RuntimeError(
-                "致命错误：QMT Manager缺失！\n"
-                "CTO命令：实盘引擎拒绝空转！\n"
-                "请在main.py中初始化QMT并传入引擎！"
-            )
+        self.mode = mode
+        self.target_date = target_date or datetime.now().strftime('%Y%m%d')
         
-        self.qmt_manager = qmt_manager
+        # 【CTO V52战役三】scan模式允许跳过QMT检查
+        if mode == "scan":
+            logger.info(f"🔄 [LiveTradingEngine] 沙盘模式启动，目标日期: {self.target_date}")
+            self.qmt_manager = qmt_manager  # 可以为None
+        else:
+            # CTO强制：live模式QMT Manager必须由外部注入！
+            if qmt_manager is None:
+                logger.error("[ERR] [LiveTradingEngine] CTO命令：没有券商通道，不准开机！")
+                raise RuntimeError(
+                    "致命错误：QMT Manager缺失！\n"
+                    "CTO命令：实盘引擎拒绝空转！\n"
+                    "请在main.py中初始化QMT并传入引擎！"
+                )
+            self.qmt_manager = qmt_manager
         self.scanner = None
         self.event_bus = event_bus  # 可以为None，稍后初始化
         self.watchlist = []
@@ -196,17 +211,32 @@ class LiveTradingEngine:
         【架构解耦】初始化QMT事件适配器
         
         将底层QMT通讯细节封装到adapter，主引擎保持纯粹
+        
+        【CTO V52战役三】灵魂统一架构：
+        - live模式：使用真实QMTEventAdapter
+        - scan模式：使用MockQmtAdapter（历史Tick伪装实时流）
         """
         try:
-            from logic.data_providers.qmt_event_adapter import QMTEventAdapter
-            self.qmt_adapter = QMTEventAdapter(event_bus=self.event_bus)
-            if self.qmt_adapter.initialize():
-                logger.info("[OK] [LiveTradingEngine] QMTEventAdapter 初始化成功")
+            if self.mode == "scan":
+                # 【CTO V52战役三】scan模式使用MockQmtAdapter
+                from logic.data_providers.mock_qmt_adapter import MockQmtAdapter
+                self.qmt_adapter = MockQmtAdapter(target_date=self.target_date, event_bus=self.event_bus)
+                if self.qmt_adapter.initialize():
+                    logger.info(f"[OK] [LiveTradingEngine-SCAN] MockQmtAdapter 初始化成功，目标日期: {self.target_date}")
+                else:
+                    logger.error("[ERR] [LiveTradingEngine-SCAN] MockQmtAdapter 初始化失败")
+                    self.qmt_adapter = None
             else:
-                logger.error("[ERR] [LiveTradingEngine] QMTEventAdapter 初始化失败")
-                self.qmt_adapter = None
+                # live模式使用真实QMT适配器
+                from logic.data_providers.qmt_event_adapter import QMTEventAdapter
+                self.qmt_adapter = QMTEventAdapter(event_bus=self.event_bus)
+                if self.qmt_adapter.initialize():
+                    logger.info("[OK] [LiveTradingEngine-LIVE] QMTEventAdapter 初始化成功")
+                else:
+                    logger.error("[ERR] [LiveTradingEngine-LIVE] QMTEventAdapter 初始化失败")
+                    self.qmt_adapter = None
         except Exception as e:
-            logger.error(f"[ERR] [LiveTradingEngine] QMTEventAdapter 创建失败: {e}")
+            logger.error(f"[ERR] [LiveTradingEngine] QMT适配器创建失败: {e}")
             self.qmt_adapter = None
     
     def start_session(self, enable_dynamic_radar: bool = True):
@@ -1219,20 +1249,28 @@ class LiveTradingEngine:
                     # 净流入估算
                     net_inflow_est = current_amount * power_ratio * 0.5
                     
-                    # 【CTO战役一】量纲校验 - 如果净流入占比超过20%，说明数据异常！
+                    # 【CTO纠偏令】废除归零，实装量纲自适应校准仪！
                     s_data = static_cache.get(stock_code)
                     float_volume = s_data.get('float_volume', 0) if s_data else 0
                     if float_volume <= 0:
                         float_volume = true_dict.get_float_volume(stock_code) or 1000000000.0
                     
                     float_market_cap = float_volume * current_price
+                    
+                    # 【量纲自适应校准算子】
+                    calibrated_market_cap = float_market_cap
                     if float_market_cap > 0:
-                        raw_inflow_pct = abs(net_inflow_est) / float_market_cap * 100.0
-                        if raw_inflow_pct > 20.0:
-                            # 【CTO战役一核心】量纲灾难时，净流入强制归零！
-                            # 宁可杀错，不能让错乱数据霸榜！
-                            logger.error(f"🚨 [量纲灾难] {stock_code} 原始INFLOW高达{raw_inflow_pct:.2f}%！金额={current_amount:.0f}, 市值={float_market_cap:.0f}。净流入强制归零！")
-                            net_inflow_est = 0.0
+                        if float_market_cap < 20000000:  # 小于2000万，单位是"万股"
+                            calibrated_market_cap = float_market_cap * 10000
+                        elif float_market_cap < 200000000:  # 小于2亿，单位是"手"
+                            calibrated_market_cap = float_market_cap * 100
+                    
+                    # 用校准后的市值计算真实流入占比（不再归零！）
+                    if calibrated_market_cap > 0:
+                        raw_inflow_pct = abs(net_inflow_est) / calibrated_market_cap * 100.0
+                        if raw_inflow_pct > 80.0:
+                            # 超过80%才可能是真正的数据异常，但也不归零，只记录警告
+                            logger.warning(f"⚠️ {stock_code} INFLOW={raw_inflow_pct:.2f}% 较高，但未归零")
                     
                     # 只累计正向净流入
                     if net_inflow_est > 0:
@@ -1607,10 +1645,14 @@ class LiveTradingEngine:
                 
         except KeyboardInterrupt:
             logger.info("[STOP] 用户中断，生成战报...")
-            self._generate_final_battle_report()
+            if not getattr(self, '_has_generated_report', False):
+                self._generate_final_battle_report()
+                self._has_generated_report = True
         except Exception as e:
             logger.error(f"雷达循环异常: {e}")
-            self._generate_final_battle_report()
+            if not getattr(self, '_has_generated_report', False):
+                self._generate_final_battle_report()
+                self._has_generated_report = True
     
     def _on_tick_data(self, tick_event):
         """
@@ -1928,11 +1970,18 @@ class LiveTradingEngine:
                         # 【CTO战役收官】修复量纲：delta_volume(手) * 100 = 股，再 / float_volume(股) * 100 = %
                         delta_turnover = (delta_volume * 10000) / float_volume if float_volume > 0 else 0.0
                         
-                        # L1探针：5分钟内爆出天量换手(>0.5%)，但价格完全推不动(<0.5%)
-                        # 说明抛压极大，主力在派发！一票否决！
-                        if delta_turnover > 0.5 and price_change_pct < 0.5:
-                            logger.warning(f"💀 [L1探针] {stock_code} 5分钟放巨量({delta_turnover:.2f}%)但滞涨({price_change_pct:.2f}%)，摩擦力极大！一票否决！")
-                            return False
+                        # 【CTO纠偏令】L1探针修复：早盘15分钟内放行，价格必须下跌才算派发！
+                        # 早盘是主力爆量建仓期，换手率高是正常的，不能用死板阈值误杀！
+                        from datetime import datetime, time as time_type
+                        now = datetime.now()
+                        current_time = now.time()
+                        
+                        # 只有在 09:45 之后，才启动 L1 探针 (给足早盘爆量建仓的时间)
+                        if current_time >= time_type(9, 45, 0):
+                            # 爆量且价格下跌，才是真正的派发！
+                            if delta_turnover > 0.5 and price_change_pct < -0.5:
+                                logger.warning(f"💀 [L1探针] {stock_code} 爆量({delta_turnover:.2f}%)且价格下跌({price_change_pct:.2f}%)，主力派发！")
+                                return False
             
             # 防守斧：资金流检查
             capital_flow_ok = getattr(self.trade_gatekeeper, 'check_capital_flow', lambda *args: True)(
@@ -2494,11 +2543,13 @@ class LiveTradingEngine:
             self.trader.disconnect()
         
         # 【CTO V32】非交易日模式下跳过战报打印（已在_print_fire_control_panel打印过）
-        if not getattr(self, '_skip_final_report', False):
+        # 【CTO V52战役二】同时检查_has_generated_report标志，防止异常分支重复生成
+        if not getattr(self, '_skip_final_report', False) and not getattr(self, '_has_generated_report', False):
             # 【CTO战地收尸】生成最终战报
             self._generate_final_battle_report()
+            self._has_generated_report = True
         else:
-            logger.info("[OK] 非交易日模式：跳过最终战报打印（已在看板显示）")
+            logger.info("[OK] 跳过最终战报打印（已在其他分支生成）")
         
         logger.info("[OK] 实盘总控引擎已停止")
     
