@@ -109,6 +109,11 @@ class LiveTradingEngine:
         # 用于计算每只股票的vampire_ratio_pct = 该股净流入 / 全池总流入 * 100
         self.market_total_inflow_cache: float = 1000000.0  # 初始兜底100万
         
+        # 【CTO V46架构大一统】持仓管理 - 使用ExitManager统一止损逻辑
+        # positions: {stock_code: ExitManager实例}
+        # 每个持仓都有自己的ExitManager来监控止损/止盈条件
+        self.positions: Dict[str, Any] = {}  # {stock_code: ExitManager}
+        
         # 【CTO修复】初始化顺序：先EventBus，再QMTEventAdapter
         # 初始化EventBus（如果未传入）
         if self.event_bus is None:
@@ -1576,6 +1581,15 @@ class LiveTradingEngine:
                 # 主线程刷屏（盘后模式静默，不清屏）
                 self._print_fire_control_panel(top_10, initial_loading=False, pool_stats=pool_stats, is_rest=is_after_hours)
                 
+                # 【CTO V46架构大一统】持仓止损/止盈检查
+                # 检查所有持仓是否触发卖出条件
+                if self.positions:
+                    exit_signals = self.check_position_exits(all_ticks)
+                    for signal in exit_signals:
+                        logger.warning(f"🔔 [持仓止损] {signal['code']}: {signal['reason']}")
+                        # 这里只打印日志，实际卖出操作需要与交易接口对接
+                        # self.close_position(signal['code'], signal['reason'])
+                
                 # 战地收尸
                 self._update_daily_battle_report(current_top_targets)
                 
@@ -2487,6 +2501,86 @@ class LiveTradingEngine:
             logger.info("[OK] 非交易日模式：跳过最终战报打印（已在看板显示）")
         
         logger.info("[OK] 实盘总控引擎已停止")
+    
+    # =========================================================================
+    # 【CTO V46架构大一统】持仓管理 - 使用ExitManager统一止损逻辑
+    # =========================================================================
+    
+    def open_position(self, stock_code: str, entry_price: float, entry_score: float, entry_time: str = None):
+        """
+        开仓 - 创建ExitManager实例
+        
+        Args:
+            stock_code: 股票代码
+            entry_price: 入场价格
+            entry_score: 入场时的打分（用于区分真龙/平民）
+            entry_time: 入场时间（可选，默认当前时间）
+        """
+        from logic.execution.exit_manager import ExitManager
+        
+        if entry_time is None:
+            entry_time = datetime.now().strftime('%Y%m%d')
+        
+        self.positions[stock_code] = ExitManager(
+            entry_price=entry_price,
+            entry_time=entry_time,
+            entry_score=entry_score,
+            stock_code=stock_code
+        )
+        logger.info(f"🟢 [开仓] {stock_code} @ {entry_price:.2f}, 分数={entry_score:.0f}")
+    
+    def close_position(self, stock_code: str, reason: str = ""):
+        """
+        平仓 - 删除ExitManager实例
+        
+        Args:
+            stock_code: 股票代码
+            reason: 平仓原因
+        """
+        if stock_code in self.positions:
+            exit_mgr = self.positions[stock_code]
+            logger.info(f"🔴 [平仓] {stock_code} 原因: {reason}, 收益: {exit_mgr.current_price/exit_mgr.entry_price*100-100:.2f}%")
+            del self.positions[stock_code]
+    
+    def check_position_exits(self, all_ticks: Dict) -> List[Dict]:
+        """
+        检查所有持仓是否触发止损/止盈
+        
+        Args:
+            all_ticks: 全量Tick数据 {stock_code: tick_dict}
+            
+        Returns:
+            List[Dict]: 触发卖出的持仓列表 [{'code': str, 'reason': str, 'price': float}, ...]
+        """
+        exits = []
+        
+        for stock_code, exit_mgr in list(self.positions.items()):
+            tick = all_ticks.get(stock_code)
+            if not tick:
+                continue
+            
+            # 构造Tick数据传给ExitManager
+            tick_data = {
+                'price': float(tick.get('lastPrice', 0)),
+                'lastPrice': float(tick.get('lastPrice', 0)),
+                'amount': float(tick.get('amount', 0)),
+                'volume': float(tick.get('volume', 0)),
+                'time': datetime.now().strftime('%Y%m%d%H%M%S')
+            }
+            
+            # 调用统一的卖点守门人
+            result = exit_mgr.on_tick(tick_data)
+            
+            if result['action'] == 'sell':
+                exits.append({
+                    'code': stock_code,
+                    'reason': result['reason'],
+                    'price': result['price'],
+                    'max_profit': result['max_profit'],
+                    'curr_profit': result['curr_profit']
+                })
+        
+        return exits
     
     def _update_daily_battle_report(self, current_scores: list):
         """
