@@ -538,7 +538,7 @@ class 动能打分引擎CoreEngine:
         MIN_BASE_FLOW = 2000000.0  # 200万底线防微盘骗炮
         safe_median_15min = max(flow_5min_median_stock * 3.0, MIN_BASE_FLOW * 3.0)
         sustain_ratio = flow_15min / safe_median_15min if safe_median_15min > 0 else 1.0
-        sustain_ratio = min(sustain_ratio, 8.0)  # 【CTO V54】封顶8倍，防止乘法爆炸！
+        sustain_ratio = min(sustain_ratio, 50.0)  # 【CTO V57修复】封顶50倍，保留区分度！原8.0太低导致全部撞天花板
         
         stock_identifier = f"{current_time.strftime('%H:%M')}@{price:.2f}"
         
