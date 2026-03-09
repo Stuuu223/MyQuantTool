@@ -492,6 +492,7 @@ def scan_cmd(ctx, date):
         
         # 【P0修复】调用run_historical_stream直线喷射引擎
         click.echo("\n📦 Step 4: 启动直线喷射引擎...")
+        engine.watchlist = base_pool  # 【CTO 补天】强制将粗筛底池注入引擎的供弹带！
         engine.run_historical_stream(tick_stream)
         
         click.echo(click.style("\n✅ 沙盘扫描完成", fg='green'))

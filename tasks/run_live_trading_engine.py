@@ -227,12 +227,11 @@ class LiveTradingEngine:
             self.true_dict.warmup(base_pool, target_date=mock_target_date)
         # ==================================================
         
-        # 执行开盘粗筛，构建watchlist
-        self._snapshot_filter()
-        
+        # 【CTO 核心切除】沙盘模式严禁调用实盘专用的 _snapshot_filter！
+        # 自动从灌入的 tick_stream 中提取股票代码作为弹药库
         if not self.watchlist:
-            logger.warning("[WARN] 粗筛后watchlist为空，无标的可计算")
-            self._generate_final_battle_report()
+            self.watchlist = list(set([t.get('stock_code') for t in tick_stream if t.get('stock_code')]))
+            logger.info(f"✅ [CTO 强制装弹] 引擎已接收 {len(self.watchlist)} 只标的进入防线！")
             self._has_generated_report = True
             return
         
