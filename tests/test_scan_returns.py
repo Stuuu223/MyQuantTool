@@ -44,7 +44,7 @@ from typing import Dict, List, Tuple
 # ============================================================================
 # 【CTO V37】版本号 - 输出文件自动命名
 # ============================================================================
-VERSION = 'V40'  # 【CTO终极天网】全链路无量纲化 - 纯物理学驱动
+VERSION = 'V45'  # 【CTO V45 Tick级全息沙盘】废除1d/1m，直接用Tick级数据+向量化VWAP计算
 
 # 测试日期范围
 START_DATE = '20260225'
@@ -275,13 +275,10 @@ def calculate_returns(stock: str, entry_date: str, end_date: str, entry_score: f
     """
     计算股票从entry_date到end_date的收益回撤
     
-    【CTO V40终极天网】动能衰竭止盈法！
-    - 天量大阴线：主力崩塌信号
-    - 动能枯竭：双破MA5与VWAP
-    
-    【CTO战役收官】双轨制阶级卖点！
-    - 真龙阶级(>=3000分)：双破MA5和VWAP才止损
-    - 平民阶级(<3000分)：跌破VWAP就止损
+    【CTO V45 Tick级全息沙盘】废除日线(1d)和分K(1m)，直接用Tick级数据！
+    - 用cumsum()计算动态VWAP
+    - 盘中实时止损（Tick级精度）
+    - 向量化高效计算
     
     返回: {
         'max_return': 最大收益率,
@@ -292,185 +289,147 @@ def calculate_returns(stock: str, entry_date: str, end_date: str, entry_score: f
     }
     """
     try:
-        # 获取日K数据（【CTO破晓战役】添加amount/volume用于真实VWAP）
-        start_date = (datetime.strptime(entry_date, '%Y%m%d') - timedelta(days=5)).strftime('%Y%m%d')
+        # 【CTO V45终极重构】废除1d/1m，直接用Tick级全息沙盘！
+        start_date = (datetime.strptime(entry_date, '%Y%m%d') - timedelta(days=1)).strftime('%Y%m%d')
         
-        data = xtdata.get_local_data(
-            field_list=['open', 'high', 'low', 'close', 'amount', 'volume'],
+        # 【第一步】获取Tick级数据
+        tick_data = xtdata.get_local_data(
+            field_list=[],
             stock_list=[stock],
-            period='1d',
+            period='tick',
             start_time=start_date,
             end_time=end_date
         )
         
-        if not data or stock not in data:
+        if not tick_data or stock not in tick_data:
             return {'max_return': None, 'max_drawdown': None, 'final_return': None, 'final_drawdown': None, 'exit_reason': None}
         
-        df = pd.DataFrame(data[stock])
-        if df.empty or len(df) == 0:
+        df_tick = pd.DataFrame(tick_data[stock])
+        if df_tick.empty or len(df_tick) == 0:
             return {'max_return': None, 'max_drawdown': None, 'final_return': None, 'final_drawdown': None, 'exit_reason': None}
         
-        # 找到entry_date的收盘价作为基准
-        entry_close = None
-        entry_idx = None
-        for idx in df.index:
-            if str(idx) == entry_date:
-                entry_close = float(df.loc[idx, 'close'])
-                entry_idx = idx
-                break
+        # 【第二步】提取Tick级字段
+        # QMT Tick字段: lastPrice, amount, volume, time, high, low, lastClose
+        # 【关键修复】index就是时间戳(YYYYMMDDHHMMSS)，不需要tick_time字段
+        df_tick['price'] = pd.to_numeric(df_tick.get('lastPrice', 0), errors='coerce').fillna(0)
+        df_tick['tick_amount'] = pd.to_numeric(df_tick.get('amount', 0), errors='coerce').fillna(0)
+        df_tick['tick_volume'] = pd.to_numeric(df_tick.get('volume', 0), errors='coerce').fillna(0)
+        df_tick['tick_time'] = df_tick.index.astype(str)  # 【关键修复】index就是时间戳
         
-        if entry_close is None or entry_close <= 0:
-            # 取entry_date之后的第一个有效价格
-            for idx in df.index:
-                if str(idx) >= entry_date:
-                    entry_close = float(df.loc[idx, 'close'])
-                    entry_idx = idx
-                    break
-        
-        if entry_close is None or entry_close <= 0:
+        # 过滤无效价格
+        df_tick = df_tick[df_tick['price'] > 0].copy()
+        if df_tick.empty:
             return {'max_return': None, 'max_drawdown': None, 'final_return': None, 'final_drawdown': None, 'exit_reason': None}
         
-        # ==========================================
-        # 【CTO V39】T+N卖点防守斧闭环
-        # ==========================================
-        # 【CTO V43关键修复】max_price必须初始化为入场当天的high！
-        # 否则入场当天已经大涨的情况会被遗漏，导致高水位止盈失效！
-        try:
-            entry_loc = df.index.get_loc(entry_idx)
-            entry_row = df.iloc[entry_loc]
-            max_price = max(entry_close, float(entry_row['high']))  # 入场当天最高价
-        except:
-            max_price = entry_close
-            entry_loc = 0
+        # 【第三步】计算动态VWAP
+        # 【关键发现】QMT Tick数据的amount和volume已经是累计值！不需要cumsum！
+        # VWAP = 累计成交额 / 累计成交量（直接用字段值）
+        df_tick['vwap'] = df_tick['tick_amount'] / df_tick['tick_volume'].replace(0, 1)
         
+        # 【第五步】找到入场日
+        entry_date_str = entry_date
+        entry_mask = df_tick['tick_time'].astype(str).str.startswith(entry_date_str)
+        
+        if not entry_mask.any():
+            return {'max_return': None, 'max_drawdown': None, 'final_return': None, 'final_drawdown': None, 'exit_reason': None}
+        
+        # 入场价格 = 入场日最后一个Tick的价格
+        # 【关键修复】entry_loc必须是iloc位置，不是索引值！
+        entry_positions = df_tick[entry_mask].index.tolist()
+        entry_loc = df_tick.index.get_loc(entry_positions[-1])  # 入场日最后一个Tick的iloc位置
+        entry_close = float(df_tick.iloc[entry_loc]['price'])
+        
+        if entry_close <= 0:
+            return {'max_return': None, 'max_drawdown': None, 'final_return': None, 'final_drawdown': None, 'exit_reason': None}
+        
+        # 【第六步】从T+1开始遍历Tick级数据
+        max_price = entry_close
         exit_reason = '持仓到期'
         exit_price = None
         
-        # 从T+1开始遍历
-        for i in range(entry_loc + 1, len(df)):
-            row = df.iloc[i]
-            open_p = float(row['open'])
-            high = float(row['high'])
-            low = float(row['low'])
-            close = float(row['close'])
+        # 【关键修复】用iloc切片获取入场日之后的数据
+        # entry_loc是入场日最后一个Tick的iloc位置，所以T+1从entry_loc+1开始
+        df_after = df_tick.iloc[entry_loc + 1:].copy()
+        
+        if df_after.empty:
+            return {'max_return': 0.0, 'max_drawdown': 0.0, 'final_return': 0.0, 'final_drawdown': 0.0, 'exit_reason': '无后续数据'}
+        
+        # 日内重置标志
+        current_day = entry_date_str
+        
+        for idx, row in df_after.iterrows():
+            tick_time = str(row['tick_time'])
+            tick_day = tick_time[:8] if len(tick_time) >= 8 else current_day
             
-            # 更新持仓期间最高价
-            if high > max_price:
-                max_price = high
+            # 跨日重置VWAP基准（每天从零开始累计）
+            if tick_day != current_day:
+                # 重置累计值
+                day_mask = df_tick['tick_time'].astype(str).str.startswith(tick_day)
+                day_cum_amount = df_tick.loc[day_mask, 'tick_amount'].sum()
+                day_cum_volume = df_tick.loc[day_mask, 'tick_volume'].sum()
+                current_day = tick_day
             
-            # 【卖点铁律1】止损斧：跌破当日真实VWAP（【CTO破晓战役】废除骗人(O+H+L+C)/4！）
-            amount = float(row.get('amount', 0))
-            volume = float(row.get('volume', 0))
-            # QMT日K的volume单位是手，需要*100转股；amount单位是元
-            if volume > 0 and amount > 0:
-                vwap = amount / (volume * 100)  # 真实VWAP = 成交额/成交量(股)
-                # 验证：VWAP应该在日内高低点之间
-                if not (low <= vwap <= high):
-                    vwap = amount / volume  # 降级：直接用volume（可能是股）
-                    if not (low <= vwap <= high):
-                        vwap = (open_p + close + high + low) / 4.0  # 最终兜底
-            else:
-                vwap = (open_p + close + high + low) / 4.0  # 数据缺失兜底
+            price = float(row['price'])
+            vwap = float(row['vwap'])
             
-            # 【CTO终极天网】MA5动能支撑线（必须用前5天均值，不含今日！）
-            ma5_yest = df['close'].iloc[max(0, i-5):i].astype(float).mean() if i > 0 else open_p
+            if price > max_price:
+                max_price = price
             
-            # ================= 高保真盘中模拟离场法则 =================
+            # ================= 【CTO V45】Tick级全息止损法则 =================
             
-            # 法则1：天量大阴线（主力崩塌，无视阶级）
-            yesterday_vol = float(df['volume'].iloc[i-1]) if i > 0 else volume
-            if volume > (yesterday_vol * 2.0) and close < (open_p * 0.97):
-                # 这种通常是盘中一路单边下杀，均价成交
-                exit_price = vwap * 0.98
-                exit_reason = '天量大阴线(主力崩塌)'
+            # 法则1：Tick级VWAP止损（核心！）
+            # 价格跌破实时VWAP 1%立即斩仓！
+            if price < vwap * 0.99:
+                exit_price = price
+                exit_reason = f'Tick破VWAP({tick_time[-6:-2] if len(tick_time) >= 6 else tick_time[-4:]})'
                 break
             
-            # 【法则2：阶级隔离防线（高水位Trailing Stop）】
-            # 【CTO V43核心修复】废除"用收盘价判断"的死人回测！
-            # 核心物理意义：不看收盘价！只画一条隐形的"止盈线"。
-            # 只要这根K线的【最低价(low)】击穿了这根线，意味着盘中必然触发了市价卖单！
-            entry_score_val = float(entry_score) if entry_score else 0.0
+            # 法则2：高水位动态止盈
             max_profit_pct = (max_price - entry_close) / entry_close
+            current_profit_pct = (price - entry_close) / entry_close
             
-            # ==================== 高水位动态止盈线（Trailing Stop）====================
-            trailing_stop_price = 0.0
+            entry_score_val = float(entry_score) if entry_score else 0.0
             
             if entry_score_val >= 3000.0:
-                # 👑 真龙阶级（大格局：允许最高15%的回撤洗盘）
+                # 真龙：赚30%给15%回撤
                 if max_profit_pct > 0.30:
-                    trailing_stop_price = max_price * 0.85  # 赚30%以上，给15%回撤空间
-                elif max_profit_pct > 0.15:
-                    trailing_stop_price = max_price * 0.90  # 赚15%以上，给10%回撤空间
+                    trailing_stop = max_price * 0.85
+                    if price < trailing_stop:
+                        exit_price = price
+                        exit_reason = f'真龙高位止盈({tick_time[-6:-2] if len(tick_time) >= 6 else tick_time[-4:]})'
+                        break
             else:
-                # 🪖 平民阶级（随时跑路：赚10%就不允许绿盘）
-                if max_profit_pct > 0.20:
-                    trailing_stop_price = max_price * 0.90  # 赚20%，回撤10%必走
-                elif max_profit_pct > 0.10:
-                    trailing_stop_price = max_price * 0.94  # 赚10%，回撤6%落袋为安
+                # 平民：赚10%给6%回撤
+                if max_profit_pct > 0.10:
+                    trailing_stop = max(max_price * 0.94, entry_close * 1.02)
+                    if price < trailing_stop:
+                        exit_price = price
+                        exit_reason = f'平民高位止盈({tick_time[-6:-2] if len(tick_time) >= 6 else tick_time[-4:]})'
+                        break
             
-            # 【CTO V43关键修复】trailing_stop不能低于入场价！
-            # 否则入场后价格已经高于止盈线，止盈条件永远不会触发
-            # 至少保本：trailing_stop_price = max(trailing_stop_price, entry_close)
-            # 或者保住5%利润：trailing_stop_price = max(trailing_stop_price, entry_close * 1.05)
-            if trailing_stop_price > 0:
-                trailing_stop_price = max(trailing_stop_price, entry_close * 1.02)  # 至少保住2%利润
-            
-            # ==================== 盘中瞬时击发判定 ====================
-            # 【关键物理模拟】一旦当天的最低价(low)刺穿了保护线！
-            if trailing_stop_price > 0 and low <= trailing_stop_price:
-                # 【CTO V43修复】处理开盘跳空灾难！
-                # 如果开盘直接跳空低开，核在止盈价之下，你只能以开盘价逃命！
-                if open_p <= trailing_stop_price:
-                    exit_price = open_p
-                    exit_reason = '开盘跳空被核(动态止盈失效)'
-                else:
-                    # 如果开盘在止盈价之上，盘中跌破，需要加上1.5%的市价单恐慌滑点！
-                    exit_price = trailing_stop_price * 0.985
-                    exit_reason = '盘中触发高水位止盈(含滑点)'
-                break
-            
-            # ==================== 止损兜底逻辑（VWAP/MA5防线）====================
-            if entry_score_val >= 3000.0:
-                # 真龙：只有双重跌破昨天的MA5和当日VWAP才判定动能枯竭
-                if close < ma5_yest and close < vwap:
-                    # 模拟盘中跌破VWAP时直接斩仓
-                    exit_price = open_p if open_p < vwap else vwap * 0.985
-                    exit_reason = '真龙动能枯竭(盘中双破止损)'
-                    break
-            else:
-                # 平民：只要跌破当天的VWAP，一键清仓！
-                if close < vwap:
-                    exit_price = open_p if open_p < vwap else vwap * 0.985
-                    exit_reason = '平民破位(盘中跌破VWAP)'
+            # 法则3：利润回撤30%止盈
+            if max_profit_pct > 0.15:
+                if (max_profit_pct - current_profit_pct) / max_profit_pct > 0.3:
+                    exit_price = price
+                    exit_reason = f'利润回撤止盈({tick_time[-6:-2] if len(tick_time) >= 6 else tick_time[-4:]})'
                     break
         
-        # 计算最终结果
+        # 【第七步】计算最终结果
         if exit_price is not None:
-            # 触发了防守斧
             final_close = exit_price
-            # 重新计算max_price（从entry到exit）
-            max_price_in_period = entry_close
-            for i in range(entry_loc, min(entry_loc + len(df), len(df))):
-                if i >= len(df):
-                    break
-                row = df.iloc[i]
-                max_price_in_period = max(max_price_in_period, float(row['high']))
-            max_price = max_price_in_period
         else:
-            # 持仓到最后一日
-            final_close = float(df.iloc[-1]['close'])
+            final_close = float(df_after.iloc[-1]['price']) if len(df_after) > 0 else entry_close
         
-        min_price = entry_close
-        for i in range(entry_loc, len(df)):
-            row = df.iloc[i]
-            min_price = min(min_price, float(row['low']))
+        # 计算持仓期间的最高价和最低价
+        # 【关键修复】用iloc切片，entry_loc是iloc位置
+        df_period = df_tick.iloc[entry_loc:]
+        max_price_period = df_period['price'].max()
+        min_price_period = df_period['price'].min()
         
-        max_return = (max_price - entry_close) / entry_close * 100
-        max_drawdown = (entry_close - min_price) / entry_close * 100
+        max_return = (max_price_period - entry_close) / entry_close * 100
+        max_drawdown = (entry_close - min_price_period) / entry_close * 100
         final_return = (final_close - entry_close) / entry_close * 100
-        
-        # 计算最终回撤（从最高点到最终价格）
-        final_drawdown = (max_price - final_close) / max_price * 100 if max_price > entry_close else 0
+        final_drawdown = (max_price_period - final_close) / max_price_period * 100 if max_price_period > entry_close else 0
         
         return {
             'max_return': round(max_return, 2),
@@ -486,9 +445,9 @@ def calculate_returns(stock: str, entry_date: str, end_date: str, entry_score: f
 
 def main():
     print("=" * 80)
-    print("📊 CTO V35 照妖镜修复版 - 榜单收益回撤测试")
+    print("📊 CTO V45 Tick级全息沙盘 - 榜单收益回撤测试")
     print(f"   测试范围: {START_DATE} ~ {END_DATE}")
-    print("   核心修复: 动态danger_pct + 封板绝对价格推导 + 废除时间冻结")
+    print("   核心修复: sustain_ratio分母修复 + Tick级VWAP止损 + 全息沙盘推演")
     print("=" * 80)
     
     # 检查日K数据

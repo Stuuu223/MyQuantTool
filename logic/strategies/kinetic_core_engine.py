@@ -494,31 +494,27 @@ class 动能打分引擎CoreEngine:
         # 第四步：神级乘数区
         multiplier = 1.0
         
-        # A. 维持能力（sustain_ratio）
-        # 【CTO修复20260304】独立窗口：排除前5分钟累计
-        # flow_next_10min = 09:35-09:45独立流入（非累计）
-        # 【CTO P0级修复20260304-II】修复负流入Bug
-        if flow_5min <= 0:
-            # 前5分钟净流出，直接标记为负维持率，触发绞杀
-            sustain_ratio = -1.0  # 致命信号
-            logger.warning(f"[杂毛断头台-前期净流出] flow_5min={flow_5min:.0f}元 <= 0，sustain_ratio强制=-1.0")
-        else:
-            flow_next_10min = flow_15min - flow_5min
-            sustain_ratio = (flow_next_10min / flow_5min) if flow_5min > 0 else 1.0
-            # 【CTO照妖镜】砸碎向上阻尼！只保留防负溢出，让真龙数据直接爆表！
-            sustain_ratio = max(-1.0, sustain_ratio)  # 向上无顶！
+        # A. 维持能力（sustain_ratio）- 【CTO V44喂饭级修复】
+        # 废除用前5分钟当分母的毒瘤！改为：当前15分钟总流入 / 历史15分钟均值
+        # 物理意义：不看"后半段是否衰减"，只看"当前做功是否超过历史平均"
+        MIN_BASE_FLOW = 2000000.0  # 200万底线防微盘骗炮
+        safe_median_15min = max(flow_5min_median_stock * 3.0, MIN_BASE_FLOW * 3.0)
+        sustain_ratio = flow_15min / safe_median_15min if safe_median_15min > 0 else 1.0
         
         stock_identifier = f"{current_time.strftime('%H:%M')}@{price:.2f}"
         
-        if sustain_ratio > 1.2:
-            multiplier *= 1.1  # 【CTO修复】防止叠乘倒挂，从1.5改为1.1
+        if flow_15min <= 0:
+            # 前15分钟总计净流出，彻底的骗炮
+            sustain_ratio = -1.0
+            multiplier *= 0.1
+            logger.warning(f"💀 [动能枯竭] {stock_code} 15分钟总计净流出，一票否决！")
+        elif sustain_ratio > 5.0:
+            multiplier *= 1.5  # 极度健康：持续维持极高水位
+            logger.info(f"🔥 [资金洪流] {stock_identifier} sustain_ratio={sustain_ratio:.2f}>5.0，乘数×1.5！")
         elif sustain_ratio < 1.0:
-            multiplier *= 0.1  # 资金退潮：杂毛断头台绞杀
-            logger.warning(f"[杂毛断头台-致命绞杀] {stock_identifier} sustain_ratio={sustain_ratio:.2f} < 1.0")
-        elif sustain_ratio < 1.1:
-            multiplier *= 0.5  # 维持吃力：降权警告
-            logger.warning(f"[杂毛断头台-降权警告] {stock_identifier} sustain_ratio={sustain_ratio:.2f} < 1.1")
-        # [1.1, 1.2] 区间：资金维持正常但未加速，multiplier不变（设计意图：观察等待）
+            multiplier *= 0.3  # 退潮：流入量连平时的中位数都不如
+            logger.warning(f"[资金退潮] {stock_identifier} sustain_ratio={sustain_ratio:.2f}<1.0，降权至0.3")
+        # [1.0, 5.0] 区间：资金维持正常，multiplier不变
         
         # B. 筹码纯度（空间差 < 10% 抛压轻）
         # 【CTO修复】从乘法改为加法，防止叠乘倒挂
