@@ -357,65 +357,37 @@ def calculate_returns(stock: str, entry_date: str, end_date: str, entry_score: f
         if df_after.empty:
             return {'max_return': 0.0, 'max_drawdown': 0.0, 'final_return': 0.0, 'final_drawdown': 0.0, 'exit_reason': '无后续数据'}
         
-        # 日内重置标志
-        current_day = entry_date_str
+        # 【CTO V46 架构大一统】使用ExitManager统一止损逻辑！
+        # 创建ExitManager实例，传入入场价格和分数
+        entry_score_val = float(entry_score) if entry_score else 0.0
+        exit_mgr = ExitManager(
+            entry_price=entry_close,
+            entry_time=entry_date_str,
+            entry_score=entry_score_val,
+            stock_code=stock
+        )
         
         for idx, row in df_after.iterrows():
             tick_time = str(row['tick_time'])
-            tick_day = tick_time[:8] if len(tick_time) >= 8 else current_day
-            
-            # 跨日重置VWAP基准（每天从零开始累计）
-            if tick_day != current_day:
-                # 重置累计值
-                day_mask = df_tick['tick_time'].astype(str).str.startswith(tick_day)
-                day_cum_amount = df_tick.loc[day_mask, 'tick_amount'].sum()
-                day_cum_volume = df_tick.loc[day_mask, 'tick_volume'].sum()
-                current_day = tick_day
-            
             price = float(row['price'])
-            vwap = float(row['vwap'])
+            amount = float(row['tick_amount'])
+            volume = float(row['tick_volume'])
             
-            if price > max_price:
-                max_price = price
+            # 构造Tick数据传给ExitManager
+            tick_data = {
+                'price': price,
+                'amount': amount,
+                'volume': volume,
+                'time': tick_time
+            }
             
-            # ================= 【CTO V45】Tick级全息止损法则 =================
+            # 调用统一的卖点守门人
+            result = exit_mgr.on_tick(tick_data)
             
-            # 法则1：Tick级VWAP止损（核心！）
-            # 价格跌破实时VWAP 1%立即斩仓！
-            if price < vwap * 0.99:
+            if result['action'] == 'sell':
                 exit_price = price
-                exit_reason = f'Tick破VWAP({tick_time[-6:-2] if len(tick_time) >= 6 else tick_time[-4:]})'
+                exit_reason = result['reason']
                 break
-            
-            # 法则2：高水位动态止盈
-            max_profit_pct = (max_price - entry_close) / entry_close
-            current_profit_pct = (price - entry_close) / entry_close
-            
-            entry_score_val = float(entry_score) if entry_score else 0.0
-            
-            if entry_score_val >= 3000.0:
-                # 真龙：赚30%给15%回撤
-                if max_profit_pct > 0.30:
-                    trailing_stop = max_price * 0.85
-                    if price < trailing_stop:
-                        exit_price = price
-                        exit_reason = f'真龙高位止盈({tick_time[-6:-2] if len(tick_time) >= 6 else tick_time[-4:]})'
-                        break
-            else:
-                # 平民：赚10%给6%回撤
-                if max_profit_pct > 0.10:
-                    trailing_stop = max(max_price * 0.94, entry_close * 1.02)
-                    if price < trailing_stop:
-                        exit_price = price
-                        exit_reason = f'平民高位止盈({tick_time[-6:-2] if len(tick_time) >= 6 else tick_time[-4:]})'
-                        break
-            
-            # 法则3：利润回撤30%止盈
-            if max_profit_pct > 0.15:
-                if (max_profit_pct - current_profit_pct) / max_profit_pct > 0.3:
-                    exit_price = price
-                    exit_reason = f'利润回撤止盈({tick_time[-6:-2] if len(tick_time) >= 6 else tick_time[-4:]})'
-                    break
         
         # 【第七步】计算最终结果
         if exit_price is not None:
