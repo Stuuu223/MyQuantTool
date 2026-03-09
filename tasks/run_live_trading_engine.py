@@ -105,6 +105,10 @@ class LiveTradingEngine:
         # 0.0 = 硬件级熔断，禁止买入；1.0 = 正常
         self._macro_multiplier: float = 1.0
         
+        # 【CTO V46战役二】横向虹吸效应 - 全候选池总净流入缓存
+        # 用于计算每只股票的vampire_ratio_pct = 该股净流入 / 全池总流入 * 100
+        self.market_total_inflow_cache: float = 1000000.0  # 初始兜底100万
+        
         # 【CTO修复】初始化顺序：先EventBus，再QMTEventAdapter
         # 初始化EventBus（如果未传入）
         if self.event_bus is None:
@@ -1182,6 +1186,60 @@ class LiveTradingEngine:
                     'filtered': 0
                 }
                 
+                # 【CTO V46战役二】横向虹吸效应 - 第一遍扫描计算全池总净流入
+                # 物理意义：找出今天全候选池有多少资金在净流入
+                # vampire_ratio = 该股净流入 / 全池总流入 * 100
+                market_total_inflow = 0.0
+                first_pass_inflow_cache = {}  # 缓存每只股票的净流入
+                
+                for stock_code in self.watchlist:
+                    tick = all_ticks.get(stock_code)
+                    if not tick:
+                        continue
+                    
+                    current_price = tick.get('lastPrice', 0)
+                    pre_close = tick.get('lastClose', 0)
+                    current_amount = tick.get('amount', 0)  # 今日累计成交额（元）
+                    tick_high = tick.get('high', current_price)
+                    tick_low = tick.get('low', current_price)
+                    
+                    # 快速计算power_ratio
+                    price_range = tick_high - tick_low
+                    if price_range > 0 and pre_close > 0:
+                        power_ratio = (current_price - pre_close) / price_range
+                        power_ratio = max(-1.0, min(power_ratio, 1.0))
+                    else:
+                        power_ratio = 1.0 if current_price > pre_close else -1.0
+                    
+                    # 净流入估算
+                    net_inflow_est = current_amount * power_ratio * 0.5
+                    
+                    # 【CTO战役一】量纲校验 - 如果净流入占比超过20%，说明数据异常！
+                    s_data = static_cache.get(stock_code)
+                    float_volume = s_data.get('float_volume', 0) if s_data else 0
+                    if float_volume <= 0:
+                        float_volume = true_dict.get_float_volume(stock_code) or 1000000000.0
+                    
+                    float_market_cap = float_volume * current_price
+                    if float_market_cap > 0:
+                        raw_inflow_pct = abs(net_inflow_est) / float_market_cap * 100.0
+                        if raw_inflow_pct > 20.0:
+                            # 【CTO战役一核心】量纲灾难时，净流入强制归零！
+                            # 宁可杀错，不能让错乱数据霸榜！
+                            logger.error(f"🚨 [量纲灾难] {stock_code} 原始INFLOW高达{raw_inflow_pct:.2f}%！金额={current_amount:.0f}, 市值={float_market_cap:.0f}。净流入强制归零！")
+                            net_inflow_est = 0.0
+                    
+                    # 只累计正向净流入
+                    if net_inflow_est > 0:
+                        market_total_inflow += net_inflow_est
+                    
+                    first_pass_inflow_cache[stock_code] = net_inflow_est
+                
+                # 更新缓存（至少100万兜底，避免除零）
+                self.market_total_inflow_cache = max(market_total_inflow, 1000000.0)
+                print(f">>> [虹吸基准] 全候选池总净流入: {self.market_total_inflow_cache/100000000:.2f}亿元")
+                sys.stdout.flush()
+                
                 # 【CTO第二级：极速布朗运动分类】
                 for stock_code in self.watchlist:
                     tick = all_ticks.get(stock_code)
@@ -1435,6 +1493,13 @@ class LiveTradingEngine:
                         else:
                             limit_up_queue_amount = 0.0
                         
+                        # 【CTO V46战役二】计算横向虹吸比例
+                        vampire_ratio_pct = 0.0
+                        stock_net_inflow = first_pass_inflow_cache.get(stock_code, 0.0)
+                        if self.market_total_inflow_cache > 0 and stock_net_inflow > 0:
+                            vampire_ratio_pct = (stock_net_inflow / self.market_total_inflow_cache) * 100.0
+                            vampire_ratio_pct = min(vampire_ratio_pct, 100.0)  # 上限100%
+                        
                         try:
                             final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe = core_engine.calculate_true_dragon_score(
                                 net_inflow=net_inflow_est,  # 净流入估算（元）
@@ -1452,7 +1517,8 @@ class LiveTradingEngine:
                                 is_limit_up=is_limit_up,  # 【CTO V33】涨停状态
                                 limit_up_queue_amount=limit_up_queue_amount,  # 【CTO V33】封单金额
                                 mode=engine_mode,  # 【CTO V34】scan跳过衰减/live应用衰减
-                                stock_code=stock_code  # 【CTO V35】股票代码用于动态danger_pct
+                                stock_code=stock_code,  # 【CTO V35】股票代码用于动态danger_pct
+                                vampire_ratio_pct=vampire_ratio_pct  # 【CTO V46】横向虹吸效应
                             )
                         except Exception as e:
                             logger.debug(f"[SKIP] {stock_code} 高阶算子计算失败，剔除: {e}")

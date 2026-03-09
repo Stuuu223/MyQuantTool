@@ -429,11 +429,13 @@ class 动能打分引擎CoreEngine:
         # 【CTO Phase3.1】使用weighted_inflow计算，奖励高位做功
         inflow_ratio_pct = (weighted_inflow / float_market_cap * 100.0) if float_market_cap > 1000 else 0.0
         
-        # 【CTO P0修复】物理极值熔断！流入占比不可能超过20%！
-        # 如果超过20%，说明数据异常（如量纲错误或假数据），强制修正并警告
+        # 【CTO决战级修复】物理极值熔断！流入占比不可能超过20%！
+        # 如果超过20%，说明数据异常（如量纲错误或假数据）
+        # 【CTO战役一核心】宁可杀错，不能让错乱数据霸榜！净流入强制归零！
         if abs(inflow_ratio_pct) > 20.0:
-            logger.warning(f"⚠️ [数据异常] {stock_code} INFLOW高达{inflow_ratio_pct:.2f}%，强制修正为±15.0%")
-            inflow_ratio_pct = 15.0 if inflow_ratio_pct > 0 else -15.0
+            logger.error(f"🚨 [量纲灾难] {stock_code} INFLOW高达{inflow_ratio_pct:.2f}%！强制归零！金额={net_inflow:.0f}, 市值={float_market_cap:.0f}")
+            inflow_ratio_pct = 0.0
+            net_inflow = 0.0  # 同时清零净流入
         inflow_ratio = inflow_ratio_pct  # 返回百分比形式
         
         # 2. 相对历史放量倍数（放大历史爆发力）

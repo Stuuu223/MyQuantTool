@@ -508,6 +508,17 @@ def scan_cmd(ctx, date):
                         if current_price > 0 and pre_close > 0 and tick_high > tick_low:
                             raw_purity = (current_price - pre_close) / (tick_high - tick_low)
                             net_inflow = current_amount * raw_purity * 0.5
+                            
+                            # 【CTO战役一】量纲校验 - 如果净流入占比超过20%，说明数据异常！
+                            float_volume = true_dict.get_float_volume(stock) or 1000000000.0
+                            float_market_cap = float_volume * current_price
+                            if float_market_cap > 0:
+                                raw_inflow_pct = abs(net_inflow) / float_market_cap * 100.0
+                                if raw_inflow_pct > 20.0:
+                                    # 【CTO战役一核心】量纲灾难时，净流入强制归零！
+                                    logger.error(f"🚨 [量纲灾难] {stock} 原始INFLOW高达{raw_inflow_pct:.2f}%！净流入强制归零！")
+                                    net_inflow = 0.0
+                            
                             if net_inflow > 0:
                                 market_total_inflow += net_inflow
                             # 缓存数据供第二遍使用
