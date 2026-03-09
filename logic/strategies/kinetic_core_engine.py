@@ -441,8 +441,9 @@ class 动能打分引擎CoreEngine:
                 logger.debug(f"📐 [量纲校准] {stock_code} 识别为手单位，市值自动放大100倍")
         
         # 用校准后的市值重新计算流入占比
+        # 【CTO修复】使用net_inflow替代未定义的weighted_inflow幽灵变量
         if calibrated_float_market_cap > 0:
-            inflow_ratio_pct = (weighted_inflow / calibrated_float_market_cap * 100.0)
+            inflow_ratio_pct = (net_inflow / calibrated_float_market_cap * 100.0)
         # 【彻底废除归零逻辑】算出来是多少就是多少！真龙的数据原汁原味！
         inflow_ratio = inflow_ratio_pct  # 返回百分比形式
         
@@ -538,14 +539,18 @@ class 动能打分引擎CoreEngine:
         sustain_ratio = flow_15min / safe_median_15min if safe_median_15min > 0 else 1.0
         sustain_ratio = min(sustain_ratio, 50.0)  # 【CTO V57修复】封顶50倍，保留区分度！原8.0太低导致全部撞天花板
         
+        # 【CTO强制熔断】Spike极刑前置！如果没通过，立刻斩首，绝不浪费算力往下走！
+        if flow_15min <= 0:
+            logger.warning(f"💀 [Spike极刑] {stock_code} 15分钟净流出，一票否决")
+            return 0.0, -1.0, inflow_ratio_pct, ratio_stock, mfe
+        
+        if sustain_ratio < 1.0:
+            logger.warning(f"💀 [Spike极刑] {stock_code} 维持能力={sustain_ratio:.2f}<1.0，被抛压瓦解")
+            return 0.0, sustain_ratio, inflow_ratio_pct, ratio_stock, mfe
+        
         stock_identifier = f"{current_time.strftime('%H:%M')}@{price:.2f}"
         
-        if flow_15min <= 0:
-            # 前15分钟总计净流出，彻底的骗炮
-            sustain_ratio = -1.0
-            multiplier *= 0.1
-            logger.warning(f"💀 [动能枯竭] {stock_code} 15分钟总计净流出，一票否决！")
-        elif sustain_ratio > 5.0:
+        if sustain_ratio > 5.0:
             multiplier *= 1.5  # 极度健康：持续维持极高水位
             logger.info(f"🔥 [资金洪流] {stock_identifier} sustain_ratio={sustain_ratio:.2f}>5.0，乘数×1.5！")
         elif sustain_ratio < 1.0:
@@ -641,15 +646,8 @@ class 动能打分引擎CoreEngine:
             logger.info(f"[真龙确立] {stock_identifier} 强势封板，封单额{limit_up_queue_amount/10000:.0f}万，乘数飙升！")
         
         # 第五步：MFE效率算子
-        # 【CTO重铸令R4】MFE已在base_power计算时提前计算并用于对数放大器
-        # 此处仅为兜底，确保mfe有值
-        if 'mfe' not in dir() or mfe is None:
-            if inflow_ratio_pct <= 0:
-                mfe = -100.0
-            else:
-                upward_thrust = ((price - low) + (high - open_price)) / 2
-                price_range_pct = upward_thrust / prev_close if prev_close > 0 else 0.0
-                mfe = max(-10.0, price_range_pct / (inflow_ratio_pct / 100.0))
+        # 【CTO重铸令R4】MFE已在函数开头初始化为-100.0，无需dir()判断
+        # base_power计算时已使用MFE对数放大器，此处保留mfe值用于返回
         
         # 第六步：最终得分（无上限里氏震级！）
         # ================= 跨日基因遗传算法（海马体完整版）=================
@@ -694,12 +692,7 @@ class 动能打分引擎CoreEngine:
         # 应用乘数和加分（含高位做功奖励bonus_score）
         final_score = round(base_power * multiplier * memory_multiplier * turnover_multiplier + bonus_score, 2)
         
-        # 【T3: Spike极刑】动能枯竭直接返回，不入场
-        # sustain_ratio < 1.0 = 当前流入低于历史中位数 = 骗炮信号
-        if sustain_ratio < 1.0:
-            logger.info(f"💀 [Spike极刑] {stock_code} sustain_ratio={sustain_ratio:.2f}<1.0，动能枯竭，一票否决！")
-            return 0.0, sustain_ratio, inflow_ratio, ratio_stock, mfe
-        
+        # 【CTO修复】Spike极刑已前置到第四步开头，此处不再重复判断
         # 净流出惩罚：减半而非封顶，让流出股也有区分度
         if is_net_outflow:
             final_score = final_score * 0.5
