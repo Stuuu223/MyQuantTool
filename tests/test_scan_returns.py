@@ -41,10 +41,13 @@ from xtquant import xtdata
 import pandas as pd
 from typing import Dict, List, Tuple
 
+# 【CTO V46 架构大一统】导入统一的ExitManager
+from logic.execution.exit_manager import ExitManager
+
 # ============================================================================
 # 【CTO V37】版本号 - 输出文件自动命名
 # ============================================================================
-VERSION = 'V45'  # 【CTO V45 Tick级全息沙盘】废除1d/1m，直接用Tick级数据+向量化VWAP计算
+VERSION = 'V46'  # 【CTO V46 架构大一统】使用ExitManager统一止损逻辑！Scan和Live共享同一套大脑！
 
 # 测试日期范围
 START_DATE = '20260225'
