@@ -1839,23 +1839,34 @@ class LiveTradingEngine:
             current_volume_ratio = estimated_full_day_volume / avg_volume_5d
             
             # ============================================================
-            # Phase 2 Step 3: 开火门槛 - 黄金起爆点(15倍极值)
+            # 【CTO外科手术】引力阻尼质量网 (Gravity Damper) - 废除15倍硬编码！
             # ============================================================
-            from logic.core.config_manager import get_config_manager
-            config_manager = get_config_manager()
+            # 原代码: GOLDEN_VOLUME_RATIO_THRESHOLD = 15.0 (违背F=ma物理定律)
+            # 新逻辑: 动态阈值与流通市值对数成反比，大盘股小阈值，微盘股高阈值
             
-            # 【CTO破晓战役】黄金起爆点：15倍绝对阈值！
-            # Boss用38592样本+336只连板纯血妖股研究得出的黄金标准
-            GOLDEN_VOLUME_RATIO_THRESHOLD = 15.0  # 瞬时量比必须>15倍才能起爆
+            # 只有不在watchlist的杂鱼才被丢弃
+            if self.watchlist and stock_code not in self.watchlist:
+                return
             
-            if current_volume_ratio < GOLDEN_VOLUME_RATIO_THRESHOLD:
-                # 【CTO强制透视】记录被静默丢弃的Tick（每500条打印一次，避免刷屏）
-                self._debug_below_threshold_count = getattr(self, '_debug_below_threshold_count', 0) + 1
-                if self._debug_below_threshold_count % 500 == 0:
-                    logger.debug(f"🚫 [CTO透视] 累计{self._debug_below_threshold_count}条Tick未达黄金起爆点({current_volume_ratio:.2f}x < {GOLDEN_VOLUME_RATIO_THRESHOLD:.2f}x)")
-                return  # 未达黄金起爆点，静默丢弃
+            # 【物理学透视】计算该股票面临的引力阻尼 (监控用途，不作拦截)
+            fv = true_dict.get_float_volume(stock_code) or 10_0000_0000.0
+            current_price = tick_event.data.get('lastPrice', 0)
+            market_cap_billion = (fv * current_price) / 1_0000_0000.0 if current_price > 0 else 50.0
             
-            logger.info(f"🔥 {stock_code} 触发黄金起爆点: {current_volume_ratio:.2f}x >= {GOLDEN_VOLUME_RATIO_THRESHOLD:.2f}x")
+            # 动态势能阈值公式：与流通市值对数成反比
+            # 20亿微盘股阻尼极高(需~15x); 500亿巨兽阻尼极小(只需~4x)
+            import math
+            cap_log_factor = math.log10(max(market_cap_billion, 20.0)) - 1.3
+            gravity_damper_threshold = max(3.0, 15.0 - 7.8 * cap_log_factor)
+            
+            # 检查是否突破引力阻尼线
+            if current_volume_ratio >= gravity_damper_threshold:
+                logger.info(f"🔥 [引力阻尼突破] {stock_code} (市值{market_cap_billion:.1f}亿) "
+                           f"量比{current_volume_ratio:.2f}x >= 阻尼线{gravity_damper_threshold:.1f}x，放行！")
+            else:
+                # 未达阻尼线，但不再静默丢弃，交给MFE做功效率裁决
+                logger.debug(f"🌊 {stock_code} 量比{current_volume_ratio:.2f}x < 阻尼线{gravity_damper_threshold:.1f}x，" 
+                            f"交由MFE裁决")
             
             # ============================================================
             # Phase 2 Step 4: 换手率检查（开火时才检查）
@@ -2771,12 +2782,16 @@ class LiveTradingEngine:
             if not code:
                 continue
             
-            # 更新最高分记录
-            if code not in self.highest_scores or score > self.highest_scores[code].get('score', 0):
+            # 【CTO修复】更新最高分记录，添加first_entry_time锚点
+            current_time_str = self.get_current_time().strftime('%H:%M:%S')
+            
+            if code not in self.highest_scores:
+                # 首次入池，记录first_entry_time
                 self.highest_scores[code] = {
                     'code': code,
                     'score': score,
-                    'time': self.get_current_time().strftime('%H:%M:%S'),
+                    'time': current_time_str,
+                    'first_entry_time': current_time_str,  # 【CTO补充】首次被盯上的时间
                     'price': item.get('price', 0),
                     'change': item.get('change', 0),
                     'inflow_ratio': item.get('inflow_ratio', 0),
@@ -2784,6 +2799,21 @@ class LiveTradingEngine:
                     'sustain_ratio': item.get('sustain_ratio', 0),
                     'purity': item.get('purity', '')
                 }
+            elif score > self.highest_scores[code].get('score', 0):
+                # 破纪录时，保留首次入池时间
+                existing_first_time = self.highest_scores[code].get('first_entry_time', 
+                                                                    self.highest_scores[code].get('time'))
+                self.highest_scores[code].update({
+                    'score': score,
+                    'time': current_time_str,
+                    'first_entry_time': existing_first_time,  # 保留原始入池时间
+                    'price': item.get('price', 0),
+                    'change': item.get('change', 0),
+                    'inflow_ratio': item.get('inflow_ratio', 0),
+                    'ratio_stock': item.get('ratio_stock', 0),
+                    'sustain_ratio': item.get('sustain_ratio', 0),
+                    'purity': item.get('purity', '')
+                })
     
     def _generate_final_battle_report(self):
         """
