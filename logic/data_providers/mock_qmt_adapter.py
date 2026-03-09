@@ -285,7 +285,7 @@ class MockQmtAdapter:
             return False
         
         try:
-            # 创建Tick事件
+            # 【CTO修复】创建完整Tick事件，与_on_tick_data属性访问对齐
             from dataclasses import dataclass
             from typing import Any
             
@@ -293,8 +293,26 @@ class MockQmtAdapter:
             class TickEvent:
                 stock_code: str
                 data: Dict[str, Any]
+                price: float = 0.0
+                volume: float = 0.0
+                amount: float = 0.0
+                open: float = 0.0
+                high: float = 0.0
+                low: float = 0.0
+                prev_close: float = 0.0
             
-            event = TickEvent(stock_code=stock, data=tick_dict)
+            # 从tick_dict提取数据
+            event = TickEvent(
+                stock_code=stock,
+                data=tick_dict,
+                price=float(tick_dict.get('lastPrice', 0)),
+                volume=float(tick_dict.get('volume', 0)),
+                amount=float(tick_dict.get('amount', 0)),
+                open=float(tick_dict.get('open', 0)),
+                high=float(tick_dict.get('high', 0)),
+                low=float(tick_dict.get('low', 0)),
+                prev_close=float(tick_dict.get('lastClose', 0))
+            )
             self.event_bus.publish('tick', event)
             return True
         except Exception as e:
