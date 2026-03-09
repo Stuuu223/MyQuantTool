@@ -353,7 +353,9 @@ class 动能打分引擎CoreEngine:
         stock_code: str = "",  # 股票代码，用于识别板块计算危险阈值
         # 【CTO终极战役】基因记忆参数
         is_yesterday_limit_up: bool = False,  # 昨日是否涨停（纯血真龙基因）
-        yesterday_vol_ratio: float = 1.0  # 昨日量比（用于暴动基因检测）
+        yesterday_vol_ratio: float = 1.0,  # 昨日量比（用于暴动基因检测）
+        # 【CTO V46】横向虹吸效应参数
+        vampire_ratio_pct: float = 0.0  # 该股流入占全候选池总流入的比例(%)
     ) -> tuple[float, float, float, float, float]:
         """
         【V20.5 Boss终极钦定：动能与势能的双Ratio验钞机 + VWAP洗盘容错】
@@ -426,7 +428,12 @@ class 动能打分引擎CoreEngine:
         # 1. 流入占比百分比（保留极端值裁剪防止溢出）
         # 【CTO Phase3.1】使用weighted_inflow计算，奖励高位做功
         inflow_ratio_pct = (weighted_inflow / float_market_cap * 100.0) if float_market_cap > 1000 else 0.0
-        inflow_ratio_pct = min(max(inflow_ratio_pct, -50.0), 50.0)  # 仅防溢出，非打分上限
+        
+        # 【CTO P0修复】物理极值熔断！流入占比不可能超过20%！
+        # 如果超过20%，说明数据异常（如量纲错误或假数据），强制修正并警告
+        if abs(inflow_ratio_pct) > 20.0:
+            logger.warning(f"⚠️ [数据异常] {stock_code} INFLOW高达{inflow_ratio_pct:.2f}%，强制修正为±15.0%")
+            inflow_ratio_pct = 15.0 if inflow_ratio_pct > 0 else -15.0
         inflow_ratio = inflow_ratio_pct  # 返回百分比形式
         
         # 2. 相对历史放量倍数（放大历史爆发力）
@@ -526,6 +533,21 @@ class 动能打分引擎CoreEngine:
         # 【CTO修复】从乘法改为加法，防止叠乘倒挂
         if inflow_ratio_pct > 1.5:
             bonus_score += 15.0  # 加法而非乘法
+        
+        # D. 【CTO V46】真正的横向虹吸效应！
+        # 计算的是该股从全候选池抢了多少血！
+        # vampire_ratio_pct = 该股净流入 / 全候选池总净流入
+        if vampire_ratio_pct > 5.0:
+            # 单只票抽干了全候选池5%以上的活跃资金！触发吸血霸权！
+            bonus_score += 1500.0  # 绝对的龙头霸权加分
+            logger.info(f"🦇 [横向虹吸] {stock_code} 抽血占比{vampire_ratio_pct:.2f}%，触发吸血霸权！")
+        elif vampire_ratio_pct > 3.0:
+            # 抽血3-5%，次级霸权
+            bonus_score += 800.0
+            logger.info(f"🦇 [横向虹吸] {stock_code} 抽血占比{vampire_ratio_pct:.2f}%，次级霸权！")
+        elif vampire_ratio_pct > 1.0:
+            # 抽血1-3%，小霸权
+            bonus_score += 300.0
         
         # D. 早盘时间坚决度
         # 【CTO V34修复】scan模式下跳过时间衰减，废除"时间冻结"毒瘤！

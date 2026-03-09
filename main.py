@@ -480,8 +480,54 @@ def scan_cmd(ctx, date):
         true_dict = get_true_dictionary()
         true_dict.warmup(base_pool, target_date=target_date)
         
-        # Step 3: Tick级高维遍历 (O(1)内存！)
-        click.echo("\n📦 Step 3: 开始 Tick 级高维遍历 (单只加载，零内存压迫)...")
+        # 【CTO V46】Step 2.5: 第一遍循环计算全候选池总净流入（横向虹吸基准）
+        click.echo("\n📦 Step 2.5: 计算横向虹吸基准...")
+        market_total_inflow = 0.0
+        first_pass_data = {}  # 缓存第一遍扫描的数据，避免第二遍重复读
+        
+        for stock in base_pool:
+            try:
+                local_data = xtdata.get_local_data(
+                    field_list=[], 
+                    stock_list=[stock], 
+                    period='tick', 
+                    start_time=target_date, 
+                    end_time=target_date
+                )
+                
+                if local_data and stock in local_data:
+                    df = local_data[stock]
+                    if df is not None and not (hasattr(df, 'empty') and df.empty):
+                        tick = df.iloc[-1]
+                        current_amount = float(tick.get('amount', 0))
+                        current_price = float(tick.get('lastPrice', 0))
+                        pre_close = float(tick.get('lastClose', 0))
+                        tick_high = float(tick.get('high', current_price))
+                        tick_low = float(tick.get('low', current_price))
+                        
+                        if current_price > 0 and pre_close > 0 and tick_high > tick_low:
+                            raw_purity = (current_price - pre_close) / (tick_high - tick_low)
+                            net_inflow = current_amount * raw_purity * 0.5
+                            if net_inflow > 0:
+                                market_total_inflow += net_inflow
+                            # 缓存数据供第二遍使用
+                            first_pass_data[stock] = {
+                                'amount': current_amount,
+                                'price': current_price,
+                                'pre_close': pre_close,
+                                'high': tick_high,
+                                'low': tick_low,
+                                'net_inflow': net_inflow,
+                                'tick_df': df
+                            }
+            except Exception:
+                continue
+        
+        market_total_inflow = max(market_total_inflow, 1000000.0)  # 防零
+        click.echo(f"   🦇 全候选池总净流入: {market_total_inflow/100000000:.2f}亿元")
+        
+        # Step 3: Tick级高维遍历 (O(1)内存！) - 第二遍循环
+        click.echo("\n📦 Step 3: 开始 Tick 级高维遍历 (含横向虹吸)...")
         
         core_engine = 动能打分引擎CoreEngine()
         current_top_targets = []
@@ -637,8 +683,8 @@ def scan_cmd(ctx, date):
                     field_list=['close'],
                     stock_list=[stock],
                     period='1d',
-                    start_time=(datetime.strptime(scan_date, '%Y%m%d') - timedelta(days=10)).strftime('%Y%m%d'),
-                    end_time=scan_date
+                    start_time=(datetime.strptime(target_date, '%Y%m%d') - timedelta(days=10)).strftime('%Y%m%d'),
+                    end_time=target_date
                 )
                 if daily_data and stock in daily_data:
                     daily_df = pd.DataFrame(daily_data[stock])
@@ -653,6 +699,15 @@ def scan_cmd(ctx, date):
                             pass
             except:
                 pass
+            
+            # 【CTO V46】计算横向虹吸比例（该股净流入/全候选池总流入）
+            vampire_ratio_pct = 0.0
+            if market_total_inflow > 0:
+                cached_data = first_pass_data.get(stock, {})
+                stock_net_inflow = cached_data.get('net_inflow', current_amount * raw_purity * 0.5)
+                if stock_net_inflow > 0:
+                    vampire_ratio_pct = (stock_net_inflow / market_total_inflow) * 100.0
+                    vampire_ratio_pct = min(vampire_ratio_pct, 100.0)  # 上限100%
             
             try:
                 result = core_engine.calculate_true_dragon_score(
@@ -672,7 +727,8 @@ def scan_cmd(ctx, date):
                     limit_up_queue_amount=limit_up_queue_amount,  # 【CTO V34】封单金额
                     mode="scan",  # 【CTO V34】scan模式跳过时间衰减
                     stock_code=stock,  # 【CTO V35】股票代码用于动态danger_pct
-                    is_yesterday_limit_up=is_yesterday_limit_up  # 【CTO终极战役】真龙基因
+                    is_yesterday_limit_up=is_yesterday_limit_up,  # 【CTO终极战役】真龙基因
+                    vampire_ratio_pct=vampire_ratio_pct  # 【CTO V46】横向虹吸效应
                 )
                 
                 # 解包tuple

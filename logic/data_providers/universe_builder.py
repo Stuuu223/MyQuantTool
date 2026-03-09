@@ -420,20 +420,35 @@ class UniverseBuilder:
                     cnt_nodata += 1
                     continue
 
-                # 60日最高价（抛压天顶）
-                high_60d = float(df['high'].max())
-                # 最新收盘价（当前位置）
-                current_close = float(df.iloc[-1]['close'])
-                
-                if high_60d <= 0:
-                    cnt_nodata += 1
+                # 【CTO P0修复】数据不足时给予惩罚性空间差！
+                # 绝不允许把今天当最高点！
+                if len(df) < 20:
+                    # 数据不足20天，定性为深水区诈尸，直接否决！
+                    space_gap_pct = 0.50
+                    cnt_fail += 1
                     continue
+                elif len(df) < 60:
+                    # 数据不足60天但>=20天，用可用数据计算但给予额外惩罚
+                    high_60d = float(df['high'].max())
+                    current_close = float(df.iloc[-1]['close'])
+                    if high_60d <= 0:
+                        cnt_nodata += 1
+                        continue
+                    space_gap_pct = (high_60d - current_close) / high_60d
+                    # 额外惩罚：数据不足时空间差阈值更严格（10%而非15%）
+                    threshold = 0.10
+                else:
+                    # 数据充足（>=60天），正常计算
+                    high_60d = float(df['high'].max())
+                    current_close = float(df.iloc[-1]['close'])
+                    if high_60d <= 0:
+                        cnt_nodata += 1
+                        continue
+                    space_gap_pct = (high_60d - current_close) / high_60d
+                    threshold = 0.15
                 
-                # 空间差 = (前高 - 现价) / 前高
-                space_gap_pct = (high_60d - current_close) / high_60d
-                
-                # 【CTO核心阈值】距离前高 <= 15% 才放行
-                if space_gap_pct <= 0.15:
+                # 【CTO核心阈值】距离前高 <= 阈值 才放行
+                if space_gap_pct <= threshold:
                     passed.append(stock)
                 else:
                     cnt_fail += 1
