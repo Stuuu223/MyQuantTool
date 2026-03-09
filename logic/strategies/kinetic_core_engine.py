@@ -349,8 +349,8 @@ class 动能打分引擎CoreEngine:
         limit_up_queue_amount: float = 0.0,  # 涨停板买一封单金额（元）
         # 【CTO V34】模式参数
         mode: str = "live",  # "live"实盘模式(有尾盘衰减) / "scan"扫描模式(无衰减)
-        # 【CTO V35】股票代码参数（用于动态danger_pct）
-        stock_code: str = "",  # 股票代码，用于识别板块计算危险阈值
+        # 【CTO V54】股票代码参数（用于板块识别、动态阈值计算）
+        stock_code: str = "",  # 股票代码
         # 【CTO终极战役】基因记忆参数
         is_yesterday_limit_up: bool = False,  # 昨日是否涨停（纯血真龙基因）
         yesterday_vol_ratio: float = 1.0,  # 昨日量比（用于暴动基因检测）
