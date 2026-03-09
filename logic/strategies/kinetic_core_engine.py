@@ -448,13 +448,12 @@ class 动能打分引擎CoreEngine:
         # 【彻底废除归零逻辑】算出来是多少就是多少！真龙的数据原汁原味！
         inflow_ratio = inflow_ratio_pct  # 返回百分比形式
         
-        # 【CTO V53大力出奇迹】资金绝对霸权！
-        # inflow_ratio_pct > 10% = 净流入占流通市值超过10%
-        # 主力花天价吃筹码，无视一切摩擦力与时间衰减！
-        is_force_override = False  # 标志变量，后续在最终得分计算前应用
-        if inflow_ratio_pct > 10.0:
-            logger.info(f"🔥 [大力出奇迹] {stock_code} 净流入占比{inflow_ratio_pct:.1f}%！无视一切摩擦力与时间衰减！")
-            is_force_override = True  # 设置标志
+        # 【CTO V53大力出奇迹】资金绝对霸权！非线性市值自适应阈值！
+        # 物理原理：质量越大，惯性越大，需要的推力比例越小
+        # 小盘股(30亿)：10%流入 = 3亿真金白银，极难！
+        # 大盘股(200亿)：5%流入 = 10亿，已是天量！
+        # 百亿市值递减公式：miracle_threshold = max(3.0, 10.0 - 市值/100亿)
+        float_market_cap_yi = calibrated_float_market_cap / 100_000_000  # 转为亿元
         
         # 2. 相对历史放量倍数（放大历史爆发力）
         # 【CTO核心注入】强制200万的5分钟成交额物理底线，绞杀僵尸股分母陷阱！
@@ -501,6 +500,18 @@ class 动能打分引擎CoreEngine:
                 logger.debug(f"[MFE做功溢价] {stock_code} MFE={mfe:.2f}, 奖励+{mfe_bonus:.1f}分")
         else:
             mfe = -100.0
+        
+        # 【CTO V53大力出奇迹】资金绝对霸权！非线性市值自适应阈值！
+        # 物理原理：质量越大，惯性越大，需要的推力比例越小
+        # 小盘股(30亿)：10%流入 = 3亿真金白银，极难！
+        # 大盘股(200亿)：5%流入 = 10亿，已是天量！
+        # 百亿市值递减公式：miracle_threshold = max(3.0, 10.0 - 市值/100亿*0.5)
+        miracle_threshold = max(3.0, 10.0 - float_market_cap_yi * 0.5)  # 每百亿递减5%
+        
+        is_force_override = False  # 标志变量，后续在最终得分计算前应用
+        if inflow_ratio_pct > miracle_threshold and mfe > 0.5:
+            logger.info(f"🔥 [大力出奇迹] {stock_code} 净流入{inflow_ratio_pct:.1f}%>{miracle_threshold:.1f}%阈值(市值{float_market_cap_yi:.0f}亿)！无视一切引力！")
+            is_force_override = True  # 设置标志
         
         # 第二步：出货拦截（净流出封顶40分）
         is_net_outflow = inflow_ratio_pct <= 0
