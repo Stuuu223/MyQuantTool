@@ -206,7 +206,8 @@ class LiveTradingEngine:
         
         # 【CTO 补天指令：强制开机！】
         # 跳过 start_session 后必须强制接通引擎电源，否则 _on_tick_data 会拒收所有 Tick！
-        self.is_running = True
+        # 【致命修复】必须是self.running不是self.is_running！
+        self.running = True
         
         logger.info(f"🚀 [Time Machine] 启动超频时间沙盒，准备暴力泵入 {len(tick_stream)} 个Tick...")
         
