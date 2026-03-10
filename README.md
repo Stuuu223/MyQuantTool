@@ -2,6 +2,22 @@
 
 ---
 
+## 🚨 物理红线库 (AI 必读)
+
+> **AI 指令**：在修改打分逻辑前，必须强制阅读 [`docs/architecture/V66_PHYSICS_LAW.md`](docs/architecture/V66_PHYSICS_LAW.md)，否则禁止提交！
+
+| 红线 | 版本 | 核心法则 |
+|------|------|----------|
+| **量纲升维** | V66 | `float_market_cap < 2亿 → ×10000`，A股最小市值不可能<2亿 |
+| **引力阻尼** | V65 | `gravity_damper = 1.0 + log10(市值/50亿)×0.5`，推卡车>推泡沫 |
+| **MFE制衡** | V64 | `MFE < 1.0 → sustain打折`，防止堆钱刷高分 |
+| **时空切片** | V63 | 禁止均摊算法，必须调用真实早盘切片 |
+| **Scan/Live同源** | V61 | 引擎只接收5个纯物理常量，入口清洗单位 |
+
+**详细文档**：[`docs/architecture/`](docs/architecture/) | **历史日志**：[`docs/worklogs/`](docs/worklogs/)
+
+---
+
 ## ⚠️ 【系统最高宪法】摒弃散户思维，拥抱市场物理学
 
 > **语言决定思维！** 本系统严禁使用任何"散户视角"的魔法数字（Magic Number）。
