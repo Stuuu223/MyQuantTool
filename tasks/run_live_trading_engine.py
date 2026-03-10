@@ -2691,8 +2691,8 @@ class LiveTradingEngine:
 
     def _start_auto_replenishment(self):
         """
-        CTO强制：启动自动热扫描定时器
-        每分钟检查一次，如果watchlist为空则执行快照筛选
+        【CTO V59 动态雷达重铸】全天候脉冲扫描
+        废除 "为空才扫描" 的静态漏斗，改为盘中定时全市场广角雷达！
         """
         import threading
         import time
@@ -2705,31 +2705,26 @@ class LiveTradingEngine:
                     market_open = current_time.replace(hour=9, minute=30, second=0, microsecond=0)
                     market_close = current_time.replace(hour=15, minute=0, second=0, microsecond=0)
                     
-                    # 只在交易时间内运行
                     if market_open.time() <= current_time.time() <= market_close.time():
-                        # 如果watchlist为空，执行快照筛选
-                        if not self.watchlist:
-                            logger.info("[FAST] 自动热扫描：执行快照筛选...")
-                            self._snapshot_filter()
-                            
-                            # 如果筛选到股票，进入高频监控模式
-                            if self.watchlist:
-                                logger.info(f"[TARGET] 自动热扫描成功，发现 {len(self.watchlist)} 只目标")
-                                self._fire_control_mode()
+                        # 【CTO 切除术】删除 if not self.watchlist: 的弱智拦截！
+                        # 无论池子里有几只，每 3 分钟都要对全市场进行广角扫描捕获新龙！
+                        logger.info("📡 [全息天网] 启动盘中动态广角扫描，搜寻新起爆真龙...")
+                        self._process_snapshot_at_0930()  # 复用全市场快照探针
                     
-                    # 每分钟检查一次（仅实盘模式）
                     if self.mode == 'live':
-                        time.sleep(60)
-                    
+                        time.sleep(180)  # 【CTO节拍器】每 3 分钟扫一次全市场！
+                    else:
+                        break  # Scan模式不需要跑后台死循环
+                        
                 except Exception as e:
                     logger.error(f"[ERR] 自动热扫描循环异常: {e}")
                     if self.mode == 'live':
-                        time.sleep(60)  # 出错后也继续运行
+                        time.sleep(60)
         
-        # 启动自动热扫描线程
-        replenish_thread = threading.Thread(target=auto_replenish_loop, daemon=True)
-        replenish_thread.start()
-        logger.info("[OK] 自动热扫描定时器已启动")
+        if self.mode == 'live':
+            replenish_thread = threading.Thread(target=auto_replenish_loop, daemon=True)
+            replenish_thread.start()
+            logger.info("[OK] 盘中动态广角雷达已启动，每 3 分钟巡航一次全市场！")
 
     def _process_snapshot_at_0930(self):
         """
@@ -2827,25 +2822,23 @@ class LiveTradingEngine:
             # 按量比排序
             filtered_df = filtered_df.sort_values('volume_ratio', ascending=False)
             
-            # 4. 【CTO重塑】放宽数量限制：50-150只观察池
-            watchlist_count = len(filtered_df)
+            # 【CTO V59 动态累计扩容】将新异动的股票加入现有池子，并去重
+            new_stocks = filtered_df['stock_code'].tolist()[:150]
+            added_stocks = [s for s in new_stocks if s not in self.watchlist]
             
-            # 【CTO第三刀】消除观察池数量焦虑：只要>0就不警告
-            if watchlist_count == 0:
-                logger.warning(f"[WARN] 观察池为空，无法监控")
-            elif watchlist_count < 10:
-                logger.info(f"[INFO] 观察池数量较少: {watchlist_count}只")
+            if added_stocks:
+                self.watchlist.extend(added_stocks)
+                logger.info(f"🔥 [天网捕获] 盘中捕捉到 {len(added_stocks)} 只新异动标的！当前雷达池扩容至: {len(self.watchlist)}只")
+                
+                # 【极其关键】必须为新猎物挂载 QMT 内存订阅，否则主循环读不到新股票的 Tick！
+                if self.mode == 'live':
+                    try:
+                        from xtquant import xtdata
+                        xtdata.subscribe_whole_quote(added_stocks)
+                    except Exception as e:
+                        pass
             else:
-                logger.info(f"[OK] 观察池已就绪: {watchlist_count}只")
-            
-            self.watchlist = filtered_df['stock_code'].tolist()[:150]  # 最多150只
-            
-            logger.info(f"[OK] 当前截面筛选完成: {len(self.watchlist)} 只目标")
-            
-            if len(self.watchlist) > 0:
-                top5 = filtered_df.head(5)
-                for _, row in top5.iterrows():
-                    logger.info(f"  [TARGET] {row['stock_code']}: 量比{row['volume_ratio']:.2f}")
+                logger.info(f"📡 [天网扫描] 本次扫描未发现新面孔，雷达池维持 {len(self.watchlist)}只")
             
         except Exception as e:
             logger.error(f"[ERR] 当前截面快照筛选失败: {e}")
