@@ -415,29 +415,34 @@ class 动能打分引擎CoreEngine:
         
         float_market_cap = float_volume_shares * price
         
-        # 【P0修复】删除altitude_weight海拔权重，涨停股资金流入不再被夸大
-        # 物理真理：net_inflow就是net_inflow，不需要根据涨幅加权
-        # 原代码：altitude_weight = 1.0 + (current_altitude * 10.0)，涨停股×2倍，严重失真！
-        
-        # 第一步：【CTO V51 里氏震级模型】无上限乘法动能！
-        # 废除加法凑分，改用乘法爆发：base_power = 流入占比 × 放量倍数
-        # 让龙中龙自然冲破天花板，无需硬性上限！
-        
-        # 1. 流入占比百分比（使用真实net_inflow，不再乘以altitude_weight）
-        # 【P0修复】使用net_inflow直接计算，不再加权
-        inflow_ratio_pct = (net_inflow / float_market_cap * 100.0) if float_market_cap > 1000 else 0.0
-        
-        # 【CTO纠偏令】废除归零，实装量纲自适应校准仪！
-        # ============================================================
-        # 【CTO手术1】拆除市值量纲强行放大！改用数学软封顶！
-        # 根因：放大10000倍导致小盘股inflow_ratio从30%被压到7.82%
-        # 正解：用对数平滑防止极端溢出，但不改变底层量纲！
-        # ============================================================
+        # ==============================================================
+        # 【CTO V66 绝地反击】彻底根治万股量纲引发的物理引擎崩盘！
+        # 病灶：QMT返回的float_volume_shares单位是万股，不是股！
+        # 志特新材流通盘1.5亿股，QMT返回15000（万股）
+        # 导致float_market_cap = 15000 * 10 = 15万（实际应是15亿！）
+        # 流入比 = 5000万/15万 = 33333%（爆炸！）
+        # 
+        # 明确法则：A股目前最小流通市值绝不可能低于2亿人民币！
+        # 如果算出来的市值低于2亿，100%是前端传进来的股本单位是"万股"！
+        # ==============================================================
         import math
         
+        # 强制量纲升维：一旦发现市值极小，必须强行把股本从万股转为股！
+        if float_market_cap > 0 and float_market_cap < 200000000:
+            float_market_cap = float_market_cap * 10000.0  # 放大一万倍，回归真实的人民币元
+            logger.debug(f"📐 [量纲升维] {stock_code} 市值{float_market_cap/100000000:.2f}亿已升维至真实人民币！")
+        
+        # 现在，float_market_cap 已经是绝对的、真实的人民币金额了！
+        # 用于后续计算（如V65引力阻尼）
+        calibrated_float_market_cap = float_market_cap  # 兼容后续代码
+        
+        # 【P0修复】删除altitude_weight海拔权重，涨停股资金流入不再被夸大
+        # 物理真理：net_inflow就是net_inflow，不需要根据涨幅加权
+        
+        # 第一步：【CTO V51 里氏震级模型】流入占比计算
         if float_market_cap > 1000:
             raw_inflow_pct = (net_inflow / float_market_cap * 100.0)
-            # 【CTO数学软封顶】超过30%后取对数平滑，增速放缓但不改变量纲
+            # 【CTO数学软封顶】超过30%后取对数平滑，防止极端溢出
             if abs(raw_inflow_pct) > 30.0:
                 sign = 1.0 if raw_inflow_pct > 0 else -1.0
                 inflow_ratio_pct = sign * (30.0 + 10.0 * math.log10(abs(raw_inflow_pct) - 29.0))
@@ -582,17 +587,17 @@ class 动能打分引擎CoreEngine:
         stock_identifier = f"{current_time.strftime('%H:%M')}@{price:.2f}"
         
         # ============================================================
-        # 【CTO手术2】MFE制衡Sustain！打击大盘伪高潮！
+        # 【CTO V66 MFE制衡】打击大盘伪高潮，但给重卡留体面！
         # 病灶：金风科技(大盘)sustain=50x但MFE=0.3靠堆钱刷高分
-        # 物理真理：推不动的钱再多也是废铁！MFE<1.0就是老黄牛！
+        # 物理真理：推不动的钱再多也是废铁！但大盘股即使效率低也有分量！
         # 方案：effective_sustain = sustain_ratio * mfe_factor
-        # mfe<1.0时压制sustain，防止堆钱刷榜
+        # 【V66修正】下限保护：最惨打5折，不至于被当成0.3的废物！
         # ============================================================
         if mfe < 1.0:
-            # 低效率压制：MFE越低，sustain打折越狠
-            mfe_factor = mfe  # MFE=0.3时sustain只保留30%
+            # 引入下限保护：最惨打 5 折，不至于被削成渣
+            mfe_factor = max(0.5, mfe)  # V66修正：MFE=0.3时打5折而非3折
             effective_sustain = sustain_ratio * mfe_factor
-            logger.info(f"🐢 [MFE压制] {stock_code} sustain={sustain_ratio:.2f}×MFE{mfe:.2f}={effective_sustain:.2f}，老黄牛降权！")
+            logger.info(f"🐢 [MFE压制] {stock_code} sustain={sustain_ratio:.2f}×MFE{mfe:.2f}(保护{mfe_factor:.2f})={effective_sustain:.2f}")
         else:
             # 高效率放行：MFE>=1.0时sustain不变
             effective_sustain = sustain_ratio
