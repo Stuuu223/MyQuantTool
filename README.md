@@ -49,6 +49,23 @@
 
 **流通市值锚点**：`float_market_cap = float_volume × price` 必须是绝对人民币元！
 
+### 🧹 字段清洗铁律 (CTO V62钦定)
+
+| 数据源 | 昨收价字段 | 当前价字段 | 数据结构 | 访问方式 |
+|--------|------------|------------|----------|----------|
+| `subscribe_quote` 实盘流 | `lastClose` | `lastPrice` | C++对象 | `tick.lastPrice` |
+| `get_full_tick` 快照 | `lastClose` | `lastPrice` | 字典嵌套 | `tick['lastPrice']` |
+| `get_local_data` 回测 | `lastClose` | `lastPrice` | Pandas DataFrame | `df['lastPrice']` |
+
+**统一清洗规则**：
+```python
+# 引擎只接收纯物理常量，不接触原始格式！
+current_price = tick.get('lastPrice', 0) or tick.get('price', 0)
+pre_close = tick.get('lastClose', 0) or tick.get('prev_close', 0)
+```
+
+**同源方案**：隔离数据通道，同源物理逻辑。引擎只接收5个纯物理常量：`price/amount/high/low/pre_close` + 时间进度 `minutes_passed`
+
 ---
 
 ## 🧠 V20.5 资金物理学核心法则 (CTO 钦定)
@@ -247,7 +264,7 @@ df['volume_ratio'] = df['estimated_full_day_volume'] / df['avg_volume_5d_gu']
 
 ### 序言：股市的尽头是物理学
 
-本系统彻底摒弃散户思维中基于"涨幅"与"红绿"的后视镜偏见。在 V20.5 架构中，价格上涨只是结果，资金推力转化为价格的速度（动能）和暗中蓄积的能量（势能）才是原因！
+本系统彻底摒弃散户思维中基于"涨幅"与"红绿"的后视镜偏见。在系统架构中，价格上涨只是结果，资金推力转化为价格的速度（动能）和暗中蓄积的能量（势能）才是原因！
 
 ### 第一定律：能量守恒与微观动能 (Kinetic Energy)
 
@@ -277,7 +294,4 @@ df['volume_ratio'] = df['estimated_full_day_volume'] / df['avg_volume_5d_gu']
 ---
 
 ## 📋 待办事项
-
-- [ ] 本周末：三个月回测框架，重新估ATR阈值
-- [x] 已完成：日K数据验证70%死亡换手合理性（420,096样本验证通过）
 - [ ] 下周：新建`amount_kinetic_engine.py`（基于成交金额dAmount/dt）
