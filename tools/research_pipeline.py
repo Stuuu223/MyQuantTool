@@ -658,12 +658,14 @@ def main():
     """主函数
     
     用法:
-    python tools/research_pipeline.py           # 处理golden_samples.csv
-    python tools/research_pipeline.py --large   # 处理large_samples_base.csv
+    python tools/research_pipeline.py                      # 处理golden_samples.csv
+    python tools/research_pipeline.py --large              # 处理large_samples_base.csv
+    python tools/research_pipeline.py --input xxx.csv      # 处理指定文件
     """
     import argparse
     parser = argparse.ArgumentParser(description='CTO数据飞轮特征提取器')
     parser.add_argument('--large', action='store_true', help='处理大批量样本(large_samples_base.csv)')
+    parser.add_argument('--input', type=str, default=None, help='指定输入样本文件')
     parser.add_argument('--output', type=str, default=None, help='输出文件路径')
     args = parser.parse_args()
     
@@ -675,7 +677,11 @@ def main():
     extractor = FeatureExtractor()
     
     # 加载样本
-    if args.large:
+    if args.input:
+        logger.info(f"[模式] 指定输入文件处理: {args.input}")
+        extractor.load_large_samples(args.input)
+        output_path = args.output or 'data/validation/features_custom.csv'
+    elif args.large:
         logger.info("[模式] 大批量样本处理 (1m降维支持)")
         extractor.load_large_samples()
         output_path = args.output or 'data/validation/features_large.csv'
