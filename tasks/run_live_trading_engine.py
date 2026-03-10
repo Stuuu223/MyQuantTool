@@ -3004,7 +3004,7 @@ class LiveTradingEngine:
         print(f"{'排名':<4} {'代码':<12} {'最高血量':<10} {'时间':<10} {'涨幅':<8}")
         print("-" * 60)
         for i, target in enumerate(final_list[:10], 1):
-            print(f"{i:<4} {target['code']:<12} {target['score']:<10.1f} {target['time']:<10} {target.get('change', 0):<8.2f}%")
+            print(f"{i:<4} {target['code']:<12} {target['score']:<10.1f} {target.get('time', '--:--:--'):<10} {target.get('change', 0):<8.2f}%")
         print("=" * 60)
         print(f"?? 总计追踪: {len(final_list)} 只股票")
         print(f"?? 完整战报: {report_path}")
