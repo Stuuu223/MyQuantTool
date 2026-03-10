@@ -2428,94 +2428,19 @@ class LiveTradingEngine:
     
     def _execute_trade(self, stock_code: str, tick_data: Dict[str, Any], score: float):
         """
-        执行交易 - 动态狙击枪（CTO V33重铸）
+        【CTO V66废弃】交易执行 - 已移除
         
-        废除静态市价单，引入：
-        1. EV盈亏比拦截闸
-        2. 动态扫单排队
-        3. 流动性防骗炮护城河
+        原因：
+        1. self.trader从未初始化
+        2. trade_interface.py已删除
+        3. 系统当前专注于打分和扫描，不执行交易
         
-        Args:
-            stock_code: 股票代码
-            tick_data: Tick数据
-            score: 动能打分引擎得分
+        保留此函数仅用于记录触发信号
         """
-        if not self.trader:
-            logger.warning(f"[WARN] {stock_code} 交易接口未连接，跳过执行")
-            return
-        
-        # 【CTO Phase4.1 龙空龙】宏观断电保护
-        if self._macro_multiplier == 0.0:
-            logger.warning(f"[龙空龙断电] {stock_code} 市场流动性枯竭，系统禁止买入！")
-            return
-        
-        try:
-            price = tick_data.get('price', 0.0) or 0.0
-            pre_close = tick_data.get('lastClose', tick_data.get('prev_close', price)) or price
-            
-            # 【CTO V34照妖镜修复】用绝对价格推导判断涨停（解决askPrice1盘后失效问题）
-            # 涨停价计算：主板10%，创业板/科创板20%，北交所30%
-            if stock_code.startswith(('30', '68')):  # 创业板、科创板 20%
-                limit_up_price = round(pre_close * 1.20, 2)
-            elif stock_code.startswith(('8', '4')):  # 北交所 30%
-                limit_up_price = round(pre_close * 1.30, 2)
-            else:  # 主板 10%
-                limit_up_price = round(pre_close * 1.10, 2)
-            # 现价距离涨停价<1分钱即判定为物理封板
-            is_limit_up = (price >= limit_up_price - 0.011)
-            
-            # 【CTO修复】计算涨幅百分比
-            change_pct = ((price - pre_close) / pre_close * 100.0) if pre_close > 0 else 0.0
-            
-            # 【CTO V35同步】动态danger_pct阈值：主板8.5%/创业板科创板17%/北交所25%
-            # 解决用主板标尺惩罚创业板的问题！
-            if stock_code.startswith(('30', '68')):  # 创业板/科创板
-                danger_pct_threshold = 17.0
-            elif stock_code.startswith(('8', '4')):  # 北交所
-                danger_pct_threshold = 25.0
-            else:  # 主板
-                danger_pct_threshold = 8.5
-            
-            if change_pct > danger_pct_threshold and not is_limit_up:
-                logger.warning(f"[EV拦截] {stock_code} 已处 {change_pct:.1f}% 高位且未封板(阈值{danger_pct_threshold}%)，盈亏比极度恶化，放弃！")
-                return
-            
-            # 【CTO V33照妖镜】2. 向上扫单排队（获取确定性）
-            # 不用tick price，用卖一价扫单
-            ask_price1 = tick_data.get('askPrice1', 0.0) or 0.0
-            order_price = ask_price1 if ask_price1 > 0 else price
-            
-            # 【CTO V33照妖镜】3. 流动性防骗炮护城河
-            # 检查上方卖盘厚度，防止真空尖刺诱多
-            if not is_limit_up:
-                ask_total_vol = 0
-                for i in range(1, 6):
-                    vol = tick_data.get(f'askVol{i}', 0) or 0
-                    ask_total_vol += vol * 100  # 手转股
-                ask_total_amount = ask_total_vol * order_price
-                
-                if ask_total_amount < 500_000:  # 上方压单不到50万
-                    logger.warning(f"[骗炮拦截] {stock_code} 卖盘极度真空(仅{ask_total_amount/10000:.1f}万)，疑似脉冲诱多！")
-                    return
-            
-            logger.info(f"?? {stock_code} 触发交易信号! 得分={score:.2f}, 价格={order_price:.2f}, 涨幅={change_pct:.1f}%")
-            
-            # 执行交易 - 动态扫单价
-            from logic.execution.trade_interface import TradeOrder, OrderDirection
-            
-            order = TradeOrder(
-                stock_code=stock_code,
-                direction=OrderDirection.BUY.value,
-                quantity=100,  # 可根据资金管理调整
-                price=order_price,  # 【CTO V33】动态扫单价，非静态tick price
-                remark=f'动能_{score:.1f}_动态狙击_涨幅{change_pct:.1f}%'
-            )
-            
-            result = self.trader.buy(order)
-            logger.info(f"?? {stock_code} 交易结果: {result}")
-            
-        except Exception as e:
-            logger.error(f"[ERR] {stock_code} 交易执行失败: {e}")
+        price = tick_data.get('price', 0.0) or 0.0
+        logger.info(f"[信号记录] {stock_code} 触发交易信号! 得分={score:.2f}, 价格={price:.2f}")
+        logger.warning(f"[V66] 交易执行已禁用，系统当前仅支持打分和扫描")
+        return
 
     def format_dragon_report(self, rank: int, stock_code: str, stock_name: str,
                             final_score: float, inflow_ratio: float,

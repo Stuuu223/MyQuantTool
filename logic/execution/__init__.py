@@ -1,70 +1,23 @@
 # -*- coding: utf-8 -*-
 """
-执行模块 (Execution Module)
+执行模块 (Execution Module) - V66精简版
 
 功能：
-- 交易接口抽象层（模拟盘/实盘）
-- 交易看门狗（风控检查）
+- 退出管理（止盈止损）
 
 主要导出：
-- TradeInterface: 交易接口抽象基类
-- SimulatedTrading: 模拟盘实现
-- QMTTrading: QMT实盘实现（预留）
-- TradeOrder: 交易订单数据类
-- TradeResult: 交易结果数据类
-- create_trader: 工厂函数
+- ExitManager: 退出管理器（VWAP动态止盈止损）
 
-使用示例:
-    >>> from logic.execution import create_trader, TradeOrder
-    >>> 
-    >>> # 创建模拟盘
-    >>> trader = create_trader('simulated', initial_cash=20000.0)
-    >>> trader.connect()
-    >>> 
-    >>> # 下单
-    >>> order = TradeOrder('300986.SZ', 'BUY', 100, 13.42)
-    >>> result = trader.buy(order)
+注：交易执行相关代码已被移除，因为：
+1. self.trader从未初始化
+2. 交易接口代码永远不会被执行
+3. 系统当前专注于打分和扫描
 """
 
-from logic.execution.trade_interface import (
-    TradeInterface,
-    SimulatedTrading,
-    QMTTrading,
-    TradeOrder,
-    TradeResult,
-    OrderValidator,
-    OrderDirection,
-    OrderType,
-    OrderStatus,
-    create_trader,
-    quick_sim_trade,
-)
-
-from logic.execution.trade_gatekeeper import (
-    TradeGatekeeper,
-    check_buy_order,
-    check_sell_order,
-)
+from logic.execution.exit_manager import ExitManager
 
 __all__ = [
-    # 交易接口
-    'TradeInterface',
-    'SimulatedTrading',
-    'QMTTrading',
-    # 数据类
-    'TradeOrder',
-    'TradeResult',
-    'OrderValidator',
-    # 枚举
-    'OrderDirection',
-    'OrderType',
-    'OrderStatus',
-    # 函数
-    'create_trader',
-    'quick_sim_trade',
-    'TradeGatekeeper',
-    'check_buy_order',
-    'check_sell_order',
+    'ExitManager',
 ]
 
-__version__ = '1.0.0'
+__version__ = '2.0.0'
