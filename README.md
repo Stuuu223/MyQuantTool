@@ -47,18 +47,18 @@
 | `get_full_tick` 快照 | 股 | 元 | **万股** | `float_volume *= 10000` |
 | `get_local_data` 回测 | 股 | 元 | **万股** | `float_volume *= 10000` |
 
-**⚠️ 关键发现 (V66)**: QMT返回的`float_volume`（流通股本）单位是**万股**，不是股！
-- 志特新材流通盘1.5亿股 → QMT返回15000（万股）
-- `float_market_cap = 15000 * 10 = 15万`（实际应是15亿！）
-- 导致`inflow_ratio = 5000万/15万 = 33333%`（爆炸！）
+**⚠️ 量纲统一铁律 (V66 确立)**：由于 QMT/通达信数据源的极度混乱，`float_volume` 经常在"股"和"万股"之间反复横跳。
 
-**流通市值锚点（V66修正）**：
+**物理引擎绝不猜测单位！** 在传入 `kinetic_core_engine` 之前，必须在系统入口处建立单位防波堤：
+
 ```python
-float_market_cap = float_volume_shares * price
-# 强制量纲升维：A股最小流通市值不可能<2亿！
+# 若 float_volume * price < 2亿，直接判定为单位错乱（万股）
+# 强行 *10000 升维至绝对人民币元！
 if float_market_cap > 0 and float_market_cap < 200000000:
     float_market_cap = float_market_cap * 10000.0  # 万股→股
 ```
+
+**物理法则**：A股最小流通市值不可能 < 2亿。如果算出来的市值 < 2亿，100% 是数据源单位错误！
 
 ### 🧹 字段清洗铁律 (CTO V62钦定)
 
@@ -115,14 +115,15 @@ pre_close = tick.get('lastClose', 0) or tick.get('prev_close', 0)
 
 | 参数 | 状态 | 说明 |
 |------|------|------|
-| `early_scale_factor` | ✅ 已启用 | 早盘降阈系数0.6，9:30-09:45阈值降低40% |
+| `early_scale_factor` | ⚠️ 已废弃 | 被 V63 "早盘真实时空切片" 降维打击替代！不再使用固定系数 |
 | `atr_ratio_min` | ✅ 已启用(仅记录) | ATR势垒阈值1.8x，当前不拦截只记录到df |
 | `atr_filter_mode` | ✅ 已启用 | 当前`record_only`，等回测后切换为`hard_filter` |
 | `min_volume_multiplier` | ✅ 已启用 | 量比阈值1.0x |
 | `turnover_rate_max` | ✅ 已启用 | **死亡换手150%** |
-| `gravity_damper` | ✅ V65已启用 | 市值引力阻尼器，市值<50亿衰减，>50亿加成 |
-| `mfe_factor` | ✅ V64已启用 | MFE制衡Sustain，低效率降权 |
+| `gravity_damper` | ✅ V65已启用 | 市值引力阻尼器，推卡车加分，推泡沫降权 |
+| `mfe_factor` | ✅ V64已启用 | MFE制衡Sustain，防止大盘股用死钱刷虚假高分 |
 | `量纲升维` | ✅ V66已启用 | 市值<2亿强制×10000，根治万股单位问题 |
+| `Scan_Sync` | ✅ V61/V62已启用 | 彻底打通 Scan 与 Live 的双层物理同源 |
 | `kinetic_barrier_min` | ⚠️ 占位未启用 | 待成交动能引擎完成后启用 |
 
 ### 👶 关于新股策略
@@ -334,6 +335,8 @@ df['volume_ratio'] = df['estimated_full_day_volume'] / df['avg_volume_5d_gu']
 ---
 
 ## 📋 待办事项
-- [ ] 本周末：三个月回测框架（验证atr_ratio_min合理范围）
-- [ ] 下周：新建`amount_kinetic_engine.py`（基于成交金额dAmount/dt）
-- [ ] V66后验证：Scan模式榜单是否正常显示
+
+- [ ] 实盘断点续传：支持盘中崩溃重启后的 `highest_scores` 状态恢复
+- [ ] 撤单防骗炮状态机：基于 `sustain_ratio` 衰减的智能撤单机制（开发中）
+- [ ] V66后验证：Scan模式榜单是否正常显示真龙
+
