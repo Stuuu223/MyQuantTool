@@ -293,8 +293,73 @@ class LiveTradingEngine:
                 )
                 self._on_tick_data(tick_event)
                 processed_count += 1
-        logger.info(f"? [Time Machine] 时间线演放完毕！共处理 {processed_count} 个有效Tick")
-        logger.info("?? 强制收尸结算...")
+        logger.info(f"✅ [Time Machine] 时间线演放完毕！共处理 {processed_count} 个有效Tick")
+        logger.info("📊 强制收尸结算...")
+        
+        # 【CTO R7修复】Scan模式：从tick_stream中提取最后状态并生成排行榜
+        # 收集每只股票的最后一笔Tick数据
+        last_tick_by_stock = {}
+        for tick in tick_stream:
+            stock_code = tick.get('stock_code', '')
+            if stock_code:
+                last_tick_by_stock[stock_code] = tick
+        
+        # 遍历计算分数
+        current_top_targets = []
+        for stock_code, tick_data in last_tick_by_stock.items():
+            try:
+                # 构造符合_calculate_signal_score格式的tick_data
+                formatted_tick = {
+                    'stock_code': stock_code,
+                    'price': float(tick_data.get('lastPrice', 0) or tick_data.get('price', 0)),
+                    'lastPrice': float(tick_data.get('lastPrice', 0) or tick_data.get('price', 0)),
+                    'volume': float(tick_data.get('volume', 0)),
+                    'amount': float(tick_data.get('amount', 0)),
+                    'open': float(tick_data.get('open', 0)),
+                    'high': float(tick_data.get('high', 0)),
+                    'low': float(tick_data.get('low', 0)),
+                    'lastClose': float(tick_data.get('lastClose', 0) or tick_data.get('prev_close', 0)),
+                    'prev_close': float(tick_data.get('lastClose', 0) or tick_data.get('prev_close', 0)),
+                }
+                
+                # 检查价格有效性
+                if formatted_tick['price'] <= 0:
+                    continue
+                
+                score = self._calculate_signal_score(stock_code, formatted_tick)
+                if score >= 50.0:  # 及格线
+                    current_top_targets.append({
+                        'code': stock_code,
+                        'score': score,
+                        'price': formatted_tick['price'],
+                        'change': (formatted_tick['price'] - formatted_tick['lastClose']) / max(formatted_tick['lastClose'], 0.01) * 100 if formatted_tick['lastClose'] > 0 else 0,
+                    })
+            except Exception as e:
+                logger.debug(f"[SKIP] {stock_code} 打分失败: {e}")
+                continue
+        
+        # 排序并保存
+        current_top_targets.sort(key=lambda x: x['score'], reverse=True)
+        if current_top_targets:
+            self.last_known_top_targets = current_top_targets[:10]
+            self.last_known_pool_stats = {
+                'total': len(last_tick_by_stock),
+                'active': len(current_top_targets),
+                'up': 0,
+                'down': 0,
+                'filtered': len(last_tick_by_stock) - len(current_top_targets)
+            }
+        
+        # 【CTO R7修复】Scan模式：强制将沙盘跑出来的最高分榜单投射到大屏！
+        if getattr(self, 'last_known_top_targets', None):
+            self._print_fire_control_panel(
+                self.last_known_top_targets, 
+                initial_loading=False, 
+                pool_stats=getattr(self, 'last_known_pool_stats', {}),
+                is_rest=True
+            )
+            print("\n[CMD] 沙盘时间线推演定格完毕。")
+        
         self._generate_final_battle_report()
         self._has_generated_report = True
     
@@ -1303,10 +1368,12 @@ class LiveTradingEngine:
                         },
                         is_rest=True
                     )
-                    print("\n?? [午休复盘模式] 保留最后机会池数据，等待下午开盘...")
-                    if self.mode == 'live':
-                        time.sleep(5)
-                    continue
+                    print("\n⏸️ [午休复盘模式] 保留最后机会池数据，等待下午开盘...")
+                    # 【CTO R7修复】午休期间只打印一次，不要无限死循环刷屏！
+                    # 斩断循环，安全挂起，下午由外部脚本重新拉起
+                    logger.info("[STOP] 进入午休静默状态，雷达主线程安全休眠。")
+                    self.running = False
+                    break  # 替换原来的continue和time.sleep()
                 
                 # 【CTO V5】盘后期间 (15:00后)：执行一次最终计算然后定格展示
                 is_after_hours = current_time >= time_type(15, 0)
