@@ -1,4 +1,4 @@
-# MyQuantTool V20.5.1 终极量化架构 (纯血游资雷达 + Boss P0修复)
+# MyQuantTool V66 绝地反击版 (纯血游资雷达 + 物理畸变修复)
 
 ---
 
@@ -39,15 +39,26 @@
    - 净流入占流通市值超过10% = 主力花天价吃筹码
    - 强制解除尾盘打折、阻力位摩擦力等任何负面压制
 
-### 📐 量纲铁律
+### 📐 量纲铁律 (V66 绝地反击验证)
 
-| 数据源 | volume单位 | amount单位 | 入口清洗 |
-|--------|------------|------------|----------|
-| `subscribe_quote` 实盘流 | 手(100股) | 元 | `volume *= 100` |
-| `get_full_tick` 快照 | 股 | 元 | 无需转换 |
-| `get_local_data` 回测 | 股 | 元 | 无需转换 |
+| 数据源 | volume单位 | amount单位 | float_volume单位 | 入口清洗 |
+|--------|------------|------------|------------------|----------|
+| `subscribe_quote` 实盘流 | 手(100股) | 元 | **万股** | `volume *= 100`, `float_volume *= 10000` |
+| `get_full_tick` 快照 | 股 | 元 | **万股** | `float_volume *= 10000` |
+| `get_local_data` 回测 | 股 | 元 | **万股** | `float_volume *= 10000` |
 
-**流通市值锚点**：`float_market_cap = float_volume × price` 必须是绝对人民币元！
+**⚠️ 关键发现 (V66)**: QMT返回的`float_volume`（流通股本）单位是**万股**，不是股！
+- 志特新材流通盘1.5亿股 → QMT返回15000（万股）
+- `float_market_cap = 15000 * 10 = 15万`（实际应是15亿！）
+- 导致`inflow_ratio = 5000万/15万 = 33333%`（爆炸！）
+
+**流通市值锚点（V66修正）**：
+```python
+float_market_cap = float_volume_shares * price
+# 强制量纲升维：A股最小流通市值不可能<2亿！
+if float_market_cap > 0 and float_market_cap < 200000000:
+    float_market_cap = float_market_cap * 10000.0  # 万股→股
+```
 
 ### 🧹 字段清洗铁律 (CTO V62钦定)
 
@@ -100,22 +111,23 @@ pre_close = tick.get('lastClose', 0) or tick.get('prev_close', 0)
 
 ---
 
-## 📊 参数启用状态表 (V20.5.1 - 2026-03-04 Boss P0修复)
+## 📊 参数启用状态表 (V66 - 2026-03-10 绝地反击版)
 
 | 参数 | 状态 | 说明 |
 |------|------|------|
 | `early_scale_factor` | ✅ 已启用 | 早盘降阈系数0.6，9:30-09:45阈值降低40% |
-| `atr_ratio_min` | ✅ 已启用(仅记录) | ATR势垒阈值1.8x，当前不拦截只记录到df。**P0修复：缺数据保留NaN** |
+| `atr_ratio_min` | ✅ 已启用(仅记录) | ATR势垒阈值1.8x，当前不拦截只记录到df |
 | `atr_filter_mode` | ✅ 已启用 | 当前`record_only`，等回测后切换为`hard_filter` |
 | `min_volume_multiplier` | ✅ 已启用 | 量比阈值1.0x |
-| `turnover_rate_max` | ✅ 已启用 | **死亡换手150%**（研究验证：70%以上10日亏损4.67%）|
-| `kinetic_barrier_min` | ⚠️ 占位未启用 | 公式：a(t)=60s换手率加速度，待成交动能引擎完成后启用 |
-| `micro_kinetic_window` | 🧪 实验参数 | 对应已废弃的盘口引擎，不建议使用 |
-| `micro_kinetic_min_acceleration` | 🧪 实验参数 | 对应已废弃的盘口引擎，不建议使用 |
+| `turnover_rate_max` | ✅ 已启用 | **死亡换手150%** |
+| `gravity_damper` | ✅ V65已启用 | 市值引力阻尼器，市值<50亿衰减，>50亿加成 |
+| `mfe_factor` | ✅ V64已启用 | MFE制衡Sustain，低效率降权 |
+| `量纲升维` | ✅ V66已启用 | 市值<2亿强制×10000，根治万股单位问题 |
+| `kinetic_barrier_min` | ⚠️ 占位未启用 | 待成交动能引擎完成后启用 |
 
 ### 👶 关于新股策略
 
-新股在 `stock_filter` 的第一道（`min_avg_amount=5000万` 需要历史数据）就被过滤，不会进入死亡换手判断环节。系统专注于有历史数据支撑的右侧起爆点，新股前几天的乱打行为不符合模型假设！
+新股在 `stock_filter` 的第一道（`min_avg_amount=5000万` 需要历史数据）就被过滤，不会进入死亡换手判断环节。
 
 ---
 
@@ -203,6 +215,34 @@ sz_tick = os.path.join(qmt_path, 'datadir', 'SZ', '0', '000001')
 ---
 
 ## 🐛 历史 Bug 记录 (血泪教训)
+
+### 2026-03-10: V64-V66物理畸变修复三连击
+
+**Bug #1: V64切掉救命稻草导致空榜**
+- **现象**: V64后榜单为空
+- **根因**: V64误删了`*10000`的量纲校准代码，但这其实是"万股→股"的救命稻草！
+- **发现**: QMT返回的`float_volume_shares`单位是万股，不是股
+- **影响**: 志特新材市值从15亿变成15万，流入比33333%被对数软封顶压成渣
+- **修复**: V66在引擎入口强制量纲升维，市值<2亿时×10000
+- **Git**: `c94ef1b`
+
+**Bug #2: 大盘伪高潮 (V64)**
+- **现象**: 金风科技(大盘)sustain=50x但MFE=0.3刷2808分
+- **根因**: sustain_ratio无MFE制衡，靠堆钱就能刷高分
+- **修复**: 引入MFE制衡，`effective_sustain = sustain × mfe_factor`
+- **Git**: `0332ff3`
+
+**Bug #3: 微盘虚假高潮 (V65)**
+- **现象**: 微盘股历史成交额极低，稍微放量就sustain=10x霸榜
+- **根因**: sustain是"自身历史对比"，没有考虑市值质量
+- **物理真理**: 推卡车的1.6倍 > 推泡沫的10倍！
+- **修复**: 引入市值引力阻尼器`gravity_damper = 1.0 + log10(市值/50亿) × 0.5`
+- **Git**: `556dc99`
+
+**血泪教训**:
+> **V64的`*10000`不是"市值放大偏见"，而是"万股→股"的救命稻草！** 物理引擎必须无状态，但数据源头量纲混乱时，必须在入口处清洗！
+
+---
 
 ### 2026-03-09: L1探针误杀 + 量纲归零双杀 Bug (V52 CTO纠偏令)
 
@@ -294,4 +334,6 @@ df['volume_ratio'] = df['estimated_full_day_volume'] / df['avg_volume_5d_gu']
 ---
 
 ## 📋 待办事项
+- [ ] 本周末：三个月回测框架（验证atr_ratio_min合理范围）
 - [ ] 下周：新建`amount_kinetic_engine.py`（基于成交金额dAmount/dt）
+- [ ] V66后验证：Scan模式榜单是否正常显示
