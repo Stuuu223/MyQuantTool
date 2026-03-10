@@ -1,0 +1,43 @@
+{
+    "date": "20260310",
+    "generated_at": "2026-03-10 11:09:00",
+    "total_targets": 3,
+    "top_targets": [
+        {
+            "code": "002350.SZ",
+            "score": 138.39,
+            "time": "11:07:53",
+            "first_entry_time": "11:06:32",
+            "price": 14.8,
+            "change": 6.936416184971105,
+            "inflow_ratio": 3.3172346792696783,
+            "ratio_stock": 3.8339424340166057,
+            "sustain_ratio": 6.282482259209453,
+            "purity": 66.66666666666676
+        },
+        {
+            "code": "002015.SZ",
+            "score": 121.51,
+            "time": "11:07:59",
+            "first_entry_time": "11:06:32",
+            "price": 18,
+            "change": 4.772991850989524,
+            "inflow_ratio": 4.76318685043188,
+            "ratio_stock": 5.904369378456365,
+            "sustain_ratio": 7.957526504635111,
+            "purity": 62.12121212121213
+        },
+        {
+            "code": "002980.SZ",
+            "score": 70.59,
+            "time": "11:07:44",
+            "first_entry_time": "11:06:32",
+            "price": 36.07,
+            "change": 1.3202247191011203,
+            "inflow_ratio": 1.883177392346104,
+            "ratio_stock": 6.659439645887971,
+            "sustain_ratio": 4.945146970997157,
+            "purity": 23.267326732673173
+        }
+    ]
+}

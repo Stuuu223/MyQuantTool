@@ -30,6 +30,11 @@ import warnings
 warnings.filterwarnings('ignore', category=FutureWarning)
 warnings.filterwarnings('ignore', category=DeprecationWarning)
 
+# 【CTO R6修复】SSOT统一导入 - 严禁在高频函数内部局部导入！
+from logic.core.config_manager import get_config_manager
+from logic.data_providers.event_bus import TickEvent
+from logic.data_providers.true_dictionary import get_true_dictionary
+
 # CTO Step6: 时空对齐需要pandas处理Tick数据
 try:
     import pandas as pd
@@ -273,8 +278,7 @@ class LiveTradingEngine:
             if stock_code in self.watchlist or not self.watchlist:
                 # 【CTO物理级对齐】将字典数据打散映射为对象属性
                 # _on_tick_data直接访问tick_event.price/volume/amount等属性
-                # 【CTO统一规范】使用标准TickEvent
-                from logic.data_providers.event_bus import TickEvent
+                # 【CTO R6修复】使用顶部导入的TickEvent
                 tick_event = TickEvent(
                     stock_code=stock_code,
                     price=float(tick.get('lastPrice', 0)),
@@ -1851,7 +1855,7 @@ class LiveTradingEngine:
             # ============================================================
             # Phase 2 Step 2: 实时计算该股票的量比（时间进度加权）
             # ============================================================
-            from logic.data_providers.true_dictionary import get_true_dictionary
+            # 【CTO R6修复】使用顶部导入，不再局部导入
             
             now = self.get_current_time()
             market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
@@ -1903,7 +1907,9 @@ class LiveTradingEngine:
             # Phase 2 Step 4: 换手率检查（开火时才检查）
             # ============================================================
             turnover_rate = self._calculate_turnover_rate(stock_code, tick_event, true_dict)
-            turnover_thresholds = config_manager.get_turnover_rate_thresholds()
+            # 【CTO R6修复】使用单例获取config_manager，解决NameError
+            config_mgr = get_config_manager()
+            turnover_thresholds = config_mgr.get_turnover_rate_thresholds()
             
             if turnover_rate < turnover_thresholds['per_minute_min']:
                 logger.debug(f"?? {stock_code} 换手率不足: {turnover_rate:.2f}% < {turnover_thresholds['per_minute_min']:.2f}%")
