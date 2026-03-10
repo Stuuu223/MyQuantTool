@@ -193,259 +193,167 @@ class LiveTradingEngine:
     
     def run_historical_stream(self, tick_stream: list):
         """
-        【CTO V56 直线喷射引擎】沙盘专属
-        
-        完全废除 while 循环与 time.sleep()，以最高 CPU 算力将历史 Tick 泵入引擎打分！
-        
-        Args:
-            tick_stream: 历史Tick列表，每个元素包含:
-                - 'stock_code': 股票代码
-                - 'lastPrice': 当前价格
-                - 'amount': 成交额
-                - 'volume': 成交量
-                - 'datetime' 或 'time': 时间戳
-                - 其他Tick字段...
+        【CTO V61 绝对同源版】Scan模式专属引擎
+        废弃将静态Tick强行喂给动态扳机(_on_tick_data)的错误做法。
+        直接提取最终快照，100% 复刻 _run_radar_main_loop 的双层打分过滤机制！
         """
         if self.mode != 'scan':
-            logger.warning("[WARN] run_historical_stream() 仅适用于Scan模式，Live模式请使用 start_session()")
+            logger.warning("[WARN] 仅适用于Scan模式")
         
-        # 【CTO 补天指令：强制开机！】
-        # 跳过 start_session 后必须强制接通引擎电源，否则 _on_tick_data 会拒收所有 Tick！
-        # 【致命修复】必须是self.running不是self.is_running！
         self.running = True
+        logger.info(f"🚀 [Time Machine] 启动定格沙盘，提取 {len(tick_stream)} 个底层切片...")
         
-        logger.info(f"?? [Time Machine] 启动超频时间沙盒，准备暴力泵入 {len(tick_stream)} 个Tick...")
-        
-        # 强行预热底层字典（无需等待9点15）
         self._init_qmt_adapter()
         
-        # ================= CTO 铁血重铸版 =================
-        # 【CTO 补天】强制获取单例 TrueDictionary 并挂载
+        # 1. 强制挂载全局字典并预热
         from logic.data_providers.true_dictionary import get_true_dictionary
         if not hasattr(self, 'true_dict') or not self.true_dict:
             self.true_dict = get_true_dictionary()
-
-        # 进行沙盘日期安全预热
-        if hasattr(self, 'mode') and self.mode == 'scan':
-            # 获取沙盘运行日期（兼容 Mock 适配器）
-            mock_target_date = getattr(self.qmt_manager, 'target_date', None) 
-            # 从 Universe 获取底池，否则全市场预热会内存爆炸
-            from logic.data_providers.universe_builder import UniverseBuilder
-            base_pool, _ = UniverseBuilder(target_date=mock_target_date).build()
             
-            logger.info(f"?? [TrueDictionary] 正在预热底池 {len(base_pool)} 只股票的静态数据...")
-            self.true_dict.warmup(base_pool, target_date=mock_target_date)
-        # ==================================================
+        mock_target_date = getattr(self.qmt_manager, 'target_date', None)
+        from logic.data_providers.universe_builder import UniverseBuilder
+        base_pool, _ = UniverseBuilder(target_date=mock_target_date).build()
+        self.true_dict.warmup(base_pool, target_date=mock_target_date)
         
-        # 【CTO 核心切除】沙盘模式严禁调用实盘专用的 _snapshot_filter！
-        # 自动从灌入的 tick_stream 中提取股票代码作为弹药库
-        if not self.watchlist:
-            self.watchlist = list(set([t.get('stock_code') for t in tick_stream if t.get('stock_code')]))
-            logger.info(f"? [CTO 强制装弹] 引擎已接收 {len(self.watchlist)} 只标的进入防线！")
-            self._has_generated_report = True
-            return
-        
-        logger.info(f"[OK] 粗筛完成，watchlist包含 {len(self.watchlist)} 只标的")
-        
-        # O(1) 暴力遍历所有历史事件
-        processed_count = 0
-        for tick in tick_stream:
-            # 1. 拨动系统时钟到历史Tick的发生时刻（精确到毫秒）
-            tick_time = tick.get('datetime') or tick.get('time')
-            if tick_time:
-                if isinstance(tick_time, datetime):
-                    self.set_mock_time(tick_time)
-                elif isinstance(tick_time, str):
-                    try:
-                        # 尝试解析时间字符串
-                        if len(tick_time) == 14:  # YYYYMMDDHHMMSS
-                            parsed_time = datetime.strptime(tick_time, '%Y%m%d%H%M%S')
-                        elif len(tick_time) == 8:  # HHMMSS
-                            parsed_time = datetime.now().replace(
-                                hour=int(tick_time[:2]),
-                                minute=int(tick_time[2:4]),
-                                second=int(tick_time[4:6]),
-                                microsecond=0
-                            )
-                        else:
-                            parsed_time = datetime.now()
-                        self.set_mock_time(parsed_time)
-                    except:
-                        pass
-            
-            # 2. 直接喂入雷达核心算子，不经过任何线程与队列！
-            stock_code = tick.get('stock_code', '')
-            if stock_code in self.watchlist or not self.watchlist:
-                # 【CTO物理级对齐】将字典数据打散映射为对象属性
-                # _on_tick_data直接访问tick_event.price/volume/amount等属性
-                # 【CTO R6修复】使用顶部导入的TickEvent
-                tick_event = TickEvent(
-                    stock_code=stock_code,
-                    price=float(tick.get('lastPrice', 0)),
-                    volume=float(tick.get('volume', 0)),
-                    amount=float(tick.get('amount', 0)),
-                    open=float(tick.get('open', 0)),
-                    high=float(tick.get('high', 0)),
-                    low=float(tick.get('low', 0)),
-                    prev_close=float(tick.get('lastClose', 0)),
-                    timestamp=tick.get('time', ''),
-                    data=tick  # 兼容旧逻辑
-                )
-                self._on_tick_data(tick_event)
-                processed_count += 1
-        logger.info(f"✅ [Time Machine] 时间线演放完毕！共处理 {processed_count} 个有效Tick")
-        logger.info("📊 强制收尸结算...")
-        
-        # =========================================================================
-        # 【CTO R8 终极修复】Scan模式：绝对同质同源的战报生成！
-        # 废除之前那种偷工减料、全是0的假榜单。
-        # 完全复用 _run_radar_main_loop 的两遍扫描打分逻辑！
-        # =========================================================================
+        # 2. 从入参提取最终定格快照 (由于是收盘数据，剥离时间轴)
         last_tick_by_stock = {}
         for tick in tick_stream:
             stock_code = tick.get('stock_code', '')
             if stock_code:
                 last_tick_by_stock[stock_code] = tick
-
-        if self.watchlist and last_tick_by_stock:
-            from logic.data_providers.true_dictionary import get_true_dictionary
-            from logic.strategies.kinetic_core_engine import 动能打分引擎CoreEngine
-            
-            true_dict = get_true_dictionary()
-            if not hasattr(self, '_kinetic_core'):
-                self._kinetic_core = 动能打分引擎CoreEngine()
                 
-            now = self.get_current_time()
-            market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
-            minutes_passed = max(1, (now - market_open).total_seconds() / 60)
+        self.watchlist = list(last_tick_by_stock.keys())
+        if not self.watchlist:
+            logger.warning("[WARN] 粗筛池为空！")
+            return
+
+        # 3. 构造虚拟系统时间（锁定在当天 15:00:00）
+        import datetime as dt
+        target_dt = dt.datetime.strptime(mock_target_date, "%Y%m%d") if mock_target_date else dt.datetime.now()
+        engine_time = target_dt.replace(hour=15, minute=0, second=0, microsecond=0)
+        self.set_mock_time(engine_time)
+
+        # 4. 【绝对同源计算：第一遍扫描 - 计算宏观虹吸基准】
+        market_total_inflow = 0.0
+        first_pass_inflow_cache = {}
+        
+        for stock_code, tick in last_tick_by_stock.items():
+            current_price = float(tick.get('lastPrice', 0) or tick.get('price', 0))
+            pre_close = float(tick.get('lastClose', 0) or tick.get('prev_close', 0))
+            current_amount = float(tick.get('amount', 0))
+            tick_high = float(tick.get('high', current_price))
+            tick_low = float(tick.get('low', current_price))
             
-            # 【第一遍扫描】：计算市场总流入 (横向虹吸基准)
-            market_total_inflow = 0.0
-            first_pass_inflow_cache = {}
-            for stock_code, tick in last_tick_by_stock.items():
+            price_range = tick_high - tick_low
+            if price_range > 0 and pre_close > 0:
+                power_ratio = (current_price - pre_close) / price_range
+                power_ratio = max(-1.0, min(power_ratio, 1.0))
+            else:
+                power_ratio = 1.0 if current_price > pre_close else -1.0
+            
+            net_inflow_est = current_amount * power_ratio * 0.5
+            if net_inflow_est > 0:
+                market_total_inflow += net_inflow_est
+            first_pass_inflow_cache[stock_code] = net_inflow_est
+            
+        self.market_total_inflow_cache = max(market_total_inflow, 1000000.0)
+
+        # 5. 【绝对同源计算：第二遍精算 - 对齐 V20.5 引擎】
+        current_top_targets = []
+        if not hasattr(self, '_kinetic_core'):
+            from logic.strategies.kinetic_core_engine import 动能打分引擎CoreEngine
+            self._kinetic_core = 动能打分引擎CoreEngine()
+
+        for stock_code, tick in last_tick_by_stock.items():
+            try:
                 current_price = float(tick.get('lastPrice', 0) or tick.get('price', 0))
                 pre_close = float(tick.get('lastClose', 0) or tick.get('prev_close', 0))
+                if current_price <= 0 or pre_close <= 0: continue
+                    
                 current_amount = float(tick.get('amount', 0))
                 tick_high = float(tick.get('high', current_price))
                 tick_low = float(tick.get('low', current_price))
                 
+                float_volume = self.true_dict.get_float_volume(stock_code) or 1000000000.0
+                avg_volume_5d = self.true_dict.get_avg_volume_5d(stock_code) or 1.0
+                avg_amount_5d = avg_volume_5d * 100 * pre_close
+                
+                # 【CTO V61 核心】盘后定格模式：强制使用240分钟（全天）计算流速！
+                # 彻底消灭时间坍塌导致的Spike极刑误杀！
+                flow_5min = current_amount / 48.0
+                change_pct = (current_price - pre_close) / pre_close
+                price_position = (current_price - tick_low) / (tick_high - tick_low) if tick_high > tick_low else 0.5
+                acceleration_factor = max(0.3, min(1.0 + (price_position - 0.5) * 1.0 + change_pct * 3.0, 3.0))
+                flow_15min = current_amount / 16.0 * acceleration_factor
+                flow_5min_median = avg_amount_5d / 48.0
+                
+                space_gap_pct = (tick_high - current_price) / tick_high if tick_high > 0 else 0.5
+                
+                stock_net_inflow = first_pass_inflow_cache.get(stock_code, 0.0)
+                vampire_ratio_pct = min((stock_net_inflow / self.market_total_inflow_cache) * 100.0, 100.0) if self.market_total_inflow_cache > 0 and stock_net_inflow > 0 else 0.0
+                
+                if stock_code.startswith(('30', '68')): limit_up_price = round(pre_close * 1.20, 2)
+                elif stock_code.startswith(('8', '4')): limit_up_price = round(pre_close * 1.30, 2)
+                else: limit_up_price = round(pre_close * 1.10, 2)
+                is_limit_up = (current_price >= limit_up_price - 0.011)
+                limit_up_queue_amount = 50000000.0 if is_limit_up else 0.0
+                
+                # 调用核心引擎打分
+                final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe = self._kinetic_core.calculate_true_dragon_score(
+                    net_inflow=stock_net_inflow,
+                    price=current_price,
+                    prev_close=pre_close,
+                    high=tick_high,
+                    low=tick_low,
+                    open_price=float(tick.get('open', current_price)),
+                    flow_5min=flow_5min,
+                    flow_15min=flow_15min,
+                    flow_5min_median_stock=flow_5min_median if flow_5min_median > 0 else 1.0,
+                    space_gap_pct=space_gap_pct,
+                    float_volume_shares=float_volume,
+                    current_time=engine_time,
+                    is_limit_up=is_limit_up,
+                    limit_up_queue_amount=limit_up_queue_amount,
+                    mode="scan", # 告知引擎这是定格沙盘
+                    stock_code=stock_code,
+                    vampire_ratio_pct=vampire_ratio_pct
+                )
+                
                 price_range = tick_high - tick_low
-                if price_range > 0 and pre_close > 0:
-                    power_ratio = (current_price - pre_close) / price_range
-                    power_ratio = max(-1.0, min(power_ratio, 1.0))
-                else:
-                    power_ratio = 1.0 if current_price > pre_close else -1.0
+                raw_purity = (current_price - pre_close) / price_range if price_range > 0 else (1.0 if current_price > pre_close else -1.0)
+                quant_purity = min(max(raw_purity, -1.0), 1.0) * 100
                 
-                net_inflow_est = current_amount * power_ratio * 0.5
-                if net_inflow_est > 0:
-                    market_total_inflow += net_inflow_est
-                first_pass_inflow_cache[stock_code] = net_inflow_est
-                
-            self.market_total_inflow_cache = max(market_total_inflow, 1000000.0)
-            
-            # 【第二遍扫描】：精确打分提取全量指标
-            current_top_targets = []
-            for stock_code, tick in last_tick_by_stock.items():
-                try:
-                    current_price = float(tick.get('lastPrice', 0) or tick.get('price', 0))
-                    pre_close = float(tick.get('lastClose', 0) or tick.get('prev_close', 0))
-                    if current_price <= 0 or pre_close <= 0:
-                        continue
-                        
-                    current_amount = float(tick.get('amount', 0))
-                    tick_high = float(tick.get('high', current_price))
-                    tick_low = float(tick.get('low', current_price))
-                    
-                    float_volume = true_dict.get_float_volume(stock_code) or 1000000000.0
-                    avg_volume_5d = true_dict.get_avg_volume_5d(stock_code) or 1.0
-                    avg_amount_5d = avg_volume_5d * 100 * pre_close
-                    
-                    change_pct = (current_price - pre_close) / pre_close
-                    price_position = (current_price - tick_low) / (tick_high - tick_low) if tick_high > tick_low else 0.5
-                    acceleration_factor = max(0.3, min(1.0 + (price_position - 0.5) * 1.0 + change_pct * 3.0, 3.0))
-                    
-                    flow_5min = current_amount / minutes_passed * 5
-                    flow_15min = current_amount / minutes_passed * 15 * acceleration_factor
-                    flow_5min_median = avg_amount_5d / 48.0
-                    
-                    space_gap_pct = (tick_high - current_price) / tick_high if tick_high > 0 else 0.5
-                    
-                    # 纯度计算
-                    price_range = tick_high - tick_low
-                    if price_range > 0:
-                        raw_purity = (current_price - pre_close) / price_range
-                    else:
-                        raw_purity = 1.0 if current_price > pre_close else -1.0
-                    quant_purity = min(max(raw_purity, -1.0), 1.0) * 100
-                    
-                    # 涨停判断
-                    if stock_code.startswith(('30', '68')): limit_up_price = round(pre_close * 1.20, 2)
-                    elif stock_code.startswith(('8', '4')): limit_up_price = round(pre_close * 1.30, 2)
-                    else: limit_up_price = round(pre_close * 1.10, 2)
-                    is_limit_up = (current_price >= limit_up_price - 0.011)
-                    limit_up_queue_amount = 50000000.0 if is_limit_up else 0.0
-                    
-                    # 虹吸比例
-                    stock_net_inflow = first_pass_inflow_cache.get(stock_code, 0.0)
-                    vampire_ratio_pct = min((stock_net_inflow / self.market_total_inflow_cache) * 100.0, 100.0) if self.market_total_inflow_cache > 0 and stock_net_inflow > 0 else 0.0
-                    
-                    # ✅ CTO 破局点：直接调用核心引擎，拦截所有返回值！
-                    final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe = self._kinetic_core.calculate_true_dragon_score(
-                        net_inflow=stock_net_inflow,
-                        price=current_price,
-                        prev_close=pre_close,
-                        high=tick_high,
-                        low=tick_low,
-                        open_price=float(tick.get('open', current_price)),
-                        flow_5min=flow_5min,
-                        flow_15min=flow_15min,
-                        flow_5min_median_stock=flow_5min_median if flow_5min_median > 0 else 1.0,
-                        space_gap_pct=space_gap_pct,
-                        float_volume_shares=float_volume,
-                        current_time=now,
-                        is_limit_up=is_limit_up,
-                        limit_up_queue_amount=limit_up_queue_amount,
-                        mode="scan",
-                        stock_code=stock_code,
-                        vampire_ratio_pct=vampire_ratio_pct
-                    )
-                    
-                    if final_score >= 50.0 and quant_purity > -50.0:
-                        current_top_targets.append({
-                            'code': stock_code,
-                            'score': final_score,
-                            'price': current_price,
-                            'change': change_pct * 100,
-                            'inflow_ratio': inflow_ratio,
-                            'ratio_stock': ratio_stock,
-                            'sustain_ratio': sustain_ratio,
-                            'mfe': mfe,
-                            'purity': quant_purity
-                        })
-                except Exception as e:
-                    logger.debug(f"[SKIP] {stock_code} 最终打分失败: {e}")
-                    continue
-                    
-            # 排序并保存
-            current_top_targets.sort(key=lambda x: x['score'], reverse=True)
-            if current_top_targets:
-                self.last_known_top_targets = current_top_targets[:10]
-                self.last_known_pool_stats = {
-                    'total': len(last_tick_by_stock),
-                    'active': len(current_top_targets),
-                    'up': 0, 'down': 0,
-                    'filtered': len(self.watchlist) - len(current_top_targets)
-                }
+                if final_score >= 50.0 and quant_purity > -50.0:
+                    current_top_targets.append({
+                        'code': stock_code,
+                        'score': final_score,
+                        'price': current_price,
+                        'change': change_pct * 100,
+                        'inflow_ratio': inflow_ratio,
+                        'ratio_stock': ratio_stock,
+                        'sustain_ratio': sustain_ratio,
+                        'mfe': mfe,
+                        'purity': quant_purity,
+                        'time': engine_time.strftime('%H:%M:%S'),  # 【CTO V61修复】添加time字段
+                        'first_entry_time': engine_time.strftime('%H:%M:%S')
+                    })
+            except Exception as e:
+                continue
 
-        # 【CTO R7修复】Scan模式：强制将沙盘跑出来的最高分榜单投射到大屏！
-        if getattr(self, 'last_known_top_targets', None):
+        current_top_targets.sort(key=lambda x: x['score'], reverse=True)
+        self.last_known_top_targets = current_top_targets[:10]
+        
+        # 写入战报数据
+        self.highest_scores = {t['code']: t for t in current_top_targets}
+        
+        # 6. 大屏展示
+        if self.last_known_top_targets:
             self._print_fire_control_panel(
                 self.last_known_top_targets, 
                 initial_loading=False, 
-                pool_stats=getattr(self, 'last_known_pool_stats', {}),
+                pool_stats={'total': len(last_tick_by_stock), 'active': len(current_top_targets), 'up': 0, 'down': 0, 'filtered': 0},
                 is_rest=True
             )
-            print("\n[CMD] 沙盘时间线推演定格完毕。")
             
         self._generate_final_battle_report()
         self._has_generated_report = True
