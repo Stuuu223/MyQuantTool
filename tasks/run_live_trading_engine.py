@@ -296,60 +296,147 @@ class LiveTradingEngine:
         logger.info(f"✅ [Time Machine] 时间线演放完毕！共处理 {processed_count} 个有效Tick")
         logger.info("📊 强制收尸结算...")
         
-        # 【CTO R7修复】Scan模式：从tick_stream中提取最后状态并生成排行榜
-        # 收集每只股票的最后一笔Tick数据
+        # =========================================================================
+        # 【CTO R8 终极修复】Scan模式：绝对同质同源的战报生成！
+        # 废除之前那种偷工减料、全是0的假榜单。
+        # 完全复用 _run_radar_main_loop 的两遍扫描打分逻辑！
+        # =========================================================================
         last_tick_by_stock = {}
         for tick in tick_stream:
             stock_code = tick.get('stock_code', '')
             if stock_code:
                 last_tick_by_stock[stock_code] = tick
-        
-        # 遍历计算分数
-        current_top_targets = []
-        for stock_code, tick_data in last_tick_by_stock.items():
-            try:
-                # 构造符合_calculate_signal_score格式的tick_data
-                formatted_tick = {
-                    'stock_code': stock_code,
-                    'price': float(tick_data.get('lastPrice', 0) or tick_data.get('price', 0)),
-                    'lastPrice': float(tick_data.get('lastPrice', 0) or tick_data.get('price', 0)),
-                    'volume': float(tick_data.get('volume', 0)),
-                    'amount': float(tick_data.get('amount', 0)),
-                    'open': float(tick_data.get('open', 0)),
-                    'high': float(tick_data.get('high', 0)),
-                    'low': float(tick_data.get('low', 0)),
-                    'lastClose': float(tick_data.get('lastClose', 0) or tick_data.get('prev_close', 0)),
-                    'prev_close': float(tick_data.get('lastClose', 0) or tick_data.get('prev_close', 0)),
-                }
+
+        if self.watchlist and last_tick_by_stock:
+            from logic.data_providers.true_dictionary import get_true_dictionary
+            from logic.strategies.kinetic_core_engine import 动能打分引擎CoreEngine
+            
+            true_dict = get_true_dictionary()
+            if not hasattr(self, '_kinetic_core'):
+                self._kinetic_core = 动能打分引擎CoreEngine()
                 
-                # 检查价格有效性
-                if formatted_tick['price'] <= 0:
+            now = self.get_current_time()
+            market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
+            minutes_passed = max(1, (now - market_open).total_seconds() / 60)
+            
+            # 【第一遍扫描】：计算市场总流入 (横向虹吸基准)
+            market_total_inflow = 0.0
+            first_pass_inflow_cache = {}
+            for stock_code, tick in last_tick_by_stock.items():
+                current_price = float(tick.get('lastPrice', 0) or tick.get('price', 0))
+                pre_close = float(tick.get('lastClose', 0) or tick.get('prev_close', 0))
+                current_amount = float(tick.get('amount', 0))
+                tick_high = float(tick.get('high', current_price))
+                tick_low = float(tick.get('low', current_price))
+                
+                price_range = tick_high - tick_low
+                if price_range > 0 and pre_close > 0:
+                    power_ratio = (current_price - pre_close) / price_range
+                    power_ratio = max(-1.0, min(power_ratio, 1.0))
+                else:
+                    power_ratio = 1.0 if current_price > pre_close else -1.0
+                
+                net_inflow_est = current_amount * power_ratio * 0.5
+                if net_inflow_est > 0:
+                    market_total_inflow += net_inflow_est
+                first_pass_inflow_cache[stock_code] = net_inflow_est
+                
+            self.market_total_inflow_cache = max(market_total_inflow, 1000000.0)
+            
+            # 【第二遍扫描】：精确打分提取全量指标
+            current_top_targets = []
+            for stock_code, tick in last_tick_by_stock.items():
+                try:
+                    current_price = float(tick.get('lastPrice', 0) or tick.get('price', 0))
+                    pre_close = float(tick.get('lastClose', 0) or tick.get('prev_close', 0))
+                    if current_price <= 0 or pre_close <= 0:
+                        continue
+                        
+                    current_amount = float(tick.get('amount', 0))
+                    tick_high = float(tick.get('high', current_price))
+                    tick_low = float(tick.get('low', current_price))
+                    
+                    float_volume = true_dict.get_float_volume(stock_code) or 1000000000.0
+                    avg_volume_5d = true_dict.get_avg_volume_5d(stock_code) or 1.0
+                    avg_amount_5d = avg_volume_5d * 100 * pre_close
+                    
+                    change_pct = (current_price - pre_close) / pre_close
+                    price_position = (current_price - tick_low) / (tick_high - tick_low) if tick_high > tick_low else 0.5
+                    acceleration_factor = max(0.3, min(1.0 + (price_position - 0.5) * 1.0 + change_pct * 3.0, 3.0))
+                    
+                    flow_5min = current_amount / minutes_passed * 5
+                    flow_15min = current_amount / minutes_passed * 15 * acceleration_factor
+                    flow_5min_median = avg_amount_5d / 48.0
+                    
+                    space_gap_pct = (tick_high - current_price) / tick_high if tick_high > 0 else 0.5
+                    
+                    # 纯度计算
+                    price_range = tick_high - tick_low
+                    if price_range > 0:
+                        raw_purity = (current_price - pre_close) / price_range
+                    else:
+                        raw_purity = 1.0 if current_price > pre_close else -1.0
+                    quant_purity = min(max(raw_purity, -1.0), 1.0) * 100
+                    
+                    # 涨停判断
+                    if stock_code.startswith(('30', '68')): limit_up_price = round(pre_close * 1.20, 2)
+                    elif stock_code.startswith(('8', '4')): limit_up_price = round(pre_close * 1.30, 2)
+                    else: limit_up_price = round(pre_close * 1.10, 2)
+                    is_limit_up = (current_price >= limit_up_price - 0.011)
+                    limit_up_queue_amount = 50000000.0 if is_limit_up else 0.0
+                    
+                    # 虹吸比例
+                    stock_net_inflow = first_pass_inflow_cache.get(stock_code, 0.0)
+                    vampire_ratio_pct = min((stock_net_inflow / self.market_total_inflow_cache) * 100.0, 100.0) if self.market_total_inflow_cache > 0 and stock_net_inflow > 0 else 0.0
+                    
+                    # ✅ CTO 破局点：直接调用核心引擎，拦截所有返回值！
+                    final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe = self._kinetic_core.calculate_true_dragon_score(
+                        net_inflow=stock_net_inflow,
+                        price=current_price,
+                        prev_close=pre_close,
+                        high=tick_high,
+                        low=tick_low,
+                        open_price=float(tick.get('open', current_price)),
+                        flow_5min=flow_5min,
+                        flow_15min=flow_15min,
+                        flow_5min_median_stock=flow_5min_median if flow_5min_median > 0 else 1.0,
+                        space_gap_pct=space_gap_pct,
+                        float_volume_shares=float_volume,
+                        current_time=now,
+                        is_limit_up=is_limit_up,
+                        limit_up_queue_amount=limit_up_queue_amount,
+                        mode="scan",
+                        stock_code=stock_code,
+                        vampire_ratio_pct=vampire_ratio_pct
+                    )
+                    
+                    if final_score >= 50.0 and quant_purity > -50.0:
+                        current_top_targets.append({
+                            'code': stock_code,
+                            'score': final_score,
+                            'price': current_price,
+                            'change': change_pct * 100,
+                            'inflow_ratio': inflow_ratio,
+                            'ratio_stock': ratio_stock,
+                            'sustain_ratio': sustain_ratio,
+                            'mfe': mfe,
+                            'purity': quant_purity
+                        })
+                except Exception as e:
+                    logger.debug(f"[SKIP] {stock_code} 最终打分失败: {e}")
                     continue
-                
-                score = self._calculate_signal_score(stock_code, formatted_tick)
-                if score >= 50.0:  # 及格线
-                    current_top_targets.append({
-                        'code': stock_code,
-                        'score': score,
-                        'price': formatted_tick['price'],
-                        'change': (formatted_tick['price'] - formatted_tick['lastClose']) / max(formatted_tick['lastClose'], 0.01) * 100 if formatted_tick['lastClose'] > 0 else 0,
-                    })
-            except Exception as e:
-                logger.debug(f"[SKIP] {stock_code} 打分失败: {e}")
-                continue
-        
-        # 排序并保存
-        current_top_targets.sort(key=lambda x: x['score'], reverse=True)
-        if current_top_targets:
-            self.last_known_top_targets = current_top_targets[:10]
-            self.last_known_pool_stats = {
-                'total': len(last_tick_by_stock),
-                'active': len(current_top_targets),
-                'up': 0,
-                'down': 0,
-                'filtered': len(last_tick_by_stock) - len(current_top_targets)
-            }
-        
+                    
+            # 排序并保存
+            current_top_targets.sort(key=lambda x: x['score'], reverse=True)
+            if current_top_targets:
+                self.last_known_top_targets = current_top_targets[:10]
+                self.last_known_pool_stats = {
+                    'total': len(last_tick_by_stock),
+                    'active': len(current_top_targets),
+                    'up': 0, 'down': 0,
+                    'filtered': len(self.watchlist) - len(current_top_targets)
+                }
+
         # 【CTO R7修复】Scan模式：强制将沙盘跑出来的最高分榜单投射到大屏！
         if getattr(self, 'last_known_top_targets', None):
             self._print_fire_control_panel(
@@ -359,7 +446,7 @@ class LiveTradingEngine:
                 is_rest=True
             )
             print("\n[CMD] 沙盘时间线推演定格完毕。")
-        
+            
         self._generate_final_battle_report()
         self._has_generated_report = True
     
