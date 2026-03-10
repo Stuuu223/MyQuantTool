@@ -19,9 +19,6 @@ from logic.core.path_resolver import PathResolver
 from logic.core.sanity_guards import SanityGuards, sanity_check
 from logic.core.version import VERSION as __version__
 
-# 策略层
-from logic.strategies.strategy_config import StrategyConfig, get_strategy_config
-
 # 数据提供层
 from logic.data_providers.qmt_manager import QmtDataManager, get_qmt_manager
 from logic.data_providers.universe_builder import UniverseBuilder
@@ -40,12 +37,8 @@ __all__ = [
     'sanity_check',
     '__version__',
     
-    # 策略层
-    'StrategyConfig',
-    'get_strategy_config',
-    
     # 数据提供层
-    'QMTManager',
+    'QmtDataManager',
     'UniverseBuilder',
     'get_true_dictionary',
 ]

@@ -389,28 +389,16 @@ class LiveTradingEngine:
     # ==========================================================================
     
     def _init_kinetic_engine(self):
-        """【CTO挂载】初始化微积分形态学引擎管理器 - 时空对齐"""
-        try:
-            from logic.execution.kinetic_engine import KineticEngine
-            self.kinetic_engine_class = KineticEngine
-            self.kinetic_engines = {}  # {stock_code: engine_instance}
-            logger.info("[TARGET] [时空对齐] KineticEngine微积分引擎管理器已挂载")
-        except Exception as e:
-            logger.error(f"[ERR] KineticEngine挂载失败: {e}")
-            self.kinetic_engine_class = None
-            self.kinetic_engines = {}
+        """【CTO V66废弃】微积分形态学引擎已移除 - 3秒快照无法支持毫秒级微积分"""
+        # 【CTO审计】kinetic_engine.py在3秒快照数据上算微积分会产生假信号
+        # 已删除，不再初始化
+        self.kinetic_engine_class = None
+        self.kinetic_engines = {}
+        logger.info("[TARGET] [V66] KineticEngine已废弃，不再初始化")
     
     def _get_kinetic_engine(self, stock_code: str):
-        """获取或创建股票的KineticEngine实例"""
-        if not self.kinetic_engine_class:
-            return None
-        if stock_code not in self.kinetic_engines:
-            try:
-                self.kinetic_engines[stock_code] = self.kinetic_engine_class(stock_code)
-            except Exception as e:
-                logger.debug(f"[WARN] 创建KineticEngine失败 {stock_code}: {e}")
-                return None
-        return self.kinetic_engines[stock_code]
+        """【CTO V66废弃】获取KineticEngine - 已移除"""
+        return None
     
     def _init_event_bus(self):
         """初始化EventBus"""
@@ -2075,27 +2063,9 @@ class LiveTradingEngine:
                 logger.info(f"?? {stock_code} 未通过微观防线检查")
                 return  # 微观防线拦截
             
-            # ============================================================
-            # 【CTO挂载】Phase 2 Step 5.5: 微积分形态学引擎 - 时空对齐
-            # ============================================================
-            kinetic_engine = self._get_kinetic_engine(stock_code)
-            if kinetic_engine:
-                # 将Tick喂给微积分引擎
-                kinetic_engine.on_price_update(now, tick_event.price, tick_event.high)
-                
-                # 检测是否尖刺骗炮(Spike Trap)
-                result = kinetic_engine.on_price_update(now, tick_event.price, tick_event.high)
-                if result and result.get('is_trap', False):
-                    logger.error(f"?? {stock_code} 尖刺骗炮(Spike) detected! 时空否决！")
-                    # 打上标签并跳过
-                    tick_data['tag'] = "?? 尖刺骗炮(Spike)"
-                    return  # 直接处决，不进入动能打分引擎算分
-                
-                # 检测生命周期T_maintain
-                if hasattr(kinetic_engine, 'lifecycle_tracker'):
-                    status = kinetic_engine.lifecycle_tracker.get_status()
-                    if status and status.maintain_minutes < 11:
-                        logger.warning(f"?? {stock_code} 生命周期T_maintain={status.maintain_minutes} < 11min, 降权处理")
+            # 【CTO V66废弃】微积分形态学引擎已移除
+            # 原因：3秒快照数据无法支持毫秒级微积分计算
+            # Spike检测已由kinetic_core_engine.py中的sustain_ratio<1.0极刑实现
             
             # ============================================================
             # Phase 2 Step 6: 动能打分引擎引擎算分
