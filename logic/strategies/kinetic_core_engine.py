@@ -533,21 +533,50 @@ class 动能打分引擎CoreEngine:
         # 第四步：神级乘数区
         multiplier = 1.0
         
-        # A. 维持能力（sustain_ratio）- 【CTO V44喂饭级修复】
-        # 废除用前5分钟当分母的毒瘤！改为：当前15分钟总流入 / 历史15分钟均值
-        # 物理意义：不看"后半段是否衰减"，只看"当前做功是否超过历史平均"
+        # A. 维持能力（sustain_ratio）- 【CTO V65 质量引力阻尼重铸】
+        # 废除"纯自身历史对比"的虚假倍数，引入物理学质量（m）挂钩！
+        # 物理真理：推卡车的1.6倍，在物理做功上，绝对大于推泡沫的10倍！
         MIN_BASE_FLOW = 2000000.0  # 200万底线防微盘骗炮
         safe_median_15min = max(flow_5min_median_stock * 3.0, MIN_BASE_FLOW * 3.0)
-        sustain_ratio = flow_15min / safe_median_15min if safe_median_15min > 0 else 1.0
-        sustain_ratio = min(sustain_ratio, 50.0)  # 【CTO V57修复】封顶50倍，保留区分度！原8.0太低导致全部撞天花板
+        
+        # 1. 基础倍数：当前做功 / 历史做功均值
+        raw_sustain = flow_15min / safe_median_15min if safe_median_15min > 0 else 1.0
+        
+        # 2. 【核心】市值引力阻尼器 (Gravity Damper)
+        # 流通市值（亿）
+        float_mc_yi = float_market_cap / 100000000.0 if float_market_cap > 0 else 0.0
+        
+        # 阻尼系数公式：对数比例化。市值越大，该系数越大，意味着同样的raw_sustain，大票含金量更高！
+        # 设定锚点：以 50亿市值为基准点 1.0。
+        # 20亿以下微盘会被衰减（0.7x），100亿中盘加成（1.2x），500亿大卡车极强加成（1.8x）
+        import math
+        if float_mc_yi > 0:
+            gravity_damper = max(0.5, min(2.5, 1.0 + math.log10(float_mc_yi / 50.0) * 0.5))
+        else:
+            gravity_damper = 0.5
+        
+        # 3. 施加引力：推卡车的倍数被放大，推泡沫的倍数被挤干水分
+        sustain_ratio = raw_sustain * gravity_damper
+        
+        # 4. 动态极值封顶 (废除僵化的50x硬编码)
+        # 微盘股的虚假高潮被死死压在 20x，而大盘股可以冲破 40x
+        dynamic_ceiling = 30.0 * gravity_damper
+        sustain_ratio = min(sustain_ratio, dynamic_ceiling)
+        
+        # 为了兼容后续乘数区间，将 1.0 和 5.0 的阈值按引力做等比例漂移
+        health_threshold = 5.0 * gravity_damper
+        survival_threshold = 1.0 * (1.0 / gravity_damper)  # 小票存活更难，大票存活更容易
+        
+        logger.debug(f"⚖️ [引力阻尼] {stock_code} 市值{float_mc_yi:.0f}亿, raw={raw_sustain:.2f}×阻尼{gravity_damper:.2f}=sustain{sustain_ratio:.2f}, 阈值[存活{survival_threshold:.2f}|健康{health_threshold:.2f}]")
         
         # 【CTO强制熔断】Spike极刑前置！如果没通过，立刻斩首，绝不浪费算力往下走！
         if flow_15min <= 0:
             logger.warning(f"💀 [Spike极刑] {stock_code} 15分钟净流出，一票否决")
             return 0.0, -1.0, inflow_ratio_pct, ratio_stock, mfe
         
-        if sustain_ratio < 1.0:
-            logger.warning(f"💀 [Spike极刑] {stock_code} 维持能力={sustain_ratio:.2f}<1.0，被抛压瓦解")
+        # 【CTO V65】动态存活阈值：小票存活更难，大票存活更容易
+        if sustain_ratio < survival_threshold:
+            logger.warning(f"💀 [Spike极刑] {stock_code} sustain={sustain_ratio:.2f}<存活阈值{survival_threshold:.2f}，被抛压瓦解")
             return 0.0, sustain_ratio, inflow_ratio_pct, ratio_stock, mfe
         
         stock_identifier = f"{current_time.strftime('%H:%M')}@{price:.2f}"
@@ -569,12 +598,12 @@ class 动能打分引擎CoreEngine:
             effective_sustain = sustain_ratio
             mfe_factor = 1.0
         
-        if effective_sustain > 5.0:
+        if effective_sustain > health_threshold:
             multiplier *= 1.5  # 极度健康：持续维持极高水位
-            logger.info(f"🔥 [资金洪流] {stock_identifier} effective_sustain={effective_sustain:.2f}>5.0，乘数×1.5！")
-        elif effective_sustain < 1.0:
+            logger.info(f"🔥 [资金洪流] {stock_identifier} effective_sustain={effective_sustain:.2f}>健康阈值{health_threshold:.2f}，乘数×1.5！")
+        elif effective_sustain < survival_threshold:
             multiplier *= 0.3  # 退潮：流入量连平时的中位数都不如
-            logger.warning(f"[资金退潮] {stock_identifier} effective_sustain={effective_sustain:.2f}<1.0，降权至0.3")
+            logger.warning(f"[资金退潮] {stock_identifier} effective_sustain={effective_sustain:.2f}<存活阈值{survival_threshold:.2f}，降权至0.3")
         # [1.0, 5.0] 区间：资金维持正常，multiplier不变
         
         # B. 【CTO修复】筹码纯度指数衰减模型
