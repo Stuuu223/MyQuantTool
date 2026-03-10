@@ -190,7 +190,8 @@ class QMTEventAdapter:
             'high': float(raw_tick.get('high', 0)),
             'low': float(raw_tick.get('low', 0)),
             'prev_close': float(raw_tick.get('lastClose', 0)),  # 修复：lastClose而非preClose
-            'timestamp': str(raw_tick.get('time', ''))
+            'timestamp': str(raw_tick.get('time', '')),
+            'data': raw_tick  # 【CTO修复】保留原始数据字典，向后兼容
         }
     
     def _publish_tick_event(self, tick_event: Dict):

@@ -1881,7 +1881,7 @@ class LiveTradingEngine:
             
             # 【物理学透视】计算该股票面临的引力阻尼 (监控用途，不作拦截)
             fv = true_dict.get_float_volume(stock_code) or 10_0000_0000.0
-            current_price = tick_event.data.get('lastPrice', 0)
+            current_price = tick_event.price  # 【CTO修复】直接使用TickEvent.price属性
             market_cap_billion = (fv * current_price) / 1_0000_0000.0 if current_price > 0 else 50.0
             
             # 动态势能阈值公式：与流通市值对数成反比

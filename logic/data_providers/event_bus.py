@@ -37,6 +37,7 @@ class TickEvent:
         high: 最高价
         low: 最低价
         prev_close: 昨收价
+        data: 原始Tick字典（向后兼容）
     """
     stock_code: str
     price: float
@@ -47,6 +48,7 @@ class TickEvent:
     high: float = 0.0
     low: float = 0.0
     prev_close: float = 0.0
+    data: Dict = None  # 原始Tick字典，向后兼容
 
 
 class AsyncEventBus:
