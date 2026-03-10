@@ -428,23 +428,25 @@ class 动能打分引擎CoreEngine:
         inflow_ratio_pct = (net_inflow / float_market_cap * 100.0) if float_market_cap > 1000 else 0.0
         
         # 【CTO纠偏令】废除归零，实装量纲自适应校准仪！
-        # 物理常识：A股目前最小的流通市值也在 3亿~5亿人民币左右
-        # 如果算出来的流通市值异常，说明QMT返回的单位不一致（股/手/万股）
-        # 【量纲自适应校准算子】
-        calibrated_float_market_cap = float_market_cap
-        if float_market_cap > 0:
-            if float_market_cap < 20000000:  # 小于2000万，单位极大可能是"万股"
-                calibrated_float_market_cap = float_market_cap * 10000
-                logger.debug(f"📐 [量纲校准] {stock_code} 识别为万股单位，市值自动放大10000倍")
-            elif float_market_cap < 200000000:  # 小于2亿，单位极大可能是"手"
-                calibrated_float_market_cap = float_market_cap * 100
-                logger.debug(f"📐 [量纲校准] {stock_code} 识别为手单位，市值自动放大100倍")
+        # ============================================================
+        # 【CTO手术1】拆除市值量纲强行放大！改用数学软封顶！
+        # 根因：放大10000倍导致小盘股inflow_ratio从30%被压到7.82%
+        # 正解：用对数平滑防止极端溢出，但不改变底层量纲！
+        # ============================================================
+        import math
         
-        # 用校准后的市值重新计算流入占比
-        # 【CTO修复】使用net_inflow替代未定义的weighted_inflow幽灵变量
-        if calibrated_float_market_cap > 0:
-            inflow_ratio_pct = (net_inflow / calibrated_float_market_cap * 100.0)
-        # 【彻底废除归零逻辑】算出来是多少就是多少！真龙的数据原汁原味！
+        if float_market_cap > 1000:
+            raw_inflow_pct = (net_inflow / float_market_cap * 100.0)
+            # 【CTO数学软封顶】超过30%后取对数平滑，增速放缓但不改变量纲
+            if abs(raw_inflow_pct) > 30.0:
+                sign = 1.0 if raw_inflow_pct > 0 else -1.0
+                inflow_ratio_pct = sign * (30.0 + 10.0 * math.log10(abs(raw_inflow_pct) - 29.0))
+                logger.debug(f"📐 [数学软封顶] {stock_code} inflow={raw_inflow_pct:.1f}% -> {inflow_ratio_pct:.1f}%")
+            else:
+                inflow_ratio_pct = raw_inflow_pct
+        else:
+            inflow_ratio_pct = 0.0
+        
         inflow_ratio = inflow_ratio_pct  # 返回百分比形式
         
         # 【CTO V53大力出奇迹】资金绝对霸权！非线性市值自适应阈值！
@@ -550,12 +552,29 @@ class 动能打分引擎CoreEngine:
         
         stock_identifier = f"{current_time.strftime('%H:%M')}@{price:.2f}"
         
-        if sustain_ratio > 5.0:
+        # ============================================================
+        # 【CTO手术2】MFE制衡Sustain！打击大盘伪高潮！
+        # 病灶：金风科技(大盘)sustain=50x但MFE=0.3靠堆钱刷高分
+        # 物理真理：推不动的钱再多也是废铁！MFE<1.0就是老黄牛！
+        # 方案：effective_sustain = sustain_ratio * mfe_factor
+        # mfe<1.0时压制sustain，防止堆钱刷榜
+        # ============================================================
+        if mfe < 1.0:
+            # 低效率压制：MFE越低，sustain打折越狠
+            mfe_factor = mfe  # MFE=0.3时sustain只保留30%
+            effective_sustain = sustain_ratio * mfe_factor
+            logger.info(f"🐢 [MFE压制] {stock_code} sustain={sustain_ratio:.2f}×MFE{mfe:.2f}={effective_sustain:.2f}，老黄牛降权！")
+        else:
+            # 高效率放行：MFE>=1.0时sustain不变
+            effective_sustain = sustain_ratio
+            mfe_factor = 1.0
+        
+        if effective_sustain > 5.0:
             multiplier *= 1.5  # 极度健康：持续维持极高水位
-            logger.info(f"🔥 [资金洪流] {stock_identifier} sustain_ratio={sustain_ratio:.2f}>5.0，乘数×1.5！")
-        elif sustain_ratio < 1.0:
+            logger.info(f"🔥 [资金洪流] {stock_identifier} effective_sustain={effective_sustain:.2f}>5.0，乘数×1.5！")
+        elif effective_sustain < 1.0:
             multiplier *= 0.3  # 退潮：流入量连平时的中位数都不如
-            logger.warning(f"[资金退潮] {stock_identifier} sustain_ratio={sustain_ratio:.2f}<1.0，降权至0.3")
+            logger.warning(f"[资金退潮] {stock_identifier} effective_sustain={effective_sustain:.2f}<1.0，降权至0.3")
         # [1.0, 5.0] 区间：资金维持正常，multiplier不变
         
         # B. 【CTO修复】筹码纯度指数衰减模型
@@ -691,6 +710,20 @@ class 动能打分引擎CoreEngine:
         
         # 应用乘数和加分（含高位做功奖励bonus_score）
         final_score = round(base_power * multiplier * memory_multiplier * turnover_multiplier + bonus_score, 2)
+        
+        # ============================================================
+        # 【CTO手术3】MFE终极审判！一票否决与真空奖励！
+        # 病灶：金风科技(大盘)靠堆钱刷分但MFE=0.3推不动
+        # 物理真理：推不动就滚，推得快才奖！
+        # ============================================================
+        if mfe > 2.0:
+            # 真空无阻力：MFE>2.0表示每一分钱都转化为势能，奖励20%
+            final_score *= 1.2
+            logger.info(f"🚀 [MFE真空] {stock_code} MFE={mfe:.2f}>2.0，真空无阻力，×1.2！")
+        elif mfe < 0.5 and inflow_ratio_pct < 10.0:
+            # 低效垃圾：MFE<0.5且流入<10%，堆钱推不动，腰斩！
+            final_score *= 0.5
+            logger.warning(f"🐌 [MFE垃圾] {stock_code} MFE={mfe:.2f}<0.5且流入{inflow_ratio_pct:.1f}%<10%，堆钱废物，×0.5！")
         
         # 【CTO修复】Spike极刑已前置到第四步开头，此处不再重复判断
         # 净流出惩罚：减半而非封顶，让流出股也有区分度
