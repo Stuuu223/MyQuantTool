@@ -1,16 +1,16 @@
 # -*- coding: utf-8 -*-
 """
-MockQmtAdapter - åå²Tickä¼ªè£å®æ¶æµééå?
+MockQmtAdapter - 历史Tick伪装实时流适配器
 
-ãCTO V52æå½¹ä¸?- çµé­ç»ä¸æ¶ææ ¸å¿ç»ä»¶ã?
-è®©Scanæ¨¡å¼å¤ç¨LiveTradingEngineï¼å®ç°ç»å¯¹åè´¨åæºï¼
+【CTO V52战役三 - 灵魂统一架构核心组件】
+让Scan模式复用LiveTradingEngine，实现绝对同质同源！
 
-è®¾è®¡åçï¼?
-- å®ç°ä¸QMTEventAdapterç¸åçæ¥å?
-- ä»æ¬å°åå²Tickæä»¶è¯»åæ°æ®
-- ææ¶é´çº¿ä¼ªè£æå®æ¶Tickæ¨é?
+设计原理：
+- 实现与QMTEventAdapter相同的接口
+- 从本地历史Tick文件读取数据
+- 按时间线伪装成实时Tick推送
 
-Author: CTOæ¶æç»?
+Author: CTO架构组
 Date: 2026-03-09
 Version: 1.0.0
 """
@@ -26,21 +26,21 @@ logger = logging.getLogger(__name__)
 
 class MockQmtAdapter:
     """
-    Mock QMTééå?- ä»åå²Tickæä»¶è¯»åï¼ä¼ªè£æå®æ¶æµ?
+    Mock QMT适配器 - 从历史Tick文件读取，伪装成实时流
     
-    ç¨éï¼
-    - Scanæ¨¡å¼å¤ç¨LiveTradingEngine
-    - åæµæ¶ä½¿ç¨çå®å¼æé»è¾
-    - å¼åè°è¯æ éè¿æ¥QMT
+    用途：
+    - Scan模式复用LiveTradingEngine
+    - 回测时使用真实引擎逻辑
+    - 开发调试无需连接QMT
     """
     
     def __init__(self, target_date: str = None, event_bus=None):
         """
-        åå§åMockééå?
+        初始化Mock适配器
         
         Args:
-            target_date: ç®æ æ¥æ (æ ¼å¼: 'YYYYMMDD')
-            event_bus: äºä»¶æ»çº¿å®ä¾
+            target_date: 目标日期 (格式: 'YYYYMMDD')
+            event_bus: 事件总线实例
         """
         self.target_date = target_date or datetime.now().strftime('%Y%m%d')
         self.event_bus = event_bus
@@ -52,43 +52,43 @@ class MockQmtAdapter:
         
     def initialize(self) -> bool:
         """
-        åå§å?- è¿æ¥QMTè¯»ååå²æ°æ®
+        初始化 - 连接QMT读取历史数据
         
         Returns:
-            bool: æ¯å¦åå§åæå?
+            bool: 是否初始化成功
         """
         try:
             from xtquant import xtdata
             xtdata.enable_hello = False
             self._xtdata = xtdata
             self._is_initialized = True
-            logger.info(f"â?[MockQmtAdapter] åå§åæåï¼ç®æ æ¥æ: {self.target_date}")
+            logger.info(f"✅ [MockQmtAdapter] 初始化成功，目标日期: {self.target_date}")
             return True
         except ImportError:
-            logger.error("â?[MockQmtAdapter] æ æ³å¯¼å¥xtquantæ¨¡å")
+            logger.error("❌ [MockQmtAdapter] 无法导入xtquant模块")
             return False
         except Exception as e:
-            logger.error(f"â?[MockQmtAdapter] åå§åå¤±è´? {e}")
+            logger.error(f"❌ [MockQmtAdapter] 初始化失败: {e}")
             return False
     
     def subscribe_ticks(self, stock_list: List[str]) -> int:
         """
-        è®¢éè¡ç¥¨Tickæ°æ® - é¢å è½½åå²Tick
+        订阅股票Tick数据 - 预加载历史Tick
         
         Args:
-            stock_list: è¡ç¥¨ä»£ç åè¡¨
+            stock_list: 股票代码列表
             
         Returns:
-            int: æåè®¢éæ°é
+            int: 成功订阅数量
         """
         if not self._is_initialized:
-            logger.error("[MockQmtAdapter] æªåå§åï¼æ æ³è®¢é?)
+            logger.error("[MockQmtAdapter] 未初始化，无法订阅")
             return 0
         
         success_count = 0
         for stock in stock_list:
             try:
-                # å è½½åå²Tickæ°æ®
+                # 加载历史Tick数据
                 local_data = self._xtdata.get_local_data(
                     field_list=[],
                     stock_list=[stock],
@@ -105,18 +105,18 @@ class MockQmtAdapter:
                         self._subscribed_stocks.add(stock)
                         success_count += 1
             except Exception as e:
-                logger.debug(f"[MockQmtAdapter] {stock} å è½½å¤±è´¥: {e}")
+                logger.debug(f"[MockQmtAdapter] {stock} 加载失败: {e}")
                 continue
         
-        logger.info(f"â?[MockQmtAdapter] é¢å è½?{success_count}/{len(stock_list)} åªè¡ç¥¨åå²Tick")
+        logger.info(f"✅ [MockQmtAdapter] 预加载 {success_count}/{len(stock_list)} 只股票历史Tick")
         return success_count
     
     def get_all_a_shares(self) -> List[str]:
         """
-        è·åå¨Aè¡åè¡?
+        获取全A股列表
         
         Returns:
-            List[str]: è¡ç¥¨ä»£ç åè¡¨
+            List[str]: 股票代码列表
         """
         if not self._is_initialized:
             return []
@@ -125,19 +125,19 @@ class MockQmtAdapter:
             sz = self._xtdata.get_stock_list_in_sector('SZ')
             sh = self._xtdata.get_stock_list_in_sector('SH')
             all_stocks = sz + sh
-            # è¿æ»¤STãéå¸ç­
-            valid_stocks = [s for s in all_stocks if not any(x in s for x in ['ST', 'é', 'PT'])]
+            # 过滤ST、退市等
+            valid_stocks = [s for s in all_stocks if not any(x in s for x in ['ST', '退', 'PT'])]
             return valid_stocks
         except Exception as e:
-            logger.error(f"[MockQmtAdapter] è·åè¡ç¥¨åè¡¨å¤±è´¥: {e}")
+            logger.error(f"[MockQmtAdapter] 获取股票列表失败: {e}")
             return []
     
     def get_full_tick_snapshot(self, stock_list: List[str]) -> Dict[str, Dict]:
         """
-        è·åTickå¿«ç§ - ä»åå²æ°æ®æåææ°ç¶æ?
+        获取Tick快照 - 从历史数据提取最新状态
         
         Args:
-            stock_list: è¡ç¥¨ä»£ç åè¡¨
+            stock_list: 股票代码列表
             
         Returns:
             Dict[str, Dict]: {stock_code: tick_dict}
@@ -148,11 +148,11 @@ class MockQmtAdapter:
             if stock in self._tick_data_cache:
                 df = self._tick_data_cache[stock]
                 if df is not None and not df.empty:
-                    # åæåä¸è¡ä½ä¸ºå½åå¿«ç?
+                    # 取最后一行作为当前快照
                     last_row = df.iloc[-1]
                     snapshot[stock] = self._row_to_tick_dict(last_row, stock)
             else:
-                # å°è¯å®æ¶å è½½ï¼æå è½½ï¼?
+                # 尝试实时加载（懒加载）
                 try:
                     local_data = self._xtdata.get_local_data(
                         field_list=[],
@@ -174,14 +174,14 @@ class MockQmtAdapter:
     
     def get_tick_at_time(self, stock: str, time_str: str) -> Optional[Dict]:
         """
-        è·åæå®æ¶é´çTickæ°æ® - ç¨äºæ¶é´çº¿åæ?
+        获取指定时间的Tick数据 - 用于时间线回放
         
         Args:
-            stock: è¡ç¥¨ä»£ç 
-            time_str: æ¶é´å­ç¬¦ä¸?(æ ¼å¼: 'HH:MM:SS' æ?'HHMMSS')
+            stock: 股票代码
+            time_str: 时间字符串(格式: 'HH:MM:SS' 或'HHMMSS')
             
         Returns:
-            Optional[Dict]: Tickå­å¸æNone
+            Optional[Dict]: Tick字典或None
         """
         if stock not in self._tick_data_cache:
             return None
@@ -190,16 +190,16 @@ class MockQmtAdapter:
         if df is None or df.empty:
             return None
         
-        # æ ååæ¶é´æ ¼å¼?
+        # 标准化时间格式
         if ':' in time_str:
             target_time = time_str.replace(':', '')
         else:
             target_time = time_str
         
-        # æ¥æ¾å¹éæ¶é´çè¡
+        # 查找匹配时间的行
         for idx, row in df.iterrows():
             tick_time = str(row.get('time', ''))
-            # tick_timeæ ¼å¼å¯è½æ?'HHMMSS' ææ¶é´æ³
+            # tick_time格式可能是'HHMMSS' 或时间戳
             if target_time in str(tick_time):
                 return self._row_to_tick_dict(row, stock)
         
@@ -207,18 +207,18 @@ class MockQmtAdapter:
     
     def get_timeline_ticks(self, stock_list: List[str], interval_seconds: int = 3) -> List[Dict]:
         """
-        è·åæ¶é´çº¿Tickåºå - ç¨äºåæ¾æ¨¡å¼
+        获取时间线Tick序列 - 用于回放模式
         
         Args:
-            stock_list: è¡ç¥¨ä»£ç åè¡¨
-            interval_seconds: æ¶é´é´éï¼ç§ï¼?
+            stock_list: 股票代码列表
+            interval_seconds: 时间间隔（秒）
             
         Returns:
-            List[Dict]: æ¶é´çº¿Tickåè¡¨ï¼æ¯ä¸ªåç´ åå?{time, ticks: {stock: tick_dict}}
+            List[Dict]: 时间线Tick列表，每个元素包含{time, ticks: {stock: tick_dict}}
         """
         timeline = []
         
-        # æå»ºæ¶é´çº¿ï¼09:30 - 15:00ï¼?
+        # 构建时间线（09:30 - 15:00）
         start_time = datetime.strptime("093000", "%H%M%S")
         end_time = datetime.strptime("150000", "%H%M%S")
         
@@ -245,14 +245,14 @@ class MockQmtAdapter:
     
     def _row_to_tick_dict(self, row, stock_code: str) -> Dict:
         """
-        å°DataFrameè¡è½¬æ¢ä¸ºTickå­å¸
+        将DataFrame行转换为Tick字典
         
         Args:
-            row: DataFrameè¡?
-            stock_code: è¡ç¥¨ä»£ç 
+            row: DataFrame行
+            stock_code: 股票代码
             
         Returns:
-            Dict: æ åTickå­å¸
+            Dict: 标准Tick字典
         """
         return {
             'stock_code': stock_code,
@@ -272,35 +272,34 @@ class MockQmtAdapter:
     
     def push_tick_to_event_bus(self, stock: str, tick_dict: Dict) -> bool:
         """
-        å°Tickæ¨éå°äºä»¶æ»çº¿ - æ¨¡æå®æ¶æ¨é?
+        将Tick推送到事件总线 - 模拟实时推送
         
         Args:
-            stock: è¡ç¥¨ä»£ç 
-            tick_dict: Tickæ°æ®å­å¸
+            stock: 股票代码
+            tick_dict: Tick数据字典
             
         Returns:
-            bool: æ¯å¦æ¨éæå?
+            bool: 是否推送成功
         """
         if self.event_bus is None:
             return False
         
         try:
-            # ¡¾CTOÍ³Ò»¹æ·¶¡¿Ê¹ÓÃ±ê×¼TickEvent
+            # 【CTO统一规格】使用标准TickEvent
             from logic.data_providers.event_bus import TickEvent
             event = TickEvent(
                 stock_code=stock,
-                price=float(tick_dict.get(\"lastPrice\", 0)),
-                volume=float(tick_dict.get(\"volume\", 0)),
-                amount=float(tick_dict.get(\"amount\", 0)),
-                open=float(tick_dict.get(\"open\", 0)),
-                high=float(tick_dict.get(\"high\", 0)),
-                low=float(tick_dict.get(\"low\", 0)),
-                prev_close=float(tick_dict.get(\"lastClose\", 0)),
-                timestamp=tick_dict.get(\"time\", \"\"),
-                data=tick_dict
+                price=float(tick_dict.get('lastPrice', 0)),
+                volume=int(tick_dict.get('volume', 0)),
+                amount=float(tick_dict.get('amount', 0)),
+                timestamp=str(tick_dict.get('time', '')),
+                open=float(tick_dict.get('open', 0)),
+                high=float(tick_dict.get('high', 0)),
+                low=float(tick_dict.get('low', 0)),
+                prev_close=float(tick_dict.get('lastClose', 0))
             )
-            self.event_bus.publish(\"tick\", event)
+            self.event_bus.publish('tick', event)
             return True
         except Exception as e:
-            logger.debug(f"[MockQmtAdapter] æ¨éäºä»¶å¤±è´? {e}")
+            logger.debug(f"[MockQmtAdapter] 推送事件失败: {e}")
             return False
