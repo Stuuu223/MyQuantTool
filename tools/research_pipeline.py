@@ -389,17 +389,26 @@ class FeatureExtractor:
             
             def calculate_net_flow_from_1m(df_slice: pd.DataFrame) -> float:
                 """从1m K线推导净流入（CTO动力学近似）"""
-                net_flow = 0.0
-                for _, k in df_slice.iterrows():
-                    k_range = k['high'] - k['low']
-                    if k_range > 0:
-                        # 用K线实体方向分配净资金：阳线为正，阴线为负
-                        power_ratio = (k['close'] - k['open']) / k_range
-                        net_flow += k['amount'] * power_ratio
-                    else:
-                        # 一字板或平盘：默认视为正向（封板）
-                        if k['close'] >= k['open']:
-                            net_flow += k['amount'] * 0.5  # 半量计入（保守估计）
+                if df_slice.empty:
+                    return 0.0
+                
+                # ========== CTO修复：典型价格流算法 ==========
+                # 物理意义：使用典型价格 (high+low+close)/3 与前值比较
+                # 比简单的(close-open)更能反映整体价格动量
+                # ==========================================
+                df_slice = df_slice.copy()
+                df_slice['typical_price'] = (df_slice['high'] + df_slice['low'] + df_slice['close']) / 3
+                
+                # 计算价格方向：与前一分钟典型价格对比
+                df_slice['price_change'] = df_slice['typical_price'].diff()
+                df_slice['flow_direction'] = df_slice['price_change'].apply(lambda x: 1 if x > 0 else (-1 if x < 0 else 0))
+                
+                # 计算净流入（按价格方向分配成交额）
+                df_slice['directed_amount'] = df_slice['amount'] * df_slice['flow_direction']
+                
+                # 汇总净流入（只取正值，符合后续代码逻辑）
+                net_flow = df_slice['directed_amount'].sum()
+                
                 return max(0, net_flow)  # 防止净流出导致后续计算异常
             
             # 09:30-09:35 (5分钟)
@@ -430,17 +439,18 @@ class FeatureExtractor:
             net_inflow = flow_15min
             inflow_ratio = (net_inflow / float_market_cap * 100) if float_market_cap > 0 else 0
             
-            # ========== CTO级 MFE做功效率计算 ==========
+            # ========== CTO修复：MFE对数化处理 ==========
             # 物理意义：MFE = 振幅%/流入比%，表示"单位资金做功效率"
             # 真空无阻力状态：极小流入打出大振幅 = MFE逼近无穷大 = 顶级真龙！
-            # 数学保护：设定最小摩擦力底线，而不是把分子清零
+            # 修复：用对数化替代硬顶，保留超强股票区分度
             # ==========================================
             MIN_FRICTION_RATIO = 0.05  # 全市场最低自然摩擦力（0.05%）
-            MFE_CEILING = 200.0        # 物理做功极限封顶
             
             safe_inflow_ratio = max(inflow_ratio, MIN_FRICTION_RATIO)
-            mfe = amplitude_pct / safe_inflow_ratio
-            mfe = min(mfe, MFE_CEILING)  # 封顶而非归零
+            raw_mfe = amplitude_pct / safe_inflow_ratio
+            # 用对数化处理极值，既压制爆炸又保留区分度
+            import numpy as np
+            mfe = np.log1p(raw_mfe)  # log(1+x) 避免极小值问题
             
             # raw_sustain
             raw_sustain = (flow_15min / safe_median) if safe_median > 0 else 0
@@ -542,18 +552,19 @@ class FeatureExtractor:
         # 流入比（净流入/流通市值）
         inflow_ratio = (net_inflow / float_market_cap * 100) if float_market_cap > 0 else 0
         
-        # ========== CTO级 MFE做功效率计算 ==========
+        # ========== CTO修复：MFE对数化处理 ==========
         # 物理意义：MFE = 振幅%/流入比%，表示"单位资金做功效率"
         # 真空无阻力状态：极小流入打出大振幅 = MFE逼近无穷大 = 顶级真龙！
-        # 数学保护：设定最小摩擦力底线，而不是把分子清零
+        # 修复：用对数化替代硬顶，保留超强股票区分度
         # ==========================================
         amplitude_pct = price_metrics.get('amplitude_pct', 0)
         MIN_FRICTION_RATIO = 0.05  # 全市场最低自然摩擦力（0.05%）
-        MFE_CEILING = 200.0        # 物理做功极限封顶
         
         safe_inflow_ratio = max(inflow_ratio, MIN_FRICTION_RATIO)
-        mfe = amplitude_pct / safe_inflow_ratio
-        mfe = min(mfe, MFE_CEILING)  # 封顶而非归零
+        raw_mfe = amplitude_pct / safe_inflow_ratio
+        # 用对数化处理极值，既压制爆炸又保留区分度
+        import numpy as np
+        mfe = np.log1p(raw_mfe)  # log(1+x) 避免极小值问题
         
         # 历史安全中位数（用avg_amount_5d作为代理）
         safe_median = historical.get('avg_amount_5d', 0)
