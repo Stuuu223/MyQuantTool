@@ -278,13 +278,28 @@ class LiveTradingEngine:
                 avg_volume_5d = self.true_dict.get_avg_volume_5d(stock_code) or 1.0
                 avg_amount_5d = avg_volume_5d * 100 * pre_close
                 
-                # 【CTO V61 核心】盘后定格模式：强制使用240分钟（全天）计算流速！
-                # 彻底消灭时间坍塌导致的Spike极刑误杀！
-                flow_5min = current_amount / 48.0
+                # ============================================================
+                # 【CTO V63 终极审判】废除全天均摊！调用真实时空切片！
+                # 根因：妖股80%成交额集中在早盘30分钟，全天/16均摊会稀释动能！
+                # 正解：调用calculate_time_slice_flows获取09:30-09:45真实早盘数据
+                # ============================================================
+                flow_5min = 0.0
+                flow_15min = 0.0
+                
+                # 获取该股票在 09:30 - 09:45 之间的真实成交数据！
+                slice_flows = self.calculate_time_slice_flows(stock_code, mock_target_date)
+                if slice_flows:
+                    flow_5min = slice_flows.get('flow_5min', 0.0)
+                    flow_15min = slice_flows.get('flow_15min', 0.0)
+                else:
+                    # 如果拿不到切片（比如数据缺失），用合理的早盘占比估算（绝非简单/16）
+                    # 假定早盘5分钟占全天15%，早盘15分钟占全天35%
+                    flow_5min = current_amount * 0.15
+                    flow_15min = current_amount * 0.35
+                
                 change_pct = (current_price - pre_close) / pre_close
                 price_position = (current_price - tick_low) / (tick_high - tick_low) if tick_high > tick_low else 0.5
                 acceleration_factor = max(0.3, min(1.0 + (price_position - 0.5) * 1.0 + change_pct * 3.0, 3.0))
-                flow_15min = current_amount / 16.0 * acceleration_factor
                 flow_5min_median = avg_amount_5d / 48.0
                 
                 space_gap_pct = (tick_high - current_price) / tick_high if tick_high > 0 else 0.5
