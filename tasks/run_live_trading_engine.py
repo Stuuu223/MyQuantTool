@@ -362,6 +362,7 @@ class LiveTradingEngine:
         self.highest_scores = {t['code']: t for t in current_top_targets}
         
         # 6. 大屏展示
+        logger.info(f"📊 强制收尸结算...共{len(current_top_targets)}只达标(>=50分)")
         if self.last_known_top_targets:
             self._print_fire_control_panel(
                 self.last_known_top_targets, 
@@ -369,6 +370,18 @@ class LiveTradingEngine:
                 pool_stats={'total': len(last_tick_by_stock), 'active': len(current_top_targets), 'up': 0, 'down': 0, 'filtered': 0},
                 is_rest=True
             )
+            print("\n[CMD] 沙盘时间线推演定格完毕。")
+        else:
+            # 【CTO增强】即使榜单为空也显示提示，避免用户误以为卡死
+            logger.warning(f"⚠️ 沙盘结算完成，但无股票达标(>=50分)。粗筛池{len(last_tick_by_stock)}只，请检查V65引力阻尼是否过严。")
+            self._print_fire_control_panel(
+                [], 
+                initial_loading=False, 
+                pool_stats={'total': len(last_tick_by_stock), 'active': 0, 'up': 0, 'down': 0, 'filtered': 0},
+                is_rest=True,
+                msg=f"无达标股票(粗筛{len(last_tick_by_stock)}只)"
+            )
+            print("\n[CMD] 沙盘时间线推演定格完毕。[空榜]")
             
         self._generate_final_battle_report()
         self._has_generated_report = True
