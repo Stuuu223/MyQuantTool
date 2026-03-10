@@ -1489,6 +1489,53 @@ class LiveTradingEngine:
                 # ----------------------------------------------------
                 loop_start = time.perf_counter()
                 
+                # 👇 【CTO V60 终极破血栓】主循环动态扩容探针（每3分钟心跳）
+                if self.mode == 'live' and self.global_tick_frame % 180 == 0:  # 假设1秒1帧，180帧≈3分钟
+                    logger.info("🌊 [活水引入] 执行全市场截面快照，捕获盘中新龙...")
+                    try:
+                        # 极轻量级操作：不阻塞，快速获取一次全市场快照
+                        all_a_shares = self.qmt_adapter.get_all_a_shares() if hasattr(self.qmt_adapter, 'get_all_a_shares') else []
+                        if all_a_shares:
+                            mid_snapshot = self.qmt_adapter.get_full_tick_snapshot(all_a_shares)
+                            if mid_snapshot:
+                                import pandas as pd
+                                mid_df = pd.DataFrame([
+                                    {'code': c, 'vol': t.get('volume', 0), 'pre_c': t.get('lastClose', 0.01), 'p': t.get('lastPrice', 0)}
+                                    for c, t in mid_snapshot.items() if t
+                                ])
+                                # 极速计算盘中量比（简化版，仅用于捕获突变）
+                                now = self.get_current_time()
+                                mid_minutes = max(5, (now - now.replace(hour=9, minute=30, second=0)).total_seconds() / 60)
+                                
+                                # 将 TrueDictionary 向量化提取
+                                mid_df['avg_v_5d'] = mid_df['code'].map(lambda x: true_dict.get_avg_volume_5d(x) * 100).replace(0, pd.NA)
+                                mid_df['vr'] = (mid_df['vol'] / mid_minutes * 240) / mid_df['avg_v_5d']
+                                mid_df['chg'] = (mid_df['p'] - mid_df['pre_c']) / mid_df['pre_c'] * 100
+                                
+                                # 动态防线：取当前市场前 5% 的极强脉冲（符合老板相对论！）且涨幅>3%起势
+                                if not mid_df.empty:
+                                    dynamic_vr_threshold = mid_df['vr'].quantile(0.95)
+                                    dynamic_vr_threshold = max(dynamic_vr_threshold, 3.0) # 兜底3倍
+                                    
+                                    new_dragons = mid_df[(mid_df['vr'] >= dynamic_vr_threshold) & (mid_df['chg'] >= 3.0)]['code'].tolist()
+                                    
+                                    added_count = 0
+                                    for nd in new_dragons:
+                                        if nd not in self.watchlist:
+                                            self.watchlist.append(nd)
+                                            added_count += 1
+                                            
+                                    if added_count > 0:
+                                        logger.info(f"🔥 [沸水入池] 动态量比阀值飙至 {dynamic_vr_threshold:.1f}x！捕获 {added_count} 只新龙！当前池子: {len(self.watchlist)}只")
+                                        # 同步订阅底层（容错包裹）
+                                        try:
+                                            from xtquant import xtdata
+                                            xtdata.subscribe_whole_quote(self.watchlist[-added_count:])
+                                        except Exception: pass
+                    except Exception as e:
+                        logger.error(f"[ERR] 盘中扩容探针失效: {e}")
+                # 👆 【CTO V60】插入结束
+                
                 if not self.watchlist:
                     logger.warning("观察池为空，等待...")
                     if self.mode == 'live':
