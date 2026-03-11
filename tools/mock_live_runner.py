@@ -337,14 +337,18 @@ def main():
     if args.stocks:
         stock_list = [s.strip() for s in args.stocks.split(',') if s.strip()]
     
-    # 如果没有指定股票，使用默认测试列表
+    # 【CTO V74修复】如果没有指定股票，动态获取今日真实活跃底池
+    # 不再硬编码死票！要读取smart_download刚下载的那批活跃票
     if not stock_list:
-        stock_list = [
-            '000001.SZ',  # 平安银行
-            '600519.SH',  # 茅台
-            '002261.SZ',  # 拓维信息
-        ]
-        print(f"[MockLiveRunner] 使用默认测试股票列表: {stock_list}")
+        print("[MockLiveRunner] 未指定股票，正在通过 UniverseBuilder 获取今日真实活跃物理底池...")
+        try:
+            from logic.data_providers.universe_builder import UniverseBuilder
+            base_pool, _ = UniverseBuilder(target_date=args.date).build()
+            stock_list = base_pool
+            print(f"[MockLiveRunner] 成功装载 {len(stock_list)} 只活跃标的。")
+        except Exception as e:
+            print(f"[ERR] 底池装载失败: {e}")
+            return
     
     # 创建运行器
     runner = MockLiveRunner(args.date, stock_list)

@@ -464,11 +464,12 @@ def scan_cmd(ctx, date):
         
         click.echo(f"   底池规模: {len(base_pool)} 只")
         
-        # 【CTO V73修复】优先使用真实Tick数据，日线数据作为兜底
-        # 真正的Tick数据包含盘中净流入、资金流向等关键信息
+        # 【CTO V74宪法】不得日K兜底，缺失即补充！
+        # Tick数据包含盘中净流入、资金流向、盘口等关键信息
+        # 日线无法伪造Tick，没有真实Tick必须物理剔除！
         for stock in base_pool:
             try:
-                # 先尝试Tick数据
+                # 只使用真实Tick数据
                 tick_data = xtdata.get_local_data(
                     field_list=[], 
                     stock_list=[stock], 
@@ -498,38 +499,15 @@ def scan_cmd(ctx, date):
                         # 只有有效Tick才加入
                         if tick['amount'] > 0 and tick['price'] > 0:
                             tick_stream.append(tick)
-                            continue  # Tick成功，跳过日线兜底
-                
-                # 兜底：使用日线数据
-                local_data = xtdata.get_local_data(
-                    field_list=[], 
-                    stock_list=[stock], 
-                    period='1d',
-                    start_time=target_date, 
-                    end_time=target_date
-                )
-                if local_data and stock in local_data:
-                    df = local_data[stock]
-                    if df is not None and not (hasattr(df, 'empty') and df.empty) and len(df) > 0:
-                        row = df.iloc[-1]
-                        # 用日线数据构造Tick快照（精度较低但可用）
-                        tick = {
-                            'stock_code': stock,
-                            'datetime': f"{target_date}150000",
-                            'price': float(row.get('close', 0)),
-                            'open': float(row.get('open', 0)),
-                            'high': float(row.get('high', 0)),
-                            'low': float(row.get('low', 0)),
-                            'volume': int(row.get('volume', 0)),
-                            'amount': float(row.get('amount', 0)),
-                            'lastClose': float(row.get('close', 0)) / (1 + row.get('chg', 0)/100) if row.get('chg') else float(row.get('close', 0)),
-                            'askPrice1': 0,  # 日线无盘口
-                            'bidPrice1': 0,
-                        }
-                        if tick['amount'] > 0 and tick['price'] > 0:
-                            tick_stream.append(tick)
+                # 无Tick则直接跳过，绝不用日线兜底！
             except Exception:
                 continue
+        
+        # 【CTO V74】统计缺失并提示用户补充
+        missing_tick_count = len(base_pool) - len(tick_stream)
+        if missing_tick_count > 0:
+            click.echo(click.style(f"⚠️ [数据截断] 发现 {missing_tick_count} 只标的缺乏当天Tick数据，已进行物理隔离。", fg='yellow'))
+            click.echo(click.style(f"💡 必须运行: python tools/smart_download.py 补充弹药！", fg='yellow'))
         
         click.echo(f"   有效Tick: {len(tick_stream)} 笔")
         
