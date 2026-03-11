@@ -195,6 +195,19 @@ class LiveTradingEngine:
             logger.error(f"[FATAL] TradeGatekeeper缺失或异常: {e}。微观防线失效，系统将拒绝一切实盘开仓！(Fail-Close)")
             self.trade_gatekeeper = None
         
+        # 【CTO V71单吊极锋执行器】MockExecutionManager - L1虚拟交易所
+        # 支持单吊模式(max_position_ratio=1.0)，物理摩擦力模型
+        try:
+            from logic.execution.mock_execution_manager import MockExecutionManager
+            self.execution_manager = MockExecutionManager(
+                initial_capital=100000.0,  # 10万初始资金
+                max_position_ratio=1.0     # 单吊模式：单票可满仓
+            )
+            logger.info("[OK] MockExecutionManager初始化成功 - 单吊极锋模式")
+        except (ImportError, Exception) as e:
+            logger.error(f"[FATAL] MockExecutionManager缺失或异常: {e}。执行层失效！(Fail-Close)")
+            self.execution_manager = None
+        
         # 【架构大道至简】EventBus 双轨制已删除，统一主循环拉取架构
         # signal_queue 已废弃，3分钟抗重力测试移入主循环帧计数
         # 原_event_bus和_qmt_adapter初始化已移除，消灭竞态条件
@@ -2141,6 +2154,41 @@ class LiveTradingEngine:
                 # 【CTO V4关键】更新静态机会池缓存！
                 if top_10:
                     self.last_known_top_targets = top_10
+                
+                # ============================================================
+                # 【CTO V71单吊极锋执行器】买入触发逻辑
+                # ============================================================
+                # 触发条件：榜首分数>=70分，且通过微观防线检查
+                # 单吊模式：只买榜首一只，满仓单票
+                # ============================================================
+                if top_10 and self.execution_manager and self.mode == 'live':
+                    top_stock = top_10[0]
+                    top_code = top_stock['code']
+                    top_score = top_stock['score']
+                    
+                    # 触发阈值：70分（确保是高质量机会）
+                    if top_score >= 70.0:
+                        # 获取Tick数据
+                        top_tick = all_ticks.get(top_code, {})
+                        top_price = top_tick.get('lastPrice', 0)
+                        
+                        # 微观防线检查
+                        if self._micro_defense_check(top_code, top_tick):
+                            logger.info(f"🎯 [单吊触发] {top_code} 分数={top_score:.1f} 价格={top_price:.2f}")
+                            
+                            # 扣动扳机（MockExecutionManager会自动检查资金状态）
+                            success = self.execution_manager.place_mock_order(
+                                top_code, 
+                                top_price, 
+                                'BUY'
+                            )
+                            
+                            if success:
+                                logger.info(f"✅ [成交确认] {top_code} 买入成功！")
+                                # 单吊模式：买入后退出主循环（不再寻找其他机会）
+                                # self.running = False
+                            else:
+                                logger.debug(f"❌ [买入失败] {top_code} 资金不足或仓位已满")
                 
                 # 【CTO V13】更新pool_stats缓存，解决盘中无数据时显示0的问题
                 if pool_stats.get('active', 0) > 0:

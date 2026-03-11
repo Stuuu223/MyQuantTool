@@ -370,8 +370,10 @@ class 动能打分引擎CoreEngine:
         # ==============================================================
         # F1修复: 在函数入口处初始化 mfe 安全默认值，防止 Spike极刑前置分支
         # 引用未赋值变量导致 UnboundLocalError 线上静默崩溃
+        # 【CTO V71修复】废除魔法数字-100.0，改用0.0作为物理底线
         # ==============================================================
-        mfe: float = -100.0
+        mfe: float = 0.0
+        mfe_penalty = 1.0  # MFE惩罚系数（资金流出时降为0.1，微弱流入时降为0.5）
         
         # 0. 基础准备：安全转换 + 流通市值
         net_inflow = safe_float(net_inflow, 0.0)
@@ -453,7 +455,17 @@ class 动能打分引擎CoreEngine:
                 mfe_bonus = 15.0 * math.log10(max(mfe * 10.0, 1.0))
                 base_power += mfe_bonus
                 logger.debug(f"[MFE做功溢价] {stock_code} MFE={mfe:.2f}, 奖励+{mfe_bonus:.1f}分")
-        # else: mfe 保持函数入口初始化的 -100.0
+        # else: mfe 保持函数入口初始化的 0.0（资金流出/微弱流入时）
+        # 【CTO V71修复】资金流出(inflow<=0)或微弱流入(0<inflow<2%)时mfe=0.0
+        # 真实MFE仅在有显著流入时计算
+
+        # 资金净流出惩罚
+        if inflow_ratio_pct <= 0:
+            base_power *= 0.1  # 动能坍塌惩罚
+            logger.warning(f"💀 [动能坍塌] {stock_code} 资金净流出{inflow_ratio_pct:.1f}%，一票否决！")
+        elif 0 < inflow_ratio_pct < 2.0:
+            base_power *= 0.5  # 无效做功惩罚
+            logger.debug(f"🐌 [无效做功] {stock_code} 流入极弱({inflow_ratio_pct:.1f}%)，动能无法维持")
         
         # 大力出奇迹标志
         cap_penalty = (float_market_cap_yi / 100.0) * 1.5
@@ -504,7 +516,7 @@ class 动能打分引擎CoreEngine:
         logger.debug(f"⚖️ [引力阻尼] {stock_code} 市值{float_mc_yi:.0f}亿, raw={raw_sustain:.2f}×阻尼{gravity_damper:.2f}=sustain{sustain_ratio:.2f}, 阈值[存活{survival_threshold:.2f}|健康{health_threshold:.2f}]")
         
         # 【CTO强制熔断】Spike极刑前置
-        # F1修复: mfe 已在函数入口处初始化为 -100.0，此处引用绝对安全
+        # F1修复: mfe 已在函数入口处初始化为 0.0，此处引用绝对安全
         if flow_15min <= 0:
             logger.warning(f"💀 [Spike极刑] {stock_code} 15分钟净流出，一票否决")
             return 0.0, -1.0, inflow_ratio_pct, ratio_stock, mfe
@@ -748,8 +760,7 @@ if __name__ == "__main__":
             current_time=test_time_spike
         )
         assert final_score_spike == 0.0, f"Spike极刑应返回0.0，实际{final_score_spike}"
-        assert mfe_spike == -100.0, f"mfe应为初始化默认值-100.0，实际{mfe_spike}"
-        print(f"  ✅ 通过 - Spike极刑前置时mfe={mfe_spike}，无UnboundLocalError")
+                    assert mfe_spike == 0.0, f"mfe应为初始化默认值0.0，实际{mfe_spike}"        print(f"  ✅ 通过 - Spike极刑前置时mfe={mfe_spike}，无UnboundLocalError")
     except UnboundLocalError as e:
         print(f"  ❌ 失败 - UnboundLocalError: {e}")
     
