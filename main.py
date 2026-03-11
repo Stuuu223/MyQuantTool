@@ -464,23 +464,70 @@ def scan_cmd(ctx, date):
         
         click.echo(f"   底池规模: {len(base_pool)} 只")
         
-        # 获取每只股票的最后一笔Tick
+        # 【CTO V73修复】优先使用真实Tick数据，日线数据作为兜底
+        # 真正的Tick数据包含盘中净流入、资金流向等关键信息
         for stock in base_pool:
             try:
+                # 先尝试Tick数据
+                tick_data = xtdata.get_local_data(
+                    field_list=[], 
+                    stock_list=[stock], 
+                    period='tick',
+                    start_time=f"{target_date}092500", 
+                    end_time=f"{target_date}150000"
+                )
+                
+                if tick_data and stock in tick_data:
+                    df = tick_data[stock]
+                    if df is not None and not (hasattr(df, 'empty') and df.empty) and len(df) > 0:
+                        # 取最后一笔Tick作为收盘快照
+                        row = df.iloc[-1]
+                        tick = {
+                            'stock_code': stock,
+                            'datetime': f"{target_date}150000",
+                            'price': float(row.get('lastPrice', row.get('price', 0))),
+                            'open': float(row.get('open', 0)),
+                            'high': float(row.get('high', 0)),
+                            'low': float(row.get('low', 0)),
+                            'volume': int(row.get('volume', 0)),
+                            'amount': float(row.get('amount', 0)),
+                            'lastClose': float(row.get('lastClose', row.get('preClose', 0))),
+                            'askPrice1': float(row.get('askPrice1', 0)),
+                            'bidPrice1': float(row.get('bidPrice1', 0)),
+                        }
+                        # 只有有效Tick才加入
+                        if tick['amount'] > 0 and tick['price'] > 0:
+                            tick_stream.append(tick)
+                            continue  # Tick成功，跳过日线兜底
+                
+                # 兜底：使用日线数据
                 local_data = xtdata.get_local_data(
                     field_list=[], 
                     stock_list=[stock], 
-                    period='tick', 
+                    period='1d',
                     start_time=target_date, 
                     end_time=target_date
                 )
                 if local_data and stock in local_data:
                     df = local_data[stock]
                     if df is not None and not (hasattr(df, 'empty') and df.empty) and len(df) > 0:
-                        tick = df.iloc[-1].to_dict()
-                        tick['stock_code'] = stock
-                        tick['datetime'] = f"{target_date}150000"  # 收盘时间
-                        tick_stream.append(tick)
+                        row = df.iloc[-1]
+                        # 用日线数据构造Tick快照（精度较低但可用）
+                        tick = {
+                            'stock_code': stock,
+                            'datetime': f"{target_date}150000",
+                            'price': float(row.get('close', 0)),
+                            'open': float(row.get('open', 0)),
+                            'high': float(row.get('high', 0)),
+                            'low': float(row.get('low', 0)),
+                            'volume': int(row.get('volume', 0)),
+                            'amount': float(row.get('amount', 0)),
+                            'lastClose': float(row.get('close', 0)) / (1 + row.get('chg', 0)/100) if row.get('chg') else float(row.get('close', 0)),
+                            'askPrice1': 0,  # 日线无盘口
+                            'bidPrice1': 0,
+                        }
+                        if tick['amount'] > 0 and tick['price'] > 0:
+                            tick_stream.append(tick)
             except Exception:
                 continue
         

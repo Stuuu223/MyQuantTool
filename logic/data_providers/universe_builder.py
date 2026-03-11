@@ -250,22 +250,26 @@ class UniverseBuilder:
                     start_time=start_date,
                     end_time=end_date
                 )
-                if data and stock in data and data[stock] is not None and len(data[stock]) >= 5:
+                # 【CTO V73修复】只要有数据（>=1天）就算有效！
+                # 次新股/停牌股可能数据不足5天，但数据是存在的
+                # 不要把它们算作"数据缺失"！
+                if data and stock in data and data[stock] is not None and len(data[stock]) >= 1:
                     all_data[stock] = data[stock]
                 else:
+                    # 只有真正没有数据的才算缺失
                     missing_stocks.append(stock)
             except Exception:
                 missing_stocks.append(stock)
 
-        # 【CTO V33终极净身令】删除阻塞式下载循环！
-        # 问题根因：download_history_data在QMT限流时会无限挂起
-        # 修复：缺失数据直接跳过，不阻塞实盘引擎！
-        # 用户应该在盘后用 tools/smart_download.py 补充弹药
-        if missing_stocks:
+        # 【CTO V73修复】只有真正缺失的才报警，且阈值设为>100才报警（避免噪音）
+        # 很多股票（停牌、次新、ST等）本身就不会有完整数据，这是正常的业务过滤
+        if missing_stocks and len(missing_stocks) > 100:
             logger.warning(f'⚠️ [防空警报] 发现 {len(missing_stocks)} 只股票日K数据缺失！')
             logger.warning(f'🚫 为防止实盘引擎被网络卡死，系统拒绝现场下载，这些股票将被物理隔离。')
             logger.warning(f'💡 请在盘后运行：python tools/smart_download.py 补充弹药！')
-            # 不下载！缺失的票在后续df is None判断中自然会被过滤掉
+        elif missing_stocks:
+            # 少量缺失是正常的（次新/停牌），只记录debug
+            logger.debug(f'[数据检查] {len(missing_stocks)} 只股票数据不足，已跳过（次新/停牌属正常情况）')
 
         # 【CTO V26优化】第三步：使用已获取的数据进行过滤
         import pandas as pd

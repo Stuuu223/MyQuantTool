@@ -40,7 +40,7 @@ VENV_PYTHON = PROJECT_ROOT / "venv_qmt" / "Scripts" / "python.exe"
 # 导入项目模块
 from logic.core.config_manager import get_config_manager
 from logic.data_providers.true_dictionary import get_true_dictionary
-from logic.strategies.kinetic_core_engine import calculate_true_dragon_score
+from logic.strategies.kinetic_core_engine import 动能打分引擎CoreEngine
 
 logger = logging.getLogger(__name__)
 
@@ -92,19 +92,23 @@ class MockLiveRunner:
             
             # 使用xtdata读取本地Tick
             tick_df = xtdata.get_local_data(
-                stock_code, 
+                field_list=[],  # 空列表返回所有字段
+                stock_list=[stock_code], 
                 period='tick', 
                 start_time=f'{self.target_date}092500',
                 end_time=f'{self.target_date}150000'
             )
             
-            if tick_df is None or tick_df.empty:
+            if tick_df is None or stock_code not in tick_df or tick_df[stock_code].empty:
                 logger.warning(f"[MockLiveRunner] {stock_code} 无Tick数据")
                 return False
             
+            # 获取该股票的DataFrame
+            df = tick_df[stock_code]
+            
             # 转换为Tick队列
             tick_list = []
-            for idx, row in tick_df.iterrows():
+            for idx, row in df.iterrows():
                 tick = {
                     'time': row.get('time', 0),
                     'price': float(row.get('price', 0)),
@@ -222,7 +226,9 @@ class MockLiveRunner:
             
             # 调用核心打分引擎
             try:
-                result = calculate_true_dragon_score(
+                # 创建引擎实例并调用
+                engine = 动能打分引擎CoreEngine()
+                result = engine.calculate_true_dragon_score(
                     stock_code=stock_code,
                     net_inflow=current_tick['amount'] * 0.5,  # 简化：假设50%是净流入
                     price=current_tick['price'],
