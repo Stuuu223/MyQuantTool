@@ -183,6 +183,16 @@ class LiveTradingEngine:
         # 每个持仓都有自己的ExitManager来监控止损/止盈条件
         self.positions: Dict[str, Any] = {}  # {stock_code: ExitManager}
         
+        # 【CTO审计修复】trade_gatekeeper初始化 - 原代码中只检查未初始化
+        # 从execution模块导入TradeGatekeeper（如果存在）
+        try:
+            from logic.execution.trade_gatekeeper import TradeGatekeeper
+            self.trade_gatekeeper = TradeGatekeeper()
+            logger.info("[OK] TradeGatekeeper初始化成功")
+        except (ImportError, Exception) as e:
+            logger.warning(f"[WARN] TradeGatekeeper初始化失败: {e}，微观防线将默认通过")
+            self.trade_gatekeeper = None
+        
         # 【CTO修复】初始化顺序：先EventBus，再QMTEventAdapter
         # 初始化EventBus（如果未传入）
         if self.event_bus is None:
@@ -2849,12 +2859,28 @@ class LiveTradingEngine:
                 logger.warning(f"[WARN] {stock_code} 09:30-09:35 无数据")
                 return None
             
-            # 计算5分钟资金流入（简化：用amount增量）
+            # 【CTO审计修复】计算5分钟资金流入 - amount是累计值，用差值而非求和！
             if 'amount' in df_5min.columns:
-                flow_5min = df_5min['amount'].sum()
+                # 取该时间段最后一个Tick的amount - 第一个Tick之前一个Tick的amount
+                # 如果df_5min第一个Tick就是09:30:00，则用第一个Tick的amount作为近似
+                first_idx = df_5min.index[0]
+                last_idx = df_5min.index[-1]
+                if first_idx > 0:
+                    prev_amount = df.loc[first_idx - 1, 'amount']
+                else:
+                    prev_amount = 0  # 第一个Tick就是开盘，用0作为起点
+                flow_5min = df_5min.loc[last_idx, 'amount'] - prev_amount
             else:
-                # 如果没有amount，用 price * volume * 100 估算
-                flow_5min = (df_5min['lastPrice'] * df_5min['volume'] * 100).sum()
+                # 如果没有amount，用 price * volume * 100 估算（注意volume也是累计值）
+                first_idx = df_5min.index[0]
+                last_idx = df_5min.index[-1]
+                if first_idx > 0:
+                    prev_volume = df.loc[first_idx - 1, 'volume']
+                else:
+                    prev_volume = 0
+                delta_volume = df_5min.loc[last_idx, 'volume'] - prev_volume
+                avg_price = df_5min['lastPrice'].mean()
+                flow_5min = avg_price * delta_volume * 100  # volume是手，*100转股
             
             # 【时空切片2】截取 09:30-09:45 计算真实 flow_15min
             df_15min = df[(df['time_str'] >= '09:30:00') & (df['time_str'] <= '09:45:00')].copy()
@@ -2862,10 +2888,25 @@ class LiveTradingEngine:
                 logger.warning(f"[WARN] {stock_code} 09:30-09:45 无数据")
                 return None
             
+            # 【CTO审计修复】amount是累计值，用差值而非求和！
             if 'amount' in df_15min.columns:
-                flow_15min = df_15min['amount'].sum()
+                first_idx = df_15min.index[0]
+                last_idx = df_15min.index[-1]
+                if first_idx > 0:
+                    prev_amount = df.loc[first_idx - 1, 'amount']
+                else:
+                    prev_amount = 0
+                flow_15min = df_15min.loc[last_idx, 'amount'] - prev_amount
             else:
-                flow_15min = (df_15min['lastPrice'] * df_15min['volume'] * 100).sum()
+                first_idx = df_15min.index[0]
+                last_idx = df_15min.index[-1]
+                if first_idx > 0:
+                    prev_volume = df.loc[first_idx - 1, 'volume']
+                else:
+                    prev_volume = 0
+                delta_volume = df_15min.loc[last_idx, 'volume'] - prev_volume
+                avg_price = df_15min['lastPrice'].mean()
+                flow_15min = avg_price * delta_volume * 100
             
             logger.debug(f"[OK] {stock_code} 时空切片: 5min={flow_5min/1e8:.2f}亿, 15min={flow_15min/1e8:.2f}亿")
             
