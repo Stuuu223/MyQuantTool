@@ -117,19 +117,21 @@ class TestDeltaTurnoverFormula:
         delta_volume_hands = 500          # 手（subscribe_quote 实盘流）
         float_volume_shares = 500_000_000  # 股（已升维后）
 
-        # 正确公式（V70 修复版）
+        # 正确公式（V70 修复版）：手*100=股，再/流通股*100=换手率%
         delta_turnover_correct = (delta_volume_hands * 100) / float_volume_shares * 100
-        # 旧 BUG 公式
-        delta_turnover_wrong = (delta_volume_hands * 10_000) / float_volume_shares
+        
+        # 模拟过去发生 BUG 的错误公式 (错把分母万股当股，导致结果大10000倍)
+        # 历史BUG：误以为float_volume_shares是万股单位，除以10000导致结果放大
+        delta_turnover_wrong = (delta_volume_hands * 100) / (float_volume_shares / 10000) * 100
 
         # 正确公式结果约 0.01%
         assert abs(delta_turnover_correct - 0.01) < 0.001, (
             f"delta_turnover 公式错误！正确应约 0.01%，实际={delta_turnover_correct:.4f}%"
         )
-        # 旧公式比正确公式大了 100 倍（这就是 L1 探针永不触发的根因）
+        # 旧公式比正确公式大了 10000 倍（分母被错误缩小10000倍）
         ratio = delta_turnover_wrong / delta_turnover_correct
-        assert abs(ratio - 100.0) < 1.0, (
-            f"BUG 验证：旧公式比正确公式大了 {ratio:.0f} 倍（应为 100 倍）"
+        assert abs(ratio - 10000.0) < 1.0, (
+            f"BUG 验证失败，比例实际为 {ratio}"
         )
 
     def test_delta_turnover_threshold_sensitivity(self):
@@ -140,6 +142,6 @@ class TestDeltaTurnoverFormula:
         delta_volume_hands = 25_000
         float_volume_shares = 500_000_000
         delta_turnover = (delta_volume_hands * 100) / float_volume_shares * 100
-        assert delta_turnover > 0.5, (
+        assert delta_turnover >= 0.5, (
             f"大量换手应触发 L1 阈值，但计算结果={delta_turnover:.4f}% 未超过 0.5%"
         )

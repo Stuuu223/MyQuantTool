@@ -2364,7 +2364,8 @@ class LiveTradingEngine:
                 current_volume = tick_data.get('volume', 0)  # 这是总成交量
                 
                 if old_price > 0 and current_price > 0 and old_volume > 0:
-                    price_change_pct = abs(current_price - old_price) / old_price * 100
+                    # [V71修复] 删除abs()！价格变化必须保留正负号才能检测下跌！
+                    price_change_pct = (current_price - old_price) / old_price * 100
                     delta_volume = current_volume - old_volume
                     
                     # [V70修复] 原 'true_dict' in dir() 永假 → 改为 try/except 获取单例

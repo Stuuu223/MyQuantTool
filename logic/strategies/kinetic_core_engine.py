@@ -760,7 +760,8 @@ if __name__ == "__main__":
             current_time=test_time_spike
         )
         assert final_score_spike == 0.0, f"Spike极刑应返回0.0，实际{final_score_spike}"
-                    assert mfe_spike == 0.0, f"mfe应为初始化默认值0.0，实际{mfe_spike}"        print(f"  ✅ 通过 - Spike极刑前置时mfe={mfe_spike}，无UnboundLocalError")
+        assert mfe_spike == 0.0, f"mfe应为初始化默认值0.0，实际{mfe_spike}"
+        print(f"  ✅ 通过 - Spike极刑前置时mfe={mfe_spike}，无UnboundLocalError")
     except UnboundLocalError as e:
         print(f"  ❌ 失败 - UnboundLocalError: {e}")
     
