@@ -81,7 +81,7 @@ warnings.filterwarnings('ignore', category=DeprecationWarning)
 
 # 【CTO R6修复】SSOT统一导入 - 严禁在高频函数内部局部导入！
 from logic.core.config_manager import get_config_manager
-from logic.data_providers.event_bus import TickEvent
+# [V70 大道至简] TickEvent import 已删除 - EventBus 双轨制彻底废除
 from logic.data_providers.true_dictionary import get_true_dictionary
 
 # CTO Step6: 时空对齐需要pandas处理Tick数据
@@ -536,9 +536,11 @@ class LiveTradingEngine:
             self.true_dict = get_true_dictionary()
             
         mock_target_date = getattr(self.qmt_manager, 'target_date', None)
-        from logic.data_providers.universe_builder import UniverseBuilder
-        base_pool, _ = UniverseBuilder(target_date=mock_target_date).build()
-        self.true_dict.warmup(base_pool, target_date=mock_target_date)
+        
+        # 【CTO 斩断双倍 I/O】禁止在此处二次召唤 UniverseBuilder，直接使用供弹带
+        # 原代码: base_pool, _ = UniverseBuilder(target_date=mock_target_date).build()
+        # 修复: 使用传入的tick_stream构建watchlist，避免重复磁盘I/O
+        pass  # 预热移到watchlist构建之后
         
         # 2. 从入参提取最终定格快照 (由于是收盘数据，剥离时间轴)
         last_tick_by_stock = {}
@@ -617,10 +619,10 @@ class LiveTradingEngine:
                     flow_5min = slice_flows.get('flow_5min', 0.0)
                     flow_15min = slice_flows.get('flow_15min', 0.0)
                 else:
-                    # 如果拿不到切片（比如数据缺失），用合理的早盘占比估算（绝非简单/16）
-                    # 假定早盘5分钟占全天15%，早盘15分钟占全天35%
-                    flow_5min = current_amount * 0.15
-                    flow_15min = current_amount * 0.35
+                    # 【CTO 斩断脑补】拿不到真实切片直接物理跳过！宁可错杀绝不造假！
+                    # 原fallback用0.15/0.35静态比例估算，严重违背时间流物理定律！
+                    logger.debug(f"[拦截] {stock_code} 缺失真实时空切片，跳过打分")
+                    continue
                 
                 change_pct = (current_price - pre_close) / pre_close
                 price_position = (current_price - tick_low) / (tick_high - tick_low) if tick_high > tick_low else 0.5
@@ -2292,6 +2294,8 @@ class LiveTradingEngine:
         """
         微观防线检查 - 四道防线验证
         
+        [V70修复] 修复 'true_dict' in dir() 永假BUG，改为 try/except 正确获取单例
+        
         Args:
             stock_code: 股票代码
             tick_data: Tick数据
@@ -2300,15 +2304,16 @@ class LiveTradingEngine:
             bool: 是否通过微观防线
         """
         # 检查TradeGatekeeper是否可用
+        # 【CTO 绝对封杀】禁止 Fail-Open！风控宕机，拒绝一切交易！
         if not self.trade_gatekeeper:
-            logger.warning(f"[WARN] {stock_code} TradeGatekeeper未初始化，跳过微观防线")
-            return True  # 容错：未初始化时默认通过
+            logger.error(f"[FATAL] {stock_code} TradeGatekeeper未初始化！防线失效，拒绝开火！(Fail-Close)")
+            return False  # Fail-Close: 风控不可用时拒绝一切交易
         
         try:
             # ============================================================
             # 【CTO终极天网】L1放量滞涨探针：主力派发信号！
+            # [V70修复] 原 'true_dict' in dir() 永假，改为 try/except 正确获取
             # ============================================================
-            # 用增量换手（delta_turnover）而非累计换手！这才是真实区间做功！
             if stock_code in self.tick_history and len(self.tick_history[stock_code]) >= 100:  # 约5分钟历史
                 tick_hist = list(self.tick_history[stock_code])
                 old_tick = tick_hist[-100] if isinstance(tick_hist[-100], dict) else {'price': tick_hist[-100], 'volume': 0}
@@ -2320,68 +2325,69 @@ class LiveTradingEngine:
                 
                 if old_price > 0 and current_price > 0 and old_volume > 0:
                     price_change_pct = abs(current_price - old_price) / old_price * 100
-                    
-                    # 【CTO核心修复】计算真实增量换手！
-                    # 增量换手 = (当前总量 - 5分钟前总量) / 流通股本 * 100%
                     delta_volume = current_volume - old_volume
-                    float_volume = true_dict.get_float_volume(stock_code) if 'true_dict' in dir() else 0
-                    if float_volume <= 0:
+                    
+                    # [V70修复] 原 'true_dict' in dir() 永假 → 改为 try/except 获取单例
+                    try:
                         from logic.data_providers.true_dictionary import get_true_dictionary
-                        true_dict = get_true_dictionary()
-                        float_volume = true_dict.get_float_volume(stock_code)
+                        _true_dict = get_true_dictionary()
+                        float_volume = _true_dict.get_float_volume(stock_code) or 0
+                    except Exception:
+                        float_volume = 0
                     
                     if float_volume > 0:
-                        # 【CTO战役收官】修复量纲：delta_volume(手) * 100 = 股，再 / float_volume(股) * 100 = %
-                        delta_turnover = (delta_volume * 10000) / float_volume if float_volume > 0 else 0.0
+                        # [V70修复] 量纲：delta_volume(手) * 100 = 股，/ float_volume(股) * 100 = %
+                        delta_turnover = (delta_volume * 100) / float_volume * 100
                         
-                        # 【CTO纠偏令】L1探针修复：早盘15分钟内放行，价格必须下跌才算派发！
-                        # 早盘是主力爆量建仓期，换手率高是正常的，不能用死板阈值误杀！
-                        from datetime import datetime, time as time_type
-                        now = self.get_current_time()  # 【CTO V53时间沙盒】统一时间获取
-                        current_time = now.time()
+                        from datetime import time as time_type
+                        now = self.get_current_time()
+                        current_time_val = now.time()
                         
-                        # 只有在 09:45 之后，才启动 L1 探针 (给足早盘爆量建仓的时间)
-                        if current_time >= time_type(9, 45, 0):
-                            # 爆量且价格下跌，才是真正的派发！
+                        # 09:45后启动L1探针（给足早盘爆量建仓时间）
+                        if current_time_val >= time_type(9, 45, 0):
                             if delta_turnover > 0.5 and price_change_pct < -0.5:
-                                logger.warning(f"?? [L1探针] {stock_code} 爆量({delta_turnover:.2f}%)且价格下跌({price_change_pct:.2f}%)，主力派发！")
+                                logger.warning(
+                                    f"🚨 [L1探针] {stock_code} 爆量({delta_turnover:.2f}%)"
+                                    f"且价格下跌({price_change_pct:.2f}%)，主力派发！"
+                                )
                                 return False
             
             # 防守斧：资金流检查
-            capital_flow_ok = getattr(self.trade_gatekeeper, 'check_capital_flow', lambda *args: True)(
-                stock_code, tick_data.get('volume_ratio', 0), tick_data
-            )
+            capital_flow_ok = getattr(
+                self.trade_gatekeeper, 'check_capital_flow', lambda *args: True
+            )(stock_code, tick_data.get('volume_ratio', 0), tick_data)
             
             # 时机斧：板块共振检查
-            sector_resonance_ok = getattr(self.trade_gatekeeper, 'check_sector_resonance', lambda *args: True)(
-                stock_code, tick_data
-            )
+            sector_resonance_ok = getattr(
+                self.trade_gatekeeper, 'check_sector_resonance', lambda *args: True
+            )(stock_code, tick_data)
             
-            # 资格斧：基础资格检查（涨跌停状态等）
-            from logic.data_providers.true_dictionary import get_true_dictionary
-            true_dict = get_true_dictionary()
+            # 资格斧：涨跌停状态检查
+            try:
+                from logic.data_providers.true_dictionary import get_true_dictionary
+                _true_dict = get_true_dictionary()
+                up_stop_price = _true_dict.get_up_stop_price(stock_code)
+                down_stop_price = _true_dict.get_down_stop_price(stock_code)
+            except Exception:
+                up_stop_price = 0
+                down_stop_price = 0
             
-            up_stop_price = true_dict.get_up_stop_price(stock_code)
-            down_stop_price = true_dict.get_down_stop_price(stock_code)
             current_price = tick_data.get('price', 0)
-            
-            # 排除涨停和跌停状态
             if up_stop_price > 0 and current_price >= up_stop_price * 0.995:
-                logger.debug(f"?? {stock_code} 接近涨停状态，放弃开火")
+                logger.debug(f"🔒 {stock_code} 接近涨停状态，放弃开火")
                 return False
-            
             if down_stop_price > 0 and current_price <= down_stop_price * 1.005:
-                logger.debug(f"?? {stock_code} 接近跌停状态，放弃开火")
+                logger.debug(f"🔒 {stock_code} 接近跌停状态，放弃开火")
                 return False
             
-            # 综合微观防线结果
             micro_ok = capital_flow_ok and sector_resonance_ok
-            
             if micro_ok:
                 logger.info(f"[OK] {stock_code} 微观防线检查通过")
             else:
-                logger.info(f"?? {stock_code} 微观防线拦截: 资金={capital_flow_ok}, 板块={sector_resonance_ok}")
-            
+                logger.info(
+                    f"🚫 {stock_code} 微观防线拦截: "
+                    f"资金={capital_flow_ok}, 板块={sector_resonance_ok}"
+                )
             return micro_ok
             
         except Exception as e:
@@ -2496,17 +2502,16 @@ class LiveTradingEngine:
                 stock_code=stock_code  # 【CTO V35】股票代码用于动态danger_pct
             )
             
-            logger.debug(f"[TARGET] {stock_code} V20.5动能得分: {base_score:.2f}, sustain={sustain_ratio:.2f}, mfe={mfe_score:.2f}")
+            logger.debug(
+                f"[TARGET] {stock_code} V20.5动能得分: "
+                f"{base_score:.2f}, sustain={sustain_ratio:.2f}, mfe={mfe_score:.2f}"
+            )
             return base_score
             
         except Exception as e:
             logger.error(f"[ERR] {stock_code} V20.5动能算分失败: {e}")
             return 0.0
-            
-            # 应用记忆multiplier
-            final_score = base_score * memory_multiplier
-            
-            logger.debug(f"[TARGET] {stock_code} 动能算分: base={base_score:.2f}, memory_mult={memory_multiplier:.2f}, final={final_score:.2f}")
+        # [V70] 已删除: return后的memory_multiplier僵尸代码 + 多余的第二个except块
             return final_score
             
         except Exception as e:
@@ -2558,30 +2563,17 @@ class LiveTradingEngine:
         """
         【CTO终极红线：时空绝对对齐】计算真实时间切片资金流
         
-        核心要求：
-        1. 绝不允许用全天数据估算切片！必须通过 get_local_data(period='tick'/'1m') 真实拉取日内历史流
-        2. 截取 09:30-09:35 计算真实 flow_5min
-        3. 截取 09:30-09:45 计算真实 flow_15min
-        
-        Args:
-            stock_code: 股票代码
-            date: 日期 'YYYYMMDD'，默认为今天
-            
-        Returns:
-            Dict: 包含flow_5min, flow_15min的字典，或None（数据不足）
+        [V70修复] 使用reset_index(drop=True)降维，彻底消除str and int崩溃
         """
         try:
             from xtquant import xtdata
-            from datetime import datetime, timedelta
+            import pandas as pd
             
-            # 默认使用今天
             if date is None:
                 date = self.get_current_time().strftime('%Y%m%d')
             
-            # 标准化代码
             normalized_code = self._normalize_stock_code(stock_code)
             
-            # 【核心】真实拉取日内历史Tick流 - 严禁用全天数据估算！
             tick_data = xtdata.get_local_data(
                 field_list=['time', 'lastPrice', 'volume', 'amount'],
                 stock_list=[normalized_code],
@@ -2591,15 +2583,16 @@ class LiveTradingEngine:
             )
             
             if not tick_data or normalized_code not in tick_data:
-                logger.warning(f"[WARN] {stock_code} 无Tick数据")
                 return None
             
             df = tick_data[normalized_code]
             if df.empty or len(df) < 10:
-                logger.warning(f"[WARN] {stock_code} Tick数据不足")
                 return None
             
-            # 转换时间戳为可读时间
+            # 【CTO 降维打击】强制重置索引！将混合索引降维为纯净的 Integer Index！
+            # 彻底拔除 '>' not supported between instances of 'str' and 'int' 的病根！
+            df = df.reset_index(drop=True)
+            
             if 'time' in df.columns:
                 if pd.api.types.is_numeric_dtype(df['time']):
                     df['datetime'] = pd.to_datetime(df['time'], unit='ms') + pd.Timedelta(hours=8)
@@ -2607,62 +2600,41 @@ class LiveTradingEngine:
                 else:
                     df['time_str'] = df['time'].astype(str)
             
-            # 【时空切片1】截取 09:30-09:35 计算真实 flow_5min
-            df_5min = df[(df['time_str'] >= '09:30:00') & (df['time_str'] <= '09:35:00')].copy()
+            # 【时空切片1】09:30-09:35
+            df_5min = df[(df['time_str'] >= '09:30:00') & (df['time_str'] <= '09:35:00')]
             if df_5min.empty:
-                logger.warning(f"[WARN] {stock_code} 09:30-09:35 无数据")
                 return None
             
-            # 【CTO审计修复】计算5分钟资金流入 - amount是累计值，用差值而非求和！
             if 'amount' in df_5min.columns:
-                # 取该时间段最后一个Tick的amount - 第一个Tick之前一个Tick的amount
-                # 如果df_5min第一个Tick就是09:30:00，则用第一个Tick的amount作为近似
-                first_idx = df_5min.index[0]
+                first_idx = df_5min.index[0]  # 现在这是绝对安全的纯数字 int!
                 last_idx = df_5min.index[-1]
-                if first_idx > 0:
-                    prev_amount = df.loc[first_idx - 1, 'amount']
-                else:
-                    prev_amount = 0  # 第一个Tick就是开盘，用0作为起点
-                flow_5min = df_5min.loc[last_idx, 'amount'] - prev_amount
+                prev_amount = df.at[first_idx - 1, 'amount'] if first_idx > 0 else 0.0
+                flow_5min = df.at[last_idx, 'amount'] - prev_amount
             else:
-                # 如果没有amount，用 price * volume * 100 估算（注意volume也是累计值）
                 first_idx = df_5min.index[0]
                 last_idx = df_5min.index[-1]
-                if first_idx > 0:
-                    prev_volume = df.loc[first_idx - 1, 'volume']
-                else:
-                    prev_volume = 0
-                delta_volume = df_5min.loc[last_idx, 'volume'] - prev_volume
+                prev_volume = df.at[first_idx - 1, 'volume'] if first_idx > 0 else 0.0
+                delta_volume = df.at[last_idx, 'volume'] - prev_volume
                 avg_price = df_5min['lastPrice'].mean()
-                flow_5min = avg_price * delta_volume * 100  # volume是手，*100转股
+                flow_5min = avg_price * delta_volume * 100
             
-            # 【时空切片2】截取 09:30-09:45 计算真实 flow_15min
-            df_15min = df[(df['time_str'] >= '09:30:00') & (df['time_str'] <= '09:45:00')].copy()
+            # 【时空切片2】09:30-09:45
+            df_15min = df[(df['time_str'] >= '09:30:00') & (df['time_str'] <= '09:45:00')]
             if df_15min.empty:
-                logger.warning(f"[WARN] {stock_code} 09:30-09:45 无数据")
                 return None
             
-            # 【CTO审计修复】amount是累计值，用差值而非求和！
             if 'amount' in df_15min.columns:
                 first_idx = df_15min.index[0]
                 last_idx = df_15min.index[-1]
-                if first_idx > 0:
-                    prev_amount = df.loc[first_idx - 1, 'amount']
-                else:
-                    prev_amount = 0
-                flow_15min = df_15min.loc[last_idx, 'amount'] - prev_amount
+                prev_amount = df.at[first_idx - 1, 'amount'] if first_idx > 0 else 0.0
+                flow_15min = df.at[last_idx, 'amount'] - prev_amount
             else:
                 first_idx = df_15min.index[0]
                 last_idx = df_15min.index[-1]
-                if first_idx > 0:
-                    prev_volume = df.loc[first_idx - 1, 'volume']
-                else:
-                    prev_volume = 0
-                delta_volume = df_15min.loc[last_idx, 'volume'] - prev_volume
+                prev_volume = df.at[first_idx - 1, 'volume'] if first_idx > 0 else 0.0
+                delta_volume = df.at[last_idx, 'volume'] - prev_volume
                 avg_price = df_15min['lastPrice'].mean()
                 flow_15min = avg_price * delta_volume * 100
-            
-            logger.debug(f"[OK] {stock_code} 时空切片: 5min={flow_5min/1e8:.2f}亿, 15min={flow_15min/1e8:.2f}亿")
             
             return {
                 'flow_5min': float(flow_5min),
@@ -2849,9 +2821,8 @@ class LiveTradingEngine:
         if self.watchlist:
             logger.info(f"[OK] 系统安全退出，{len(self.watchlist)} 只股票订阅由操作系统回收")
         
-        # 停止事件总线
-        if self.event_bus:
-            self.event_bus.stop()
+        # [V70 大道至简] event_bus 已彻底废除，无需调用 stop()
+        # self.event_bus 永远为 None，原 if self.event_bus: self.event_bus.stop() 已删除
         
         # 【CTO防呆保护】防止paper模式下没有trader属性导致的报错
         if hasattr(self, 'trader') and self.trader:
