@@ -191,7 +191,8 @@ class LiveTradingEngine:
             self.trade_gatekeeper = TradeGatekeeper()
             logger.info("[OK] TradeGatekeeper初始化成功")
         except (ImportError, Exception) as e:
-            logger.warning(f"[WARN] TradeGatekeeper初始化失败: {e}，微观防线将默认通过")
+            # 【CTO修复】日志必须与底层 Fail-Close 行为绝对统一！
+            logger.error(f"[FATAL] TradeGatekeeper缺失或异常: {e}。微观防线失效，系统将拒绝一切实盘开仓！(Fail-Close)")
             self.trade_gatekeeper = None
         
         # 【架构大道至简】EventBus 双轨制已删除，统一主循环拉取架构
@@ -980,24 +981,20 @@ class LiveTradingEngine:
         try:
             start_time = time.perf_counter()
             
-            # 【架构解耦】使用adapter获取数据，而非直接调用xtdata
-            if not hasattr(self, 'qmt_adapter') or self.qmt_adapter is None:
-                logger.error("?? QMTEventAdapter未初始化")
-                self._fallback_premarket_scan()
-                return
+            # 【CTO重构】废弃qmt_adapter，直接用xtdata
+            from xtquant import xtdata
             
             # 1. 获取全市场快照（1毫秒内完成）
-            all_stocks = self.qmt_adapter.get_all_a_shares()
+            all_stocks = xtdata.get_stock_list_in_sector('沪深A股')
             if not all_stocks:
-                logger.error("?? 无法获取沪深A股列表")
-                self._fallback_premarket_scan()
+                logger.error("[ERR] 无法获取沪深A股列表")
                 return
             
-            snapshot = self.qmt_adapter.get_full_tick_snapshot(all_stocks)
+            xtdata.subscribe_whole_quote(all_stocks)
+            snapshot = xtdata.get_full_tick(all_stocks)
             
             if not snapshot:
-                logger.error("?? 无法获取09:25集合竞价快照")
-                self._fallback_premarket_scan()
+                logger.error("[ERR] 无法获取09:25集合竞价快照")
                 return
             
             # 2. 转换为DataFrame，增加竞价Tick关键字段
@@ -1155,23 +1152,20 @@ class LiveTradingEngine:
         logger.warning("[WARN] 执行QMT快照回退方案...")
         
         try:
-            # 使用QMTEventAdapter获取全市场快照
-            if not hasattr(self, 'qmt_adapter') or self.qmt_adapter is None:
-                logger.error("[ERR] QMTEventAdapter未初始化，回退失败")
-                self.watchlist = []
-                return
-            
-            all_stocks = self.qmt_adapter.get_all_a_shares()
+            # 【CTO重构】废弃qmt_adapter，直接用xtdata
+            from xtquant import xtdata
+            all_stocks = xtdata.get_stock_list_in_sector('沪深A股')
             if not all_stocks:
                 logger.error("[ERR] 无法获取股票列表")
                 self.watchlist = []
                 return
             
             # 获取快照，只取前100只作为应急观察池
-            snapshot = self.qmt_adapter.get_full_tick_snapshot(all_stocks[:500])
+            xtdata.subscribe_whole_quote(all_stocks[:500])
+            snapshot = xtdata.get_full_tick(all_stocks[:500])
             if snapshot:
                 self.watchlist = list(snapshot.keys())[:100]
-                logger.info(f"?? QMT快照回退完成: {len(self.watchlist)} 只候选")
+                logger.info(f"[OK] QMT快照回退完成: {len(self.watchlist)} 只候选")
             else:
                 logger.error("[ERR] 快照获取失败")
                 self.watchlist = []
@@ -1237,13 +1231,9 @@ class LiveTradingEngine:
         
         # 添加沪深A股主要股票
         try:
-            # 【架构解耦】使用adapter获取数据
-            if not hasattr(self, 'qmt_adapter') or self.qmt_adapter is None:
-                logger.debug("QMTEventAdapter未初始化，跳过扩展")
-                return list(extended)
-            
-            # 获取沪深A股列表 (前1000只用于缓存预热)
-            all_a_shares = self.qmt_adapter.get_all_a_shares()
+            # 【CTO重构】废弃qmt_adapter，直接用xtdata
+            from xtquant import xtdata
+            all_a_shares = xtdata.get_stock_list_in_sector('沪深A股')
             
             # 优先添加watchlist中的股票
             for code in self.watchlist:
@@ -1319,23 +1309,23 @@ class LiveTradingEngine:
             # 【CTO修复】prev_close已从快照lastClose获取，无需预热_prev_close_cache
             # 删除多余的预热逻辑，避免阻塞
             
-            # 【架构解耦】检查adapter
-            if not hasattr(self, 'qmt_adapter') or self.qmt_adapter is None:
-                logger.error("?? QMTEventAdapter未初始化")
-                self._fallback_premarket_scan()
-                return
+            # 【CTO重构】彻底废弃qmt_adapter幽灵依赖！直接用xtdata拉取快照
+            # 原代码依赖self.qmt_adapter.get_full_tick_snapshot，但qmt_adapter已被废弃
             
             # 1. 获取09:25筛选出的股票的开盘快照
             if not self.watchlist:
-                logger.error("?? watchlist为空，无法进行09:30粗筛")
-                self._fallback_premarket_scan()
+                logger.error("[WARN] watchlist为空，无法进行09:30粗筛")
                 return
             
-            snapshot = self.qmt_adapter.get_full_tick_snapshot(self.watchlist)
+            from xtquant import xtdata
+            xtdata.subscribe_whole_quote(self.watchlist)
+            time.sleep(1.0)  # 给予C++底层1秒钟内存聚合时间
+            
+            snapshot = xtdata.get_full_tick(self.watchlist)
             
             if not snapshot:
-                logger.error("?? 无法获取09:30开盘快照")
-                self._fallback_premarket_scan()
+                logger.error("[ERR] xtdata.get_full_tick返回空快照，内存中无行情数据")
+                self.watchlist = []
                 return
             
             # 2. 转换为DataFrame
@@ -1682,10 +1672,12 @@ class LiveTradingEngine:
                 if self.mode == 'live' and self.global_tick_frame % 180 == 0:  # 假设1秒1帧，180帧≈3分钟
                     logger.info("🌊 [活水引入] 执行全市场截面快照，捕获盘中新龙...")
                     try:
-                        # 极轻量级操作：不阻塞，快速获取一次全市场快照
-                        all_a_shares = self.qmt_adapter.get_all_a_shares() if hasattr(self.qmt_adapter, 'get_all_a_shares') else []
+                        # 【CTO重构】废弃qmt_adapter，直接用xtdata
+                        from xtquant import xtdata
+                        all_a_shares = xtdata.get_stock_list_in_sector('沪深A股')
                         if all_a_shares:
-                            mid_snapshot = self.qmt_adapter.get_full_tick_snapshot(all_a_shares)
+                            xtdata.subscribe_whole_quote(all_a_shares)
+                            mid_snapshot = xtdata.get_full_tick(all_a_shares)
                             if mid_snapshot:
                                 import pandas as pd
                                 mid_df = pd.DataFrame([
@@ -2703,22 +2695,19 @@ class LiveTradingEngine:
         from datetime import datetime
         
         try:
-            logger.info("?? 执行当前截面快照筛选...")
+            logger.info("🔍 执行当前截面快照筛选...")
             
-            # 【架构解耦】检查adapter
-            if not hasattr(self, 'qmt_adapter') or self.qmt_adapter is None:
-                logger.error("?? QMTEventAdapter未初始化")
-                return
-            
-            # 获取全市场快照
-            all_stocks = self.qmt_adapter.get_all_a_shares()
+            # 【CTO重构】废弃qmt_adapter，直接用xtdata
+            from xtquant import xtdata
+            all_stocks = xtdata.get_stock_list_in_sector('沪深A股')
             if not all_stocks:
-                logger.error("?? 无法获取股票列表")
+                logger.error("[ERR] 无法获取股票列表")
                 return
             
-            snapshot = self.qmt_adapter.get_full_tick_snapshot(all_stocks)
+            xtdata.subscribe_whole_quote(all_stocks)
+            snapshot = xtdata.get_full_tick(all_stocks)
             if not snapshot:
-                logger.error("?? 无法获取当前快照")
+                logger.error("[ERR] 无法获取当前快照")
                 return
             
             # 转换为DataFrame进行向量化过滤
