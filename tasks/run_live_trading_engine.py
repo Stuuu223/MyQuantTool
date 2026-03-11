@@ -148,7 +148,8 @@ class LiveTradingEngine:
                 )
             self.qmt_manager = qmt_manager
         self.scanner = None
-        self.event_bus = event_bus  # 可以为None，稍后初始化
+        # event_bus参数保留仅为向后兼容，内部已不使用（大道至简重构）
+        self.event_bus = None
         self.watchlist = []
         self.running = False
         self.volume_percentile = volume_percentile
@@ -193,18 +194,9 @@ class LiveTradingEngine:
             logger.warning(f"[WARN] TradeGatekeeper初始化失败: {e}，微观防线将默认通过")
             self.trade_gatekeeper = None
         
-        # 【CTO修复】初始化顺序：先EventBus，再QMTEventAdapter
-        # 初始化EventBus（如果未传入）
-        if self.event_bus is None:
-            self._init_event_bus()
-        
-        # 【架构解耦】初始化QMT事件适配器（需要event_bus已就绪）
-        self._init_qmt_adapter()
-        
-        # 【CTO V33照妖镜】黄金3分钟生死观察队列
-        # 信号触发后不立即买入，先进入观察队列进行抗重力测试
-        # {stock_code: {'trigger_frame': int, 'score': float, 'sustain_ratio': float, 'tick_data': dict}}
-        self.signal_queue: Dict[str, Dict] = {}
+        # 【架构大道至简】EventBus 双轨制已删除，统一主循环拉取架构
+        # signal_queue 已废弃，3分钟抗重力测试移入主循环帧计数
+        # 原_event_bus和_qmt_adapter初始化已移除，消灭竞态条件
         
         # 【CTO V39战役三】统一时间流 - 用Tick帧数替代绝对时间！
         # 假设系统3秒推一个Tick，3分钟=60帧。彻底消灭datetime.now()时间流速精神分裂！

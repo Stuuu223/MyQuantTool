@@ -1,43 +1,43 @@
 {
     "date": "20260311",
-    "generated_at": "2026-03-11 10:53:22",
+    "generated_at": "2026-03-11 11:30:00",
     "total_targets": 3,
     "top_targets": [
         {
-            "code": "000533.SZ",
-            "score": 130.488,
-            "time": "10:47:50",
-            "first_entry_time": "10:28:00",
-            "price": 17.98,
-            "change": 1.8120045300113266,
-            "inflow_ratio": 2.2853949715712263,
-            "ratio_stock": 10.0,
-            "sustain_ratio": 13.154400154614521,
-            "purity": 17.29729729729733
+            "code": "001258.SZ",
+            "score": 148.38,
+            "time": "11:08:38",
+            "first_entry_time": "11:07:23",
+            "price": 9.72,
+            "change": 3.6247334754797427,
+            "inflow_ratio": 1.9738303557551689,
+            "ratio_stock": 5.406585414858581,
+            "sustain_ratio": 9.093910431399994,
+            "purity": 50.746268656716396
         },
         {
-            "code": "002229.SZ",
-            "score": 118.18799999999999,
-            "time": "10:16:21",
-            "first_entry_time": "09:58:38",
-            "price": 18.3,
-            "change": 0.1094091903719889,
-            "inflow_ratio": 0.23069401469485573,
-            "ratio_stock": 8.00372911286446,
-            "sustain_ratio": 6.669417351608235,
-            "purity": 3.9215686274508847
+            "code": "000533.SZ",
+            "score": 130.14,
+            "time": "11:13:50",
+            "first_entry_time": "11:07:23",
+            "price": 17.97,
+            "change": 1.755379388448464,
+            "inflow_ratio": 2.306954676150992,
+            "ratio_stock": 9.99321749567718,
+            "sustain_ratio": 10.155242225363518,
+            "purity": 16.756756756756708
         },
         {
             "code": "002467.SZ",
-            "score": 98.3,
-            "time": "10:18:05",
-            "first_entry_time": "10:16:00",
-            "price": 7.68,
-            "change": 1.1857707509881406,
-            "inflow_ratio": 2.914443779160168,
-            "ratio_stock": 10.0,
-            "sustain_ratio": 9.361321976940037,
-            "purity": 29.999999999999883
+            "score": 98.016,
+            "time": "11:21:27",
+            "first_entry_time": "11:07:23",
+            "price": 7.600000000000001,
+            "change": 0.13175230566536975,
+            "inflow_ratio": 0.335654615809347,
+            "ratio_stock": 5.771707258237246,
+            "sustain_ratio": 3.567238217507264,
+            "purity": 2.941176470588689
         }
     ]
 }
