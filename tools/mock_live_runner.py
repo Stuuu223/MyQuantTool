@@ -109,19 +109,32 @@ class MockLiveRunner:
             # 转换为Tick队列
             tick_list = []
             for idx, row in df.iterrows():
-                tick = {
-                    'time': row.get('time', 0),
-                    'price': float(row.get('price', 0)),
-                    'volume': int(row.get('volume', 0)),
-                    'amount': float(row.get('amount', 0)),
-                    'high': float(row.get('high', 0)),
-                    'low': float(row.get('low', 0)),
-                    'open': float(row.get('open', 0)),
-                    'lastClose': float(row.get('lastClose', 0)),
-                    'limitUpPrice': float(row.get('limitUpPrice', 0)),
-                    'limitDownPrice': float(row.get('limitDownPrice', 0)),
-                }
-                tick_list.append(tick)
+                try:
+                    # 【CTO V75防御性编程】提前验证时间戳有效性
+                    raw_time = row.get('time', 0)
+                    # 触发时间戳解析验证（不使用返回值，只验证是否有效）
+                    _ = self._parse_tick_time(raw_time)
+                    
+                    tick = {
+                        'time': raw_time,
+                        'price': float(row.get('lastPrice', row.get('price', 0))),
+                        'volume': int(row.get('volume', 0)),
+                        'amount': float(row.get('amount', 0)),
+                        'high': float(row.get('high', 0)),
+                        'low': float(row.get('low', 0)),
+                        'open': float(row.get('open', 0)),
+                        'lastClose': float(row.get('lastClose', row.get('preClose', 0))),
+                        'limitUpPrice': float(row.get('limitUpPrice', 0)),
+                        'limitDownPrice': float(row.get('limitDownPrice', 0)),
+                        'askPrice1': float(row.get('askPrice1', 0)),
+                        'bidPrice1': float(row.get('bidPrice1', 0)),
+                    }
+                    # 只有有效Tick才加入
+                    if tick['amount'] > 0 and tick['price'] > 0:
+                        tick_list.append(tick)
+                except Exception as e:
+                    # 【CTO防线】遇到脏数据Tick物理跳过，不阻塞系统
+                    continue
             
             self.tick_queues[stock_code] = tick_list
             logger.info(f"[MockLiveRunner] {stock_code} 加载{len(tick_list)}个Tick")
@@ -288,14 +301,48 @@ class MockLiveRunner:
             total_minutes = int(morning_delta.total_seconds() / 60) + int(afternoon_delta.total_seconds() / 60)
             return total_minutes
     
-    def _parse_tick_time(self, tick_time) -> datetime:
-        """解析Tick时间"""
-        if isinstance(tick_time, (int, float)):
-            # 假设是HHMMSS格式的整数
-            time_str = str(int(tick_time)).zfill(6)
-            return datetime.strptime(f"{self.target_date}{time_str}", "%Y%m%d%H%M%S")
-        else:
-            return datetime.strptime(str(tick_time), "%Y%m%d%H%M%S")
+    def _parse_tick_time(self, time_val):
+        """
+        【CTO V75重构】物理级时间戳解析
+        兼容 QMT 返回的毫秒时间戳 (int/float) 或 字符串
+        """
+        import pandas as pd
+        from datetime import datetime
+        try:
+            # 1. 尝试作为数值型毫秒级时间戳解析
+            if isinstance(time_val, (int, float)):
+                # 如果数值很大，说明是毫秒时间戳 (如 1773072000000)
+                if time_val > 1000000000000:
+                    dt = pd.to_datetime(time_val, unit='ms')
+                    return dt.to_pydatetime()
+                # 如果是 YYYYMMDDHHMMSS 格式的整数 (如 20260311093000)
+                elif time_val > 20000000000000:
+                    return datetime.strptime(str(int(time_val)), "%Y%m%d%H%M%S")
+                # 其他情况假设为秒级时间戳
+                else:
+                    dt = pd.to_datetime(time_val, unit='s')
+                    return dt.to_pydatetime()
+                    
+            # 2. 作为字符串解析
+            time_str = str(time_val).strip()
+            # 如果字符串是纯数字且很长，尝试转为数值型毫秒处理
+            if time_str.isdigit() and len(time_str) >= 13:
+                 dt = pd.to_datetime(int(time_str), unit='ms')
+                 return dt.to_pydatetime()
+                 
+            # 如果只包含时分秒 HHMMSS (长度为6)
+            if len(time_str) == 6:
+                return datetime.strptime(f"{self.target_date}{time_str}", "%Y%m%d%H%M%S")
+            # 如果包含完整的 YYYYMMDDHHMMSS
+            elif len(time_str) == 14:
+                return datetime.strptime(time_str, "%Y%m%d%H%M%S")
+            # 带有分隔符的常规格式
+            else:
+                return pd.to_datetime(time_str).to_pydatetime()
+                
+        except Exception as e:
+            # 解析失败时的兜底：抛出异常让上层接管，禁止伪造时间
+            raise ValueError(f"无法解析的时间戳格式: {time_val}, 错误: {e}")
     
     def _print_leaderboard(self):
         """打印当前榜单"""
