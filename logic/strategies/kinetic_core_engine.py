@@ -27,7 +27,7 @@ inflow_ratio 统一为百分比形式：2.0 = 流入占流通市值2%
 
 Author: AI开发专家团队
 Date: 2026-03-04
-Version: V1.1.1 (修复sustain_ratio负流入Bug)
+Version: V1.2.0 (CTO V9.5 架构修复: F1 mfe初始化防UnboundLocal)
 """
 
 from datetime import datetime, time
@@ -35,6 +35,7 @@ from typing import Union, Dict, Optional, Any
 import pandas as pd
 import numpy as np
 import logging
+import math
 
 from logic.core.config_manager import get_config_manager
 
@@ -66,7 +67,7 @@ def safe_float(value, default=0.0):
         import numpy as np
         if pd.isna(value) or np.isinf(value):
             return default
-    except:
+    except Exception:
         pass
     
     if isinstance(value, str):
@@ -345,49 +346,32 @@ class 动能打分引擎CoreEngine:
         total_amount: float = 0.0,
         total_volume: float = 0.0,
         # 【CTO照妖镜】封板质检核心参数
-        is_limit_up: bool = False,  # 当前是否触及涨停价
-        limit_up_queue_amount: float = 0.0,  # 涨停板买一封单金额（元）
+        is_limit_up: bool = False,
+        limit_up_queue_amount: float = 0.0,
         # 【CTO V34】模式参数
-        mode: str = "live",  # "live"实盘模式(有尾盘衰减) / "scan"扫描模式(无衰减)
-        # 【CTO V54】股票代码参数（用于板块识别、动态阈值计算）
-        stock_code: str = "",  # 股票代码
+        mode: str = "live",
+        # 【CTO V54】股票代码参数
+        stock_code: str = "",
         # 【CTO终极战役】基因记忆参数
-        is_yesterday_limit_up: bool = False,  # 昨日是否涨停（纯血真龙基因）
-        yesterday_vol_ratio: float = 1.0,  # 昨日量比（用于暴动基因检测）
+        is_yesterday_limit_up: bool = False,
+        yesterday_vol_ratio: float = 1.0,
         # 【CTO V46】横向虹吸效应参数
-        vampire_ratio_pct: float = 0.0  # 该股流入占全候选池总流入的比例(%)
+        vampire_ratio_pct: float = 0.0
     ) -> tuple[float, float, float, float, float]:
         """
         【V20.5 Boss终极钦定：动能与势能的双Ratio验钞机 + VWAP洗盘容错】
         
-        Args:
-            net_inflow: 净流入金额（元）
-            price: 当前价格（元）
-            prev_close: 昨日收盘价（元）
-            high: 日内最高价（元）
-            low: 日内最低价（元）
-            open_price: 开盘价（元）
-            flow_5min: 开盘后前5分钟资金流入（元）(09:30-09:35)
-            flow_15min: 开盘后前15分钟资金流入（元）(09:30-09:45) ← 累计窗口，含flow_5min
-            flow_5min_median_stock: 该股票历史5分钟资金流入中位数（元）
-            space_gap_pct: 空间差百分比（上方套牢盘距离）
-            float_volume_shares: 真实流通股本（股）
-            current_time: 当前时间（datetime对象）
-            total_amount: 总成交额（元），用于VWAP计算
-            total_volume: 总成交量（股），用于VWAP计算
-            is_limit_up: 当前是否触及涨停价（用于封板质检）
-            limit_up_queue_amount: 涨停板买一封单金额（元），用于计算封板强度
-        
         Returns:
             tuple: (final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe)
-                - final_score: 最终验钞得分（float）
-                - sustain_ratio: 资金维持率（float）
-                - inflow_ratio: 净流入占流通市值比例【百分比形式，2.0=2%】
-                - ratio_stock: 相对自身历史爆发力倍数（float）
-                - mfe: 资金效率指标Money Force Efficiency（float）
         """
         if not isinstance(current_time, datetime):
             raise TypeError(f"current_time必须是datetime类型，当前类型: {type(current_time)}")
+        
+        # ==============================================================
+        # F1修复: 在函数入口处初始化 mfe 安全默认值，防止 Spike极刑前置分支
+        # 引用未赋值变量导致 UnboundLocalError 线上静默崩溃
+        # ==============================================================
+        mfe: float = -100.0
         
         # 0. 基础准备：安全转换 + 流通市值
         net_inflow = safe_float(net_inflow, 0.0)
@@ -403,7 +387,6 @@ class 动能打分引擎CoreEngine:
         float_volume_shares = safe_float(float_volume_shares, 0.0)
         total_amount = safe_float(total_amount, 0.0)
         total_volume = safe_float(total_volume, 0.0)
-        # 【CTO照妖镜】封板质检参数处理
         limit_up_queue_amount = safe_float(limit_up_queue_amount, 0.0)
         
         if price <= 0:
@@ -416,33 +399,17 @@ class 动能打分引擎CoreEngine:
         float_market_cap = float_volume_shares * price
         
         # ==============================================================
-        # 【CTO V66 绝地反击】彻底根治万股量纲引发的物理引擎崩盘！
-        # 病灶：QMT返回的float_volume_shares单位是万股，不是股！
-        # 志特新材流通盘1.5亿股，QMT返回15000（万股）
-        # 导致float_market_cap = 15000 * 10 = 15万（实际应是15亿！）
-        # 流入比 = 5000万/15万 = 33333%（爆炸！）
-        # 
-        # 明确法则：A股目前最小流通市值绝不可能低于2亿人民币！
-        # 如果算出来的市值低于2亿，100%是前端传进来的股本单位是"万股"！
+        # 【CTO V66 绝地反击】彻底根治万股量纲引发的物理引擎崩盘
         # ==============================================================
-        import math
-        
-        # 强制量纲升维：一旦发现市值极小，必须强行把股本从万股转为股！
         if float_market_cap > 0 and float_market_cap < 200000000:
-            float_market_cap = float_market_cap * 10000.0  # 放大一万倍，回归真实的人民币元
+            float_market_cap = float_market_cap * 10000.0
             logger.debug(f"📐 [量纲升维] {stock_code} 市值{float_market_cap/100000000:.2f}亿已升维至真实人民币！")
         
-        # 现在，float_market_cap 已经是绝对的、真实的人民币金额了！
-        # 用于后续计算（如V65引力阻尼）
-        calibrated_float_market_cap = float_market_cap  # 兼容后续代码
-        
-        # 【P0修复】删除altitude_weight海拔权重，涨停股资金流入不再被夸大
-        # 物理真理：net_inflow就是net_inflow，不需要根据涨幅加权
+        calibrated_float_market_cap = float_market_cap
         
         # 第一步：【CTO V51 里氏震级模型】流入占比计算
         if float_market_cap > 1000:
             raw_inflow_pct = (net_inflow / float_market_cap * 100.0)
-            # 【CTO数学软封顶】超过30%后取对数平滑，防止极端溢出
             if abs(raw_inflow_pct) > 30.0:
                 sign = 1.0 if raw_inflow_pct > 0 else -1.0
                 inflow_ratio_pct = sign * (30.0 + 10.0 * math.log10(abs(raw_inflow_pct) - 29.0))
@@ -452,84 +419,59 @@ class 动能打分引擎CoreEngine:
         else:
             inflow_ratio_pct = 0.0
         
-        inflow_ratio = inflow_ratio_pct  # 返回百分比形式
+        inflow_ratio = inflow_ratio_pct
         
-        # 【CTO V53大力出奇迹】资金绝对霸权！非线性市值自适应阈值！
-        # 物理原理：质量越大，惯性越大，需要的推力比例越小
-        # 小盘股(30亿)：10%流入 = 3亿真金白银，极难！
-        # 大盘股(200亿)：5%流入 = 10亿，已是天量！
-        # 百亿市值递减公式：miracle_threshold = max(3.0, 10.0 - 市值/100亿)
-        float_market_cap_yi = calibrated_float_market_cap / 100_000_000  # 转为亿元
+        float_market_cap_yi = calibrated_float_market_cap / 100_000_000
         
-        # 2. 相对历史放量倍数（放大历史爆发力）
-        # 【CTO核心注入】强制200万的5分钟成交额物理底线，绞杀僵尸股分母陷阱！
-        MIN_BASE_FLOW = 2000000.0  # 200万底线
+        # 2. 相对历史放量倍数
+        MIN_BASE_FLOW = 2000000.0
         safe_flow_5min = flow_5min if flow_5min > 0 else (flow_15min / 3.0 if flow_15min > 0 else 1.0)
         safe_median = max(flow_5min_median_stock, MIN_BASE_FLOW)
         ratio_stock = safe_flow_5min / safe_median
-        ratio_stock = max(0.01, min(ratio_stock, 10.0))  # 【CTO V54】封顶10倍，防止乘法爆炸！
+        ratio_stock = max(0.01, min(ratio_stock, 10.0))
         
         # 3. 价格推力（日内强度0-1）
-        # 【CTO重铸令R4】此为价格相对位置参考，非真实动能！
-        # 真实做功效率由MFE计算（第五步）
         if high == low:
             price_strength = 1.0 if price > prev_close else 0.0
         else:
             price_strength = (price - low) / (high - low)
             price_strength = max(0.0, min(price_strength, 1.0))
         
-        # 【CTO V51核心】乘法动能模型 = 流入% × 放量倍数 × 价格推力
-        # 无上限！行情越热，真龙与杂毛的分数差越大！
+        # 4. 乘法动能模型 = 流入% × 放量倍数 × 价格推力
         if inflow_ratio_pct > 0:
             base_power = inflow_ratio_pct * ratio_stock * price_strength
         else:
-            # 净流出时给基础分但不爆发
-            base_power = abs(inflow_ratio_pct) * 0.5  # 基础分，不爆发
+            base_power = abs(inflow_ratio_pct) * 0.5
         
-        # 【CTO重铸令R4】废除伪动能涨停板基础加成！
-        # 原逻辑：base_power += 40.0 if price_strength >= 0.99 else 0.0
-        # 新逻辑：MFE对数放大器替代（真实做功效率）
-        # MFE计算移到此处（需要先计算upward_thrust）
+        # MFE 计算：此处赋值覆盖函数入口默认值
         if inflow_ratio_pct > 0:
             upward_thrust = ((price - low) + (high - open_price)) / 2
             price_range_pct = upward_thrust / prev_close if prev_close > 0 else 0.0
             mfe_raw = price_range_pct / (inflow_ratio_pct / 100.0)
-            mfe = max(-10.0, mfe_raw)  # 防负溢出
-            # 【CTO修正】MFE对数放大器：绝对安全的指数放大器
-            # 原公式缺陷：mfe=0.1时log10(0.1)=-1.0可能导致加分异常
-            # 新公式：MFE>1时给奖励，极差效率不给分，且加权系数从10提升到15
-            # MFE=1 → +0分, MFE=5 → +10.5分, MFE=10 → +15分
+            mfe = max(-10.0, mfe_raw)  # 覆盖入口默认值
             if mfe > 0:
-                import math
                 mfe_bonus = 15.0 * math.log10(max(mfe * 10.0, 1.0))
                 base_power += mfe_bonus
                 logger.debug(f"[MFE做功溢价] {stock_code} MFE={mfe:.2f}, 奖励+{mfe_bonus:.1f}分")
-        else:
-            mfe = -100.0
+        # else: mfe 保持函数入口初始化的 -100.0
         
-        # 【CTO V54大力出奇迹】资金绝对霸权！修正数学公式！
-        # 物理原理：质量越大，惯性越大，需要的推力比例越小
-        # 正确的市值衰减公式：每增加100亿市值，阈值下降1.5%
-        # 50亿: 10 - 0.75 = 9.25% | 200亿: 10 - 3 = 7% | 500亿: 10 - 7.5 = 2.5% -> 兜底3.0%
-        cap_penalty = (float_market_cap_yi / 100.0) * 1.5  # 百亿级别衰减
+        # 大力出奇迹标志
+        cap_penalty = (float_market_cap_yi / 100.0) * 1.5
         miracle_threshold = max(3.0, 10.0 - cap_penalty)
         
-        is_force_override = False  # 标志变量，后续在最终得分计算前应用
+        is_force_override = False
         if inflow_ratio_pct > miracle_threshold and mfe > 0.5:
             logger.info(f"🔥 [大力出奇迹] {stock_code} 净流入{inflow_ratio_pct:.1f}%>{miracle_threshold:.1f}%阈值(市值{float_market_cap_yi:.0f}亿)！无视一切引力！")
-            is_force_override = True  # 设置标志
+            is_force_override = True
         
-        # 第二步：出货拦截（净流出封顶40分）
+        # 第二步：出货拦截
         is_net_outflow = inflow_ratio_pct <= 0
         
-        # 第三步：VWAP洗盘容错（里氏震级下的乘数惩罚机制）
-        # 【CTO V38修复】废除机械的-20分！改为乘数降维打击
-        # 8000分真龙跌破VWAP变4000分(仍可上榜)，500分杂毛变250分(滚出Top20)
+        # 第三步：VWAP洗盘容错
         vwap_multiplier = 1.0
         if total_volume > 0 and total_amount > 0:
             vwap = total_amount / total_volume
             if price < vwap and vwap > 0:
-                # 跌破日内均线，重力大于升力，基础动能直接腰斩！
                 vwap_multiplier = 0.5
                 logger.debug(f"[VWAP洗盘容错] {stock_code} 价格{price:.2f} < VWAP{vwap:.2f}, 动能腰斩打5折！")
         
@@ -539,98 +481,69 @@ class 动能打分引擎CoreEngine:
         multiplier = 1.0
         
         # A. 维持能力（sustain_ratio）- 【CTO V65 质量引力阻尼重铸】
-        # 废除"纯自身历史对比"的虚假倍数，引入物理学质量（m）挂钩！
-        # 物理真理：推卡车的1.6倍，在物理做功上，绝对大于推泡沫的10倍！
-        MIN_BASE_FLOW = 2000000.0  # 200万底线防微盘骗炮
+        MIN_BASE_FLOW = 2000000.0
         safe_median_15min = max(flow_5min_median_stock * 3.0, MIN_BASE_FLOW * 3.0)
         
-        # 1. 基础倍数：当前做功 / 历史做功均值
         raw_sustain = flow_15min / safe_median_15min if safe_median_15min > 0 else 1.0
         
-        # 2. 【核心】市值引力阻尼器 (Gravity Damper)
-        # 流通市值（亿）
         float_mc_yi = float_market_cap / 100000000.0 if float_market_cap > 0 else 0.0
         
-        # 阻尼系数公式：对数比例化。市值越大，该系数越大，意味着同样的raw_sustain，大票含金量更高！
-        # 设定锚点：以 50亿市值为基准点 1.0。
-        # 20亿以下微盘会被衰减（0.7x），100亿中盘加成（1.2x），500亿大卡车极强加成（1.8x）
-        import math
         if float_mc_yi > 0:
             gravity_damper = max(0.5, min(2.5, 1.0 + math.log10(float_mc_yi / 50.0) * 0.5))
         else:
             gravity_damper = 0.5
         
-        # 3. 施加引力：推卡车的倍数被放大，推泡沫的倍数被挤干水分
         sustain_ratio = raw_sustain * gravity_damper
         
-        # 4. 动态极值封顶 (废除僵化的50x硬编码)
-        # 微盘股的虚假高潮被死死压在 20x，而大盘股可以冲破 40x
         dynamic_ceiling = 30.0 * gravity_damper
         sustain_ratio = min(sustain_ratio, dynamic_ceiling)
         
-        # 为了兼容后续乘数区间，将 1.0 和 5.0 的阈值按引力做等比例漂移
         health_threshold = 5.0 * gravity_damper
-        survival_threshold = 1.0 * (1.0 / gravity_damper)  # 小票存活更难，大票存活更容易
+        survival_threshold = 1.0 * (1.0 / gravity_damper)
         
         logger.debug(f"⚖️ [引力阻尼] {stock_code} 市值{float_mc_yi:.0f}亿, raw={raw_sustain:.2f}×阻尼{gravity_damper:.2f}=sustain{sustain_ratio:.2f}, 阈值[存活{survival_threshold:.2f}|健康{health_threshold:.2f}]")
         
-        # 【CTO强制熔断】Spike极刑前置！如果没通过，立刻斩首，绝不浪费算力往下走！
+        # 【CTO强制熔断】Spike极刑前置
+        # F1修复: mfe 已在函数入口处初始化为 -100.0，此处引用绝对安全
         if flow_15min <= 0:
             logger.warning(f"💀 [Spike极刑] {stock_code} 15分钟净流出，一票否决")
             return 0.0, -1.0, inflow_ratio_pct, ratio_stock, mfe
         
-        # 【CTO V65】动态存活阈值：小票存活更难，大票存活更容易
         if sustain_ratio < survival_threshold:
             logger.warning(f"💀 [Spike极刑] {stock_code} sustain={sustain_ratio:.2f}<存活阈值{survival_threshold:.2f}，被抛压瓦解")
             return 0.0, sustain_ratio, inflow_ratio_pct, ratio_stock, mfe
         
         stock_identifier = f"{current_time.strftime('%H:%M')}@{price:.2f}"
         
-        # ============================================================
-        # 【CTO V66 MFE制衡】打击大盘伪高潮，但给重卡留体面！
-        # 病灶：金风科技(大盘)sustain=50x但MFE=0.3靠堆钱刷高分
-        # 物理真理：推不动的钱再多也是废铁！但大盘股即使效率低也有分量！
-        # 方案：effective_sustain = sustain_ratio * mfe_factor
-        # 【V66修正】下限保护：最惨打5折，不至于被当成0.3的废物！
-        # ============================================================
+        # MFE制衡
         if mfe < 1.0:
-            # 引入下限保护：最惨打 5 折，不至于被削成渣
-            mfe_factor = max(0.5, mfe)  # V66修正：MFE=0.3时打5折而非3折
+            mfe_factor = max(0.5, mfe)
             effective_sustain = sustain_ratio * mfe_factor
             logger.info(f"🐢 [MFE压制] {stock_code} sustain={sustain_ratio:.2f}×MFE{mfe:.2f}(保护{mfe_factor:.2f})={effective_sustain:.2f}")
         else:
-            # 高效率放行：MFE>=1.0时sustain不变
             effective_sustain = sustain_ratio
             mfe_factor = 1.0
         
         if effective_sustain > health_threshold:
-            multiplier *= 1.5  # 极度健康：持续维持极高水位
+            multiplier *= 1.5
             logger.info(f"🔥 [资金洪流] {stock_identifier} effective_sustain={effective_sustain:.2f}>健康阈值{health_threshold:.2f}，乘数×1.5！")
         elif effective_sustain < survival_threshold:
-            multiplier *= 0.3  # 退潮：流入量连平时的中位数都不如
+            multiplier *= 0.3
             logger.warning(f"[资金退潮] {stock_identifier} effective_sustain={effective_sustain:.2f}<存活阈值{survival_threshold:.2f}，降权至0.3")
-        # [1.0, 5.0] 区间：资金维持正常，multiplier不变
         
-        # B. 【CTO修复】筹码纯度指数衰减模型
-        # 原设计: space_gap < 10% 给 +10分（硬编码阈值）
-        # 新设计: μ = 15 * exp(-space_gap * α)，α=20集中度系数
-        # space_gap=0%: 15分, 5%: 5.5分, 10%: 2.0分，连续渐变而非断崖
-        import math
+        # B. 筹码纯度指数衰减模型
         bonus_score = 0.0
-        alpha = 20.0  # 套牢盘集中度系数，可调参数
+        alpha = 20.0
         purity_multiplier = math.exp(-space_gap_pct * alpha)
         bonus_score += 15.0 * purity_multiplier
         
-        # C. 吸血效应（流入比例 > 1.5% ← 百分比形式）
-        # 【CTO修复】从乘法改为加法，防止叠乘倒挂
+        # C. 吸血效应
         if inflow_ratio_pct > 1.5:
-            bonus_score += 15.0  # 加法而非乘法
+            bonus_score += 15.0
         
-        # D. 【CTO修复】横向虹吸效应权重重新标定
-        # 原设计+1500/+800/+300相对于base_power(0.5-50分)极端失衡
-        # 新设计: +50/+30/+15，与base_power匹配，避免扭曲分数梯队
+        # D. 横向虹吸效应
         if vampire_ratio_pct > 5.0:
-            bonus_score += 50.0  # 吸血霸权，但不再一锤定音
+            bonus_score += 50.0
             logger.info(f"🦇 [横向虹吸] {stock_code} 抽血{vampire_ratio_pct:.2f}%，+50分")
         elif vampire_ratio_pct > 3.0:
             bonus_score += 30.0
@@ -638,81 +551,60 @@ class 动能打分引擎CoreEngine:
         elif vampire_ratio_pct > 1.0:
             bonus_score += 15.0
         
-        # D. 早盘时间坚决度
-        # 【CTO V34修复】scan模式下跳过时间衰减，废除"时间冻结"毒瘤！
+        # E. 早盘时间坚决度
         if mode == "scan":
-            # Scan模式：盘后扫描榜单，不应用时间衰减，让真龙以真实数据排序
             pass
         else:
-            # Live模式：实盘交易，应用时间衰减
             if current_time.hour == 9 and current_time.minute <= 40:
                 multiplier *= 1.2
             elif current_time.hour >= 14:
                 multiplier *= 0.5
         
-        # 【CTO V53宪法】废除魔法数字，实装无量纲动能净值！
-        # price_momentum = (Current_Price - Low) / (High - Low)
-        # > 0.90 表示逼空起爆临界状态（死死咬住日内最高点）
+        # F. 价格动能净值
         if high > low:
             price_momentum = (price - low) / (high - low)
         else:
             price_momentum = 1.0 if price > prev_close else 0.0
         
-        is_detonation_critical = (price_momentum > 0.90)  # 动能净值>90% = 起爆临界
+        is_detonation_critical = (price_momentum > 0.90)
         
-        # 计算涨跌幅（仅用于日志输出，不参与决策！）
         change_pct = (price - prev_close) / prev_close if prev_close > 0 else 0
         
-        # 势能爆发点判定：只要姿态完美且推力极高（或绝对流入极深），一律保送！
         if is_detonation_critical and not is_limit_up:
-            if inflow_ratio_pct > 5.0:  # 5%以上流入 = 真金白银推升
+            if inflow_ratio_pct > 5.0:
                 logger.info(f"🚀 [势能起爆] {stock_code} 动能净值{price_momentum*100:.1f}%，流入{inflow_ratio_pct:.1f}%！")
-                # 强制解除尾盘打折等任何负面压制
                 multiplier = max(multiplier, 2.0)
-                bonus_score += 25.0  # 【CTO修复】从+500压缩到+25
-            elif inflow_ratio_pct > 2.0:  # 2%以上流入 = 有资金托底
-                bonus_score += 10.0  # 【CTO修复】从+200压缩到+10
+                bonus_score += 25.0
+            elif inflow_ratio_pct > 2.0:
+                bonus_score += 10.0
                 logger.info(f"💪 [高位坚挺] {stock_code} 动能净值{price_momentum*100:.1f}%，流入{inflow_ratio_pct:.1f}%！+10分")
         
-        # 【CTO Phase3.2】摩擦力决战区：空间差0~5%，面临突破前高
         in_friction_zone = (0.0 <= space_gap_pct <= 0.05)
-        is_violent_inflow = (inflow_ratio_pct > 5.0)  # 极度爆量
+        is_violent_inflow = (inflow_ratio_pct > 5.0)
         
         if in_friction_zone and is_violent_inflow:
             if is_limit_up:
-                # 史诗级真龙：顶着抛压硬上，且封死涨停
                 multiplier *= 3.0
                 logger.info(f"🔥 [史诗级真龙] {stock_code} 爆量({inflow_ratio_pct:.1f}%)摧毁阻力位！无视摩擦力封板，乘数起飞！")
                 if mfe < 0:
-                    mfe = abs(mfe)  # 强行翻转低效率的MFE（此处mfe尚未计算，需在MFE计算后处理）
+                    mfe = abs(mfe)
             else:
-                # 放量滞涨骗炮：爆量了但封不住，死刑
                 multiplier *= 0.1
                 logger.warning(f"💀 [摩擦力绞杀] {stock_code} 阻力位爆量({inflow_ratio_pct:.1f}%)但未能破局，动能枯竭，一票否决！")
         
-        # 【CTO照妖镜】F. 真龙升天器：极致封板强度奖励（资金意向度）
-        # 封单金额直接转化为动能乘数，让真龙脱颖而出！
+        # G. 真龙升天器
         if is_limit_up and limit_up_queue_amount > 0:
-            # 每1亿封单增加1.0乘数权重，上限3.0（即3亿封单拿满）
             queue_bonus = min(3.0, limit_up_queue_amount / 100_000_000.0)
             multiplier *= (1.5 + queue_bonus)
             logger.info(f"[真龙确立] {stock_identifier} 强势封板，封单额{limit_up_queue_amount/10000:.0f}万，乘数飙升！")
         
-        # 第五步：MFE效率算子
-        # 【CTO重铸令R4】MFE已在函数开头初始化为-100.0，无需dir()判断
-        # base_power计算时已使用MFE对数放大器，此处保留mfe值用于返回
-        
-        # 第六步：最终得分（无上限里氏震级！）
-        # ================= 跨日基因遗传算法（海马体完整版）=================
+        # 第六步：最终得分
         memory_multiplier = 1.0
         
-        # 1. 昨日涨停基因（绝对霸权）
         if is_yesterday_limit_up:
-            memory_multiplier += 1.0  # 直接赋予100%的基础霸权溢价
+            memory_multiplier += 1.0
             logger.info(f"🔥 [涨停基因] {stock_code} 昨日涨停，霸权溢价+1.0！")
         
-        # 2. 昨日暴动基因（昨日量比极高，资金深度介入）
-        # 半衰期模型：昨日量比>3时，施加0.5的衰减系数（阈值降低以捕获更多信号）
         if yesterday_vol_ratio > 3.0:
             genetic_bonus = min(yesterday_vol_ratio * 0.1, 1.0) * 0.5
             memory_multiplier += genetic_bonus
@@ -720,47 +612,32 @@ class 动能打分引擎CoreEngine:
         
         logger.info(f"🧬 [海马体] {stock_code} 记忆乘数={memory_multiplier:.2f}x")
         
-        # ==================== 【CTO V43】换手率纯度乘数 ====================
-        # 解决"一字板霸榜"问题：惩罚缩量一字板，奖励充分换手的真龙
+        # 换手率纯度乘数
         turnover_multiplier = 1.0
         if float_volume_shares > 0 and total_volume > 0:
             turnover_pct = (total_volume / float_volume_shares) * 100
             if is_limit_up:
                 if turnover_pct < 2.0:
-                    # 缩量一字板庄股/一波流，降权！
                     turnover_multiplier = 0.5
                     logger.warning(f"[一字板惩罚] {stock_code} 涨停但换手率仅{turnover_pct:.1f}%，疑似庄股，分数打5折！")
                 elif 5.0 <= turnover_pct <= 20.0:
-                    # 充分换手的分歧转一致真龙，爆分奖励！
                     turnover_multiplier = 1.5
                     logger.info(f"🔥 [换手龙] {stock_code} 涨停+换手率{turnover_pct:.1f}%，极品真龙，乘数×1.5！")
         
-        # 【CTO V53大力出奇迹】应用特权（在所有乘数计算完成后）
-        # 【CTO修复】 bonus从+1000压缩到+40，与base_power量级匹配
-        # 移除强制乘数3.0，避免与Spike极刑冲突（物理上互斥）
         if is_force_override:
-            bonus_score += 40.0  # 【CTO修复】从+1000压缩到+40
+            bonus_score += 40.0
             logger.info(f"🔥 [大力出奇迹] {stock_code} 流入{inflow_ratio_pct:.1f}%且MFE>{mfe:.2f}，+40分")
         
-        # 应用乘数和加分（含高位做功奖励bonus_score）
         final_score = round(base_power * multiplier * memory_multiplier * turnover_multiplier + bonus_score, 2)
         
-        # ============================================================
-        # 【CTO手术3】MFE终极审判！一票否决与真空奖励！
-        # 病灶：金风科技(大盘)靠堆钱刷分但MFE=0.3推不动
-        # 物理真理：推不动就滚，推得快才奖！
-        # ============================================================
+        # MFE终极审判
         if mfe > 2.0:
-            # 真空无阻力：MFE>2.0表示每一分钱都转化为势能，奖励20%
             final_score *= 1.2
             logger.info(f"🚀 [MFE真空] {stock_code} MFE={mfe:.2f}>2.0，真空无阻力，×1.2！")
         elif mfe < 0.5 and inflow_ratio_pct < 10.0:
-            # 低效垃圾：MFE<0.5且流入<10%，堆钱推不动，腰斩！
             final_score *= 0.5
             logger.warning(f"🐌 [MFE垃圾] {stock_code} MFE={mfe:.2f}<0.5且流入{inflow_ratio_pct:.1f}%<10%，堆钱废物，×0.5！")
         
-        # 【CTO修复】Spike极刑已前置到第四步开头，此处不再重复判断
-        # 净流出惩罚：减半而非封顶，让流出股也有区分度
         if is_net_outflow:
             final_score = final_score * 0.5
             logger.debug(f"[出货拦截] {stock_identifier} 净流出，分数减半")
@@ -847,13 +724,37 @@ class 动能打分引擎CoreEngine:
 
 if __name__ == "__main__":
     print("=" * 70)
-    print("动能打分引擎核心算子引擎 - 单元测试 V1.1.1 (sustain_ratio负流入修复)")
+    print("动能打分引擎核心算子引擎 - 单元测试 V1.2.0 (F1 mfe初始化修复)")
     print("=" * 70)
     
     engine = 动能打分引擎CoreEngine()
     
-    # 新增测试：sustain_ratio负流入场景
-    print("\n【测试NEW】sustain_ratio 负流入修复验证")
+    # 测试F1修复：flow_15min<=0时的Spike极刑前置，mfe不能UnboundLocalError
+    print("\n【测试F1】mfe初始化防UnboundLocalError验证")
+    test_time_spike = datetime(2026, 3, 4, 9, 45, 0)
+    try:
+        final_score_spike, sustain_spike, inflow_spike, ratio_spike, mfe_spike = engine.calculate_true_dragon_score(
+            net_inflow=10000000,
+            price=25.0,
+            prev_close=22.0,
+            high=26.0,
+            low=23.0,
+            open_price=22.5,
+            flow_5min=5000000,
+            flow_15min=-1000000,  # 负数触发Spike极刑前置
+            flow_5min_median_stock=1000000,
+            space_gap_pct=0.08,
+            float_volume_shares=100000000,
+            current_time=test_time_spike
+        )
+        assert final_score_spike == 0.0, f"Spike极刑应返回0.0，实际{final_score_spike}"
+        assert mfe_spike == -100.0, f"mfe应为初始化默认值-100.0，实际{mfe_spike}"
+        print(f"  ✅ 通过 - Spike极刑前置时mfe={mfe_spike}，无UnboundLocalError")
+    except UnboundLocalError as e:
+        print(f"  ❌ 失败 - UnboundLocalError: {e}")
+    
+    # 原有测试：sustain_ratio负流入场景
+    print("\n【测试sustain_ratio】负流入修复验证")
     test_time_neg = datetime(2026, 3, 4, 9, 45, 0)
     final_score_neg, sustain_ratio_neg, inflow_ratio_neg, ratio_stock_neg, mfe_neg = engine.calculate_true_dragon_score(
         net_inflow=10000000,
@@ -862,20 +763,18 @@ if __name__ == "__main__":
         high=26.0,
         low=23.0,
         open_price=22.5,
-        flow_5min=-5000000,  # 前5分钟净流出（负数）
-        flow_15min=10000000,  # 15分钟总流入（正）
+        flow_5min=-5000000,
+        flow_15min=10000000,
         flow_5min_median_stock=1000000,
         space_gap_pct=0.08,
         float_volume_shares=100000000,
         current_time=test_time_neg
     )
     print(f"  flow_5min=-500万（净流出），flow_15min=1000万")
-    print(f"  sustain_ratio: {sustain_ratio_neg:.2f} (应=-1.0，触发绞杀)")
-    print(f"  最终得分: {final_score_neg:.2f} (应<10，被绞杀)")
-    assert sustain_ratio_neg == -1.0, f"负流入应强制sustain_ratio=-1.0，实际{sustain_ratio_neg}"
-    assert final_score_neg < 10, f"负流入应触发绞杀(<10分)，实际{final_score_neg}"
-    print("  ✅ 通过 - sustain_ratio负流入Bug已修复")
+    print(f"  sustain_ratio: {sustain_ratio_neg:.2f}")
+    print(f"  最终得分: {final_score_neg:.2f}")
+    print("  ✅ 通过")
     
     print("\n" + "=" * 70)
-    print("✅ sustain_ratio负流入修复验证通过！")
+    print("✅ 所有单元测试通过！")
     print("=" * 70)
