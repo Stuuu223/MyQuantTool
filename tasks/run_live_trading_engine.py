@@ -761,9 +761,8 @@ class LiveTradingEngine:
         # QMT Manager已通过依赖注入保证存在，无需检查
         logger.info("[OK] [LiveTradingEngine] QMT Manager已就绪，启动完整模式")
         
-        if self.event_bus is None:
-            logger.error("[ERR] [LiveTradingEngine] EventBus缺失，会话启动失败！")
-            raise RuntimeError("致命错误：EventBus缺失，会话启动失败！")
+        # 【大道至简】EventBus已废除，不再需要event_bus空值检查
+        # 原代码会在event_bus=None时抛出RuntimeError，现已删除
         
         self.running = True
         
@@ -942,25 +941,18 @@ class LiveTradingEngine:
     
     def _setup_qmt_callbacks(self):
         """
-        【架构解耦】使用QMTEventAdapter订阅Tick数据
+        【大道至简】仅做subscribe_whole_quote订阅，激活QMT内存缓存
         
-        原有100+行的QMT底层代码已剥离至qmt_event_adapter.py
-        主引擎只负责调度，不做底层脏活！
+        EventBus双轨制已废除，主循环通过xtdata.get_full_tick()批量拉取。
+        此方法仅保留subscribe_whole_quote订阅，确保QMT内存缓存被激活。
         """
-        # CTO修复：检查watchlist是否已初始化
         if not self.watchlist:
             logger.warning("[WARN] watchlist未初始化，跳过Tick订阅")
             return
-            
-        # 检查adapter是否就绪
-        if not hasattr(self, 'qmt_adapter') or self.qmt_adapter is None:
-            logger.error("[ERR] QMTEventAdapter未初始化，无法订阅Tick")
-            return
-            
-        # 【架构解耦】通过adapter订阅，主引擎保持纯粹
         try:
-            subscribed_count = self.qmt_adapter.subscribe_ticks(self.watchlist)
-            logger.info(f"[OK] Tick订阅完成: {subscribed_count}/{len(self.watchlist)} 只股票")
+            from xtquant import xtdata
+            xtdata.subscribe_whole_quote(self.watchlist)
+            logger.info(f"[OK] QMT Tick订阅: {len(self.watchlist)}只（主循环拉取模式）")
         except Exception as e:
             logger.error(f"[ERR] Tick订阅失败: {e}")
     
@@ -2210,166 +2202,6 @@ class LiveTradingEngine:
     def _on_tick_data(self, tick_event):
         """【已废弃】EventBus Tick回调——大道至简重构已删除双轨制"""
         pass
-            logger.debug(f"?? [CTO透视] 累计接收Tick: {self._debug_tick_received_count} 条 | watchlist数量: {len(self.watchlist)}")
-        
-        # CTO加固：容错机制
-        if not self.running:
-            logger.warning("[WARN] [CTO透视] 引擎未运行，丢弃Tick")
-            return
-        
-        stock_code = tick_event.stock_code
-        
-        # ============================================================
-        # Phase 2 Step 1: 只在watchlist中的股票才处理
-        # ============================================================
-        if stock_code not in self.watchlist:
-            # CTO透视：记录被过滤的股票（每1000条打印一次）
-            self._debug_filtered_count = getattr(self, '_debug_filtered_count', 0) + 1
-            if self._debug_filtered_count % 1000 == 0:
-                logger.debug(f"?? [CTO透视] 已过滤 {self._debug_filtered_count} 条不在watchlist的Tick")
-            return  # 不在观察池，直接丢弃
-        
-        # 【CTO清理】V18的warfare_core已废弃，使用动能打分引擎CoreEngine直接计算
-        
-        try:
-            # ============================================================
-            # Phase 2 Step 2: 实时计算该股票的量比（时间进度加权）
-            # ============================================================
-            # 【CTO R6修复】使用顶部导入，不再局部导入
-            
-            now = self.get_current_time()
-            market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
-            minutes_passed = max(1, (now - market_open).total_seconds() / 60)
-            
-            current_volume = tick_event.volume
-            true_dict = get_true_dictionary()
-            avg_volume_5d = true_dict.get_avg_volume_5d(stock_code)
-            
-            if avg_volume_5d <= 0:
-                logger.debug(f"[WARN] {stock_code} 5日均量无效，跳过")
-                return
-            
-            # 估算全天成交量 = 当前成交量 / 已过分钟数 * 240分钟
-            estimated_full_day_volume = current_volume / minutes_passed * 240
-            current_volume_ratio = estimated_full_day_volume / avg_volume_5d
-            
-            # ============================================================
-            # 【CTO外科手术】引力阻尼质量网 (Gravity Damper) - 废除15倍硬编码！
-            # ============================================================
-            # 原代码: GOLDEN_VOLUME_RATIO_THRESHOLD = 15.0 (违背F=ma物理定律)
-            # 新逻辑: 动态阈值与流通市值对数成反比，大盘股小阈值，微盘股高阈值
-            
-            # 只有不在watchlist的杂鱼才被丢弃
-            if self.watchlist and stock_code not in self.watchlist:
-                return
-            
-            # 【物理学透视】计算该股票面临的引力阻尼 (监控用途，不作拦截)
-            fv = true_dict.get_float_volume(stock_code) or 10_0000_0000.0
-            current_price = tick_event.price  # 【CTO修复】直接使用TickEvent.price属性
-            market_cap_billion = (fv * current_price) / 1_0000_0000.0 if current_price > 0 else 50.0
-            
-            # 动态势能阈值公式：与流通市值对数成反比
-            # 20亿微盘股阻尼极高(需~15x); 500亿巨兽阻尼极小(只需~4x)
-            import math
-            cap_log_factor = math.log10(max(market_cap_billion, 20.0)) - 1.3
-            gravity_damper_threshold = max(3.0, 15.0 - 7.8 * cap_log_factor)
-            
-            # 检查是否突破引力阻尼线
-            if current_volume_ratio >= gravity_damper_threshold:
-                logger.info(f"?? [引力阻尼突破] {stock_code} (市值{market_cap_billion:.1f}亿) "
-                           f"量比{current_volume_ratio:.2f}x >= 阻尼线{gravity_damper_threshold:.1f}x，放行！")
-            else:
-                # 未达阻尼线，但不再静默丢弃，交给MFE做功效率裁决
-                logger.debug(f"?? {stock_code} 量比{current_volume_ratio:.2f}x < 阻尼线{gravity_damper_threshold:.1f}x，" 
-                            f"交由MFE裁决")
-            
-            # ============================================================
-            # Phase 2 Step 4: 换手率检查（开火时才检查）
-            # ============================================================
-            turnover_rate = self._calculate_turnover_rate(stock_code, tick_event, true_dict)
-            # 【CTO R6修复】使用单例获取config_manager，解决NameError
-            config_mgr = get_config_manager()
-            turnover_thresholds = config_mgr.get_turnover_rate_thresholds()
-            
-            if turnover_rate < turnover_thresholds['per_minute_min']:
-                logger.debug(f"?? {stock_code} 换手率不足: {turnover_rate:.2f}% < {turnover_thresholds['per_minute_min']:.2f}%")
-                return  # 换手率不达标，放弃开火
-            
-            logger.info(f"[OK] {stock_code} 换手率通过: {turnover_rate:.2f}%/min")
-            
-            # ============================================================
-            # Phase 2 Step 5: 微观防线检查
-            # ============================================================
-            tick_data = {
-                'stock_code': stock_code,
-                'datetime': now,
-                'price': tick_event.price,
-                'volume': tick_event.volume,
-                'amount': tick_event.amount,
-                'open': tick_event.open,
-                'high': tick_event.high,
-                'low': tick_event.low,
-                'prev_close': tick_event.prev_close,
-                'volume_ratio': current_volume_ratio,
-                'turnover_rate': turnover_rate,
-            }
-            
-            if not self._micro_defense_check(stock_code, tick_data):
-                logger.info(f"?? {stock_code} 未通过微观防线检查")
-                return  # 微观防线拦截
-            
-            # 【CTO V66废弃】微积分形态学引擎已移除
-            # 原因：3秒快照数据无法支持毫秒级微积分计算
-            # Spike检测已由kinetic_core_engine.py中的sustain_ratio<1.0极刑实现
-            
-            # ============================================================
-            # Phase 2 Step 6: 动能打分引擎引擎算分
-            # ============================================================
-            score = self._calculate_signal_score(stock_code, tick_data)
-            
-            if score < 70:  # 动能打分引擎阈值
-                logger.debug(f"?? {stock_code} 动能打分引擎得分不足: {score:.2f} < 70")
-                return  # 得分不足，放弃开火
-            
-            # ============================================================
-            # Phase 2 Step 7: 【CTO V33照妖镜】黄金3分钟生死观察队列
-            # ============================================================
-            # 信号触发后不立即买入，先进入观察队列进行抗重力测试
-            # 【CTO V39战役三】3分钟=60帧抗重力测试
-            # 假设系统3秒推一个Tick，60帧≈3分钟
-            
-            if stock_code not in self.signal_queue:
-                # 首次触发，加入观察队列
-                self.signal_queue[stock_code] = {
-                    'trigger_frame': self.global_tick_frame,  # 【CTO V39】用帧数替代时间！
-                    'score': score,
-                    'tick_data': tick_data.copy() if isinstance(tick_data, dict) else tick_data
-                }
-                logger.info(f"[进入观察] {stock_code} 触发信号(得分{score:.1f})，开启180帧(真实3分钟)抗重力测试")
-            else:
-                # 已在队列中，检查是否超过180帧(真实3分钟)
-                entry = self.signal_queue[stock_code]
-                frames_elapsed = self.global_tick_frame - entry['trigger_frame']
-                
-                if frames_elapsed >= 180:  # 【CTO破晓战役】180帧=真实3分钟！主循环1秒1圈
-                    # 获取最新的sustain_ratio
-                    sustain_ratio = self._get_current_sustain_ratio(stock_code, tick_data)
-                    
-                    if sustain_ratio > 1.2:
-                        logger.info(f"[测试通过] {stock_code} 扛过{frames_elapsed}帧抗重力测试！sustain_ratio={sustain_ratio:.2f}")
-                        self._execute_trade(stock_code, tick_data, score)
-                        del self.signal_queue[stock_code]
-                    else:
-                        logger.warning(f"[过滤] {stock_code} 动能萎缩，sustain_ratio={sustain_ratio:.2f}，一票否决！")
-                        del self.signal_queue[stock_code]
-                else:
-                    logger.debug(f"[观察中] {stock_code} 已观察{frames_elapsed}帧，等待180帧(3分钟)测试")
-            
-        except Exception as e:
-            logger.error(f"[ERR] Tick事件处理失败 ({stock_code}): {e}")
-            import traceback
-            logger.error(traceback.format_exc())
-    
     def _get_current_sustain_ratio(self, stock_code: str, tick_data: Dict[str, Any]) -> float:
         """
         获取当前sustain_ratio（用于3分钟观察队列测试）
