@@ -726,63 +726,11 @@ class LiveTradingEngine:
         return None
     
     def _init_event_bus(self):
-        """初始化EventBus"""
-        try:
-            from logic.data_providers.event_bus import create_event_bus
-            self.event_bus = create_event_bus(max_queue_size=20000, max_workers=10)
-            logger.debug("[TARGET] EventBus 已初始化")
-        except Exception as e:
-            logger.error(f"[ERR] EventBus 初始化失败: {e}")
-            raise RuntimeError(f"EventBus初始化失败: {e}")
-        
-        # 【CTO修复连环雷2】FullMarketScanner已废弃，用UniverseBuilder替代！
-        # 原因：FullMarketScanner模块不存在，导致self.scanner=None
-        # 修复：直接使用UniverseBuilder的粗筛能力
-        self.scanner = None  # 标记为None，后续用UniverseBuilder
-        logger.info("[TARGET] [纯血游资雷达] 使用UniverseBuilder替代FullMarketScanner进行粗筛")
-        
-        try:
-            from logic.data_providers.event_bus import create_event_bus
-            self.event_bus = create_event_bus(max_queue_size=20000, max_workers=10)  # 扩大队列容量和工作线程
-            logger.debug("[TARGET] EventBus 已加载")
-        except ImportError:
-            self.event_bus = None
-            logger.error("[ERR] EventBus 加载失败")
-        except Exception as e:
-            self.event_bus = None
-            logger.error(f"[ERR] EventBus 初始化异常: {e}")    
+        """【已废弃】大道至简重构：EventBus双轨制已删除"""
+        pass    
     def _init_qmt_adapter(self):
-        """
-        【架构解耦】初始化QMT事件适配器
-        
-        将底层QMT通讯细节封装到adapter，主引擎保持纯粹
-        
-        【CTO V52战役三】灵魂统一架构：
-        - live模式：使用真实QMTEventAdapter
-        - scan模式：使用MockQmtAdapter（历史Tick伪装实时流）
-        """
-        try:
-            if self.mode == "scan":
-                # 【CTO V52战役三】scan模式使用MockQmtAdapter
-                from logic.data_providers.mock_qmt_adapter import MockQmtAdapter
-                self.qmt_adapter = MockQmtAdapter(target_date=self.target_date, event_bus=self.event_bus)
-                if self.qmt_adapter.initialize():
-                    logger.info(f"[OK] [LiveTradingEngine-SCAN] MockQmtAdapter 初始化成功，目标日期: {self.target_date}")
-                else:
-                    logger.error("[ERR] [LiveTradingEngine-SCAN] MockQmtAdapter 初始化失败")
-                    self.qmt_adapter = None
-            else:
-                # live模式使用真实QMT适配器
-                from logic.data_providers.qmt_event_adapter import QMTEventAdapter
-                self.qmt_adapter = QMTEventAdapter(event_bus=self.event_bus)
-                if self.qmt_adapter.initialize():
-                    logger.info("[OK] [LiveTradingEngine-LIVE] QMTEventAdapter 初始化成功")
-                else:
-                    logger.error("[ERR] [LiveTradingEngine-LIVE] QMTEventAdapter 初始化失败")
-                    self.qmt_adapter = None
-        except Exception as e:
-            logger.error(f"[ERR] [LiveTradingEngine] QMT适配器创建失败: {e}")
-            self.qmt_adapter = None
+        """【已废弃】大道至简重构：QMTEventAdapter绑定已删除"""
+        pass
     
     def start_session(self, enable_dynamic_radar: bool = True):
         """
@@ -819,10 +767,8 @@ class LiveTradingEngine:
         
         self.running = True
         
-        # 启动事件总线消费者
-        self.event_bus.start_consumer()
-        # 绑定Tick事件处理器
-        self.event_bus.subscribe('tick', self._on_tick_data)
+        # 【大道至简】EventBus双轨制已废除，主循环为唯一打分路径
+        # 原event_bus.start_consumer/subscribe已删除，消灭竞态条件
         
         # 获取当前时间
         current_time = self.get_current_time()
@@ -2262,24 +2208,8 @@ class LiveTradingEngine:
                 self._has_generated_report = True
     
     def _on_tick_data(self, tick_event):
-        """
-        Tick事件处理 - Phase 2: Tick级开火权下放 (CTO架构重塑)
-        
-        核心逻辑:
-        1. 只在watchlist中的股票才处理 (0.90分位已进池)
-        2. 实时计算该股票的量比（时间进度加权）
-        3. 开火门槛：0.95分位（严格）
-        4. 换手率检查（开火时才检查）
-        5. 微观防线检查
-        6. 动能打分引擎引擎算分
-        7. 拔枪射击！
-        
-        Args:
-            tick_event: Tick事件对象
-        """
-        # CTO强制透视：记录所有接收到的Tick（每100条打印一次避免刷屏）
-        self._debug_tick_received_count = getattr(self, '_debug_tick_received_count', 0) + 1
-        if self._debug_tick_received_count % 100 == 0:
+        """【已废弃】EventBus Tick回调——大道至简重构已删除双轨制"""
+        pass
             logger.debug(f"?? [CTO透视] 累计接收Tick: {self._debug_tick_received_count} 条 | watchlist数量: {len(self.watchlist)}")
         
         # CTO加固：容错机制
