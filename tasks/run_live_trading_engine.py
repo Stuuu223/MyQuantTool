@@ -22,9 +22,58 @@ import time
 import threading
 import os
 from datetime import datetime, timedelta
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 import logging
 import warnings
+from enum import Enum
+from dataclasses import dataclass, field
+from collections import deque
+
+# 【CTO状态机重构】股票生命周期状态定义
+class StockState(Enum):
+    """股票在雷达中的生命周期状态"""
+    OUTSIDE = "outside"           # 在蓄水池外
+    CANDIDATE = "candidate"       # 进入候选池
+    TRACKING = "tracking"         # 正在跟踪
+    OPPORTUNITY = "opportunity"   # 确认为机会
+    ELIMINATED = "eliminated"     # 被剔除
+
+@dataclass
+class TickSnapshot:
+    """Tick快照数据结构 - CTO状态机架构"""
+    timestamp: datetime
+    price: float
+    amount: float          # 累计成交额
+    volume: float          # 累计成交量
+    high: float
+    low: float
+    open: float
+
+@dataclass  
+class StockTracker:
+    """股票跟踪器 - 维持15分钟历史状态"""
+    stock_code: str
+    state: StockState
+    enter_time: datetime   # 进入候选池时间
+    tick_history: deque = field(default_factory=lambda: deque(maxlen=300))  # 300个Tick历史
+    
+    # 实时计算指标
+    current_price: float = 0.0
+    current_amount: float = 0.0
+    
+    # 15分钟切片指标（真实计算，非脑补）
+    flow_15min: float = 0.0
+    flow_5min: float = 0.0
+    
+    # 打分结果
+    final_score: float = 0.0
+    sustain_ratio: float = 0.0
+    mfe: float = 0.0
+    inflow_ratio: float = 0.0
+    volume_ratio: float = 0.0
+    
+    # 剔除原因
+    elimination_reason: str = ""
 
 # 【CTO V9 强制屏蔽】物理级消灭 Pandas 的向下转型警告
 warnings.filterwarnings('ignore', category=FutureWarning)
@@ -164,7 +213,31 @@ class LiveTradingEngine:
         self.volume_history: Dict[str, deque] = {}     # {stock_code: deque(maxlen=60)}
         self._TICK_HISTORY_MAXLEN = 60  # 约3分钟微观轨迹
         
+        # 【CTO状态机重构】动态蓄水池架构 - 解决伪时间折算和无状态扫描问题
+        # 核心组件：
+        # 1. candidate_pool: 宽进粗筛选出的候选股票池
+        # 2. stock_trackers: 每只股票的历史状态跟踪器（维持15分钟Tick队列）
+        # 3. opportunity_pool: 经精细打分后的机会池
+        # 4. eliminated_pool: 被剔除的股票及其原因（负样本收集）
+        self.candidate_pool: Dict[str, StockTracker] = {}      # 候选蓄水池
+        self.opportunity_pool: Dict[str, StockTracker] = {}    # 机会池
+        self.eliminated_pool: Dict[str, StockTracker] = {}     # 剔除池（负样本）
+        
+        # 【CTO动能悖论熔断】Sustain>5.0但CHG%<2.0时强制剔除
+        self.kinetic_paradox_enabled: bool = True              # 熔断开关
+        self.kinetic_paradox_sustain_threshold: float = 5.0    # Sustain阈值
+        self.kinetic_paradox_change_threshold: float = 0.02    # 涨幅阈值(2%)
+        
+        # 【CTO宽进粗筛标准】简化粗筛，快速构建候选池
+        self.candidate_price_momentum_threshold: float = 0.8   # 价格动能>0.8
+        self.candidate_turnover_threshold: float = 0.01        # 换手率>1%
+        
+        # 【CTO动态剔除标准】从蓄水池中剔除的条件
+        self.eliminate_mfe_threshold: float = 1.2              # MFE<1.2
+        self.eliminate_volume_ratio_threshold: float = 3.0     # Volume_Ratio>3.0
+        
         logger.info("[OK] [LiveTradingEngine] 初始化完成 - QMT Manager已注入")
+        logger.info("[CTO状态机] 动态蓄水池架构已启用：candidate_pool/opportunity_pool/eliminated_pool")
     
     # ==================== 【CTO V53时间沙盒】统一时间获取入口 ====================
     
@@ -190,6 +263,256 @@ class LiveTradingEngine:
             tick_time: Tick数据携带的时间戳
         """
         self._mock_time = tick_time
+    
+    # ==================== 【CTO状态机重构】动态蓄水池核心方法 ====================
+    
+    def _update_stock_tracker(self, stock_code: str, tick_data: Dict) -> StockTracker:
+        """
+        【CTO状态机】更新股票跟踪器，维持15分钟Tick历史队列
+        
+        Args:
+            stock_code: 股票代码
+            tick_data: Tick数据字典
+            
+        Returns:
+            StockTracker: 更新后的跟踪器
+        """
+        # 获取或创建跟踪器
+        if stock_code not in self.candidate_pool:
+            self.candidate_pool[stock_code] = StockTracker(
+                stock_code=stock_code,
+                state=StockState.OUTSIDE,
+                enter_time=self.get_current_time()
+            )
+        
+        tracker = self.candidate_pool[stock_code]
+        
+        # 提取Tick数据
+        current_time = self.get_current_time()
+        price = float(tick_data.get('lastPrice', 0.0))
+        amount = float(tick_data.get('amount', 0.0))  # 累计成交额
+        volume = float(tick_data.get('volume', 0.0))  # 累计成交量
+        high = float(tick_data.get('high', price))
+        low = float(tick_data.get('low', price))
+        open_price = float(tick_data.get('open', price))
+        
+        # 创建快照并加入历史队列
+        snapshot = TickSnapshot(
+            timestamp=current_time,
+            price=price,
+            amount=amount,
+            volume=volume,
+            high=high,
+            low=low,
+            open=open_price
+        )
+        tracker.tick_history.append(snapshot)
+        
+        # 更新当前状态
+        tracker.current_price = price
+        tracker.current_amount = amount
+        
+        return tracker
+    
+    def _calculate_real_flow(self, tracker: StockTracker) -> Tuple[float, float]:
+        """
+        【CTO状态机】真实计算15分钟和5分钟流入
+        不是用乘数，而是用真实的历史快照差值
+        
+        Args:
+            tracker: 股票跟踪器
+            
+        Returns:
+            Tuple[float, float]: (flow_15min, flow_5min)
+        """
+        if len(tracker.tick_history) < 2:
+            return 0.0, 0.0
+        
+        current = tracker.tick_history[-1]
+        
+        # 找15分钟前的快照
+        target_time_15min = current.timestamp - timedelta(minutes=15)
+        snapshot_15min_ago = self._find_nearest_snapshot(tracker.tick_history, target_time_15min)
+        
+        # 找5分钟前的快照
+        target_time_5min = current.timestamp - timedelta(minutes=5)
+        snapshot_5min_ago = self._find_nearest_snapshot(tracker.tick_history, target_time_5min)
+        
+        # 真实流入 = 当前累计 - 历史累计
+        flow_15min = current.amount - snapshot_15min_ago.amount if snapshot_15min_ago else 0.0
+        flow_5min = current.amount - snapshot_5min_ago.amount if snapshot_5min_ago else 0.0
+        
+        return flow_15min, flow_5min
+    
+    def _find_nearest_snapshot(self, history: deque, target_time: datetime) -> Optional[TickSnapshot]:
+        """
+        【CTO状态机】在历史队列中找到最接近目标时间的快照
+        
+        Args:
+            history: Tick历史队列
+            target_time: 目标时间
+            
+        Returns:
+            Optional[TickSnapshot]: 最接近的快照，如果没有则返回None
+        """
+        if not history:
+            return None
+        
+        # 从后向前找最接近的
+        best_match = None
+        best_diff = timedelta.max
+        
+        for snapshot in reversed(history):
+            diff = abs(snapshot.timestamp - target_time)
+            if diff < best_diff:
+                best_diff = diff
+                best_match = snapshot
+            # 如果找到足够近的，提前返回
+            if diff < timedelta(seconds=5):
+                return best_match
+        
+        return best_match
+    
+    def _should_enter_candidate_pool(self, tick_data: Dict, pre_close: float) -> bool:
+        """
+        【CTO状态机】宽进粗筛标准
+        只有价格动能和换手率，不计算复杂指标
+        
+        Args:
+            tick_data: Tick数据
+            pre_close: 昨收价
+            
+        Returns:
+            bool: 是否进入候选池
+        """
+        price = float(tick_data.get('lastPrice', 0.0))
+        high = float(tick_data.get('high', price))
+        low = float(tick_data.get('low', price))
+        volume = float(tick_data.get('volume', 0.0))
+        
+        if price <= 0 or high <= low:
+            return False
+        
+        # 价格动能 = (当前价 - 日内最低) / (日内最高 - 日内最低)
+        price_momentum = (price - low) / (high - low)
+        
+        # 换手率计算（需要流通股本，这里简化）
+        # 实际应该从TrueDictionary获取float_volume
+        turnover_rate = 0.0  # 简化，实际应计算
+        
+        # 宽进标准：价格动能>0.8
+        return price_momentum > self.candidate_price_momentum_threshold
+    
+    def _check_kinetic_paradox(self, tracker: StockTracker, pre_close: float) -> Tuple[bool, str]:
+        """
+        【CTO状态机】动能悖论熔断检查
+        Sustain>5.0但CHG%<2.0时强制剔除
+        
+        Args:
+            tracker: 股票跟踪器
+            pre_close: 昨收价
+            
+        Returns:
+            Tuple[bool, str]: (是否触发悖论, 原因)
+        """
+        if not self.kinetic_paradox_enabled:
+            return False, ""
+        
+        # 计算涨幅
+        if pre_close <= 0 or tracker.current_price <= 0:
+            return False, ""
+        
+        change_pct = (tracker.current_price - pre_close) / pre_close
+        
+        # 检查悖论条件：高Sustain但低涨幅
+        if (tracker.sustain_ratio > self.kinetic_paradox_sustain_threshold and 
+            change_pct < self.kinetic_paradox_change_threshold):
+            return True, f"动能悖论: Sustain={tracker.sustain_ratio:.2f}x但涨幅={change_pct:.2%}"
+        
+        return False, ""
+    
+    def _should_eliminate(self, tracker: StockTracker) -> Tuple[bool, str]:
+        """
+        【CTO状态机】动态剔除检查
+        从蓄水池中移除不合格股票
+        
+        Args:
+            tracker: 股票跟踪器
+            
+        Returns:
+            Tuple[bool, str]: (是否剔除, 原因)
+        """
+        # 条件1: MFE<1.2且Volume_Ratio>3.0 (天量滞涨)
+        if (tracker.mfe < self.eliminate_mfe_threshold and 
+            tracker.volume_ratio > self.eliminate_volume_ratio_threshold):
+            return True, f"天量滞涨: MFE={tracker.mfe:.2f}且量比={tracker.volume_ratio:.2f}"
+        
+        # 条件2: 价格跌破15分钟VWAP
+        vwap_15min = self._calculate_vwap_15min(tracker)
+        if vwap_15min > 0 and tracker.current_price < vwap_15min * 0.99:
+            return True, f"跌破VWAP: 价格{tracker.current_price:.2f} < VWAP{vwap_15min:.2f}"
+        
+        return False, ""
+    
+    def _calculate_vwap_15min(self, tracker: StockTracker) -> float:
+        """
+        【CTO状态机】计算15分钟VWAP
+        
+        Args:
+            tracker: 股票跟踪器
+            
+        Returns:
+            float: 15分钟VWAP
+        """
+        if len(tracker.tick_history) < 2:
+            return 0.0
+        
+        current = tracker.tick_history[-1]
+        target_time = current.timestamp - timedelta(minutes=15)
+        snapshot_15min_ago = self._find_nearest_snapshot(tracker.tick_history, target_time)
+        
+        if not snapshot_15min_ago:
+            return 0.0
+        
+        # VWAP = (成交金额变化) / (成交量变化)
+        amount_delta = current.amount - snapshot_15min_ago.amount
+        volume_delta = current.volume - snapshot_15min_ago.volume
+        
+        if volume_delta <= 0:
+            return 0.0
+        
+        return amount_delta / volume_delta
+    
+    def _transition_state(self, tracker: StockTracker, new_state: StockState, reason: str = ""):
+        """
+        【CTO状态机】状态转换
+        
+        Args:
+            tracker: 股票跟踪器
+            new_state: 新状态
+            reason: 转换原因
+        """
+        old_state = tracker.state
+        tracker.state = new_state
+        
+        if new_state == StockState.ELIMINATED:
+            tracker.elimination_reason = reason
+            # 从候选池移到剔除池
+            if tracker.stock_code in self.candidate_pool:
+                del self.candidate_pool[tracker.stock_code]
+            self.eliminated_pool[tracker.stock_code] = tracker
+            logger.info(f"💀 [剔除] {tracker.stock_code}: {reason}")
+        
+        elif new_state == StockState.OPPORTUNITY:
+            # 从候选池移到机会池
+            if tracker.stock_code in self.candidate_pool:
+                del self.candidate_pool[tracker.stock_code]
+            self.opportunity_pool[tracker.stock_code] = tracker
+            logger.info(f"🎯 [机会] {tracker.stock_code}: 分数{tracker.final_score:.1f}")
+        
+        logger.debug(f"[状态转换] {tracker.stock_code}: {old_state.value} -> {new_state.value}")
+    
+    # ==================== 【CTO状态机重构】结束 ====================
     
     def run_historical_stream(self, tick_stream: list):
         """
