@@ -428,19 +428,25 @@ class KineticCoreEngine:
         # 质量势能
         mass_potential = (inflow_ratio_pct / 100.0) * ratio_stock
         
-        # ========== 2. 速度 = 涨跌幅%（无底保！）==========
-        velocity = (price - prev_close) / prev_close * 100.0 if prev_close > 0 else 0.0
+        # ========== 2. 指数速度向量 (VELOCITY CUBED) ==========
+        # 【CTO V92 铁律】涨幅的威力是非线性的！3次幂让涨幅9%的动能是涨幅3%的27倍！
+        change_pct = (price - prev_close) / prev_close * 100.0 if prev_close > 0 else 0.0
+        sign_velocity = 1.0 if change_pct >= 0 else -1.0
+        velocity = sign_velocity * (abs(change_pct) ** 3)
         
         # ========== 3. 动能 = 质量 × 速度 ==========
         base_kinetic_energy = mass_potential * velocity
         
-        # ========== 4. 摩擦阻尼 = 纯度平方 ==========
+        # ========== 4. 纯度断头台 (MICRO-MOMENTUM GUILLOTINE) ==========
+        # 【CTO V92 断崖式大摆锤】真龙纯度必须极高！
+        # 低于70%开始遭遇指数级剥夺，低于50%直接灰飞烟灭！
+        # 使用5次幂衰减: 纯度0.9->0.59, 纯度0.7->0.16(绞杀84%), 纯度0.5->0.03(绞杀97%)
         price_range = high - low
         if price_range > 0:
             raw_purity = (price - low) / price_range
         else:
-            raw_purity = 1.0 if velocity > 0 else 0.0
-        friction_multiplier = min(max(raw_purity, 0.0), 1.0) ** 2
+            raw_purity = 1.0 if change_pct > 0 else 0.0
+        friction_multiplier = min(max(raw_purity, 0.0), 1.0) ** 5
         
         # ========== 5. 效率激活 = MFE Sigmoid ==========
         if inflow_ratio_pct <= 0.0:

@@ -95,16 +95,6 @@ def get_trading_days(start_date: str, end_date: str, xtdata) -> list:
             days.append(cur.strftime('%Y%m%d'))
         cur += timedelta(days=1)
     return days
-    except Exception:
-        pass
-    s = datetime.strptime(start_date, '%Y%m%d')
-    e = datetime.strptime(end_date,   '%Y%m%d')
-    days, cur = [], s
-    while cur <= e:
-        if cur.weekday() < 5:
-            days.append(cur.strftime('%Y%m%d'))
-        cur += timedelta(days=1)
-    return days
 
 
 
