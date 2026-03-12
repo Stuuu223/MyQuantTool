@@ -311,6 +311,27 @@ def main():
                 continue
             
             date_str = cur_date.strftime('%Y%m%d')
+            
+            # 【CTO V117 智能跳过】检查本地是否已有该日期的分K数据
+            skip_check = xtdata.get_local_data(
+                field_list=[],
+                stock_list=target_stocks[:100],  # 抽样100只检查
+                period='1m',
+                start_time=date_str,
+                end_time=date_str
+            )
+            
+            existing_count = 0
+            if skip_check:
+                for s in target_stocks[:100]:
+                    if s in skip_check and skip_check[s] is not None and len(skip_check[s]) > 0:
+                        existing_count += 1
+            
+            if existing_count >= 50:  # 抽样100只中有50只已有数据，说明该日期已下载过
+                log(f'>>> {date_str} 已有分K数据 ({existing_count}/100 抽样命中)，跳过')
+                cur_date -= timedelta(days=1)
+                continue
+            
             log(f'>>> 回溯日期: {date_str} (连续无数据: {consecutive_no_data}/{STOP_DAYS})')
             
             try:
