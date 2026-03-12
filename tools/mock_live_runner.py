@@ -375,15 +375,15 @@ class MockLiveRunner:
             # 【CTO V78】涨跌幅百分比
             change = ((price - prev_close) / prev_close * 100) if prev_close > 0 else 0
             
-            # 【CTO V78】价格纯度 = (现价 - 昨收) / (最高 - 最低)
-            # 反映价格在日内振幅中的位置，正值=强势区，负值=弱势区
+            # 【CTO V80】价格纯度 = (当前价 - 日内最低) / (日内最高 - 日内最低)
+            # 反映价格在日内振幅中的位置：100%=最高点收盘，0%=最低点收盘
             price_range = high - low
             if price_range > 0:
-                raw_purity = (price - prev_close) / price_range
+                raw_purity = (price - low) / price_range  # 【V80修复】正确公式
             else:
-                # 一字板情况：价格无波动，纯度取决于涨跌方向
-                raw_purity = 1.0 if price > prev_close else (-1.0 if price < prev_close else 0)
-            purity = max(min(raw_purity * 100, 100.0), -100.0)  # 限制在[-100, 100]
+                # 一字板情况：价格无波动，涨停给100%，跌停给0%
+                raw_purity = 1.0 if price >= prev_close else 0.0
+            purity = min(max(raw_purity * 100, 0.0), 100.0)  # 【V80修复】范围0-100%
             
             # 统计涨跌数量
             if change >= 0:

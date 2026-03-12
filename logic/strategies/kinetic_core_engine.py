@@ -489,6 +489,31 @@ class KineticCoreEngine:
         
         base_power = base_power * vwap_multiplier
         
+        # 【CTO V80 极刑绞杀法则】涨幅与纯度双维度一票否决
+        # 计算涨幅
+        change_pct = (price - prev_close) / prev_close * 100 if prev_close > 0 else 0
+        
+        # 计算日内纯度 (-100% 到 100%)
+        # 纯度 = (当前价 - 昨收) / (最高 - 最低)
+        # 正值=强势区(收盘在昨收上方)，负值=弱势区(收盘在昨收下方)
+        price_range = high - low
+        if price_range > 0:
+            raw_purity = (price - prev_close) / price_range
+        else:
+            # 一字板情况
+            raw_purity = 1.0 if price > prev_close else (-1.0 if price < prev_close else 0)
+        purity_pct = max(min(raw_purity * 100, 100.0), -100.0)
+        
+        # 【极刑#1】涨幅 < 3.0% = 缺乏绝对右侧动能，分数强制乘以 0.1
+        if change_pct < 3.0:
+            base_power *= 0.1
+            logger.warning(f"🔪 [涨幅不达标] {stock_code} 涨幅仅 {change_pct:.2f}%，动能降维至0.1")
+        
+        # 【极刑#2】纯度 < 40.0% = 严重冲高回落，上影线极长，分数强制乘以 0.05
+        if purity_pct < 40.0:
+            base_power *= 0.05
+            logger.warning(f"💀 [冲高回落] {stock_code} 纯度仅 {purity_pct:.1f}%，遭抛压瓦解，极刑！")
+        
         # 第四步：神级乘数区
         multiplier = 1.0
         
@@ -563,14 +588,17 @@ class KineticCoreEngine:
         elif vampire_ratio_pct > 1.0:
             bonus_score += 15.0
         
-        # E. 早盘时间坚决度
+        # E. 【CTO V80】废除时间衰减毒瘤！
+        # 物理真理：真龙的势能不会因为到了下午就自然衰减！
+        # 尾盘打折的逻辑是期权定价(Theta)的错误应用！
+        # 只保留早盘加成，尾盘不惩罚
         if mode == "scan":
             pass
         else:
             if current_time.hour == 9 and current_time.minute <= 40:
-                multiplier *= 1.2
-            elif current_time.hour >= 14:
-                multiplier *= 0.5
+                multiplier *= 1.2  # 早盘溢价保留
+            # 【删除】elif current_time.hour >= 14: multiplier *= 0.5
+            # 真龙14:59的动能和09:30是一模一样的！
         
         # F. 价格动能净值
         if high > low:
@@ -642,13 +670,19 @@ class KineticCoreEngine:
         
         final_score = round(base_power * multiplier * memory_multiplier * turnover_multiplier + bonus_score, 2)
         
-        # MFE终极审判
-        if mfe > 2.0:
-            final_score *= 1.2
-            logger.info(f"🚀 [MFE真空] {stock_code} MFE={mfe:.2f}>2.0，真空无阻力，×1.2！")
-        elif mfe < 0.5 and inflow_ratio_pct < 10.0:
-            final_score *= 0.5
-            logger.warning(f"🐌 [MFE垃圾] {stock_code} MFE={mfe:.2f}<0.5且流入{inflow_ratio_pct:.1f}%<10%，堆钱废物，×0.5！")
+        # 【CTO V80】MFE两极分化：几何级爆炸 vs 摩擦力绞杀
+        if mfe >= 2.0 and purity_pct > 80.0:
+            # 突破真空且高纯度，分数呈几何级爆炸！
+            final_score *= 3.0
+            logger.info(f"🚀 [真空起爆] {stock_code} MFE={mfe:.2f} 纯度{purity_pct:.1f}%，势能爆炸×3.0！")
+        elif mfe >= 2.0:
+            # 真空但纯度不够高
+            final_score *= 1.5
+            logger.info(f"🚀 [MFE真空] {stock_code} MFE={mfe:.2f}>2.0，真空无阻力，×1.5！")
+        elif mfe < 0.5:
+            # 遇到强阻力，做功效率极低，加重惩罚
+            final_score *= 0.2
+            logger.warning(f"🐌 [强摩擦力] {stock_code} MFE={mfe:.2f}，动能被消耗，严重压制×0.2！")
         
         if is_net_outflow:
             final_score = final_score * 0.5
