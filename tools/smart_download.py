@@ -315,11 +315,13 @@ def main():
             
             try:
                 t0 = time.time()
-                # 极速批量投递：同时下载日K和分K
-                for i in range(0, len(target_stocks), 500):
-                    batch = target_stocks[i:i+500]
-                    xtdata.download_history_data(batch, '1d', start_time=date_str, end_time=date_str)
-                    xtdata.download_history_data(batch, '1m', start_time=date_str, end_time=date_str)
+                # [CTO V115] 逐只异步投递，QMT不支持list批量下载
+                for stock in target_stocks:
+                    try:
+                        xtdata.download_history_data(stock, '1d', start_time=date_str, end_time=date_str)
+                        xtdata.download_history_data(stock, '1m', start_time=date_str, end_time=date_str)
+                    except Exception:
+                        pass
                 elapsed = time.time() - t0
                 
                 time.sleep(2.0)  # 等待异步落盘
@@ -405,10 +407,13 @@ def main():
     log(f'  强制指令：全市场日K覆盖 {kline_start} ~ {end_date}')
     
     try:
-        # QMT 日K下载极快，500只一批全量投递，底层会自动增量更新
-        for i in range(0, len(all_stocks), 500):
-            batch = all_stocks[i:i+500]
-            xtdata.download_history_data(batch, '1d', start_time=kline_start, end_time=end_date)
+        # [CTO V115] QMT download_history_data 仅支持单只股票 str，不支持 list！
+        # 必须逐只异步投递
+        for stock in all_stocks:
+            try:
+                xtdata.download_history_data(stock, '1d', start_time=kline_start, end_time=end_date)
+            except Exception:
+                pass
         log('  OK 全市场日K投递完毕，等待 3 秒落盘...')
         time.sleep(3)
     except Exception as e:
