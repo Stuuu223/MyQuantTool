@@ -776,6 +776,8 @@ class TrueDictionary:
         """
         【CTO V34】构建静态常数预编译快查表
         
+        【CTO V101】新增连板海马体：计算昨日涨停基因
+        
         从run_live_trading_engine.py剥离，实现预热层与逻辑分离
         
         Args:
@@ -783,9 +785,28 @@ class TrueDictionary:
             default_float_volume: 流通股本默认值（10亿股）
             
         Returns:
-            Dict: {stock_code: {'float_volume': float, 'avg_volume_5d': float}}
+            Dict: {stock_code: {'float_volume': float, 'avg_volume_5d': float, 'is_yesterday_limit_up': bool}}
         """
+        import xtquant.xtdata as xtdata
+        from datetime import datetime, timedelta
+        
         static_cache = {}
+        
+        # 【CTO V101】批量获取最近3天日K数据，用于判断昨日涨停
+        today = datetime.now().strftime('%Y%m%d')
+        three_days_ago = (datetime.now() - timedelta(days=5)).strftime('%Y%m%d')  # 多预留几天考虑非交易日
+        
+        try:
+            daily_data = xtdata.get_local_data(
+                field_list=['open', 'high', 'low', 'close'],
+                stock_list=stock_list,
+                period='1d',
+                start_time=three_days_ago,
+                end_time=today
+            )
+        except Exception as e:
+            logger.warning(f"[连板海马体] 获取日K数据失败: {e}")
+            daily_data = {}
         
         for stock in stock_list:
             fv = self.get_float_volume(stock)
@@ -795,9 +816,30 @@ class TrueDictionary:
             if not fv or fv <= 0:
                 fv = default_float_volume
             
+            # 【CTO V101 连板海马体】判断昨日是否涨停
+            is_yesterday_limit_up = False
+            if daily_data and stock in daily_data and daily_data[stock] is not None:
+                df = daily_data[stock]
+                if len(df) >= 2:
+                    try:
+                        # 昨日最高价
+                        prev_high = float(df['high'].iloc[-2])
+                        # 前日收盘价
+                        prev_prev_close = float(df['close'].iloc[-3]) if len(df) >= 3 else float(df['open'].iloc[-2])
+                        
+                        if prev_prev_close > 0:
+                            y_change = (prev_high - prev_prev_close) / prev_prev_close * 100.0
+                            # 宽容判定：主板>9.5%，创业板>19.5% 视为昨日涨停(或触及涨停)
+                            limit_threshold = 19.5 if stock.startswith(('30', '68')) else 9.5
+                            if y_change >= limit_threshold:
+                                is_yesterday_limit_up = True
+                    except Exception as e:
+                        pass
+            
             static_cache[stock] = {
                 'float_volume': fv,
-                'avg_volume_5d': avg_vol_5d or 1.0
+                'avg_volume_5d': avg_vol_5d or 1.0,
+                'is_yesterday_limit_up': is_yesterday_limit_up  # 【CTO V101】连板基因
             }
         
         logger.info(f"[TrueDictionary] 静态快查表编译完成: {len(static_cache)} 只股票")

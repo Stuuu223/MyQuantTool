@@ -776,6 +776,8 @@ class LiveTradingEngine:
                 limit_up_queue_amount = 50000000.0 if is_limit_up else 0.0
                 
                 # 调用核心引擎打分
+                # 【CTO V101】获取连板基因
+                is_yesterday_limit_up = self.static_cache.get(stock_code, {}).get('is_yesterday_limit_up', False)
                 final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe = self._kinetic_core.calculate_true_dragon_score(
                     net_inflow=stock_net_inflow,
                     price=current_price,
@@ -793,6 +795,7 @@ class LiveTradingEngine:
                     limit_up_queue_amount=limit_up_queue_amount,
                     mode="scan", # 告知引擎这是定格沙盘
                     stock_code=stock_code,
+                    is_yesterday_limit_up=is_yesterday_limit_up,  # 【CTO V101】连板基因
                     vampire_ratio_pct=vampire_ratio_pct
                 )
                 
@@ -1733,6 +1736,7 @@ class LiveTradingEngine:
         
         # 【CTO V34】静态常数预编译快查表 - 剥离到TrueDictionary.build_static_cache
         static_cache = true_dict.build_static_cache(self.watchlist)
+        self.static_cache = static_cache  # 【CTO V101】存储以便获取连板基因
         print(f">>> [INIT] 静态快查表编译完成: {len(static_cache)} 只股票")
         sys.stdout.flush()
         
@@ -2255,6 +2259,8 @@ class LiveTradingEngine:
                             vampire_ratio_pct = (stock_net_inflow / self.market_total_inflow_cache) * 100.0
                             vampire_ratio_pct = min(vampire_ratio_pct, 100.0)  # 上限100%
                         
+                        # 【CTO V101】获取连板基因
+                        is_yesterday_limit_up = self.static_cache.get(stock_code, {}).get('is_yesterday_limit_up', False)
                         try:
                             final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe = core_engine.calculate_true_dragon_score(
                                 net_inflow=net_inflow_est,  # 净流入估算（元）
@@ -2273,6 +2279,7 @@ class LiveTradingEngine:
                                 limit_up_queue_amount=limit_up_queue_amount,  # 【CTO V33】封单金额
                                 mode=engine_mode,  # 【CTO V34】scan跳过衰减/live应用衰减
                                 stock_code=stock_code,  # 【CTO V35】股票代码用于动态danger_pct
+                                is_yesterday_limit_up=is_yesterday_limit_up,  # 【CTO V101】连板基因
                                 vampire_ratio_pct=vampire_ratio_pct  # 【CTO V46】横向虹吸效应
                             )
                         except Exception as e:
@@ -2689,6 +2696,8 @@ class LiveTradingEngine:
             else:
                 limit_up_queue_amount = 0.0
             
+            # 【CTO V101】获取连板基因
+            is_yesterday_limit_up = self.static_cache.get(stock_code, {}).get('is_yesterday_limit_up', False)
             # 调用 V20.5 动能引擎
             base_score, sustain_ratio, inflow_ratio, ratio_stock, mfe_score = self._kinetic_core.calculate_true_dragon_score(
                 net_inflow=net_inflow_est,  # 【CTO V87】使用L1微积分状态机
@@ -2706,7 +2715,8 @@ class LiveTradingEngine:
                 is_limit_up=is_limit_up,  # 【CTO V33】涨停状态
                 limit_up_queue_amount=limit_up_queue_amount,  # 【CTO V33】封单金额
                 mode="live",  # 【CTO V34】黄金3分钟队列用live模式
-                stock_code=stock_code  # 【CTO V35】股票代码用于动态danger_pct
+                stock_code=stock_code,  # 【CTO V35】股票代码用于动态danger_pct
+                is_yesterday_limit_up=is_yesterday_limit_up  # 【CTO V101】连板基因
             )
             
             logger.debug(

@@ -433,7 +433,15 @@ class KineticCoreEngine:
             effective_ratio = ratio_stock
         
         # 质量势能
-        mass_potential = (inflow_ratio_pct / 100.0) * effective_ratio
+        # 【CTO V101 连板真空加速器】跨日动量继承！
+        if is_yesterday_limit_up:
+            # 如果带有连板基因，废除对当天放量(effective_ratio)的依赖！
+            # 缩量秒板是最高荣耀。赋予其恒定且庞大的基础质量，并叠加流入势能！
+            # 将其 mass 强制托底并放大，碾压所有首板杂毛！
+            mass_potential = (inflow_ratio_pct / 100.0) * max(effective_ratio, 8.0) * 3.0
+            logger.debug(f"👑 [连板基因觉醒] {stock_code} 触发跨日动量继承！质量无视缩量强制膨胀至 {mass_potential:.4f}")
+        else:
+            mass_potential = (inflow_ratio_pct / 100.0) * effective_ratio
         
         # ========== 2. 指数速度向量 (VELOCITY CUBED) ==========
         # 【CTO V92 铁律】涨幅的威力是非线性的！3次幂让涨幅9%的动能是涨幅3%的27倍！
