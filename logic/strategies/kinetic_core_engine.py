@@ -471,16 +471,23 @@ class KineticCoreEngine:
         # ========== 3. 动能 = 质量 × 速度 ==========
         base_kinetic_energy = mass_potential * velocity
         
-        # === 【CTO V100 终极时空物理引擎】 ===
-        # 4. 时空微观动量阻尼 (Time-Space Purity Damping)
+        # === 【CTO V100 终极时空物理引擎 + V109 能量重心降维】 ===
+        # 4. 时空微观动量阻尼与【VWAP重心引力补偿】
         price_range = high - low
         raw_purity = (price - low) / price_range if price_range > 0 else (1.0 if change_pct > 0 else 0.0)
         purity_norm = min(max(raw_purity, 0.0), 1.0)
         
+        # 【CTO V109 能量重心降维提取】
+        # 计算全天成交均价 (VWAP)，作为主力的真实能量重心
+        vwap = (total_amount / total_volume) if total_volume > 0 else prev_close
+        
+        # 判断当前价格是否在能量重心之上？
+        is_above_center_of_mass = price >= (vwap * 0.995)  # 给予千分之五的宽容度
+        
         # 时间熵特征提取 (判断当前处于什么交易阶段)
         minutes_from_open = (current_time.hour * 60 + current_time.minute) - (9 * 60 + 30)
         
-        # 动态阻尼场：根据时间流逝，对纯度的容忍度呈几何级下降！
+        # 动态阻尼场
         if minutes_from_open < 60:
             # 早盘(10:30前)：容忍洗盘，2次方温和阻尼
             friction_multiplier = purity_norm ** 2
@@ -495,10 +502,18 @@ class KineticCoreEngine:
             # 午后及尾盘(13:30后)：长上影线是绝对的死亡派发，5次方极刑！
             friction_multiplier = purity_norm ** 5
         
-        # 绝对死线：如果纯度跌破30%且没有强流入，任何时间都必须死！
-        if purity_norm < 0.3 and inflow_ratio_pct < 2.0:
+        # 【CTO V109 能量重心绝对豁免】(取代之前粗糙的龙抬头)
+        # 如果当前价格依然死死踩在主力的能量重心(VWAP)之上，说明无论纯度多低(长上影线)，
+        # 都是主力在成本区上方的主动洗盘，而不是恐慌性踩踏出货！
+        # 此时，强行将极其严苛的 3次方/5次方 阻尼，降低为温和的 1.5 次方！
+        if is_above_center_of_mass and purity_norm < 0.7:
+            friction_multiplier = purity_norm ** 1.5
+            logger.debug(f"⚖️ [重心引力补偿] {stock_code} 纯度仅{purity_norm*100:.0f}%，但稳踩能量重心(VWAP:{vwap:.2f})！判定为高位强承接，执行物理豁免！")
+        
+        # 绝对死线：跌破重心，且无资金流入，立刻绞杀
+        if not is_above_center_of_mass and purity_norm < 0.3 and inflow_ratio_pct < 2.0:
             friction_multiplier = purity_norm ** 6
-            logger.debug(f"💀 [死线极刑] {stock_code} 纯度{purity_norm*100:.0f}%+流入{inflow_ratio_pct:.1f}%，6次方绞杀！")
+            logger.debug(f"💀 [死线极刑] {stock_code} 跌破VWAP({vwap:.2f})+纯度{purity_norm*100:.0f}%+流入{inflow_ratio_pct:.1f}%，6次方绞杀！")
         
         # ========== 5. 效率激活 = MFE Sigmoid ==========
         if inflow_ratio_pct <= 0.0:
