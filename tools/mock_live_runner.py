@@ -350,7 +350,7 @@ class MockLiveRunner:
     def _print_leaderboard(self):
         """
         【CTO V77】调用主引擎的render_live_dashboard - SSOT原则
-        不再使用粗糙的字符串拼接打印！
+        【CTO V78】补齐change/purity字段，添加pool_stats完整统计
         """
         from logic.utils.metrics_utils import render_live_dashboard
         
@@ -362,28 +362,53 @@ class MockLiveRunner:
             reverse=True
         )[:10]
         
+        up_count = 0
+        down_count = 0
+        
         for code, data in sorted_stocks:
             tick = data.get('tick', {})
             prev_close = tick.get('lastClose', tick.get('prev_close', data['price']))
             price = data['price']
-            change_pct = ((price - prev_close) / prev_close * 100) if prev_close > 0 else 0
+            high = tick.get('high', price)
+            low = tick.get('low', price)
+            
+            # 【CTO V78】涨跌幅百分比
+            change = ((price - prev_close) / prev_close * 100) if prev_close > 0 else 0
+            
+            # 【CTO V78】价格纯度 = (现价 - 昨收) / (最高 - 最低)
+            # 反映价格在日内振幅中的位置，正值=强势区，负值=弱势区
+            price_range = high - low
+            if price_range > 0:
+                raw_purity = (price - prev_close) / price_range
+            else:
+                # 一字板情况：价格无波动，纯度取决于涨跌方向
+                raw_purity = 1.0 if price > prev_close else (-1.0 if price < prev_close else 0)
+            purity = max(min(raw_purity * 100, 100.0), -100.0)  # 限制在[-100, 100]
+            
+            # 统计涨跌数量
+            if change >= 0:
+                up_count += 1
+            else:
+                down_count += 1
             
             top_targets.append({
                 'code': code,
                 'score': data['score'],
                 'price': price,
-                'change_pct': change_pct,
+                'change': change,  # 【CTO V78】字段名修正
                 'inflow_ratio': data.get('inflow_ratio', 0),
                 'sustain_ratio': data.get('sustain_ratio', 0),
                 'mfe': data.get('mfe', 0),
-                'purity': 0  # mock模式暂无纯度数据
+                'purity': purity  # 【CTO V78】真实计算，不再硬编码0
             })
         
-        # 调用主引擎的UI渲染函数
+        # 【CTO V78】完整pool_stats统计
         pool_stats = {
             'total': len(self.tick_queues),
             'active': len(self.leaderboard),
-            'passed_fine_filter': len(self.leaderboard)
+            'passed_fine_filter': len(self.leaderboard),
+            'up': up_count,
+            'down': down_count
         }
         render_live_dashboard(top_targets, pool_stats=pool_stats, is_rest=True)
 

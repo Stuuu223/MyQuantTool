@@ -241,25 +241,33 @@ class UniverseBuilder:
         all_data = {}
         missing_stocks = []
         
-        for stock in stock_list:
+        # 【CTO V78 BSON免疫】分批获取，防止C++底层内存泄漏或BSON超载
+        all_data = {}
+        missing_stocks = []
+        chunk_size = 500
+        
+        for i in range(0, len(stock_list), chunk_size):
+            chunk = stock_list[i:i + chunk_size]
             try:
                 data = xtdata.get_local_data(
-                    field_list=['open', 'high', 'low', 'close', 'volume', 'amount'],  # 【CTO终极天网】添加high/low用于计算日内动能净值
-                    stock_list=[stock],
+                    field_list=['open', 'high', 'low', 'close', 'volume', 'amount'],
+                    stock_list=chunk,
                     period='1d',
                     start_time=start_date,
                     end_time=end_date
                 )
-                # 【CTO V73修复】只要有数据（>=1天）就算有效！
-                # 次新股/停牌股可能数据不足5天，但数据是存在的
-                # 不要把它们算作"数据缺失"！
-                if data and stock in data and data[stock] is not None and len(data[stock]) >= 1:
-                    all_data[stock] = data[stock]
+                if data:
+                    for stock in chunk:
+                        # 【CTO V73】只要有数据（>=1天）就算有效！
+                        if stock in data and data[stock] is not None and len(data[stock]) >= 1:
+                            all_data[stock] = data[stock]
+                        else:
+                            missing_stocks.append(stock)
                 else:
-                    # 只有真正没有数据的才算缺失
-                    missing_stocks.append(stock)
-            except Exception:
-                missing_stocks.append(stock)
+                    missing_stocks.extend(chunk)
+            except Exception as e:
+                logger.error(f'[漏斗2] 批量获取失败: {e}')
+                missing_stocks.extend(chunk)
 
         # 【CTO V73修复】只有真正缺失的才报警，且阈值设为>100才报警（避免噪音）
         # 很多股票（停牌、次新、ST等）本身就不会有完整数据，这是正常的业务过滤
