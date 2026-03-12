@@ -481,15 +481,32 @@ class KineticCoreEngine:
         # 计算全天成交均价 (VWAP)，作为主力的真实能量重心
         vwap = (total_amount / total_volume) if total_volume > 0 else prev_close
         
-        # === 【CTO V110 绝对水位隔离：重力逃逸判据】 ===
-        # 物理铁律：必须同时满足 [翻红] + [高于开盘价] + [脱离底部3%以上] + [站稳均价线]
+        # === 【CTO V112 微观坍塌探测 (动量方向)】 ===
+        # 物理铁律：如果从高空自由落体回撤超过3.5%（比如冲高8%被砸回4.5%），
+        # 即使你现在还在水面上，这也不叫重力逃逸，这叫"流星坠毁"！
+        is_micro_collapsed = False
+        # 预先计算mfe用于返回（防止UnboundLocalError）
+        mfe = 0.0
+        if high > 0 and prev_close > 0:
+            drawdown_from_high = (high - price) / prev_close * 100.0
+            if drawdown_from_high > 3.5:  # V112精细调整：3.5%阈值捕获更多诱多
+                is_micro_collapsed = True
+                # 【CTO V112终极修复】流星坠毁直接静默！诱多出货票没资格上榜！
+                # 物理铁律：从高点回撤>3.5% = 资金链断裂 = 诱多出货
+                logger.debug(f"☄️ [流星坠毁静默] {stock_code} 从高点回撤{drawdown_from_high:.1f}%>3.5%，诱多出货判死刑！")
+                return 0.0, 0.0, inflow_ratio_pct, ratio_stock, mfe
+        
+        # === 【CTO V110 绝对水位隔离：重力逃逸判据 + V112微观坍塌】 ===
+        # 物理铁律：必须同时满足 [翻红] + [高于开盘价] + [脱离底部3%以上] + [站稳均价线] + [未发生微观坍塌]
         # 才算真正的"高空重力逃逸"，才有资格享受洗盘豁免！
         # 防止水下反抽(price < prev_close)骗炮！
+        # 【V112新增】防止高空坠毁流星(is_micro_collapsed)骗取豁免！
         is_gravitational_escape = (
             price > prev_close and           # 翻红：打破隔夜多空平衡
             price >= open_price and          # 高于开盘价：守住日内资金防线
             change_pct > 3.0 and             # 脱离底部引力区
-            price >= (vwap * 0.995)          # 站稳均价线
+            price >= (vwap * 0.995) and      # 站稳均价线
+            not is_micro_collapsed           # 【V112】未发生微观坍塌
         )
         
         # 时间熵特征提取 (判断当前处于什么交易阶段)
@@ -517,12 +534,20 @@ class KineticCoreEngine:
             friction_multiplier = purity_norm ** 1.5
             logger.debug(f"⚖️ [重力逃逸豁免] {stock_code} 高空水位(涨幅{change_pct:.1f}%)稳踩VWAP，纯度{purity_norm*100:.0f}%判定为洗盘！")
         
-        # 【CTO V110 水下反噬极刑】
-        # 如果未逃逸重力(水下或跌破开盘价)且纯度极低，执行6次方绞杀！
-        # 防止水下反抽骗炮！
-        if not is_gravitational_escape and purity_norm < 0.4:
+        # 【CTO V112 流星坠毁极刑】
+        # 如果发生了微观坍塌(从高点回撤>4.5%)，这就是"流星坠毁"！
+        # 无论纯度如何，都要执行严厉惩罚！诱多出货票必须被绞杀！
+        if is_micro_collapsed:
+            # 流星坠毁：用5次方惩罚，让分数归零
+            friction_multiplier = purity_norm ** 5
+            logger.debug(f"☄️ [流星坠毁] {stock_code} 从高点回撤>{4.5}%，执行5次方极刑！")
+        
+        # 【CTO V112 坠毁极刑】
+        # 只要你没资格进入逃逸层(被砸破了VWAP，或者发生了微观坍塌)，且纯度低于45%
+        # 直接执行最残忍的6次方极刑，让那些骗炮票分数彻底归零！
+        if not is_gravitational_escape and purity_norm < 0.45:
             friction_multiplier = purity_norm ** 6
-            logger.debug(f"💀 [水下反噬极刑] {stock_code} 未逃逸重力且纯度{purity_norm*100:.0f}%，执行6次方绞杀！")
+            logger.debug(f"💀 [坠毁极刑] {stock_code} 未逃逸重力且纯度{purity_norm*100:.0f}%，执行6次方绞杀！")
         
         # ========== 5. 效率激活 = MFE Sigmoid ==========
         if inflow_ratio_pct <= 0.0:
