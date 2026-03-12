@@ -505,12 +505,14 @@ class LiveTradingEngine:
         return amount_delta / volume_delta
     
     def _calculate_l1_inflow(self, stock_code: str, current_amount: float, current_price: float,
-                              pre_close: float, tick_high: float, tick_low: float) -> float:
+                              pre_close: float, tick_high: float, tick_low: float, tick: dict = None) -> float:
         """
-        【CTO V87 L1真实微积分】Tick差分流入累加器
+        【CTO V93 智能微积分算子】L2/L1 自适应优雅降级与盘口重力场
         
-        废除power_ratio伪物理估算，使用真实的delta_amount和delta_price计算流入。
-        物理真理：流入 = Δ成交额 × 价格方向系数
+        升级点：
+        1. 价格僵持时(ΔP=0)不再盲猜，使用盘口失衡度推断
+        2. L2上帝视角(十档)和L1刺刀模式(五档)自动降级
+        3. 三次方失衡算子(Imbalance^3)放大深层盘口意图
         
         Args:
             stock_code: 股票代码
@@ -519,6 +521,7 @@ class LiveTradingEngine:
             pre_close: 昨收价
             tick_high: 今日最高价
             tick_low: 今日最低价
+            tick: 原始Tick数据字典(用于提取盘口)
             
         Returns:
             真实净流入估算值
@@ -549,29 +552,45 @@ class LiveTradingEngine:
         delta_amount = current_amount - last_amount
         delta_price = current_price - last_price
         
-        # 价格方向系数：涨为正，跌为负
-        # 使用价格位置相对昨收的偏移来加权
         if delta_amount > 0:  # 有新成交
-            # 方向系数：基于价格相对昨收的位置
-            if pre_close > 0:
-                price_position = (current_price - pre_close) / pre_close
-                # 限制在[-1, 1]范围
-                direction = max(-1.0, min(1.0, price_position * 10))  # 放大敏感度
+            if delta_price > 0:
+                # 向上吃单，绝对做多
+                acc['inflow'] += delta_amount
+            elif delta_price < 0:
+                # 向下砸盘，绝对做空
+                acc['inflow'] -= delta_amount
             else:
-                direction = 1.0 if delta_price >= 0 else -1.0
-            
-            # 真实流入 = 增量金额 × 方向系数
-            l1_inflow = delta_amount * direction
-            
-            # 累加到状态机
-            acc['inflow'] += l1_inflow
-            acc['last_amount'] = current_amount
-            acc['last_price'] = current_price
-            
-            return acc['inflow']
-        else:
-            # 无新成交，返回累计值
-            return acc['inflow']
+                # === 价格僵持段：L2/L1 自适应盘口重力推断 ===
+                imbalance = 0.0
+                if tick:
+                    ask_list = tick.get('askVol', [])
+                    bid_list = tick.get('bidVol', [])
+                    
+                    # 动态嗅探：鸭子类型降级 (Duck Typing Degradation)
+                    if isinstance(ask_list, list) and len(ask_list) >= 10:
+                        # 👑 【L2 上帝视角】十档重力场全解析
+                        total_ask = sum(ask_list[:10])
+                        total_bid = sum(bid_list[:10])
+                    else:
+                        # ⚔️ 【L1 刺刀模式】无缝降级至五档推断
+                        total_ask = sum([tick.get(f'askVol{i}', 0) for i in range(1, 6)]) if not ask_list else sum(ask_list[:5])
+                        total_bid = sum([tick.get(f'bidVol{i}', 0) for i in range(1, 6)]) if not bid_list else sum(bid_list[:5])
+
+                    if total_bid + total_ask > 0:
+                        # 引入盘口引力非线性偏置 (Imbalance^3)
+                        # 过滤噪音，将主力真实的深层压单/托单意图指数级放大！
+                        imbalance = (total_bid - total_ask) / (total_bid + total_ask)
+                        directional_force = imbalance ** 3 if imbalance > 0 else -((-imbalance) ** 3)
+                        acc['inflow'] += delta_amount * directional_force
+                # 如果没有tick数据，使用价格位置推断
+                elif pre_close > 0:
+                    price_position = (current_price - pre_close) / pre_close
+                    direction = max(-1.0, min(1.0, price_position * 10))
+                    acc['inflow'] += delta_amount * direction
+
+        acc['last_amount'] = current_amount
+        acc['last_price'] = current_price
+        return acc['inflow']
     
     def _reset_l1_accumulator(self, stock_code: str = None):
         """
@@ -670,10 +689,10 @@ class LiveTradingEngine:
             tick_high = float(tick.get('high', current_price))
             tick_low = float(tick.get('low', current_price))
             
-            # 【CTO V87 L1真实微积分】废除power_ratio伪物理估算！
+            # 【CTO V93 L2/L1智能微积分】价格僵持时使用盘口重力推断
             # 使用Tick差分状态机计算真实净流入
             net_inflow_est = self._calculate_l1_inflow(
-                stock_code, current_amount, current_price, pre_close, tick_high, tick_low
+                stock_code, current_amount, current_price, pre_close, tick_high, tick_low, tick
             )
             
             # === 【CTO V85: L1 对倒阻尼防线】 ===
@@ -1913,11 +1932,11 @@ class LiveTradingEngine:
                     tick_high = tick.get('high', current_price)
                     tick_low = tick.get('low', current_price)
                     
-                    # 【CTO V87 L1真实微积分】废除power_ratio伪物理估算！
+                    # 【CTO V93 L2/L1智能微积分】价格僵持时使用盘口重力推断
                     # 使用Tick差分状态机计算真实净流入
                     net_inflow_est = self._calculate_l1_inflow(
                         stock_code, float(current_amount), float(current_price), 
-                        float(pre_close), float(tick_high), float(tick_low)
+                        float(pre_close), float(tick_high), float(tick_low), tick
                     )
                     
                     # 【CTO V90 终极微积分与崩溃修复】
@@ -2184,13 +2203,13 @@ class LiveTradingEngine:
                         # 【CTO V20】avg_amount_5d已在上方从缓存或兜底获取
                         flow_5min_median = avg_amount_5d / 48.0  # 每5分钟历史中位数（元）
                         
-                        # 【CTO V87 L1真实微积分】废除power_ratio伪物理估算！
+                        # 【CTO V93 L2/L1智能微积分】价格僵持时使用盘口重力推断
                         # 使用Tick差分状态机计算真实净流入
                         tick_high = tick.get('high', current_price)
                         tick_low = tick.get('low', current_price)
                         net_inflow_est = self._calculate_l1_inflow(
                             stock_code, float(current_amount), float(current_price),
-                            float(pre_close), float(tick_high), float(tick_low)
+                            float(pre_close), float(tick_high), float(tick_low), tick
                         )
                         
                         # 【CTO修复】使用tick真实high/low计算动态MFE
@@ -2629,11 +2648,11 @@ class LiveTradingEngine:
             else:
                 flow_5min_median = flow_5min / 10
             
-            # 【CTO V87 L1真实微积分】废除power_ratio伪物理估算！
+            # 【CTO V93 L2/L1智能微积分】价格僵持时使用盘口重力推断
             # 使用Tick差分状态机计算真实净流入
             net_inflow_est = self._calculate_l1_inflow(
                 stock_code, float(amount), float(price),
-                float(prev_close), float(high), float(low)
+                float(prev_close), float(high), float(low), tick_data
             )
             
             # === 【CTO V85: L1 对倒阻尼防线】 ===

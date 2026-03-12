@@ -437,16 +437,29 @@ class KineticCoreEngine:
         # ========== 3. 动能 = 质量 × 速度 ==========
         base_kinetic_energy = mass_potential * velocity
         
-        # ========== 4. 纯度断头台 (MICRO-MOMENTUM GUILLOTINE) ==========
-        # 【CTO V92 断崖式大摆锤】真龙纯度必须极高！
-        # 低于70%开始遭遇指数级剥夺，低于50%直接灰飞烟灭！
-        # 使用5次幂衰减: 纯度0.9->0.59, 纯度0.7->0.16(绞杀84%), 纯度0.5->0.03(绞杀97%)
+        # === 【CTO V93 动态博弈场：势能补偿与阻尼自适应】 ===
+        # 4. 微观动量阻尼 (纯度)
         price_range = high - low
-        if price_range > 0:
-            raw_purity = (price - low) / price_range
-        else:
-            raw_purity = 1.0 if change_pct > 0 else 0.0
-        friction_multiplier = min(max(raw_purity, 0.0), 1.0) ** 5
+        raw_purity = (price - low) / price_range if price_range > 0 else (1.0 if change_pct > 0 else 0.0)
+        purity_norm = min(max(raw_purity, 0.0), 1.0)
+        
+        # 初始阻尼（恢复到温和的平方，避免滥杀早盘洗盘真龙）
+        friction_multiplier = purity_norm ** 2 
+        
+        # 【物理豁免：低位强承接 (龙抬头)】
+        # 如果资金流入极强(>1.5%)且正在持续放量(>3.0x)，说明是洗盘后的强力反包点火
+        # 此时即便纯度很低(比如被砸到底部刚拉起，纯度仅22%)，也必须给予物理豁免！
+        if inflow_ratio_pct > 1.5 and ratio_stock > 3.0:
+            if purity_norm < 0.5:
+                # 触发"龙抬头"势能补偿，将原本跌破0.25的摩擦乘数强行托底到 0.6，释放动能！
+                friction_multiplier = max(friction_multiplier, 0.6)
+                logger.debug(f"🐉 [龙抬头豁免] {stock_code} 强承接(Inflow:{inflow_ratio_pct:.1f}%, 量:{ratio_stock:.1f}x)，纯度{purity_norm*100:.0f}%豁免阻尼！")
+        
+        # 【物理绞杀：无量滞涨】
+        # 反之，如果纯度极低(<30%)，且根本没有资金流入(<0.5%)，那才是真正的出货杂毛，执行指数极刑！
+        elif purity_norm < 0.3 and inflow_ratio_pct < 0.5:
+            friction_multiplier = purity_norm ** 5
+            logger.debug(f"💀 [死水出货] {stock_code} 无流入且破位(纯度{purity_norm*100:.0f}%)，执行5次方极刑绞杀！")
         
         # ========== 5. 效率激活 = MFE Sigmoid ==========
         if inflow_ratio_pct <= 0.0:
