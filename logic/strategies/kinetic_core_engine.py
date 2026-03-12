@@ -370,18 +370,17 @@ class KineticCoreEngine:
         Returns:
             tuple: (final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe)
         """
+
         if not isinstance(current_time, datetime):
             raise TypeError(f"current_time必须是datetime类型，当前类型: {type(current_time)}")
         
         # ==============================================================
-        # F1修复: 在函数入口处初始化 mfe 安全默认值，防止 Spike极刑前置分支
-        # 引用未赋值变量导致 UnboundLocalError 线上静默崩溃
-        # 【CTO V71修复】废除魔法数字-100.0，改用0.0作为物理底线
+        # 【CTO V88 纯正物理引擎】无低保、无门槛的连续力场
+        # 废除所有max/min硬编码，用连续物理算子计算动能
         # ==============================================================
-        mfe: float = 0.0
-        mfe_penalty = 1.0  # MFE惩罚系数（资金流出时降为0.1，微弱流入时降为0.5）
+        import math
         
-        # 0. 基础准备：安全转换 + 流通市值
+        # 0. 安全转换
         net_inflow = safe_float(net_inflow, 0.0)
         price = safe_float(price, 0.0)
         prev_close = safe_float(prev_close, 0.0)
@@ -391,332 +390,87 @@ class KineticCoreEngine:
         flow_5min = safe_float(flow_5min, 0.0)
         flow_15min = safe_float(flow_15min, 0.0)
         flow_5min_median_stock = safe_float(flow_5min_median_stock, 0.0)
-        space_gap_pct = safe_float(space_gap_pct, 0.0)
         float_volume_shares = safe_float(float_volume_shares, 0.0)
-        total_amount = safe_float(total_amount, 0.0)
-        total_volume = safe_float(total_volume, 0.0)
-        limit_up_queue_amount = safe_float(limit_up_queue_amount, 0.0)
         
+        # 安全检查
         if price <= 0:
-            raise ValueError(f"当前价格必须>0，当前值: {price}")
+            return 0.0, 0.0, 0.0, 0.0, 0.0
         if float_volume_shares <= 0:
-            raise ValueError(f"流通股本必须>0，当前值: {float_volume_shares}")
+            return 0.0, 0.0, 0.0, 0.0, 0.0
         if high < low:
-            raise ValueError(f"最高价不能低于最低价")
+            high = low = price  # 容错
         
+        # 量纲升维
         float_market_cap = float_volume_shares * price
-        
-        # ==============================================================
-        # 【CTO V66 绝地反击】彻底根治万股量纲引发的物理引擎崩盘
-        # ==============================================================
-        if float_market_cap > 0 and float_market_cap < 200000000:
+        if 0 < float_market_cap < 200000000:  # 2亿以下
             float_market_cap = float_market_cap * 10000.0
-            logger.debug(f"📐 [量纲升维] {stock_code} 市值{float_market_cap/100000000:.2f}亿已升维至真实人民币！")
+            logger.debug(f"V88 [量纲升维] {stock_code} 市值已升维")
         
-        calibrated_float_market_cap = float_market_cap
-        
-        # 第一步：【CTO V51 里氏震级模型】流入占比计算
+        # ========== 1. 质量 = 流入占比 × 放量倍数 ==========
+        # 流入占比（对数软压缩）
         if float_market_cap > 1000:
             raw_inflow_pct = (net_inflow / float_market_cap * 100.0)
             if abs(raw_inflow_pct) > 30.0:
                 sign = 1.0 if raw_inflow_pct > 0 else -1.0
                 inflow_ratio_pct = sign * (30.0 + 10.0 * math.log10(abs(raw_inflow_pct) - 29.0))
-                logger.debug(f"📐 [数学软封顶] {stock_code} inflow={raw_inflow_pct:.1f}% -> {inflow_ratio_pct:.1f}%")
             else:
                 inflow_ratio_pct = raw_inflow_pct
         else:
             inflow_ratio_pct = 0.0
         
-        inflow_ratio = inflow_ratio_pct
-        
-        float_market_cap_yi = calibrated_float_market_cap / 100_000_000
-        
-        # 2. 相对历史放量倍数
+        # 放量倍数（tanh自然限制）
         MIN_BASE_FLOW = 2000000.0
         safe_flow_5min = flow_5min if flow_5min > 0 else (flow_15min / 3.0 if flow_15min > 0 else 1.0)
-        safe_median = max(flow_5min_median_stock, MIN_BASE_FLOW)
-        raw_ratio_stock = safe_flow_5min / safe_median
-        
-        # 【CTO V87 纯正物理】废除硬截断max/min，改用tanh连续平滑
-        # tanh(x)在x=0附近接近线性，x>3时渐近1，完美模拟放量边际递减
-        # ratio_stock_raw=1 -> tanh(1)=0.76 -> 映射到5.2x
-        # ratio_stock_raw=3 -> tanh(3)=0.995 -> 映射到6.97x
-        # ratio_stock_raw=10 -> tanh(10)=1.0 -> 映射到7.0x(渐近上限)
+        safe_median = flow_5min_median_stock if flow_5min_median_stock > 0 else MIN_BASE_FLOW
+        raw_ratio_stock = safe_flow_5min / safe_median if safe_median > 0 else 1.0
         ratio_stock = 1.0 + 6.0 * math.tanh(raw_ratio_stock - 1.0)
-        ratio_stock = max(0.1, ratio_stock)  # 仅保留下限保护
         
-        # 3. 价格推力（日内强度0-1）
-        # 【CTO V87 纯正物理】废除硬截断，改用Sigmoid连续平滑
-        # 价格推力本质是价格在日内振幅中的位置，物理意义清晰
-        if high == low:
-            raw_price_strength = 1.0 if price > prev_close else 0.0
-        else:
-            raw_price_strength = (price - low) / (high - low)
+        # 质量势能
+        mass_potential = (inflow_ratio_pct / 100.0) * ratio_stock
         
-        # Sigmoid平滑映射到(0.05, 0.95)区间，避免极端边界
-        # x=0 -> sigmoid(-4)=0.018, x=1 -> sigmoid(4)=0.982
-        price_strength = 1.0 / (1.0 + math.exp(-8.0 * (raw_price_strength - 0.5)))
+        # ========== 2. 速度 = 涨跌幅%（无底保！）==========
+        velocity = (price - prev_close) / prev_close * 100.0 if prev_close > 0 else 0.0
         
-        # 【CTO V84 物理绞杀】放量滞涨检测
-        # 如果放量(ratio_stock>3)但价格推力极低(<0.3)，说明爆量出货/长上影线，动能坍塌！
-        effective_ratio = ratio_stock
-        if ratio_stock > 3.0 and price_strength < 0.3:
-            effective_ratio = 0.1  # 放量变成阻力
-            logger.info(f"💀 [放量滞涨] {stock_code} 放量{ratio_stock:.1f}倍但推力仅{price_strength:.2f}，判定出货！动能坍塌至0.1")
+        # ========== 3. 动能 = 质量 × 速度 ==========
+        base_kinetic_energy = mass_potential * velocity
         
-        # 4. 乘法动能模型 = 流入% × 有效放量倍数 × 价格推力
-        # 【CTO V84】废除0.5底噪！涨多少就是多少推力！
-        if inflow_ratio_pct > 0:
-            base_power = inflow_ratio_pct * effective_ratio * price_strength
-        else:
-            base_power = abs(inflow_ratio_pct) * 0.5
-        
-        # 【CTO V83 物理宪法】MFE重铸为Sigmoid激活函数
-        # 做功效率的影响应该是连续的S型曲线，而非阶梯式跃变
-        mfe_multiplier = 1.0  # 默认乘数
-        
-        if inflow_ratio_pct <= 0.5:
-            # 【激活能门槛】流入<=0.5%时，振幅只是噪音，MFE无物理意义
-            mfe = 0.0
-            mfe_multiplier = 0.1  # 极刑压制
-            logger.debug(f"[MFE无效] {stock_code} 流入仅{inflow_ratio_pct:.2f}%，激活能不足，乘数×0.1")
-        else:
-            # 真实MFE计算：做功效率 = 振幅 / 净流入
-            upward_thrust = ((price - low) + (high - open_price)) / 2
-            price_range_pct = upward_thrust / prev_close * 100 if prev_close > 0 else 0.0
-            mfe = max(0.01, price_range_pct / inflow_ratio_pct)
-            
-            # 【连续物理算子：MFE Sigmoid激活函数】
-            # 公式: M(x) = 3.0 / (1 + exp(-2.0 * (x - 1.2)))
-            # MFE = 0.2 (重摩擦) -> 乘数 ~0.35 (极刑压制)
-            # MFE = 1.2 (标准线) -> 乘数 = 1.50 (平滑过渡)
-            # MFE = 2.5 (大真空) -> 乘数 ~2.79 (逼近极值3.0)
-            mfe_multiplier = 3.0 / (1.0 + math.exp(-2.0 * (mfe - 1.2)))
-            logger.debug(f"[MFE Sigmoid] {stock_code} MFE={mfe:.2f}，乘数×{mfe_multiplier:.2f}")
-        
-        # 【CTO V82】应用MFE乘数，而非加法！
-        base_power = base_power * mfe_multiplier
-
-        # 资金净流出惩罚
-        if inflow_ratio_pct <= 0:
-            base_power *= 0.1  # 动能坍塌惩罚
-            logger.warning(f"💀 [动能坍塌] {stock_code} 资金净流出{inflow_ratio_pct:.1f}%，一票否决！")
-        elif 0 < inflow_ratio_pct < 2.0:
-            base_power *= 0.5  # 无效做功惩罚
-            logger.debug(f"🐌 [无效做功] {stock_code} 流入极弱({inflow_ratio_pct:.1f}%)，动能无法维持")
-        
-        # 大力出奇迹标志
-        cap_penalty = (float_market_cap_yi / 100.0) * 1.5
-        miracle_threshold = max(3.0, 10.0 - cap_penalty)
-        
-        is_force_override = False
-        if inflow_ratio_pct > miracle_threshold and mfe > 0.5:
-            logger.info(f"🔥 [大力出奇迹] {stock_code} 净流入{inflow_ratio_pct:.1f}%>{miracle_threshold:.1f}%阈值(市值{float_market_cap_yi:.0f}亿)！无视一切引力！")
-            is_force_override = True
-        
-        # 第二步：出货拦截
-        is_net_outflow = inflow_ratio_pct <= 0
-        
-        # 第三步：VWAP洗盘容错
-        vwap_multiplier = 1.0
-        if total_volume > 0 and total_amount > 0:
-            vwap = total_amount / total_volume
-            if price < vwap and vwap > 0:
-                vwap_multiplier = 0.5
-                logger.debug(f"[VWAP洗盘容错] {stock_code} 价格{price:.2f} < VWAP{vwap:.2f}, 动能腰斩打5折！")
-        
-        base_power = base_power * vwap_multiplier
-        
-        # 【CTO V83 物理宪法】纯度重铸为抛物线阻尼器
-        # 计算纯度 (0.0 到 1.0) - 价格在日内高低点的位置
+        # ========== 4. 摩擦阻尼 = 纯度平方 ==========
         price_range = high - low
         if price_range > 0:
             raw_purity = (price - low) / price_range
         else:
-            # 一字板情况：涨停给100%，跌停给0%
-            raw_purity = 1.0 if price >= prev_close else 0.0
+            raw_purity = 1.0 if velocity > 0 else 0.0
+        friction_multiplier = min(max(raw_purity, 0.0), 1.0) ** 2
         
-        purity_norm = min(max(raw_purity, 0.0), 1.0)
+        # ========== 5. 效率激活 = MFE Sigmoid ==========
+        if inflow_ratio_pct <= 0.0:
+            efficiency_multiplier = 0.0
+            mfe = 0.0
+        else:
+            upward_thrust = ((price - low) + (high - open_price)) / 2
+            price_range_pct = upward_thrust / prev_close * 100.0 if prev_close > 0 else 0.0
+            mfe = price_range_pct / inflow_ratio_pct if inflow_ratio_pct > 0 else 0.0
+            efficiency_multiplier = 3.0 / (1.0 + math.exp(-2.0 * (mfe - 1.2)))
         
-        # 【连续物理算子：纯度动量阻尼】
-        # 纯度 0.9 -> 乘数 0.81 (轻微摩擦)
-        # 纯度 0.5 -> 乘数 0.25 (严重压制)
-        # 纯度 0.2 -> 乘数 0.04 (毁灭性坍塌)
-        # 纯度 0.02 -> 乘数 0.0004 (绝对归零)
-        purity_multiplier = purity_norm ** 2
+        # ========== 6. 终极融合 ==========
+        final_score_raw = base_kinetic_energy * friction_multiplier * efficiency_multiplier
+        final_score = round(final_score_raw * 1000.0, 1)
+        if final_score < 0:
+            final_score = 0.0
         
-        # 兼容旧版输出
-        purity_pct = purity_norm * 100.0
-        change_pct = (price - prev_close) / prev_close * 100 if prev_close > 0 else 0
-        
-        # 第四步：神级乘数区
-        multiplier = 1.0
-        
-        # A. 维持能力（sustain_ratio）- 【CTO V65 质量引力阻尼重铸】
-        MIN_BASE_FLOW = 2000000.0
-        safe_median_15min = max(flow_5min_median_stock * 3.0, MIN_BASE_FLOW * 3.0)
-        
-        raw_sustain = flow_15min / safe_median_15min if safe_median_15min > 0 else 1.0
-        
-        float_mc_yi = float_market_cap / 100000000.0 if float_market_cap > 0 else 0.0
-        
+        # Sustain计算（兼容输出）
+        safe_median_15min = flow_5min_median_stock * 3.0 if flow_5min_median_stock > 0 else MIN_BASE_FLOW * 3.0
+        sustain_ratio = flow_15min / safe_median_15min if safe_median_15min > 0 else 0.0
+        float_mc_yi = float_market_cap / 100000000.0
         if float_mc_yi > 0:
-            gravity_damper = max(0.5, min(2.5, 1.0 + math.log10(float_mc_yi / 50.0) * 0.5))
+            gravity_damper = min(max(1.0 + math.log10(float_mc_yi / 50.0) * 0.5, 0.5), 2.5)
         else:
             gravity_damper = 0.5
+        sustain_ratio = sustain_ratio * gravity_damper
         
-        sustain_ratio = raw_sustain * gravity_damper
+        logger.debug(f"[V88Physics] {stock_code} | mass:{mass_potential:.4f} | vel:{velocity:.2f}% | ke:{base_kinetic_energy:.4f} | friction:{friction_multiplier:.2f} | mfe_mult:{efficiency_multiplier:.2f} | score:{final_score}")
         
-        dynamic_ceiling = 30.0 * gravity_damper
-        sustain_ratio = min(sustain_ratio, dynamic_ceiling)
-        
-        health_threshold = 5.0 * gravity_damper
-        survival_threshold = 1.0 * (1.0 / gravity_damper)
-        
-        logger.debug(f"⚖️ [引力阻尼] {stock_code} 市值{float_mc_yi:.0f}亿, raw={raw_sustain:.2f}×阻尼{gravity_damper:.2f}=sustain{sustain_ratio:.2f}, 阈值[存活{survival_threshold:.2f}|健康{health_threshold:.2f}]")
-        
-        # 【CTO强制熔断】Spike极刑前置
-        # F1修复: mfe 已在函数入口处初始化为 0.0，此处引用绝对安全
-        if flow_15min <= 0:
-            logger.warning(f"💀 [Spike极刑] {stock_code} 15分钟净流出，一票否决")
-            return 0.0, -1.0, inflow_ratio_pct, ratio_stock, mfe
-        
-        if sustain_ratio < survival_threshold:
-            logger.warning(f"💀 [Spike极刑] {stock_code} sustain={sustain_ratio:.2f}<存活阈值{survival_threshold:.2f}，被抛压瓦解")
-            return 0.0, sustain_ratio, inflow_ratio_pct, ratio_stock, mfe
-        
-        stock_identifier = f"{current_time.strftime('%H:%M')}@{price:.2f}"
-        
-        # MFE制衡
-        if mfe < 1.0:
-            mfe_factor = max(0.5, mfe)
-            effective_sustain = sustain_ratio * mfe_factor
-            logger.info(f"🐢 [MFE压制] {stock_code} sustain={sustain_ratio:.2f}×MFE{mfe:.2f}(保护{mfe_factor:.2f})={effective_sustain:.2f}")
-        else:
-            effective_sustain = sustain_ratio
-            mfe_factor = 1.0
-        
-        if effective_sustain > health_threshold:
-            multiplier *= 1.5
-            logger.info(f"🔥 [资金洪流] {stock_identifier} effective_sustain={effective_sustain:.2f}>健康阈值{health_threshold:.2f}，乘数×1.5！")
-        elif effective_sustain < survival_threshold:
-            multiplier *= 0.3
-            logger.warning(f"[资金退潮] {stock_identifier} effective_sustain={effective_sustain:.2f}<存活阈值{survival_threshold:.2f}，降权至0.3")
-        
-        # B. 筹码纯度指数衰减模型
-        bonus_score = 0.0
-        alpha = 20.0
-        purity_multiplier = math.exp(-space_gap_pct * alpha)
-        bonus_score += 15.0 * purity_multiplier
-        
-        # C. 吸血效应
-        if inflow_ratio_pct > 1.5:
-            bonus_score += 15.0
-        
-        # D. 横向虹吸效应
-        if vampire_ratio_pct > 5.0:
-            bonus_score += 50.0
-            logger.info(f"🦇 [横向虹吸] {stock_code} 抽血{vampire_ratio_pct:.2f}%，+50分")
-        elif vampire_ratio_pct > 3.0:
-            bonus_score += 30.0
-            logger.info(f"🦇 [横向虹吸] {stock_code} 抽血{vampire_ratio_pct:.2f}%，+30分")
-        elif vampire_ratio_pct > 1.0:
-            bonus_score += 15.0
-        
-        # E. 【CTO V80】废除时间衰减毒瘤！
-        # 物理真理：真龙的势能不会因为到了下午就自然衰减！
-        # 尾盘打折的逻辑是期权定价(Theta)的错误应用！
-        # 只保留早盘加成，尾盘不惩罚
-        if mode == "scan":
-            pass
-        else:
-            if current_time.hour == 9 and current_time.minute <= 40:
-                multiplier *= 1.2  # 早盘溢价保留
-            # 【删除】elif current_time.hour >= 14: multiplier *= 0.5
-            # 真龙14:59的动能和09:30是一模一样的！
-        
-        # F. 价格动能净值
-        if high > low:
-            price_momentum = (price - low) / (high - low)
-        else:
-            price_momentum = 1.0 if price > prev_close else 0.0
-        
-        is_detonation_critical = (price_momentum > 0.90)
-        
-        change_pct = (price - prev_close) / prev_close if prev_close > 0 else 0
-        
-        if is_detonation_critical and not is_limit_up:
-            if inflow_ratio_pct > 5.0:
-                logger.info(f"🚀 [势能起爆] {stock_code} 动能净值{price_momentum*100:.1f}%，流入{inflow_ratio_pct:.1f}%！")
-                multiplier = max(multiplier, 2.0)
-                bonus_score += 25.0
-            elif inflow_ratio_pct > 2.0:
-                bonus_score += 10.0
-                logger.info(f"💪 [高位坚挺] {stock_code} 动能净值{price_momentum*100:.1f}%，流入{inflow_ratio_pct:.1f}%！+10分")
-        
-        in_friction_zone = (0.0 <= space_gap_pct <= 0.05)
-        is_violent_inflow = (inflow_ratio_pct > 5.0)
-        
-        if in_friction_zone and is_violent_inflow:
-            if is_limit_up:
-                multiplier *= 3.0
-                logger.info(f"🔥 [史诗级真龙] {stock_code} 爆量({inflow_ratio_pct:.1f}%)摧毁阻力位！无视摩擦力封板，乘数起飞！")
-                if mfe < 0:
-                    mfe = abs(mfe)
-            else:
-                multiplier *= 0.1
-                logger.warning(f"💀 [摩擦力绞杀] {stock_code} 阻力位爆量({inflow_ratio_pct:.1f}%)但未能破局，动能枯竭，一票否决！")
-        
-        # G. 真龙升天器
-        if is_limit_up and limit_up_queue_amount > 0:
-            queue_bonus = min(3.0, limit_up_queue_amount / 100_000_000.0)
-            multiplier *= (1.5 + queue_bonus)
-            logger.info(f"[真龙确立] {stock_identifier} 强势封板，封单额{limit_up_queue_amount/10000:.0f}万，乘数飙升！")
-        
-        # 第六步：最终得分
-        memory_multiplier = 1.0
-        
-        if is_yesterday_limit_up:
-            memory_multiplier += 1.0
-            logger.info(f"🔥 [涨停基因] {stock_code} 昨日涨停，霸权溢价+1.0！")
-        
-        if yesterday_vol_ratio > 3.0:
-            genetic_bonus = min(yesterday_vol_ratio * 0.1, 1.0) * 0.5
-            memory_multiplier += genetic_bonus
-            logger.info(f"🧠 [暴动基因] {stock_code} 昨日量比={yesterday_vol_ratio:.1f}，遗传溢价+{genetic_bonus:.2f}！")
-        
-        logger.info(f"🧬 [海马体] {stock_code} 记忆乘数={memory_multiplier:.2f}x")
-        
-        # 换手率纯度乘数
-        turnover_multiplier = 1.0
-        if float_volume_shares > 0 and total_volume > 0:
-            turnover_pct = (total_volume / float_volume_shares) * 100
-            if is_limit_up:
-                if turnover_pct < 2.0:
-                    turnover_multiplier = 0.5
-                    logger.warning(f"[一字板惩罚] {stock_code} 涨停但换手率仅{turnover_pct:.1f}%，疑似庄股，分数打5折！")
-                elif 5.0 <= turnover_pct <= 20.0:
-                    turnover_multiplier = 1.5
-                    logger.info(f"🔥 [换手龙] {stock_code} 涨停+换手率{turnover_pct:.1f}%，极品真龙，乘数×1.5！")
-        
-        if is_force_override:
-            bonus_score += 40.0
-            logger.info(f"🔥 [大力出奇迹] {stock_code} 流入{inflow_ratio_pct:.1f}%且MFE>{mfe:.2f}，+40分")
-        
-        # 【CTO V83 终极力场方程式】
-        # 施加空间、效率与微观方向的力场乘数
-        # base_power已经应用了mfe_multiplier，现在应用purity_multiplier
-        base_power_with_physics = base_power * purity_multiplier
-        
-        final_score = round(base_power_with_physics * multiplier * memory_multiplier * turnover_multiplier + bonus_score, 2)
-        
-        # 【CTO V83】物理乘数已经包含MFE和纯度的连续影响，无需额外硬编码阈值
-        
-        if is_net_outflow:
-            final_score = final_score * 0.5
-            logger.debug(f"[出货拦截] {stock_identifier} 净流出，分数减半")
-        
-        return final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe
+        return final_score, sustain_ratio, inflow_ratio_pct, ratio_stock, mfe
     
     def calculate_volume_ratio(
         self,
