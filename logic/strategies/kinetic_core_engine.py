@@ -425,8 +425,15 @@ class KineticCoreEngine:
         raw_ratio_stock = safe_flow_5min / safe_median if safe_median > 0 else 1.0
         ratio_stock = 1.0 + 6.0 * math.tanh(raw_ratio_stock - 1.0)
         
+        # ========== 1. 洛伦兹质量收缩 (Lorentz Contraction) ==========
+        # 【CTO V100 铁律】放量>10倍后边际效用急剧递减，防止90x异常对倒撑爆引擎！
+        if ratio_stock > 10.0:
+            effective_ratio = 10.0 + 5.0 * math.log10(ratio_stock - 9.0)
+        else:
+            effective_ratio = ratio_stock
+        
         # 质量势能
-        mass_potential = (inflow_ratio_pct / 100.0) * ratio_stock
+        mass_potential = (inflow_ratio_pct / 100.0) * effective_ratio
         
         # ========== 2. 指数速度向量 (VELOCITY CUBED) ==========
         # 【CTO V92 铁律】涨幅的威力是非线性的！3次幂让涨幅9%的动能是涨幅3%的27倍！
@@ -437,29 +444,34 @@ class KineticCoreEngine:
         # ========== 3. 动能 = 质量 × 速度 ==========
         base_kinetic_energy = mass_potential * velocity
         
-        # === 【CTO V93 动态博弈场：势能补偿与阻尼自适应】 ===
-        # 4. 微观动量阻尼 (纯度)
+        # === 【CTO V100 终极时空物理引擎】 ===
+        # 4. 时空微观动量阻尼 (Time-Space Purity Damping)
         price_range = high - low
         raw_purity = (price - low) / price_range if price_range > 0 else (1.0 if change_pct > 0 else 0.0)
         purity_norm = min(max(raw_purity, 0.0), 1.0)
         
-        # 初始阻尼（恢复到温和的平方，避免滥杀早盘洗盘真龙）
-        friction_multiplier = purity_norm ** 2 
+        # 时间熵特征提取 (判断当前处于什么交易阶段)
+        minutes_from_open = (current_time.hour * 60 + current_time.minute) - (9 * 60 + 30)
         
-        # 【物理豁免：低位强承接 (龙抬头)】
-        # 如果资金流入极强(>1.5%)且正在持续放量(>3.0x)，说明是洗盘后的强力反包点火
-        # 此时即便纯度很低(比如被砸到底部刚拉起，纯度仅22%)，也必须给予物理豁免！
-        if inflow_ratio_pct > 1.5 and ratio_stock > 3.0:
-            if purity_norm < 0.5:
-                # 触发"龙抬头"势能补偿，将原本跌破0.25的摩擦乘数强行托底到 0.6，释放动能！
-                friction_multiplier = max(friction_multiplier, 0.6)
-                logger.debug(f"🐉 [龙抬头豁免] {stock_code} 强承接(Inflow:{inflow_ratio_pct:.1f}%, 量:{ratio_stock:.1f}x)，纯度{purity_norm*100:.0f}%豁免阻尼！")
-        
-        # 【物理绞杀：无量滞涨】
-        # 反之，如果纯度极低(<30%)，且根本没有资金流入(<0.5%)，那才是真正的出货杂毛，执行指数极刑！
-        elif purity_norm < 0.3 and inflow_ratio_pct < 0.5:
+        # 动态阻尼场：根据时间流逝，对纯度的容忍度呈几何级下降！
+        if minutes_from_open < 60:
+            # 早盘(10:30前)：容忍洗盘，2次方温和阻尼
+            friction_multiplier = purity_norm ** 2
+            # 早盘龙抬头豁免 (强流入+放量承接)
+            if inflow_ratio_pct > 1.5 and effective_ratio > 3.0 and purity_norm < 0.5:
+                friction_multiplier = max(friction_multiplier, 0.4)
+                logger.debug(f"🐉 [龙抬头豁免] {stock_code} 早盘强承接，纯度{purity_norm*100:.0f}%豁免！")
+        elif minutes_from_open < 180:
+            # 盘中(10:30-13:30)：3次方中等绞杀
+            friction_multiplier = purity_norm ** 3
+        else:
+            # 午后及尾盘(13:30后)：长上影线是绝对的死亡派发，5次方极刑！
             friction_multiplier = purity_norm ** 5
-            logger.debug(f"💀 [死水出货] {stock_code} 无流入且破位(纯度{purity_norm*100:.0f}%)，执行5次方极刑绞杀！")
+        
+        # 绝对死线：如果纯度跌破30%且没有强流入，任何时间都必须死！
+        if purity_norm < 0.3 and inflow_ratio_pct < 2.0:
+            friction_multiplier = purity_norm ** 6
+            logger.debug(f"💀 [死线极刑] {stock_code} 纯度{purity_norm*100:.0f}%+流入{inflow_ratio_pct:.1f}%，6次方绞杀！")
         
         # ========== 5. 效率激活 = MFE Sigmoid ==========
         if inflow_ratio_pct <= 0.0:
