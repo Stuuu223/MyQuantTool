@@ -449,24 +449,23 @@ class KineticCoreEngine:
         # 做功效率的影响应该是连续的S型曲线，而非阶梯式跃变
         mfe_multiplier = 1.0  # 默认乘数
         
-        if inflow_ratio_pct < 1.0:
-            # 【激活能门槛】流入<1%时，振幅只是噪音，MFE无物理意义
-            mfe = 1.0
-            mfe_multiplier = 1.0
-            logger.debug(f"[MFE无效] {stock_code} 流入仅{inflow_ratio_pct:.2f}%，激活能不足，MFE=1.0")
+        if inflow_ratio_pct <= 0.5:
+            # 【激活能门槛】流入<=0.5%时，振幅只是噪音，MFE无物理意义
+            mfe = 0.0
+            mfe_multiplier = 0.1  # 极刑压制
+            logger.debug(f"[MFE无效] {stock_code} 流入仅{inflow_ratio_pct:.2f}%，激活能不足，乘数×0.1")
         else:
             # 真实MFE计算：做功效率 = 振幅 / 净流入
             upward_thrust = ((price - low) + (high - open_price)) / 2
-            price_range_pct = upward_thrust / prev_close if prev_close > 0 else 0.0
-            mfe_raw = price_range_pct / (inflow_ratio_pct / 100.0)
-            mfe = max(0.01, mfe_raw)
+            price_range_pct = upward_thrust / prev_close * 100 if prev_close > 0 else 0.0
+            mfe = max(0.01, price_range_pct / inflow_ratio_pct)
             
             # 【连续物理算子：MFE Sigmoid激活函数】
-            # M(x) = 3.0 / (1 + exp(-1.5 * (x - 1.0)))
-            # MFE=0.1 -> 乘数 0.61 (压制)
-            # MFE=1.0 -> 乘数 1.50 (基准)
-            # MFE=3.0 -> 乘数 2.85 (逼近极值3.0)
-            mfe_multiplier = 3.0 / (1.0 + math.exp(-1.5 * (mfe - 1.0)))
+            # 公式: M(x) = 3.0 / (1 + exp(-2.0 * (x - 1.2)))
+            # MFE = 0.2 (重摩擦) -> 乘数 ~0.35 (极刑压制)
+            # MFE = 1.2 (标准线) -> 乘数 = 1.50 (平滑过渡)
+            # MFE = 2.5 (大真空) -> 乘数 ~2.79 (逼近极值3.0)
+            mfe_multiplier = 3.0 / (1.0 + math.exp(-2.0 * (mfe - 1.2)))
             logger.debug(f"[MFE Sigmoid] {stock_code} MFE={mfe:.2f}，乘数×{mfe_multiplier:.2f}")
         
         # 【CTO V82】应用MFE乘数，而非加法！
