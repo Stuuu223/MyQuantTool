@@ -433,14 +433,33 @@ class KineticCoreEngine:
             effective_ratio = ratio_stock
         
         # 质量势能
-        # 【CTO V101 连板真空加速器】跨日动量继承！
+        # === 【CTO V105 去魔法化：跨日封单溢出算子】 ===
         if is_yesterday_limit_up:
-            # 如果带有连板基因，废除对当天放量(effective_ratio)的依赖！
-            # 缩量秒板是最高荣耀。赋予其恒定且庞大的基础质量，并叠加流入势能！
-            # 将其 mass 强制托底并放大，碾压所有首板杂毛！
-            mass_potential = (inflow_ratio_pct / 100.0) * max(effective_ratio, 8.0) * 3.0
-            logger.debug(f"👑 [连板基因觉醒] {stock_code} 触发跨日动量继承！质量无视缩量强制膨胀至 {mass_potential:.4f}")
+            # 废除拍脑袋的 "3倍"！我们需要根据昨天封板时的真实动能溢出来计算今天的基础质量。
+            # 【提取真实溢出势能】yesterday_vol_ratio参数包含昨日量比信息
+            # 如果昨天是巨量封板，今天应该继承更大的势能
+            overflow_multiplier = 1.0  # 默认温和继承
+            
+            if yesterday_vol_ratio > 1.0 and flow_5min_median_stock > 0:
+                # 溢出乘数 = 昨日量比的对数平滑
+                # 昨日量比越高，说明资金介入越深，今日继承势能越大
+                overflow_multiplier = 1.0 + math.log10(1.0 + yesterday_vol_ratio) * 2.0
+            else:
+                # 若缺乏昨日量比数据，仅给予温和的 1.5 倍基础惯性继承
+                overflow_multiplier = 1.5
+            
+            # 材质脆性检测 (踢铁板逻辑)
+            # 如果今天极端缩量且盘中无封单，这是惯性衰竭的铁板！
+            if ratio_stock < 0.5 and limit_up_queue_amount < 50000000.0:
+                # 极端缩量且今天盘中无封单，这是惯性衰竭的铁板！
+                mass_potential = (inflow_ratio_pct / 100.0) * 0.1
+                logger.debug(f"⚠️ [惯性衰竭] {stock_code} 缩量铁板(ratio:{ratio_stock:.2f})，剥夺连板特权！")
+            else:
+                # 真正的动态质量继承！没有魔法数字，全靠真实数据说话！
+                mass_potential = (inflow_ratio_pct / 100.0) * overflow_multiplier
+                logger.debug(f"👑 [真实动量继承] {stock_code} 溢出乘数: {overflow_multiplier:.2f}x，质量: {mass_potential:.4f}")
         else:
+            # 非连板股，使用当天的实际放量作为质量
             mass_potential = (inflow_ratio_pct / 100.0) * effective_ratio
         
         # ========== 2. 指数速度向量 (VELOCITY CUBED) ==========
@@ -491,11 +510,35 @@ class KineticCoreEngine:
             mfe = price_range_pct / inflow_ratio_pct if inflow_ratio_pct > 0 else 0.0
             efficiency_multiplier = 3.0 / (1.0 + math.exp(-2.0 * (mfe - 1.2)))
         
+        # === 【CTO V103 纯物理力场防线：废除一切静态位移阈值】 ===
+        
+        # 1. MFE 摩擦力死亡之墙 (取代涨幅<3%静态阈值)
+        # 不看涨幅！看做功效率。如果流入了一定资金(>0.5%)，但 MFE 效率极低(<0.1)，
+        # 说明每一分钱都砸在了套牢盘的绝对阻力墙上（动能转化为无用的内能热量）。直接放弃！
+        if not is_yesterday_limit_up and inflow_ratio_pct > 0.5:
+            if mfe < 0.1:
+                logger.debug(f"🧱 [阻力死墙] {stock_code} 做功效率极低(MFE:{mfe:.2f})，动能被摩擦力耗尽，静默！")
+                return 0.0, 0.0, inflow_ratio_pct, ratio_stock, mfe
+        
+        # 2. 重力势能坍塌 (Gravitational Collapse, 取代回撤>4%静态阈值)
+        # 物理学定义：价格被砸穿了日内的"能量质心"(近似为当日开盘价)。
+        # 如果当前价格跌破了开盘价，且被死死压在日内最高点的一半以下(纯度<0.4)，主升力场已坍塌。
+        if price < open_price and purity_norm < 0.4:
+            logger.debug(f"🕳️ [引力坍塌] {stock_code} 跌破开盘价且纯度仅{purity_norm*100:.0f}%，势能坠入黑洞！")
+            return 0.0, 0.0, inflow_ratio_pct, ratio_stock, mfe
+        
         # ========== 6. 终极融合 ==========
         final_score_raw = base_kinetic_energy * friction_multiplier * efficiency_multiplier
         final_score = round(final_score_raw * 1000.0, 1)
         if final_score < 0:
             final_score = 0.0
+        
+        # === 【CTO V103 纯物理力场防线：动量虚空惩罚】 ===
+        # 物理学定义：位移大(涨停)，但质量极轻(无承接资金)，说明在高空处于失重漂浮状态，极其危险。
+        # 如果速度极快(velocity>300) 但 势能质量(mass_potential) < 0.05 且非连板票，没资格打高分！
+        if velocity > 300.0 and mass_potential < 0.05 and not is_yesterday_limit_up:
+            final_score = final_score / 10.0
+            logger.debug(f"🎈 [动量虚空] {stock_code} 速度快({velocity:.0f})但质量空洞(Mass:{mass_potential:.4f})，判定为失重跟风！")
         
         # Sustain计算（兼容输出）
         safe_median_15min = flow_5min_median_stock * 3.0 if flow_5min_median_stock > 0 else MIN_BASE_FLOW * 3.0
