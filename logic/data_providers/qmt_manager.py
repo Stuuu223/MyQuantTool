@@ -169,7 +169,7 @@ class QmtDataManager:
     # 只有真正需要时（start_vip_service 调用时）才触发加载
     # ----------------------------------------------------------
     @property
-    def vip_token(self) -> str:
+    def vip_token(self) -> Optional[str]:
         if self._vip_token_cache is None:
             self._vip_token_cache = self._load_vip_token(self._vip_token_override)
         return self._vip_token_cache
@@ -200,18 +200,19 @@ class QmtDataManager:
 
         return str(sandbox_dir)
 
-    def _load_vip_token(self, override: Optional[str] = None) -> str:
-        """从环境变量加载 VIP Token（严格校验，不允许空串）"""
+    def _load_vip_token(self, override: Optional[str] = None) -> Optional[str]:
+        """【CTO V85 优雅降级】从环境变量加载 VIP Token，无 Token 则平滑降级"""
         if override and override.strip():
             return override.strip()
 
         env_token = os.getenv("QMT_VIP_TOKEN")
         if env_token and env_token.strip():
-            logger.info("[QmtDataManager] 从环境变量读取VIP Token")
+            logger.info("[QmtDataManager] 从环境变量读取 VIP Token，准备激活 L2 权限")
             return env_token.strip()
 
-        logger.error("❌ 致命错误：未在 .env 中配置 QMT_VIP_TOKEN！")
-        raise ValueError("QMT_VIP_TOKEN未配置，请在 .env 文件中写入: QMT_VIP_TOKEN=您的Token")
+        # 【绝对禁止崩溃】没有 Token 就静默降级为 L1
+        logger.warning("⚠️ [数据降级] 未检测到 QMT_VIP_TOKEN，系统已自动降级为 L1 普通行情模式！")
+        return None
 
     def start_vip_service(self) -> bool:
         """【CTO 终极直连与探针防爆版 V3.0】"""
@@ -235,6 +236,21 @@ class QmtDataManager:
                     except Exception as e:
                         logger.error(f"❌ 客户端连接全面崩溃: {e}")
                         return False
+
+                # === 【CTO V85 L2 权限注入与容错】 ===
+                token = self.vip_token
+                if token:
+                    try:
+                        # 兼容不同版本的 QMT VIP API
+                        if hasattr(xtdata, 'set_token'):
+                            xtdata.set_token(token)
+                        elif hasattr(xtdata, 'set_vip_license'):
+                            xtdata.set_vip_license(token)
+                        logger.info("💎 [VIP L2] VIP Token 注入成功！L2 高频行情/十档盘口已激活！")
+                    except Exception as e:
+                        logger.warning(f"⚠️ [VIP 失效] VIP Token 无效或已过期 ({e})。已平滑降级为 L1 模式，继续战斗！")
+                        self.use_vip = False
+                # =====================================
 
                 # 2. 【CTO 双重探针验证】
                 # get_trading_calendar 在极简版/投研版sp3不支持，改用双重探针

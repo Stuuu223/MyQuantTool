@@ -593,6 +593,26 @@ class LiveTradingEngine:
                 power_ratio = 1.0 if current_price > pre_close else -1.0
             
             net_inflow_est = current_amount * power_ratio * 0.5
+            
+            # === 【CTO V85: L1 对倒阻尼防线】 ===
+            # 识别放量滞涨：如果当前成交额极大但涨幅极小，说明主力在对倒或派发
+            # L1估算的流入严重失真，需要强制剥离！
+            change_pct = (current_price - pre_close) / pre_close * 100 if pre_close > 0 else 0.0
+            
+            # 获取5日均成交额判断是否放量
+            avg_volume_5d = self.true_dict.get_avg_volume_5d(stock_code) or 0.0
+            avg_amount_5d = avg_volume_5d * 100 * pre_close if avg_volume_5d > 0 and pre_close > 0 else 0.0
+            
+            if avg_amount_5d > 0:
+                # 盘后模式直接用全天数据
+                current_ratio = current_amount / avg_amount_5d
+                
+                # 物理绞杀：如果量比 > 3.0 且 涨幅 < 2.0%
+                if current_ratio > 3.0 and abs(change_pct) < 2.0:
+                    # 放量滞涨，认定为摩擦消耗，强制抹除 90% 的虚假流入！
+                    net_inflow_est *= 0.1
+                    logger.debug(f"🚨 [对倒降维] {stock_code} 量比{current_ratio:.1f}x但涨幅仅{change_pct:.2f}%，剥离虚假流入！")
+            
             if net_inflow_est > 0:
                 market_total_inflow += net_inflow_est
             first_pass_inflow_cache[stock_code] = net_inflow_est
@@ -1800,6 +1820,19 @@ class LiveTradingEngine:
                     # 净流入估算
                     net_inflow_est = current_amount * power_ratio * 0.5
                     
+                    # === 【CTO V85: L1 对倒阻尼防线】 ===
+                    change_pct = (current_price - pre_close) / pre_close * 100 if pre_close > 0 else 0.0
+                    avg_volume_5d = s_data.get('avg_volume_5d') if s_data else 0
+                    if avg_volume_5d <= 0:
+                        avg_volume_5d = true_dict.get_avg_volume_5d(stock_code) or 0.0
+                    avg_amount_5d = avg_volume_5d * 100 * pre_close if avg_volume_5d > 0 and pre_close > 0 else 0.0
+                    
+                    if avg_amount_5d > 0:
+                        current_ratio = current_amount / avg_amount_5d
+                        if current_ratio > 3.0 and abs(change_pct) < 2.0:
+                            net_inflow_est *= 0.1
+                            logger.debug(f"🚨 [对倒降维] {stock_code} 量比{current_ratio:.1f}x但涨幅仅{change_pct:.2f}%，剥离虚假流入！")
+                    
                     # 【CTO纠偏令】废除归零，实装量纲自适应校准仪！
                     s_data = static_cache.get(stock_code)
                     float_volume = s_data.get('float_volume', 0) if s_data else 0
@@ -2047,6 +2080,14 @@ class LiveTradingEngine:
                         
                         # 估算真实净流入（元）
                         net_inflow_est = current_amount * power_ratio * 0.5
+                        
+                        # === 【CTO V85: L1 对倒阻尼防线】 ===
+                        change_pct = (current_price - pre_close) / pre_close * 100 if pre_close > 0 else 0.0
+                        if avg_amount_5d > 0:
+                            current_ratio = current_amount / avg_amount_5d
+                            if current_ratio > 3.0 and abs(change_pct) < 2.0:
+                                net_inflow_est *= 0.1
+                                logger.debug(f"🚨 [对倒降维] {stock_code} 量比{current_ratio:.1f}x但涨幅仅{change_pct:.2f}%，剥离虚假流入！")
                         
                         # 【CTO V18极速调用】float_market_cap已在缓存中
                         # float_market_cap = s_data['float_market_cap']  # 已在上面使用
@@ -2498,6 +2539,16 @@ class LiveTradingEngine:
             
             # 估算真实净流入（元）- 使用power_ratio而非固定0.5！
             net_inflow_est = amount * power_ratio * 0.5
+            
+            # === 【CTO V85: L1 对倒阻尼防线】 ===
+            change_pct = (price - prev_close) / prev_close * 100 if prev_close > 0 else 0.0
+            if avg_vol_5d and avg_vol_5d > 0:
+                avg_amount_5d = avg_vol_5d * 100 * prev_close
+                if avg_amount_5d > 0:
+                    current_ratio = amount / avg_amount_5d
+                    if current_ratio > 3.0 and abs(change_pct) < 2.0:
+                        net_inflow_est *= 0.1
+                        logger.debug(f"🚨 [对倒降维] {stock_code} 量比{current_ratio:.1f}x但涨幅仅{change_pct:.2f}%，剥离虚假流入！")
             
             # 【CTO V34照妖镜修复】用绝对价格推导判断涨停（解决askPrice1盘后失效问题）
             # 涨停价计算：主板10%，创业板/科创板20%，北交所30%
