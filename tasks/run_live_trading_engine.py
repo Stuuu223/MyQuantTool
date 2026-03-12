@@ -1467,11 +1467,13 @@ class LiveTradingEngine:
             logger.info(f"> 5日均换手门槛: >= {min_avg_turnover_5d:.1f}% (从配置读取)")
             logger.info(f"> 死亡换手拦截: 开盘换手 < {max_open_turnover:.0f}%")
             
-            # 多维复合过滤
+            # 【CTO V86 绝对同质同源】废除历史均额和换手率过滤！
+            # 右侧起爆抓的是"平地起惊雷"，昨天的死水不能过滤今天的爆发！
+            # 只保留基础卫生过滤：
+            # 1. 死亡换手（current_turnover > max_open_turnover）
+            # 2. 极端无量（volume == 0）
             mask = (
-                (df['volume_ratio'] >= min_volume_multiplier) &
-                (df['avg_amount_5d'] >= min_avg_amount_5d) &
-                (df['avg_turnover_5d'] >= min_avg_turnover_5d) &
+                (df['volume_gu'] > 0) &
                 (df['current_turnover'] < max_open_turnover)
             )
             
