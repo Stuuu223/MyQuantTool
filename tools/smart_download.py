@@ -314,11 +314,47 @@ def main():
             log(f'>>> 回溯日期: {date_str} (连续无数据: {consecutive_no_data}/{STOP_DAYS})')
             
             try:
-                t0 = time.time()
-                # [CTO V115] 逐只异步投递，QMT不支持list批量下载
+                # 【CTO V116 极速宽网嗅探】
+                # 1. 批量下发当日日K，用于快速嗅探活跃度
                 for stock in target_stocks:
                     try:
                         xtdata.download_history_data(stock, '1d', start_time=date_str, end_time=date_str)
+                    except Exception:
+                        pass
+                
+                time.sleep(1.0)  # 稍微等日K落盘
+                
+                # 2. 宽体漏斗过滤：只要成交额 > 5000万 的活跃股，才下载分K
+                active_stocks = []
+                daily_check = xtdata.get_local_data(
+                    field_list=['amount'], 
+                    stock_list=target_stocks, 
+                    period='1d', 
+                    start_time=date_str, 
+                    end_time=date_str
+                )
+                
+                for stock in target_stocks:
+                    try:
+                        if stock in daily_check and not daily_check[stock].empty:
+                            amt = float(daily_check[stock]['amount'].iloc[0])
+                            if amt > 50000000.0:  # 5000万门槛
+                                active_stocks.append(stock)
+                    except Exception:
+                        pass
+                
+                log(f'  宽网嗅探: {len(active_stocks)}/{len(target_stocks)} 只活跃 (过滤{len(target_stocks)-len(active_stocks)}死鱼)')
+                
+                if not active_stocks:
+                    consecutive_no_data += 1
+                    log(f'  ⚠️ 当日无活跃股，跳过')
+                    cur_date -= timedelta(days=1)
+                    continue
+                
+                # 3. 异步极速投递分K
+                t0 = time.time()
+                for stock in active_stocks:
+                    try:
                         xtdata.download_history_data(stock, '1m', start_time=date_str, end_time=date_str)
                     except Exception:
                         pass
@@ -327,7 +363,7 @@ def main():
                 time.sleep(2.0)  # 等待异步落盘
                 
                 # 抽样探测是否真实有数据
-                test_batch = target_stocks[:5]
+                test_batch = active_stocks[:5]
                 raw = xtdata.get_local_data(
                     field_list=[], stock_list=test_batch, 
                     period='1m', start_time=date_str, end_time=date_str
@@ -343,7 +379,7 @@ def main():
                 if has_data:
                     consecutive_no_data = 0
                     total_downloaded_days += 1
-                    log(f'  ✅ {date_str} 数据落盘成功 ({elapsed:.0f}s) - 累计{total_downloaded_days}天有效')
+                    log(f'  ✅ {date_str} 分K落盘成功 ({elapsed:.0f}s, {len(active_stocks)}只) - 累计{total_downloaded_days}天')
                 else:
                     consecutive_no_data += 1
                     log(f'  ⚠️ {date_str} 数据为空，券商服务器无此日数据')
