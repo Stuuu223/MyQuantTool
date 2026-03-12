@@ -66,8 +66,8 @@ class TimeMachineEngine:
         self.is_continuous_backtest = False
         
         # 【CTO修复】挂载动能打分引擎算分引擎
-        from logic.strategies.kinetic_core_engine import 动能打分引擎CoreEngine
-        self._kinetic_engine = 动能打分引擎CoreEngine()
+        from logic.strategies.kinetic_core_engine import KineticCoreEngine
+        self._kinetic_engine = KineticCoreEngine()
         
         self._ensure_output_dirs()
         

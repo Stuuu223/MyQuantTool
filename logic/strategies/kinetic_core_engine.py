@@ -40,7 +40,7 @@ import math
 from logic.core.config_manager import get_config_manager
 
 # 配置动能打分引擎引擎专用日志器
-logger = logging.getLogger("动能打分引擎CoreEngine")
+logger = logging.getLogger("KineticCoreEngine")
 
 
 def safe_float(value, default=0.0):
@@ -86,7 +86,7 @@ def safe_float(value, default=0.0):
         return default
 
 
-class 动能打分引擎CoreEngine:
+class KineticCoreEngine:
     """
     动能打分引擎核心算子 - 无状态数学计算引擎
     
@@ -97,7 +97,7 @@ class 动能打分引擎CoreEngine:
     - 知行合一：实盘/回测/复盘共用同一逻辑
     
     使用示例：
-        >>> engine = 动能打分引擎CoreEngine()
+        >>> engine = KineticCoreEngine()
         >>> score = engine.calculate_base_score(
         ...     change_pct=5.2,
         ...     volume_ratio=2.5,
@@ -739,7 +739,7 @@ if __name__ == "__main__":
     print("动能打分引擎核心算子引擎 - 单元测试 V1.2.0 (F1 mfe初始化修复)")
     print("=" * 70)
     
-    engine = 动能打分引擎CoreEngine()
+    engine = KineticCoreEngine()
     
     # 测试F1修复：flow_15min<=0时的Spike极刑前置，mfe不能UnboundLocalError
     print("\n【测试F1】mfe初始化防UnboundLocalError验证")

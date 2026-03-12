@@ -602,8 +602,8 @@ class LiveTradingEngine:
         # 5. 【绝对同源计算：第二遍精算 - 对齐 V20.5 引擎】
         current_top_targets = []
         if not hasattr(self, '_kinetic_core'):
-            from logic.strategies.kinetic_core_engine import 动能打分引擎CoreEngine
-            self._kinetic_core = 动能打分引擎CoreEngine()
+            from logic.strategies.kinetic_core_engine import KineticCoreEngine
+            self._kinetic_core = KineticCoreEngine()
 
         for stock_code, tick in last_tick_by_stock.items():
             try:
@@ -1552,7 +1552,7 @@ class LiveTradingEngine:
         from datetime import datetime, time as time_type
         from xtquant import xtdata
         from logic.data_providers.true_dictionary import get_true_dictionary
-        from logic.strategies.kinetic_core_engine import 动能打分引擎CoreEngine
+        from logic.strategies.kinetic_core_engine import KineticCoreEngine
         
         # ==========================================
         # 【CTO V30】Step 1: 环境侦测 + 插桩打点
@@ -1583,7 +1583,7 @@ class LiveTradingEngine:
         true_dict = get_true_dictionary()
         
         # 预先创建动能打分引擎实例
-        core_engine = 动能打分引擎CoreEngine()
+        core_engine = KineticCoreEngine()
         
         # 【CTO V5】盘后投影标志位：记录是否已执行过盘后最终计算
         has_run_after_hours = False
@@ -2448,11 +2448,11 @@ class LiveTradingEngine:
         """
         try:
             # 【CTO 物理归位】：直接调用 V20.5 动能算子
-            from logic.strategies.kinetic_core_engine import 动能打分引擎CoreEngine
+            from logic.strategies.kinetic_core_engine import KineticCoreEngine
             from logic.data_providers.true_dictionary import get_true_dictionary
             
             if not hasattr(self, '_kinetic_core'):
-                self._kinetic_core = 动能打分引擎CoreEngine()
+                self._kinetic_core = KineticCoreEngine()
             
             true_dict = get_true_dictionary()
             

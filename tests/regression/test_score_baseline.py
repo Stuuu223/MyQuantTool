@@ -56,10 +56,10 @@ def _calc_score(tick: dict) -> float:
     如果 import 失败（没有 xtquant 环境），返回 -1.0 标记跳过
     """
     try:
-        from logic.strategies.kinetic_core_engine import 动能打分引擎CoreEngine
+        from logic.strategies.kinetic_core_engine import KineticCoreEngine
         from datetime import datetime
 
-        engine = 动能打分引擎CoreEngine()
+        engine = KineticCoreEngine()
         price = tick['lastPrice']
         prev_close = tick['lastClose']
         high = tick['high']

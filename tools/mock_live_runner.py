@@ -40,7 +40,7 @@ VENV_PYTHON = PROJECT_ROOT / "venv_qmt" / "Scripts" / "python.exe"
 # 导入项目模块
 from logic.core.config_manager import get_config_manager
 from logic.data_providers.true_dictionary import get_true_dictionary
-from logic.strategies.kinetic_core_engine import 动能打分引擎CoreEngine
+from logic.strategies.kinetic_core_engine import KineticCoreEngine
 
 logger = logging.getLogger(__name__)
 
@@ -240,9 +240,10 @@ class MockLiveRunner:
             # 调用核心打分引擎
             try:
                 # 创建引擎实例并调用
-                engine = 动能打分引擎CoreEngine()
+                engine = KineticCoreEngine()
+                # 【CTO V76修复】引擎返回tuple(final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe)
+                # 参数需要current_time(datetime)而非target_date(str)
                 result = engine.calculate_true_dragon_score(
-                    stock_code=stock_code,
                     net_inflow=current_tick['amount'] * 0.5,  # 简化：假设50%是净流入
                     price=current_tick['price'],
                     prev_close=current_tick['lastClose'],
@@ -254,27 +255,29 @@ class MockLiveRunner:
                     flow_5min_median_stock=5000000,  # 默认历史中位数
                     space_gap_pct=10.0,  # 默认空间差
                     float_volume_shares=1000000000,  # 默认流通盘10亿股
+                    current_time=target_time,  # 【修复】datetime对象
                     total_amount=total_amount,
                     total_volume=int(total_amount / current_tick['price']) if current_tick['price'] > 0 else 0,
                     limit_up_queue_amount=0,
                     mode='scan',
-                    target_date=self.target_date
+                    stock_code=stock_code
                 )
                 
-                if isinstance(result, dict):
-                    score = result.get('final_score', 0)
+                # 【修复】返回类型是tuple: (final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe)
+                if isinstance(result, tuple) and len(result) >= 5:
+                    score, sustain_ratio, inflow_ratio, ratio_stock, mfe = result[0], result[1], result[2], result[3], result[4]
                     self.leaderboard[stock_code] = {
                         'score': score,
                         'price': current_tick['price'],
                         'amount': total_amount,
-                        'mfe': result.get('mfe', 0),
-                        'sustain_ratio': result.get('sustain_ratio', 0),
-                        'inflow_ratio': result.get('inflow_ratio', 0),
+                        'mfe': mfe,
+                        'sustain_ratio': sustain_ratio,
+                        'inflow_ratio': inflow_ratio,
                         'tick': current_tick
                     }
                     
             except Exception as e:
-                logger.debug(f"[MockLiveRunner] {stock_code} 打分失败: {e}")
+                logger.warning(f"[MockLiveRunner] {stock_code} 打分失败: {e}")
     
     def _get_minutes_passed(self, current_time: datetime) -> int:
         """计算开盘后经过的分钟数"""
@@ -345,23 +348,44 @@ class MockLiveRunner:
             raise ValueError(f"无法解析的时间戳格式: {time_val}, 错误: {e}")
     
     def _print_leaderboard(self):
-        """打印当前榜单"""
-        if not self.leaderboard:
-            print("  [空榜] 没有达标的股票")
-            return
+        """
+        【CTO V77】调用主引擎的render_live_dashboard - SSOT原则
+        不再使用粗糙的字符串拼接打印！
+        """
+        from logic.utils.metrics_utils import render_live_dashboard
         
-        # 按分数排序
+        # 构建符合render_live_dashboard格式的top_targets列表
+        top_targets = []
         sorted_stocks = sorted(
             self.leaderboard.items(), 
             key=lambda x: x[1]['score'], 
             reverse=True
-        )[:10]  # 只显示Top10
+        )[:10]
         
-        print(f"  {'排名':<4} {'代码':<12} {'分数':<8} {'价格':<8} {'MFE':<6} {'Sustain':<8}")
-        print(f"  {'-'*4} {'-'*12} {'-'*8} {'-'*8} {'-'*6} {'-'*8}")
+        for code, data in sorted_stocks:
+            tick = data.get('tick', {})
+            prev_close = tick.get('lastClose', tick.get('prev_close', data['price']))
+            price = data['price']
+            change_pct = ((price - prev_close) / prev_close * 100) if prev_close > 0 else 0
+            
+            top_targets.append({
+                'code': code,
+                'score': data['score'],
+                'price': price,
+                'change_pct': change_pct,
+                'inflow_ratio': data.get('inflow_ratio', 0),
+                'sustain_ratio': data.get('sustain_ratio', 0),
+                'mfe': data.get('mfe', 0),
+                'purity': 0  # mock模式暂无纯度数据
+            })
         
-        for i, (code, data) in enumerate(sorted_stocks, 1):
-            print(f"  {i:<4} {code:<12} {data['score']:<8.1f} {data['price']:<8.2f} {data['mfe']:<6.2f} {data['sustain_ratio']:<8.2f}x")
+        # 调用主引擎的UI渲染函数
+        pool_stats = {
+            'total': len(self.tick_queues),
+            'active': len(self.leaderboard),
+            'passed_fine_filter': len(self.leaderboard)
+        }
+        render_live_dashboard(top_targets, pool_stats=pool_stats, is_rest=True)
 
 
 def main():

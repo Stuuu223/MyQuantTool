@@ -75,7 +75,7 @@ def get_top_stocks(date: str, top_n: int = 20) -> List[Dict]:
     """
     from logic.data_providers.universe_builder import UniverseBuilder
     from logic.data_providers.true_dictionary import get_true_dictionary
-    from logic.strategies.kinetic_core_engine import 动能打分引擎CoreEngine
+    from logic.strategies.kinetic_core_engine import KineticCoreEngine
     from datetime import time as time_type
     
     print(f"  扫描 {date}...")
@@ -94,7 +94,7 @@ def get_top_stocks(date: str, top_n: int = 20) -> List[Dict]:
         true_dict.warmup(base_pool, target_date=date)
         
         # 3. 逐只读取Tick打分
-        core_engine = 动能打分引擎CoreEngine()
+        core_engine = KineticCoreEngine()
         results = []
         
         for stock in base_pool:
