@@ -34,6 +34,13 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
 from dataclasses import dataclass, field
 
+# 【CTO V87 强制自主性】自动装载.env文件，严禁让用户手动配置！
+try:
+    from dotenv import load_dotenv
+    load_dotenv()  # 自动寻找项目根目录.env并加载
+except ImportError:
+    pass  # dotenv未安装则跳过，使用系统环境变量
+
 try:
     # HIGH-3修复: 删除 xtdatacenter (xtdc) 僵尸 import
     # xtdc 已废除，数据请求统一由本地 MiniQMT 客户端处理

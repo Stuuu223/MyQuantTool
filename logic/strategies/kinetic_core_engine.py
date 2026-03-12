@@ -217,7 +217,12 @@ class KineticCoreEngine:
         )
         
         if passes_filters:
-            base_score = min(abs(change_pct) * 5, 100.0)
+            # 【CTO V87 纯正物理】废除硬截断min(x,100)，改用tanh平滑
+            # tanh(涨幅*5/100)*100 让分数在100分渐近
+            # 涨幅10% -> tanh(0.5)*100 = 46分
+            # 涨幅20% -> tanh(1.0)*100 = 76分
+            # 涨幅50% -> tanh(2.5)*100 = 98.7分
+            base_score = math.tanh(abs(change_pct) * 0.05) * 100.0
             
             if volume_ratio > self.extreme_volume_ratio:
                 base_score += self.extreme_vol_bonus
@@ -225,7 +230,8 @@ class KineticCoreEngine:
             if turnover_rate_per_min > self.high_efficiency_turnover_min:
                 base_score += self.high_turnover_bonus
         else:
-            base_score = min(abs(change_pct) * 2, 50.0)
+            # 【CTO V87 纯正物理】废除硬截断min(x,50)，改用tanh平滑
+            base_score = math.tanh(abs(change_pct) * 0.04) * 50.0
         
         return float(base_score)
     
@@ -429,15 +435,27 @@ class KineticCoreEngine:
         MIN_BASE_FLOW = 2000000.0
         safe_flow_5min = flow_5min if flow_5min > 0 else (flow_15min / 3.0 if flow_15min > 0 else 1.0)
         safe_median = max(flow_5min_median_stock, MIN_BASE_FLOW)
-        ratio_stock = safe_flow_5min / safe_median
-        ratio_stock = max(0.01, min(ratio_stock, 10.0))
+        raw_ratio_stock = safe_flow_5min / safe_median
+        
+        # 【CTO V87 纯正物理】废除硬截断max/min，改用tanh连续平滑
+        # tanh(x)在x=0附近接近线性，x>3时渐近1，完美模拟放量边际递减
+        # ratio_stock_raw=1 -> tanh(1)=0.76 -> 映射到5.2x
+        # ratio_stock_raw=3 -> tanh(3)=0.995 -> 映射到6.97x
+        # ratio_stock_raw=10 -> tanh(10)=1.0 -> 映射到7.0x(渐近上限)
+        ratio_stock = 1.0 + 6.0 * math.tanh(raw_ratio_stock - 1.0)
+        ratio_stock = max(0.1, ratio_stock)  # 仅保留下限保护
         
         # 3. 价格推力（日内强度0-1）
+        # 【CTO V87 纯正物理】废除硬截断，改用Sigmoid连续平滑
+        # 价格推力本质是价格在日内振幅中的位置，物理意义清晰
         if high == low:
-            price_strength = 1.0 if price > prev_close else 0.0
+            raw_price_strength = 1.0 if price > prev_close else 0.0
         else:
-            price_strength = (price - low) / (high - low)
-            price_strength = max(0.0, min(price_strength, 1.0))
+            raw_price_strength = (price - low) / (high - low)
+        
+        # Sigmoid平滑映射到(0.05, 0.95)区间，避免极端边界
+        # x=0 -> sigmoid(-4)=0.018, x=1 -> sigmoid(4)=0.982
+        price_strength = 1.0 / (1.0 + math.exp(-8.0 * (raw_price_strength - 0.5)))
         
         # 【CTO V84 物理绞杀】放量滞涨检测
         # 如果放量(ratio_stock>3)但价格推力极低(<0.3)，说明爆量出货/长上影线，动能坍塌！

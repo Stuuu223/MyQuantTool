@@ -179,6 +179,11 @@ class LiveTradingEngine:
         # 用于计算每只股票的vampire_ratio_pct = 该股净流入 / 全池总流入 * 100
         self.market_total_inflow_cache: float = 1000000.0  # 初始兜底100万
         
+        # 【CTO V87 L1真实微积分】Tick差分流入累加器状态机
+        # 废除power_ratio估算，使用真实的delta_amount和delta_price计算流入
+        # {stock_code: {'inflow': float, 'last_amount': float, 'last_price': float}}
+        self.l1_inflow_accumulator: Dict[str, Dict[str, float]] = {}
+        
         # 【CTO V46架构大一统】持仓管理 - 使用ExitManager统一止损逻辑
         # positions: {stock_code: ExitManager实例}
         # 每个持仓都有自己的ExitManager来监控止损/止盈条件
@@ -499,6 +504,86 @@ class LiveTradingEngine:
         
         return amount_delta / volume_delta
     
+    def _calculate_l1_inflow(self, stock_code: str, current_amount: float, current_price: float,
+                              pre_close: float, tick_high: float, tick_low: float) -> float:
+        """
+        【CTO V87 L1真实微积分】Tick差分流入累加器
+        
+        废除power_ratio伪物理估算，使用真实的delta_amount和delta_price计算流入。
+        物理真理：流入 = Δ成交额 × 价格方向系数
+        
+        Args:
+            stock_code: 股票代码
+            current_amount: 当前累计成交额
+            current_price: 当前价格
+            pre_close: 昨收价
+            tick_high: 今日最高价
+            tick_low: 今日最低价
+            
+        Returns:
+            真实净流入估算值
+        """
+        # 初始化该股票的累加器
+        if stock_code not in self.l1_inflow_accumulator:
+            self.l1_inflow_accumulator[stock_code] = {
+                'inflow': 0.0,
+                'last_amount': current_amount,
+                'last_price': current_price
+            }
+            # 首次调用：无历史数据，回退到power_ratio估算作为初始值
+            price_range = tick_high - tick_low
+            if price_range > 0 and pre_close > 0:
+                power_ratio = (current_price - pre_close) / price_range
+                power_ratio = max(-1.0, min(power_ratio, 1.0))
+            else:
+                power_ratio = 1.0 if current_price > pre_close else -1.0
+            initial_inflow = current_amount * power_ratio * 0.5
+            self.l1_inflow_accumulator[stock_code]['inflow'] = initial_inflow
+            return initial_inflow
+        
+        acc = self.l1_inflow_accumulator[stock_code]
+        last_amount = acc['last_amount']
+        last_price = acc['last_price']
+        
+        # 计算真实增量
+        delta_amount = current_amount - last_amount
+        delta_price = current_price - last_price
+        
+        # 价格方向系数：涨为正，跌为负
+        # 使用价格位置相对昨收的偏移来加权
+        if delta_amount > 0:  # 有新成交
+            # 方向系数：基于价格相对昨收的位置
+            if pre_close > 0:
+                price_position = (current_price - pre_close) / pre_close
+                # 限制在[-1, 1]范围
+                direction = max(-1.0, min(1.0, price_position * 10))  # 放大敏感度
+            else:
+                direction = 1.0 if delta_price >= 0 else -1.0
+            
+            # 真实流入 = 增量金额 × 方向系数
+            l1_inflow = delta_amount * direction
+            
+            # 累加到状态机
+            acc['inflow'] += l1_inflow
+            acc['last_amount'] = current_amount
+            acc['last_price'] = current_price
+            
+            return acc['inflow']
+        else:
+            # 无新成交，返回累计值
+            return acc['inflow']
+    
+    def _reset_l1_accumulator(self, stock_code: str = None):
+        """
+        【CTO V87】重置L1累加器
+        每日开盘前调用，或针对特定股票重置
+        """
+        if stock_code:
+            if stock_code in self.l1_inflow_accumulator:
+                del self.l1_inflow_accumulator[stock_code]
+        else:
+            self.l1_inflow_accumulator.clear()
+    
     def _transition_state(self, tracker: StockTracker, new_state: StockState, reason: str = ""):
         """
         【CTO状态机】状态转换
@@ -585,14 +670,11 @@ class LiveTradingEngine:
             tick_high = float(tick.get('high', current_price))
             tick_low = float(tick.get('low', current_price))
             
-            price_range = tick_high - tick_low
-            if price_range > 0 and pre_close > 0:
-                power_ratio = (current_price - pre_close) / price_range
-                power_ratio = max(-1.0, min(power_ratio, 1.0))
-            else:
-                power_ratio = 1.0 if current_price > pre_close else -1.0
-            
-            net_inflow_est = current_amount * power_ratio * 0.5
+            # 【CTO V87 L1真实微积分】废除power_ratio伪物理估算！
+            # 使用Tick差分状态机计算真实净流入
+            net_inflow_est = self._calculate_l1_inflow(
+                stock_code, current_amount, current_price, pre_close, tick_high, tick_low
+            )
             
             # === 【CTO V85: L1 对倒阻尼防线】 ===
             # 识别放量滞涨：如果当前成交额极大但涨幅极小，说明主力在对倒或派发
@@ -1458,14 +1540,12 @@ class LiveTradingEngine:
             max_open_turnover = 30.0  # 开盘换手率>30%视为死亡派发
             
             logger.info(f"\n{'='*60}")
-            logger.info(f"[FILTER] 【四级漏斗-第二级粗筛】CTO V25统一配置生效！")
+            logger.info(f"[FILTER] 【四级漏斗-第二级粗筛】CTO V86/V87绝对同质同源！")
             logger.info(f"{'='*60}")
             logger.info(f"> 运行模式: {mode_tag} (已过{minutes_passed:.0f}分钟)")
             logger.info(f"> 输入池: {pre_filter_count} 只")
-            logger.info(f"> 量比门槛: >= {min_volume_multiplier:.2f}x (90th分位+1.5x下限)")
-            logger.info(f"> 5日均额门槛: >= {min_avg_amount_5d/10000:.0f}万 (从配置读取)")
-            logger.info(f"> 5日均换手门槛: >= {min_avg_turnover_5d:.1f}% (从配置读取)")
-            logger.info(f"> 死亡换手拦截: 开盘换手 < {max_open_turnover:.0f}%")
+            logger.info(f"> 【已废除】历史均额/换手过滤 - 右侧起爆抓平地惊雷！")
+            logger.info(f"> 基础卫生过滤: 死亡换手 < {max_open_turnover:.0f}% | 极端无量 = 0")
             
             # 【CTO V86 绝对同质同源】废除历史均额和换手率过滤！
             # 右侧起爆抓的是"平地起惊雷"，昨天的死水不能过滤今天的爆发！
@@ -1811,16 +1891,12 @@ class LiveTradingEngine:
                     tick_high = tick.get('high', current_price)
                     tick_low = tick.get('low', current_price)
                     
-                    # 快速计算power_ratio
-                    price_range = tick_high - tick_low
-                    if price_range > 0 and pre_close > 0:
-                        power_ratio = (current_price - pre_close) / price_range
-                        power_ratio = max(-1.0, min(power_ratio, 1.0))
-                    else:
-                        power_ratio = 1.0 if current_price > pre_close else -1.0
-                    
-                    # 净流入估算
-                    net_inflow_est = current_amount * power_ratio * 0.5
+                    # 【CTO V87 L1真实微积分】废除power_ratio伪物理估算！
+                    # 使用Tick差分状态机计算真实净流入
+                    net_inflow_est = self._calculate_l1_inflow(
+                        stock_code, float(current_amount), float(current_price), 
+                        float(pre_close), float(tick_high), float(tick_low)
+                    )
                     
                     # === 【CTO V85: L1 对倒阻尼防线】 ===
                     change_pct = (current_price - pre_close) / pre_close * 100 if pre_close > 0 else 0.0
@@ -2067,21 +2143,14 @@ class LiveTradingEngine:
                         # 【CTO V20】avg_amount_5d已在上方从缓存或兜底获取
                         flow_5min_median = avg_amount_5d / 48.0  # 每5分钟历史中位数（元）
                         
-                        # 【CTO V15终极修复】动态净流入估算
-                        # 用(当前价-昨收)/(最高-最低)的比例衡量资金做多意愿
-                        # 涨停时power_ratio=1.0，跌停时power_ratio=-1.0
+                        # 【CTO V87 L1真实微积分】废除power_ratio伪物理估算！
+                        # 使用Tick差分状态机计算真实净流入
                         tick_high = tick.get('high', current_price)
                         tick_low = tick.get('low', current_price)
-                        price_range = tick_high - tick_low
-                        
-                        if price_range > 0:
-                            power_ratio = (current_price - pre_close) / price_range
-                            power_ratio = max(-1.0, min(power_ratio, 1.0))
-                        else:
-                            power_ratio = 1.0 if current_price > pre_close else -1.0
-                        
-                        # 估算真实净流入（元）
-                        net_inflow_est = current_amount * power_ratio * 0.5
+                        net_inflow_est = self._calculate_l1_inflow(
+                            stock_code, float(current_amount), float(current_price),
+                            float(pre_close), float(tick_high), float(tick_low)
+                        )
                         
                         # === 【CTO V85: L1 对倒阻尼防线】 ===
                         change_pct = (current_price - pre_close) / pre_close * 100 if pre_close > 0 else 0.0
@@ -2530,17 +2599,12 @@ class LiveTradingEngine:
             else:
                 flow_5min_median = flow_5min / 10
             
-            # 【CTO V51修复】计算power_ratio（资金做多意愿）
-            # 与_run_radar_main_loop保持100%一致！
-            price_range = high - low
-            if price_range > 0:
-                power_ratio = (price - prev_close) / price_range
-                power_ratio = max(-1.0, min(power_ratio, 1.0))
-            else:
-                power_ratio = 1.0 if price > prev_close else -1.0
-            
-            # 估算真实净流入（元）- 使用power_ratio而非固定0.5！
-            net_inflow_est = amount * power_ratio * 0.5
+            # 【CTO V87 L1真实微积分】废除power_ratio伪物理估算！
+            # 使用Tick差分状态机计算真实净流入
+            net_inflow_est = self._calculate_l1_inflow(
+                stock_code, float(amount), float(price),
+                float(prev_close), float(high), float(low)
+            )
             
             # === 【CTO V85: L1 对倒阻尼防线】 ===
             change_pct = (price - prev_close) / prev_close * 100 if prev_close > 0 else 0.0
@@ -2578,7 +2642,7 @@ class LiveTradingEngine:
             
             # 调用 V20.5 动能引擎
             base_score, sustain_ratio, inflow_ratio, ratio_stock, mfe_score = self._kinetic_core.calculate_true_dragon_score(
-                net_inflow=net_inflow_est,  # V51: 使用正确的power_ratio计算
+                net_inflow=net_inflow_est,  # 【CTO V87】使用L1微积分状态机
                 price=price,
                 prev_close=prev_close,
                 high=high,
