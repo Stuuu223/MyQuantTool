@@ -304,64 +304,30 @@ class UniverseBuilder:
             else:
                 self._volume_ratios[stock] = 0.0
 
-            # 原有过滤逻辑
-            avg_amount = df['amount'].iloc[-n:].mean()
-            if pd.isna(avg_amount) or np.isinf(avg_amount) or avg_amount < self.min_avg_amount:
-                cnt_volume += 1
-                continue
-
+            # 【CTO V84 砸碎静态漏斗】释放真龙，由动态雷达接管生死！
+            # 废除"历史均额不足"和"历史换手不足"的静态拦截！
+            # 右侧起爆抓的就是"平地起惊雷"——昨天死水的票今天爆发才是真龙！
+            
             last_close = float(df['close'].iloc[-1])
-            if not (self.min_price <= last_close <= self.max_price):
+            today_volume = float(df['volume'].iloc[-1])
+            
+            # 只做最基础的脏数据和极端价格拦截（仙股<2元，超高价>500元）
+            if last_close <= 0 or today_volume <= 0:
+                cnt_nodata += 1
+                continue
+            
+            if not (2.0 <= last_close <= 500.0):
                 cnt_price += 1
                 continue
+            
+            # 历史均额/换手率不再作为硬过滤条件！
+            # 这些指标只用于参考，不阻断股票进入候选池
+            avg_amount = df['amount'].iloc[-n:].mean() if not pd.isna(df['amount'].iloc[-n:].mean()) else 0
 
-            try:
-                detail = xtdata.get_instrument_detail(stock, False)
-                if detail:
-                    float_shares = float(
-                        detail.get('FloatVolume', 0)
-                        if hasattr(detail, 'get')
-                        else getattr(detail, 'FloatVolume', 0)
-                    )
-                else:
-                    float_shares = 0.0
-
-                if float_shares > 0:
-                    float_mkt_cap    = float_shares * last_close
-                    avg_turnover_pct = (avg_amount / float_mkt_cap) * 100.0
-                    if avg_turnover_pct < self.min_avg_turnover_pct:
-                        cnt_turnover += 1
-                        continue
-            except Exception:
-                pass
-
-            # 【CTO终极天网】纯物理量纲放行法则！
-            # 不看涨了多少%，只看攻击姿态有多决绝！
-            today_high = float(df['high'].iloc[-1])
-            today_low = float(df['low'].iloc[-1])
-            
-            # 日内动能净值（Price Momentum Ratio）
-            # 反映资金强顶最高点的决绝度，而非绝对涨幅
-            # 【CTO战役收官】一字板(today_high==today_low)是最强动能，给满分1.0！
-            price_momentum = (last_close - today_low) / (today_high - today_low) if today_high > today_low else 1.0
-            
-            # 涨停遗传基因（昨日是否涨停）
-            pre_close = float(df['close'].iloc[-2]) if len(df) > 1 else last_close
-            is_yesterday_limit_up = False
-            if len(df) >= 2:
-                day_before_yest_close = float(df['close'].iloc[-3]) if len(df) >= 3 else pre_close
-                yesterday_change_pct = ((pre_close - day_before_yest_close) / day_before_yest_close * 100.0) if day_before_yest_close > 0 else 0.0
-                is_yesterday_limit_up = yesterday_change_pct >= 9.8  # 近似涨停
-            
-            # 获取相对势能爆发极值
-            volume_ratio = self._volume_ratios.get(stock, 0.0)
-            
-            # 【CTO绝对无量纲放行法则】
-            # 只要资金强顶最高点(动能>0.9)且放量(>2.0)，或者极其狂暴地放量(>3.0)，或者带有昨日涨停基因，直接入池！
-            if (price_momentum >= 0.90 and volume_ratio >= 2.0) or volume_ratio > 3.0 or is_yesterday_limit_up:
-                passed.append(stock)
-            else:
-                self._volume_ratios[stock] = 0.0  # 剔除平庸死水
+            # 【CTO V84 终极放行】
+            # 只要股票有有效数据（非停牌/非仙股），无条件放行！
+            # 生死由动态雷达（KineticCoreEngine）接管，静态漏斗只做基础卫生检查！
+            passed.append(stock)
 
         # 【CTO V25】自愈下载统计日志
         if cnt_autoheal > 0:

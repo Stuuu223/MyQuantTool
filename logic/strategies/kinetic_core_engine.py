@@ -439,9 +439,17 @@ class KineticCoreEngine:
             price_strength = (price - low) / (high - low)
             price_strength = max(0.0, min(price_strength, 1.0))
         
-        # 4. 乘法动能模型 = 流入% × 放量倍数 × 价格推力
+        # 【CTO V84 物理绞杀】放量滞涨检测
+        # 如果放量(ratio_stock>3)但价格推力极低(<0.3)，说明爆量出货/长上影线，动能坍塌！
+        effective_ratio = ratio_stock
+        if ratio_stock > 3.0 and price_strength < 0.3:
+            effective_ratio = 0.1  # 放量变成阻力
+            logger.info(f"💀 [放量滞涨] {stock_code} 放量{ratio_stock:.1f}倍但推力仅{price_strength:.2f}，判定出货！动能坍塌至0.1")
+        
+        # 4. 乘法动能模型 = 流入% × 有效放量倍数 × 价格推力
+        # 【CTO V84】废除0.5底噪！涨多少就是多少推力！
         if inflow_ratio_pct > 0:
-            base_power = inflow_ratio_pct * ratio_stock * price_strength
+            base_power = inflow_ratio_pct * effective_ratio * price_strength
         else:
             base_power = abs(inflow_ratio_pct) * 0.5
         
