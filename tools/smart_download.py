@@ -479,7 +479,7 @@ def main():
         log(f'\n✅ FULL全量完成! 总耗时 {total_elapsed:.0f}s ({total_elapsed/60:.1f}min)')
         return
 
-    # 粗筛模式 【新墝动态量比阈值】
+    # 粗筛模式 【CTO V114 铁血漏斗】
     from logic.data_providers.universe_builder import UniverseBuilder
     import numpy as np
 
@@ -490,29 +490,58 @@ def main():
         try:
             t0 = time.time()
             valid_stocks, market_ratios = UniverseBuilder(date).build()
-            log(f'  粗筛: {len(valid_stocks)}只 ({time.time()-t0:.1f}s)')
+            log(f'  粗筛原池: {len(valid_stocks)}只 ({time.time()-t0:.1f}s)')
 
-            # 【新墝】计算全市场量比的 95th 分位数作为动态阈值
-            valid_ratios = [r for r in market_ratios.values() if r > 0]
-            if len(valid_ratios) >= 100:
+            # 【CTO V114 铁血截断：涨幅>3% + 量比>1.5 才配下Tick】
+            # 先获取日K数据用于涨幅过滤
+            daily_check = xtdata.get_local_data(
+                field_list=['close', 'preClose'], 
+                stock_list=valid_stocks, 
+                period='1d', 
+                start_time=date, 
+                end_time=date
+            )
+            
+            strict_valid_stocks = []
+            for stock in valid_stocks:
+                # 1. 量比硬底线
+                ratio = market_ratios.get(stock, 0)
+                if ratio < 1.5:
+                    continue
+                    
+                # 2. 涨幅硬底线（过滤无效布朗运动）
+                try:
+                    if stock in daily_check and not daily_check[stock].empty:
+                        close_p = float(daily_check[stock]['close'].iloc[0])
+                        pre_p = float(daily_check[stock]['preClose'].iloc[0])
+                        if pre_p > 0:
+                            change_pct = (close_p - pre_p) / pre_p * 100.0
+                            if change_pct > 3.0:
+                                strict_valid_stocks.append(stock)
+                except Exception:
+                    pass
+            
+            log(f'  铁血截断: {len(valid_stocks)}只 → {len(strict_valid_stocks)}只 (涨幅>3% + 量比>1.5)')
+            
+            if not strict_valid_stocks:
+                log('  ⚠️ 铁血截断后无标的，跳过')
+                continue
+            
+            # 动态量比阈值（仅用于日志记录）
+            valid_ratios = [market_ratios.get(s, 0) for s in strict_valid_stocks if market_ratios.get(s, 0) > 0]
+            if len(valid_ratios) >= 10:
                 vol_threshold = float(np.percentile(valid_ratios, 95))
-                log(f'  动态量比阈值(95th): {vol_threshold:.2f} '
-                    f'(样本:{len(valid_ratios)}只)')
+                log(f'  动态量比阈值(95th): {vol_threshold:.2f}')
             else:
-                vol_threshold = 3.0  # fallback
-                log(f'  样本不足({len(valid_ratios)}<100)，量比阈值fallback到3.0')
+                vol_threshold = 3.0
 
         except Exception as e:
             log(f'  ❌ 粗筛失败: {e}，跳过')
             continue
 
-        if not valid_stocks:
-            log('  ⚠️ 粗筛后无标的，跳过')
-            continue
-
-        download_one_day(date, valid_stocks, xtdata, full=False,
+        download_one_day(date, strict_valid_stocks, xtdata, full=False,
                          do_verify=True, volume_ratio_threshold=vol_threshold)
-        grand_total   += len(valid_stocks)
+        grand_total   += len(strict_valid_stocks)
         total_elapsed  = time.time() - grand_t0
         remaining      = (total_elapsed / (i + 1)) * (len(trading_days) - i - 1)
         log(f'  总进度: {i+1}/{len(trading_days)}天 | '
