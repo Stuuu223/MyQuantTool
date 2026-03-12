@@ -84,19 +84,17 @@ def batch_verify_sample(stocks: list[str], date: str, xtdata,
 # 日期工具
 # ────────────────────────────────────────────
 
-def get_trading_days(start_date: str, end_date: str, xtdata) -> list[str]:
-    """优先读本地510300日K判断交易日，fallback用自然日去除周末"""
-    try:
-        raw = xtdata.get_local_data(
-            field_list=['close'], stock_list=['510300.SH'],
-            period='1d', start_time=start_date, end_time=end_date
-        )
-        df = raw.get('510300.SH')
-        if df is not None and not df.empty:
-            days = [str(idx)[:8] for idx in df.index.tolist()]
-            days = [d for d in days if start_date <= d <= end_date]
-            if days:
-                return days
+def get_trading_days(start_date: str, end_date: str, xtdata) -> list:
+    """【CTO V91】优先本地，获取失败直接用自然日（去周末）硬算，绝不罢工"""
+    from datetime import datetime, timedelta
+    s = datetime.strptime(start_date, '%Y%m%d')
+    e = datetime.strptime(end_date, '%Y%m%d')
+    days, cur = [], s
+    while cur <= e:
+        if cur.weekday() < 5:
+            days.append(cur.strftime('%Y%m%d'))
+        cur += timedelta(days=1)
+    return days
     except Exception:
         pass
     s = datetime.strptime(start_date, '%Y%m%d')
@@ -109,75 +107,10 @@ def get_trading_days(start_date: str, end_date: str, xtdata) -> list[str]:
     return days
 
 
-def get_last_completed_day(xtdata, fallback: str) -> str:
-    """向前最多找14天，找到本地日K有数据的最近交易日"""
-    cur = datetime.now() - timedelta(days=1)
-    for _ in range(14):
-        if cur.weekday() < 5:
-            d = cur.strftime('%Y%m%d')
-            try:
-                sample = xtdata.get_local_data(
-                    field_list=['close'],
-                    stock_list=['000001.SZ', '600000.SH', '300001.SZ'],
-                    period='1d', start_time=d, end_time=d
-                )
-                valid = sum(
-                    1 for s in ['000001.SZ', '600000.SH', '300001.SZ']
-                    if s in sample and sample[s] is not None and len(sample[s]) > 0
-                )
-                if valid >= 2:
-                    return d
-            except Exception:
-                pass
-        cur -= timedelta(days=1)
-    return fallback
-
 
 # ────────────────────────────────────────────
 # 日K本地检查 + 自动补充（P2修复）
 # ────────────────────────────────────────────
-
-def ensure_daily_kline(xtdata, check_date: str, start_date: str, end_date: str) -> bool:
-    """
-    检查本地日K是否充足；不足时自动投递补充请求后重新验证。
-    返回 True=可继续，False=日K仍不足需退出。
-    """
-    ANCHORS = ['000001.SZ', '600000.SH', '510300.SH']
-
-    def _count_valid() -> int:
-        sample = xtdata.get_local_data(
-            field_list=['close'], stock_list=ANCHORS,
-            period='1d', start_time=check_date, end_time=check_date
-        )
-        return sum(
-            1 for s in ANCHORS
-            if s in sample and sample[s] is not None and len(sample[s]) > 0
-        )
-
-    valid_n = _count_valid()
-    if valid_n >= 2:
-        log(f'  ✅ 本地日K充足 ({valid_n}/{len(ANCHORS)})')
-        return True
-
-    log(f'  ⚠️ 本地日K不足 ({valid_n}/{len(ANCHORS)})，尝试自动补充...')
-    for s in ANCHORS:
-        try:
-            xtdata.download_history_data(s, '1d',
-                                         start_time=start_date, end_time=end_date)
-        except Exception:
-            pass
-    log('  等待3s让日K落盘...')
-    time.sleep(3)
-
-    valid_n = _count_valid()
-    if valid_n >= 2:
-        log(f'  ✅ 日K补充成功 ({valid_n}/{len(ANCHORS)})')
-        return True
-
-    log(f'  ❌ 日K补充后仍不足 ({valid_n}/{len(ANCHORS)})。')
-    log('  原因可能: QMT客户端未登录 / 未订阅日K权限 / 无网络连接。')
-    log('  请在QMT客户端手动下载日K数据后重试。')
-    return False
 
 
 # ────────────────────────────────────────────
@@ -376,12 +309,22 @@ def main():
     all_stocks = xtdata.get_stock_list_in_sector('沪深A股')
     log(f'全市场 {len(all_stocks)} 只股票')
 
-    # ── 阶段一：日K检查（P2修复：不足时自动补充） ──
-    log('[阶段一] 检查本地日K...')
-    check_date = get_last_completed_day(xtdata, fallback=start_date)
-    log(f'  检查基准日期: {check_date}')
-    if not ensure_daily_kline(xtdata, check_date, start_date, end_date):
-        return
+    # ── 阶段一：全市场日K基建无脑强刷（CTO V91 暴力美学） ──
+    log('[阶段一] 执行全市场日K基建无脑强刷 (极速模式)...')
+    # 为了保证 5日均线/换手率 等指标能算出来，日K必须往前多下 30 天
+    s_dt = datetime.strptime(start_date, '%Y%m%d') - timedelta(days=30)
+    kline_start = s_dt.strftime('%Y%m%d')
+    log(f'  强制指令：全市场日K覆盖 {kline_start} ~ {end_date}')
+    
+    try:
+        # QMT 日K下载极快，500只一批全量投递，底层会自动增量更新
+        for i in range(0, len(all_stocks), 500):
+            batch = all_stocks[i:i+500]
+            xtdata.download_history_data(batch, '1d', start_time=kline_start, end_time=end_date)
+        log('  OK 全市场日K投递完毕，等待 3 秒落盘...')
+        time.sleep(3)
+    except Exception as e:
+        log(f'  [WARN] 日K下载报出异常: {e}')
 
     trading_days = get_trading_days(start_date, end_date, xtdata)
     today        = datetime.now().strftime('%Y%m%d')

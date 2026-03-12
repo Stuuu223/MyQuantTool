@@ -1920,24 +1920,51 @@ class LiveTradingEngine:
                         float(pre_close), float(tick_high), float(tick_low)
                     )
                     
-                    # === 【CTO V85: L1 对倒阻尼防线】 ===
-                    change_pct = (current_price - pre_close) / pre_close * 100 if pre_close > 0 else 0.0
-                    avg_volume_5d = s_data.get('avg_volume_5d') if s_data else 0
-                    if avg_volume_5d <= 0:
-                        avg_volume_5d = true_dict.get_avg_volume_5d(stock_code) or 0.0
-                    avg_amount_5d = avg_volume_5d * 100 * pre_close if avg_volume_5d > 0 and pre_close > 0 else 0.0
+                    # 【CTO V90 终极微积分与崩溃修复】
+                    current_price = tick.get('lastPrice', 0)
+                    pre_close = tick.get('lastClose', 0)
+                    current_amount = tick.get('amount', 0)
                     
-                    if avg_amount_5d > 0:
-                        current_ratio = current_amount / avg_amount_5d
-                        if current_ratio > 3.0 and abs(change_pct) < 2.0:
+                    if stock_code not in self.l1_inflow_accumulator:
+                        self.l1_inflow_accumulator[stock_code] = {
+                            'inflow': 0.0, 'last_amount': current_amount, 'last_price': current_price
+                        }
+                        
+                    cache = self.l1_inflow_accumulator[stock_code]
+                    delta_amount = current_amount - cache['last_amount']
+                    delta_price = current_price - cache['last_price']
+                    
+                    if delta_amount > 0:
+                        if delta_price > 0:
+                            cache['inflow'] += delta_amount
+                        elif delta_price < 0:
+                            cache['inflow'] -= delta_amount
+                        else:
+                            bid_vol = tick.get('bidVol1', 0)
+                            ask_vol = tick.get('askVol1', 0)
+                            if bid_vol + ask_vol > 0:
+                                imb = (bid_vol - ask_vol) / (bid_vol + ask_vol)
+                                cache['inflow'] += delta_amount * imb
+                                
+                    cache['last_amount'] = current_amount
+                    cache['last_price'] = current_price
+                    net_inflow_est = cache['inflow']
+                    
+                    # 修复 s_data 崩溃：直接从 true_dict 获取
+                    avg_vol = true_dict.get_avg_volume_5d(stock_code) or 0.0
+                    avg_amt = avg_vol * 100 * pre_close
+                    change_pct = (current_price - pre_close) / pre_close * 100 if pre_close > 0 else 0
+                    
+                    if avg_amt > 0:
+                        cur_ratio = current_amount / avg_amt
+                        if cur_ratio > 3.0 and abs(change_pct) < 2.0:
                             net_inflow_est *= 0.1
-                            logger.debug(f"🚨 [对倒降维] {stock_code} 量比{current_ratio:.1f}x但涨幅仅{change_pct:.2f}%，剥离虚假流入！")
+                            logger.debug(f"[CTO V90] {stock_code} 放量滞涨，inflow降权")
                     
-                    # 【CTO纠偏令】废除归零，实装量纲自适应校准仪！
-                    s_data = static_cache.get(stock_code)
-                    float_volume = s_data.get('float_volume', 0) if s_data else 0
+                    # 【CTO V90纠偏令】废除归零，实装量纲自适应校准仪！
+                    float_volume = true_dict.get_float_volume(stock_code) or 0
                     if float_volume <= 0:
-                        float_volume = true_dict.get_float_volume(stock_code) or 1000000000.0
+                        float_volume = 1000000000.0  # 默认10亿股
                     
                     float_market_cap = float_volume * current_price
                     
@@ -2037,7 +2064,7 @@ class LiveTradingEngine:
                     
                     
                     # 【CTO V20手术一】废除"缓存不到就杀人"的弱智拦截！
-                    # 原Bug：if not s_data: continue 直接杀掉了87只股票
+                    # [CTO V90] 已移除 s_data 依赖，直接从 true_dict 获取
                     # 修复：缓存缺失时兜底现场计算，绝不物理删除！
                     # 【CTO V21修复】get默认值对None无效！必须用or！
                     # 【CTO V23终极修复】昨收价优先从tick获取！流通股本用默认值兜底！
@@ -2047,20 +2074,12 @@ class LiveTradingEngine:
                     if pre_close <= 0:
                         pre_close = tick.get('lastPrice', 1.0)  # 再拿不到用现价
                     
-                    s_data = static_cache.get(stock_code)
-                    if s_data and s_data.get('float_volume') and s_data.get('float_volume') > 0:
-                        float_volume = s_data.get('float_volume')
-                        avg_volume_5d = s_data.get('avg_volume_5d') or 1.0
-                    else:
-                        # 【CTO V23绝对物理兜底】
-                        # 如果QMT彻底断联，用默认10亿股兜底！绝不让程序因除零崩溃！
-                        fv = true_dict.get_float_volume(stock_code)
-                        if not fv or fv <= 0:
-                            logger.debug(f"[WARN] {stock_code} 流通盘获取失败，启用10亿股强行兜底！")
-                            float_volume = 1000000000.0  # 10亿股默认值
-                        else:
-                            float_volume = fv
-                        avg_volume_5d = true_dict.get_avg_volume_5d(stock_code) or 1.0
+                    float_volume = true_dict.get_float_volume(stock_code) or 0
+                    avg_volume_5d = true_dict.get_avg_volume_5d(stock_code) or 1.0
+                    if float_volume <= 0:
+                        # 【CTO V90绝对物理兜底】
+                        logger.debug(f"[WARN] {stock_code} 流通盘获取失败，启用10亿股强行兜底！")
+                        float_volume = 1000000000.0  # 10亿股默认值
                     
                     # 【CTO V23】动态计算市值和成交额（基于tick的实时昨收价）
                     float_market_cap = float_volume * pre_close if float_volume > 0 and pre_close > 0 else 1.0
@@ -2173,17 +2192,6 @@ class LiveTradingEngine:
                             stock_code, float(current_amount), float(current_price),
                             float(pre_close), float(tick_high), float(tick_low)
                         )
-                        
-                        # === 【CTO V85: L1 对倒阻尼防线】 ===
-                        change_pct = (current_price - pre_close) / pre_close * 100 if pre_close > 0 else 0.0
-                        if avg_amount_5d > 0:
-                            current_ratio = current_amount / avg_amount_5d
-                            if current_ratio > 3.0 and abs(change_pct) < 2.0:
-                                net_inflow_est *= 0.1
-                                logger.debug(f"🚨 [对倒降维] {stock_code} 量比{current_ratio:.1f}x但涨幅仅{change_pct:.2f}%，剥离虚假流入！")
-                        
-                        # 【CTO V18极速调用】float_market_cap已在缓存中
-                        # float_market_cap = s_data['float_market_cap']  # 已在上面使用
                         
                         # 【CTO修复】使用tick真实high/low计算动态MFE
                         high_60d = tick.get('high', current_price)
