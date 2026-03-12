@@ -252,7 +252,9 @@ def main():
     args = sys.argv[1:]
 
     full_mode    = '--full' in args
+    minute_mode  = '--1m' in args  # 【CTO V113】分K回溯下载模式
     stocks_arg   = next((a for a in args if a.startswith('--stocks=')), None)
+    
     # 支持 --stocks=600759.SH,603353.SH 或 --stocks 600759.SH,603353.SH
     if stocks_arg:
         pinpoint_stocks = [s.strip() for s in stocks_arg.split('=', 1)[1].split(',') if s.strip()]
@@ -263,7 +265,103 @@ def main():
             pinpoint_stocks = [s.strip() for s in args[idx + 1].split(',') if s.strip()]
         except (ValueError, IndexError):
             pinpoint_stocks = []
-
+    
+    # 【CTO V113 优雅升级：1分钟K线回溯下载模式】
+    # 用法：python tools/smart_download.py --1m [--stocks 股票列表]
+    # 功能：从今天往前下载分K，连续20天无数据停止，统计下载天数
+    if minute_mode:
+        print('=' * 60)
+        print('分K回溯下载模式 (--1m)')
+        print('=' * 60)
+        
+        port = cfg.get('system_and_risk.qmt_port', 58610)
+        log(f'连接端口 {port}...')
+        try:
+            xtdata.connect(port=port)
+            log('✅ 连接成功')
+        except Exception as e:
+            log(f'❌ 连接失败: {e}')
+            return
+        
+        # 获取目标股票列表
+        if pinpoint_stocks:
+            target_stocks = pinpoint_stocks
+            log(f'指定标的: {len(target_stocks)} 只')
+        else:
+            target_stocks = xtdata.get_stock_list_in_sector('沪深A股')
+            # 过滤主板/创业板/科创板
+            target_stocks = [s for s in target_stocks if s.startswith(('00', '60', '30', '68'))]
+            target_stocks = [s for s in target_stocks if 'ST' not in s]
+            log(f'全市场标的: {len(target_stocks)} 只')
+        
+        # 从 end_date 开始逆向回溯（end_date后面会定义，这里先用今天）
+        today = datetime.now().strftime('%Y%m%d')
+        cur_date = datetime.now()
+        consecutive_no_data = 0
+        total_downloaded_days = 0
+        STOP_DAYS = 20  # 连续20天无数据停止
+        
+        log(f'开始回溯下载，停止条件: 连续{STOP_DAYS}天无数据')
+        log('')
+        
+        while consecutive_no_data < STOP_DAYS:
+            # 跳过周末
+            if cur_date.weekday() >= 5:
+                cur_date -= timedelta(days=1)
+                continue
+            
+            date_str = cur_date.strftime('%Y%m%d')
+            log(f'>>> 回溯日期: {date_str} (连续无数据: {consecutive_no_data}/{STOP_DAYS})')
+            
+            try:
+                t0 = time.time()
+                # 极速批量投递：同时下载日K和分K
+                for i in range(0, len(target_stocks), 500):
+                    batch = target_stocks[i:i+500]
+                    xtdata.download_history_data(batch, '1d', start_time=date_str, end_time=date_str)
+                    xtdata.download_history_data(batch, '1m', start_time=date_str, end_time=date_str)
+                elapsed = time.time() - t0
+                
+                time.sleep(2.0)  # 等待异步落盘
+                
+                # 抽样探测是否真实有数据
+                test_batch = target_stocks[:5]
+                raw = xtdata.get_local_data(
+                    field_list=[], stock_list=test_batch, 
+                    period='1m', start_time=date_str, end_time=date_str
+                )
+                
+                has_data = False
+                if raw:
+                    for s in test_batch:
+                        if s in raw and raw[s] is not None and len(raw[s]) > 0:
+                            has_data = True
+                            break
+                
+                if has_data:
+                    consecutive_no_data = 0
+                    total_downloaded_days += 1
+                    log(f'  ✅ {date_str} 数据落盘成功 ({elapsed:.0f}s) - 累计{total_downloaded_days}天有效')
+                else:
+                    consecutive_no_data += 1
+                    log(f'  ⚠️ {date_str} 数据为空，券商服务器无此日数据')
+                    
+            except Exception as e:
+                log(f'  ❌ 下载异常: {e}')
+                consecutive_no_data += 1
+            
+            cur_date -= timedelta(days=1)
+        
+        # 最终报告
+        log('')
+        print('=' * 60)
+        print('分K回溯下载完成报告')
+        print('=' * 60)
+        print(f'有效下载天数: {total_downloaded_days} 天')
+        print(f'停止原因: 连续{STOP_DAYS}天无数据')
+        print('=' * 60)
+        return
+    
     dates_args = [a for a in args if not a.startswith('--') and ',' not in a]
 
     if len(dates_args) >= 2:
