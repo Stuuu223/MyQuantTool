@@ -445,12 +445,12 @@ class KineticCoreEngine:
         else:
             base_power = abs(inflow_ratio_pct) * 0.5
         
-        # 【CTO V82】MFE计算重构：解决分母极小化伪真空爆炸
-        # 当流入资金不足时，禁止计算MFE，防止除零放大的伪真空
+        # 【CTO V83 物理宪法】MFE重铸为Sigmoid激活函数
+        # 做功效率的影响应该是连续的S型曲线，而非阶梯式跃变
         mfe_multiplier = 1.0  # 默认乘数
         
         if inflow_ratio_pct < 1.0:
-            # 【CTO V82 激活能门槛】流入<1%时，振幅只是噪音，MFE无物理意义
+            # 【激活能门槛】流入<1%时，振幅只是噪音，MFE无物理意义
             mfe = 1.0
             mfe_multiplier = 1.0
             logger.debug(f"[MFE无效] {stock_code} 流入仅{inflow_ratio_pct:.2f}%，激活能不足，MFE=1.0")
@@ -459,19 +459,15 @@ class KineticCoreEngine:
             upward_thrust = ((price - low) + (high - open_price)) / 2
             price_range_pct = upward_thrust / prev_close if prev_close > 0 else 0.0
             mfe_raw = price_range_pct / (inflow_ratio_pct / 100.0)
-            mfe = max(0.1, mfe_raw)
+            mfe = max(0.01, mfe_raw)
             
-            # 【CTO V82】将MFE转换为乘数，绝不能是加数！
-            if mfe >= 2.0:
-                # 真空区加速乘数 (最高给2.5倍)
-                mfe_multiplier = min(2.5, 1.0 + math.log10(mfe))
-                logger.debug(f"🚀 [MFE真空] {stock_code} MFE={mfe:.2f}，乘数×{mfe_multiplier:.2f}")
-            elif mfe < 0.5:
-                # 摩擦区减速乘数 (遇到抛压，动能打折)
-                mfe_multiplier = max(0.2, mfe * 1.5)
-                logger.debug(f"🐌 [MFE摩擦] {stock_code} MFE={mfe:.2f}，乘数×{mfe_multiplier:.2f}")
-            else:
-                mfe_multiplier = 1.0
+            # 【连续物理算子：MFE Sigmoid激活函数】
+            # M(x) = 3.0 / (1 + exp(-1.5 * (x - 1.0)))
+            # MFE=0.1 -> 乘数 0.61 (压制)
+            # MFE=1.0 -> 乘数 1.50 (基准)
+            # MFE=3.0 -> 乘数 2.85 (逼近极值3.0)
+            mfe_multiplier = 3.0 / (1.0 + math.exp(-1.5 * (mfe - 1.0)))
+            logger.debug(f"[MFE Sigmoid] {stock_code} MFE={mfe:.2f}，乘数×{mfe_multiplier:.2f}")
         
         # 【CTO V82】应用MFE乘数，而非加法！
         base_power = base_power * mfe_multiplier
@@ -506,33 +502,27 @@ class KineticCoreEngine:
         
         base_power = base_power * vwap_multiplier
         
-        # 【CTO V80 极刑绞杀法则】涨幅与纯度双维度一票否决
-        # 计算涨幅
-        change_pct = (price - prev_close) / prev_close * 100 if prev_close > 0 else 0
-        
-        # 计算日内纯度 (-100% 到 100%)
-        # 纯度 = (当前价 - 昨收) / (最高 - 最低)
-        # 正值=强势区(收盘在昨收上方)，负值=弱势区(收盘在昨收下方)
+        # 【CTO V83 物理宪法】纯度重铸为抛物线阻尼器
+        # 计算纯度 (0.0 到 1.0) - 价格在日内高低点的位置
         price_range = high - low
         if price_range > 0:
-            raw_purity = (price - prev_close) / price_range
+            raw_purity = (price - low) / price_range
         else:
-            # 一字板情况
-            raw_purity = 1.0 if price > prev_close else (-1.0 if price < prev_close else 0)
-        purity_pct = max(min(raw_purity * 100, 100.0), -100.0)
+            # 一字板情况：涨停给100%，跌停给0%
+            raw_purity = 1.0 if price >= prev_close else 0.0
         
-        # 【极刑#1】涨幅 < 3.0% = 缺乏绝对右侧动能，分数强制乘以 0.1
-        if change_pct < 3.0:
-            base_power *= 0.1
-            logger.warning(f"🔪 [涨幅不达标] {stock_code} 涨幅仅 {change_pct:.2f}%，动能降维至0.1")
+        purity_norm = min(max(raw_purity, 0.0), 1.0)
         
-        # 【CTO V82 极刑#2】纯度方向毁灭性压制
-        # 纯度<30%代表方向向下（高开低走），必须遭到毁灭性压制
-        # 使用连续函数：乘以 purity_pct/100，纯度2.3% = 乘以0.023
-        if purity_pct < 30.0:
-            purity_punishment = purity_pct / 100.0
-            base_power *= purity_punishment
-            logger.warning(f"💀 [方向证伪] {stock_code} 纯度仅 {purity_pct:.1f}%，高开低走遭抛压瓦解，动能×{purity_punishment:.3f}！")
+        # 【连续物理算子：纯度动量阻尼】
+        # 纯度 0.9 -> 乘数 0.81 (轻微摩擦)
+        # 纯度 0.5 -> 乘数 0.25 (严重压制)
+        # 纯度 0.2 -> 乘数 0.04 (毁灭性坍塌)
+        # 纯度 0.02 -> 乘数 0.0004 (绝对归零)
+        purity_multiplier = purity_norm ** 2
+        
+        # 兼容旧版输出
+        purity_pct = purity_norm * 100.0
+        change_pct = (price - prev_close) / prev_close * 100 if prev_close > 0 else 0
         
         # 第四步：神级乘数区
         multiplier = 1.0
@@ -688,21 +678,14 @@ class KineticCoreEngine:
             bonus_score += 40.0
             logger.info(f"🔥 [大力出奇迹] {stock_code} 流入{inflow_ratio_pct:.1f}%且MFE>{mfe:.2f}，+40分")
         
-        final_score = round(base_power * multiplier * memory_multiplier * turnover_multiplier + bonus_score, 2)
+        # 【CTO V83 终极力场方程式】
+        # 施加空间、效率与微观方向的力场乘数
+        # base_power已经应用了mfe_multiplier，现在应用purity_multiplier
+        base_power_with_physics = base_power * purity_multiplier
         
-        # 【CTO V80】MFE两极分化：几何级爆炸 vs 摩擦力绞杀
-        if mfe >= 2.0 and purity_pct > 80.0:
-            # 突破真空且高纯度，分数呈几何级爆炸！
-            final_score *= 3.0
-            logger.info(f"🚀 [真空起爆] {stock_code} MFE={mfe:.2f} 纯度{purity_pct:.1f}%，势能爆炸×3.0！")
-        elif mfe >= 2.0:
-            # 真空但纯度不够高
-            final_score *= 1.5
-            logger.info(f"🚀 [MFE真空] {stock_code} MFE={mfe:.2f}>2.0，真空无阻力，×1.5！")
-        elif mfe < 0.5:
-            # 遇到强阻力，做功效率极低，加重惩罚
-            final_score *= 0.2
-            logger.warning(f"🐌 [强摩擦力] {stock_code} MFE={mfe:.2f}，动能被消耗，严重压制×0.2！")
+        final_score = round(base_power_with_physics * multiplier * memory_multiplier * turnover_multiplier + bonus_score, 2)
+        
+        # 【CTO V83】物理乘数已经包含MFE和纯度的连续影响，无需额外硬编码阈值
         
         if is_net_outflow:
             final_score = final_score * 0.5
