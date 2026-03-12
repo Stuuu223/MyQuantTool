@@ -1076,6 +1076,17 @@ class LiveTradingEngine:
     
     def _auction_snapshot_filter(self):
         """
+        【CTO V87 优雅同源】废除实盘专属竞价淘汰。
+        竞价弱的票交由引擎自然打出低分，坚决不在初始列表里做物理切除！
+        保证与 Scan/Mock 100% 对齐。
+        
+        原逻辑：过滤低开/无量/一字板等，破坏SSOT。
+        新逻辑：直接return，让打分引擎自然淘汰。
+        """
+        logger.info("[SSOT] 竞价快照过滤已关闭，维持UniverseBuilder原始底池。")
+        return
+        # ===== 以下代码已被CTO V87废除 =====
+        """
         09:25集合竞价快照初筛 - CTO第一斩 - 带火力输出的雷达版
         
         【架构解耦】使用QMTEventAdapter获取数据，向量化过滤：
@@ -1400,6 +1411,17 @@ class LiveTradingEngine:
         return code
     
     def _snapshot_filter(self):
+        """
+        【CTO V87 优雅同源】废除实盘专属开盘淘汰。
+        开盘弱的票交由引擎自然打出低分，坚决不在初始列表里做物理切除！
+        保证与 Scan/Mock 100% 对齐。
+        
+        原逻辑：过滤量比/换手率/死亡换手等，破坏SSOT。
+        新逻辑：直接return，让打分引擎自然淘汰。
+        """
+        logger.info("[SSOT] 开盘快照过滤已关闭，维持UniverseBuilder原始底池。")
+        return
+        # ===== 以下代码已被CTO V87废除 =====
         """
         【CTO V4四级漏斗】09:30开盘粗筛 - 只看量比！
         
