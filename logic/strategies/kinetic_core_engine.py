@@ -481,8 +481,16 @@ class KineticCoreEngine:
         # 计算全天成交均价 (VWAP)，作为主力的真实能量重心
         vwap = (total_amount / total_volume) if total_volume > 0 else prev_close
         
-        # 判断当前价格是否在能量重心之上？
-        is_above_center_of_mass = price >= (vwap * 0.995)  # 给予千分之五的宽容度
+        # === 【CTO V110 绝对水位隔离：重力逃逸判据】 ===
+        # 物理铁律：必须同时满足 [翻红] + [高于开盘价] + [脱离底部3%以上] + [站稳均价线]
+        # 才算真正的"高空重力逃逸"，才有资格享受洗盘豁免！
+        # 防止水下反抽(price < prev_close)骗炮！
+        is_gravitational_escape = (
+            price > prev_close and           # 翻红：打破隔夜多空平衡
+            price >= open_price and          # 高于开盘价：守住日内资金防线
+            change_pct > 3.0 and             # 脱离底部引力区
+            price >= (vwap * 0.995)          # 站稳均价线
+        )
         
         # 时间熵特征提取 (判断当前处于什么交易阶段)
         minutes_from_open = (current_time.hour * 60 + current_time.minute) - (9 * 60 + 30)
@@ -502,18 +510,19 @@ class KineticCoreEngine:
             # 午后及尾盘(13:30后)：长上影线是绝对的死亡派发，5次方极刑！
             friction_multiplier = purity_norm ** 5
         
-        # 【CTO V109 能量重心绝对豁免】(取代之前粗糙的龙抬头)
-        # 如果当前价格依然死死踩在主力的能量重心(VWAP)之上，说明无论纯度多低(长上影线)，
-        # 都是主力在成本区上方的主动洗盘，而不是恐慌性踩踏出货！
-        # 此时，强行将极其严苛的 3次方/5次方 阻尼，降低为温和的 1.5 次方！
-        if is_above_center_of_mass and purity_norm < 0.7:
+        # 【CTO V110 重力逃逸绝对豁免】
+        # 只有真正的高空重力逃逸(翻红+高于开盘+涨幅>3%+站稳VWAP)，才能享受洗盘豁免！
+        # 彻底杜绝水下反抽骗炮！(水下股票反抽超过均价线也被当成高位洗盘的致命Bug已修复)
+        if is_gravitational_escape and purity_norm < 0.7:
             friction_multiplier = purity_norm ** 1.5
-            logger.debug(f"⚖️ [重心引力补偿] {stock_code} 纯度仅{purity_norm*100:.0f}%，但稳踩能量重心(VWAP:{vwap:.2f})！判定为高位强承接，执行物理豁免！")
+            logger.debug(f"⚖️ [重力逃逸豁免] {stock_code} 高空水位(涨幅{change_pct:.1f}%)稳踩VWAP，纯度{purity_norm*100:.0f}%判定为洗盘！")
         
-        # 绝对死线：跌破重心，且无资金流入，立刻绞杀
-        if not is_above_center_of_mass and purity_norm < 0.3 and inflow_ratio_pct < 2.0:
+        # 【CTO V110 水下反噬极刑】
+        # 如果未逃逸重力(水下或跌破开盘价)且纯度极低，执行6次方绞杀！
+        # 防止水下反抽骗炮！
+        if not is_gravitational_escape and purity_norm < 0.4:
             friction_multiplier = purity_norm ** 6
-            logger.debug(f"💀 [死线极刑] {stock_code} 跌破VWAP({vwap:.2f})+纯度{purity_norm*100:.0f}%+流入{inflow_ratio_pct:.1f}%，6次方绞杀！")
+            logger.debug(f"💀 [水下反噬极刑] {stock_code} 未逃逸重力且纯度{purity_norm*100:.0f}%，执行6次方绞杀！")
         
         # ========== 5. 效率激活 = MFE Sigmoid ==========
         if inflow_ratio_pct <= 0.0:
