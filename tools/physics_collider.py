@@ -110,7 +110,7 @@ def extract_limit_up_work_done(stock_code: str, date: str) -> Dict:
     # 获取日K数据确定昨收价和涨停价
     try:
         daily_data = xtdata.get_local_data(
-            field_list=['open', 'high', 'low', 'close', 'volume', 'amount'],
+            field_list=['open', 'high', 'low', 'close', 'volume', 'amount', 'preClose'],
             stock_list=[stock_code],
             period='1d',
             start_time=date,
@@ -125,7 +125,12 @@ def extract_limit_up_work_done(stock_code: str, date: str) -> Dict:
         if df_daily is None or len(df_daily) == 0:
             return result
             
-        prev_close = float(df_daily['close'].iloc[0]) * 0.9  # 简化：用当日收盘估算
+        # 【CTO V107修复】用preClose字段获取昨收价，不要用当日收盘价*0.9估算
+        if 'preClose' in df_daily.columns:
+            prev_close = float(df_daily['preClose'].iloc[0])
+        else:
+            # 如果没有preClose，尝试从前一天的数据获取
+            prev_close = 0.0
         today_high = float(df_daily['high'].iloc[0])
         today_close = float(df_daily['close'].iloc[0])
         total_amount = float(df_daily['amount'].iloc[0])
@@ -173,7 +178,8 @@ def extract_limit_up_work_done(stock_code: str, date: str) -> Dict:
         result['limit_price'] = limit_price
         
         # 判断是否涨停（最高价接近涨停价）
-        price_tolerance = limit_price * 0.005  # 0.5%容差
+        # 【CTO V107修复】使用极小容差(0.01元)避免误判接近涨停的价格
+        price_tolerance = 0.01  # 固定0.01元容差
         is_limit_up = abs(today_high - limit_price) < price_tolerance or today_high >= limit_price
         result['is_limit_up'] = is_limit_up
         
@@ -181,17 +187,24 @@ def extract_limit_up_work_done(stock_code: str, date: str) -> Dict:
             return result
         
         # 遍历Tick计算板上做功
+        # 【CTO修复】QMT Tick的amount/volume是累计值，必须用差分计算增量
         limit_up_amount = 0.0
         limit_up_volume = 0.0
         seal_time = None
         last_limit_up_time = None
         
-        # 封板前3分钟流入累计
+        # 封板前3分钟流入累计（使用增量）
         pre_seal_inflow = []
         
         prices = df_tick['price'] if 'price' in df_tick.columns else df_tick.get('lastPrice', df_tick.iloc[:, 1])
         volumes = df_tick['volume'] if 'volume' in df_tick.columns else df_tick.iloc[:, 2]
         amounts = df_tick['amount'] if 'amount' in df_tick.columns else df_tick.iloc[:, 3]
+        
+        prev_amount = 0.0
+        prev_volume = 0.0
+        
+        # 【CTO V107】修复板上成交计算：lastPrice是快照当前价不是成交价
+        # 正确方法：首次触及涨停后的所有增量成交都是"板上做功"
         
         for i in range(len(df_tick)):
             try:
@@ -199,18 +212,32 @@ def extract_limit_up_work_done(stock_code: str, date: str) -> Dict:
                 volume = float(volumes.iloc[i]) if hasattr(volumes, 'iloc') else float(volumes[i])
                 amount = float(amounts.iloc[i]) if hasattr(amounts, 'iloc') else float(amounts[i])
                 
-                # 判断是否在涨停价成交
-                if abs(price - limit_price) < price_tolerance:
-                    limit_up_amount += amount
-                    limit_up_volume += volume
-                    last_limit_up_time = i
+                # 计算增量而非累计
+                delta_amount = amount - prev_amount
+                delta_volume = volume - prev_volume
+                prev_amount = amount
+                prev_volume = volume
+                
+                # 过滤异常增量（负数或超大值）
+                if delta_amount < 0 or delta_amount > 1e9:
+                    delta_amount = 0
+                if delta_volume < 0 or delta_volume > 1e8:
+                    delta_volume = 0
+                
+                # 【CTO V107】正确判断封板：首次触及涨停价
+                if seal_time is None:
+                    # 封板前，记录流入
+                    pre_seal_inflow.append(delta_amount)
                     
-                    if seal_time is None:
-                        seal_time = i  # 首次触及涨停
+                    # 检查是否首次触及涨停
+                    if abs(price - limit_price) < price_tolerance:
+                        seal_time = i
+                        last_limit_up_time = i
                 else:
-                    # 非涨停价成交，记录封板前流入
-                    if seal_time is None:
-                        pre_seal_inflow.append(amount)
+                    # 封板后，所有增量都是板上做功
+                    limit_up_amount += delta_amount
+                    limit_up_volume += delta_volume
+                    last_limit_up_time = i
                         
             except Exception:
                 continue
