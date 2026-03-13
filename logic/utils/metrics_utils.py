@@ -538,41 +538,120 @@ def _silence_terminal_logging():
     
     _terminal_silenced = True
 
-def render_live_dashboard(top_targets, pool_stats=None, is_rest=False, msg=None, initial_loading=False):
+def build_dashboard_layout(top_targets, pool_stats=None, account_info=None, is_rest=False, msg=None, initial_loading=False):
     """
-    【CTO V34】实盘引擎专用UI渲染函数
-    【CTO V118】FPS锁频 - 每3秒刷新一次，防止终端刷屏
-    【CTO V119】终端静默 - 禁用logger终端输出，只写文件
-    
-    从run_live_trading_engine.py剥离，实现UI与逻辑分离
+    【CTO V121 工业级悬浮大屏】
+    返回组合渲染对象，绝对不执行 print！
+    用于 rich.Live 模式，实现真正的原地刷新
     
     Args:
         top_targets: TOP10目标列表
         pool_stats: 漏斗统计信息
-        is_rest: 是否盘后/非交易日模式
-        msg: 自定义标题消息
-        initial_loading: 是否初始加载中
+        account_info: 虚拟账户信息（总资产/子弹/持仓/盈亏）
+        is_rest: 是否盘后模式
+        msg: 自定义消息
+        initial_loading: 是否初始加载
     """
-    import os
-    import time
     from datetime import datetime
-    global _last_display_time
+    from rich.console import Group
+    from rich.table import Table
+    from rich.panel import Panel
+    from rich.text import Text
     
-    # 【CTO V118】FPS锁频检查
-    current_time = time.time()
-    if not initial_loading and not is_rest:
-        if current_time - _last_display_time < _DISPLAY_INTERVAL:
-            return  # 3秒内不刷新，直接返回
+    now_str = datetime.now().strftime('%H:%M:%S')
     
-    _last_display_time = current_time
+    # 1. 顶部标题栏
+    title_str = f"🚀 [V20 纯血游资雷达] | {msg or ('静态复盘' if is_rest else '极速狙击')} | 帧同步: {now_str}"
+    header_panel = Panel(title_str, style="bold cyan", expand=False)
     
+    if initial_loading:
+        return Group(header_panel, Text(">>> 正在连接 QMT 物理内存，装载高阶算子...", style="yellow"))
+    
+    # 2. 虚拟作战中枢 (CTO V121 高密度信息版)
+    if account_info:
+        t_asset = account_info.get('total_asset', 0)
+        a_cash = account_info.get('available_cash', 0)
+        p_count = account_info.get('position_count', 0)
+        
+        d_pnl_amt = account_info.get('daily_pnl_amt', 0)
+        d_pnl_pct = account_info.get('daily_pnl_pct', 0)
+        d_color = "red" if d_pnl_amt >= 0 else "green"
+        
+        t_pnl_amt = account_info.get('total_pnl_amt', 0)
+        t_pnl_pct = account_info.get('total_pnl_pct', 0)
+        t_color = "red" if t_pnl_amt >= 0 else "green"
+        
+        acc_text = (
+            f"[bold yellow]💰 总资产:[/bold yellow] ¥{t_asset:,.2f}  |  "
+            f"[bold cyan]💵 剩余子弹:[/bold cyan] ¥{a_cash:,.2f}  |  "
+            f"[bold magenta]📦 锁定槽位:[/bold magenta] {p_count} 只\n"
+            f"[bold {d_color}]⚡ 今日盈亏: ¥{d_pnl_amt:+,.2f} ({d_pnl_pct:+.2f}%)[/]  |  "
+            f"[bold {t_color}]🏆 累计盈亏: ¥{t_pnl_amt:+,.2f} ({t_pnl_pct:+.2f}%)[/]"
+        )
+        acc_panel = Panel(acc_text, title="[ 虚拟资金风控中枢 ]", border_style="cyan", expand=False)
+    else:
+        acc_panel = Text("")
+    
+    # 3. 战场情绪统计
+    stats_text = Text()
+    if pool_stats:
+        passed = pool_stats.get('passed_fine_filter', pool_stats.get('active', 0))
+        stats_text.append(f"🔍 漏斗: 5191只 → 粗筛 {pool_stats.get('total',0)} → 活跃 {pool_stats.get('active',0)} → 过细筛 {passed}\n", style="white")
+        stats_text.append(f"🔥 情绪: 红盘/封板 {pool_stats.get('up',0)}只 | 水下/绿盘 {pool_stats.get('down',0)}只 | 派发剔除 {pool_stats.get('active',0)-passed}只", style="white")
+    
+    # 4. 战神榜核心矩阵
+    table = Table(show_header=True, header_style="bold magenta", style="cyan", expand=False)
+    table.add_column("RANK", justify="center", width=4)
+    table.add_column("TARGET", justify="center", width=10, style="bold white")
+    table.add_column("SCORE", justify="right", width=8, style="bold red")
+    table.add_column("PRICE", justify="right", width=7)
+    table.add_column("CHG%", justify="right", width=8)
+    table.add_column("INFLOW%", justify="right", width=8)
+    table.add_column("SUSTAIN", justify="right", width=8)
+    table.add_column("MFE", justify="right", width=6)
+    table.add_column("PURITY%", justify="right", width=8)
+    
+    if not top_targets:
+        table.add_row("...", "空仓观望", "...", "...", "...", "...", "...", "...", "...")
+    else:
+        for i, t in enumerate(top_targets, 1):
+            row_style = "bold red" if i <= 3 else None
+            p_val = t.get('purity', 0)
+            p_color = "red" if p_val >= 80 else "yellow" if p_val >= 20 else "white" if p_val >= -20 else "green"
+            
+            safe_sustain = min(max(t.get('sustain_ratio', 0), -99.9), 99.9)
+            safe_mfe = min(max(t.get('mfe', 0), -99.9), 99.9)
+            
+            table.add_row(
+                str(i), t['code'], f"{t.get('score', 0):.1f}", f"{t['price']:.2f}",
+                f"{t.get('change', 0):+.2f}%", f"{t.get('inflow_ratio', 0):.2f}%",
+                f"{safe_sustain:.2f}x", f"{safe_mfe:.1f}",
+                f"[{p_color}]{p_val:+.1f}%[/{p_color}]", style=row_style
+            )
+    
+    cmd_text = Text("[CMD] 雷达超频扫描中... (Ctrl+C 安全阻断)", style="bright_black") if not is_rest else Text("[CMD] 盘后定格完毕。", style="bright_black")
+    
+    # 组装返回，决不 print！
+    return Group(header_panel, acc_panel, stats_text, table, cmd_text)
+
+
+def render_live_dashboard(top_targets, pool_stats=None, is_rest=False, msg=None, initial_loading=False, account_info=None):
+    """
+    【CTO V121】兼容接口 - 调用 build_dashboard_layout 返回渲染对象
+    
+    Args:
+        top_targets: TOP10目标列表
+        pool_stats: 漏斗统计信息
+        is_rest: 是否盘后模式
+        msg: 自定义消息
+        initial_loading: 是否初始加载
+        account_info: 虚拟账户信息（新增）
+    """
     # 【CTO V119】禁用终端日志输出，防止滚动
     _silence_terminal_logging()
     
-    # 【CTO V13】盘后投影模式不清屏，静默追加
-    if not is_rest:
-        os.system('cls' if os.name == 'nt' else 'clear')
-    now_str = datetime.now().strftime('%H:%M:%S')
+    # 直接返回渲染对象，由外层 Live 调用
+    return build_dashboard_layout(top_targets, pool_stats, account_info, is_rest, msg, initial_loading)
     
     try:
         from rich.console import Console

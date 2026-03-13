@@ -1700,11 +1700,45 @@ class LiveTradingEngine:
     def _print_fire_control_panel(self, top_targets, initial_loading=False, pool_stats=None, is_rest=False, msg=None):
         """
         【CTO V34】UI渲染代理 - 调用metrics_utils中的render_live_dashboard
+        【CTO V121】添加虚拟账户信息支持
         
         实现UI与逻辑分离，实盘引擎只负责传数据，不负责画表格
         """
         from logic.utils.metrics_utils import render_live_dashboard
-        render_live_dashboard(top_targets, pool_stats, is_rest, msg, initial_loading)
+        
+        # 【CTO V121】提取虚拟账户信息
+        account_info = None
+        if hasattr(self, 'execution_manager') and self.execution_manager:
+            try:
+                initial_cap = getattr(self.execution_manager, 'initial_capital', 100000.0)
+                available_cash = getattr(self.execution_manager, 'available_cash', initial_cap)
+                positions = getattr(self.execution_manager, 'positions', {})
+                
+                # 计算持仓市值
+                position_value = 0.0
+                for code, vol in positions.items():
+                    for t in (self.last_known_top_targets or []):
+                        if t.get('code') == code:
+                            position_value += vol * t.get('price', 0)
+                            break
+                
+                total_asset = available_cash + position_value
+                total_pnl_amt = total_asset - initial_cap
+                total_pnl_pct = (total_pnl_amt / initial_cap * 100.0) if initial_cap > 0 else 0.0
+                
+                account_info = {
+                    'total_asset': total_asset,
+                    'available_cash': available_cash,
+                    'position_count': len(positions),
+                    'daily_pnl_amt': total_pnl_amt,
+                    'daily_pnl_pct': total_pnl_pct,
+                    'total_pnl_amt': total_pnl_amt,
+                    'total_pnl_pct': total_pnl_pct
+                }
+            except Exception:
+                pass
+        
+        render_live_dashboard(top_targets, pool_stats, is_rest, msg, initial_loading, account_info)
     
     def _run_radar_main_loop(self):
         """
