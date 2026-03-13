@@ -359,18 +359,25 @@ class UniverseBuilder:
             today_turnover_pct = (today_volume * 100 / float_volume_shares) * 100
             avg_turnover_5d_pct = (avg_volume_5d * 100 / float_volume_shares) * 100
             
-            # 【条件2】5日均换手>5%
-            if avg_turnover_5d_pct < self.min_avg_turnover_pct:
+            # 【CTO V133 冷热双轨漏斗引擎】
+            # 计算换手率异动加速度 (Ratio)
+            turnover_ratio = today_turnover_pct / avg_turnover_5d_pct if avg_turnover_5d_pct > 0 else 0
+            
+            # 【轨道 A：高位接力热启动】(对应 10天70% 阵营)
+            # 物理特征：绝对活跃度极高，资金在里面疯狂换手
+            track_A_pass = (avg_turnover_5d_pct >= 5.0) and (today_turnover_pct >= 5.0)
+            
+            # 【轨道 B：平地惊雷冷启动】(对应 6天100% 阵营)
+            # 物理特征：平时死水一潭，今日突然爆量！绝对值可以低(3%)，但加速度必须极高！
+            # 甜点位 3.5% 作为冷启动绝对底线（防僵尸股），同时要求爆发力 Ratio >= 2.5倍！
+            track_B_pass = (today_turnover_pct >= 3.5) and (turnover_ratio >= 2.5)
+            
+            # 双轨制拦截：只要满足其中一条物理轨道，即刻放行进入雷达！
+            if track_A_pass or track_B_pass:
+                passed.append(stock)
+            else:
                 cnt_turnover += 1
                 continue
-            
-            # 【条件3】当日换手>5%
-            if today_turnover_pct < self.min_avg_turnover_pct:
-                cnt_turnover += 1
-                continue
-            
-            # 四维共振通过！
-            passed.append(stock)
 
         # 【CTO V25】自愈下载统计日志
         if cnt_autoheal > 0:
