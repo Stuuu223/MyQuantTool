@@ -456,8 +456,8 @@ def main():
     all_stocks = xtdata.get_stock_list_in_sector('沪深A股')
     log(f'全市场 {len(all_stocks)} 只股票')
 
-    # ── 阶段一：全市场日K基建无脑强刷（CTO V91 暴力美学） ──
-    log('[阶段一] 执行全市场日K基建无脑强刷 (极速模式)...')
+    # ── 阶段一：全市场日K基建无脑强刷（CTO V91 暴力美学 + V122 多线程加速） ──
+    log('[阶段一] 执行全市场日K基建无脑强刷 (多线程极速模式)...')
     # 为了保证 5日均线/换手率 等指标能算出来，日K必须往前多下 30 天
     s_dt = datetime.strptime(start_date, '%Y%m%d') - timedelta(days=30)
     kline_start = s_dt.strftime('%Y%m%d')
@@ -465,13 +465,20 @@ def main():
     
     try:
         # [CTO V115] QMT download_history_data 仅支持单只股票 str，不支持 list！
-        # 必须逐只异步投递
-        for stock in all_stocks:
+        # [CTO V122] 多线程并发投递，32线程暴力加速
+        def submit_one(stock):
             try:
                 xtdata.download_history_data(stock, '1d', start_time=kline_start, end_time=end_date)
+                return True
             except Exception:
-                pass
-        log('  OK 全市场日K投递完毕，等待 3 秒落盘...')
+                return False
+        
+        import concurrent.futures
+        t0_submit = time.time()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=32) as executor:
+            futures = {executor.submit(submit_one, s): s for s in all_stocks}
+            done = sum(1 for f in concurrent.futures.as_completed(futures))
+        log(f'  OK 全市场日K投递完毕 ({done}只, {time.time()-t0_submit:.1f}s)，等待 3 秒落盘...')
         time.sleep(3)
     except Exception as e:
         log(f'  [WARN] 日K下载报出异常: {e}')
@@ -541,9 +548,11 @@ def main():
         log(f'\n✅ FULL全量完成! 总耗时 {total_elapsed:.0f}s ({total_elapsed/60:.1f}min)')
         return
 
-    # 粗筛模式 【CTO V114 铁血漏斗】
+    # 粗筛模式 【CTO V122 样本完整性保卫令】
+    # 老板命令：进了watchlist全下！绝不物理删除负样本！
     from logic.data_providers.universe_builder import UniverseBuilder
     import numpy as np
+    import concurrent.futures
 
     grand_total = 0
     grand_t0    = time.time()
@@ -554,56 +563,28 @@ def main():
             valid_stocks, market_ratios = UniverseBuilder(date).build()
             log(f'  粗筛原池: {len(valid_stocks)}只 ({time.time()-t0:.1f}s)')
 
-            # 【CTO V114 铁血截断：涨幅>3% + 量比>1.5 才配下Tick】
-            # 先获取日K数据用于涨幅过滤
-            daily_check = xtdata.get_local_data(
-                field_list=['close', 'preClose'], 
-                stock_list=valid_stocks, 
-                period='1d', 
-                start_time=date, 
-                end_time=date
-            )
+            # 【CTO V122】废除铁血截断！保留完整负样本！
+            # 让物理引擎自然淘汰骗炮股，而不是在下载阶段物理阉割！
             
-            strict_valid_stocks = []
-            for stock in valid_stocks:
-                # 1. 量比硬底线
-                ratio = market_ratios.get(stock, 0)
-                if ratio < 1.5:
-                    continue
-                    
-                # 2. 涨幅硬底线（过滤无效布朗运动）
-                try:
-                    if stock in daily_check and not daily_check[stock].empty:
-                        close_p = float(daily_check[stock]['close'].iloc[0])
-                        pre_p = float(daily_check[stock]['preClose'].iloc[0])
-                        if pre_p > 0:
-                            change_pct = (close_p - pre_p) / pre_p * 100.0
-                            if change_pct > 3.0:
-                                strict_valid_stocks.append(stock)
-                except Exception:
-                    pass
-            
-            log(f'  铁血截断: {len(valid_stocks)}只 → {len(strict_valid_stocks)}只 (涨幅>3% + 量比>1.5)')
-            
-            if not strict_valid_stocks:
-                log('  ⚠️ 铁血截断后无标的，跳过')
-                continue
-            
-            # 动态量比阈值（仅用于日志记录）
-            valid_ratios = [market_ratios.get(s, 0) for s in strict_valid_stocks if market_ratios.get(s, 0) > 0]
+            # 仅做统计参考
+            valid_ratios = [market_ratios.get(s, 0) for s in valid_stocks if market_ratios.get(s, 0) > 0]
             if len(valid_ratios) >= 10:
                 vol_threshold = float(np.percentile(valid_ratios, 95))
-                log(f'  动态量比阈值(95th): {vol_threshold:.2f}')
+                log(f'  动态量比阈值(95th): {vol_threshold:.2f} | 全量下载 {len(valid_stocks)} 只（含负样本）')
             else:
                 vol_threshold = 3.0
+            
+            if not valid_stocks:
+                log('  ⚠️ 粗筛后无标的，跳过')
+                continue
 
         except Exception as e:
             log(f'  ❌ 粗筛失败: {e}，跳过')
             continue
 
-        download_one_day(date, strict_valid_stocks, xtdata, full=False,
+        download_one_day(date, valid_stocks, xtdata, full=False,
                          do_verify=True, volume_ratio_threshold=vol_threshold)
-        grand_total   += len(strict_valid_stocks)
+        grand_total   += len(valid_stocks)
         total_elapsed  = time.time() - grand_t0
         remaining      = (total_elapsed / (i + 1)) * (len(trading_days) - i - 1)
         log(f'  总进度: {i+1}/{len(trading_days)}天 | '
