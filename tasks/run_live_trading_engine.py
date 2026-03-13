@@ -972,29 +972,15 @@ class LiveTradingEngine:
                     base_pool, volume_ratios = builder.build()
                     
                     if base_pool:
-                        # 【CTO V130 实盘绞肉机】绝不允许2000只股票进入内存订阅！
-                        # 必须执行92th分位数截断！
-                        if volume_ratios:
-                            valid_ratios = [r for r in volume_ratios.values() if r > 0]
-                            if len(valid_ratios) > 100:
-                                threshold = float(np.percentile(valid_ratios, 92))
-                                threshold = max(threshold, 1.5)  # 物理兜底
-                            else:
-                                threshold = 1.5
-                            
-                            strict_pool = [s for s in base_pool if volume_ratios.get(s, 0) >= threshold]
-                            
-                            logger.info("=" * 60)
-                            logger.info(f"🩸 [实盘绞肉机] 启动 92th 分位数过滤 (阈值: {threshold:.2f}x)")
-                            logger.info(f"🩸 将 UniverseBuilder 释放的 {len(base_pool)} 只，残忍压缩至 {len(strict_pool)} 只精锐！")
-                            logger.info("=" * 60)
-                            
-                            self.watchlist = strict_pool
-                        else:
-                            self.watchlist = base_pool
+                        # 【CTO V141 物理学法则】
+                        # 分位数必须用盘中实时数据！
+                        # 启动阶段用历史量比算分位数是"时空错位"！
+                        # UniverseBuilder只做"宽进"，盘中_snapshot_filter做"严出"
+                        self.watchlist = base_pool
                         
                         print(f"[OK] 静态底池装载完成: {len(self.watchlist)} 只标的")
                         logger.info(f"[OK] 静态底池装载完成: {len(self.watchlist)} 只标的")
+                        logger.info(f"[CTO V141] 盘中分位数绞杀将在_snapshot_filter中执行")
                     else:
                         print("[ERR] 底池装载失败！")
                         logger.error("[ERR] 底池装载失败！")
@@ -1604,24 +1590,14 @@ class LiveTradingEngine:
             # 数据支撑：连板首板V3报告显示T-1换手中位3.69%，T0换手中位4.96%
             # 粗筛必须捕捉"暗流期"（换手从<3%异动至>3.5%但价格未动）
             
-            # 【量比动态分位】取全市场92th分位，防止熊市数据塌缩
+            # 【CTO V141 物理学法则】时间越往后，拉升的物理门槛就必须越高！
+            # 全天候焊死92th分位数，绝不向时间妥协！
+            # 数据支撑：20260313全市场5191只股票1m分K研究
+            # - 早盘92th覆盖率：88.2%
+            # - 午后92th覆盖率：70.6%（正好过滤掉30%偷袭型骗炮）
             volume_ratio_92th = df['volume_ratio'].quantile(0.92)
             min_volume_multiplier = max(volume_ratio_92th, 1.5)  # 绝对物理下限1.5x
-            
-            # 【时间效应补偿】午后量比回归，需要降低分位数门槛
-            if minutes_passed >= 240:
-                # 盘后模式：量比是全天真实值，使用70th分位
-                volume_ratio_70th = df['volume_ratio'].quantile(0.70)
-                min_volume_multiplier = max(volume_ratio_70th, 1.5)
-                mode_tag = "盘后投影"
-            elif minutes_passed >= 120:
-                # 午后模式：量比部分回归，使用80th分位
-                volume_ratio_80th = df['volume_ratio'].quantile(0.80)
-                min_volume_multiplier = max(volume_ratio_80th, 1.5)
-                mode_tag = "午后修正"
-            else:
-                # 早盘模式：量比脉冲期，使用92th分位
-                mode_tag = "早盘脉冲"
+            mode_tag = "全天92th"
             
             # 【CTO V25 统一配置读取】废除硬编码，全部从strategy_params.json读取！
             # stock_filter.min_avg_amount: 5000万均额
