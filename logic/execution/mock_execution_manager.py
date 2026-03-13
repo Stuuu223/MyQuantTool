@@ -54,9 +54,15 @@ class MockExecutionManager:
     def place_mock_order(self, stock_code: str, last_price: float, direction: str = 'BUY') -> bool:
         """触发虚拟状态机撮合"""
         if direction == 'BUY':
+            # 【CTO V120】单吊模式：已有持仓时静默跳过，不刷屏
+            if len(self.positions) >= 1:
+                logger.debug(f"🎯 [信号确认] {stock_code} 满足条件，但我们已满仓({len(self.positions)}只)，执行观望。")
+                return False
+            
             volume = self.calculate_position_size(last_price)
             if volume < 100:
-                logger.warning(f"[拦截] {stock_code} 剩余子弹(¥{self.available_cash:,.2f})不足以建立最低底仓(1手)！")
+                # 【CTO V120】降级为debug，防止终端刷屏
+                logger.debug(f"🎯 [信号确认] {stock_code} 满足条件，但剩余子弹(¥{self.available_cash:,.2f})已空，执行观望。")
                 return False
                 
             # 施加物理滑点与手续费攻击
