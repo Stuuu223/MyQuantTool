@@ -508,11 +508,41 @@ def render_battle_dashboard(data_list, title="战报", clear_screen=False):
 # 【CTO V118】FPS锁频控制 - 防止终端刷屏
 _last_display_time = 0
 _DISPLAY_INTERVAL = 3.0  # 每3秒刷新一次屏幕
+_terminal_silenced = False  # 终端静默标志
+
+def _silence_terminal_logging():
+    """
+    【CTO V119】禁用所有logger的终端输出，只保留文件输出
+    防止终端疯狂滚动
+    """
+    import logging
+    global _terminal_silenced
+    
+    if _terminal_silenced:
+        return  # 已经静默过
+    
+    # 获取根logger
+    root_logger = logging.getLogger()
+    
+    # 移除所有StreamHandler（终端输出）
+    for handler in root_logger.handlers[:]:
+        if isinstance(handler, logging.StreamHandler) and not isinstance(handler, logging.FileHandler):
+            handler.setLevel(logging.CRITICAL + 1)  # 提升到最高级别，实质禁用
+    
+    # 静默所有模块的终端输出
+    for name in logging.root.manager.loggerDict:
+        logger = logging.getLogger(name)
+        for handler in logger.handlers[:]:
+            if isinstance(handler, logging.StreamHandler) and not isinstance(handler, logging.FileHandler):
+                handler.setLevel(logging.CRITICAL + 1)
+    
+    _terminal_silenced = True
 
 def render_live_dashboard(top_targets, pool_stats=None, is_rest=False, msg=None, initial_loading=False):
     """
     【CTO V34】实盘引擎专用UI渲染函数
     【CTO V118】FPS锁频 - 每3秒刷新一次，防止终端刷屏
+    【CTO V119】终端静默 - 禁用logger终端输出，只写文件
     
     从run_live_trading_engine.py剥离，实现UI与逻辑分离
     
@@ -535,6 +565,9 @@ def render_live_dashboard(top_targets, pool_stats=None, is_rest=False, msg=None,
             return  # 3秒内不刷新，直接返回
     
     _last_display_time = current_time
+    
+    # 【CTO V119】禁用终端日志输出，防止滚动
+    _silence_terminal_logging()
     
     # 【CTO V13】盘后投影模式不清屏，静默追加
     if not is_rest:
