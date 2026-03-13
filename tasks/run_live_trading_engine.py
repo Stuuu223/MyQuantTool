@@ -79,6 +79,32 @@ class StockTracker:
 warnings.filterwarnings('ignore', category=FutureWarning)
 warnings.filterwarnings('ignore', category=DeprecationWarning)
 
+# 【CTO V118】拒绝日志专用函数 - 写入文件，不刷终端
+_REJECT_LOG_PATH = None
+
+def _log_reject(stock_code: str, reason: str):
+    """
+    【CTO V118】将拦截日志写入后台文件，不在终端刷屏
+    
+    Args:
+        stock_code: 股票代码
+        reason: 拒绝原因
+    """
+    global _REJECT_LOG_PATH
+    from pathlib import Path
+    
+    if _REJECT_LOG_PATH is None:
+        log_dir = Path(__file__).parent.parent / 'logs'
+        log_dir.mkdir(exist_ok=True)
+        _REJECT_LOG_PATH = log_dir / 'live_reject.log'
+    
+    try:
+        ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        with open(_REJECT_LOG_PATH, 'a', encoding='utf-8') as f:
+            f.write(f"[{ts}] [拦截] {stock_code} - {reason}\n")
+    except Exception:
+        pass  # 日志写入失败不阻塞主流程
+
 # 【CTO R6修复】SSOT统一导入 - 严禁在高频函数内部局部导入！
 from logic.core.config_manager import get_config_manager
 # [V70 大道至简] TickEvent import 已删除 - EventBus 双轨制彻底废除
@@ -2059,7 +2085,8 @@ class LiveTradingEngine:
                         
                         # 正确逻辑：当前Tick成交量是过去1分钟平均的10倍以上（极度爆量），但价格涨幅极小
                         if avg_tick_vol > 0 and (current_tick_vol > avg_tick_vol * 10) and abs(delta_price_pct) < 0.2:
-                            logger.warning(f"[L1探针] {stock_code} 瞬间爆天量({current_tick_vol:.0f}>10x{avg_tick_vol:.0f})但滞涨({delta_price_pct:.2f}%)，摩擦力极大，剔除！")
+                            # 【CTO V118】日志降级到文件
+                            _log_reject(stock_code, f"L1探针爆天量滞涨({current_tick_vol:.0f}>10x{avg_tick_vol:.0f}, {delta_price_pct:.2f}%)")
                             pool_stats['filtered'] += 1
                             continue
                     
@@ -2081,7 +2108,8 @@ class LiveTradingEngine:
                             # 原逻辑缺陷：acceleration<0只说明速度放缓，正常洗盘也会发生
                             # 新逻辑：v1>0(前半段拉升) + v2<0(后半段砸盘) + acceleration<0(减速) + 跌破起涨点
                             if v1 > 0 and v2 < 0 and acceleration < 0 and current_price < p_3min:
-                                logger.warning(f"[重力异常] {stock_code} 检出真实Spike尖刺骗炮(v1={v1:.2f}, v2={v2:.2f})，一票否决！")
+                                # 【CTO V118】重力异常日志降级到文件，不在终端刷屏
+                                _log_reject(stock_code, f"Spike骗炮(v1={v1:.2f}, v2={v2:.2f})")
                                 pool_stats['filtered'] += 1
                                 continue
                     

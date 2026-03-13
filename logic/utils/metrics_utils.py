@@ -505,9 +505,14 @@ def render_battle_dashboard(data_list, title="战报", clear_screen=False):
         print(f"{'='*100}\n")
 
 
+# 【CTO V118】FPS锁频控制 - 防止终端刷屏
+_last_display_time = 0
+_DISPLAY_INTERVAL = 3.0  # 每3秒刷新一次屏幕
+
 def render_live_dashboard(top_targets, pool_stats=None, is_rest=False, msg=None, initial_loading=False):
     """
     【CTO V34】实盘引擎专用UI渲染函数
+    【CTO V118】FPS锁频 - 每3秒刷新一次，防止终端刷屏
     
     从run_live_trading_engine.py剥离，实现UI与逻辑分离
     
@@ -519,7 +524,17 @@ def render_live_dashboard(top_targets, pool_stats=None, is_rest=False, msg=None,
         initial_loading: 是否初始加载中
     """
     import os
+    import time
     from datetime import datetime
+    global _last_display_time
+    
+    # 【CTO V118】FPS锁频检查
+    current_time = time.time()
+    if not initial_loading and not is_rest:
+        if current_time - _last_display_time < _DISPLAY_INTERVAL:
+            return  # 3秒内不刷新，直接返回
+    
+    _last_display_time = current_time
     
     # 【CTO V13】盘后投影模式不清屏，静默追加
     if not is_rest:
