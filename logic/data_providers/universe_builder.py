@@ -282,6 +282,21 @@ class UniverseBuilder:
         # 【CTO V26优化】第三步：使用已获取的数据进行过滤
         import pandas as pd
         import numpy as np
+        
+        # 【CTO V131】批量预热TrueDictionary获取流通股本
+        # 必须在循环前预热，否则get_float_volume返回0
+        float_volume_cache = {}
+        try:
+            from logic.data_providers.true_dictionary import get_true_dictionary
+            true_dict = get_true_dictionary()
+            # 批量预热流通股本
+            true_dict.warmup(stock_list, target_date=self.target_date, force=False)
+            # 构建快查缓存
+            for s in stock_list:
+                float_volume_cache[s] = true_dict.get_float_volume(s)
+            logger.info(f'[漏斗2] TrueDictionary预热完成，流通股本覆盖率: {sum(1 for v in float_volume_cache.values() if v > 0)}/{len(stock_list)}')
+        except Exception as e:
+            logger.warning(f'[漏斗2] TrueDictionary预热失败: {e}，换手率过滤将降级')
 
         for stock in stock_list:
             df = all_data.get(stock)
@@ -304,14 +319,17 @@ class UniverseBuilder:
             else:
                 self._volume_ratios[stock] = 0.0
 
-            # 【CTO V84 砸碎静态漏斗】释放真龙，由动态雷达接管生死！
-            # 废除"历史均额不足"和"历史换手不足"的静态拦截！
-            # 右侧起爆抓的就是"平地起惊雷"——昨天死水的票今天爆发才是真龙！
+            # 【CTO V129 游资四维共振漏斗】全部条件满足才能进！
+            # 条件1: 5日均额>1.5亿
+            # 条件2: 5日均换手>5%
+            # 条件3: 当日换手>5%
+            # 条件4: 量比92分位数（在watchlist装载时执行）
             
             last_close = float(df['close'].iloc[-1])
             today_volume = float(df['volume'].iloc[-1])
+            today_amount = float(df['amount'].iloc[-1])
             
-            # 只做最基础的脏数据和极端价格拦截（仙股<2元，超高价>500元）
+            # 基础卫生检查
             if last_close <= 0 or today_volume <= 0:
                 cnt_nodata += 1
                 continue
@@ -320,17 +338,38 @@ class UniverseBuilder:
                 cnt_price += 1
                 continue
             
-            # 历史均额/换手率不再作为硬过滤条件！
-            # 这些指标只用于参考，不阻断股票进入候选池
-            avg_amount = df['amount'].iloc[-n:].mean() if not pd.isna(df['amount'].iloc[-n:].mean()) else 0
-
-            # 【CTO V128 重铸静态漏斗】恢复老板要求的100-200只精度！
-            # 均额是核心过滤条件：资金不活跃的票没有研究价值
-            if avg_amount < self.min_avg_amount:
+            # 提取5日窗口数据
+            avg_amount_5d = df['amount'].iloc[-n:].mean() if not pd.isna(df['amount'].iloc[-n:].mean()) else 0
+            avg_volume_5d = df['volume'].iloc[-n:].mean() if not pd.isna(df['volume'].iloc[-n:].mean()) else 0
+            
+            # 【条件1】五日成交均额大于1.5亿
+            if avg_amount_5d < self.min_avg_amount:
                 cnt_volume += 1
                 continue
-
-            # 【CTO V128】通过基础过滤，送入下一轮！
+            
+            # 【条件2+3】换手率计算（使用预热的缓存）
+            float_volume_shares = float_volume_cache.get(stock, 0)
+            
+            if float_volume_shares <= 0:
+                # 无流通股本数据，跳过换手过滤但记录警告
+                passed.append(stock)
+                continue
+            
+            # QMT volume单位是手(100股)，需要转换
+            today_turnover_pct = (today_volume * 100 / float_volume_shares) * 100
+            avg_turnover_5d_pct = (avg_volume_5d * 100 / float_volume_shares) * 100
+            
+            # 【条件2】5日均换手>5%
+            if avg_turnover_5d_pct < self.min_avg_turnover_pct:
+                cnt_turnover += 1
+                continue
+            
+            # 【条件3】当日换手>5%
+            if today_turnover_pct < self.min_avg_turnover_pct:
+                cnt_turnover += 1
+                continue
+            
+            # 四维共振通过！
             passed.append(stock)
 
         # 【CTO V25】自愈下载统计日志

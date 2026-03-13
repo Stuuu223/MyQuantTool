@@ -966,12 +966,33 @@ class LiveTradingEngine:
                 logger.info("[FAST] Step 1: 从UniverseBuilder装载静态物理底池...")
                 try:
                     from logic.data_providers.universe_builder import UniverseBuilder
+                    import numpy as np
                     target_date = self.get_current_time().strftime('%Y%m%d')
                     builder = UniverseBuilder(target_date=target_date)
                     base_pool, volume_ratios = builder.build()
                     
                     if base_pool:
-                        self.watchlist = base_pool
+                        # 【CTO V130 实盘绞肉机】绝不允许2000只股票进入内存订阅！
+                        # 必须执行92th分位数截断！
+                        if volume_ratios:
+                            valid_ratios = [r for r in volume_ratios.values() if r > 0]
+                            if len(valid_ratios) > 100:
+                                threshold = float(np.percentile(valid_ratios, 92))
+                                threshold = max(threshold, 1.5)  # 物理兜底
+                            else:
+                                threshold = 1.5
+                            
+                            strict_pool = [s for s in base_pool if volume_ratios.get(s, 0) >= threshold]
+                            
+                            logger.info("=" * 60)
+                            logger.info(f"🩸 [实盘绞肉机] 启动 92th 分位数过滤 (阈值: {threshold:.2f}x)")
+                            logger.info(f"🩸 将 UniverseBuilder 释放的 {len(base_pool)} 只，残忍压缩至 {len(strict_pool)} 只精锐！")
+                            logger.info("=" * 60)
+                            
+                            self.watchlist = strict_pool
+                        else:
+                            self.watchlist = base_pool
+                        
                         print(f"[OK] 静态底池装载完成: {len(self.watchlist)} 只标的")
                         logger.info(f"[OK] 静态底池装载完成: {len(self.watchlist)} 只标的")
                     else:
