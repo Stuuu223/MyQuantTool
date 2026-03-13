@@ -1,22 +1,22 @@
 {
-  "_comment": "系统唯一参数配置 - V2.6.2 CTO V134魔法数字剿灭令成果版",
-  "version": "2.6.2",
+  "_comment": "系统唯一参数配置 - V2.7.0 CTO V137纯正物理防线版",
+  "version": "2.7.0",
   "last_updated": "2026-03-13",
-  "_research_source": "基于63,963个暴力样本数据验证",
+  "_research_source": "CTO V137发现时空错乱谬误：QMT FloatVolume是当前值，历史换手率存在失真",
   
   "stock_filter": {
-    "_description": "【全局股票漏斗铁律】基于63,963个暴力样本数据验证",
-    "min_avg_amount": 120000000.0,
-    "_min_avg_amount_comment": "【CTO V134研究验证】P25=1.12亿，降到1.2亿覆盖75%真龙",
-    "min_avg_turnover_pct": 5.0,
-    "_min_avg_turnover_pct_comment": "【CTO V133双轨制】轨道A(热启动)使用绝对值5%，轨道B(冷启动)用Ratio>=2.5",
-    "min_intraday_turnover_pct": 3.5,
-    "_min_intraday_turnover_comment": "【CTO V133冷启动底线】冷启动轨道允许3.5%当日换手+Ratio>=2.5倍",
+    "_description": "【CTO V137纯正物理防线】废止双轨制，回归金额+量比纯物理",
+    "min_avg_amount": 150000000.0,
+    "_min_avg_amount_comment": "【CTO V137】恢复1.5亿！这是最可靠的物理指标，不受除权影响",
+    "min_avg_turnover_pct": 2.0,
+    "_min_avg_turnover_pct_comment": "【CTO V137】换手率降级为辅助防线，只需>2%防极端死水",
+    "min_intraday_turnover_pct": 2.0,
+    "_min_intraday_turnover_comment": "【CTO V137】换手率降级为防死水过滤器，盘中由Momentum算子裁决",
     "min_volume_multiplier": 2.0,
-    "_min_volume_multiplier_comment": "【CTO V134研究验证】量比P50=1.96x，降到2.0x覆盖50%真龙",
+    "_min_volume_multiplier_comment": "【CTO V137】量比>=2.0倍是最可靠的爆发力指标",
     "min_price": 3.0,
     "max_price": 300.0,
-    "notes": "基于63,963样本：金额P25=1.12亿, 量比P50=1.96x, 空间差P75=7%"
+    "notes": "V137: 金额1.5亿 + 量比2.0x + 换手2%(辅助)"
   },
 
   "system_and_risk": {

@@ -91,8 +91,8 @@ class UniverseBuilder:
 
         from logic.core.config_manager import get_config_manager
         cfg = get_config_manager()
-        self.min_avg_amount       = cfg.get('stock_filter.min_avg_amount',       50_000_000.0)
-        self.min_avg_turnover_pct = cfg.get('stock_filter.min_avg_turnover_pct', 2.5)  # 【CTO V25】默认值改为2.5%
+        self.min_avg_amount       = cfg.get('stock_filter.min_avg_amount',       150_000_000.0)  # 【CTO V137】默认1.5亿
+        self.min_avg_turnover_pct = cfg.get('stock_filter.min_avg_turnover_pct', 2.0)  # 【CTO V137】换手率降级为辅助防线
         self.min_price            = cfg.get('stock_filter.min_price',            3.0)
         self.max_price            = cfg.get('stock_filter.max_price',            300.0)
 
@@ -283,8 +283,9 @@ class UniverseBuilder:
         import pandas as pd
         import numpy as np
         
-        # 【CTO V131】批量预热TrueDictionary获取流通股本
-        # 必须在循环前预热，否则get_float_volume返回0
+        # 【CTO V137】换手率预热改为可选（已降级为辅助防线）
+        # 由于QMT FloatVolume是当前值，历史换手率存在"时空错乱谬误"
+        # 换手率只用于"防极端死水"，阈值降至2%
         float_volume_cache = {}
         try:
             from logic.data_providers.true_dictionary import get_true_dictionary
@@ -359,25 +360,27 @@ class UniverseBuilder:
             today_turnover_pct = (today_volume * 100 / float_volume_shares) * 100
             avg_turnover_5d_pct = (avg_volume_5d * 100 / float_volume_shares) * 100
             
-            # 【CTO V133 冷热双轨漏斗引擎】
-            # 计算换手率异动加速度 (Ratio)
-            turnover_ratio = today_turnover_pct / avg_turnover_5d_pct if avg_turnover_5d_pct > 0 else 0
-            
-            # 【轨道 A：高位接力热启动】(对应 10天70% 阵营)
-            # 物理特征：绝对活跃度极高，资金在里面疯狂换手
-            track_A_pass = (avg_turnover_5d_pct >= 5.0) and (today_turnover_pct >= 5.0)
-            
-            # 【轨道 B：平地惊雷冷启动】(对应 6天100% 阵营)
-            # 物理特征：平时死水一潭，今日突然爆量！绝对值可以低(3%)，但加速度必须极高！
-            # 甜点位 3.5% 作为冷启动绝对底线（防僵尸股），同时要求爆发力 Ratio >= 2.5倍！
-            track_B_pass = (today_turnover_pct >= 3.5) and (turnover_ratio >= 2.5)
-            
-            # 双轨制拦截：只要满足其中一条物理轨道，即刻放行进入雷达！
-            if track_A_pass or track_B_pass:
-                passed.append(stock)
-            else:
+            # 【CTO V137 纯正物理防线】(摒弃除权造假，重归金额与量比)
+            # 致命发现：QMT FloatVolume是当前值，用历史成交量除以当前股本会导致"时空错乱谬误"！
+            # 中间有"10转10"送股的股票，历史换手率会被腰斩！
+            # 因此废止双轨制，回归"金额+量比"纯物理学防线！
+
+            # 【第二道锁：动能爆发力】今日量比必须 >= 2.0倍（P50=1.94x）
+            # 这是最可靠的物理指标，不受除权影响！
+            volume_ratio = today_volume / avg_volume_5d if avg_volume_5d > 0 else 0
+            if volume_ratio < 2.0:
                 cnt_turnover += 1
                 continue
+            
+            # 【第三道锁：换手率降级为辅助防线】
+            # 既然历史换手率不准，那就把换手率阈值降维成【防极端死水过滤器】
+            # 只需验证今日换手率 > 2.0%，足以排除极度死水
+            # 注：这部分工作交给盘中Tick级的Momentum算子去解决
+            if today_turnover_pct < 2.0:
+                cnt_turnover += 1
+                continue
+            
+            passed.append(stock)
 
         # 【CTO V25】自愈下载统计日志
         if cnt_autoheal > 0:
