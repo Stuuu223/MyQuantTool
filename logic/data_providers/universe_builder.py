@@ -324,9 +324,13 @@ class UniverseBuilder:
             # 这些指标只用于参考，不阻断股票进入候选池
             avg_amount = df['amount'].iloc[-n:].mean() if not pd.isna(df['amount'].iloc[-n:].mean()) else 0
 
-            # 【CTO V84 终极放行】
-            # 只要股票有有效数据（非停牌/非仙股），无条件放行！
-            # 生死由动态雷达（KineticCoreEngine）接管，静态漏斗只做基础卫生检查！
+            # 【CTO V128 重铸静态漏斗】恢复老板要求的100-200只精度！
+            # 均额是核心过滤条件：资金不活跃的票没有研究价值
+            if avg_amount < self.min_avg_amount:
+                cnt_volume += 1
+                continue
+
+            # 【CTO V128】通过基础过滤，送入下一轮！
             passed.append(stock)
 
         # 【CTO V25】自愈下载统计日志
