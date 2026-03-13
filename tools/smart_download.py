@@ -569,8 +569,8 @@ def main():
             # 仅做统计参考
             valid_ratios = [market_ratios.get(s, 0) for s in valid_stocks if market_ratios.get(s, 0) > 0]
             if len(valid_ratios) >= 10:
-                vol_threshold = float(np.percentile(valid_ratios, 95))
-                log(f'  动态量比阈值(95th): {vol_threshold:.2f} | 全量下载 {len(valid_stocks)} 只（含负样本）')
+                vol_threshold = float(np.percentile(valid_ratios, 92))
+                log(f'  动态量比阈值(92th): {vol_threshold:.2f} | 全量下载 {len(valid_stocks)} 只（含负样本）')
             else:
                 vol_threshold = 3.0
             

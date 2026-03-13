@@ -1583,9 +1583,9 @@ class LiveTradingEngine:
             # 数据支撑：连板首板V3报告显示T-1换手中位3.69%，T0换手中位4.96%
             # 粗筛必须捕捉"暗流期"（换手从<3%异动至>3.5%但价格未动）
             
-            # 【量比动态分位】取全市场90th分位，防止熊市数据塌缩
-            volume_ratio_90th = df['volume_ratio'].quantile(0.90)
-            min_volume_multiplier = max(volume_ratio_90th, 1.5)  # 绝对物理下限1.5x
+            # 【量比动态分位】取全市场92th分位，防止熊市数据塌缩
+            volume_ratio_92th = df['volume_ratio'].quantile(0.92)
+            min_volume_multiplier = max(volume_ratio_92th, 1.5)  # 绝对物理下限1.5x
             
             # 【时间效应补偿】午后量比回归，需要降低分位数门槛
             if minutes_passed >= 240:
@@ -1599,7 +1599,7 @@ class LiveTradingEngine:
                 min_volume_multiplier = max(volume_ratio_80th, 1.5)
                 mode_tag = "午后修正"
             else:
-                # 早盘模式：量比脉冲期，使用90th分位
+                # 早盘模式：量比脉冲期，使用92th分位
                 mode_tag = "早盘脉冲"
             
             # 【CTO V25 统一配置读取】废除硬编码，全部从strategy_params.json读取！
@@ -1915,7 +1915,7 @@ class LiveTradingEngine:
                                 
                                 # 动态防线：取当前市场前 5% 的极强脉冲（符合老板相对论！）且涨幅>3%起势
                                 if not mid_df.empty:
-                                    dynamic_vr_threshold = mid_df['vr'].quantile(0.95)
+                                    dynamic_vr_threshold = mid_df['vr'].quantile(0.92)
                                     dynamic_vr_threshold = max(dynamic_vr_threshold, 3.0) # 兜底3倍
                                     
                                     new_dragons = mid_df[(mid_df['vr'] >= dynamic_vr_threshold) & (mid_df['chg'] >= 3.0)]['code'].tolist()
