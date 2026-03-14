@@ -681,8 +681,14 @@ class MockLiveRunner:
         
         # 【CTO V170 智猪法则】开盘15分钟非涨停脉冲拒绝进食
         if minutes_passed < 15:
-            # 检查是否涨停
-            limit_up_price = tick.get('limitUpPrice', prev_close * 1.1)
+            # 检查是否涨停（区分主板10%和创业板/科创板20%）
+            limit_up_price = tick.get('limitUpPrice', 0)
+            if limit_up_price <= 0:
+                # 手动计算涨停价：主板10%，创业板(300xxx)/科创板(688xxx)20%
+                if top1_code.startswith('300') or top1_code.startswith('688'):
+                    limit_up_price = prev_close * 1.2  # 创业板/科创板20%
+                else:
+                    limit_up_price = prev_close * 1.1  # 主板10%
             is_limit_up = price >= limit_up_price * 0.99  # 涨停价附近
             if not is_limit_up:
                 return  # 非涨停脉冲，智猪拒绝进食
