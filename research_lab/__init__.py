@@ -25,6 +25,12 @@ from .physics_sensors import (
     extract_purity,
     extract_non_newtonian_viscosity,
     extract_smart_pig_signal,
+    # 已验证的物理铁律
+    extract_time_decay_factor,
+    extract_dynamic_friction,
+    extract_velocity_cubed,
+    extract_overdraft_multiplier,
+    VALIDATED_LAWS,
 )
 from .shannon_validator import ShannonValidator
 

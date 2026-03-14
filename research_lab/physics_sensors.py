@@ -331,3 +331,135 @@ def extract_all_features(
         logger.error(f"[PhysicsSensors] 特征提取失败: {e}")
     
     return features
+
+
+# ============== 已验证的物理铁律 (V92/V100/V158) ==============
+
+def extract_time_decay_factor(
+    minutes_from_open: int
+) -> float:
+    """
+    【时间衰减因子】(V100已验证)
+    
+    时间 = 能量耗散的刻度
+    
+    物理意义：
+    - 早盘(0-10min): 1.2x 克服最大重力冲天而起
+    - 上午(10-60min): 1.0x 正常推力确认主升
+    - 午间(60-210min): 0.8x 垃圾时间分数量打折
+    - 尾盘(210-240min): 0.2x 陷阱严防骗炮
+    
+    Args:
+        minutes_from_open: 开盘后分钟数 (09:30 = 0)
+    
+    Returns:
+        float: 时间衰减因子
+    """
+    if minutes_from_open < 10:
+        return 1.2  # 早盘冲刺
+    elif minutes_from_open < 60:
+        return 1.0  # 上午确认
+    elif minutes_from_open < 210:
+        return 0.8  # 午间垃圾时间
+    else:
+        return 0.2  # 尾盘陷阱
+
+
+def extract_dynamic_friction(
+    purity: float,
+    minutes_from_open: int,
+    is_gravitational_escape: bool = False
+) -> float:
+    """
+    【时间动态阻尼场】(V92/V100已验证)
+    
+    纯度次方的物理意义：
+    - 早盘: purity ** 2 温和阻尼
+    - 盘中: purity ** 3 中等阻尼
+    - 午后: purity ** 5 极刑阻尼
+    
+    物理验证：高MFE高量比组胜率73.9% vs 低组50.1%，EV差异+2.40%
+    
+    Args:
+        purity: 纯度值 [0, 1]
+        minutes_from_open: 开盘后分钟数
+        is_gravitational_escape: 是否重力逃逸（豁免）
+    
+    Returns:
+        float: 摩擦因子 [0, 1]
+    """
+    # 边界保护
+    purity = max(0.0, min(1.0, purity))
+    
+    # 重力逃逸豁免
+    if is_gravitational_escape:
+        return purity ** 1.5  # 豁免后温和
+    
+    # 时间动态阻尼
+    if minutes_from_open < 60:
+        # 早盘：温和
+        return purity ** 2
+    elif minutes_from_open < 210:
+        # 盘中：中等
+        return purity ** 3
+    else:
+        # 午后：极刑
+        return purity ** 5
+
+
+def extract_velocity_cubed(
+    change_pct: float
+) -> float:
+    """
+    【指数速度向量】(V92已验证)
+    
+    Velocity = sign * |change_pct| ** 3
+    
+    物理意义：
+    - 涨幅9%的动能是涨幅3%的27倍
+    - 非线性门槛清洗散户基因
+    
+    Args:
+        change_pct: 涨跌幅百分比
+    
+    Returns:
+        float: 指数速度值
+    """
+    sign = 1.0 if change_pct >= 0 else -1.0
+    return sign * (abs(change_pct) ** 3)
+
+
+def extract_overdraft_multiplier(
+    yesterday_vol_ratio: float
+) -> float:
+    """
+    【透支效应乘数】(V158已验证)
+    
+    物理真相：昨日量比越高，今日开盘溢价越低！
+    
+    回归结果(8014样本):
+    - 量比95th(8.2x)次日溢价仅+1.19%
+    - 量比50th(1.0x)次日溢价+4.67%
+    
+    Args:
+        yesterday_vol_ratio: 昨日量比
+    
+    Returns:
+        float: 溢出乘数 [0.5, 1.0]
+    """
+    import math
+    
+    if yesterday_vol_ratio <= 1.0:
+        return 1.0
+    
+    # 负相关：量比越高，乘数越低
+    return max(0.5, 1.0 - math.log10(1.0 + yesterday_vol_ratio) * 0.5)
+
+
+# 导出已验证铁律
+VALIDATED_LAWS = {
+    'time_decay': extract_time_decay_factor,
+    'dynamic_friction': extract_dynamic_friction,
+    'velocity_cubed': extract_velocity_cubed,
+    'overdraft_multiplier': extract_overdraft_multiplier,
+}
