@@ -1,113 +1,442 @@
 # logic/execution/mock_execution_manager.py
+"""
+L1 虚拟交易所 - 全息战场模拟器 (CTO收官战版)
+
+【三大物理关卡】
+1. 动态滑点惩罚：引力弹弓/阶梯突破场景滑点×2
+2. 流动性拒绝：成交量不足时部分成交或废单
+3. 微观防爆确认：买入后价格跌破触发价时止损
+
+Author: CTO Research Lab
+Date: 2026-03-14
+"""
 import logging
 import math
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from datetime import datetime
+from dataclasses import dataclass, field
+from enum import Enum
 
 logger = logging.getLogger(__name__)
 
+
+class TriggerType(Enum):
+    """触发类型枚举"""
+    VWAP_BOUNCE = "vwap_bounce"       # 引力弹弓
+    STAIR_BREAKOUT = "stair_breakout" # 阶梯突破
+    VACUUM_IGNITION = "vacuum_ignition"  # 真空点火
+    STATIC_SCORE = "static_score"     # 静态打分（旧模式）
+    UNKNOWN = "unknown"
+
+
+class OrderStatus(Enum):
+    """订单状态枚举"""
+    FILLED = "filled"           # 完全成交
+    PARTIAL = "partial"         # 部分成交
+    REJECTED = "rejected"       # 拒绝
+    CANCELLED = "cancelled"     # 取消
+
+
+@dataclass
+class MockOrder:
+    """虚拟订单"""
+    stock_code: str
+    direction: str
+    trigger_price: float
+    trigger_type: TriggerType
+    requested_volume: int
+    filled_volume: int = 0
+    filled_price: float = 0.0
+    slippage: float = 0.0
+    status: OrderStatus = OrderStatus.REJECTED
+    rejection_reason: str = ""
+    timestamp: str = ""
+    
+    # 关卡记录
+    slippage_applied: float = 0.0
+    liquidity_check_passed: bool = False
+    micro_guard_triggered: bool = False
+
+
+@dataclass
+class MockPosition:
+    """虚拟持仓"""
+    stock_code: str
+    volume: int
+    entry_price: float
+    entry_time: str
+    trigger_type: TriggerType
+    entry_amount: float  # 买入金额（含费用）
+    current_price: float = 0.0
+    unrealized_pnl: float = 0.0
+    max_price: float = 0.0  # 持仓期间最高价
+    stopped_out: bool = False
+
+
 class MockExecutionManager:
-    def __init__(self, initial_capital: float = 100000.0, max_position_ratio: float = 1.0):
+    """L1 虚拟交易所 - 全息战场模拟器"""
+    
+    def __init__(
+        self, 
+        initial_capital: float = 100000.0, 
+        max_position_ratio: float = 1.0
+    ):
         """
-        L1 虚拟交易所与资金状态机 (集中火力版)
+        初始化虚拟交易所
         
-        :param initial_capital: 初始本金池 (例如 10 万)
-        :param max_position_ratio: 仓位超参。
-            - 1.0 代表单吊全仓
-            - 0.5 代表分2只
-            - 0.33 代表分3只
+        Args:
+            initial_capital: 初始本金
+            max_position_ratio: 单票最大仓位比例 (1.0=单吊)
         """
         self.initial_capital = initial_capital
         self.available_cash = initial_capital
         self.max_position_ratio = max_position_ratio
         
-        self.positions: Dict[str, int] = {}  # 结构: {stock_code: volume_in_shares}
-        self.trades: List[Dict] = []         # 交割单流水
+        # 持仓管理
+        self.positions: Dict[str, MockPosition] = {}
+        self.trades: List[Dict] = []
+        self.orders: List[MockOrder] = []
         
-        # 物理摩擦力模型 (不可绕过)
-        self.commission_rate = 0.00025       # 佣金 万2.5
-        self.tax_rate_sell = 0.001           # 印花税 千1 (仅卖出收取)
-        self.slippage_rate = 0.001           # 单边滑点 千1 
-
+        # 物理摩擦力模型 (基准值)
+        self.commission_rate = 0.00025    # 佣金 万2.5
+        self.tax_rate_sell = 0.001        # 印花税 千1
+        self.base_slippage_rate = 0.001   # 基准滑点 千1
+        
+        # ==================== 【CTO收官战】三大物理关卡 ====================
+        
+        # 关卡1：动态滑点惩罚
+        # 引力弹弓/阶梯突破场景，盘口活跃抢筹，滑点翻倍
+        self.active_trigger_slippage = 0.002  # 千2（活跃场景）
+        
+        # 关卡2：流动性拒绝
+        # 想买入金额 > 该分钟成交额的1/3时，部分成交或拒绝
+        self.liquidity_ratio_threshold = 0.33
+        
+        # 关卡3：微观防爆确认
+        # 买入后3分钟内价格跌破触发价且MFE<0.5，判定点火失败
+        self.micro_guard_window_sec = 180
+        self.micro_guard_mfe_threshold = 0.5
+        
         mode_str = "单吊绝对集中" if max_position_ratio == 1.0 else f"最高限购 {int(1/max_position_ratio)} 只"
-        logger.info(f"[OK] L1 虚拟交易所启动 | 资金池: ¥{self.initial_capital:,.2f} | 攻击模式: {mode_str}")
+        logger.info(f"[OK] L1 全息战场模拟器启动 | 资金池: ¥{self.initial_capital:,.2f} | 攻击模式: {mode_str}")
+        logger.info(f"[关卡1] 动态滑点: 基准{self.base_slippage_rate*1000:.1f}‰ → 活跃场景{self.active_trigger_slippage*1000:.1f}‰")
+        logger.info(f"[关卡2] 流动性拒绝: 买入金额 > {self.liquidity_ratio_threshold*100:.0f}%该分钟成交额时拒绝")
+        logger.info(f"[关卡3] 微观防爆: {self.micro_guard_window_sec}秒内破位+MFE<{self.micro_guard_mfe_threshold}触发止损")
 
-    def calculate_position_size(self, last_price: float) -> int:
-        """资金切片：计算合法买入股数，强制 1手=100股"""
+    # ==================== 核心交易接口 ====================
+    
+    def place_mock_order(
+        self, 
+        stock_code: str, 
+        last_price: float, 
+        direction: str = 'BUY',
+        trigger_type: TriggerType = TriggerType.STATIC_SCORE,
+        tick_data: Dict = None,
+        minute_volume: float = 0.0  # 该分钟成交额
+    ) -> Tuple[bool, MockOrder]:
+        """
+        触发虚拟状态机撮合（带回测数据）
+        
+        Args:
+            stock_code: 股票代码
+            last_price: 触发价格
+            direction: 方向 'BUY'/'SELL'
+            trigger_type: 触发类型
+            tick_data: Tick数据（用于关卡判断）
+            minute_volume: 该分钟成交额（用于流动性检查）
+            
+        Returns:
+            (是否成功, 订单详情)
+        """
+        if direction == 'BUY':
+            return self._execute_buy(stock_code, last_price, trigger_type, tick_data, minute_volume)
+        elif direction == 'SELL':
+            return self._execute_sell(stock_code, last_price)
+        
+        return False, MockOrder(
+            stock_code=stock_code,
+            direction=direction,
+            trigger_price=last_price,
+            trigger_type=trigger_type,
+            requested_volume=0,
+            status=OrderStatus.REJECTED,
+            rejection_reason="无效方向"
+        )
+
+    def _execute_buy(
+        self,
+        stock_code: str,
+        last_price: float,
+        trigger_type: TriggerType,
+        tick_data: Dict,
+        minute_volume: float
+    ) -> Tuple[bool, MockOrder]:
+        """执行买入（三大关卡）"""
+        
+        order = MockOrder(
+            stock_code=stock_code,
+            direction='BUY',
+            trigger_price=last_price,
+            trigger_type=trigger_type,
+            requested_volume=0,
+            timestamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        )
+        
+        # 前置检查：单吊模式已有持仓
+        if len(self.positions) >= 1:
+            order.rejection_reason = f"已有持仓({len(self.positions)}只)，单吊模式拒绝开新仓"
+            order.status = OrderStatus.REJECTED
+            self.orders.append(order)
+            logger.debug(f"[拦截] {stock_code}: {order.rejection_reason}")
+            return False, order
+        
+        # 计算理论买入量
+        requested_volume = self._calculate_position_size(last_price)
+        if requested_volume < 100:
+            order.rejection_reason = f"资金不足(剩余¥{self.available_cash:,.2f})"
+            order.status = OrderStatus.REJECTED
+            self.orders.append(order)
+            logger.debug(f"[拦截] {stock_code}: {order.rejection_reason}")
+            return False, order
+        
+        order.requested_volume = requested_volume
+        
+        # ==================== 关卡1：动态滑点惩罚 ====================
+        slippage_rate = self._get_dynamic_slippage(trigger_type)
+        order.slippage_applied = slippage_rate
+        executed_price = last_price * (1.0 + slippage_rate)
+        
+        # ==================== 关卡2：流动性拒绝 ====================
+        estimated_cost = executed_price * requested_volume
+        liquidity_ok, actual_volume = self._check_liquidity(
+            estimated_cost, minute_volume, trigger_type
+        )
+        order.liquidity_check_passed = liquidity_ok
+        
+        if not liquidity_ok:
+            # 流动性不足，部分成交或拒绝
+            if actual_volume < 100:
+                order.rejection_reason = f"流动性不足: 该分钟成交额¥{minute_volume:,.0f} < 买入需求{estimated_cost*self.liquidity_ratio_threshold:,.0f}"
+                order.status = OrderStatus.REJECTED
+                self.orders.append(order)
+                logger.info(f"🚫 [流动性拒绝] {stock_code}: {order.rejection_reason}")
+                return False, order
+            else:
+                # 部分成交
+                order.status = OrderStatus.PARTIAL
+                order.filled_volume = actual_volume
+                executed_price = last_price * (1.0 + slippage_rate)
+        else:
+            order.status = OrderStatus.FILLED
+            order.filled_volume = requested_volume
+        
+        # ==================== 执行交易 ====================
+        actual_cost = executed_price * order.filled_volume
+        commission = max(5.0, actual_cost * self.commission_rate)
+        total_cost = actual_cost + commission
+        
+        if total_cost > self.available_cash:
+            order.rejection_reason = f"预估耗资¥{total_cost:,.2f}大于现金池"
+            order.status = OrderStatus.REJECTED
+            self.orders.append(order)
+            logger.error(f"[FATAL] {stock_code}: {order.rejection_reason}")
+            return False, order
+        
+        # 扣款与创建持仓
+        self.available_cash -= total_cost
+        order.filled_price = executed_price
+        order.slippage = (executed_price - last_price) / last_price * 100
+        
+        self.positions[stock_code] = MockPosition(
+            stock_code=stock_code,
+            volume=order.filled_volume,
+            entry_price=executed_price,
+            entry_time=order.timestamp,
+            trigger_type=trigger_type,
+            entry_amount=total_cost,
+            current_price=executed_price,
+            max_price=executed_price
+        )
+        
+        self._record_trade(stock_code, 'BUY', executed_price, order.filled_volume, commission, total_cost)
+        self.orders.append(order)
+        
+        logger.info(
+            f"💥 [开仓] {stock_code} | 触发:{trigger_type.value} | "
+            f"均价:{executed_price:.2f} | 规模:{order.filled_volume}股 | "
+            f"滑点:{order.slippage:.2f}% | 耗资:¥{total_cost:,.2f}"
+        )
+        
+        return True, order
+
+    def _execute_sell(self, stock_code: str, last_price: float) -> Tuple[bool, MockOrder]:
+        """执行卖出"""
+        
+        order = MockOrder(
+            stock_code=stock_code,
+            direction='SELL',
+            trigger_price=last_price,
+            trigger_type=TriggerType.UNKNOWN,
+            requested_volume=0,
+            timestamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        )
+        
+        pos = self.positions.get(stock_code)
+        if not pos or pos.volume <= 0:
+            order.rejection_reason = "无持仓"
+            order.status = OrderStatus.REJECTED
+            self.orders.append(order)
+            logger.warning(f"[拦截] {stock_code}: 无持仓，拒绝做空")
+            return False, order
+        
+        order.requested_volume = pos.volume
+        
+        # 卖出滑点
+        executed_price = last_price * (1.0 - self.base_slippage_rate)
+        gross_value = executed_price * pos.volume
+        commission = max(5.0, gross_value * self.commission_rate)
+        tax = gross_value * self.tax_rate_sell
+        net_proceeds = gross_value - commission - tax
+        
+        # 回血
+        self.available_cash += net_proceeds
+        order.filled_volume = pos.volume
+        order.filled_price = executed_price
+        order.status = OrderStatus.FILLED
+        
+        # 记录盈亏
+        pnl = net_proceeds - pos.entry_amount
+        pnl_pct = pnl / pos.entry_amount * 100 if pos.entry_amount > 0 else 0
+        
+        self._record_trade(stock_code, 'SELL', executed_price, pos.volume, commission + tax, net_proceeds)
+        del self.positions[stock_code]
+        self.orders.append(order)
+        
+        logger.info(
+            f"🔪 [平仓] {stock_code} | 均价:{executed_price:.2f} | "
+            f"规模:{pos.volume}股 | 回血:¥{net_proceeds:,.2f} | "
+            f"盈亏:{pnl:+.2f}({pnl_pct:+.2f}%)"
+        )
+        
+        return True, order
+
+    # ==================== 三大关卡实现 ====================
+    
+    def _get_dynamic_slippage(self, trigger_type: TriggerType) -> float:
+        """
+        关卡1：动态滑点惩罚
+        
+        - 引力弹弓/阶梯突破：盘口活跃抢筹，滑点翻倍
+        - 真空点火/静态打分：使用基准滑点
+        """
+        if trigger_type in [TriggerType.VWAP_BOUNCE, TriggerType.STAIR_BREAKOUT]:
+            return self.active_trigger_slippage  # 千2
+        return self.base_slippage_rate  # 千1
+
+    def _check_liquidity(
+        self, 
+        estimated_cost: float, 
+        minute_volume: float,
+        trigger_type: TriggerType
+    ) -> Tuple[bool, int]:
+        """
+        关卡2：流动性拒绝
+        
+        Args:
+            estimated_cost: 预估买入金额
+            minute_volume: 该分钟成交额
+            trigger_type: 触发类型
+            
+        Returns:
+            (是否通过, 实际可成交量)
+        """
+        # 真空点火场景：无量空涨，流动性检查更严格
+        if trigger_type == TriggerType.VACUUM_IGNITION:
+            # 需要该分钟成交额至少是买入金额的5倍
+            liquidity_threshold = 5.0
+        else:
+            liquidity_threshold = 1.0 / self.liquidity_ratio_threshold  # 约3倍
+        
+        if minute_volume <= 0:
+            # 无数据时，保守起见拒绝
+            return False, 0
+        
+        max_buy_amount = minute_volume / liquidity_threshold
+        
+        if estimated_cost <= max_buy_amount:
+            return True, 0  # 通过，返回0表示使用原请求量
+        else:
+            # 部分成交
+            partial_volume = int(max_buy_amount / estimated_cost * 100) * 100
+            return False, partial_volume
+
+    def check_micro_guard(
+        self,
+        stock_code: str,
+        current_price: float,
+        current_mfe: float,
+        minutes_elapsed: int
+    ) -> Tuple[bool, str]:
+        """
+        关卡3：微观防爆确认
+        
+        买入后检查价格走势，如果破位则触发止损
+        
+        Args:
+            stock_code: 股票代码
+            current_price: 当前价格
+            current_mfe: 当前MFE
+            minutes_elapsed: 持仓分钟数
+            
+        Returns:
+            (是否触发止损, 原因)
+        """
+        pos = self.positions.get(stock_code)
+        if not pos or pos.stopped_out:
+            return False, ""
+        
+        # 更新持仓状态
+        pos.current_price = current_price
+        if current_price > pos.max_price:
+            pos.max_price = current_price
+        
+        # 计算盈亏
+        pnl_pct = (current_price - pos.entry_price) / pos.entry_price * 100
+        pos.unrealized_pnl = pnl_pct
+        
+        # 持仓时间窗口内检查
+        if minutes_elapsed > self.micro_guard_window_sec / 60:
+            return False, ""  # 超过窗口期，不再监控
+        
+        # 检查条件：价格跌破买入价 + MFE极低
+        if current_price < pos.entry_price and current_mfe < self.micro_guard_mfe_threshold:
+            reason = f"微观防爆: 价格{current_price:.2f}<{pos.entry_price:.2f} + MFE{current_mfe:.2f}<{self.micro_guard_mfe_threshold}"
+            pos.stopped_out = True
+            logger.warning(f"⚠️ [微观防爆] {stock_code}: {reason}")
+            return True, reason
+        
+        return False, ""
+
+    # ==================== 辅助方法 ====================
+    
+    def _calculate_position_size(self, last_price: float) -> int:
+        """计算合法买入股数，强制100股整数倍"""
         if last_price <= 0:
             return 0
-            
-        # 单票理论最大动用资金
+        
         max_allocation = self.initial_capital * self.max_position_ratio
-        # 实际购买力受限于当前剩余子弹
         actual_allocation = min(max_allocation, self.available_cash)
         
-        # 剥离摩擦力（滑点+佣金预留）
-        estimated_cost_ratio = 1.0 + self.commission_rate + self.slippage_rate
+        # 预留滑点+佣金
+        estimated_cost_ratio = 1.0 + self.commission_rate + self.active_trigger_slippage
         purchasing_power = actual_allocation / estimated_cost_ratio
         
-        # 量子化为 100 的整数倍
         raw_shares = purchasing_power / last_price
         hands = math.floor(raw_shares / 100)
         return int(hands * 100)
 
-    def place_mock_order(self, stock_code: str, last_price: float, direction: str = 'BUY') -> bool:
-        """触发虚拟状态机撮合"""
-        if direction == 'BUY':
-            # 【CTO V120】单吊模式：已有持仓时静默跳过，不刷屏
-            if len(self.positions) >= 1:
-                logger.debug(f"🎯 [信号确认] {stock_code} 满足条件，但我们已满仓({len(self.positions)}只)，执行观望。")
-                return False
-            
-            volume = self.calculate_position_size(last_price)
-            if volume < 100:
-                # 【CTO V120】降级为debug，防止终端刷屏
-                logger.debug(f"🎯 [信号确认] {stock_code} 满足条件，但剩余子弹(¥{self.available_cash:,.2f})已空，执行观望。")
-                return False
-                
-            # 施加物理滑点与手续费攻击
-            executed_price = last_price * (1.0 + self.slippage_rate)
-            gross_value = executed_price * volume
-            commission = max(5.0, gross_value * self.commission_rate) # 最低收费 5 元
-            total_cost = gross_value + commission
-            
-            # 状态机边界检查
-            if total_cost > self.available_cash:
-                logger.error(f"[FATAL] {stock_code} 预估耗资 ¥{total_cost:,.2f} 大于现金池，系统拒绝透支！")
-                return False
-                
-            # 扣款与发货
-            self.available_cash -= total_cost
-            self.positions[stock_code] = self.positions.get(stock_code, 0) + volume
-            self._record_trade(stock_code, 'BUY', executed_price, volume, commission, total_cost)
-            
-            logger.info(f"💥 [开仓] {stock_code} | 均价: {executed_price:.2f} | 规模: {volume}股 | 耗资: ¥{total_cost:,.2f} | 剩余: ¥{self.available_cash:,.2f}")
-            return True
-            
-        elif direction == 'SELL':
-            volume = self.positions.get(stock_code, 0)
-            if volume <= 0:
-                logger.warning(f"[拦截] {stock_code} 物理仓位为 0，拒绝做空！")
-                return False
-                
-            executed_price = last_price * (1.0 - self.slippage_rate)
-            gross_value = executed_price * volume
-            commission = max(5.0, gross_value * self.commission_rate)
-            tax = gross_value * self.tax_rate_sell
-            net_proceeds = gross_value - commission - tax
-            
-            # 回血与清仓
-            self.available_cash += net_proceeds
-            del self.positions[stock_code]
-            self._record_trade(stock_code, 'SELL', executed_price, volume, commission + tax, net_proceeds)
-            
-            logger.info(f"🔪 [平仓] {stock_code} | 均价: {executed_price:.2f} | 规模: {volume}股 | 回血: ¥{net_proceeds:,.2f} | 剩余: ¥{self.available_cash:,.2f}")
-            return True
-        
-        return False
-
     def _record_trade(self, stock_code: str, direction: str, price: float, volume: int, fee: float, cash_flow: float):
-        """交割单固化持久记录"""
+        """记录交割单"""
         self.trades.append({
             'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             'stock': stock_code,
@@ -118,19 +447,58 @@ class MockExecutionManager:
             'cash_flow': cash_flow
         })
 
+    # ==================== 状态查询 ====================
+    
     def get_portfolio_summary(self) -> Dict:
-        """获取当前投资组合摘要"""
+        """获取投资组合摘要"""
+        total_position_value = sum(
+            pos.current_price * pos.volume for pos in self.positions.values()
+        )
+        
         return {
             'initial_capital': self.initial_capital,
             'available_cash': self.available_cash,
-            'positions': dict(self.positions),
+            'position_value': total_position_value,
+            'total_value': self.available_cash + total_position_value,
+            'positions': {k: {'volume': v.volume, 'entry_price': v.entry_price, 'pnl_pct': v.unrealized_pnl} for k, v in self.positions.items()},
             'position_count': len(self.positions),
             'trade_count': len(self.trades),
-            'total_fees': sum(t['fee'] for t in self.trades)
+            'order_count': len(self.orders),
+            'total_fees': sum(t['fee'] for t in self.trades),
+            'rejected_count': sum(1 for o in self.orders if o.status == OrderStatus.REJECTED),
+            'partial_count': sum(1 for o in self.orders if o.status == OrderStatus.PARTIAL)
+        }
+
+    def get_performance_report(self) -> Dict:
+        """获取绩效报告"""
+        if not self.trades:
+            return {'error': '无交易记录'}
+        
+        buy_trades = [t for t in self.trades if t['direction'] == 'BUY']
+        sell_trades = [t for t in self.trades if t['direction'] == 'SELL']
+        
+        total_buy = sum(t['cash_flow'] for t in buy_trades)
+        total_sell = sum(t['cash_flow'] for t in sell_trades)
+        total_fees = sum(t['fee'] for t in self.trades)
+        
+        pnl = total_sell - total_buy + self.available_cash - self.initial_capital + total_fees
+        pnl_pct = pnl / self.initial_capital * 100
+        
+        return {
+            'initial_capital': self.initial_capital,
+            'final_cash': self.available_cash,
+            'total_buy': total_buy,
+            'total_sell': total_sell,
+            'total_fees': total_fees,
+            'realized_pnl': pnl,
+            'realized_pnl_pct': pnl_pct,
+            'trade_count': len(self.trades),
+            'win_count': sum(1 for t in sell_trades if t['cash_flow'] > 0),
+            'loss_count': sum(1 for t in sell_trades if t['cash_flow'] <= 0)
         }
 
     def export_trades_to_csv(self, filepath: str):
-        """导出交割单到CSV"""
+        """导出交割单"""
         import pandas as pd
         if not self.trades:
             logger.warning("[WARN] 无交易记录可导出")

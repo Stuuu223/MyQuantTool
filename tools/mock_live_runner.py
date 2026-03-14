@@ -1,32 +1,30 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-时间机器Mock脚本 - 历史Tick伪装实时流喂给LiveTradingEngine
+全息战场模拟器 - 历史Tick真实交易回演
 ================================================================
 
-【CTO V71物理级架构修复】Step 2
-目标：用历史Tick测试LiveTradingEngine，确保Scan/Live物理逻辑100%同源
+【CTO V162收官战版】三大物理关卡全息沙盘
 
 使用方法：
     python tools/mock_live_runner.py --date 20260310 --stocks 000001.SZ,600519.SH
 
-架构说明：
-    - 读取本地Tick数据
-    - 按时间顺序推送Tick
-    - 调用LiveTradingEngine核心打分逻辑
-    - 输出实时榜单和交易信号
+三大物理关卡：
+    关卡1：动态滑点惩罚 - 引力弹弓/阶梯突破场景滑点×2（千2）
+    关卡2：流动性拒绝 - 成交量不足时部分成交或废单
+    关卡3：微观防爆确认 - 买入后价格跌破触发价时止损
 
 物理定律：
     - 时间锁定：模拟指定交易日的完整时间流
     - 量纲统一：amount单位为元，volume单位为股
-    - 引擎同源：100%复用calculate_true_dragon_score
+    - 真实摩擦：滑点/佣金/印花税/流动性一个不能少
 """
 
 import sys
 import argparse
 from pathlib import Path
 from datetime import datetime, timedelta
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 import pandas as pd
 import logging
 
@@ -41,25 +39,32 @@ VENV_PYTHON = PROJECT_ROOT / "venv_qmt" / "Scripts" / "python.exe"
 from logic.core.config_manager import get_config_manager
 from logic.data_providers.true_dictionary import get_true_dictionary
 from logic.strategies.kinetic_core_engine import KineticCoreEngine
+from logic.execution.mock_execution_manager import MockExecutionManager, TriggerType, OrderStatus
+from research_lab.trigger_validator import TriggerValidator
 
 logger = logging.getLogger(__name__)
 
 
 class MockLiveRunner:
-    """时间机器Mock运行器"""
+    """全息战场模拟器 - 三大物理关卡"""
     
-    def __init__(self, target_date: str, stock_list: List[str] = None):
+    def __init__(self, target_date: str, stock_list: List[str] = None, initial_capital: float = 100000.0):
         """
         初始化Mock运行器
         
         Args:
             target_date: 目标日期 (YYYYMMDD格式)
             stock_list: 股票列表，为空则使用粗筛结果
+            initial_capital: 初始本金
         """
         self.target_date = target_date
         self.stock_list = stock_list or []
         self.config_mgr = get_config_manager()
         self.true_dict = get_true_dictionary()
+        
+        # 【CTO V162】核心组件
+        self.execution_manager = MockExecutionManager(initial_capital=initial_capital, max_position_ratio=1.0)
+        self.trigger_validator = TriggerValidator()
         
         # Tick队列缓存 {stock_code: List[Dict]}
         self.tick_queues: Dict[str, List[Dict]] = {}
@@ -70,7 +75,13 @@ class MockLiveRunner:
         # 榜单缓存
         self.leaderboard: Dict[str, Dict] = {}
         
-        logger.info(f"[MockLiveRunner] 初始化完成，目标日期={target_date}")
+        # 【CTO V162】分钟级成交额缓存（用于流动性检查）
+        self.minute_volumes: Dict[str, Dict[str, float]] = {}  # {stock_code: {HH:MM: amount}}
+        
+        # 【CTO V162】买入信号记录
+        self.buy_signals: List[Dict] = []
+        
+        logger.info(f"[MockLiveRunner] 初始化完成，目标日期={target_date}，本金=¥{initial_capital:,.0f}")
     
     def load_tick_data(self, stock_code: str) -> bool:
         """
@@ -146,7 +157,7 @@ class MockLiveRunner:
     
     def run_mock_session(self):
         """
-        运行Mock交易时段
+        运行Mock交易时段 - 【CTO V162】三大物理关卡全息沙盘
         
         模拟完整的交易时段：
         - 09:25 竞价结束
@@ -154,9 +165,13 @@ class MockLiveRunner:
         - 11:30-13:00 午休
         - 13:00-15:00 午盘
         """
-        print(f"\n{'='*60}")
-        print(f"[MockLiveRunner] 时间机器启动 - {self.target_date}")
-        print(f"{'='*60}\n")
+        print(f"\n{'='*70}")
+        print(f"[全息战场模拟器] CTO V162 三大物理关卡 - {self.target_date}")
+        print(f"{'='*70}")
+        print(f"[关卡1] 动态滑点: 基准千1 → 活跃场景千2")
+        print(f"[关卡2] 流动性拒绝: 买入金额 > 33%该分钟成交额时拒绝")
+        print(f"[关卡3] 微观防爆: 3分钟内破位+MFE<0.5触发止损")
+        print(f"{'='*70}\n")
         
         # 加载所有股票的Tick数据
         loaded_count = 0
@@ -171,10 +186,12 @@ class MockLiveRunner:
         print(f"[MockLiveRunner] 成功加载 {loaded_count}/{len(self.stock_list)} 只股票\n")
         
         # 模拟时间轴
-        # 时间锚点
+        # 时间锚点 - 更密集的交易检查
         time_anchors = [
             ('09:25:00', '竞价结束'),
             ('09:30:00', '开盘'),
+            ('09:35:00', '开盘5分钟'),
+            ('09:45:00', '开盘15分钟'),
             ('10:00:00', '早盘第一小时'),
             ('10:30:00', '早盘中期'),
             ('11:00:00', '早盘后期'),
@@ -187,22 +204,41 @@ class MockLiveRunner:
             ('15:00:00', '收盘'),
         ]
         
+        prev_time = None
+        
         # 遍历时间锚点
         for time_str, event_name in time_anchors:
             current_time = datetime.strptime(f"{self.target_date}{time_str}", "%Y%m%d%H:%M:%S")
             
             print(f"\n⏰ [{time_str}] {event_name}")
-            print("-" * 40)
+            print("-" * 50)
             
             # 在每个时间点计算当前榜单
             self._calculate_leaderboard_at_time(current_time)
             
+            # 【CTO V162】核心：检查买点触发
+            self._check_triggers_and_execute(current_time, prev_time)
+            
+            # 【CTO V162】持仓监控：检查微观防爆
+            self._monitor_positions(current_time)
+            
             # 打印当前榜单
             self._print_leaderboard()
+            
+            # 打印当前持仓
+            self._print_positions()
+            
+            prev_time = current_time
         
-        print(f"\n{'='*60}")
-        print(f"[MockLiveRunner] 时间机器结束")
-        print(f"{'='*60}\n")
+        # 收盘：强制平仓所有持仓
+        self._close_all_positions()
+        
+        # 【CTO V162】输出最终绩效报告
+        self._print_final_report()
+        
+        print(f"\n{'='*70}")
+        print(f"[全息战场模拟器] 回演结束")
+        print(f"{'='*70}\n")
     
     def _calculate_leaderboard_at_time(self, target_time: datetime):
         """
@@ -412,12 +448,261 @@ class MockLiveRunner:
         }
         render_live_dashboard(top_targets, pool_stats=pool_stats, is_rest=True)
 
+    # ==================== 【CTO V162】三大物理关卡核心方法 ====================
+    
+    def _get_minute_volume(self, stock_code: str, current_time: datetime) -> float:
+        """
+        获取当前分钟的成交额（用于流动性检查）
+        
+        Args:
+            stock_code: 股票代码
+            current_time: 当前时间
+            
+        Returns:
+            该分钟成交额
+        """
+        tick_list = self.tick_queues.get(stock_code, [])
+        if not tick_list:
+            return 0.0
+        
+        # 找到当前分钟内的所有Tick
+        current_minute_start = current_time.replace(second=0, microsecond=0)
+        current_minute_end = current_minute_start + timedelta(minutes=1)
+        
+        # 获取前一分钟的最后一个Tick的amount作为基准
+        prev_minute_end = current_minute_start
+        prev_amount = 0.0
+        for tick in tick_list:
+            tick_time = self._parse_tick_time(tick['time'])
+            if tick_time <= prev_minute_end:
+                prev_amount = tick['amount']
+        
+        # 获取当前分钟最后一个Tick的amount
+        curr_amount = prev_amount
+        for tick in tick_list:
+            tick_time = self._parse_tick_time(tick['time'])
+            if tick_time < current_minute_end:
+                curr_amount = tick['amount']
+        
+        # 当前分钟成交额 = 当前累计 - 上一分钟累计
+        return max(0, curr_amount - prev_amount)
+    
+    def _check_triggers_and_execute(self, current_time: datetime, prev_time: datetime):
+        """
+        【CTO V162关卡核心】检查物理买点触发并执行交易
+        
+        Args:
+            current_time: 当前时间
+            prev_time: 上一个时间点
+        """
+        if prev_time is None:
+            return
+        
+        # 获取榜单中分数>=50的标的
+        candidates = [
+            (code, data) for code, data in self.leaderboard.items()
+            if data['score'] >= 50.0
+        ]
+        
+        for stock_code, data in candidates:
+            tick = data.get('tick', {})
+            price = data['price']
+            prev_close = tick.get('lastClose', price)
+            high = tick.get('high', price)
+            low = tick.get('low', price)
+            open_price = tick.get('open', price)
+            total_amount = data['amount']
+            
+            # 计算分钟级成交额
+            minute_volume = self._get_minute_volume(stock_code, current_time)
+            
+            # 构造TriggerValidator需要的参数
+            vwap = total_amount / (total_amount / price) if price > 0 and total_amount > 0 else price
+            amplitude = (high - low) / prev_close * 100 if prev_close > 0 else 0
+            volume_ratio = data.get('sustain_ratio', 1.0)
+            mfe = data.get('mfe', 0)
+            
+            # 【CTO V162】调用TriggerValidator检测物理买点
+            trigger_signal = self.trigger_validator.check_all_triggers(
+                stock_code=stock_code,
+                current_price=price,
+                vwap=vwap,
+                high=high,
+                low=low,
+                prev_close=prev_close,
+                open_price=open_price,
+                amplitude_pct=amplitude,
+                volume_ratio=volume_ratio,
+                mfe=mfe,
+                minutes_passed=self._get_minutes_passed(current_time),
+                tick_data=None  # 暂不传详细Tick
+            )
+            
+            if trigger_signal is None:
+                continue  # 没有触发任何买点
+            
+            # 【CTO V162关卡2】获取流动性数据
+            minute_volume = self._get_minute_volume(stock_code, current_time)
+            
+            # 【CTO V162关卡1+2+3】执行买入
+            success, order = self.execution_manager.place_mock_order(
+                stock_code=stock_code,
+                last_price=price,
+                direction='BUY',
+                trigger_type=trigger_signal.trigger_type,
+                tick_data=tick,
+                minute_volume=minute_volume
+            )
+            
+            if success:
+                self.buy_signals.append({
+                    'time': current_time.strftime('%H:%M:%S'),
+                    'stock': stock_code,
+                    'price': price,
+                    'trigger': trigger_signal.trigger_type.value,
+                    'score': data['score'],
+                    'mfe': mfe,
+                    'sustain': volume_ratio
+                })
+    
+    def _monitor_positions(self, current_time: datetime):
+        """
+        【CTO V162关卡3】监控持仓，检查微观防爆
+        
+        Args:
+            current_time: 当前时间
+        """
+        positions = self.execution_manager.positions
+        if not positions:
+            return
+        
+        for stock_code, pos in list(positions.items()):
+            # 获取当前价格和MFE
+            tick_list = self.tick_queues.get(stock_code, [])
+            current_tick = None
+            for tick in tick_list:
+                tick_time = self._parse_tick_time(tick['time'])
+                if tick_time <= current_time:
+                    current_tick = tick
+                else:
+                    break
+            
+            if current_tick is None:
+                continue
+            
+            current_price = current_tick['price']
+            high = current_tick.get('high', current_price)
+            low = current_tick.get('low', current_price)
+            prev_close = current_tick.get('lastClose', current_price)
+            
+            # 计算当前MFE
+            amplitude = (high - low) / prev_close if prev_close > 0 else 0
+            total_amount = current_tick['amount']
+            float_volume = 1000000000  # 默认10亿股
+            inflow_ratio = (total_amount * 0.5) / (float_volume * current_price) * 100
+            mfe = amplitude / max(inflow_ratio, 0.01) if inflow_ratio > 0 else 0
+            
+            # 持仓时间（分钟）
+            entry_time = datetime.strptime(pos.entry_time, '%Y-%m-%d %H:%M:%S')
+            minutes_elapsed = (current_time - entry_time).total_seconds() / 60
+            
+            # 【CTO V162关卡3】检查微观防爆
+            stopped, reason = self.execution_manager.check_micro_guard(
+                stock_code, current_price, mfe, int(minutes_elapsed)
+            )
+            
+            if stopped:
+                # 执行止损卖出
+                success, order = self.execution_manager.place_mock_order(
+                    stock_code=stock_code,
+                    last_price=current_price,
+                    direction='SELL'
+                )
+                if success:
+                    logger.warning(f"⚠️ [微观防爆止损] {stock_code}: {reason}")
+    
+    def _print_positions(self):
+        """打印当前持仓"""
+        positions = self.execution_manager.positions
+        if not positions:
+            return
+        
+        print("\n📊 当前持仓:")
+        print("-" * 50)
+        for code, pos in positions.items():
+            pnl_pct = (pos.current_price - pos.entry_price) / pos.entry_price * 100 if pos.entry_price > 0 else 0
+            print(f"  {code}: {pos.volume}股 @ {pos.entry_price:.2f} | 当前:{pos.current_price:.2f} | PnL:{pnl_pct:+.2f}%")
+        print("-" * 50)
+    
+    def _close_all_positions(self):
+        """收盘强制平仓"""
+        positions = list(self.execution_manager.positions.keys())
+        if not positions:
+            return
+        
+        print("\n🔔 收盘强制平仓:")
+        for stock_code in positions:
+            # 用最后一个Tick的价格平仓
+            tick_list = self.tick_queues.get(stock_code, [])
+            if tick_list:
+                last_tick = tick_list[-1]
+                success, order = self.execution_manager.place_mock_order(
+                    stock_code=stock_code,
+                    last_price=last_tick['price'],
+                    direction='SELL'
+                )
+    
+    def _print_final_report(self):
+        """【CTO V162】输出最终绩效报告"""
+        report = self.execution_manager.get_performance_report()
+        portfolio = self.execution_manager.get_portfolio_summary()
+        
+        print("\n" + "="*70)
+        print("📈 全息战场模拟器 - 最终绩效报告")
+        print("="*70)
+        
+        if 'error' in report:
+            print(f"  {report['error']}")
+            return
+        
+        print(f"\n💰 资金状况:")
+        print(f"  初始本金: ¥{report['initial_capital']:,.2f}")
+        print(f"  最终现金: ¥{report['final_cash']:,.2f}")
+        print(f"  总买入额: ¥{report['total_buy']:,.2f}")
+        print(f"  总卖出额: ¥{report['total_sell']:,.2f}")
+        print(f"  总手续费: ¥{report['total_fees']:,.2f}")
+        
+        print(f"\n📊 绩效指标:")
+        pnl = report['realized_pnl']
+        pnl_pct = report['realized_pnl_pct']
+        pnl_sign = "+" if pnl >= 0 else ""
+        print(f"  实现盈亏: {pnl_sign}¥{pnl:,.2f} ({pnl_sign}{pnl_pct:.2f}%)")
+        print(f"  交易次数: {report['trade_count']}")
+        print(f"  盈利次数: {report['win_count']}")
+        print(f"  亏损次数: {report['loss_count']}")
+        
+        if report['trade_count'] > 0:
+            win_rate = report['win_count'] / (report['win_count'] + report['loss_count']) * 100 if (report['win_count'] + report['loss_count']) > 0 else 0
+            print(f"  胜率: {win_rate:.1f}%")
+        
+        print(f"\n📋 关卡统计:")
+        print(f"  拒绝订单: {portfolio.get('rejected_count', 0)} 笔")
+        print(f"  部分成交: {portfolio.get('partial_count', 0)} 笔")
+        
+        if self.buy_signals:
+            print(f"\n🎯 买入信号记录 ({len(self.buy_signals)}笔):")
+            for sig in self.buy_signals[:10]:  # 只显示前10笔
+                print(f"  [{sig['time']}] {sig['stock']} @ {sig['price']:.2f} | {sig['trigger']} | 分数:{sig['score']:.0f}")
+        
+        print("\n" + "="*70)
+
 
 def main():
     """主函数"""
-    parser = argparse.ArgumentParser(description='时间机器Mock脚本')
+    parser = argparse.ArgumentParser(description='全息战场模拟器 - CTO V162三大物理关卡')
     parser.add_argument('--date', type=str, required=True, help='目标日期 (YYYYMMDD)')
     parser.add_argument('--stocks', type=str, default='', help='股票列表，逗号分隔')
+    parser.add_argument('--capital', type=float, default=100000.0, help='初始本金 (默认10万)')
     parser.add_argument('--verbose', '-v', action='store_true', help='详细日志')
     
     args = parser.parse_args()
@@ -447,7 +732,7 @@ def main():
             return
     
     # 创建运行器
-    runner = MockLiveRunner(args.date, stock_list)
+    runner = MockLiveRunner(args.date, stock_list, initial_capital=args.capital)
     
     # 运行Mock
     runner.run_mock_session()
