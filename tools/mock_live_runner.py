@@ -499,13 +499,7 @@ class MockLiveRunner:
                 curr_tick_time = tick_time
         
         # 当前分钟成交额 = 当前累计 - 上一分钟累计
-        minute_volume = max(0, curr_amount - prev_amount)
-        
-        # 【CTO V165调试】
-        if minute_volume == 0:
-            print(f"  [分钟成交调试] {stock_code} @ {current_time} | prev_amount={prev_amount:.0f}(time={prev_tick_time}) | curr_amount={curr_amount:.0f}(time={curr_tick_time}) | minute_start={current_minute_start}")
-        
-        return minute_volume
+        return max(0, curr_amount - prev_amount)
     
     def _check_triggers_and_execute(self, current_time: datetime, prev_time: datetime):
         """
@@ -515,22 +509,13 @@ class MockLiveRunner:
         不依赖复杂的TriggerValidator物理检测
         """
         if prev_time is None:
-            print(f"  [Baseline] prev_time为空，跳过")
             return
-        
-        # 【CTO V164调试】输出榜单状态
-        if self.leaderboard:
-            top_scores = sorted([(k, v['score']) for k, v in self.leaderboard.items()], key=lambda x: x[1], reverse=True)[:3]
-            print(f"  [Baseline] 榜单TOP3分数: {top_scores}")
         
         # 获取榜单中分数>=50的标的
         candidates = [
             (code, data) for code, data in self.leaderboard.items()
             if data['score'] >= 50.0
         ]
-        
-        # 【CTO V164调试】输出候选数量
-        print(f"  [Baseline] 分数>=50候选: {len(candidates)}只")
         
         for stock_code, data in candidates:
             # 【CTO V164】检查是否已有持仓（单吊模式）
@@ -549,7 +534,7 @@ class MockLiveRunner:
             final_score = data['score']
             
             # 【CTO V164调试】输出每只候选的参数
-            print(f"  [Baseline检查] {stock_code}: 分数={final_score:.1f}, sustain={volume_ratio:.2f}")
+            logger.info(f"[Baseline] {stock_code}: 分数={final_score:.1f}, sustain={volume_ratio:.2f}")
             
             # 【CTO V164 Baseline】极简买入条件：
             # 1. 分数>=50
@@ -557,32 +542,23 @@ class MockLiveRunner:
             # 不再依赖TriggerValidator的复杂条件！
             
             if final_score < 50.0:
-                print(f"  [Baseline跳过] {stock_code}: 分数{final_score:.1f}<50")
                 continue
             if volume_ratio < 1.0:
-                print(f"  [Baseline跳过] {stock_code}: sustain{volume_ratio:.2f}<1.0")
                 continue  # 资金流出不买
             
             # 计算分钟级成交额
             minute_volume = self._get_minute_volume(stock_code, current_time)
-            print(f"  [Baseline买入尝试] {stock_code} @ {price:.2f} | 分数={final_score:.1f} | 分钟成交={minute_volume:.0f}")
             
             # 【CTO V164】直接执行买入，使用BASELINE触发类型
             from logic.execution.mock_execution_manager import TriggerType
-            try:
-                success, order = self.execution_manager.place_mock_order(
-                    stock_code=stock_code,
-                    last_price=price,
-                    direction='BUY',
-                    trigger_type=TriggerType.STATIC_SCORE,  # Baseline模式
-                    tick_data=tick,
-                    minute_volume=minute_volume
-                )
-                print(f"  [Baseline结果] success={success}, order={order}")
-            except Exception as e:
-                print(f"  [Baseline异常] {stock_code}: {e}")
-                success = False
-                order = None
+            success, order = self.execution_manager.place_mock_order(
+                stock_code=stock_code,
+                last_price=price,
+                direction='BUY',
+                trigger_type=TriggerType.STATIC_SCORE,  # Baseline模式
+                tick_data=tick,
+                minute_volume=minute_volume
+            )
             
             if success:
                 self.buy_signals.append({
