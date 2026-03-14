@@ -508,9 +508,6 @@ class MockLiveRunner:
             tick = data.get('tick', {})
             price = data['price']
             prev_close = tick.get('lastClose', price)
-            high = tick.get('high', price)
-            low = tick.get('low', price)
-            open_price = tick.get('open', price)
             total_amount = data['amount']
             
             # 计算分钟级成交额
@@ -518,25 +515,47 @@ class MockLiveRunner:
             
             # 构造TriggerValidator需要的参数
             vwap = total_amount / (total_amount / price) if price > 0 and total_amount > 0 else price
-            amplitude = (high - low) / prev_close * 100 if prev_close > 0 else 0
             volume_ratio = data.get('sustain_ratio', 1.0)
-            mfe = data.get('mfe', 0)
+            current_mfe = data.get('mfe', 0)
+            
+            # 【CTO V162】构造历史数据列表（简化版，从Tick队列提取）
+            tick_list = self.tick_queues.get(stock_code, [])
+            price_history = []
+            recent_mfe_list = []
+            recent_volume_ratios = []
+            
+            # 提取最近的价格历史（最近60个Tick）
+            for t in tick_list[-60:]:
+                if t.get('price', 0) > 0:
+                    price_history.append(t['price'])
+            
+            # 简化：用当前MFE填充列表
+            recent_mfe_list = [current_mfe] * 5 if current_mfe > 0 else [0.5] * 5
+            recent_volume_ratios = [volume_ratio] * 5 if volume_ratio > 0 else [1.0] * 5
+            
+            # 简化斜率计算
+            current_slope = 0.0
+            if len(price_history) >= 2:
+                current_slope = (price_history[-1] - price_history[-2]) / price_history[-2] * 100 if price_history[-2] > 0 else 0
             
             # 【CTO V162】调用TriggerValidator检测物理买点
-            trigger_signal = self.trigger_validator.check_all_triggers(
-                stock_code=stock_code,
-                current_price=price,
-                vwap=vwap,
-                high=high,
-                low=low,
-                prev_close=prev_close,
-                open_price=open_price,
-                amplitude_pct=amplitude,
-                volume_ratio=volume_ratio,
-                mfe=mfe,
-                minutes_passed=self._get_minutes_passed(current_time),
-                tick_data=None  # 暂不传详细Tick
-            )
+            try:
+                trigger_signal = self.trigger_validator.check_all_triggers(
+                    stock_code=stock_code,
+                    current_price=price,
+                    prev_close=prev_close,
+                    vwap=vwap,
+                    volume_ratio=volume_ratio,
+                    current_mfe=current_mfe,
+                    recent_mfe_list=recent_mfe_list,
+                    price_history=price_history,
+                    recent_volume_ratios=recent_volume_ratios,
+                    current_slope=current_slope,
+                    timestamp=current_time
+                )
+            except Exception as e:
+                logger.warning(f"[TriggerValidator] {stock_code} 检查失败: {e}")
+                trigger_signal = None
             
             if trigger_signal is None:
                 continue  # 没有触发任何买点
@@ -561,7 +580,7 @@ class MockLiveRunner:
                     'price': price,
                     'trigger': trigger_signal.trigger_type.value,
                     'score': data['score'],
-                    'mfe': mfe,
+                    'mfe': current_mfe,
                     'sustain': volume_ratio
                 })
     
