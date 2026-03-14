@@ -79,9 +79,13 @@ class ShortTermMemoryEngine:
         >>> engine.annihilate_expired()
     """
     
-    # 基因写入阈值
-    GAIN_THRESHOLD = 8.0      # 涨幅阈值: >8%
-    TURNOVER_THRESHOLD = 5.0  # 换手率阈值: >5%
+    # 【CTO V157 物理当量阈值】
+    # 废除涨幅硬编码！改用物理分位数判断。
+    # 只要昨日MFE击败全市场90%的票，且量比击败90%的票，
+    # 说明主力昨日留下了巨大的动能残余，今日必须遗传！
+    # 涨幅只是结果标签，和物理学没有关系！
+    PHYSICS_PERCENTILE_THRESHOLD = 0.90  # 物理分位数阈值: >=90th
+    MIN_WORK_EQUIVALENT = 0.5            # 最小做功当量（防止单日异常值）
     
     # 衰减参数
     HALF_LIFE_FACTOR = 0.5    # 半衰期衰减系数
@@ -244,18 +248,24 @@ class ShortTermMemoryEngine:
     
     def _should_write_memory(self, gain_pct: float, turnover_rate: float) -> bool:
         """
-        判断是否应该写入记忆
-        条件: 涨幅>8% 且 换手>5%
+        【CTO V157 纯物理记忆写入判断】
+        
+        废除涨幅硬编码！改用物理当量判断。
+        gain_pct在此语义下代表"物理做功当量"(Work Equivalent)，
+        turnover_rate在此语义下代表"量比分位数"。
+        
+        当gain_pct >= 0.90（物理分位数）且turnover_rate >= 0.90时，
+        说明主力昨日留下了巨大的动能残余，今日必须遗传！
         
         Args:
-            gain_pct: 涨幅百分比
-            turnover_rate: 换手率百分比
+            gain_pct: 物理做功当量分位数（原涨幅参数语义变更）
+            turnover_rate: 量比分位数（原换手率参数语义变更）
             
         Returns:
             是否满足写入条件
         """
-        return (gain_pct > self.GAIN_THRESHOLD and 
-                turnover_rate > self.TURNOVER_THRESHOLD)
+        return (gain_pct >= self.PHYSICS_PERCENTILE_THRESHOLD and 
+                turnover_rate >= self.PHYSICS_PERCENTILE_THRESHOLD)
     
     def write_memory(self, 
                      stock_code: str, 
