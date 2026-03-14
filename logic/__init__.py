@@ -17,7 +17,10 @@ from logic.core.log_config import (
 )
 from logic.core.path_resolver import PathResolver
 from logic.core.sanity_guards import SanityGuards, sanity_check
-from logic.core.version import VERSION as __version__
+
+# 【CTO剃刀行动】version.py已删除，Git管理版本
+# 如需版本号，运行: git describe --tags 或查看 README.md
+__version__ = "V20.0.0"  # 硬编码兜底，实际版本由Git管理
 
 # 数据提供层
 from logic.data_providers.qmt_manager import QmtDataManager, get_qmt_manager
