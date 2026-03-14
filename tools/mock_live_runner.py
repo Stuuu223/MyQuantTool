@@ -586,6 +586,10 @@ class MockLiveRunner:
         price = top1_data['price']
         current_mfe = top1_data.get('mfe', 0)
         
+        # 【CTO V167防作弊】硬断言：确保买入的是当时的绝对Top1
+        assert top1_code == sorted_stocks[0][0], f"FATAL: 系统买入的不是当时的绝对Top1！存在作弊嫌疑！买入{top1_code} vs Top1{sorted_stocks[0][0]}"
+        assert top1_score >= 100.0, f"FATAL: Top1分数{top1_score}低于阈值100，触发条件异常！"
+        
         # 计算分钟级成交额
         minute_volume = self._get_minute_volume(top1_code, current_time)
         
@@ -601,7 +605,20 @@ class MockLiveRunner:
         )
         
         if success:
-            # 记录买入信号
+            # 【CTO V167防作弊】捕获案发现场Top10快照作为铁证
+            snapshot_top10 = []
+            for idx, (code, data) in enumerate(sorted_stocks[:10]):
+                snapshot_top10.append({
+                    'rank': idx + 1,
+                    'code': code,
+                    'score': data['score'],
+                    'mfe': data.get('mfe', 0),
+                    'sustain': data.get('sustain_ratio', 0),
+                    'price': data['price'],
+                    'is_buy_target': code == top1_code  # 标记买入标的
+                })
+            
+            # 记录买入信号（含铁证快照）
             self.buy_signals.append({
                 'time': current_time.strftime('%H:%M:%S'),
                 'stock': top1_code,
@@ -609,7 +626,8 @@ class MockLiveRunner:
                 'trigger': '刺客Top1单吊',
                 'score': top1_score,
                 'mfe': current_mfe,
-                'sustain': volume_ratio
+                'sustain': volume_ratio,
+                'moment_snapshot': snapshot_top10  # 【CTO V167】案发现场铁证
             })
             
             # 【CTO V166】设置单吊锁和T+1锁
@@ -837,6 +855,15 @@ class MockLiveRunner:
             print("🎯 当日操作记录：")
             for sig in self.buy_signals:
                 print(f"  【买入单吊】 {sig['stock']} @ {sig['price']:.2f} | 触发: {sig['trigger']} | 耗资: ¥{initial:,.2f}")
+                
+                # 【CTO V167防作弊】打印案发现场快照
+                snapshot = sig.get('moment_snapshot', [])
+                if snapshot:
+                    print(f"\n  ==================== 【案发现场快照 {sig['time']}】 ====================")
+                    for item in snapshot:
+                        buy_mark = " (*买入标的*)" if item.get('is_buy_target') else ""
+                        print(f"  [Top {item['rank']}] {item['code']} | 分数: {item['score']:.0f} | MFE: {item['mfe']:.2f} | Sustain: {item['sustain']:.2f} | 现价: {item['price']:.2f}{buy_mark}")
+                    print("  " + "="*60)
         else:
             print("🎯 当日操作记录：无")
         
