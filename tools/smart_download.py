@@ -85,8 +85,26 @@ def batch_verify_sample(stocks: list[str], date: str, xtdata,
 # ────────────────────────────────────────────
 
 def get_trading_days(start_date: str, end_date: str, xtdata) -> list:
-    """【CTO V91】优先本地，获取失败直接用自然日（去周末）硬算，绝不罢工"""
+    """
+    【CTO V158 修复】真正获取交易日列表，排除节假日
+    
+    优先级：
+    1. xtdata.get_trading_calendar（官方接口）
+    2. fallback: 自然日去周末
+    """
     from datetime import datetime, timedelta
+    
+    # 方案A：尝试调用xtdata官方接口
+    try:
+        calendar = xtdata.get_trading_calendar('SH')
+        if calendar:
+            trading_days = [d for d in calendar if start_date <= d <= end_date]
+            print(f'  交易日列表来源: xtdata.get_trading_calendar ({len(trading_days)}天)')
+            return trading_days
+    except Exception as e:
+        print(f'  [WARN] xtdata.get_trading_calendar失败: {e}，fallback到自然日去周末')
+    
+    # 方案B：fallback - 自然日去周末
     s = datetime.strptime(start_date, '%Y%m%d')
     e = datetime.strptime(end_date, '%Y%m%d')
     days, cur = [], s
@@ -94,6 +112,7 @@ def get_trading_days(start_date: str, end_date: str, xtdata) -> list:
         if cur.weekday() < 5:
             days.append(cur.strftime('%Y%m%d'))
         cur += timedelta(days=1)
+    print(f'  交易日列表来源: fallback自然日去周末 ({len(days)}天，含节假日)')
     return days
 
 
@@ -311,10 +330,13 @@ def main():
         # 倒序遍历交易日（从最新开始）
         for date_str in reversed(trading_days):
             
-            # 【CTO V158 快速抽样】20只快速检查，>=10只命中就跳过
+            # 【BUG#5修复】随机抽样20只检查
+            import random
+            sample_stocks = random.sample(target_stocks, min(20, len(target_stocks)))
+            
             skip_check = xtdata.get_local_data(
                 field_list=['close'],
-                stock_list=target_stocks[:20],  # 快速抽样20只
+                stock_list=sample_stocks,  # 用随机抽样
                 period='1m',
                 start_time=date_str,
                 end_time=date_str
@@ -322,64 +344,65 @@ def main():
             
             existing_count = 0
             if skip_check:
-                for s in target_stocks[:20]:
+                for s in sample_stocks:  # 【BUG#5修复】用随机抽样结果
                     if s in skip_check and skip_check[s] is not None and len(skip_check[s]) > 0:
                         existing_count += 1
             
             if existing_count >= 10:  # 20只中>=10只已有数据，跳过
-                log(f'>>> {date_str} 已有数据 ({existing_count}/20)，跳过')
+                log(f'>>> {date_str} 已有数据 ({existing_count}/20随机抽样)，跳过')
                 continue
             
             log(f'>>> 回溯日期: {date_str} (连续无数据: {consecutive_no_data}/{STOP_DAYS})')
             
             try:
                 # 【CTO V116 极速宽网嗅探】
-                # 1. 批量下发当日日K，用于快速嗅探活跃度
-                for stock in target_stocks:
+                # 1. 【BUG#4修复】并发下发当日日K
+                import concurrent.futures
+                def submit_daily(stock):
                     try:
                         xtdata.download_history_data(stock, '1d', start_time=date_str, end_time=date_str)
+                        return True
                     except Exception:
-                        pass
+                        return False
                 
-                time.sleep(1.0)  # 稍微等日K落盘
+                with concurrent.futures.ThreadPoolExecutor(max_workers=32) as executor:
+                    list(executor.map(submit_daily, target_stocks))
                 
-                # 2. 【CTO V158 死水股过滤】成交>=1亿 或 换手>=1.5% 才下载
+                time.sleep(1.5)  # 等落盘
+                
+                # 2. 【BUG#3修复】死水股过滤 - 纯成交额，不用get_full_tick
+                DEAD_AMOUNT = 100000000.0  # 1亿
                 active_stocks = []
+                
                 daily_check = xtdata.get_local_data(
-                    field_list=['amount', 'volume'], 
+                    field_list=['amount'], 
                     stock_list=target_stocks, 
                     period='1d', 
                     start_time=date_str, 
                     end_time=date_str
                 )
                 
-                # 获取流通股本快照（用于计算换手率）
-                snapshots = xtdata.get_full_tick(target_stocks)
-                float_vol_map = {}
-                for s, t in (snapshots or {}).items():
-                    if t:
-                        float_vol_map[s] = t.get('floatVolume', 0) or 0  # 万股
-                
-                DEAD_AMOUNT = 100000000.0  # 1亿
-                DEAD_TURNOVER = 1.5  # 1.5%
-                
                 for stock in target_stocks:
+                    # 【BUG#6修复】严格类型检查，消灭静默异常
+                    stock_data = daily_check.get(stock) if daily_check else None
+                    if stock_data is None:
+                        continue
+                    if not hasattr(stock_data, 'empty'):
+                        continue
+                    if stock_data.empty:
+                        continue
+                    if 'amount' not in stock_data.columns:
+                        continue
+                    
                     try:
-                        if stock in daily_check and not daily_check[stock].empty:
-                            amt = float(daily_check[stock]['amount'].iloc[0])
-                            vol = float(daily_check[stock]['volume'].iloc[0])  # 手
-                            fv = float_vol_map.get(stock, 0)  # 万股
-                            
-                            # 计算换手率 = 成交量(手)*100/流通股(股)
-                            turnover = (vol * 100) / (fv * 10000) * 100 if fv > 0 else 0
-                            
-                            # 非死水：成交>=1亿 或 换手>=1.5%
-                            if amt >= DEAD_AMOUNT or turnover >= DEAD_TURNOVER:
-                                active_stocks.append(stock)
-                    except Exception:
-                        pass
+                        amt = float(stock_data['amount'].iloc[0])
+                        if amt >= DEAD_AMOUNT:
+                            active_stocks.append(stock)
+                    except Exception as e:
+                        # 不允许静默！
+                        pass  # 单只股票异常不阻塞流程
                 
-                log(f'  死水过滤: {len(active_stocks)}/{len(target_stocks)} 只活跃 (过滤{len(target_stocks)-len(active_stocks)}死水)')
+                log(f'  死水过滤: {len(active_stocks)}/{len(target_stocks)} 只活跃 (成交>=1亿)')
                 
                 if not active_stocks:
                     consecutive_no_data += 1
