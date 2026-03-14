@@ -311,7 +311,12 @@ class MockExecutionManager:
         pnl = net_proceeds - pos.entry_amount
         pnl_pct = pnl / pos.entry_amount * 100 if pos.entry_amount > 0 else 0
         
-        self._record_trade(stock_code, 'SELL', executed_price, pos.volume, commission + tax, net_proceeds)
+        # 【CTO V166修复】传入entry_amount和pnl用于真实胜率计算
+        self._record_trade(
+            stock_code, 'SELL', executed_price, pos.volume, 
+            commission + tax, net_proceeds, 
+            entry_amount=pos.entry_amount, pnl=pnl
+        )
         del self.positions[stock_code]
         self.orders.append(order)
         
@@ -438,8 +443,12 @@ class MockExecutionManager:
         hands = math.floor(raw_shares / 100)
         return int(hands * 100)
 
-    def _record_trade(self, stock_code: str, direction: str, price: float, volume: int, fee: float, cash_flow: float):
-        """记录交割单"""
+    def _record_trade(self, stock_code: str, direction: str, price: float, volume: int, fee: float, cash_flow: float, entry_amount: float = 0.0, pnl: float = 0.0):
+        """
+        记录交割单
+        
+        【CTO V166修复】添加entry_amount和pnl字段，用于真实胜率计算
+        """
         self.trades.append({
             'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             'stock': stock_code,
@@ -447,7 +456,9 @@ class MockExecutionManager:
             'price': price,
             'volume': volume,
             'fee': fee,
-            'cash_flow': cash_flow
+            'cash_flow': cash_flow,
+            'entry_amount': entry_amount,  # 【CTO V166】买入成本
+            'pnl': pnl  # 【CTO V166】净利润
         })
 
     # ==================== 状态查询 ====================
@@ -487,6 +498,11 @@ class MockExecutionManager:
         pnl = total_sell - total_buy + self.available_cash - self.initial_capital + total_fees
         pnl_pct = pnl / self.initial_capital * 100
         
+        # 【CTO V166修复】用净利润(pnl)判断真实盈亏
+        # 盈利 = 卖出净收入 > 买入成本 (pnl > 0)
+        win_count = sum(1 for t in sell_trades if t.get('pnl', 0) > 0)
+        loss_count = sum(1 for t in sell_trades if t.get('pnl', 0) <= 0)
+        
         return {
             'initial_capital': self.initial_capital,
             'final_cash': self.available_cash,
@@ -496,8 +512,9 @@ class MockExecutionManager:
             'realized_pnl': pnl,
             'realized_pnl_pct': pnl_pct,
             'trade_count': len(self.trades),
-            'win_count': sum(1 for t in sell_trades if t['cash_flow'] > 0),
-            'loss_count': sum(1 for t in sell_trades if t['cash_flow'] <= 0)
+            'win_count': win_count,
+            'loss_count': loss_count,
+            'win_rate': win_count / (win_count + loss_count) * 100 if (win_count + loss_count) > 0 else 0
         }
 
     def export_trades_to_csv(self, filepath: str):

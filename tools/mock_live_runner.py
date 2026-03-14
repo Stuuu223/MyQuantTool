@@ -81,6 +81,14 @@ class MockLiveRunner:
         # 【CTO V162】买入信号记录
         self.buy_signals: List[Dict] = []
         
+        # 【CTO V166】单吊模式状态
+        self.has_bought_today = False  # 今日是否已买入
+        self.current_top1_code = None  # 当前Top1代码
+        self.current_top1_score = 0.0  # 当前Top1分数
+        
+        # 【CTO V166】T+1锁状态 {stock_code: buy_date}
+        self.t1_lock: Dict[str, str] = {}
+        
         logger.info(f"[MockLiveRunner] 初始化完成，目标日期={target_date}，本金=¥{initial_capital:,.0f}")
     
     def load_tick_data(self, stock_code: str) -> bool:
@@ -184,60 +192,76 @@ class MockLiveRunner:
             return
         
         print(f"[MockLiveRunner] 成功加载 {loaded_count}/{len(self.stock_list)} 只股票\n")
+
+        # ================================================================
+        # 【CTO V166】废除静态锚点，改为每分钟流式雷达
+        # 实盘不可能按"09:35、09:45"这种死板时间点买
+        # 真正的买点是物理状态的"临界节点"，每一分钟都要检查
+        # ================================================================
         
-        # 模拟时间轴
-        # 时间锚点 - 更密集的交易检查
-        time_anchors = [
-            ('09:25:00', '竞价结束'),
-            ('09:30:00', '开盘'),
-            ('09:35:00', '开盘5分钟'),
-            ('09:45:00', '开盘15分钟'),
-            ('10:00:00', '早盘第一小时'),
-            ('10:30:00', '早盘中期'),
-            ('11:00:00', '早盘后期'),
-            ('11:30:00', '早盘结束'),
-            ('13:00:00', '午盘开盘'),
-            ('13:30:00', '午盘中期'),
-            ('14:00:00', '午盘后期'),
-            ('14:30:00', '尾盘前期'),
-            ('14:45:00', '尾盘'),
-            ('15:00:00', '收盘'),
-        ]
+        # 关键事件时间点（仅用于日志打印）
+        key_events = {
+            '09:25:00': '竞价结束',
+            '09:30:00': '开盘',
+            '11:30:00': '早盘结束',
+            '13:00:00': '午盘开盘',
+            '15:00:00': '收盘',
+        }
+        
+        # 生成每分钟时间轴 09:30 -> 14:57
+        time_points = []
+        from datetime import timedelta
+        start_time = datetime.strptime(f"{self.target_date}09:30:00", "%Y%m%d%H:%M:%S")
+        end_time = datetime.strptime(f"{self.target_date}14:57:00", "%Y%m%d%H:%M:%S")
+        
+        current = start_time
+        while current <= end_time:
+            # 跳过11:30-13:00午休
+            if current.hour == 11 and current.minute > 30:
+                current = datetime.strptime(f"{self.target_date}13:00:00", "%Y%m%d%H:%M:%S")
+                continue
+            if current.hour == 12:
+                current = datetime.strptime(f"{self.target_date}13:00:00", "%Y%m%d%H:%M:%S")
+                continue
+            time_points.append(current)
+            current += timedelta(minutes=1)
+        
+        # 竞价阶段先计算
+        auction_time = datetime.strptime(f"{self.target_date}09:25:00", "%Y%m%d%H:%M:%S")
+        self._calculate_leaderboard_at_time(auction_time)
         
         prev_time = None
+        last_print_minute = -99  # 控制日志打印频率
         
-        # 遍历时间锚点
-        for time_str, event_name in time_anchors:
-            current_time = datetime.strptime(f"{self.target_date}{time_str}", "%Y%m%d%H:%M:%S")
+        # 遍历每分钟时间轴
+        for current_time in time_points:
+            time_str = current_time.strftime('%H:%M:%S')
             
-            print(f"\n⏰ [{time_str}] {event_name}")
-            print("-" * 50)
+            # 关键事件打印日志
+            if time_str in key_events:
+                print(f"\n⏰ [{time_str}] {key_events[time_str]}")
+                print("-" * 50)
             
-            # 在每个时间点计算当前榜单
+            # 每分钟计算榜单
             self._calculate_leaderboard_at_time(current_time)
             
-            # 【CTO V164调试】打印榜单状态
-            if self.leaderboard:
-                print(f"  [榜单] {len(self.leaderboard)}只股票")
-                for code, data in list(self.leaderboard.items())[:3]:
-                    print(f"    {code}: 分数={data['score']:.1f}, sustain={data.get('sustain_ratio', 0):.2f}")
-            
-            # 【CTO V162】核心：检查买点触发
+            # 【CTO V166核心】每分钟检查买点触发
             self._check_triggers_and_execute(current_time, prev_time)
             
-            # 【CTO V162】持仓监控：检查微观防爆
+            # 【CTO V166核心】每分钟监控持仓
             self._monitor_positions(current_time)
             
-            # 打印当前榜单
-            self._print_leaderboard()
-            
-            # 打印当前持仓
-            self._print_positions()
+            # 每15分钟打印一次状态
+            current_minute = current_time.hour * 60 + current_time.minute
+            if abs(current_minute - last_print_minute) >= 15:
+                self._print_status_brief(current_time)
+                last_print_minute = current_minute
             
             prev_time = current_time
         
-        # 收盘：强制平仓所有持仓
-        self._close_all_positions()
+        # 收盘：打印最终状态
+        print(f"\n⏰ [15:00:00] 收盘")
+        print("-" * 50)
         
         # 【CTO V162】输出最终绩效报告
         self._print_final_report()
@@ -503,78 +527,106 @@ class MockLiveRunner:
     
     def _check_triggers_and_execute(self, current_time: datetime, prev_time: datetime):
         """
-        【CTO V164 Baseline恢复】先跑通基准线，再谈优化
+        【CTO V166 刺客模式】单吊Top1 + T+1物理锁
         
-        退回原始逻辑：只要score>=50且sustain_ratio>=1.0就买入
-        不依赖复杂的TriggerValidator物理检测
+        核心逻辑：
+        1. 每天只允许买入一次（单吊模式）
+        2. 只买分数最高的Top1股票
+        3. 全仓买入（All-in）
+        4. T+1锁：买入当天禁止卖出
         """
         if prev_time is None:
             return
         
-        # 获取榜单中分数>=50的标的
-        candidates = [
-            (code, data) for code, data in self.leaderboard.items()
-            if data['score'] >= 50.0
-        ]
+        # 【CTO V166】检查是否今日已买入
+        if self.has_bought_today:
+            return  # 今日已买入，静默拒绝
         
-        for stock_code, data in candidates:
-            # 【CTO V164】检查是否已有持仓（单吊模式）
-            if stock_code in self.execution_manager.positions:
-                print(f"  [Baseline跳过] {stock_code}: 已有持仓")
-                continue
+        # 【CTO V166】检查是否已有持仓
+        if len(self.execution_manager.positions) > 0:
+            return  # 有持仓就不再买
+        
+        # 获取分数最高的股票（Top1）
+        if not self.leaderboard:
+            return
+        
+        # 排序找出Top1
+        sorted_stocks = sorted(
+            self.leaderboard.items(),
+            key=lambda x: x[1]['score'],
+            reverse=True
+        )
+        
+        if not sorted_stocks:
+            return
+        
+        top1_code, top1_data = sorted_stocks[0]
+        top1_score = top1_data['score']
+        
+        # 更新Top1状态
+        self.current_top1_code = top1_code
+        self.current_top1_score = top1_score
+        
+        # 【CTO V166】买入条件检查
+        # 条件1：分数>=100（提高门槛避免噪音）
+        if top1_score < 100.0:
+            return
+        
+        # 条件2：sustain_ratio>=1.0（资金流入正反馈）
+        volume_ratio = top1_data.get('sustain_ratio', 0)
+        if volume_ratio < 1.0:
+            return
+        
+        # 条件3：有真实成交额
+        if top1_data.get('amount', 0) <= 0:
+            return
+        
+        # 准备买入参数
+        tick = top1_data.get('tick', {})
+        price = top1_data['price']
+        current_mfe = top1_data.get('mfe', 0)
+        
+        # 计算分钟级成交额
+        minute_volume = self._get_minute_volume(top1_code, current_time)
+        
+        # 【CTO V166】执行单吊买入
+        from logic.execution.mock_execution_manager import TriggerType
+        success, order = self.execution_manager.place_mock_order(
+            stock_code=top1_code,
+            last_price=price,
+            direction='BUY',
+            trigger_type=TriggerType.STATIC_SCORE,
+            tick_data=tick,
+            minute_volume=minute_volume
+        )
+        
+        if success:
+            # 记录买入信号
+            self.buy_signals.append({
+                'time': current_time.strftime('%H:%M:%S'),
+                'stock': top1_code,
+                'price': price,
+                'trigger': '刺客Top1单吊',
+                'score': top1_score,
+                'mfe': current_mfe,
+                'sustain': volume_ratio
+            })
             
-            tick = data.get('tick', {})
-            price = data['price']
-            prev_close = tick.get('lastClose', price)
-            total_amount = data['amount']
+            # 【CTO V166】设置单吊锁和T+1锁
+            self.has_bought_today = True
+            self.t1_lock[top1_code] = self.target_date
             
-            # 核心参数
-            volume_ratio = data.get('sustain_ratio', 1.0)
-            current_mfe = data.get('mfe', 0)
-            final_score = data['score']
-            
-            # 【CTO V164调试】输出每只候选的参数
-            logger.info(f"[Baseline] {stock_code}: 分数={final_score:.1f}, sustain={volume_ratio:.2f}")
-            
-            # 【CTO V164 Baseline】极简买入条件：
-            # 1. 分数>=50
-            # 2. sustain_ratio>=1.0（资金流入正反馈）
-            # 不再依赖TriggerValidator的复杂条件！
-            
-            if final_score < 50.0:
-                continue
-            if volume_ratio < 1.0:
-                continue  # 资金流出不买
-            
-            # 计算分钟级成交额
-            minute_volume = self._get_minute_volume(stock_code, current_time)
-            
-            # 【CTO V164】直接执行买入，使用BASELINE触发类型
-            from logic.execution.mock_execution_manager import TriggerType
-            success, order = self.execution_manager.place_mock_order(
-                stock_code=stock_code,
-                last_price=price,
-                direction='BUY',
-                trigger_type=TriggerType.STATIC_SCORE,  # Baseline模式
-                tick_data=tick,
-                minute_volume=minute_volume
-            )
-            
-            if success:
-                self.buy_signals.append({
-                    'time': current_time.strftime('%H:%M:%S'),
-                    'stock': stock_code,
-                    'price': price,
-                    'trigger': 'baseline_score50',
-                    'score': final_score,
-                    'mfe': current_mfe,
-                    'sustain': volume_ratio
-                })
-                logger.info(f"🎯 [Baseline买入] {stock_code} @ {price:.2f} | 分数:{final_score:.0f} | MFE:{current_mfe:.2f} | Sustain:{volume_ratio:.2f}")
+            print(f"\n🎯 [刺客买入] {top1_code} @ {price:.2f}")
+            print(f"   分数: {top1_score:.0f} | MFE: {current_mfe:.2f} | Sustain: {volume_ratio:.2f}")
+            print(f"   模式: 单吊Top1 | 仓位: 全仓")
     
     def _monitor_positions(self, current_time: datetime):
         """
-        【CTO V162关卡3】监控持仓，检查微观防爆
+        【CTO V166】监控持仓，T+1物理锁强制执行
+        
+        核心规则：
+        1. T+1锁：买入当天禁止卖出（A股规则）
+        2. 微观防爆：第二天才允许止损
         
         Args:
             current_time: 当前时间
@@ -584,7 +636,21 @@ class MockLiveRunner:
             return
         
         for stock_code, pos in list(positions.items()):
-            # 获取当前价格和MFE
+            # 【CTO V166核心】T+1物理锁检查
+            buy_date = self.t1_lock.get(stock_code, '')
+            if buy_date == self.target_date:
+                # 今天买的，不能卖！
+                # 只更新价格，不做止损检查
+                tick_list = self.tick_queues.get(stock_code, [])
+                for tick in reversed(tick_list):
+                    tick_time = self._parse_tick_time(tick['time'])
+                    if tick_time <= current_time:
+                        pos.current_price = tick['price']
+                        pos.max_price = max(pos.max_price, tick['price'])
+                        break
+                continue  # 跳过止损检查
+            
+            # 第二天及以后：允许止损检查
             tick_list = self.tick_queues.get(stock_code, [])
             current_tick = None
             for tick in tick_list:
@@ -613,7 +679,7 @@ class MockLiveRunner:
             entry_time = datetime.strptime(pos.entry_time, '%Y-%m-%d %H:%M:%S')
             minutes_elapsed = (current_time - entry_time).total_seconds() / 60
             
-            # 【CTO V162关卡3】检查微观防爆
+            # 【CTO V162关卡3】检查微观防爆（仅第二天起生效）
             stopped, reason = self.execution_manager.check_micro_guard(
                 stock_code, current_price, mfe, int(minutes_elapsed)
             )
@@ -642,64 +708,148 @@ class MockLiveRunner:
         print("-" * 50)
     
     def _close_all_positions(self):
-        """收盘强制平仓"""
+        """
+        收盘处理持仓
+        
+        【CTO V166】T+1锁：买入当天不能卖
+        收盘时只是记录持仓状态，不强制平仓
+        """
         positions = list(self.execution_manager.positions.keys())
         if not positions:
             return
         
-        print("\n🔔 收盘强制平仓:")
+        print("\n🔔 收盘持仓检查:")
         for stock_code in positions:
-            # 用最后一个Tick的价格平仓
-            tick_list = self.tick_queues.get(stock_code, [])
-            if tick_list:
-                last_tick = tick_list[-1]
-                success, order = self.execution_manager.place_mock_order(
-                    stock_code=stock_code,
-                    last_price=last_tick['price'],
-                    direction='SELL'
-                )
+            pos = self.execution_manager.positions.get(stock_code)
+            if not pos:
+                continue
+            
+            # 【CTO V166核心】T+1锁检查
+            buy_date = self.t1_lock.get(stock_code, '')
+            if buy_date == self.target_date:
+                # 今天买的，不能卖，记录为锁仓
+                print(f"  📦 {stock_code}: 锁仓中(T+1) | 成本:{pos.entry_price:.2f} | 数量:{pos.volume}")
+            else:
+                # 不是今天买的，可以卖
+                tick_list = self.tick_queues.get(stock_code, [])
+                if tick_list:
+                    last_tick = tick_list[-1]
+                    pos.current_price = last_tick['price']
+                    print(f"  ✅ {stock_code}: 可卖出 | 成本:{pos.entry_price:.2f} | 现价:{pos.current_price:.2f}")
+    
+    def _print_status_brief(self, current_time: datetime):
+        """【CTO V166】打印简短状态（每15分钟）"""
+        time_str = current_time.strftime('%H:%M')
+        
+        # 榜单Top1
+        if self.leaderboard:
+            sorted_stocks = sorted(self.leaderboard.items(), key=lambda x: x[1]['score'], reverse=True)
+            if sorted_stocks:
+                top1_code, top1_data = sorted_stocks[0]
+                top1_score = top1_data['score']
+                print(f"  [{time_str}] Top1: {top1_code} 分数={top1_score:.0f}")
+        
+        # 持仓状态
+        if self.execution_manager.positions:
+            for code, pos in self.execution_manager.positions.items():
+                status = "锁仓(T+1)" if self.t1_lock.get(code) == self.target_date else "可卖"
+                print(f"  [{time_str}] 持仓: {code} {status} | 成本={pos.entry_price:.2f}")
     
     def _print_final_report(self):
-        """【CTO V162】输出最终绩效报告"""
+        """
+        【CTO V166】刺客级账户战报
+        
+        格式严格按照Boss要求：
+        账户总资金 | 持仓资金 | 剩余可用 | 当日收益 | 账户总收益
+        持仓股票详情
+        """
         report = self.execution_manager.get_performance_report()
         portfolio = self.execution_manager.get_portfolio_summary()
         
+        # 计算账户总资金 = 现金 + 持仓市值
+        total_position_value = 0.0
+        for stock_code, pos in self.execution_manager.positions.items():
+            total_position_value += pos.current_price * pos.volume if pos.current_price > 0 else pos.entry_price * pos.volume
+        
+        total_value = report.get('final_cash', 0) + total_position_value
+        
         print("\n" + "="*70)
-        print("📈 全息战场模拟器 - 最终绩效报告")
+        print(f"【CTO V166 刺客级账户战报 - {self.target_date}】")
         print("="*70)
         
-        if 'error' in report:
-            print(f"  {report['error']}")
-            return
+        # 核心账户指标
+        initial = report.get('initial_capital', 100000)
+        print(f"\n💰 账户总资金：¥{total_value:,.2f}")
+        print(f"💼 持仓资金：¥{total_position_value:,.2f}")
+        print(f"💵 剩余可用资金：¥{report.get('final_cash', 0):,.2f}")
         
-        print(f"\n💰 资金状况:")
-        print(f"  初始本金: ¥{report['initial_capital']:,.2f}")
-        print(f"  最终现金: ¥{report['final_cash']:,.2f}")
-        print(f"  总买入额: ¥{report['total_buy']:,.2f}")
-        print(f"  总卖出额: ¥{report['total_sell']:,.2f}")
-        print(f"  总手续费: ¥{report['total_fees']:,.2f}")
+        # 当日浮动收益（持仓市值变化）
+        # 如果有持仓，用浮动收益；如果没有持仓，用已实现收益
+        if total_position_value > 0:
+            # 有持仓：计算浮动收益
+            total_float_pnl = total_position_value - (initial - report.get('final_cash', 0))
+            float_pnl_pct = total_float_pnl / initial * 100 if initial > 0 else 0
+            float_sign = "+" if total_float_pnl >= 0 else ""
+            print(f"📈 当日浮动收益：{float_sign}{float_pnl_pct:.2f}% ({float_sign}¥{total_float_pnl:,.2f})")
+        else:
+            # 无持仓：显示已实现收益
+            pnl = report.get('realized_pnl', 0)
+            pnl_pct = report.get('realized_pnl_pct', 0)
+            pnl_sign = "+" if pnl >= 0 else ""
+            print(f"📈 当日收益：{pnl_sign}{pnl_pct:.2f}% ({pnl_sign}¥{pnl:,.2f})")
         
-        print(f"\n📊 绩效指标:")
-        pnl = report['realized_pnl']
-        pnl_pct = report['realized_pnl_pct']
-        pnl_sign = "+" if pnl >= 0 else ""
-        print(f"  实现盈亏: {pnl_sign}¥{pnl:,.2f} ({pnl_sign}{pnl_pct:.2f}%)")
-        print(f"  交易次数: {report['trade_count']}")
-        print(f"  盈利次数: {report['win_count']}")
-        print(f"  亏损次数: {report['loss_count']}")
+        # 账户总收益
+        total_pnl = total_value - initial
+        total_pnl_pct = total_pnl / initial * 100 if initial > 0 else 0
+        total_sign = "+" if total_pnl >= 0 else ""
+        print(f"🏆 账户总收益：{total_sign}{total_pnl_pct:.2f}% ({total_sign}¥{total_pnl:,.2f})")
         
-        if report['trade_count'] > 0:
-            win_rate = report['win_count'] / (report['win_count'] + report['loss_count']) * 100 if (report['win_count'] + report['loss_count']) > 0 else 0
-            print(f"  胜率: {win_rate:.1f}%")
+        # 持仓股票详情
+        print("\n" + "-"*70)
+        print("📦 当前持仓股票：")
         
-        print(f"\n📋 关卡统计:")
-        print(f"  拒绝订单: {portfolio.get('rejected_count', 0)} 笔")
-        print(f"  部分成交: {portfolio.get('partial_count', 0)} 笔")
+        if self.execution_manager.positions:
+            for i, (code, pos) in enumerate(self.execution_manager.positions.items(), 1):
+                buy_date = self.t1_lock.get(code, '')
+                is_locked = buy_date == self.target_date
+                status = "锁仓中(T+1)" if is_locked else "可卖出"
+                
+                # 计算浮动收益
+                current_price = pos.current_price if pos.current_price > 0 else pos.entry_price
+                float_pnl = (current_price - pos.entry_price) / pos.entry_price * 100
+                float_pnl_value = (current_price - pos.entry_price) * pos.volume
+                float_sign = "+" if float_pnl >= 0 else ""
+                
+                holding_value = current_price * pos.volume
+                
+                print(f"\n[{i}] {code}")
+                print(f"    状态：{status} / 持仓天数：{pos.holding_days}天")
+                print(f"    买入成本：¥{pos.entry_price:.2f}")
+                print(f"    当前现价：¥{current_price:.2f}")
+                print(f"    浮动收益：{float_sign}{float_pnl:.2f}% ({float_sign}¥{float_pnl_value:,.2f})")
+                print(f"    持有市值：¥{holding_value:,.2f}")
+        else:
+            print("  无持仓")
         
+        # 当日操作记录
+        print("\n" + "-"*70)
         if self.buy_signals:
-            print(f"\n🎯 买入信号记录 ({len(self.buy_signals)}笔):")
-            for sig in self.buy_signals[:10]:  # 只显示前10笔
-                print(f"  [{sig['time']}] {sig['stock']} @ {sig['price']:.2f} | {sig['trigger']} | 分数:{sig['score']:.0f}")
+            print("🎯 当日操作记录：")
+            for sig in self.buy_signals:
+                print(f"  【买入单吊】 {sig['stock']} @ {sig['price']:.2f} | 触发: {sig['trigger']} | 耗资: ¥{initial:,.2f}")
+        else:
+            print("🎯 当日操作记录：无")
+        
+        # 真实胜率统计
+        print("\n" + "-"*70)
+        print("📊 真实胜率统计（净利润>0才算赢）：")
+        win_count = report.get('win_count', 0)
+        loss_count = report.get('loss_count', 0)
+        total_trades = win_count + loss_count
+        win_rate = report.get('win_rate', 0)
+        print(f"  盈利次数：{win_count}")
+        print(f"  亏损次数：{loss_count}")
+        print(f"  真实胜率：{win_rate:.1f}%")
         
         print("\n" + "="*70)
 
