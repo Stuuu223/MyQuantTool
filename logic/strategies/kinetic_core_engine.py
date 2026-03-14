@@ -365,12 +365,14 @@ class KineticCoreEngine:
         yesterday_vol_ratio: float = 1.0,      # 昨日量比：决定今日势能继承
         # 【CTO V46】横向虹吸效应参数
         vampire_ratio_pct: float = 0.0
-    ) -> tuple[float, float, float, float, float]:
+    ) -> tuple[float, float, float, float, float, dict]:
         """
         【V20.5 Boss终极钦定：动能与势能的双Ratio验钞机 + VWAP洗盘容错】
         
+        【CTO V168 透明度改造】新增debug_metrics返回值
+        
         Returns:
-            tuple: (final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe)
+            tuple: (final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe, debug_metrics)
         """
 
         if not isinstance(current_time, datetime):
@@ -396,9 +398,11 @@ class KineticCoreEngine:
         
         # 安全检查
         if price <= 0:
-            return 0.0, 0.0, 0.0, 0.0, 0.0
+            empty_debug = {'mass_potential': 0.0, 'velocity': 0.0, 'base_kinetic_energy': 0.0, 'friction_multiplier': 0.0, 'purity_norm': 0.0, 'inflow_ratio_pct': 0.0, 'ratio_stock': 0.0, 'reason': '价格无效'}
+            return 0.0, 0.0, 0.0, 0.0, 0.0, empty_debug
         if float_volume_shares <= 0:
-            return 0.0, 0.0, 0.0, 0.0, 0.0
+            empty_debug = {'mass_potential': 0.0, 'velocity': 0.0, 'base_kinetic_energy': 0.0, 'friction_multiplier': 0.0, 'purity_norm': 0.0, 'inflow_ratio_pct': 0.0, 'ratio_stock': 0.0, 'reason': '流通盘无效'}
+            return 0.0, 0.0, 0.0, 0.0, 0.0, empty_debug
         if high < low:
             high = low = price  # 容错
         
@@ -493,7 +497,8 @@ class KineticCoreEngine:
                 # 【CTO V112终极修复】流星坠毁直接静默！诱多出货票没资格上榜！
                 # 物理铁律：从高点回撤>3.5% = 资金链断裂 = 诱多出货
                 logger.debug(f"☄️ [流星坠毁静默] {stock_code} 从高点回撤{drawdown_from_high:.1f}%>3.5%，诱多出货判死刑！")
-                return 0.0, 0.0, inflow_ratio_pct, ratio_stock, mfe
+                empty_debug = {'mass_potential': 0.0, 'velocity': 0.0, 'base_kinetic_energy': 0.0, 'friction_multiplier': 0.0, 'purity_norm': 0.0, 'inflow_ratio_pct': inflow_ratio_pct, 'ratio_stock': ratio_stock, 'reason': '流星坠毁'}
+                return 0.0, 0.0, inflow_ratio_pct, ratio_stock, mfe, empty_debug
         
         # === 【CTO V110 绝对水位隔离：重力逃逸判据 + V112微观坍塌】 ===
         # 物理铁律：必须同时满足 [翻红] + [高于开盘价] + [脱离底部3%以上] + [站稳均价线] + [未发生微观坍塌]
@@ -566,14 +571,16 @@ class KineticCoreEngine:
         if overflow_multiplier <= 1.0 and inflow_ratio_pct > 0.5:
             if mfe < 0.1:
                 logger.debug(f"🧱 [阻力死墙] {stock_code} 做功效率极低(MFE:{mfe:.2f})，动能被摩擦力耗尽，静默！")
-                return 0.0, 0.0, inflow_ratio_pct, ratio_stock, mfe
+                empty_debug = {'mass_potential': mass_potential, 'velocity': velocity, 'base_kinetic_energy': base_kinetic_energy, 'friction_multiplier': friction_multiplier, 'purity_norm': purity_norm, 'inflow_ratio_pct': inflow_ratio_pct, 'ratio_stock': ratio_stock, 'mfe': mfe, 'reason': '阻力死墙'}
+                return 0.0, 0.0, inflow_ratio_pct, ratio_stock, mfe, empty_debug
         
         # 2. 重力势能坍塌 (Gravitational Collapse, 取代回撤>4%静态阈值)
         # 物理学定义：价格被砸穿了日内的"能量质心"(近似为当日开盘价)。
         # 如果当前价格跌破了开盘价，且被死死压在日内最高点的一半以下(纯度<0.4)，主升力场已坍塌。
         if price < open_price and purity_norm < 0.4:
             logger.debug(f"🕳️ [引力坍塌] {stock_code} 跌破开盘价且纯度仅{purity_norm*100:.0f}%，势能坠入黑洞！")
-            return 0.0, 0.0, inflow_ratio_pct, ratio_stock, mfe
+            empty_debug = {'mass_potential': mass_potential, 'velocity': velocity, 'base_kinetic_energy': base_kinetic_energy, 'friction_multiplier': friction_multiplier, 'purity_norm': purity_norm, 'inflow_ratio_pct': inflow_ratio_pct, 'ratio_stock': ratio_stock, 'reason': '引力坍塌'}
+            return 0.0, 0.0, inflow_ratio_pct, ratio_stock, mfe, empty_debug
         
         # ========== 6. 终极融合 ==========
         final_score_raw = base_kinetic_energy * friction_multiplier * efficiency_multiplier
@@ -601,7 +608,27 @@ class KineticCoreEngine:
         
         logger.debug(f"[V88Physics] {stock_code} | mass:{mass_potential:.4f} | vel:{velocity:.2f}% | ke:{base_kinetic_energy:.4f} | friction:{friction_multiplier:.2f} | mfe_mult:{efficiency_multiplier:.2f} | score:{final_score}")
         
-        return final_score, sustain_ratio, inflow_ratio_pct, ratio_stock, mfe
+        # 【CTO V168 透明度改造】收集所有物理算子明细用于审计
+        debug_metrics = {
+            'mass_potential': mass_potential,           # 质量势能
+            'velocity': velocity,                       # 速度(涨幅^3)
+            'velocity_cubed': velocity,                 # 速度的3次方
+            'base_kinetic_energy': base_kinetic_energy, # 基础动能
+            'friction_multiplier': friction_multiplier, # 摩擦力乘数(纯度^n)
+            'efficiency_multiplier': efficiency_multiplier, # 效率乘数(MFE)
+            'purity_norm': purity_norm,                 # 纯度(日内位置)
+            'inflow_ratio_pct': inflow_ratio_pct,       # 流入占比
+            'ratio_stock': ratio_stock,                 # 放量倍数
+            'effective_ratio': effective_ratio,         # 有效放量比(洛伦兹收缩后)
+            'overflow_multiplier': overflow_multiplier, # 溢出乘数(跨日势能)
+            'gravity_damper': gravity_damper,           # 引力阻尼(市值修正)
+            'is_gravitational_escape': is_gravitational_escape, # 是否重力逃逸
+            'is_micro_collapsed': is_micro_collapsed,   # 是否微观坍塌
+            'change_pct': change_pct,                   # 涨幅百分比
+            'vwap': vwap                                # 成交均价
+        }
+        
+        return final_score, sustain_ratio, inflow_ratio_pct, ratio_stock, mfe, debug_metrics
     
     def calculate_volume_ratio(
         self,

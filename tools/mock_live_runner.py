@@ -89,6 +89,9 @@ class MockLiveRunner:
         # 【CTO V166】T+1锁状态 {stock_code: buy_date}
         self.t1_lock: Dict[str, str] = {}
         
+        # 【CTO V168】全天候Top10审计台账 - 每分钟记录，用于正反样本分析
+        self.daily_top10_ledger: List[Dict] = []
+        
         logger.info(f"[MockLiveRunner] 初始化完成，目标日期={target_date}，本金=¥{initial_capital:,.0f}")
     
     def load_tick_data(self, stock_code: str) -> bool:
@@ -245,6 +248,9 @@ class MockLiveRunner:
             # 每分钟计算榜单
             self._calculate_leaderboard_at_time(current_time)
             
+            # 【CTO V168】记录每分钟Top10到审计台账
+            self._record_top10_to_ledger(current_time)
+            
             # 【CTO V166核心】每分钟检查买点触发
             self._check_triggers_and_execute(current_time, prev_time)
             
@@ -329,8 +335,21 @@ class MockLiveRunner:
                     stock_code=stock_code
                 )
                 
-                # 【修复】返回类型是tuple: (final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe)
-                if isinstance(result, tuple) and len(result) >= 5:
+                # 【CTO V168修复】返回类型是tuple: (final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe, debug_metrics)
+                if isinstance(result, tuple) and len(result) >= 6:
+                    score, sustain_ratio, inflow_ratio, ratio_stock, mfe, debug_metrics = result[0], result[1], result[2], result[3], result[4], result[5]
+                    self.leaderboard[stock_code] = {
+                        'score': score,
+                        'price': current_tick['price'],
+                        'amount': total_amount,
+                        'mfe': mfe,
+                        'sustain_ratio': sustain_ratio,
+                        'inflow_ratio': inflow_ratio,
+                        'tick': current_tick,
+                        'debug_metrics': debug_metrics  # 【CTO V168】高阶物理算子明细
+                    }
+                elif isinstance(result, tuple) and len(result) >= 5:
+                    # 兼容旧版本返回值（无debug_metrics）
                     score, sustain_ratio, inflow_ratio, ratio_stock, mfe = result[0], result[1], result[2], result[3], result[4]
                     self.leaderboard[stock_code] = {
                         'score': score,
@@ -339,7 +358,8 @@ class MockLiveRunner:
                         'mfe': mfe,
                         'sustain_ratio': sustain_ratio,
                         'inflow_ratio': inflow_ratio,
-                        'tick': current_tick
+                        'tick': current_tick,
+                        'debug_metrics': {}  # 空字典兼容
                     }
                     
             except Exception as e:
@@ -369,6 +389,44 @@ class MockLiveRunner:
             afternoon_delta = current_time - afternoon_start
             total_minutes = int(morning_delta.total_seconds() / 60) + int(afternoon_delta.total_seconds() / 60)
             return total_minutes
+    
+    def _record_top10_to_ledger(self, current_time: datetime):
+        """
+        【CTO V168】记录每分钟Top10到审计台账
+        
+        用于正反样本分析，建立香农信息熵分析的基础数据
+        """
+        if not self.leaderboard:
+            return
+        
+        # 按分数排序取Top10
+        sorted_stocks = sorted(
+            self.leaderboard.items(),
+            key=lambda x: x[1]['score'],
+            reverse=True
+        )[:10]
+        
+        for rank, (code, data) in enumerate(sorted_stocks, 1):
+            debug_m = data.get('debug_metrics', {})
+            self.daily_top10_ledger.append({
+                'date': self.target_date,
+                'time': current_time.strftime('%H:%M:%S'),
+                'rank': rank,
+                'code': code,
+                'score': data['score'],
+                'price': data['price'],
+                'mfe': data.get('mfe', 0),
+                'sustain': data.get('sustain_ratio', 0),
+                'inflow_pct': data.get('inflow_ratio', 0),
+                # 高阶物理算子
+                'mass_potential': debug_m.get('mass_potential', 0),
+                'velocity': debug_m.get('velocity', 0),
+                'kinetic_energy': debug_m.get('base_kinetic_energy', 0),
+                'friction': debug_m.get('friction_multiplier', 0),
+                'purity': debug_m.get('purity_norm', 0),
+                'ratio_stock': debug_m.get('ratio_stock', 0),
+                'change_pct': debug_m.get('change_pct', 0)
+            })
     
     def _parse_tick_time(self, time_val):
         """
@@ -606,8 +664,10 @@ class MockLiveRunner:
         
         if success:
             # 【CTO V167防作弊】捕获案发现场Top10快照作为铁证
+            # 【CTO V168透明度】增加高阶物理算子明细
             snapshot_top10 = []
             for idx, (code, data) in enumerate(sorted_stocks[:10]):
+                debug_m = data.get('debug_metrics', {})
                 snapshot_top10.append({
                     'rank': idx + 1,
                     'code': code,
@@ -615,7 +675,15 @@ class MockLiveRunner:
                     'mfe': data.get('mfe', 0),
                     'sustain': data.get('sustain_ratio', 0),
                     'price': data['price'],
-                    'is_buy_target': code == top1_code  # 标记买入标的
+                    'is_buy_target': code == top1_code,  # 标记买入标的
+                    # 【CTO V168】高阶物理算子明细
+                    'mass_potential': debug_m.get('mass_potential', 0),
+                    'velocity': debug_m.get('velocity', 0),
+                    'kinetic_energy': debug_m.get('base_kinetic_energy', 0),
+                    'friction': debug_m.get('friction_multiplier', 0),
+                    'purity': debug_m.get('purity_norm', 0),
+                    'inflow_pct': debug_m.get('inflow_ratio_pct', 0),
+                    'ratio_stock': debug_m.get('ratio_stock', 0)
                 })
             
             # 记录买入信号（含铁证快照）
@@ -857,12 +925,17 @@ class MockLiveRunner:
                 print(f"  【买入单吊】 {sig['stock']} @ {sig['price']:.2f} | 触发: {sig['trigger']} | 耗资: ¥{initial:,.2f}")
                 
                 # 【CTO V167防作弊】打印案发现场快照
+                # 【CTO V168透明度】打印高阶物理算子明细
                 snapshot = sig.get('moment_snapshot', [])
                 if snapshot:
                     print(f"\n  ==================== 【案发现场快照 {sig['time']}】 ====================")
                     for item in snapshot:
                         buy_mark = " (*买入标的*)" if item.get('is_buy_target') else ""
-                        print(f"  [Top {item['rank']}] {item['code']} | 分数: {item['score']:.0f} | MFE: {item['mfe']:.2f} | Sustain: {item['sustain']:.2f} | 现价: {item['price']:.2f}{buy_mark}")
+                        # 【CTO V168】显示物理算子明细
+                        debug_info = ""
+                        if item.get('mass_potential', 0) != 0 or item.get('kinetic_energy', 0) != 0:
+                            debug_info = f" | 动能:{item.get('kinetic_energy', 0):.3f} | 质量:{item.get('mass_potential', 0):.4f} | 摩擦:{item.get('friction', 0):.2f}"
+                        print(f"  [Top {item['rank']}] {item['code']} | 分数: {item['score']:.0f} | MFE: {item['mfe']:.2f} | Sustain: {item['sustain']:.2f} | 现价: {item['price']:.2f}{debug_info}{buy_mark}")
                     print("  " + "="*60)
         else:
             print("🎯 当日操作记录：无")
@@ -879,6 +952,18 @@ class MockLiveRunner:
         print(f"  真实胜率：{win_rate:.1f}%")
         
         print("\n" + "="*70)
+        
+        # 【CTO V168】导出全天候Top10审计台账CSV
+        if self.daily_top10_ledger:
+            import os
+            output_dir = "data/research_lab"
+            os.makedirs(output_dir, exist_ok=True)
+            csv_path = f"{output_dir}/top10_audit_ledger_{self.target_date}.csv"
+            
+            import pandas as pd
+            df = pd.DataFrame(self.daily_top10_ledger)
+            df.to_csv(csv_path, index=False, encoding='utf-8-sig')
+            print(f"\n📊 Top10审计台账已导出: {csv_path} ({len(self.daily_top10_ledger)}条记录)")
 
 
 def main():
