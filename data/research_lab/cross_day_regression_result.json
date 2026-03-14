@@ -1,0 +1,161 @@
+{
+  "threshold_results": [
+    {
+      "percentile": 50,
+      "threshold": 1.0,
+      "n_above": 7931,
+      "n_below": 834,
+      "y_mean_above": 4.6698556696615885,
+      "y_mean_below": 9.066792494052553,
+      "y_std_above": 6.097131810083713,
+      "y_median_above": 3.4199726402188713,
+      "y_positive_ratio_above": 75.32467532467533
+    },
+    {
+      "percentile": 55,
+      "threshold": 1.3764510779436125,
+      "n_above": 3949,
+      "n_below": 4816,
+      "y_mean_above": 4.160555546795274,
+      "y_mean_below": 5.848898754533086,
+      "y_std_above": 6.1615719401865015,
+      "y_median_above": 3.00082781456954,
+      "y_positive_ratio_above": 71.79032666497848
+    },
+    {
+      "percentile": 60,
+      "threshold": 2.606635071090047,
+      "n_above": 3508,
+      "n_below": 5257,
+      "y_mean_above": 4.086014117601977,
+      "y_mean_below": 5.757008318732766,
+      "y_std_above": 6.272377747881857,
+      "y_median_above": 2.908325218006891,
+      "y_positive_ratio_above": 70.72405929304448
+    },
+    {
+      "percentile": 65,
+      "threshold": 3.4621794527175944,
+      "n_above": 3068,
+      "n_below": 5697,
+      "y_mean_above": 4.132839111732338,
+      "y_mean_below": 5.602734748346687,
+      "y_std_above": 6.464123372378347,
+      "y_median_above": 2.7961761188143752,
+      "y_positive_ratio_above": 69.98044328552803
+    },
+    {
+      "percentile": 70,
+      "threshold": 4.096045197740113,
+      "n_above": 2633,
+      "n_below": 6132,
+      "y_mean_above": 4.096053612870764,
+      "y_mean_below": 5.514256538394841,
+      "y_std_above": 6.682436595308154,
+      "y_median_above": 2.7397260273972712,
+      "y_positive_ratio_above": 68.5909608811242
+    },
+    {
+      "percentile": 75,
+      "threshold": 4.617691154422792,
+      "n_above": 2193,
+      "n_below": 6572,
+      "y_mean_above": 4.232151973398718,
+      "y_mean_below": 5.373892419120891,
+      "y_std_above": 7.029516562944993,
+      "y_median_above": 2.590147282884714,
+      "y_positive_ratio_above": 67.89785681714547
+    },
+    {
+      "percentile": 80,
+      "threshold": 5.28846153846154,
+      "n_above": 1754,
+      "n_below": 7011,
+      "y_mean_above": 4.263618276192112,
+      "y_mean_below": 5.294529139878038,
+      "y_std_above": 7.353578167689016,
+      "y_median_above": 2.4300441826214936,
+      "y_positive_ratio_above": 66.59064994298745
+    },
+    {
+      "percentile": 85,
+      "threshold": 5.951134380453753,
+      "n_above": 1315,
+      "n_below": 7450,
+      "y_mean_above": 3.769396421055537,
+      "y_mean_below": 5.321016639253403,
+      "y_std_above": 7.23648363889025,
+      "y_median_above": 2.0306731042317505,
+      "y_positive_ratio_above": 64.7148288973384
+    },
+    {
+      "percentile": 90,
+      "threshold": 6.7984570877531265,
+      "n_above": 878,
+      "n_below": 7887,
+      "y_mean_above": 2.4177741925180545,
+      "y_mean_below": 5.385510905933185,
+      "y_std_above": 6.414073574625422,
+      "y_median_above": 1.0109289617486361,
+      "y_positive_ratio_above": 58.65603644646925
+    },
+    {
+      "percentile": 95,
+      "threshold": 8.239162652834379,
+      "n_above": 439,
+      "n_below": 8326,
+      "y_mean_above": 1.187780893265541,
+      "y_mean_below": 5.293885952916445,
+      "y_std_above": 5.532855242943299,
+      "y_median_above": 0.424628450106157,
+      "y_positive_ratio_above": 54.21412300683372
+    }
+  ],
+  "sensitivity": [
+    {
+      "percentile": 0.7,
+      "vol_threshold": 3.095347266365051,
+      "mfe_threshold": 1.0,
+      "n_samples": 914,
+      "y_mean": 3.6316150614744296,
+      "y_median": 2.2306065757286775,
+      "y_std": 6.377193028690124,
+      "y_positive_ratio": 66.84901531728666,
+      "y_above_2pct": 50.43763676148797
+    },
+    {
+      "percentile": 0.75,
+      "vol_threshold": 3.862163893667941,
+      "mfe_threshold": 1.0344842064065205,
+      "n_samples": 568,
+      "y_mean": 2.7883152611191884,
+      "y_median": 1.7061207856378657,
+      "y_std": 5.543360339279711,
+      "y_positive_ratio": 65.14084507042254,
+      "y_above_2pct": 45.95070422535211
+    },
+    {
+      "percentile": 0.8,
+      "vol_threshold": 5.080217385505762,
+      "mfe_threshold": 1.2987940498897006,
+      "n_samples": 112,
+      "y_mean": 3.312945435358075,
+      "y_median": 1.1198765464049631,
+      "y_std": 6.637327140137246,
+      "y_positive_ratio": 63.39285714285714,
+      "y_above_2pct": 43.75
+    }
+  ],
+  "regression": {
+    "intercept": 6.323302728396654,
+    "coef_log_vol_ratio": -3.8053599202369828,
+    "coef_mfe": 0.24757532417745454,
+    "r_squared": 0.03978592565060324,
+    "corr_vol_gap": -0.19297556700186347,
+    "corr_mfe_gap": 0.1006209708553582,
+    "n_samples": 8014,
+    "y_mean": 4.693416020042867,
+    "y_std": 6.081054035960794,
+    "equation": "开盘溢价 = 6.323 + -3.805*log10(1+量比) + 0.248*MFE"
+  }
+}
