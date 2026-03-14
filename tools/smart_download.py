@@ -313,12 +313,19 @@ def main():
             target_stocks = [s for s in target_stocks if 'ST' not in s]
             log(f'全市场标的: {len(target_stocks)} 只')
         
-        # 【CTO V158】用get_trading_days获取交易日列表，和tick下载模式一致
-        today = datetime.now().strftime('%Y%m%d')
-        start_date = (datetime.now() - timedelta(days=400)).strftime('%Y%m%d')  # 往前400天
-        trading_days = get_trading_days(start_date, today, xtdata)
-        trading_days = [d for d in trading_days if d <= today]  # 不超过今天
-        log(f'交易日列表: {len(trading_days)}天 ({trading_days[0]} ~ {trading_days[-1]})')
+        # 【CTO V158】支持传入日期范围，默认往前400天
+        dates_args = [a for a in args if not a.startswith('--') and ',' not in a]
+        if len(dates_args) >= 2:
+            start_date, end_date = dates_args[0], dates_args[1]
+        elif len(dates_args) == 1:
+            start_date = end_date = dates_args[0]
+        else:
+            today = datetime.now().strftime('%Y%m%d')
+            start_date = (datetime.now() - timedelta(days=400)).strftime('%Y%m%d')
+            end_date = today
+        
+        trading_days = get_trading_days(start_date, end_date, xtdata)
+        log(f'交易日列表: {len(trading_days)}天 ({trading_days[0] if trading_days else "N/A"} ~ {trading_days[-1] if trading_days else "N/A"})')
         
         consecutive_no_data = 0
         total_downloaded_days = 0
