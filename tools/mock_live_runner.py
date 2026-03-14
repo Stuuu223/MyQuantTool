@@ -216,6 +216,12 @@ class MockLiveRunner:
             # 在每个时间点计算当前榜单
             self._calculate_leaderboard_at_time(current_time)
             
+            # 【CTO V164调试】打印榜单状态
+            if self.leaderboard:
+                print(f"  [榜单] {len(self.leaderboard)}只股票")
+                for code, data in list(self.leaderboard.items())[:3]:
+                    print(f"    {code}: 分数={data['score']:.1f}, sustain={data.get('sustain_ratio', 0):.2f}")
+            
             # 【CTO V162】核心：检查买点触发
             self._check_triggers_and_execute(current_time, prev_time)
             
@@ -344,6 +350,8 @@ class MockLiveRunner:
         """
         【CTO V75重构】物理级时间戳解析
         兼容 QMT 返回的毫秒时间戳 (int/float) 或 字符串
+        
+        【CTO V165修复】QMT毫秒时间戳是UTC，需转为北京时间(UTC+8)
         """
         import pandas as pd
         from datetime import datetime
@@ -353,7 +361,9 @@ class MockLiveRunner:
                 # 如果数值很大，说明是毫秒时间戳 (如 1773072000000)
                 if time_val > 1000000000000:
                     dt = pd.to_datetime(time_val, unit='ms')
-                    return dt.to_pydatetime()
+                    # 【CTO V165关键修复】UTC -> 北京时间
+                    dt = dt.tz_localize('UTC').tz_convert('Asia/Shanghai')
+                    return dt.replace(tzinfo=None).to_pydatetime()  # 去掉时区信息便于比较
                 # 如果是 YYYYMMDDHHMMSS 格式的整数 (如 20260311093000)
                 elif time_val > 20000000000000:
                     return datetime.strptime(str(int(time_val)), "%Y%m%d%H%M%S")
@@ -472,31 +482,46 @@ class MockLiveRunner:
         # 获取前一分钟的最后一个Tick的amount作为基准
         prev_minute_end = current_minute_start
         prev_amount = 0.0
+        prev_tick_time = None
         for tick in tick_list:
             tick_time = self._parse_tick_time(tick['time'])
             if tick_time <= prev_minute_end:
                 prev_amount = tick['amount']
+                prev_tick_time = tick_time
         
         # 获取当前分钟最后一个Tick的amount
         curr_amount = prev_amount
+        curr_tick_time = None
         for tick in tick_list:
             tick_time = self._parse_tick_time(tick['time'])
             if tick_time < current_minute_end:
                 curr_amount = tick['amount']
+                curr_tick_time = tick_time
         
         # 当前分钟成交额 = 当前累计 - 上一分钟累计
-        return max(0, curr_amount - prev_amount)
+        minute_volume = max(0, curr_amount - prev_amount)
+        
+        # 【CTO V165调试】
+        if minute_volume == 0:
+            print(f"  [分钟成交调试] {stock_code} @ {current_time} | prev_amount={prev_amount:.0f}(time={prev_tick_time}) | curr_amount={curr_amount:.0f}(time={curr_tick_time}) | minute_start={current_minute_start}")
+        
+        return minute_volume
     
     def _check_triggers_and_execute(self, current_time: datetime, prev_time: datetime):
         """
-        【CTO V162关卡核心】检查物理买点触发并执行交易
+        【CTO V164 Baseline恢复】先跑通基准线，再谈优化
         
-        Args:
-            current_time: 当前时间
-            prev_time: 上一个时间点
+        退回原始逻辑：只要score>=50且sustain_ratio>=1.0就买入
+        不依赖复杂的TriggerValidator物理检测
         """
         if prev_time is None:
+            print(f"  [Baseline] prev_time为空，跳过")
             return
+        
+        # 【CTO V164调试】输出榜单状态
+        if self.leaderboard:
+            top_scores = sorted([(k, v['score']) for k, v in self.leaderboard.items()], key=lambda x: x[1], reverse=True)[:3]
+            print(f"  [Baseline] 榜单TOP3分数: {top_scores}")
         
         # 获取榜单中分数>=50的标的
         candidates = [
@@ -504,85 +529,72 @@ class MockLiveRunner:
             if data['score'] >= 50.0
         ]
         
+        # 【CTO V164调试】输出候选数量
+        print(f"  [Baseline] 分数>=50候选: {len(candidates)}只")
+        
         for stock_code, data in candidates:
+            # 【CTO V164】检查是否已有持仓（单吊模式）
+            if stock_code in self.execution_manager.positions:
+                print(f"  [Baseline跳过] {stock_code}: 已有持仓")
+                continue
+            
             tick = data.get('tick', {})
             price = data['price']
             prev_close = tick.get('lastClose', price)
             total_amount = data['amount']
             
-            # 计算分钟级成交额
-            minute_volume = self._get_minute_volume(stock_code, current_time)
-            
-            # 构造TriggerValidator需要的参数
-            vwap = total_amount / (total_amount / price) if price > 0 and total_amount > 0 else price
+            # 核心参数
             volume_ratio = data.get('sustain_ratio', 1.0)
             current_mfe = data.get('mfe', 0)
+            final_score = data['score']
             
-            # 【CTO V162】构造历史数据列表（简化版，从Tick队列提取）
-            tick_list = self.tick_queues.get(stock_code, [])
-            price_history = []
-            recent_mfe_list = []
-            recent_volume_ratios = []
+            # 【CTO V164调试】输出每只候选的参数
+            print(f"  [Baseline检查] {stock_code}: 分数={final_score:.1f}, sustain={volume_ratio:.2f}")
             
-            # 提取最近的价格历史（最近60个Tick）
-            for t in tick_list[-60:]:
-                if t.get('price', 0) > 0:
-                    price_history.append(t['price'])
+            # 【CTO V164 Baseline】极简买入条件：
+            # 1. 分数>=50
+            # 2. sustain_ratio>=1.0（资金流入正反馈）
+            # 不再依赖TriggerValidator的复杂条件！
             
-            # 简化：用当前MFE填充列表
-            recent_mfe_list = [current_mfe] * 5 if current_mfe > 0 else [0.5] * 5
-            recent_volume_ratios = [volume_ratio] * 5 if volume_ratio > 0 else [1.0] * 5
+            if final_score < 50.0:
+                print(f"  [Baseline跳过] {stock_code}: 分数{final_score:.1f}<50")
+                continue
+            if volume_ratio < 1.0:
+                print(f"  [Baseline跳过] {stock_code}: sustain{volume_ratio:.2f}<1.0")
+                continue  # 资金流出不买
             
-            # 简化斜率计算
-            current_slope = 0.0
-            if len(price_history) >= 2:
-                current_slope = (price_history[-1] - price_history[-2]) / price_history[-2] * 100 if price_history[-2] > 0 else 0
-            
-            # 【CTO V162】调用TriggerValidator检测物理买点
-            try:
-                trigger_signal = self.trigger_validator.check_all_triggers(
-                    stock_code=stock_code,
-                    current_price=price,
-                    prev_close=prev_close,
-                    vwap=vwap,
-                    volume_ratio=volume_ratio,
-                    current_mfe=current_mfe,
-                    recent_mfe_list=recent_mfe_list,
-                    price_history=price_history,
-                    recent_volume_ratios=recent_volume_ratios,
-                    current_slope=current_slope,
-                    timestamp=current_time
-                )
-            except Exception as e:
-                logger.warning(f"[TriggerValidator] {stock_code} 检查失败: {e}")
-                trigger_signal = None
-            
-            if trigger_signal is None:
-                continue  # 没有触发任何买点
-            
-            # 【CTO V162关卡2】获取流动性数据
+            # 计算分钟级成交额
             minute_volume = self._get_minute_volume(stock_code, current_time)
+            print(f"  [Baseline买入尝试] {stock_code} @ {price:.2f} | 分数={final_score:.1f} | 分钟成交={minute_volume:.0f}")
             
-            # 【CTO V162关卡1+2+3】执行买入
-            success, order = self.execution_manager.place_mock_order(
-                stock_code=stock_code,
-                last_price=price,
-                direction='BUY',
-                trigger_type=trigger_signal.trigger_type,
-                tick_data=tick,
-                minute_volume=minute_volume
-            )
+            # 【CTO V164】直接执行买入，使用BASELINE触发类型
+            from logic.execution.mock_execution_manager import TriggerType
+            try:
+                success, order = self.execution_manager.place_mock_order(
+                    stock_code=stock_code,
+                    last_price=price,
+                    direction='BUY',
+                    trigger_type=TriggerType.STATIC_SCORE,  # Baseline模式
+                    tick_data=tick,
+                    minute_volume=minute_volume
+                )
+                print(f"  [Baseline结果] success={success}, order={order}")
+            except Exception as e:
+                print(f"  [Baseline异常] {stock_code}: {e}")
+                success = False
+                order = None
             
             if success:
                 self.buy_signals.append({
                     'time': current_time.strftime('%H:%M:%S'),
                     'stock': stock_code,
                     'price': price,
-                    'trigger': trigger_signal.trigger_type.value,
-                    'score': data['score'],
+                    'trigger': 'baseline_score50',
+                    'score': final_score,
                     'mfe': current_mfe,
                     'sustain': volume_ratio
                 })
+                logger.info(f"🎯 [Baseline买入] {stock_code} @ {price:.2f} | 分数:{final_score:.0f} | MFE:{current_mfe:.2f} | Sustain:{volume_ratio:.2f}")
     
     def _monitor_positions(self, current_time: datetime):
         """
