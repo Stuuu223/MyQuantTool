@@ -653,9 +653,11 @@ class MockLiveRunner:
         self.current_top1_code = top1_code
         self.current_top1_score = top1_score
         
-        # 【CTO V166】买入条件检查
-        # 条件1：分数>=100（提高门槛避免噪音）
-        if top1_score < 100.0:
+        # 【CTO V171】买入条件检查 - 阈值从config读取
+        min_trigger_score = self.config_manager.get('kinetic_physics.min_trigger_score', 100.0)
+        
+        # 条件1：分数>=阈值（提高门槛避免噪音）
+        if top1_score < min_trigger_score:
             return
         
         # 条件2：sustain_ratio>=1.0（资金流入正反馈）
@@ -679,17 +681,24 @@ class MockLiveRunner:
         # 计算分钟数（用于智猪法则）
         minutes_passed = self._get_minutes_passed(current_time)
         
-        # 【CTO V170 智猪法则】开盘15分钟非涨停脉冲拒绝进食
-        if minutes_passed < 15:
-            # 检查是否涨停（区分主板10%和创业板/科创板20%）
-            limit_up_price = tick.get('limitUpPrice', 0)
-            if limit_up_price <= 0:
-                # 手动计算涨停价：主板10%，创业板(300xxx)/科创板(688xxx)20%
-                if top1_code.startswith('300') or top1_code.startswith('688'):
-                    limit_up_price = prev_close * 1.2  # 创业板/科创板20%
-                else:
-                    limit_up_price = prev_close * 1.1  # 主板10%
-            is_limit_up = price >= limit_up_price * 0.99  # 涨停价附近
+        # 【CTO V171 智猪法则】从配置读取观察期（⚠️ Boss批注：不应是机械时间门槛，应改为动态确认机制）
+        early_observation_minutes = self.config_manager.get('kinetic_physics.early_observation_minutes', 15)
+        if minutes_passed < early_observation_minutes:
+            # 【CTO V171 禁止涨停作单】涨停时买不进去，排队是大猪的特权！
+            limit_up_buy_enabled = self.config_manager.get('kinetic_physics.limit_up_buy_enabled', False)
+            if not limit_up_buy_enabled:
+                # 检查是否涨停
+                limit_up_price = tick.get('limitUpPrice', 0)
+                if limit_up_price <= 0:
+                    if top1_code.startswith('300') or top1_code.startswith('688'):
+                        limit_up_price = prev_close * 1.2
+                    else:
+                        limit_up_price = prev_close * 1.1
+                is_limit_up = price >= limit_up_price * 0.99
+                if is_limit_up:
+                    return  # 【CTO V171】涨停禁止作单！智猪不接盘
+            
+            # 非涨停脉冲也拒绝进食（智猪法则）
             if not is_limit_up:
                 return  # 非涨停脉冲，智猪拒绝进食
         
@@ -699,22 +708,27 @@ class MockLiveRunner:
         if upward_displacement > 0:
             drawdown_from_high = high - price
             retrace_ratio = drawdown_from_high / upward_displacement
-            # 黄金分割死线：回撤超过61.8%则判定为恶性避雷针
-            if retrace_ratio > 0.618:
+            # 【CTO V171】黄金分割死线从config读取（⚠️ UNVERIFIED）
+            retrace_ratio_max = self.config_manager.get('kinetic_physics.retrace_ratio_max', 0.618)
+            if retrace_ratio > retrace_ratio_max:
                 return  # 避雷针：向上势能已被吞噬，禁止开火
         
-        # 【CTO V170 VWAP确认】现价必须在均价线附近或上方
+        # 【CTO V171 VWAP确认】现价必须在均价线附近或上方
         # 简化VWAP：用成交额/成交量估算
         total_amount = top1_data.get('amount', 0)
         total_volume = tick.get('volume', 1)
         if total_volume > 0:
             vwap = total_amount / (total_volume * 100) if total_volume > 0 else price  # volume单位是手，转股
-            if price < vwap * 0.98:  # 现价跌破VWAP 2%，大猪沉没成本不足
+            vwap_deviation_max = self.config_manager.get('kinetic_physics.vwap_deviation_max', 0.02)
+            if price < vwap * (1 - vwap_deviation_max):  # 现价跌破VWAP阈值
                 return  # 智猪法则：未在均线上方形成强势沉没成本
+        
+        # 【CTO V171】触发分数阈值从config读取（⚠️ UNVERIFIED）
+        min_trigger_score = self.config_manager.get('kinetic_physics.min_trigger_score', 100.0)
         
         # 【CTO V167防作弊】硬断言：确保买入的是当时的绝对Top1
         assert top1_code == sorted_stocks[0][0], f"FATAL: 系统买入的不是当时的绝对Top1！存在作弊嫌疑！买入{top1_code} vs Top1{sorted_stocks[0][0]}"
-        assert top1_score >= 100.0, f"FATAL: Top1分数{top1_score}低于阈值100，触发条件异常！"
+        assert top1_score >= min_trigger_score, f"FATAL: Top1分数{top1_score}低于阈值{min_trigger_score}，触发条件异常！"
         
         # 计算分钟级成交额
         minute_volume = self._get_minute_volume(top1_code, current_time)

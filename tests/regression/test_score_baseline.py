@@ -91,7 +91,7 @@ def _calc_score(tick: dict) -> float:
         # 固定时间，消除时间衰减变量
         engine_time = datetime(2026, 1, 29, 15, 0, 0)
 
-        final_score, _, _, _, _ = engine.calculate_true_dragon_score(
+        final_score, _, _, _, _, _ = engine.calculate_true_dragon_score(
             net_inflow=net_inflow,
             price=price,
             prev_close=prev_close,
@@ -110,7 +110,7 @@ def _calc_score(tick: dict) -> float:
             stock_code=tick.get('stock_code', '000000'),
             vampire_ratio_pct=0.0
         )
-        return final_score
+        return final_score  # 引擎返回6个值，只取final_score
     except ImportError:
         return -1.0  # 无 xtquant 环境，标记跳过
     except Exception as e:

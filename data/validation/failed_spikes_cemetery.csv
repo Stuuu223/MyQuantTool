@@ -1,0 +1,26 @@
+# ⚠️ 失败的脉冲公墓
+#
+# 【CTO排毒】记录所有被系统误判为"买入信号"但实际亏损的反面样本
+# 用于未来阈值校准和香农信息熵分析
+#
+# 字段说明：
+# stock_code: 股票代码
+# date: 日期
+# trigger_time: 触发时间（HHMMSS）
+# trigger_price: 触发价格
+# trigger_score: 触发时分数
+# trigger_mfe: 触发时MFE
+# trigger_sustain: 触发时sustain_ratio
+# exit_price: 退出价格
+# return_pct: 收益率%
+# fail_reason: 失败原因
+#
+# 【失败模式分类】
+# - 避雷针（Lightning_Rod）: 早盘脉冲后回落>2.5%
+# - 派发陷阱（Distribution_Trap）: 高换手+滞涨
+# - 假突破（False_Breakout）: 突破后回撤
+# - 流动性枯竭（Liquidity_Drought）: 封板后无法成交
+# - 追高被套（Chasing_Top）: 在最高点买入
+#
+stock_code,date,trigger_time,trigger_price,trigger_score,trigger_mfe,trigger_sustain,exit_price,return_pct,fail_reason
+002274.SZ,20260309,093100,7.40,497.0,?,?,?,?%,Lightning_Rod+Chasing_Top

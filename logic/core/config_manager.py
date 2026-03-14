@@ -224,8 +224,8 @@ class ConfigManager:
         return max(dynamic_threshold, fallback)
 
     def get_min_volume_multiplier(self) -> float:
-        """【V20.5唯一真理】获取最小量比倍数阈值 - 从 live_sniper.min_volume_multiplier 读取"""
-        return self.get('live_sniper.min_volume_multiplier', 3.0)
+        """【CTO M3修复】获取最小量比倍数阈值 - 统一从 volume_ratio_filter 读取"""
+        return self.get('volume_ratio_filter.fixed_threshold', 3.0)
     
     def get_turnover_rate_thresholds(self) -> Dict[str, float]:
         """【CTO规范化】获取换手率阈值，严禁缩进错乱"""
@@ -246,7 +246,7 @@ class ConfigManager:
             'early_morning_rush': ratios.get('early_morning_rush', 1.2),
             'morning_confirm':    ratios.get('morning_confirm', 1.0),
             'noon_trash':         ratios.get('noon_trash', 0.8),
-            'tail_trap':          ratios.get('tail_trap', 0.2)   # 【已修正】0.5→0.2
+            'tail_trap':          ratios.get('tail_trap', 0.5)   # 【CTO M4修复】恢复0.5尾盘腰斩
         }
     
     def get_kinetic_physics_config(self) -> Dict[str, float]:
@@ -277,9 +277,8 @@ class ConfigManager:
         【ATR势垒阈值】获取ATR比率最小值
         
         【阈值来源】
-        - 研究样本：2026-02-27至2026-03-02（4天）
-        - 结论：atr_ratio >= 1.8时，涨停概率提升3.2倍
-        - TODO: 后续需更大样本优化此参数
+        - 【CTO M2修复】基于极小样本观察，暂定阈值1.8，待大规模回测验证
+        - ⚠️ 警告：此参数未经跨年跨牛熊验证，仅作占位符使用
         
         Returns:
             float: ATR势垒阈值，默认1.8

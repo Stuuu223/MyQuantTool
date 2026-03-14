@@ -62,8 +62,8 @@
       "_morning_comment": "09:40-10:30 主升确认：正常推力，分数×1.0",
       "noon_trash": 0.8,
       "_noon_comment": "10:30-14:00 垃圾时间：震荡居多，分数×0.8打折",
-      "tail_trap": 0.2,
-      "_tail_comment": "14:00-14:55 尾盘陷阱：严防骗炮，分数×0.2腰斩"
+      "tail_trap": 0.5,
+      "_tail_comment": "14:00-14:55 尾盘陷阱：严防骗炮，分数×0.5腰斩【CTO M4修复】"
     },
 
     "scoring_bonuses": {
@@ -132,7 +132,7 @@
     
     "atr_ratio_min": 1.8,
     "_atr_ratio_min_comment": "ATR势垒阈值：今日波幅/20日ATR >= 1.8才算高能态（有起爆潜力）",
-    "_atr_ratio_min_source": "研究样本：2026-02-27至2026-03-02，atr_ratio>=1.8时涨停概率提升3.2倍",
+    "_atr_ratio_min_source": "【CTO M2修复】基于极小样本观察暂定1.8，⚠️ 此参数未经跨年跨牛熊验证，仅作占位符",
     "_atr_ratio_min_todo": "TODO: 后续需三个月样本重新估此参数",
 
     "atr_filter_enabled": true,
@@ -154,6 +154,21 @@
     "_kinetic_barrier_min_comment": "【占位未启用】动能/势垒比阈值。公式定义：a(t)=60s换手率加速度，ATR_Ratio=今日波幅/20日ATR。待60秒成交动能引擎完成后启用",
 
     "early_scale_factor": 0.6,
-    "_early_scale_factor_comment": "【已启用】早盘降阈系数：09:30-09:45阈值降至60%，捕捉资金意愿度"
+    "_early_scale_factor_comment": "【已启用】早盘降阈系数：09:30-09:45阈值降至60%，捕捉资金意愿度",
+
+    "retrace_ratio_max": 0.618,
+    "_WARNING_retrace_ratio_max": "[UNVERIFIED] 黄金分割死线，回撤超过61.8%判定为避雷针。待网格扫描验证最优阈值",
+    
+    "early_observation_minutes": 15,
+    "_WARNING_early_observation_minutes": "[UNVERIFIED] 智猪法则观察期：开盘N分钟内非涨停脉冲拒绝进食。⚠️ Boss批注：不应是机械时间门槛，应改为动态确认机制",
+    
+    "min_trigger_score": 100.0,
+    "_WARNING_min_trigger_score": "[UNVERIFIED] 触发买入最低分数。待大样本回测校准",
+    
+    "vwap_deviation_max": 0.02,
+    "_WARNING_vwap_deviation_max": "[UNVERIFIED] 现价跌破VWAP阈值，大猪沉没成本不足判定",
+    
+    "limit_up_buy_enabled": false,
+    "_limit_up_buy_enabled_comment": "【CTO V171修复】禁止涨停作单！涨停时买不进去，排队是大猪的特权，智猪不接盘"
   }
 }

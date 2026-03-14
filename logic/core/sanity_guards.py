@@ -80,7 +80,7 @@ class SanityGuards:
             stock_code: 股票代码
         """
         if final_score == 0.0 and base_score > 0:
-            error_msg = f"{stock_code} 得分逻辑错误：基础分{basis_score:.2f}>0但最终得分=0，检查惩罚机制"
+            error_msg = f"{stock_code} 得分逻辑错误：基础分{base_score:.2f}>0但最终得分=0，检查惩罚机制"
             logger.error(f"[SanityGuards] {error_msg}")
             return False, error_msg
         
