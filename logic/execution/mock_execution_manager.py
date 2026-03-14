@@ -65,12 +65,14 @@ class MockPosition:
     volume: int
     entry_price: float
     entry_time: str
-    trigger_type: TriggerType
-    entry_amount: float  # 买入金额（含费用）
+    entry_date: str = ""  # 【CTO V163】入场日期，用于跨日计算
+    trigger_type: TriggerType = TriggerType.UNKNOWN
+    entry_amount: float = 0.0  # 买入金额（含费用）
     current_price: float = 0.0
     unrealized_pnl: float = 0.0
     max_price: float = 0.0  # 持仓期间最高价
     stopped_out: bool = False
+    holding_days: int = 0  # 【CTO V163】持仓天数
 
 
 class MockExecutionManager:
@@ -252,6 +254,7 @@ class MockExecutionManager:
             volume=order.filled_volume,
             entry_price=executed_price,
             entry_time=order.timestamp,
+            entry_date=order.timestamp[:10] if order.timestamp else "",  # 【CTO V163】入场日期
             trigger_type=trigger_type,
             entry_amount=total_cost,
             current_price=executed_price,
@@ -507,3 +510,136 @@ class MockExecutionManager:
         df = pd.DataFrame(self.trades)
         df.to_csv(filepath, index=False, encoding='utf-8-sig')
         logger.info(f"[OK] 交割单已导出: {filepath}")
+
+    # ==================== 【CTO V163】多日连续回测支持 ====================
+    
+    def get_overnight_positions(self) -> Dict[str, MockPosition]:
+        """获取隔夜持仓（收盘时仍持有的仓位）"""
+        return {k: v for k, v in self.positions.items() if not v.stopped_out}
+    
+    def update_position_price(self, stock_code: str, current_price: float):
+        """
+        更新持仓当前价格（用于日内和隔日估值）
+        
+        Args:
+            stock_code: 股票代码
+            current_price: 当前价格
+        """
+        pos = self.positions.get(stock_code)
+        if pos:
+            pos.current_price = current_price
+            if current_price > pos.max_price:
+                pos.max_price = current_price
+            # 更新未实现盈亏
+            pos.unrealized_pnl = (current_price - pos.entry_price) / pos.entry_price * 100
+    
+    def carry_positions_to_next_day(self, new_date: str):
+        """
+        【CTO V163核心】将持仓跨日继承到下一个交易日
+        
+        Args:
+            new_date: 新交易日期 (YYYY-MM-DD格式)
+        """
+        for stock_code, pos in self.positions.items():
+            if not pos.stopped_out:
+                pos.holding_days += 1
+                logger.info(f"📅 [隔夜继承] {stock_code}: 持仓{pos.volume}股@{pos.entry_price:.2f} → 第{pos.holding_days}天")
+    
+    def get_total_value(self, price_dict: Dict[str, float] = None) -> float:
+        """
+        计算总资产价值
+        
+        Args:
+            price_dict: 股票价格字典 {stock_code: price}
+            
+        Returns:
+            总资产价值 = 现金 + 持仓市值
+        """
+        total_position_value = 0.0
+        for stock_code, pos in self.positions.items():
+            if pos.stopped_out:
+                continue
+            price = pos.current_price
+            if price_dict and stock_code in price_dict:
+                price = price_dict[stock_code]
+            total_position_value += price * pos.volume
+        
+        return self.available_cash + total_position_value
+    
+    def get_daily_snapshot(self, date_str: str, price_dict: Dict[str, float] = None) -> Dict:
+        """
+        获取每日快照（用于多日资金曲线）
+        
+        Args:
+            date_str: 日期字符串
+            price_dict: 收盘价字典
+            
+        Returns:
+            每日快照字典
+        """
+        total_value = self.get_total_value(price_dict)
+        daily_pnl = total_value - self.initial_capital
+        daily_pnl_pct = daily_pnl / self.initial_capital * 100
+        
+        # 统计持仓
+        position_details = []
+        for stock_code, pos in self.positions.items():
+            if pos.stopped_out:
+                continue
+            price = pos.current_price
+            if price_dict and stock_code in price_dict:
+                price = price_dict[stock_code]
+            pos_value = price * pos.volume
+            pos_pnl = (price - pos.entry_price) / pos.entry_price * 100
+            position_details.append({
+                'code': stock_code,
+                'volume': pos.volume,
+                'entry_price': pos.entry_price,
+                'current_price': price,
+                'value': pos_value,
+                'pnl_pct': pos_pnl,
+                'holding_days': pos.holding_days
+            })
+        
+        return {
+            'date': date_str,
+            'cash': self.available_cash,
+            'position_value': total_value - self.available_cash,
+            'total_value': total_value,
+            'pnl': daily_pnl,
+            'pnl_pct': daily_pnl_pct,
+            'position_count': len([p for p in self.positions.values() if not p.stopped_out]),
+            'positions': position_details,
+            'trade_count': len(self.trades)
+        }
+    
+    def force_close_all_positions(self, price_dict: Dict[str, float], reason: str = "回测结束"):
+        """
+        强制平仓所有持仓（用于回测结束）
+        
+        Args:
+            price_dict: 收盘价字典
+            reason: 平仓原因
+        """
+        for stock_code, pos in list(self.positions.items()):
+            if pos.stopped_out or pos.volume <= 0:
+                continue
+            
+            price = price_dict.get(stock_code, pos.current_price)
+            executed_price = price * (1.0 - self.base_slippage_rate)
+            gross_value = executed_price * pos.volume
+            commission = max(5.0, gross_value * self.commission_rate)
+            tax = gross_value * self.tax_rate_sell
+            net_proceeds = gross_value - commission - tax
+            
+            self.available_cash += net_proceeds
+            pnl = net_proceeds - pos.entry_amount
+            pnl_pct = pnl / pos.entry_amount * 100 if pos.entry_amount > 0 else 0
+            
+            self._record_trade(stock_code, 'SELL', executed_price, pos.volume, commission + tax, net_proceeds)
+            del self.positions[stock_code]
+            
+            logger.info(
+                f"🔔 [强制平仓] {stock_code} | 原因:{reason} | "
+                f"均价:{executed_price:.2f} | 盈亏:{pnl:+.2f}({pnl_pct:+.2f}%)"
+            )

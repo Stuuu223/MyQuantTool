@@ -718,8 +718,10 @@ class MockLiveRunner:
 
 def main():
     """主函数"""
-    parser = argparse.ArgumentParser(description='全息战场模拟器 - CTO V162三大物理关卡')
-    parser.add_argument('--date', type=str, required=True, help='目标日期 (YYYYMMDD)')
+    parser = argparse.ArgumentParser(description='全息战场模拟器 - CTO V163多日连续回测')
+    parser.add_argument('--date', type=str, default='', help='单日模式: 目标日期 (YYYYMMDD)')
+    parser.add_argument('--start_date', type=str, default='', help='多日模式: 开始日期 (YYYYMMDD)')
+    parser.add_argument('--end_date', type=str, default='', help='多日模式: 结束日期 (YYYYMMDD)')
     parser.add_argument('--stocks', type=str, default='', help='股票列表，逗号分隔')
     parser.add_argument('--capital', type=float, default=100000.0, help='初始本金 (默认10万)')
     parser.add_argument('--verbose', '-v', action='store_true', help='详细日志')
@@ -732,13 +734,24 @@ def main():
     else:
         logging.basicConfig(level=logging.INFO)
     
-    # 解析股票列表
+    # 【CTO V163】判断单日模式还是多日模式
+    if args.start_date and args.end_date:
+        # 多日连续回测模式
+        run_continuous_backtest(args)
+    elif args.date:
+        # 单日模式
+        run_single_day(args)
+    else:
+        print("[ERR] 必须指定 --date (单日) 或 --start_date + --end_date (多日)")
+        return
+
+
+def run_single_day(args):
+    """单日回测模式"""
     stock_list = []
     if args.stocks:
         stock_list = [s.strip() for s in args.stocks.split(',') if s.strip()]
     
-    # 【CTO V74修复】如果没有指定股票，动态获取今日真实活跃底池
-    # 不再硬编码死票！要读取smart_download刚下载的那批活跃票
     if not stock_list:
         print("[MockLiveRunner] 未指定股票，正在通过 UniverseBuilder 获取今日真实活跃物理底池...")
         try:
@@ -750,11 +763,120 @@ def main():
             print(f"[ERR] 底池装载失败: {e}")
             return
     
-    # 创建运行器
     runner = MockLiveRunner(args.date, stock_list, initial_capital=args.capital)
-    
-    # 运行Mock
     runner.run_mock_session()
+
+
+def run_continuous_backtest(args):
+    """【CTO V163】多日连续回测模式"""
+    from logic.utils.calendar_utils import get_trading_days_between
+    
+    start_date = args.start_date
+    end_date = args.end_date
+    initial_capital = args.capital
+    
+    print("\n" + "="*70)
+    print(f"🚀 [多日连续回测] CTO V163 时间机器启动")
+    print(f"   区间: {start_date} → {end_date}")
+    print(f"   本金: ¥{initial_capital:,.2f}")
+    print("="*70 + "\n")
+    
+    # 获取交易日列表
+    try:
+        trading_days = get_trading_days_between(start_date, end_date)
+    except Exception as e:
+        print(f"[WARN] get_trading_days_between失败: {e}，使用简单日期范围")
+        # 降级：简单生成日期范围
+        from datetime import datetime, timedelta
+        start = datetime.strptime(start_date, "%Y%m%d")
+        end = datetime.strptime(end_date, "%Y%m%d")
+        trading_days = []
+        current = start
+        while current <= end:
+            # 跳过周末
+            if current.weekday() < 5:
+                trading_days.append(current.strftime("%Y%m%d"))
+            current += timedelta(days=1)
+    
+    if not trading_days:
+        print("[ERR] 区间内无交易日")
+        return
+    
+    print(f"📅 交易日列表: {trading_days}")
+    
+    # 共享的ExecutionManager（跨日资金复利）
+    shared_manager = None
+    daily_snapshots = []
+    
+    for i, date_str in enumerate(trading_days):
+        print(f"\n{'='*70}")
+        print(f"📆 [{i+1}/{len(trading_days)}] {date_str}")
+        print("="*70)
+        
+        # 获取当日活跃底池
+        stock_list = []
+        if args.stocks:
+            stock_list = [s.strip() for s in args.stocks.split(',') if s.strip()]
+        
+        if not stock_list:
+            try:
+                from logic.data_providers.universe_builder import UniverseBuilder
+                base_pool, _ = UniverseBuilder(target_date=date_str).build()
+                stock_list = base_pool
+                print(f"[MockLiveRunner] {date_str} 装载 {len(stock_list)} 只活跃标的")
+            except Exception as e:
+                print(f"[WARN] {date_str} 底池装载失败: {e}，跳过该日")
+                continue
+        
+        # 创建运行器（继承前一日资金）
+        if shared_manager is None:
+            # 第一天：新初始化
+            runner = MockLiveRunner(date_str, stock_list, initial_capital=initial_capital)
+            shared_manager = runner.execution_manager
+        else:
+            # 后续日：继承资金和持仓
+            runner = MockLiveRunner(date_str, stock_list, initial_capital=initial_capital)
+            runner.execution_manager = shared_manager  # 共享资金状态机
+            
+            # 跨日继承持仓
+            shared_manager.carry_positions_to_next_day(date_str[:4] + "-" + date_str[4:6] + "-" + date_str[6:8])
+        
+        # 运行当日模拟
+        runner.run_mock_session()
+        
+        # 记录当日快照
+        snapshot = shared_manager.get_daily_snapshot(date_str)
+        daily_snapshots.append(snapshot)
+        
+        print(f"\n📊 [{date_str}] 日终净值: ¥{snapshot['total_value']:,.2f} | 累计盈亏: {snapshot['pnl_pct']:+.2f}%")
+    
+    # ==================== 最终报告 ====================
+    print("\n" + "="*70)
+    print("📈 多日连续回测 - 最终资金曲线报告")
+    print("="*70)
+    
+    if daily_snapshots:
+        print("\n日期          | 现金          | 持仓市值      | 总资产        | 累计收益率")
+        print("-" * 80)
+        for snap in daily_snapshots:
+            print(f"{snap['date']} | ¥{snap['cash']:>10,.2f} | ¥{snap['position_value']:>10,.2f} | ¥{snap['total_value']:>10,.2f} | {snap['pnl_pct']:>+8.2f}%")
+        
+        # 统计
+        final_snapshot = daily_snapshots[-1]
+        print("\n" + "="*70)
+        print(f"💰 初始本金: ¥{initial_capital:,.2f}")
+        print(f"💰 最终资产: ¥{final_snapshot['total_value']:,.2f}")
+        print(f"📈 累计盈亏: ¥{final_snapshot['pnl']:,.2f} ({final_snapshot['pnl_pct']:+.2f}%)")
+        print(f"📊 交易天数: {len(daily_snapshots)} 天")
+        print(f"📊 总交易次数: {final_snapshot['trade_count']} 笔")
+        print("="*70)
+        
+        # 导出资金曲线CSV
+        import pandas as pd
+        df = pd.DataFrame(daily_snapshots)
+        output_path = f"data/backtest_out/continuous_curve_{start_date}_{end_date}.csv"
+        df.to_csv(output_path, index=False, encoding='utf-8-sig')
+        print(f"\n📁 资金曲线已导出: {output_path}")
 
 
 if __name__ == '__main__':
