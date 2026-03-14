@@ -489,10 +489,21 @@ class LiveTradingEngine:
         Returns:
             Tuple[bool, str]: (是否剔除, 原因)
         """
+        # ==================== 【CTO周末曼哈顿计划】真空滑行豁免 ====================
+        # 核心发现：3558只涨停真龙因MFE<1.0被误杀！
+        # 物理真相：涨停板锁仓 = 真空无摩擦 = MFE低是正常的，不是派发！
+        is_vacuum_gliding = self._check_vacuum_gliding(tracker)
+        if is_vacuum_gliding:
+            # 真空滑行状态：豁免MFE剔除，让子弹再飞一会儿
+            pass  # 不触发任何剔除，继续持有
+        
         # 条件1: MFE<1.2且Volume_Ratio>3.0 (天量滞涨)
+        # 【CTO修正】添加真空滑行豁免
         if (tracker.mfe < self.eliminate_mfe_threshold and 
             tracker.volume_ratio > self.eliminate_volume_ratio_threshold):
-            return True, f"天量滞涨: MFE={tracker.mfe:.2f}且量比={tracker.volume_ratio:.2f}"
+            # 如果是真空滑行状态，豁免天量滞涨判断
+            if not is_vacuum_gliding:
+                return True, f"天量滞涨: MFE={tracker.mfe:.2f}且量比={tracker.volume_ratio:.2f}"
         
         # 条件2: 价格跌破15分钟VWAP
         vwap_15min = self._calculate_vwap_15min(tracker)
@@ -500,6 +511,65 @@ class LiveTradingEngine:
             return True, f"跌破VWAP: 价格{tracker.current_price:.2f} < VWAP{vwap_15min:.2f}"
         
         return False, ""
+    
+    def _check_vacuum_gliding(self, tracker: StockTracker) -> bool:
+        """
+        【CTO周末曼哈顿计划】真空滑行检测
+        
+        物理判据：
+        1. 涨停状态（价格>=涨停价-1分）
+        2. 低量比（<1.5，表示锁仓）
+        3. 低振幅（<3%，一字板特征）
+        
+        物理本质：
+        涨停锁仓后，主力不需要继续买入维持价格，
+        此时MFE低是"真空无摩擦"的正常现象，不是派发！
+        
+        Args:
+            tracker: 股票跟踪器
+            
+        Returns:
+            bool: 是否处于真空滑行状态
+        """
+        # 1. 涨停判断
+        current_price = tracker.current_price
+        stock_code = tracker.stock_code
+        
+        # 从静态缓存获取昨收价
+        prev_close = self.static_cache.get(stock_code, {}).get('prev_close', 0)
+        if prev_close <= 0:
+            return False
+        
+        # 计算涨停价
+        if stock_code.startswith(('30', '68')):
+            limit_up_price = round(prev_close * 1.20, 2)
+        elif stock_code.startswith(('8', '4')):
+            limit_up_price = round(prev_close * 1.30, 2)
+        else:
+            limit_up_price = round(prev_close * 1.10, 2)
+        
+        is_limit_up = (current_price >= limit_up_price - 0.011)
+        if not is_limit_up:
+            return False
+        
+        # 2. 低量比判断（锁仓特征）
+        if tracker.volume_ratio >= 1.5:
+            return False
+        
+        # 3. 低振幅判断（从Tick历史计算日内振幅）
+        if len(tracker.tick_history) < 2:
+            return False
+        
+        daily_high = max(s.high for s in tracker.tick_history)
+        daily_low = min(s.low for s in tracker.tick_history)
+        amplitude = (daily_high - daily_low) / prev_close * 100 if prev_close > 0 else 0
+        
+        if amplitude >= 3.0:
+            return False
+        
+        # 满足三个条件：真空滑行状态
+        logger.debug(f"[真空滑行] {stock_code} 涨停锁仓中，豁免MFE剔除 (量比={tracker.volume_ratio:.2f}, 振幅={amplitude:.1f}%)")
+        return True
     
     def _calculate_vwap_15min(self, tracker: StockTracker) -> float:
         """
