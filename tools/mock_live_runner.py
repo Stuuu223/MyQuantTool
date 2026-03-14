@@ -27,6 +27,7 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional, Tuple
 import pandas as pd
 import logging
+import json
 
 # 添加项目根目录到Python路径
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -41,6 +42,7 @@ from logic.data_providers.true_dictionary import get_true_dictionary
 from logic.strategies.kinetic_core_engine import KineticCoreEngine
 from logic.execution.mock_execution_manager import MockExecutionManager, TriggerType, OrderStatus
 from research_lab.trigger_validator import TriggerValidator
+from logic.core.sandbox_manager import SandboxManager  # 【CTO V169】沙盒档案库
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +50,7 @@ logger = logging.getLogger(__name__)
 class MockLiveRunner:
     """全息战场模拟器 - 三大物理关卡"""
     
-    def __init__(self, target_date: str, stock_list: List[str] = None, initial_capital: float = 100000.0):
+    def __init__(self, target_date: str, stock_list: List[str] = None, initial_capital: float = 100000.0, sandbox: SandboxManager = None):
         """
         初始化Mock运行器
         
@@ -56,11 +58,18 @@ class MockLiveRunner:
             target_date: 目标日期 (YYYYMMDD格式)
             stock_list: 股票列表，为空则使用粗筛结果
             initial_capital: 初始本金
+            sandbox: 【CTO V169】沙盒档案库管理器（多日连续模式共享）
         """
         self.target_date = target_date
         self.stock_list = stock_list or []
         self.config_mgr = get_config_manager()
         self.true_dict = get_true_dictionary()
+        
+        # 【CTO V169】沙盒档案库 - 如果未传入则自动创建
+        if sandbox:
+            self.sandbox = sandbox
+        else:
+            self.sandbox = SandboxManager(mode="backtest")
         
         # 【CTO V162】核心组件
         self.execution_manager = MockExecutionManager(initial_capital=initial_capital, max_position_ratio=1.0)
@@ -93,6 +102,7 @@ class MockLiveRunner:
         self.daily_top10_ledger: List[Dict] = []
         
         logger.info(f"[MockLiveRunner] 初始化完成，目标日期={target_date}，本金=¥{initial_capital:,.0f}")
+        logger.info(f"[MockLiveRunner] 沙盒ID: {self.sandbox.get_run_id()}")
     
     def load_tick_data(self, stock_code: str) -> bool:
         """
@@ -844,6 +854,7 @@ class MockLiveRunner:
     def _print_final_report(self):
         """
         【CTO V166】刺客级账户战报
+        【CTO V169】沙盒档案库持久化
         
         格式严格按照Boss要求：
         账户总资金 | 持仓资金 | 剩余可用 | 当日收益 | 账户总收益
@@ -858,35 +869,34 @@ class MockLiveRunner:
             total_position_value += pos.current_price * pos.volume if pos.current_price > 0 else pos.entry_price * pos.volume
         
         total_value = report.get('final_cash', 0) + total_position_value
+        initial = report.get('initial_capital', 100000)
         
+        # 计算收益
+        if total_position_value > 0:
+            total_float_pnl = total_position_value - (initial - report.get('final_cash', 0))
+            float_pnl_pct = total_float_pnl / initial * 100 if initial > 0 else 0
+            day_pnl_pct = float_pnl_pct
+            day_pnl = total_float_pnl
+        else:
+            day_pnl = report.get('realized_pnl', 0)
+            day_pnl_pct = report.get('realized_pnl_pct', 0)
+        
+        total_pnl = total_value - initial
+        total_pnl_pct = total_pnl / initial * 100 if initial > 0 else 0
+        
+        # ==================== 控制台输出 ====================
         print("\n" + "="*70)
-        print(f"【CTO V166 刺客级账户战报 - {self.target_date}】")
+        print(f"【CTO V169 刺客级账户战报 - {self.target_date}】")
+        print(f"沙盒ID: {self.sandbox.get_run_id()}")
         print("="*70)
         
-        # 核心账户指标
-        initial = report.get('initial_capital', 100000)
         print(f"\n💰 账户总资金：¥{total_value:,.2f}")
         print(f"💼 持仓资金：¥{total_position_value:,.2f}")
         print(f"💵 剩余可用资金：¥{report.get('final_cash', 0):,.2f}")
         
-        # 当日浮动收益（持仓市值变化）
-        # 如果有持仓，用浮动收益；如果没有持仓，用已实现收益
-        if total_position_value > 0:
-            # 有持仓：计算浮动收益
-            total_float_pnl = total_position_value - (initial - report.get('final_cash', 0))
-            float_pnl_pct = total_float_pnl / initial * 100 if initial > 0 else 0
-            float_sign = "+" if total_float_pnl >= 0 else ""
-            print(f"📈 当日浮动收益：{float_sign}{float_pnl_pct:.2f}% ({float_sign}¥{total_float_pnl:,.2f})")
-        else:
-            # 无持仓：显示已实现收益
-            pnl = report.get('realized_pnl', 0)
-            pnl_pct = report.get('realized_pnl_pct', 0)
-            pnl_sign = "+" if pnl >= 0 else ""
-            print(f"📈 当日收益：{pnl_sign}{pnl_pct:.2f}% ({pnl_sign}¥{pnl:,.2f})")
+        float_sign = "+" if day_pnl >= 0 else ""
+        print(f"📈 当日收益：{float_sign}{day_pnl_pct:.2f}% ({float_sign}¥{day_pnl:,.2f})")
         
-        # 账户总收益
-        total_pnl = total_value - initial
-        total_pnl_pct = total_pnl / initial * 100 if initial > 0 else 0
         total_sign = "+" if total_pnl >= 0 else ""
         print(f"🏆 账户总收益：{total_sign}{total_pnl_pct:.2f}% ({total_sign}¥{total_pnl:,.2f})")
         
@@ -894,18 +904,18 @@ class MockLiveRunner:
         print("\n" + "-"*70)
         print("📦 当前持仓股票：")
         
+        positions_data = []  # 用于JSON持久化
+        
         if self.execution_manager.positions:
             for i, (code, pos) in enumerate(self.execution_manager.positions.items(), 1):
                 buy_date = self.t1_lock.get(code, '')
                 is_locked = buy_date == self.target_date
                 status = "锁仓中(T+1)" if is_locked else "可卖出"
                 
-                # 计算浮动收益
                 current_price = pos.current_price if pos.current_price > 0 else pos.entry_price
                 float_pnl = (current_price - pos.entry_price) / pos.entry_price * 100
                 float_pnl_value = (current_price - pos.entry_price) * pos.volume
                 float_sign = "+" if float_pnl >= 0 else ""
-                
                 holding_value = current_price * pos.volume
                 
                 print(f"\n[{i}] {code}")
@@ -914,6 +924,19 @@ class MockLiveRunner:
                 print(f"    当前现价：¥{current_price:.2f}")
                 print(f"    浮动收益：{float_sign}{float_pnl:.2f}% ({float_sign}¥{float_pnl_value:,.2f})")
                 print(f"    持有市值：¥{holding_value:,.2f}")
+                
+                # 收集持仓数据
+                positions_data.append({
+                    'code': code,
+                    'status': status,
+                    'holding_days': pos.holding_days,
+                    'entry_price': pos.entry_price,
+                    'current_price': current_price,
+                    'float_pnl_pct': float_pnl,
+                    'float_pnl_value': float_pnl_value,
+                    'holding_value': holding_value,
+                    'volume': pos.volume
+                })
         else:
             print("  无持仓")
         
@@ -924,14 +947,11 @@ class MockLiveRunner:
             for sig in self.buy_signals:
                 print(f"  【买入单吊】 {sig['stock']} @ {sig['price']:.2f} | 触发: {sig['trigger']} | 耗资: ¥{initial:,.2f}")
                 
-                # 【CTO V167防作弊】打印案发现场快照
-                # 【CTO V168透明度】打印高阶物理算子明细
                 snapshot = sig.get('moment_snapshot', [])
                 if snapshot:
                     print(f"\n  ==================== 【案发现场快照 {sig['time']}】 ====================")
                     for item in snapshot:
                         buy_mark = " (*买入标的*)" if item.get('is_buy_target') else ""
-                        # 【CTO V168】显示物理算子明细
                         debug_info = ""
                         if item.get('mass_potential', 0) != 0 or item.get('kinetic_energy', 0) != 0:
                             debug_info = f" | 动能:{item.get('kinetic_energy', 0):.3f} | 质量:{item.get('mass_potential', 0):.4f} | 摩擦:{item.get('friction', 0):.2f}"
@@ -945,7 +965,6 @@ class MockLiveRunner:
         print("📊 真实胜率统计（净利润>0才算赢）：")
         win_count = report.get('win_count', 0)
         loss_count = report.get('loss_count', 0)
-        total_trades = win_count + loss_count
         win_rate = report.get('win_rate', 0)
         print(f"  盈利次数：{win_count}")
         print(f"  亏损次数：{loss_count}")
@@ -953,17 +972,105 @@ class MockLiveRunner:
         
         print("\n" + "="*70)
         
-        # 【CTO V168】导出全天候Top10审计台账CSV
+        # ==================== 【CTO V169】沙盒持久化 ====================
+        
+        # 1. 保存每日Top10审计台账CSV
         if self.daily_top10_ledger:
-            import os
-            output_dir = "data/research_lab"
-            os.makedirs(output_dir, exist_ok=True)
-            csv_path = f"{output_dir}/top10_audit_ledger_{self.target_date}.csv"
-            
-            import pandas as pd
-            df = pd.DataFrame(self.daily_top10_ledger)
-            df.to_csv(csv_path, index=False, encoding='utf-8-sig')
-            print(f"\n📊 Top10审计台账已导出: {csv_path} ({len(self.daily_top10_ledger)}条记录)")
+            self.sandbox.save_daily_ledger(self.target_date, self.daily_top10_ledger)
+        
+        # 2. 构建结构化战报数据（含案发现场快照）
+        battle_report_data = {
+            'account': {
+                'total_value': total_value,
+                'position_value': total_position_value,
+                'cash': report.get('final_cash', 0),
+                'day_pnl': day_pnl,
+                'day_pnl_pct': day_pnl_pct,
+                'total_pnl': total_pnl,
+                'total_pnl_pct': total_pnl_pct
+            },
+            'positions': positions_data,
+            'buy_signals': self.buy_signals,  # 含moment_snapshot案发现场
+            'performance': {
+                'win_count': win_count,
+                'loss_count': loss_count,
+                'win_rate': win_rate,
+                'trade_count': len(self.execution_manager.trades)
+            }
+        }
+        
+        # 3. 保存JSON战报
+        self.sandbox.save_battle_report_json(self.target_date, battle_report_data)
+        
+        # 4. 生成并保存MD战报
+        md_content = self._generate_markdown_report(
+            total_value, total_position_value, report, day_pnl, day_pnl_pct,
+            total_pnl, total_pnl_pct, positions_data, win_count, loss_count, win_rate
+        )
+        self.sandbox.save_battle_report_md(self.target_date, md_content)
+        
+        print(f"\n📁 档案已存入沙盒: {self.sandbox.get_sandbox_root()}")
+    
+    def _generate_markdown_report(self, total_value, total_position_value, report, 
+                                   day_pnl, day_pnl_pct, total_pnl, total_pnl_pct,
+                                   positions_data, win_count, loss_count, win_rate) -> str:
+        """
+        【CTO V169】生成人类可读的Markdown战报
+        """
+        lines = []
+        lines.append(f"# 刺客级账户战报 - {self.target_date}\n")
+        lines.append(f"> 沙盒ID: `{self.sandbox.get_run_id()}`\n")
+        lines.append(f"> 生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        
+        lines.append("## 💰 账户概览\n")
+        lines.append(f"| 指标 | 数值 |")
+        lines.append(f"|------|------|")
+        lines.append(f"| 账户总资金 | ¥{total_value:,.2f} |")
+        lines.append(f"| 持仓资金 | ¥{total_position_value:,.2f} |")
+        lines.append(f"| 剩余可用 | ¥{report.get('final_cash', 0):,.2f} |")
+        day_sign = "+" if day_pnl >= 0 else ""
+        lines.append(f"| 当日收益 | {day_sign}{day_pnl_pct:.2f}% ({day_sign}¥{day_pnl:,.2f}) |")
+        total_sign = "+" if total_pnl >= 0 else ""
+        lines.append(f"| 账户总收益 | {total_sign}{total_pnl_pct:.2f}% ({total_sign}¥{total_pnl:,.2f}) |")
+        
+        lines.append("\n## 📦 当前持仓\n")
+        if positions_data:
+            lines.append("| 代码 | 状态 | 成本 | 现价 | 浮动收益 | 持仓市值 |")
+            lines.append("|------|------|------|------|----------|----------|")
+            for pos in positions_data:
+                sign = "+" if pos['float_pnl_pct'] >= 0 else ""
+                lines.append(f"| {pos['code']} | {pos['status']} | ¥{pos['entry_price']:.2f} | ¥{pos['current_price']:.2f} | {sign}{pos['float_pnl_pct']:.2f}% | ¥{pos['holding_value']:,.2f} |")
+        else:
+            lines.append("*无持仓*")
+        
+        lines.append("\n## 🎯 当日操作记录\n")
+        if self.buy_signals:
+            for sig in self.buy_signals:
+                lines.append(f"### 买入: {sig['stock']} @ ¥{sig['price']:.2f}\n")
+                lines.append(f"- **触发时间**: {sig['time']}")
+                lines.append(f"- **触发类型**: {sig['trigger']}")
+                lines.append(f"- **分数**: {sig['score']:.0f}")
+                lines.append(f"- **MFE**: {sig['mfe']:.2f}")
+                lines.append(f"- **Sustain**: {sig['sustain']:.2f}")
+                
+                # 案发现场快照
+                snapshot = sig.get('moment_snapshot', [])
+                if snapshot:
+                    lines.append("\n**案发现场Top10快照:**\n")
+                    lines.append("| 排名 | 代码 | 分数 | MFE | Sustain | 现价 | 买入标的 |")
+                    lines.append("|------|------|------|-----|---------|------|----------|")
+                    for item in snapshot:
+                        mark = "✅" if item.get('is_buy_target') else ""
+                        lines.append(f"| {item['rank']} | {item['code']} | {item['score']:.0f} | {item['mfe']:.2f} | {item['sustain']:.2f} | ¥{item['price']:.2f} | {mark} |")
+        else:
+            lines.append("*无操作*")
+        
+        lines.append("\n## 📊 胜率统计\n")
+        lines.append(f"- 盈利次数: {win_count}")
+        lines.append(f"- 亏损次数: {loss_count}")
+        lines.append(f"- 真实胜率: {win_rate:.1f}%")
+        
+        return "\n".join(lines)
 
 
 def main():
@@ -997,7 +1104,7 @@ def main():
 
 
 def run_single_day(args):
-    """单日回测模式"""
+    """【CTO V169】单日回测模式"""
     stock_list = []
     if args.stocks:
         stock_list = [s.strip() for s in args.stocks.split(',') if s.strip()]
@@ -1013,20 +1120,39 @@ def run_single_day(args):
             print(f"[ERR] 底池装载失败: {e}")
             return
     
-    runner = MockLiveRunner(args.date, stock_list, initial_capital=args.capital)
+    # 【CTO V169】创建沙盒
+    sandbox = SandboxManager(mode="backtest")
+    
+    # 保存配置快照
+    config_snapshot = {
+        'target_date': args.date,
+        'initial_capital': args.capital,
+        'stock_list': stock_list[:10] if stock_list else [],  # 只保存前10只避免过大
+        'stock_count': len(stock_list)
+    }
+    sandbox.save_config_snapshot(config_snapshot)
+    
+    runner = MockLiveRunner(args.date, stock_list, initial_capital=args.capital, sandbox=sandbox)
     runner.run_mock_session()
+    
+    # 打印沙盒目录结构
+    sandbox.print_sandbox_summary()
 
 
 def run_continuous_backtest(args):
-    """【CTO V163】多日连续回测模式"""
+    """【CTO V163/V169】多日连续回测模式 - 沙盒档案库"""
     from logic.utils.calendar_utils import get_trading_days_between
     
     start_date = args.start_date
     end_date = args.end_date
     initial_capital = args.capital
     
+    # 【CTO V169】创建共享沙盒（多日共用一个Run ID）
+    sandbox = SandboxManager(mode="continuous_backtest")
+    
     print("\n" + "="*70)
-    print(f"🚀 [多日连续回测] CTO V163 时间机器启动")
+    print(f"🚀 [多日连续回测] CTO V169 时间机器启动")
+    print(f"   沙盒ID: {sandbox.get_run_id()}")
     print(f"   区间: {start_date} → {end_date}")
     print(f"   本金: ¥{initial_capital:,.2f}")
     print("="*70 + "\n")
@@ -1054,6 +1180,16 @@ def run_continuous_backtest(args):
     
     print(f"📅 交易日列表: {trading_days}")
     
+    # 【CTO V169】保存配置快照
+    config_snapshot = {
+        'start_date': start_date,
+        'end_date': end_date,
+        'initial_capital': initial_capital,
+        'trading_days': trading_days,
+        'stocks_param': args.stocks
+    }
+    sandbox.save_config_snapshot(config_snapshot)
+    
     # 共享的ExecutionManager（跨日资金复利）
     shared_manager = None
     daily_snapshots = []
@@ -1078,14 +1214,14 @@ def run_continuous_backtest(args):
                 print(f"[WARN] {date_str} 底池装载失败: {e}，跳过该日")
                 continue
         
-        # 创建运行器（继承前一日资金）
+        # 创建运行器（继承前一日资金 + 共享沙盒）
         if shared_manager is None:
             # 第一天：新初始化
-            runner = MockLiveRunner(date_str, stock_list, initial_capital=initial_capital)
+            runner = MockLiveRunner(date_str, stock_list, initial_capital=initial_capital, sandbox=sandbox)
             shared_manager = runner.execution_manager
         else:
             # 后续日：继承资金和持仓
-            runner = MockLiveRunner(date_str, stock_list, initial_capital=initial_capital)
+            runner = MockLiveRunner(date_str, stock_list, initial_capital=initial_capital, sandbox=sandbox)
             runner.execution_manager = shared_manager  # 共享资金状态机
             
             # 跨日继承持仓
@@ -1121,12 +1257,11 @@ def run_continuous_backtest(args):
         print(f"📊 总交易次数: {final_snapshot['trade_count']} 笔")
         print("="*70)
         
-        # 导出资金曲线CSV
-        import pandas as pd
-        df = pd.DataFrame(daily_snapshots)
-        output_path = f"data/backtest_out/continuous_curve_{start_date}_{end_date}.csv"
-        df.to_csv(output_path, index=False, encoding='utf-8-sig')
-        print(f"\n📁 资金曲线已导出: {output_path}")
+        # 【CTO V169】保存资金曲线到沙盒
+        sandbox.save_equity_curve(daily_snapshots)
+    
+    # 【CTO V169】打印沙盒目录结构
+    sandbox.print_sandbox_summary()
 
 
 if __name__ == '__main__':
