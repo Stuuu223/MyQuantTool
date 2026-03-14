@@ -66,6 +66,9 @@ def download_1m_for_date(stocks: list, date: str) -> tuple:
     # 分批下载
     for i in range(0, len(stocks), BATCH_SIZE):
         batch = stocks[i:i + BATCH_SIZE]
+        batch_num = i // BATCH_SIZE + 1
+        total_batches = (len(stocks) + BATCH_SIZE - 1) // BATCH_SIZE
+        
         try:
             # 投递下载任务
             for stock in batch:
@@ -80,6 +83,9 @@ def download_1m_for_date(stocks: list, date: str) -> tuple:
                 except Exception:
                     fail_count += 1
             
+            # 打印批次进度
+            log(f"  批次 {batch_num}/{total_batches} 已投递，等待{BATCH_SLEEP}秒...")
+            
             # 批次间隔
             time.sleep(BATCH_SLEEP)
             
@@ -87,22 +93,24 @@ def download_1m_for_date(stocks: list, date: str) -> tuple:
             log(f"批次下载失败 {date}: {e}")
             fail_count += len(batch)
     
+    log(f"  投递完成: 成功{success_count} 失败{fail_count}")
     return success_count, fail_count
 
 
-def verify_date_has_data(stocks: list, date: str, sample_size: int = 50) -> bool:
+def verify_date_has_data(stocks: list, date: str, sample_size: int = 10) -> bool:
     """
     验证指定日期是否有数据
-    抽样检查sample_size只股票
+    抽样检查sample_size只股票（默认10只，快速验证）
     """
     import random
     sample = random.sample(stocks, min(sample_size, len(stocks)))
     
+    log(f"  [验证] 抽样{len(sample)}只股票...")
     has_data_count = 0
-    for stock in sample:
+    for i, stock in enumerate(sample):
         try:
             data = xtdata.get_local_data(
-                field_list=['open', 'high', 'low', 'close', 'volume', 'amount'],
+                field_list=['close'],
                 stock_list=[stock],
                 period='1m',
                 start_time=date,
@@ -139,39 +147,26 @@ def main():
     dates_with_data = []
     dates_without_data = []
     
-    # 从最新日期往前下载
-    for date in reversed(trading_days):
-        log(f"\n>>> 处理日期: {date}")
+    # 从最新日期往前下载（无验证，速度最大化）
+    log("【极速模式】直接投递，无验证，速度最大化")
+    
+    for idx, date in enumerate(reversed(trading_days)):
+        log(f"\n>>> [{idx+1}/{len(trading_days)}] 投递日期: {date}")
         
-        # 检查是否已有数据
-        if verify_date_has_data(stocks, date):
-            log(f"  [已有数据] {date} 跳过下载")
-            dates_with_data.append(date)
-            consecutive_fails = 0
-            continue
-        
-        # 下载数据
+        # 直接下载数据，不验证
         success, fail = download_1m_for_date(stocks, date)
         total_success += success
         total_fail += fail
+        dates_with_data.append(date)
         
-        # 等待数据落盘
-        time.sleep(5)
-        
-        # 验证下载结果
-        if verify_date_has_data(stocks, date):
-            log(f"  [下载成功] {date} 成功:{success} 失败:{fail}")
-            dates_with_data.append(date)
-            consecutive_fails = 0
-        else:
-            log(f"  [下载失败] {date} 无数据返回")
-            dates_without_data.append(date)
+        # 检查是否达到连续失败阈值
+        if fail > len(stocks) * 0.9:  # 90%失败
             consecutive_fails += 1
-            
-            # 检查是否达到连续失败阈值
             if consecutive_fails >= CONSECUTIVE_FAIL_LIMIT:
-                log(f"\n*** 连续{consecutive_fails}天无数据，服务器数据已榨干！***")
+                log(f"\n*** 连续{consecutive_fails}天大量失败，可能数据已到头！***")
                 break
+        else:
+            consecutive_fails = 0
     
     # 最终报告
     log("\n" + "=" * 60)

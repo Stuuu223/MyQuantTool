@@ -294,9 +294,13 @@ def main():
             target_stocks = [s for s in target_stocks if 'ST' not in s]
             log(f'全市场标的: {len(target_stocks)} 只')
         
-        # 从 end_date 开始逆向回溯（end_date后面会定义，这里先用今天）
+        # 【CTO V158】用get_trading_days获取交易日列表，和tick下载模式一致
         today = datetime.now().strftime('%Y%m%d')
-        cur_date = datetime.now()
+        start_date = (datetime.now() - timedelta(days=400)).strftime('%Y%m%d')  # 往前400天
+        trading_days = get_trading_days(start_date, today, xtdata)
+        trading_days = [d for d in trading_days if d <= today]  # 不超过今天
+        log(f'交易日列表: {len(trading_days)}天 ({trading_days[0]} ~ {trading_days[-1]})')
+        
         consecutive_no_data = 0
         total_downloaded_days = 0
         STOP_DAYS = 20  # 连续20天无数据停止
@@ -304,18 +308,13 @@ def main():
         log(f'开始回溯下载，停止条件: 连续{STOP_DAYS}天无数据')
         log('')
         
-        while consecutive_no_data < STOP_DAYS:
-            # 跳过周末
-            if cur_date.weekday() >= 5:
-                cur_date -= timedelta(days=1)
-                continue
+        # 倒序遍历交易日（从最新开始）
+        for date_str in reversed(trading_days):
             
-            date_str = cur_date.strftime('%Y%m%d')
-            
-            # 【CTO V117 智能跳过】检查本地是否已有该日期的分K数据
+            # 【CTO V158 快速抽样】20只快速检查，>=10只命中就跳过
             skip_check = xtdata.get_local_data(
-                field_list=[],
-                stock_list=target_stocks[:100],  # 抽样100只检查
+                field_list=['close'],
+                stock_list=target_stocks[:20],  # 快速抽样20只
                 period='1m',
                 start_time=date_str,
                 end_time=date_str
@@ -323,13 +322,12 @@ def main():
             
             existing_count = 0
             if skip_check:
-                for s in target_stocks[:100]:
+                for s in target_stocks[:20]:
                     if s in skip_check and skip_check[s] is not None and len(skip_check[s]) > 0:
                         existing_count += 1
             
-            if existing_count >= 50:  # 抽样100只中有50只已有数据，说明该日期已下载过
-                log(f'>>> {date_str} 已有分K数据 ({existing_count}/100 抽样命中)，跳过')
-                cur_date -= timedelta(days=1)
+            if existing_count >= 10:  # 20只中>=10只已有数据，跳过
+                log(f'>>> {date_str} 已有数据 ({existing_count}/20)，跳过')
                 continue
             
             log(f'>>> 回溯日期: {date_str} (连续无数据: {consecutive_no_data}/{STOP_DAYS})')
@@ -345,40 +343,66 @@ def main():
                 
                 time.sleep(1.0)  # 稍微等日K落盘
                 
-                # 2. 宽体漏斗过滤：只要成交额 > 5000万 的活跃股，才下载分K
+                # 2. 【CTO V158 死水股过滤】成交>=1亿 或 换手>=1.5% 才下载
                 active_stocks = []
                 daily_check = xtdata.get_local_data(
-                    field_list=['amount'], 
+                    field_list=['amount', 'volume'], 
                     stock_list=target_stocks, 
                     period='1d', 
                     start_time=date_str, 
                     end_time=date_str
                 )
                 
+                # 获取流通股本快照（用于计算换手率）
+                snapshots = xtdata.get_full_tick(target_stocks)
+                float_vol_map = {}
+                for s, t in (snapshots or {}).items():
+                    if t:
+                        float_vol_map[s] = t.get('floatVolume', 0) or 0  # 万股
+                
+                DEAD_AMOUNT = 100000000.0  # 1亿
+                DEAD_TURNOVER = 1.5  # 1.5%
+                
                 for stock in target_stocks:
                     try:
                         if stock in daily_check and not daily_check[stock].empty:
                             amt = float(daily_check[stock]['amount'].iloc[0])
-                            if amt > 50000000.0:  # 5000万门槛
+                            vol = float(daily_check[stock]['volume'].iloc[0])  # 手
+                            fv = float_vol_map.get(stock, 0)  # 万股
+                            
+                            # 计算换手率 = 成交量(手)*100/流通股(股)
+                            turnover = (vol * 100) / (fv * 10000) * 100 if fv > 0 else 0
+                            
+                            # 非死水：成交>=1亿 或 换手>=1.5%
+                            if amt >= DEAD_AMOUNT or turnover >= DEAD_TURNOVER:
                                 active_stocks.append(stock)
                     except Exception:
                         pass
                 
-                log(f'  宽网嗅探: {len(active_stocks)}/{len(target_stocks)} 只活跃 (过滤{len(target_stocks)-len(active_stocks)}死鱼)')
+                log(f'  死水过滤: {len(active_stocks)}/{len(target_stocks)} 只活跃 (过滤{len(target_stocks)-len(active_stocks)}死水)')
                 
                 if not active_stocks:
                     consecutive_no_data += 1
                     log(f'  ⚠️ 当日无活跃股，跳过')
-                    cur_date -= timedelta(days=1)
                     continue
                 
-                # 3. 异步极速投递分K
+                # 3. 【CTO V158 分批500只异步投递】
+                BATCH_SIZE = 500
                 t0 = time.time()
-                for stock in active_stocks:
-                    try:
-                        xtdata.download_history_data(stock, '1m', start_time=date_str, end_time=date_str)
-                    except Exception:
-                        pass
+                total_submitted = 0
+                for batch_start in range(0, len(active_stocks), BATCH_SIZE):
+                    batch = active_stocks[batch_start:batch_start + BATCH_SIZE]
+                    batch_num = batch_start // BATCH_SIZE + 1
+                    total_batches = (len(active_stocks) + BATCH_SIZE - 1) // BATCH_SIZE
+                    
+                    for stock in batch:
+                        try:
+                            xtdata.download_history_data(stock, '1m', start_time=date_str, end_time=date_str)
+                            total_submitted += 1
+                        except Exception:
+                            pass
+                    
+                    log(f'  批次 {batch_num}/{total_batches} 投递完成 ({len(batch)}只)')
                 elapsed = time.time() - t0
                 
                 time.sleep(2.0)  # 等待异步落盘
@@ -408,8 +432,6 @@ def main():
             except Exception as e:
                 log(f'  ❌ 下载异常: {e}')
                 consecutive_no_data += 1
-            
-            cur_date -= timedelta(days=1)
         
         # 最终报告
         log('')
