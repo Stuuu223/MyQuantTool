@@ -319,12 +319,30 @@ class MockLiveRunner:
                     # QMT Tick的amount通常是累计值
                     total_amount = tick['amount']
             
+            # 【CTO V170】计算真实时间切片成交额（废除线性外推造假！）
+            # 真实5分钟成交额：取过去5分钟内的所有Tick
+            cutoff_5min = target_time - timedelta(minutes=5)
+            cutoff_15min = target_time - timedelta(minutes=15)
+            
+            # 计算真实5分钟累计成交额（当前amount - 5分钟前的amount）
+            amount_5min_ago = 0.0
+            amount_15min_ago = 0.0
+            for tick in tick_list:
+                tick_time = self._parse_tick_time(tick['time'])
+                if tick_time <= cutoff_5min:
+                    amount_5min_ago = tick['amount']
+                if tick_time <= cutoff_15min:
+                    amount_15min_ago = tick['amount']
+            
+            # 真实时间切片成交额 = 当前累计 - N分钟前累计
+            true_flow_5min = max(0, total_amount - amount_5min_ago)
+            true_flow_15min = max(0, total_amount - amount_15min_ago)
+            
             # 调用核心打分引擎
             try:
                 # 创建引擎实例并调用
                 engine = KineticCoreEngine()
-                # 【CTO V76修复】引擎返回tuple(final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe)
-                # 参数需要current_time(datetime)而非target_date(str)
+                # 【CTO V170】传入真实时间切片数据，绝不允许线性外推！
                 result = engine.calculate_true_dragon_score(
                     net_inflow=current_tick['amount'] * 0.5,  # 简化：假设50%是净流入
                     price=current_tick['price'],
@@ -332,8 +350,8 @@ class MockLiveRunner:
                     high=current_tick['high'],
                     low=current_tick['low'],
                     open_price=current_tick['open'],
-                    flow_5min=total_amount / max(minutes_passed, 1) * 5,  # 估算5分钟流入
-                    flow_15min=total_amount / max(minutes_passed, 1) * 15,  # 估算15分钟流入
+                    flow_5min=true_flow_5min,  # 【CTO V170】真实5分钟成交额
+                    flow_15min=true_flow_15min,  # 【CTO V170】真实15分钟成交额
                     flow_5min_median_stock=5000000,  # 默认历史中位数
                     space_gap_pct=10.0,  # 默认空间差
                     float_volume_shares=1000000000,  # 默认流通盘10亿股
@@ -653,6 +671,40 @@ class MockLiveRunner:
         tick = top1_data.get('tick', {})
         price = top1_data['price']
         current_mfe = top1_data.get('mfe', 0)
+        high = tick.get('high', price)
+        low = tick.get('low', price)
+        open_price = tick.get('open', price)
+        prev_close = tick.get('lastClose', price)
+        
+        # 计算分钟数（用于智猪法则）
+        minutes_passed = self._get_minutes_passed(current_time)
+        
+        # 【CTO V170 智猪法则】开盘15分钟非涨停脉冲拒绝进食
+        if minutes_passed < 15:
+            # 检查是否涨停
+            limit_up_price = tick.get('limitUpPrice', prev_close * 1.1)
+            is_limit_up = price >= limit_up_price * 0.99  # 涨停价附近
+            if not is_limit_up:
+                return  # 非涨停脉冲，智猪拒绝进食
+        
+        # 【CTO V170 避雷针相对论防御】废除2.5%伪装常数！
+        # 相对势能损耗率 = 从高点回落 / 有效向上推力
+        upward_displacement = high - open_price  # 向上推力（从开盘到最高）
+        if upward_displacement > 0:
+            drawdown_from_high = high - price
+            retrace_ratio = drawdown_from_high / upward_displacement
+            # 黄金分割死线：回撤超过61.8%则判定为恶性避雷针
+            if retrace_ratio > 0.618:
+                return  # 避雷针：向上势能已被吞噬，禁止开火
+        
+        # 【CTO V170 VWAP确认】现价必须在均价线附近或上方
+        # 简化VWAP：用成交额/成交量估算
+        total_amount = top1_data.get('amount', 0)
+        total_volume = tick.get('volume', 1)
+        if total_volume > 0:
+            vwap = total_amount / (total_volume * 100) if total_volume > 0 else price  # volume单位是手，转股
+            if price < vwap * 0.98:  # 现价跌破VWAP 2%，大猪沉没成本不足
+                return  # 智猪法则：未在均线上方形成强势沉没成本
         
         # 【CTO V167防作弊】硬断言：确保买入的是当时的绝对Top1
         assert top1_code == sorted_stocks[0][0], f"FATAL: 系统买入的不是当时的绝对Top1！存在作弊嫌疑！买入{top1_code} vs Top1{sorted_stocks[0][0]}"
