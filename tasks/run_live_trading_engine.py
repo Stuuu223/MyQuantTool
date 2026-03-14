@@ -29,6 +29,9 @@ from enum import Enum
 from dataclasses import dataclass, field
 from collections import deque
 
+# 【CTO课题三】动态买点验证器
+from research_lab.trigger_validator import TriggerValidator
+
 # 【CTO状态机重构】股票生命周期状态定义
 class StockState(Enum):
     """股票在雷达中的生命周期状态"""
@@ -238,6 +241,11 @@ class LiveTradingEngine:
         except (ImportError, Exception) as e:
             logger.error(f"[FATAL] MockExecutionManager缺失或异常: {e}。执行层失效！(Fail-Close)")
             self.execution_manager = None
+        
+        # 【CTO课题三】动态买点验证器 - 拒绝静态打分崇拜，构建物理触发
+        self.trigger_validator = TriggerValidator()
+        self.trigger_history: List[Dict] = []  # 触发信号历史
+        logger.info("[OK] TriggerValidator初始化成功 - 物理买点拓扑检测已启用")
         
         # 【架构大道至简】EventBus 双轨制已删除，统一主循环拉取架构
         # signal_queue 已废弃，3分钟抗重力测试移入主循环帧计数
@@ -899,8 +907,35 @@ class LiveTradingEngine:
                 raw_purity = (current_price - pre_close) / price_range if price_range > 0 else (1.0 if current_price > pre_close else -1.0)
                 quant_purity = min(max(raw_purity, -1.0), 1.0) * 100
                 
+                # ==================== 【CTO课题三】物理买点检测 ====================
+                # 废除简单粗暴的 score >= 50 买入，添加动态触发验证
+                trigger_signal = None
                 if final_score >= 50.0 and quant_purity > -50.0:
-                    current_top_targets.append({
+                    # 计算VWAP（简化：用成交额/成交量）
+                    vwap = current_amount / volume_gu if volume_gu > 0 else current_price
+                    
+                    # 尝试触发物理买点
+                    trigger_signal = self.trigger_validator.check_all_triggers(
+                        stock_code=stock_code,
+                        current_price=current_price,
+                        prev_close=pre_close,
+                        vwap=vwap,
+                        volume_ratio=ratio_stock,
+                        current_mfe=mfe,
+                        recent_mfe_list=[mfe],  # 单帧数据，后续扩展
+                        price_history=[current_price],
+                        recent_volume_ratios=[ratio_stock],
+                        current_slope=change_pct,  # 简化用涨跌幅
+                        timestamp=engine_time
+                    )
+                
+                # ==================== 入选条件 ====================
+                # 方案A（宽松）：分数达标即可入选，物理买点作为置信度加分
+                # 方案B（严格）：必须有物理买点触发才能入选
+                # 当前采用方案A，但在结果中标记触发状态
+                
+                if final_score >= 50.0 and quant_purity > -50.0:
+                    target_entry = {
                         'code': stock_code,
                         'score': final_score,
                         'price': current_price,
@@ -910,9 +945,23 @@ class LiveTradingEngine:
                         'sustain_ratio': sustain_ratio,
                         'mfe': mfe,
                         'purity': quant_purity,
-                        'time': engine_time.strftime('%H:%M:%S'),  # 【CTO V61修复】添加time字段
-                        'first_entry_time': engine_time.strftime('%H:%M:%S')
-                    })
+                        'time': engine_time.strftime('%H:%M:%S'),
+                        'first_entry_time': engine_time.strftime('%H:%M:%S'),
+                        # 【CTO课题三】物理买点触发标记
+                        'trigger_type': trigger_signal.trigger_type if trigger_signal else None,
+                        'trigger_confidence': trigger_signal.confidence if trigger_signal else 0.0
+                    }
+                    current_top_targets.append(target_entry)
+                    
+                    # 记录触发历史
+                    if trigger_signal:
+                        self.trigger_history.append({
+                            'stock_code': stock_code,
+                            'trigger_type': trigger_signal.trigger_type,
+                            'confidence': trigger_signal.confidence,
+                            'score': final_score,
+                            'time': engine_time.strftime('%H:%M:%S')
+                        })
             except Exception as e:
                 continue
 
@@ -2426,6 +2475,27 @@ class LiveTradingEngine:
                             raw_purity = 1.0 if current_price > pre_close else -1.0
                         quant_purity = min(max(raw_purity, -1.0), 1.0) * 100  # 范围 -100% 到 +100%
                         
+                        # ==================== 【CTO课题三】物理买点检测 ====================
+                        trigger_signal = None
+                        if final_score >= 50.0 and quant_purity > -50.0:
+                            # 计算VWAP（简化：用成交额/成交量）
+                            vwap = current_amount / volume_gu if volume_gu > 0 else current_price
+                            
+                            # 尝试触发物理买点
+                            trigger_signal = self.trigger_validator.check_all_triggers(
+                                stock_code=stock_code,
+                                current_price=current_price,
+                                prev_close=pre_close,
+                                vwap=vwap,
+                                volume_ratio=ratio_stock,
+                                current_mfe=mfe,
+                                recent_mfe_list=[mfe],
+                                price_history=[current_price],
+                                recent_volume_ratios=[ratio_stock],
+                                current_slope=change_pct,
+                                timestamp=engine_time
+                            )
+                        
                         # 【CTO V21垃圾隔离防线】
                         # 1. 决不允许不及格的票（<50分）上榜！
                         # 2. 决不允许极端出货（纯度<-50%）的票上榜！
@@ -2439,7 +2509,10 @@ class LiveTradingEngine:
                                 'ratio_stock': ratio_stock,
                                 'sustain_ratio': sustain_ratio,
                                 'mfe': mfe,  # 资金效率指标
-                                'purity': quant_purity  # 【CTO V21】量化纯度百分比
+                                'purity': quant_purity,  # 【CTO V21】量化纯度百分比
+                                # 【CTO课题三】物理买点触发标记
+                                'trigger_type': trigger_signal.trigger_type if trigger_signal else None,
+                                'trigger_confidence': trigger_signal.confidence if trigger_signal else 0.0
                             })
                     except Exception:
                         continue
