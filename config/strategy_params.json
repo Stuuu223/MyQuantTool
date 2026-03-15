@@ -174,8 +174,8 @@
     "early_buy": {
       "_description": "【CTO V172】早盘点火连续函数参数 - 废除if-else布尔切断，改用概率乘积模型",
       
-      "mfe_midpoint": 1.2,
-      "_WARNING_mfe_midpoint": "[UNVERIFIED] MFE Sigmoid中心点，待网格扫描验证",
+      "mfe_midpoint": 5.0,
+      "_WARNING_mfe_midpoint": "[V178统一] MFE Sigmoid中心点，与主引擎mfe_sigmoid_center同步。early_buy模块的MFE来源于引擎返回值，已是Law2新口径",
       
       "mfe_steepness": 2.0,
       "_WARNING_mfe_steepness": "[UNVERIFIED] MFE Sigmoid陡峭度，越大越接近阶跃函数",
@@ -206,6 +206,12 @@
     "_WARNING_mfe_sigmoid_center": "[UNVERIFIED] Law2 MFE Sigmoid中心点。新MFE公式典型值3-20，中心点从1.2提升到5.0。需真实数据拟合后固化",
     
     "mfe_sigmoid_slope": 0.5,
-    "_WARNING_mfe_sigmoid_slope": "[UNVERIFIED] Law2 MFE Sigmoid斜率。从2.0降到0.5使曲线更平缓。需真实数据拟合后固化"
+    "_WARNING_mfe_sigmoid_slope": "[UNVERIFIED] Law2 MFE Sigmoid斜率。从2.0降到0.5使曲线更平缓。需真实数据拟合后固化",
+    
+    "ignition_sigmoid_center": 2000.0,
+    "_WARNING_ignition_sigmoid_center": "[V178新增] 波函数坍缩概率中心点。分数2000→概率50%。分数越高概率越接近100%",
+    
+    "ignition_sigmoid_slope": 0.005,
+    "_WARNING_ignition_sigmoid_slope": "[V178新增] 波函数坍缩概率斜率。越大越接近阶跃函数"
   }
 }

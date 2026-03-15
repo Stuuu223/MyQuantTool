@@ -161,6 +161,9 @@ class KineticCoreEngine:
         self.pm_threshold: float = physics_config.get('price_momentum_collapse_threshold', 0.57)
         self.mfe_sigmoid_center: float = physics_config.get('mfe_sigmoid_center', 5.0)
         self.mfe_sigmoid_slope: float = physics_config.get('mfe_sigmoid_slope', 0.5)
+        # 【V178 战役5】波函数坍缩概率超参
+        self.ignition_sigmoid_center: float = physics_config.get('ignition_sigmoid_center', 2000.0)
+        self.ignition_sigmoid_slope: float = physics_config.get('ignition_sigmoid_slope', 0.005)
 
     def reload_config(self) -> None:
         """
@@ -462,6 +465,14 @@ class KineticCoreEngine:
         else:
             overflow_multiplier = 1.0
         
+        # ========== 质量加成 (绕过tanh压制，直接使用effective_ratio) ==========
+        # 【V178终极修复】让effective_ratio真正影响质量势能！
+        # 否则洛伦兹收缩只是装饰性代码，对分数无实际影响
+        if effective_ratio > 3.0:
+            mass_boost = 1.0 + math.log10(effective_ratio / 3.0) * 0.3
+        else:
+            mass_boost = 1.0
+        
         # 材质脆性检测 (踢铁板逻辑)
         # 如果今天极端缩量且盘中无封单，这是惯性衰竭的铁板！
         if ratio_stock < 0.5 and limit_up_queue_amount < 50000000.0:
@@ -469,9 +480,9 @@ class KineticCoreEngine:
             mass_potential = (inflow_ratio_pct / 100.0) * 0.1
             logger.debug(f"⚠️ [惯性衰竭] {stock_code} 缩量铁板(ratio:{ratio_stock:.2f})，势能衰减！")
         else:
-            # 真正的动态质量继承！没有魔法数字，全靠真实数据说话！
-            mass_potential = (inflow_ratio_pct / 100.0) * overflow_multiplier
-            logger.debug(f"⚡ [势能继承] {stock_code} 溢出乘数: {overflow_multiplier:.2f}x，质量: {mass_potential:.4f}")
+            # 真正的动态质量继承！质量加成让放量承接产生真实动能增益！
+            mass_potential = (inflow_ratio_pct / 100.0) * overflow_multiplier * mass_boost
+            logger.debug(f"⚡ [势能继承] {stock_code} 溢出乘数:{overflow_multiplier:.2f}x 质量加成:{mass_boost:.2f}x，质量:{mass_potential:.4f}")
         
         # ========== 2. 指数速度向量 (VELOCITY CUBED) ==========
         # 【CTO V92 铁律】涨幅的威力是非线性的！3次幂让涨幅9%的动能是涨幅3%的27倍！
@@ -670,6 +681,18 @@ class KineticCoreEngine:
             'change_pct': change_pct,                   # 涨幅百分比
             'vwap': vwap                                # 成交均价
         }
+        
+        # ========== 7. 波函数坍缩概率 (V178新增) ==========
+        # 【CTO V178终极修复】将连续分数坍缩为点火概率
+        # 物理意义：分数2000→概率50%，分数越高概率越接近100%
+        # 使用热路径缓存避免每次读config
+        prob_center = self.ignition_sigmoid_center
+        prob_slope = self.ignition_sigmoid_slope
+        try:
+            ignition_prob_pct = round(1.0 / (1.0 + math.exp(-prob_slope * (final_score - prob_center))) * 100.0, 1)
+        except OverflowError:
+            ignition_prob_pct = 100.0 if final_score > prob_center else 0.0
+        debug_metrics['ignition_probability_pct'] = ignition_prob_pct
         
         return final_score, sustain_ratio, inflow_ratio_pct, ratio_stock, mfe, debug_metrics
     
