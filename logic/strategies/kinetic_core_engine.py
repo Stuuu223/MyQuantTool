@@ -481,21 +481,32 @@ class KineticCoreEngine:
         # 计算全天成交均价 (VWAP)，作为主力的真实能量重心
         vwap = (total_amount / total_volume) if total_volume > 0 else prev_close
         
-        # === 【CTO V112 微观坍塌探测 (动量方向)】 ===
-        # 物理铁律：如果从高空自由落体回撤超过3.5%（比如冲高8%被砸回4.5%），
-        # 即使你现在还在水面上，这也不叫重力逃逸，这叫"流星坠毁"！
+        # === 【CTO V176 Law1: 抗重力姿态判定】===
+        # 废除3.5%硬编码回撤阈值！改用连续物理姿态判定
+        # price_momentum = (price - low) / (high - low)
+        # 物理意义：现价在日内价格区间的相对位置
+        # 1.0 = 现价在最高点（完美抗重力姿态）
+        # 0.57 = 从高点回落43%振幅（临界点）
+        # 0.5 = 现价在半山腰
+        # 0.0 = 现价在最低点（完全失守）
         is_micro_collapsed = False
         # 预先计算mfe用于返回（防止UnboundLocalError）
         mfe = 0.0
-        if high > 0 and prev_close > 0:
-            drawdown_from_high = (high - price) / prev_close * 100.0
-            if drawdown_from_high > 3.5:  # V112精细调整：3.5%阈值捕获更多冲高回落
-                is_micro_collapsed = True
-                # 【CTO V112终极修复】冲高回落直接返回0分！无承接拉升票没资格上榜！
-                # 物理铁律：从高点回撤>3.5% = 资金链断裂 = 冲高出货
-                logger.debug(f"☄️ [冲高回落] {stock_code} 从高点回撤{drawdown_from_high:.1f}%>3.5%，判定为冲高出货，返回0分")
-                empty_debug = {'mass_potential': 0.0, 'velocity': 0.0, 'base_kinetic_energy': 0.0, 'friction_multiplier': 0.0, 'purity_norm': 0.0, 'inflow_ratio_pct': inflow_ratio_pct, 'ratio_stock': ratio_stock, 'reason': '流星坠毁'}
-                return 0.0, 0.0, inflow_ratio_pct, ratio_stock, mfe, empty_debug
+        
+        if high > low:
+            price_momentum = (price - low) / (high - low)
+        else:
+            # 一字板或无波动，给中性值
+            price_momentum = 0.5 if high == low else 0.0
+        
+        # 【CTO V176】用连续姿态替代硬编码阈值
+        # 姿态<0.57说明已从高点回落超过43%的日内振幅，资金承接不足
+        # 原来用回撤>3.5%是绝对值，现在用相对位置更物理
+        if price_momentum < 0.57:
+            is_micro_collapsed = True
+            logger.debug(f"☄️ [冲高回落] {stock_code} 抗重力姿态破败(momentum={price_momentum:.2f}<0.57)，判定为冲高出货，返回0分")
+            empty_debug = {'mass_potential': 0.0, 'velocity': 0.0, 'base_kinetic_energy': 0.0, 'friction_multiplier': 0.0, 'purity_norm': 0.0, 'inflow_ratio_pct': inflow_ratio_pct, 'ratio_stock': ratio_stock, 'reason': '姿态破败'}
+            return 0.0, 0.0, inflow_ratio_pct, ratio_stock, mfe, empty_debug
         
         # === 【CTO V110 绝对水位隔离：重力逃逸判据 + V112微观坍塌】 ===
         # 物理铁律：必须同时满足 [翻红] + [高于开盘价] + [脱离底部3%以上] + [站稳均价线] + [未发生微观坍塌]
@@ -554,13 +565,19 @@ class KineticCoreEngine:
             logger.debug(f"📉 [纯度惩罚] {stock_code} 未逃逸重力且纯度{purity_norm*100:.0f}%，执行6次方高摩擦惩罚")
         
         # ========== 5. 效率激活 = MFE Sigmoid ==========
+        # 【CTO V176 Law2】废除科学怪人公式，改用真实物理做功效率
+        # MFE = (全天真实振幅百分比) / 净流入占比
+        # 物理意义：单位净流入产生的振幅百分比
+        # 高MFE = 真空区小资金撬动大振幅（势能爆发点）
+        # 低MFE = 大资金只砸出小振幅（阻力死墙）
         if inflow_ratio_pct <= 0.0:
             efficiency_multiplier = 0.0
             mfe = 0.0
         else:
-            upward_thrust = ((price - low) + (high - open_price)) / 2
-            price_range_pct = upward_thrust / prev_close * 100.0 if prev_close > 0 else 0.0
-            mfe = price_range_pct / inflow_ratio_pct if inflow_ratio_pct > 0 else 0.0
+            # 真实振幅百分比
+            amplitude_pct = (high - low) / prev_close * 100.0 if prev_close > 0 else 0.0
+            # 做功效率 = 振幅/流入
+            mfe = amplitude_pct / inflow_ratio_pct if inflow_ratio_pct > 0 else 0.0
             efficiency_multiplier = 3.0 / (1.0 + math.exp(-2.0 * (mfe - 1.2)))
         
         # === 【CTO V103 纯物理力场防线：废除一切静态位移阈值】 ===
