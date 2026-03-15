@@ -162,8 +162,11 @@ class KineticCoreEngine:
         self.mfe_sigmoid_center: float = physics_config.get('mfe_sigmoid_center', 5.0)
         self.mfe_sigmoid_slope: float = physics_config.get('mfe_sigmoid_slope', 0.5)
         # 【V178 战役5】波函数坍缩概率超参
-        self.ignition_sigmoid_center: float = physics_config.get('ignition_sigmoid_center', 2000.0)
-        self.ignition_sigmoid_slope: float = physics_config.get('ignition_sigmoid_slope', 0.005)
+        # 【V179校准】默认值已更新：center 2000→10000, slope 0.005→0.0002
+        self.ignition_sigmoid_center: float = physics_config.get('ignition_sigmoid_center', 10000.0)
+        self.ignition_sigmoid_slope: float = physics_config.get('ignition_sigmoid_slope', 0.0002)
+        # 【V179 P2】铁板惩罚系数参数化
+        self.iron_plate_penalty: float = physics_config.get('iron_plate_penalty', 0.1)
 
     def reload_config(self) -> None:
         """
@@ -477,8 +480,9 @@ class KineticCoreEngine:
         # 如果今天极端缩量且盘中无封单，这是惯性衰竭的铁板！
         if ratio_stock < 0.5 and limit_up_queue_amount < 50000000.0:
             # 极端缩量且今天盘中无封单，这是惯性衰竭的铁板！
-            mass_potential = (inflow_ratio_pct / 100.0) * 0.1
-            logger.debug(f"⚠️ [惯性衰竭] {stock_code} 缩量铁板(ratio:{ratio_stock:.2f})，势能衰减！")
+            # 【V179 P2】铁板惩罚系数参数化，从硬编码0.1改为config读取
+            mass_potential = (inflow_ratio_pct / 100.0) * self.iron_plate_penalty
+            logger.debug(f"⚠️ [惯性衰竭] {stock_code} 缩量铁板(ratio:{ratio_stock:.2f})，势能衰减(惩罚×{self.iron_plate_penalty})！")
         else:
             # 真正的动态质量继承！质量加成让放量承接产生真实动能增益！
             mass_potential = (inflow_ratio_pct / 100.0) * overflow_multiplier * mass_boost
@@ -551,6 +555,17 @@ class KineticCoreEngine:
         # 时间熵特征提取：计算实际交易分钟数（扣除午休90分钟）
         # 【CTO V175】修复：午后开盘不应被误判为尾盘陷阱
         _total_min = current_time.hour * 60 + current_time.minute
+        
+        # 【V179 P1】休市期间(11:30-13:00)调用保护
+        # 午休期间调用引擎会得到"已交易N分钟"的错误结果
+        from datetime import time as time_type
+        LUNCH_BREAK_START = time_type(11, 30)
+        LUNCH_BREAK_END = time_type(13, 0)
+        if LUNCH_BREAK_START <= current_time.time() < LUNCH_BREAK_END:
+            logger.warning(f"[时序异常] {stock_code} 传入休市时间{current_time.time()}，返回0分")
+            empty_debug = {'mass_potential': mass_potential, 'velocity': velocity, 'base_kinetic_energy': base_kinetic_energy, 'friction_multiplier': 0.0, 'purity_norm': purity_norm, 'inflow_ratio_pct': inflow_ratio_pct, 'ratio_stock': ratio_stock, 'reason': '休市时间'}
+            return 0.0, 0.0, inflow_ratio_pct, ratio_stock, 0.0, empty_debug
+        
         if _total_min <= 11 * 60 + 30:
             # 早盘（09:30-11:30）
             minutes_from_open = _total_min - (9 * 60 + 30)

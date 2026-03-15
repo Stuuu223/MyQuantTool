@@ -208,10 +208,13 @@
     "mfe_sigmoid_slope": 0.5,
     "_WARNING_mfe_sigmoid_slope": "[UNVERIFIED] Law2 MFE Sigmoid斜率。从2.0降到0.5使曲线更平缓。需真实数据拟合后固化",
     
-    "ignition_sigmoid_center": 2000.0,
-    "_WARNING_ignition_sigmoid_center": "[V178新增] 波函数坍缩概率中心点。分数2000→概率50%。分数越高概率越接近100%",
+    "ignition_sigmoid_center": 10000.0,
+    "_WARNING_ignition_sigmoid_center": "[V179校准] 波函数坍缩概率中心点。正常真龙信号final_score动辄破万，原值2000会导致所有信号接近100%概率失去区分度",
     
-    "ignition_sigmoid_slope": 0.005,
-    "_WARNING_ignition_sigmoid_slope": "[V178新增] 波函数坍缩概率斜率。越大越接近阶跃函数"
+    "ignition_sigmoid_slope": 0.0002,
+    "_WARNING_ignition_sigmoid_slope": "[V179校准] 波函数坍缩概率斜率。原值0.005太陡，现放缓给区分度留余地",
+    
+    "iron_plate_penalty": 0.1,
+    "_WARNING_iron_plate_penalty": "[V179 P2] 缩量铁板惩罚系数，质量势能×此值。原硬编码0.1现参数化"
   }
 }
