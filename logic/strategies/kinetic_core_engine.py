@@ -486,7 +486,6 @@ class KineticCoreEngine:
         # price_momentum = (price - low) / (high - low)
         # 物理意义：现价在日内价格区间的相对位置
         # 1.0 = 现价在最高点（完美抗重力姿态）
-        # 0.57 = 从高点回落43%振幅（临界点）
         # 0.5 = 现价在半山腰
         # 0.0 = 现价在最低点（完全失守）
         is_micro_collapsed = False
@@ -499,13 +498,13 @@ class KineticCoreEngine:
             # 一字板或无波动，给中性值
             price_momentum = 0.5 if high == low else 0.0
         
-        # 【CTO V176】用连续姿态替代硬编码阈值
-        # 姿态<0.57说明已从高点回落超过43%的日内振幅，资金承接不足
-        # 原来用回撤>3.5%是绝对值，现在用相对位置更物理
-        if price_momentum < 0.57:
+        # 【CTO V177】阈值参数化，禁止硬编码
+        # [UNVERIFIED] 当前默认值基于2样本反向拟合，需>=50样本回测验证
+        pm_threshold = self._config.get('kinetic_physics.price_momentum_collapse_threshold', 0.57)
+        if price_momentum < pm_threshold:
             is_micro_collapsed = True
-            logger.debug(f"☄️ [冲高回落] {stock_code} 抗重力姿态破败(momentum={price_momentum:.2f}<0.57)，判定为冲高出货，返回0分")
-            empty_debug = {'mass_potential': 0.0, 'velocity': 0.0, 'base_kinetic_energy': 0.0, 'friction_multiplier': 0.0, 'purity_norm': 0.0, 'inflow_ratio_pct': inflow_ratio_pct, 'ratio_stock': ratio_stock, 'reason': '姿态破败'}
+            logger.debug(f"☄️ [冲高回落] {stock_code} momentum={price_momentum:.2f}<{pm_threshold:.2f}[UNVERIFIED]，姿态破败，返回0分")
+            empty_debug = {'mass_potential': 0.0, 'velocity': 0.0, 'base_kinetic_energy': 0.0, 'friction_multiplier': 0.0, 'purity_norm': 0.0, 'inflow_ratio_pct': inflow_ratio_pct, 'ratio_stock': ratio_stock, 'reason': '姿态破败', 'pm_threshold': pm_threshold}
             return 0.0, 0.0, inflow_ratio_pct, ratio_stock, mfe, empty_debug
         
         # === 【CTO V110 绝对水位隔离：重力逃逸判据 + V112微观坍塌】 ===
@@ -578,7 +577,12 @@ class KineticCoreEngine:
             amplitude_pct = (high - low) / prev_close * 100.0 if prev_close > 0 else 0.0
             # 做功效率 = 振幅/流入
             mfe = amplitude_pct / inflow_ratio_pct if inflow_ratio_pct > 0 else 0.0
-            efficiency_multiplier = 3.0 / (1.0 + math.exp(-2.0 * (mfe - 1.2)))
+            # 【CTO V177】Sigmoid参数重新标定
+            # 新MFE公式典型值3-20，中心点从1.2→5.0，斜率从2.0→0.5
+            # [UNVERIFIED] 参数需用真实数据分布拟合后固化
+            mfe_center = self._config.get('kinetic_physics.mfe_sigmoid_center', 5.0)
+            mfe_slope = self._config.get('kinetic_physics.mfe_sigmoid_slope', 0.5)
+            efficiency_multiplier = 3.0 / (1.0 + math.exp(-mfe_slope * (mfe - mfe_center)))
         
         # === 【CTO V103 纯物理力场防线：废除一切静态位移阈值】 ===
         

@@ -197,6 +197,15 @@
       
       "inflow_min_for_high_surge": 0.5,
       "_WARNING_inflow_min_for_high_surge": "[UNVERIFIED] 高涨幅最小流入占比，防缩量秒板毒药"
-    }
+    },
+    
+    "price_momentum_collapse_threshold": 0.57,
+    "_WARNING_price_momentum_collapse": "[UNVERIFIED] 基于仅2个样本反向拟合，需>=50样本回测验证。阈值0.57对应从高点回落43%振幅",
+    
+    "mfe_sigmoid_center": 5.0,
+    "_WARNING_mfe_sigmoid_center": "[UNVERIFIED] Law2 MFE Sigmoid中心点。新MFE公式典型值3-20，中心点从1.2提升到5.0。需真实数据拟合后固化",
+    
+    "mfe_sigmoid_slope": 0.5,
+    "_WARNING_mfe_sigmoid_slope": "[UNVERIFIED] Law2 MFE Sigmoid斜率。从2.0降到0.5使曲线更平缓。需真实数据拟合后固化"
   }
 }
