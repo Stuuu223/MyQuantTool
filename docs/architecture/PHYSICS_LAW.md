@@ -86,18 +86,45 @@ flow_15min = slice_flows.get('flow_15min', 0.0)
 
 ---
 
-## 📐 数据源量纲铁律
+## 📐 数据源量纲铁律（V179.5 终极判决）
+
+> **CTO 震怒令**：经代码快照深度审计，发现团队对量纲的理解存在严重混乱！
+> 代码注释与实际不符，导致7处错误×100！现一锤定音！
+
+### QMT API 量纲真相表
 
 | 数据源 | volume单位 | amount单位 | float_volume单位 | 入口清洗 |
 |--------|------------|------------|------------------|----------|
-| `subscribe_quote` 实盘流 | 手(100股) | 元 | **万股** | `volume *= 100`, `float_volume *= 10000` |
-| `get_full_tick` 快照 | 股 | 元 | **万股** | `float_volume *= 10000` |
-| `get_local_data` 回测 | 股 | 元 | **万股** | `float_volume *= 10000` |
+| `get_local_data(period='1d')` | **股** | 元 | **万股** | `float_volume *= 10000` |
+| `get_local_data(period='tick')` | **股** | 元 | **万股** | `float_volume *= 10000` |
+| `get_full_tick()` 快照 | **股** | 元 | **万股** | `float_volume *= 10000` |
+| `subscribe_quote()` 实盘流 | **手(100股)** | 元 | **万股** | `volume *= 100`, `float_volume *= 10000` |
+| `get_instrument_detail()` | - | - | **万股** | `float_volume *= 10000` |
 
-**统一规则**：
-- `amount` 永远是绝对人民币（元）
-- `volume` 入口统一转为股
-- `float_volume` 入口统一转为股（×10000）
+### 🚨 致命错误示例（代码中已发现7处）
+
+```python
+# ❌ 错误！avg_volume_5d来自get_local_data，单位已经是股！
+avg_amount_5d = avg_volume_5d * 100 * pre_close  # 错误×100
+
+# ✅ 正确！
+avg_amount_5d = avg_volume_5d * pre_close  # 直接用
+```
+
+### 统一规则
+
+| 变量 | 统一单位 | 说明 |
+|------|----------|------|
+| `amount` | 元 | 成交额，永远是绝对人民币 |
+| `volume` | **股** | 成交量，入口统一转为股 |
+| `float_volume` | **股** | 流通股本，QMT返回万股，需×10000 |
+| `avg_volume_5d` | **股** | 5日均量，来自get_local_data，已是股 |
+
+### 关键结论
+
+1. **`get_local_data` 的 `volume` 单位是【股】，不是手！**
+2. **`avg_volume_5d` 是股单位，禁止再×100！**
+3. **只有 `subscribe_quote` 实盘流的 `volume` 才是【手】！**
 
 ---
 

@@ -356,9 +356,10 @@ class UniverseBuilder:
                 passed.append(stock)
                 continue
             
-            # QMT volume单位是手(100股)，需要转换
-            today_turnover_pct = (today_volume * 100 / float_volume_shares) * 100
-            avg_turnover_5d_pct = (avg_volume_5d * 100 / float_volume_shares) * 100
+            # 【CTO V179.5】get_local_data返回的volume单位是股，不是手！
+            # 今日换手率 = 今日成交量 / 流通股本
+            today_turnover_pct = (today_volume / float_volume_shares) * 100
+            avg_turnover_5d_pct = (avg_volume_5d / float_volume_shares) * 100
             
             # 【CTO V137 纯正物理防线】(摒弃除权造假，重归金额与量比)
             # 致命发现：QMT FloatVolume是当前值，用历史成交量除以当前股本会导致"时空错乱谬误"！

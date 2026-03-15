@@ -764,6 +764,11 @@ class TrueDictionary:
     def get_avg_volume_5d(self, stock_code: str) -> float:
         """获取5日平均成交量 - O(1)内存查询
         
+        【CTO V179.5 量纲铁律】
+        返回过去5日的平均成交量，单位绝对是【股】！
+        数据来源：get_local_data(period='1d') → volume单位是股
+        调用方获得此值后，绝对禁止再乘以100！
+        
         【CTO铁血令】强制转换为float，防止类型爆炸
         """
         try:

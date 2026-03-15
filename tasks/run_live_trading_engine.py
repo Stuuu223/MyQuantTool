@@ -806,7 +806,8 @@ class LiveTradingEngine:
             
             # 获取5日均成交额判断是否放量
             avg_volume_5d = self.true_dict.get_avg_volume_5d(stock_code) or 0.0
-            avg_amount_5d = avg_volume_5d * 100 * pre_close if avg_volume_5d > 0 and pre_close > 0 else 0.0
+            # 【CTO V179.5】avg_volume_5d来自get_local_data，单位是股，禁止×100！
+            avg_amount_5d = avg_volume_5d * pre_close if avg_volume_5d > 0 and pre_close > 0 else 0.0
             
             if avg_amount_5d > 0:
                 # 盘后模式直接用全天数据
@@ -842,7 +843,8 @@ class LiveTradingEngine:
                 
                 float_volume = self.true_dict.get_float_volume(stock_code) or 1000000000.0
                 avg_volume_5d = self.true_dict.get_avg_volume_5d(stock_code) or 1.0
-                avg_amount_5d = avg_volume_5d * 100 * pre_close
+                # 【CTO V179.5】avg_volume_5d来自get_local_data，单位是股，禁止×100！
+                avg_amount_5d = avg_volume_5d * pre_close
                 
                 # ============================================================
                 # 【CTO V63 终极审判】废除全天均摊！调用真实时空切片！
@@ -1680,16 +1682,16 @@ class LiveTradingEngine:
             
             # 估算全天成交量
             df['estimated_full_day_volume'] = df['volume_gu'] / minutes_passed * 240
-            # 【CTO修复】avg_volume_5d单位是手，需要乘100转成股
-            df['avg_volume_5d_gu'] = df['avg_volume_5d'] * 100
+            # 【CTO V179.5】avg_volume_5d来自get_local_data，单位已经是股！禁止×100！
+            df['avg_volume_5d_gu'] = df['avg_volume_5d']  # 已经是股，无需转换
             df['volume_ratio'] = df['estimated_full_day_volume'] / df['avg_volume_5d_gu'].replace(0, pd.NA)
             
             # 开盘瞬时换手率（用于过滤死亡换手派发）
             df['current_turnover'] = (df['volume_gu'] / df['float_volume'].replace(0, pd.NA)) * 100
             
             # 5日均成交额 = avg_volume_5d * prev_close (近似计算)
-            # prev_close已在快照中获取，直接使用
-            df['avg_amount_5d'] = df['avg_volume_5d'] * df['prev_close'] * 100  # 手→股→元
+            # 【CTO V179.5】avg_volume_5d单位是股，直接×prev_close即可
+            df['avg_amount_5d'] = df['avg_volume_5d'] * df['prev_close']  # 股×元=元
             
             # 【Phase1修复】不用dropna屠杀，改用fillna容错
             # 缺失数据用安全默认值填充，保留股票
@@ -2028,8 +2030,8 @@ class LiveTradingEngine:
                                 now = self.get_current_time()
                                 mid_minutes = max(5, (now - now.replace(hour=9, minute=30, second=0)).total_seconds() / 60)
                                 
-                                # 将 TrueDictionary 向量化提取
-                                mid_df['avg_v_5d'] = mid_df['code'].map(lambda x: true_dict.get_avg_volume_5d(x) * 100).replace(0, pd.NA)
+                                # 【CTO V179.5】avg_volume_5d单位是股，禁止×100！
+                                mid_df['avg_v_5d'] = mid_df['code'].map(lambda x: true_dict.get_avg_volume_5d(x)).replace(0, pd.NA)
                                 mid_df['vr'] = (mid_df['vol'] / mid_minutes * 240) / mid_df['avg_v_5d']
                                 mid_df['chg'] = (mid_df['p'] - mid_df['pre_c']) / mid_df['pre_c'] * 100
                                 
@@ -2288,7 +2290,8 @@ class LiveTradingEngine:
                     
                     # 【CTO V23】动态计算市值和成交额（基于tick的实时昨收价）
                     float_market_cap = float_volume * pre_close if float_volume > 0 and pre_close > 0 else 1.0
-                    avg_amount_5d = avg_volume_5d * 100 * pre_close if avg_volume_5d > 0 and pre_close > 0 else 1.0
+                    # 【CTO V179.5】avg_volume_5d单位是股，禁止×100！
+                    avg_amount_5d = avg_volume_5d * pre_close if avg_volume_5d > 0 and pre_close > 0 else 1.0
                     
                     # 【CTO V3修复】正确的死水判断：今日累计成交量为0
                     if current_volume == 0:
