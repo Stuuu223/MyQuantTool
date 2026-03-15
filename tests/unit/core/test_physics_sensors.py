@@ -1,21 +1,23 @@
 # -*- coding: utf-8 -*-
 """
-【物理铁律单元测试】CTO V182 测试防线降维收编
+【物理铁律单元测试】CTO V183 架构纠偏与量纲清洗
 
 确定性测试：输入A必须输出B，不允许概率性结果。
 这些物理定律已通过大样本验证，是系统核心城墙。
+
+V183变更：
+- 删除TestVelocityCubed（违背Law1无量纲化原则）
+- 参数化extract_overdraft_multiplier测试
 
 Author: CTO
 Date: 2026-03-15
 """
 
 import pytest
-import numpy as np
 
-from research_lab.physics_sensors import (
+from logic.core.physics_sensors import (
     extract_time_decay_factor,
     extract_dynamic_friction,
-    extract_velocity_cubed,
     extract_overdraft_multiplier,
 )
 
@@ -78,36 +80,6 @@ class TestDynamicFriction:
         assert extract_dynamic_friction(-0.5, 30) == 0.0  # 下界
 
 
-class TestVelocityCubed:
-    """速度三次方测试"""
-    
-    def test_positive_velocity(self):
-        """正涨幅: 3% → 27"""
-        assert abs(extract_velocity_cubed(3.0) - 27.0) < 0.01
-    
-    def test_negative_velocity(self):
-        """负涨幅: -5% → -125"""
-        assert abs(extract_velocity_cubed(-5.0) - (-125.0)) < 0.01
-    
-    def test_nine_percent_vs_three_percent(self):
-        """核心铁律: 涨幅9%是涨幅3%的27倍"""
-        v9 = extract_velocity_cubed(9.0)
-        v3 = extract_velocity_cubed(3.0)
-        assert abs(v9 / v3 - 27.0) < 0.01
-    
-    def test_zero_velocity(self):
-        """零涨幅: 0"""
-        assert extract_velocity_cubed(0.0) == 0.0
-    
-    def test_small_change(self):
-        """小涨幅: 1% → 1"""
-        assert abs(extract_velocity_cubed(1.0) - 1.0) < 0.01
-    
-    def test_large_change(self):
-        """大涨幅: 10% → 1000"""
-        assert abs(extract_velocity_cubed(10.0) - 1000.0) < 0.01
-
-
 class TestOverdraftMultiplier:
     """透支效应乘数测试"""
     
@@ -129,8 +101,8 @@ class TestOverdraftMultiplier:
         mult = extract_overdraft_multiplier(10.0)
         assert mult < 1.0  # 放量滞涨被折扣
     
-    def test_lower_bound(self):
-        """下界保护: 最低0.5"""
+    def test_lower_bound_default(self):
+        """下界保护: 默认最低0.5"""
         mult = extract_overdraft_multiplier(100.0)
         assert mult >= 0.5
     
@@ -140,3 +112,27 @@ class TestOverdraftMultiplier:
         mult2 = extract_overdraft_multiplier(5.0)
         mult3 = extract_overdraft_multiplier(10.0)
         assert mult1 >= mult2 >= mult3
+    
+    # ============== 参数化测试 ==============
+    
+    def test_custom_min_limit(self):
+        """自定义下界: min_limit=0.3"""
+        mult = extract_overdraft_multiplier(100.0, min_limit=0.3)
+        assert mult >= 0.3
+        assert mult < 0.5  # 比默认0.5更低
+    
+    def test_custom_log_coefficient(self):
+        """自定义对数系数: log_coefficient=0.8加速衰减"""
+        mult_default = extract_overdraft_multiplier(5.0)
+        mult_faster = extract_overdraft_multiplier(5.0, log_coefficient=0.8)
+        assert mult_faster < mult_default  # 更大系数衰减更快
+    
+    def test_custom_params_combination(self):
+        """自定义参数组合"""
+        mult = extract_overdraft_multiplier(
+            10.0,
+            min_limit=0.2,
+            log_coefficient=0.3
+        )
+        # 较小系数(0.3)衰减较慢，较低下界(0.2)允许更低值
+        assert 0.2 <= mult < 1.0

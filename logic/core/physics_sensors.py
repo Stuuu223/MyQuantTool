@@ -407,30 +407,10 @@ def extract_dynamic_friction(
         return purity ** 5
 
 
-def extract_velocity_cubed(
-    change_pct: float
-) -> float:
-    """
-    【指数速度向量】(V92已验证)
-    
-    Velocity = sign * |change_pct| ** 3
-    
-    物理意义：
-    - 涨幅9%的动能是涨幅3%的27倍
-    - 非线性门槛清洗散户基因
-    
-    Args:
-        change_pct: 涨跌幅百分比
-    
-    Returns:
-        float: 指数速度值
-    """
-    sign = 1.0 if change_pct >= 0 else -1.0
-    return sign * (abs(change_pct) ** 3)
-
-
 def extract_overdraft_multiplier(
-    yesterday_vol_ratio: float
+    yesterday_vol_ratio: float,
+    min_limit: float = 0.5,
+    log_coefficient: float = 0.5
 ) -> float:
     """
     【透支效应乘数】(V158已验证)
@@ -441,11 +421,15 @@ def extract_overdraft_multiplier(
     - 量比95th(8.2x)次日溢价仅+1.19%
     - 量比50th(1.0x)次日溢价+4.67%
     
+    ⚠️ `min_limit` 和 `log_coefficient` 为待定超参，必须由全量Tick数据交叉验证得出，禁止默认其为真理。
+    
     Args:
         yesterday_vol_ratio: 昨日量比
+        min_limit: 乘数下界（默认0.5，待验证）
+        log_coefficient: 对数衰减系数（默认0.5，待验证）
     
     Returns:
-        float: 溢出乘数 [0.5, 1.0]
+        float: 溢出乘数 [min_limit, 1.0]
     """
     import math
     
@@ -453,13 +437,12 @@ def extract_overdraft_multiplier(
         return 1.0
     
     # 负相关：量比越高，乘数越低
-    return max(0.5, 1.0 - math.log10(1.0 + yesterday_vol_ratio) * 0.5)
+    return max(min_limit, 1.0 - math.log10(1.0 + yesterday_vol_ratio) * log_coefficient)
 
 
 # 导出已验证铁律
 VALIDATED_LAWS = {
     'time_decay': extract_time_decay_factor,
     'dynamic_friction': extract_dynamic_friction,
-    'velocity_cubed': extract_velocity_cubed,
     'overdraft_multiplier': extract_overdraft_multiplier,
 }

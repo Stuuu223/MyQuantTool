@@ -4,8 +4,12 @@ MyQuantLab 工业级量化研究框架
 
 架构：
 ├── data_collider.py    - 全息数据对撞机（多维时空切片器）
-├── physics_sensors.py  - 物理特征提取矩阵
-└── shannon_validator.py - 香农真理试金石
+├── shannon_validator.py - 香农真理试金石
+└── validate_framework.py - 探索性验证脚本
+
+⚠️ physics_sensors.py 已晋升至 logic/core/physics_sensors.py
+   - 确定性物理铁律已进入核心城墙
+   - 引用路径: from logic.core.physics_sensors import ...
 
 设计哲学：
 1. 香农六把钥匙：降维、逆向思考、信息熵、冗余验证、边界条件、基础概率
@@ -14,34 +18,14 @@ MyQuantLab 工业级量化研究框架
 
 Author: CTO
 Date: 2026-03-14
-Version: V1.0
+Version: V1.1 (V183架构纠偏)
 """
 
 from .data_collider import HolographicSample, DataCollider
-from .physics_sensors import (
-    extract_mfe,
-    extract_volume_ratio,
-    extract_acceleration,
-    extract_purity,
-    extract_non_newtonian_viscosity,
-    extract_smart_pig_signal,
-    # 已验证的物理铁律
-    extract_time_decay_factor,
-    extract_dynamic_friction,
-    extract_velocity_cubed,
-    extract_overdraft_multiplier,
-    VALIDATED_LAWS,
-)
 from .shannon_validator import ShannonValidator
 
 __all__ = [
     'HolographicSample',
     'DataCollider',
-    'extract_mfe',
-    'extract_volume_ratio',
-    'extract_acceleration',
-    'extract_purity',
-    'extract_non_newtonian_viscosity',
-    'extract_smart_pig_signal',
     'ShannonValidator',
 ]
