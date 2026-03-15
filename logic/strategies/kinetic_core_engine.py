@@ -489,11 +489,11 @@ class KineticCoreEngine:
         mfe = 0.0
         if high > 0 and prev_close > 0:
             drawdown_from_high = (high - price) / prev_close * 100.0
-            if drawdown_from_high > 3.5:  # V112精细调整：3.5%阈值捕获更多诱多
+            if drawdown_from_high > 3.5:  # V112精细调整：3.5%阈值捕获更多冲高回落
                 is_micro_collapsed = True
-                # 【CTO V112终极修复】流星坠毁直接静默！诱多出货票没资格上榜！
-                # 物理铁律：从高点回撤>3.5% = 资金链断裂 = 诱多出货
-                logger.debug(f"☄️ [流星坠毁静默] {stock_code} 从高点回撤{drawdown_from_high:.1f}%>3.5%，诱多出货判死刑！")
+                # 【CTO V112终极修复】冲高回落直接返回0分！无承接拉升票没资格上榜！
+                # 物理铁律：从高点回撤>3.5% = 资金链断裂 = 冲高出货
+                logger.debug(f"☄️ [冲高回落] {stock_code} 从高点回撤{drawdown_from_high:.1f}%>3.5%，判定为冲高出货，返回0分")
                 empty_debug = {'mass_potential': 0.0, 'velocity': 0.0, 'base_kinetic_energy': 0.0, 'friction_multiplier': 0.0, 'purity_norm': 0.0, 'inflow_ratio_pct': inflow_ratio_pct, 'ratio_stock': ratio_stock, 'reason': '流星坠毁'}
                 return 0.0, 0.0, inflow_ratio_pct, ratio_stock, mfe, empty_debug
         
@@ -529,10 +529,10 @@ class KineticCoreEngine:
                 friction_multiplier = max(friction_multiplier, 0.4)
                 logger.debug(f"🐉 [龙抬头豁免] {stock_code} 早盘强承接，纯度{purity_norm*100:.0f}%豁免！")
         elif minutes_from_open < 180:
-            # 盘中(10:30-13:30)：3次方中等绞杀
+            # 盘中(10:30-13:30)：3次方中等摩擦
             friction_multiplier = purity_norm ** 3
         else:
-            # 午后及尾盘(13:30后)：长上影线是绝对的死亡派发，5次方极刑！
+            # 午后及尾盘(14:30后)：长上影线是高涨幅低承接信号，5次方最高摩擦惩罚！
             friction_multiplier = purity_norm ** 5
         
         # 【CTO V110 重力逃逸绝对豁免】
@@ -546,12 +546,12 @@ class KineticCoreEngine:
         # L500已return，以下代码永远不会执行，已删除。
         # 流星坠毁(is_micro_collapsed=True)在L500已直接return 0，无需重复惩罚。
         
-        # 【CTO V112 坠毁极刑】
-        # 只要你没资格进入逃逸层(被砸破了VWAP，或者发生了微观坍塌)，且纯度低于45%
-        # 直接执行最残忍的6次方极刑，让那些骗炮票分数彻底归零！
+        # 【CTO V112 纯度惩罚】
+        # 只要没资格进入逃逸层(被砸破了VWAP，或者发生了微观坍塌)，且纯度低于45%
+        # 直接执行6次方最高摩擦惩罚，让那些无承接票分数显著降低！
         if not is_gravitational_escape and purity_norm < 0.45:
             friction_multiplier = purity_norm ** 6
-            logger.debug(f"💀 [坠毁极刑] {stock_code} 未逃逸重力且纯度{purity_norm*100:.0f}%，执行6次方绞杀！")
+            logger.debug(f"📉 [纯度惩罚] {stock_code} 未逃逸重力且纯度{purity_norm*100:.0f}%，执行6次方高摩擦惩罚")
         
         # ========== 5. 效率激活 = MFE Sigmoid ==========
         if inflow_ratio_pct <= 0.0:

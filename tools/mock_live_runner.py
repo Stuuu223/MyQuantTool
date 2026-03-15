@@ -733,12 +733,12 @@ class MockLiveRunner:
         
         # 【CTO V172流动性拒止】涨停边缘绝对禁止买入！排队是大猪特权！
         if price >= limit_up_price * 0.998:
-            return  # 涨停排队是骗局，智猪绝不接盘！
+            return  # 涨停排队流动性风险过高，跳过
         
-        # 【CTO V172缩量秒板毒药拦截】涨幅高但流入极低 = 极度一致性陷阱
+        # 【CTO V172缩量秒板拦截】涨幅高但流入极低 = 无承接拉升
         inflow_min = self.config_manager.get('kinetic_physics.early_buy.inflow_min_for_high_surge', 0.5)
         if price > prev_close * 1.08 and inflow_ratio < inflow_min:
-            return  # 涨幅>8%但流入<0.5%，缩量秒板毒药，拒绝虚假一致性！
+            return  # 涨幅>8%但资金流入<0.5%，疑似无承接缩量拉升，跳过
         
         # 【CTO V172避雷针相对论防御】
         upward_displacement = high - open_price
@@ -747,7 +747,7 @@ class MockLiveRunner:
             retrace_ratio = drawdown_from_high / upward_displacement
             retrace_ratio_max = self.config_manager.get('kinetic_physics.retrace_ratio_max', 0.618)
             if retrace_ratio > retrace_ratio_max:
-                return  # 避雷针：向上势能已被吞噬，跳过
+                return  # 价格回撤超过上涨幅度的61.8%，趋势已逆转，跳过
         
         # 【CTO V175】VWAP过滤已在引擎calculate_true_dragon_score()内部处理，此处不重复计算
         # 原代码量纲错误：total_volume是单笔tick成交量，total_amount是全天累计额
