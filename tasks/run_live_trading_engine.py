@@ -886,7 +886,8 @@ class LiveTradingEngine:
                 is_yesterday_limit_up = self.static_cache.get(stock_code, {}).get('is_yesterday_limit_up', False)
                 # 【V178 Bug#2】传入真实成交数据用于VWAP计算
                 tick_volume = float(tick.get('volume', 0) or tick.get('lastVolume', 0))
-                final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe = self._kinetic_core.calculate_true_dragon_score(
+                # 【CTO V180】引擎返回6个值，必须解包6个！
+                final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe, _ = self._kinetic_core.calculate_true_dragon_score(
                     net_inflow=stock_net_inflow,
                     price=current_price,
                     prev_close=pre_close,
@@ -917,8 +918,8 @@ class LiveTradingEngine:
                 # 废除简单粗暴的 score >= 50 买入，添加动态触发验证
                 trigger_signal = None
                 if final_score >= 50.0 and quant_purity > -50.0:
-                    # 计算VWAP（简化：用成交额/成交量）
-                    vwap = current_amount / volume_gu if volume_gu > 0 else current_price
+                    # 【CTO V180】使用已定义的tick_volume变量
+                    vwap = current_amount / tick_volume if tick_volume > 0 else current_price
                     
                     # 尝试触发物理买点
                     trigger_signal = self.trigger_validator.check_all_triggers(
@@ -1963,25 +1964,36 @@ class LiveTradingEngine:
                 
                 # 【CTO V5】午休期间：保持挂起，显示缓存
                 is_lunch_break = time_type(11, 30) <= current_time < time_type(13, 0)
-                if is_lunch_break and self.last_known_top_targets:
-                    self._print_fire_control_panel(
-                        self.last_known_top_targets, 
-                        initial_loading=False, 
-                        pool_stats={
-                            'total': len(self.watchlist),
-                            'active': 0,
-                            'up': 0,
-                            'down': 0,
-                            'filtered': len(self.watchlist)
-                        },
-                        is_rest=True
-                    )
-                    print("\n⏸️ [午休复盘模式] 保留最后机会池数据，等待下午开盘...")
-                    # 【CTO R7修复】午休期间只打印一次，不要无限死循环刷屏！
-                    # 斩断循环，安全挂起，下午由外部脚本重新拉起
-                    logger.info("[STOP] 进入午休静默状态，雷达主线程安全休眠。")
-                    self.running = False
-                    break  # 替换原来的continue和time.sleep()
+                if is_lunch_break:
+                    # 【CTO V180】午休期间不退出，改为continue等待下午开盘
+                    if not getattr(self, '_lunch_logged', False):
+                        logger.info("[PAUSE] 午休静默中 (11:30-13:00)，等待下午开盘...")
+                        self._lunch_logged = True
+                    
+                    if self.last_known_top_targets:
+                        self._print_fire_control_panel(
+                            self.last_known_top_targets, 
+                            initial_loading=False, 
+                            pool_stats={
+                                'total': len(self.watchlist),
+                                'active': 0,
+                                'up': 0,
+                                'down': 0,
+                                'filtered': len(self.watchlist)
+                            },
+                            is_rest=True
+                        )
+                        print("\n⏸️ [午休复盘模式] 保留最后机会池数据，等待下午开盘...")
+                    
+                    # 午休期间等待，不退出循环
+                    if self.mode == 'live':
+                        import time
+                        time.sleep(60)  # 每60秒检查一次
+                    continue  # 【CTO V180】改为continue，下午自动恢复
+                
+                # 13:00后重置午休日志标志
+                if current_time >= time_type(13, 0) and getattr(self, '_lunch_logged', False):
+                    self._lunch_logged = False
                 
                 # 【CTO V5】盘后期间 (15:00后)：执行一次最终计算然后定格展示
                 is_after_hours = current_time >= time_type(15, 0)
@@ -2157,7 +2169,8 @@ class LiveTradingEngine:
                     
                     # 修复 s_data 崩溃：直接从 true_dict 获取
                     avg_vol = true_dict.get_avg_volume_5d(stock_code) or 0.0
-                    avg_amt = avg_vol * 100 * pre_close
+                    # 【CTO V179.5】avg_volume_5d单位是股，禁止×100！
+                    avg_amt = avg_vol * pre_close
                     change_pct = (current_price - pre_close) / pre_close * 100 if pre_close > 0 else 0
                     
                     if avg_amt > 0:
@@ -2449,7 +2462,8 @@ class LiveTradingEngine:
                         try:
                             # 【V178 Bug#2】传入真实成交数据用于VWAP计算
                             tick_volume_gu = float(current_volume or 0) * 100  # 手→股
-                            final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe = core_engine.calculate_true_dragon_score(
+                            # 【CTO V180】引擎返回6个值，必须解包6个！
+                            final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe, _ = core_engine.calculate_true_dragon_score(
                                 net_inflow=net_inflow_est,  # 净流入估算（元）
                                 price=current_price,
                                 prev_close=pre_close,
@@ -2490,8 +2504,8 @@ class LiveTradingEngine:
                         trigger_signal = None
                         if final_score >= 50.0 and quant_purity > -50.0:
                             # 计算VWAP（简化：用成交额/成交量）
-                            vwap = current_amount / volume_gu if volume_gu > 0 else current_price
-                            
+                            # 【CTO V180】修复: 使用tick_volume而非未定义的volume_gu
+                            vwap = current_amount / tick_volume if tick_volume > 0 else current_price
                             # 尝试触发物理买点
                             trigger_signal = self.trigger_validator.check_all_triggers(
                                 stock_code=stock_code,
@@ -2914,7 +2928,8 @@ class LiveTradingEngine:
             # 调用 V20.5 动能引擎
             # 【V178 Bug#2】传入真实成交数据用于VWAP计算
             volume_gu = float(volume or 0) * 100  # 手→股
-            base_score, sustain_ratio, inflow_ratio, ratio_stock, mfe_score = self._kinetic_core.calculate_true_dragon_score(
+            # 【CTO V180】引擎返回6个值，必须解包6个！
+            base_score, sustain_ratio, inflow_ratio, ratio_stock, mfe_score, _ = self._kinetic_core.calculate_true_dragon_score(
                 net_inflow=net_inflow_est,  # 【CTO V87】使用L1微积分状态机
                 price=price,
                 prev_close=prev_close,
