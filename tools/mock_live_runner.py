@@ -902,7 +902,18 @@ class MockLiveRunner:
                 logger.warning(f"[{stock_code}] 持仓监控缺失真实流通盘，跳过本分钟动能更新！")
                 continue  # 不要用假数据污染
             
-            inflow_ratio = (total_amount * 0.5) / (real_float_vol * current_price) * 100
+            # 【CTO V175】计算真实5分钟切片成交额，统一买卖口径
+            # 与打分引擎_calculate_leaderboard_at_time保持绝对同频
+            cutoff_5min_monitor = current_time - timedelta(minutes=5)
+            amount_5min_ago_monitor = 0.0
+            for _tick in tick_list:
+                _tick_time = self._parse_tick_time(_tick['time'])
+                if _tick_time <= cutoff_5min_monitor:
+                    amount_5min_ago_monitor = _tick['amount']
+            true_flow_5min_monitor = max(0.0, total_amount - amount_5min_ago_monitor)
+            
+            # 与打分引擎保持相同口径：5分钟切片 × 0.5净流入假设
+            inflow_ratio = (true_flow_5min_monitor * 0.5) / (real_float_vol * current_price) * 100
             mfe = amplitude / max(inflow_ratio, 0.01) if inflow_ratio > 0 else 0
             
             # 持仓时间（分钟）
