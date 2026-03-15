@@ -2652,9 +2652,8 @@ class LiveTradingEngine:
                 self._generate_final_battle_report()
                 self._has_generated_report = True
     
-    def _on_tick_data(self, tick_event):
-        """【已废弃】EventBus Tick回调——大道至简重构已删除双轨制"""
-        pass
+    # 【CTO V181】删除_on_tick_data废弃函数体（原只有pass，零引用）
+
     def _get_current_sustain_ratio(self, stock_code: str, tick_data: Dict[str, Any]) -> float:
         """
         获取当前sustain_ratio（用于3分钟观察队列测试）
@@ -2724,9 +2723,6 @@ class LiveTradingEngine:
             "_calculate_turnover_rate已废弃，请直接在主循环中计算换手率。"
             "注意：current_volume单位是手，需×100转换为股后再除以float_volume。"
         )
-        # 【CTO V180.4】删除孤立的return语句
-        # 原代码: return turnover_rate_per_min
-        # 此变量已被删除，保留return会导致NameError炸弹
     
     def _micro_defense_check(self, stock_code: str, tick_data: Dict[str, Any]) -> bool:
         """
