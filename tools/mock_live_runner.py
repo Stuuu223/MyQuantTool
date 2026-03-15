@@ -181,8 +181,8 @@ class MockLiveRunner:
                     float_vol_wangu = detail.get('FloatVolume', 0)
                     if float_vol_wangu and float_vol_wangu > 0:
                         # 【CTO V173】用市值法检测单位，替代数值猜测
-                        # 假设当前价格，计算市值判断单位
-                        est_price = current_tick.get('price', 10) if tick_list else 10
+                        # 【CTO V174】修复：current_tick在此作用域未定义，改用tick_list最后一个tick的价格
+                        est_price = float(tick_list[-1].get('price', 10)) if tick_list else 10.0
                         est_market_cap = float_vol_wangu * est_price
                         
                         if est_market_cap < 200000000:  # 市值<2亿，说明单位是万股
@@ -379,7 +379,7 @@ class MockLiveRunner:
             if real_float_volume <= 0:
                 # 无真实流通盘数据，跳过打分！绝不使用假数据！
                 logger.debug(f"[MockLiveRunner] {stock_code} 流通盘数据缺失，跳过打分")
-                return  # 数据缺失就跳过，禁止用假数据凑数
+                continue  # 【CTO V174】修复：for循环内只能用continue，return会清空整个榜单！
             
             # 调用核心打分引擎
             try:
