@@ -215,6 +215,12 @@
     "_WARNING_ignition_sigmoid_slope": "[V179校准] 波函数坍缩概率斜率。原值0.005太陡，现放缓给区分度留余地",
     
     "iron_plate_penalty": 0.1,
-    "_WARNING_iron_plate_penalty": "[V179 P2] 缩量铁板惩罚系数，质量势能×此值。原硬编码0.1现参数化"
+    "_WARNING_iron_plate_penalty": "[V179 P2] 缩量铁板惩罚系数，质量势能×此值。原硬编码0.1现参数化",
+    
+    "overdraft_min_limit": 0.5,
+    "_WARNING_overdraft_min_limit": "[UNVERIFIED] 透支效应乘数下界。V158回归验证：量比越高今日溢价越低，min_limit控制最低乘数",
+    
+    "overdraft_log_coeff": 0.5,
+    "_WARNING_overdraft_log_coeff": "[UNVERIFIED] 透支效应对数衰减系数。需全量Tick数据交叉验证"
   }
 }

@@ -279,11 +279,18 @@ def extract_smart_pig_signal(
 
 # ============== 综合特征提取器 ==============
 
+# ⚠️ [DEAD CODE] 此函数在整个仓库中零调用。
+# 禁止在此函数中增加任何 Pandas/DataFrame 操作。
+# 仅保留作为物理铁律的参考实现。
 def extract_all_features(
     sample  # HolographicSample
 ) -> PhysicsFeatures:
     """
     从全息样本中提取所有物理特征
+    
+    ⚠️ [ARCHITECTURE WARNING] 此函数依赖 HolographicSample 复杂数据舱，
+    引入了 DataFrame 依赖。当前实盘引擎使用标量参数版本的独立函数，
+    如 extract_purity(close, high, low) 而非 DataFrame 操作。
     
     Args:
         sample: HolographicSample 全息数据舱
@@ -409,8 +416,8 @@ def extract_dynamic_friction(
 
 def extract_overdraft_multiplier(
     yesterday_vol_ratio: float,
-    min_limit: float = 0.5,
-    log_coefficient: float = 0.5
+    min_limit: float | None = None,
+    log_coefficient: float | None = None
 ) -> float:
     """
     【透支效应乘数】(V158已验证)
@@ -421,17 +428,30 @@ def extract_overdraft_multiplier(
     - 量比95th(8.2x)次日溢价仅+1.19%
     - 量比50th(1.0x)次日溢价+4.67%
     
-    ⚠️ `min_limit` 和 `log_coefficient` 为待定超参，必须由全量Tick数据交叉验证得出，禁止默认其为真理。
-    
+    ⚠️ `min_limit` 和 `log_coefficient` 为待定超参，必须由上层注入！
+    从 config_manager.get('kinetic_physics.overdraft_min_limit') 获取。
+    禁止使用魔法默认值！
+
     Args:
         yesterday_vol_ratio: 昨日量比
-        min_limit: 乘数下界（默认0.5，待验证）
-        log_coefficient: 对数衰减系数（默认0.5，待验证）
+        min_limit: 乘数下界（必须注入，从config读取）
+        log_coefficient: 对数衰减系数（必须注入，从config读取）
     
     Returns:
         float: 溢出乘数 [min_limit, 1.0]
+    
+    Raises:
+        ValueError: 如果参数未注入
     """
     import math
+    
+    # 【CTO V184】强制要求上层注入参数，禁止魔法默认值
+    if min_limit is None or log_coefficient is None:
+        raise ValueError(
+            "min_limit 和 log_coefficient 必须由上层注入！"
+            "从 config_manager.get('kinetic_physics.overdraft_min_limit') 获取。"
+            "禁止使用魔法默认值。"
+        )
     
     if yesterday_vol_ratio <= 1.0:
         return 1.0
@@ -446,3 +466,42 @@ VALIDATED_LAWS = {
     'dynamic_friction': extract_dynamic_friction,
     'overdraft_multiplier': extract_overdraft_multiplier,
 }
+
+
+# ============== 正确使用方式示例 ==============
+# 
+# 【CTO V184 架构指南】
+# 
+# 实盘引擎应使用标量参数版本的独立函数，而非 DataFrame 依赖版本：
+#
+# ✅ 正确用法：
+#   from logic.core.physics_sensors import (
+#       extract_purity,           # 纯度：(close-low)/(high-low)
+#       extract_volume_ratio,     # 量比：current_vol / avg_vol_5d
+#       extract_mfe_efficiency,   # MFE做功效率
+#       extract_time_decay_factor, # 时间衰减
+#       extract_overdraft_multiplier, # 透支效应
+#   )
+#
+#   # 在实盘引擎的 _on_tick_data 中：
+#   purity = extract_purity(current_price, today_high, today_low)
+#   vol_ratio = extract_volume_ratio(current_volume, avg_volume_5d)
+#   
+#   # 透支效应需要注入config参数：
+#   from logic.core.config_manager import get_config_manager
+#   cfg = get_config_manager()
+#   overdraft = extract_overdraft_multiplier(
+#       yesterday_vol_ratio,
+#       min_limit=cfg.get('kinetic_physics.overdraft_min_limit', 0.5),
+#       log_coefficient=cfg.get('kinetic_physics.overdraft_log_coeff', 0.5)
+#   )
+#
+# ❌ 禁止用法：
+#   # 不要使用 extract_all_features，它依赖复杂的 HolographicSample
+#   features = extract_all_features(sample)  # ❌ DataFrame 依赖
+#
+# ⚠️ 架构原则：
+#   1. 实盘引擎追求 O(1) 时间复杂度
+#   2. 避免 DataFrame 操作带来的内存分配开销
+#   3. 使用标量参数，便于 JIT 编译优化
+#   4. 配置参数必须从 SSOT 注入，禁止魔法默认值

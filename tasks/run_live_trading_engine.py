@@ -132,6 +132,38 @@ except ImportError:
     logger.addHandler(handler)
 
 
+def get_effective_minutes_from_open(now: datetime) -> int:
+    """
+    【CTO V184】计算从09:30到now的有效交易分钟数（扣除11:30-13:00午休）
+    
+    午休时间轴修正：下午时间计算必须扣除90分钟午休！
+    例如：13:30时，正确有效分钟数=120(早盘)+30(午后)=150分钟
+          而非错误算法的240分钟。
+    
+    Args:
+        now: 当前时间
+    
+    Returns:
+        int: 有效分钟数，范围 [1, 240]
+    """
+    market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
+    lunch_start = now.replace(hour=11, minute=30, second=0, microsecond=0)
+    lunch_end = now.replace(hour=13, minute=0, second=0, microsecond=0)
+    
+    raw = (now - market_open).total_seconds() / 60
+    if raw <= 0:
+        return 1
+    
+    # 扣除午休
+    if now >= lunch_end:
+        raw -= 90  # 扣除整个午休段
+    elif now >= lunch_start:
+        # 在午休中，以 11:30 为基准
+        raw = (lunch_start - market_open).total_seconds() / 60
+    
+    return max(1, min(int(raw), 240))
+
+
 class LiveTradingEngine:
     """
     实盘总控引擎 - 实现老板的"降频初筛，高频决断" (CTO依赖注入版)
@@ -295,6 +327,10 @@ class LiveTradingEngine:
         self._lunch_logged: bool = False
         self._printed_lunch_panel: bool = False
         self._has_generated_report: bool = False
+        
+        # 【CTO V184】统一创建KineticCoreEngine单例 - 实盘/沙盘绝对同质同源
+        from logic.strategies.kinetic_core_engine import KineticCoreEngine
+        self._kinetic_core = KineticCoreEngine()
         
         logger.info("[OK] [LiveTradingEngine] 初始化完成 - QMT Manager已注入")
         logger.info("[CTO状态机] 动态蓄水池架构已启用：candidate_pool/opportunity_pool/eliminated_pool")
@@ -627,6 +663,10 @@ class LiveTradingEngine:
         2. L2上帝视角(十档)和L1刺刀模式(五档)自动降级
         3. 三次方失衡算子(Imbalance^3)放大深层盘口意图
         
+        ⚠️ [ARCHITECTURE WARNING] l1_inflow_accumulator 是有状态字典，挂载在实例上
+        当前为单线程串行安全，若引入多线程必须替换为 threading.local() 或对象池
+        禁止在未做线程隔离的情况下并发调用此方法
+        
         Args:
             stock_code: 股票代码
             current_amount: 当前累计成交额
@@ -849,9 +889,7 @@ class LiveTradingEngine:
 
         # 5. 【绝对同源计算：第二遍精算 - 对齐 V20.5 引擎】
         current_top_targets = []
-        if not hasattr(self, '_kinetic_core'):
-            from logic.strategies.kinetic_core_engine import KineticCoreEngine
-            self._kinetic_core = KineticCoreEngine()
+        # 【CTO V184】_kinetic_core已在__init__中统一创建，删除条件检查
 
         for stock_code, tick in last_tick_by_stock.items():
             try:
@@ -1938,8 +1976,8 @@ class LiveTradingEngine:
         # 预先获取TrueDictionary单例
         true_dict = get_true_dictionary()
         
-        # 预先创建动能打分引擎实例
-        core_engine = KineticCoreEngine()
+        # 【CTO V184】使用__init__中统一创建的_kinetic_core单例，不再重复实例化
+        core_engine = self._kinetic_core
         
         # 【CTO V5】盘后投影标志位：记录是否已执行过盘后最终计算
         has_run_after_hours = False
@@ -2348,8 +2386,8 @@ class LiveTradingEngine:
                         if is_after_hours or not is_trading:
                             minutes_elapsed = 240
                         else:
-                            minutes_elapsed = (now.hour * 60 + now.minute) - (9 * 60 + 30)
-                            minutes_elapsed = max(1, min(minutes_elapsed, 240))
+                            # 【CTO V184】使用午休扣除后的有效分钟数
+                            minutes_elapsed = get_effective_minutes_from_open(now)
                         est_full_day_turnover = current_turnover / minutes_elapsed * 240
                         
                         # 【CTO V12 死亡防线】只防出货，不设底线！
@@ -2407,8 +2445,8 @@ class LiveTradingEngine:
                             # 【CTO V32关键修复】带上acceleration_factor，让sustain_ratio动态变化！
                             flow_15min = current_amount / 16.0 * acceleration_factor  # 破除2.0魔咒
                         else:
-                            minutes_elapsed = (now.hour * 60 + now.minute) - (9 * 60 + 30)
-                            minutes_elapsed = max(1, min(minutes_elapsed, 240))
+                            # 【CTO V184】使用午休扣除后的有效分钟数
+                            minutes_elapsed = get_effective_minutes_from_open(now)
                             
                             # 成交额估算
                             flow_5min = current_amount / minutes_elapsed * 5
@@ -2842,11 +2880,8 @@ class LiveTradingEngine:
         """
         try:
             # 【CTO 物理归位】：直接调用 V20.5 动能算子
-            from logic.strategies.kinetic_core_engine import KineticCoreEngine
+            # 【CTO V184】_kinetic_core已在__init__中统一创建，删除条件检查
             from logic.data_providers.true_dictionary import get_true_dictionary
-            
-            if not hasattr(self, '_kinetic_core'):
-                self._kinetic_core = KineticCoreEngine()
             
             true_dict = get_true_dictionary()
             

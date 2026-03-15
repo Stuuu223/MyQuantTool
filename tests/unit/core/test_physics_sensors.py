@@ -9,17 +9,23 @@ V183变更：
 - 删除TestVelocityCubed（违背Law1无量纲化原则）
 - 参数化extract_overdraft_multiplier测试
 
+V184变更：
+- 强制参数注入，禁止魔法默认值
+- 精确断言替换弱断言
+
 Author: CTO
 Date: 2026-03-15
 """
 
 import pytest
+import math
 
 from logic.core.physics_sensors import (
     extract_time_decay_factor,
     extract_dynamic_friction,
     extract_overdraft_multiplier,
 )
+from logic.core.config_manager import get_config_manager
 
 
 class TestTimeDecayFactor:
@@ -83,48 +89,58 @@ class TestDynamicFriction:
 class TestOverdraftMultiplier:
     """透支效应乘数测试"""
     
+    @pytest.fixture(autouse=True)
+    def setup_config(self):
+        """从config读取参数"""
+        cfg = get_config_manager()
+        self.min_limit = cfg.get('kinetic_physics.overdraft_min_limit', 0.5)
+        self.log_coeff = cfg.get('kinetic_physics.overdraft_log_coeff', 0.5)
+    
     def test_normal_volume(self):
         """正常量比(1.0x): 无透支"""
-        assert extract_overdraft_multiplier(1.0) == 1.0
+        assert extract_overdraft_multiplier(1.0, self.min_limit, self.log_coeff) == 1.0
     
     def test_low_volume(self):
         """低量比(<1.0): 无透支"""
-        assert extract_overdraft_multiplier(0.5) == 1.0
+        assert extract_overdraft_multiplier(0.5, self.min_limit, self.log_coeff) == 1.0
     
     def test_moderate_overdraft(self):
-        """中等透支(2.0x): 轻微折扣"""
-        mult = extract_overdraft_multiplier(2.0)
-        assert 0.7 < mult < 1.0
+        """中等透支(2.0x): 精确值约0.7614"""
+        expected = max(self.min_limit, 1.0 - math.log10(1.0 + 2.0) * self.log_coeff)
+        result = extract_overdraft_multiplier(2.0, self.min_limit, self.log_coeff)
+        assert abs(result - expected) < 0.001
     
     def test_severe_overdraft(self):
-        """严重透支(10.0x): 明显折扣"""
-        mult = extract_overdraft_multiplier(10.0)
-        assert mult < 1.0  # 放量滞涨被折扣
+        """严重透支(10.0x): 命中下界保护，精确等于min_limit"""
+        result = extract_overdraft_multiplier(10.0, self.min_limit, self.log_coeff)
+        assert result == self.min_limit
     
     def test_lower_bound_default(self):
-        """下界保护: 默认最低0.5"""
-        mult = extract_overdraft_multiplier(100.0)
-        assert mult >= 0.5
+        """下界保护: 精确等于min_limit"""
+        result1 = extract_overdraft_multiplier(100.0, self.min_limit, self.log_coeff)
+        result2 = extract_overdraft_multiplier(1000.0, self.min_limit, self.log_coeff)
+        assert result1 == self.min_limit
+        assert result2 == self.min_limit
     
     def test_monotonic_decreasing(self):
         """单调递减: 量比越高，乘数越低"""
-        mult1 = extract_overdraft_multiplier(1.0)
-        mult2 = extract_overdraft_multiplier(5.0)
-        mult3 = extract_overdraft_multiplier(10.0)
+        mult1 = extract_overdraft_multiplier(1.0, self.min_limit, self.log_coeff)
+        mult2 = extract_overdraft_multiplier(5.0, self.min_limit, self.log_coeff)
+        mult3 = extract_overdraft_multiplier(10.0, self.min_limit, self.log_coeff)
         assert mult1 >= mult2 >= mult3
     
     # ============== 参数化测试 ==============
     
     def test_custom_min_limit(self):
         """自定义下界: min_limit=0.3"""
-        mult = extract_overdraft_multiplier(100.0, min_limit=0.3)
+        mult = extract_overdraft_multiplier(100.0, min_limit=0.3, log_coefficient=self.log_coeff)
         assert mult >= 0.3
         assert mult < 0.5  # 比默认0.5更低
     
     def test_custom_log_coefficient(self):
         """自定义对数系数: log_coefficient=0.8加速衰减"""
-        mult_default = extract_overdraft_multiplier(5.0)
-        mult_faster = extract_overdraft_multiplier(5.0, log_coefficient=0.8)
+        mult_default = extract_overdraft_multiplier(5.0, self.min_limit, self.log_coeff)
+        mult_faster = extract_overdraft_multiplier(5.0, self.min_limit, 0.8)
         assert mult_faster < mult_default  # 更大系数衰减更快
     
     def test_custom_params_combination(self):
@@ -136,3 +152,12 @@ class TestOverdraftMultiplier:
         )
         # 较小系数(0.3)衰减较慢，较低下界(0.2)允许更低值
         assert 0.2 <= mult < 1.0
+    
+    def test_missing_params_raises(self):
+        """缺失参数必须抛出ValueError"""
+        with pytest.raises(ValueError, match="必须由上层注入"):
+            extract_overdraft_multiplier(5.0)  # 不传参数应该抛异常
+        with pytest.raises(ValueError, match="必须由上层注入"):
+            extract_overdraft_multiplier(5.0, min_limit=None, log_coefficient=self.log_coeff)
+        with pytest.raises(ValueError, match="必须由上层注入"):
+            extract_overdraft_multiplier(5.0, min_limit=self.min_limit, log_coefficient=None)
