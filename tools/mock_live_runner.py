@@ -62,7 +62,7 @@ class MockLiveRunner:
         """
         self.target_date = target_date
         self.stock_list = stock_list or []
-        self.config_mgr = get_config_manager()
+        self.config_manager = get_config_manager()  # 【CTO V172扫尾】统一命名为config_manager
         self.true_dict = get_true_dictionary()
         
         # 【CTO V169】沙盒档案库 - 如果未传入则自动创建
@@ -786,12 +786,12 @@ class MockLiveRunner:
             logger.debug(f"[MockLiveRunner] {top1_code} 点火概率{ignition_prob:.2%} < {ignition_threshold:.0%}，拒绝")
             return
         
-        # 【CTO V171】触发分数阈值从config读取（⚠️ UNVERIFIED）
-        min_trigger_score = self.config_manager.get('kinetic_physics.min_trigger_score', 100.0)
+        # 【CTO V172扫尾】删除重复读取min_trigger_score和废话assert
+        # L701已经检查过 if top1_score < min_trigger_score: return
+        # 能走到这里说明分数一定>=阈值，不需要再检查
         
         # 【CTO V167防作弊】硬断言：确保买入的是当时的绝对Top1
         assert top1_code == sorted_stocks[0][0], f"FATAL: 系统买入的不是当时的绝对Top1！存在作弊嫌疑！买入{top1_code} vs Top1{sorted_stocks[0][0]}"
-        assert top1_score >= min_trigger_score, f"FATAL: Top1分数{top1_score}低于阈值{min_trigger_score}，触发条件异常！"
         
         # 计算分钟级成交额
         minute_volume = self._get_minute_volume(top1_code, current_time)
@@ -902,8 +902,14 @@ class MockLiveRunner:
             # 计算当前MFE
             amplitude = (high - low) / prev_close if prev_close > 0 else 0
             total_amount = current_tick['amount']
-            float_volume = 1000000000  # 默认10亿股
-            inflow_ratio = (total_amount * 0.5) / (float_volume * current_price) * 100
+            
+            # 【CTO V172扫尾】删除10亿股僵尸代码！使用真实流通盘
+            real_float_vol = self.float_volumes.get(stock_code, 0)
+            if real_float_vol <= 0:
+                logger.warning(f"[{stock_code}] 持仓监控缺失真实流通盘，跳过本分钟动能更新！")
+                continue  # 不要用假数据污染
+            
+            inflow_ratio = (total_amount * 0.5) / (real_float_vol * current_price) * 100
             mfe = amplitude / max(inflow_ratio, 0.01) if inflow_ratio > 0 else 0
             
             # 持仓时间（分钟）
