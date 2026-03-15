@@ -180,14 +180,19 @@ class MockLiveRunner:
                     # QMT返回的FloatVolume单位是万股，需要转换为股
                     float_vol_wangu = detail.get('FloatVolume', 0)
                     if float_vol_wangu and float_vol_wangu > 0:
-                        # 检测单位：如果值很小（<1000），说明是亿股；如果是万级别，说明是万股
-                        # A股最小流通市值约20亿，如果float_vol < 1000，单位是亿股
-                        if float_vol_wangu < 1000:
-                            # 单位是亿股，转换为股
-                            float_vol_shares = float_vol_wangu * 100000000
-                        else:
-                            # 单位是万股，转换为股
+                        # 【CTO V173】用市值法检测单位，替代数值猜测
+                        # 假设当前价格，计算市值判断单位
+                        est_price = current_tick.get('price', 10) if tick_list else 10
+                        est_market_cap = float_vol_wangu * est_price
+                        
+                        if est_market_cap < 200000000:  # 市值<2亿，说明单位是万股
+                            # QMT返回的是万股，转换为股
                             float_vol_shares = float_vol_wangu * 10000
+                            logger.debug(f"[MockLiveRunner] {stock_code} 检测到万股单位，升维为股")
+                        else:
+                            # 单位已经是股
+                            float_vol_shares = float_vol_wangu
+                        
                         self.float_volumes[stock_code] = float_vol_shares
                         logger.debug(f"[MockLiveRunner] {stock_code} 真实流通盘: {float_vol_shares/100000000:.2f}亿股")
                     else:
