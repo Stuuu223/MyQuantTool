@@ -609,15 +609,21 @@ def build_dashboard_layout(top_targets, pool_stats=None, account_info=None, is_r
     table.add_column("INFLOW%", justify="right", width=8)
     table.add_column("SUSTAIN", justify="right", width=8)
     table.add_column("MFE", justify="right", width=6)
+    table.add_column("IGNITE%", justify="right", width=8)  # 【CTO V180.3】波函数坍缩概率
     table.add_column("PURITY%", justify="right", width=8)
     
     if not top_targets:
-        table.add_row("...", "空仓观望", "...", "...", "...", "...", "...", "...", "...")
+        table.add_row("...", "空仓观望", "...", "...", "...", "...", "...", "...", "...", "...")
     else:
         for i, t in enumerate(top_targets, 1):
             row_style = "bold red" if i <= 3 else None
             p_val = t.get('purity', 0)
             p_color = "red" if p_val >= 80 else "yellow" if p_val >= 20 else "white" if p_val >= -20 else "green"
+            
+            # 【CTO V180.3】点火概率渲染（波函数坍缩概率）
+            ignite_val = t.get('ignition_prob', 0)
+            ignite_color = "red" if ignite_val >= 50 else "yellow" if ignite_val >= 20 else "white"
+            ignite_str = f"[{ignite_color}]{ignite_val:.1f}%[/{ignite_color}]"
             
             safe_sustain = min(max(t.get('sustain_ratio', 0), -99.9), 99.9)
             safe_mfe = min(max(t.get('mfe', 0), -99.9), 99.9)
@@ -626,6 +632,7 @@ def build_dashboard_layout(top_targets, pool_stats=None, account_info=None, is_r
                 str(i), t['code'], f"{t.get('score', 0):.1f}", f"{t['price']:.2f}",
                 f"{t.get('change', 0):+.2f}%", f"{t.get('inflow_ratio', 0):.2f}%",
                 f"{safe_sustain:.2f}x", f"{safe_mfe:.1f}",
+                ignite_str,
                 f"[{p_color}]{p_val:+.1f}%[/{p_color}]", style=row_style
             )
     

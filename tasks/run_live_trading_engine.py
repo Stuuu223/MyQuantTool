@@ -521,7 +521,11 @@ class LiveTradingEngine:
         # 条件2: 价格跌破15分钟VWAP
         vwap_15min = self._calculate_vwap_15min(tracker)
         if vwap_15min > 0 and tracker.current_price < vwap_15min * 0.99:
-            return True, f"跌破VWAP: 价格{tracker.current_price:.2f} < VWAP{vwap_15min:.2f}"
+            # 【CTO V180.3】真空滑行豁免：涨停锁仓后VWAP可能虚高，不能用VWAP剔除
+            if not is_vacuum_gliding:
+                return True, f"跌破VWAP: 价格{tracker.current_price:.2f} < VWAP{vwap_15min:.2f}"
+            else:
+                logger.debug(f"[真空滑行豁免] {tracker.stock_code} VWAP剔除条件豁免")
         
         return False, ""
     
@@ -769,12 +773,15 @@ class LiveTradingEngine:
             
         mock_target_date = getattr(self.qmt_manager, 'target_date', None)
         
-        # 【CTO V180.2】从tick_stream预填充prev_close到static_cache
-        # _check_vacuum_gliding需要self.static_cache.get(stock_code, {}).get('prev_close', 0)
-        # scan模式下必须在此处填充，否则涨停股会被错误剔除
+        # 【CTO V180.3】一次遍历同时完成static_cache填充和last_tick_by_stock构建
+        # 原代码做了两次O(n)遍历，现在合并为一次
+        last_tick_by_stock = {}
         for tick in tick_stream:
             sc = tick.get('stock_code', '')
-            if sc and sc not in self.static_cache:
+            if not sc:
+                continue
+            last_tick_by_stock[sc] = tick  # 保留最后一个tick
+            if sc not in self.static_cache:  # 填充static_cache（只需要第一个）
                 prev_close_val = float(tick.get('lastClose', 0) or tick.get('prev_close', 0))
                 if prev_close_val > 0:
                     self.static_cache[sc] = {
@@ -785,14 +792,6 @@ class LiveTradingEngine:
         # 【CTO 斩断双倍 I/O】禁止在此处二次召唤 UniverseBuilder，直接使用供弹带
         # 原代码: base_pool, _ = UniverseBuilder(target_date=mock_target_date).build()
         # 修复: 使用传入的tick_stream构建watchlist，避免重复磁盘I/O
-        pass  # 预热移到watchlist构建之后
-        
-        # 2. 从入参提取最终定格快照 (由于是收盘数据，剥离时间轴)
-        last_tick_by_stock = {}
-        for tick in tick_stream:
-            stock_code = tick.get('stock_code', '')
-            if stock_code:
-                last_tick_by_stock[stock_code] = tick
                 
         self.watchlist = list(last_tick_by_stock.keys())
         if not self.watchlist:
@@ -1992,9 +1991,9 @@ class LiveTradingEngine:
                 # 【CTO V5】午休期间：保持挂起，显示缓存
                 is_lunch_break = time_type(11, 30) <= current_time < time_type(13, 0)
                 if is_lunch_break:
-                    # 【CTO V180.1】午休面板只打印一次，避免60秒刷屏
-                    if not getattr(self, '_printed_lunch_panel', False):
-                        if not getattr(self, '_lunch_logged', False):
+                    # 【CTO V180.3】直接访问属性，__init__已显式初始化
+                    if not self._printed_lunch_panel:
+                        if not self._lunch_logged:
                             logger.info("[PAUSE] 午休静默中 (11:30-13:00)，等待下午开盘...")
                             self._lunch_logged = True
                         
@@ -2021,10 +2020,11 @@ class LiveTradingEngine:
                     continue  # 【CTO V180】改为continue，下午自动恢复
                 
                 # 13:00后重置午休日志标志和面板标志
+                # 【CTO V180.3】直接访问属性，__init__已显式初始化
                 if current_time >= time_type(13, 0):
-                    if getattr(self, '_lunch_logged', False):
+                    if self._lunch_logged:
                         self._lunch_logged = False
-                    if getattr(self, '_printed_lunch_panel', False):
+                    if self._printed_lunch_panel:
                         self._printed_lunch_panel = False
                 
                 # 【CTO V5】盘后期间 (15:00后)：执行一次最终计算然后定格展示
@@ -2710,33 +2710,19 @@ class LiveTradingEngine:
     
     def _calculate_turnover_rate(self, stock_code: str, tick_event, true_dict) -> float:
         """
-        计算每分钟换手率
+        【CTO V180.3 废弃】此方法接收TickEvent对象（已废弃的EventBus架构）。
+        现在主循环直接用 volume_gu = current_volume * 100 计算换手率。
+        禁止调用此方法，保留仅防止外部引用报错。
         
-        Args:
-            stock_code: 股票代码
-            tick_event: Tick事件
-            true_dict: TrueDictionary实例
-            
-        Returns:
-            float: 每分钟换手率 (%)
+        致命问题：
+        1. tick_event.volume是属性访问，但主循环tick是dict
+        2. current_volume单位是手(100股)，float_volume单位是股，没有×100转换
+           导致换手率缩小100倍，"死亡换手>70%"防线永远无法触发！
         """
-        from datetime import datetime
-        
-        now = self.get_current_time()
-        market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
-        minutes_passed = max(1, (now - market_open).total_seconds() / 60)
-        
-        current_volume = tick_event.volume
-        float_volume = true_dict.get_float_volume(stock_code)
-        
-        if float_volume <= 0:
-            return 0.0
-        
-        # 总换手率 = 成交量 / 流通股本 * 100%
-        total_turnover_rate = (current_volume / float_volume) * 100
-        
-        # 每分钟换手率（实战核心指标）
-        turnover_rate_per_min = total_turnover_rate / minutes_passed
+        raise DeprecationWarning(
+            "_calculate_turnover_rate已废弃，请直接在主循环中计算换手率。"
+            "注意：current_volume单位是手，需×100转换为股后再除以float_volume。"
+        )
         
         return turnover_rate_per_min
     
