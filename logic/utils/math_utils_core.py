@@ -404,3 +404,153 @@ def calculate_pullback_ratio(high_price: float, current_price: float, pre_close:
     pullback = ((max_gain - current_gain) / max_gain) * 100.0
     
     return float(max(0.0, min(pullback, 200.0)))  # 限制在0-200%范围内
+
+
+# =============================================================================
+# 【CTO V172】连续函数库 - 废除布尔逻辑断崖，启用平滑物理函数
+# =============================================================================
+
+import math
+
+
+def sigmoid_multiplier(value: float, midpoint: float, steepness: float) -> float:
+    """
+    S型平滑激活函数，输出范围 (0, 1)
+    
+    【物理意义】
+    - value=midpoint 时输出 0.5（中性点）
+    - steepness 越大，曲线越陡（阈值敏感度）
+    - 输出平滑趋近0或1，无断崖式跳跃
+    
+    【用途】
+    - MFE、sustain_ratio 等正向特征的平滑激活
+    - 替代 `if value > threshold: pass else: return` 的布尔切断
+    
+    Args:
+        value: 输入值（如MFE、sustain_ratio）
+        midpoint: 中心点（阈值），value等于此时输出0.5
+        steepness: 曲线陡峭度，越大越接近阶跃函数
+        
+    Returns:
+        float: 激活乘数，范围(0, 1)
+        
+    Example:
+        >>> mfe_factor = sigmoid_multiplier(mfe=1.8, midpoint=1.2, steepness=2.0)
+        >>> # MFE=1.8时，中心点1.2，输出约0.70（已充分激活）
+        >>> final_score = base_score * mfe_factor  # 平滑乘法，无断崖
+    """
+    if value is None or midpoint is None or steepness is None:
+        return 0.5  # 缺失数据时返回中性值
+    try:
+        return 1.0 / (1.0 + math.exp(-steepness * (value - midpoint)))
+    except (OverflowError, ValueError):
+        # 数值溢出时返回边界值
+        if value > midpoint:
+            return 1.0
+        return 0.0
+
+
+def gaussian_penalty(value: float, optimal: float, sigma: float) -> float:
+    """
+    高斯钟形惩罚函数，输出范围 (0, 1]
+    
+    【物理意义】
+    - value=optimal 时输出 1.0（最优）
+    - 偏离optimal越多，输出越小
+    - 双向惩罚：太高或太低都不行
+    
+    【用途】
+    - limit_proximity（涨停逼近率）：居中最优，太高风险大，太低动能不足
+    - 换手率甜点区：太高分歧大，太低活跃度不够
+    
+    Args:
+        value: 输入值（如涨停逼近率0.8）
+        optimal: 最优值（如0.75，表示涨幅距涨停25%最优）
+        sigma: 标准差，控制容忍范围
+        
+    Returns:
+        float: 惩罚乘数，范围(0, 1]，最优时=1.0
+        
+    Example:
+        >>> prox_factor = gaussian_penalty(proximity=0.8, optimal=0.75, sigma=0.15)
+        >>> # 逼近率0.8接近最优0.75，输出约0.97（几乎无惩罚）
+        >>> # 如果proximity=0.5或0.95，输出会显著下降
+    """
+    if value is None or optimal is None or sigma is None or sigma <= 0:
+        return 0.5  # 缺失数据或非法sigma时返回中性值
+    try:
+        return math.exp(-0.5 * ((value - optimal) / sigma) ** 2)
+    except (OverflowError, ValueError):
+        return 0.0
+
+
+def exponential_decay(time_passed: float, half_life: float) -> float:
+    """
+    指数衰减函数，输出范围 (0, 1]
+    
+    【物理意义】
+    - time_passed=0 时输出 1.0（无衰减）
+    - 每经过 half_life 时间，输出衰减一半
+    - 物理放射性衰变模型
+    
+    【用途】
+    - 跨日情绪衰减：昨日涨停记忆随天数衰减
+    - 日内时间衰减：尾盘信号权重降低
+    
+    Args:
+        time_passed: 经过的时间（如天数、分钟数）
+        half_life: 半衰期，输出衰减到0.5所需时间
+        
+    Returns:
+        float: 衰减乘数，范围(0, 1]
+        
+    Example:
+        >>> decay_factor = exponential_decay(time_passed=2, half_life=1)
+        >>> # 经过2天，半衰期1天，输出=0.25（衰减75%）
+        >>> memory_score = original_score * decay_factor
+    """
+    if time_passed is None or half_life is None or half_life <= 0:
+        return 0.0
+    if time_passed <= 0:
+        return 1.0
+    try:
+        return math.exp(-math.log(2) * time_passed / half_life)
+    except (OverflowError, ValueError):
+        return 0.0
+
+
+def calculate_ignition_probability(
+    mfe: float, 
+    sustain_ratio: float,
+    proximity: float,
+    mfe_midpoint: float = 1.2,
+    mfe_steepness: float = 2.0,
+    sustain_midpoint: float = 1.5,
+    sustain_steepness: float = 2.0,
+    proximity_optimal: float = 0.75,
+    proximity_sigma: float = 0.15
+) -> float:
+    """
+    【连乘点火概率模型】综合计算买入信号的总能量
+    
+    【物理哲学】
+    废除 if-else 布尔切断，改用连续函数乘积：
+    ignition_prob = mfe_factor * sustain_factor * proximity_factor
+    
+    每个因子输出(0,1)，只有三者同时高，总概率才高。
+    任何一项短板都会平滑拉低总概率，无断崖式拒绝。
+    
+    Args:
+        mfe: MFE做功效率
+        sustain_ratio: 资金持续比
+        proximity: 涨停逼近率
+        其他参数: 各连续函数的超参数
+        
+    Returns:
+        float: 综合点火概率(0, 1)
+    """
+    mfe_factor = sigmoid_multiplier(mfe, mfe_midpoint, mfe_steepness)
+    sustain_factor = sigmoid_multiplier(sustain_ratio, sustain_midpoint, sustain_steepness)
+    proximity_factor = gaussian_penalty(proximity, proximity_optimal, proximity_sigma)
+    
+    return mfe_factor * sustain_factor * proximity_factor

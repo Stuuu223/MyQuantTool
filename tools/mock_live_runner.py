@@ -101,6 +101,9 @@ class MockLiveRunner:
         # 【CTO V168】全天候Top10审计台账 - 每分钟记录，用于正反样本分析
         self.daily_top10_ledger: List[Dict] = []
         
+        # 【CTO V172】真实流通盘缓存 - 废除10亿股硬编码！
+        self.float_volumes: Dict[str, float] = {}  # {stock_code: float_volume_shares}
+        
         logger.info(f"[MockLiveRunner] 初始化完成，目标日期={target_date}，本金=¥{initial_capital:,.0f}")
         logger.info(f"[MockLiveRunner] 沙盒ID: {self.sandbox.get_run_id()}")
     
@@ -169,6 +172,34 @@ class MockLiveRunner:
                     continue
             
             self.tick_queues[stock_code] = tick_list
+            
+            # 【CTO V172核弹级修复】获取真实流通盘数据！废除10亿股硬编码！
+            try:
+                detail = xtdata.get_instrument_detail(stock_code)
+                if detail:
+                    # QMT返回的FloatVolume单位是万股，需要转换为股
+                    float_vol_wangu = detail.get('FloatVolume', 0)
+                    if float_vol_wangu and float_vol_wangu > 0:
+                        # 检测单位：如果值很小（<1000），说明是亿股；如果是万级别，说明是万股
+                        # A股最小流通市值约20亿，如果float_vol < 1000，单位是亿股
+                        if float_vol_wangu < 1000:
+                            # 单位是亿股，转换为股
+                            float_vol_shares = float_vol_wangu * 100000000
+                        else:
+                            # 单位是万股，转换为股
+                            float_vol_shares = float_vol_wangu * 10000
+                        self.float_volumes[stock_code] = float_vol_shares
+                        logger.debug(f"[MockLiveRunner] {stock_code} 真实流通盘: {float_vol_shares/100000000:.2f}亿股")
+                    else:
+                        logger.warning(f"[MockLiveRunner] {stock_code} FloatVolume=0，将跳过打分")
+                        self.float_volumes[stock_code] = 0
+                else:
+                    logger.warning(f"[MockLiveRunner] {stock_code} 无法获取instrument_detail，将跳过打分")
+                    self.float_volumes[stock_code] = 0
+            except Exception as e:
+                logger.warning(f"[MockLiveRunner] {stock_code} 获取流通盘失败: {e}，将跳过打分")
+                self.float_volumes[stock_code] = 0
+            
             logger.info(f"[MockLiveRunner] {stock_code} 加载{len(tick_list)}个Tick")
             return True
             
@@ -338,11 +369,19 @@ class MockLiveRunner:
             true_flow_5min = max(0, total_amount - amount_5min_ago)
             true_flow_15min = max(0, total_amount - amount_15min_ago)
             
+            # 【CTO V172核弹级修复】使用真实流通盘！废除10亿股硬编码！
+            real_float_volume = self.float_volumes.get(stock_code, 0)
+            if real_float_volume <= 0:
+                # 无真实流通盘数据，跳过打分！绝不使用假数据！
+                logger.debug(f"[MockLiveRunner] {stock_code} 流通盘数据缺失，跳过打分")
+                return  # 数据缺失就跳过，禁止用假数据凑数
+            
             # 调用核心打分引擎
             try:
                 # 创建引擎实例并调用
                 engine = KineticCoreEngine()
                 # 【CTO V170】传入真实时间切片数据，绝不允许线性外推！
+                # 【CTO V172】传入真实流通盘，绝不允许硬编码10亿股！
                 result = engine.calculate_true_dragon_score(
                     net_inflow=current_tick['amount'] * 0.5,  # 简化：假设50%是净流入
                     price=current_tick['price'],
@@ -354,7 +393,7 @@ class MockLiveRunner:
                     flow_15min=true_flow_15min,  # 【CTO V170】真实15分钟成交额
                     flow_5min_median_stock=5000000,  # 默认历史中位数
                     space_gap_pct=10.0,  # 默认空间差
-                    float_volume_shares=1000000000,  # 默认流通盘10亿股
+                    float_volume_shares=real_float_volume,  # 【CTO V172】真实流通盘！禁止硬编码！
                     current_time=target_time,  # 【修复】datetime对象
                     total_amount=total_amount,
                     total_volume=int(total_amount / current_tick['price']) if current_tick['price'] > 0 else 0,
@@ -673,55 +712,79 @@ class MockLiveRunner:
         tick = top1_data.get('tick', {})
         price = top1_data['price']
         current_mfe = top1_data.get('mfe', 0)
+        sustain_ratio = top1_data.get('sustain_ratio', 0)
+        inflow_ratio = top1_data.get('inflow_ratio', 0)
         high = tick.get('high', price)
         low = tick.get('low', price)
         open_price = tick.get('open', price)
         prev_close = tick.get('lastClose', price)
         
-        # 计算分钟数（用于智猪法则）
-        minutes_passed = self._get_minutes_passed(current_time)
+        # 计算涨停逼近率
+        limit_up_price = tick.get('limitUpPrice', 0)
+        if limit_up_price <= 0:
+            if top1_code.startswith('300') or top1_code.startswith('688'):
+                limit_up_price = prev_close * 1.2
+            else:
+                limit_up_price = prev_close * 1.1
+        limit_proximity = (price - prev_close) / (limit_up_price - prev_close) if (limit_up_price - prev_close) > 0 else 0.5
         
-        # 【CTO V171 智猪法则】从配置读取观察期（⚠️ Boss批注：不应是机械时间门槛，应改为动态确认机制）
-        early_observation_minutes = self.config_manager.get('kinetic_physics.early_observation_minutes', 15)
-        if minutes_passed < early_observation_minutes:
-            # 【CTO V171 禁止涨停作单】涨停时买不进去，排队是大猪的特权！
-            limit_up_buy_enabled = self.config_manager.get('kinetic_physics.limit_up_buy_enabled', False)
-            if not limit_up_buy_enabled:
-                # 检查是否涨停
-                limit_up_price = tick.get('limitUpPrice', 0)
-                if limit_up_price <= 0:
-                    if top1_code.startswith('300') or top1_code.startswith('688'):
-                        limit_up_price = prev_close * 1.2
-                    else:
-                        limit_up_price = prev_close * 1.1
-                is_limit_up = price >= limit_up_price * 0.99
-                if is_limit_up:
-                    return  # 【CTO V171】涨停禁止作单！智猪不接盘
-            
-            # 非涨停脉冲也拒绝进食（智猪法则）
-            if not is_limit_up:
-                return  # 非涨停脉冲，智猪拒绝进食
+        # 【CTO V172流动性拒止】涨停边缘绝对禁止买入！排队是大猪特权！
+        if price >= limit_up_price * 0.998:
+            return  # 涨停排队是骗局，智猪绝不接盘！
         
-        # 【CTO V170 避雷针相对论防御】废除2.5%伪装常数！
-        # 相对势能损耗率 = 从高点回落 / 有效向上推力
-        upward_displacement = high - open_price  # 向上推力（从开盘到最高）
+        # 【CTO V172缩量秒板毒药拦截】涨幅高但流入极低 = 极度一致性陷阱
+        inflow_min = self.config_manager.get('kinetic_physics.early_buy.inflow_min_for_high_surge', 0.5)
+        if price > prev_close * 1.08 and inflow_ratio < inflow_min:
+            return  # 涨幅>8%但流入<0.5%，缩量秒板毒药，拒绝虚假一致性！
+        
+        # 【CTO V172避雷针相对论防御】
+        upward_displacement = high - open_price
         if upward_displacement > 0:
             drawdown_from_high = high - price
             retrace_ratio = drawdown_from_high / upward_displacement
-            # 【CTO V171】黄金分割死线从config读取（⚠️ UNVERIFIED）
             retrace_ratio_max = self.config_manager.get('kinetic_physics.retrace_ratio_max', 0.618)
             if retrace_ratio > retrace_ratio_max:
                 return  # 避雷针：向上势能已被吞噬，禁止开火
         
-        # 【CTO V171 VWAP确认】现价必须在均价线附近或上方
-        # 简化VWAP：用成交额/成交量估算
+        # 【CTO V172 VWAP确认】
         total_amount = top1_data.get('amount', 0)
         total_volume = tick.get('volume', 1)
         if total_volume > 0:
-            vwap = total_amount / (total_volume * 100) if total_volume > 0 else price  # volume单位是手，转股
+            vwap = total_amount / (total_volume * 100) if total_volume > 0 else price
             vwap_deviation_max = self.config_manager.get('kinetic_physics.vwap_deviation_max', 0.02)
-            if price < vwap * (1 - vwap_deviation_max):  # 现价跌破VWAP阈值
+            if price < vwap * (1 - vwap_deviation_max):
                 return  # 智猪法则：未在均线上方形成强势沉没成本
+        
+        # 【CTO V172核心：连续函数点火概率模型】
+        # 废除if-else布尔切断，改用Sigmoid和Gaussian连续函数乘积
+        from logic.utils.math_utils_core import sigmoid_multiplier, gaussian_penalty, calculate_ignition_probability
+        
+        # 从config读取连续函数参数
+        mfe_mid = self.config_manager.get('kinetic_physics.early_buy.mfe_midpoint', 1.2)
+        mfe_k = self.config_manager.get('kinetic_physics.early_buy.mfe_steepness', 2.0)
+        sustain_mid = self.config_manager.get('kinetic_physics.early_buy.sustain_midpoint', 1.5)
+        sustain_k = self.config_manager.get('kinetic_physics.early_buy.sustain_steepness', 2.0)
+        prox_opt = self.config_manager.get('kinetic_physics.early_buy.proximity_optimal', 0.75)
+        prox_sigma = self.config_manager.get('kinetic_physics.early_buy.proximity_sigma', 0.15)
+        ignition_threshold = self.config_manager.get('kinetic_physics.early_buy.ignition_threshold', 0.30)
+        
+        # 计算综合点火概率
+        ignition_prob = calculate_ignition_probability(
+            mfe=current_mfe,
+            sustain_ratio=sustain_ratio,
+            proximity=limit_proximity,
+            mfe_midpoint=mfe_mid,
+            mfe_steepness=mfe_k,
+            sustain_midpoint=sustain_mid,
+            sustain_steepness=sustain_k,
+            proximity_optimal=prox_opt,
+            proximity_sigma=prox_sigma
+        )
+        
+        if ignition_prob < ignition_threshold:
+            # 综合能量不足，拒绝买入
+            logger.debug(f"[MockLiveRunner] {top1_code} 点火概率{ignition_prob:.2%} < {ignition_threshold:.0%}，拒绝")
+            return
         
         # 【CTO V171】触发分数阈值从config读取（⚠️ UNVERIFIED）
         min_trigger_score = self.config_manager.get('kinetic_physics.min_trigger_score', 100.0)

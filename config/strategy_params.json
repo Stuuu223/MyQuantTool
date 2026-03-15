@@ -169,6 +169,34 @@
     "_WARNING_vwap_deviation_max": "[UNVERIFIED] 现价跌破VWAP阈值，大猪沉没成本不足判定",
     
     "limit_up_buy_enabled": false,
-    "_limit_up_buy_enabled_comment": "【CTO V171修复】禁止涨停作单！涨停时买不进去，排队是大猪的特权，智猪不接盘"
+    "_limit_up_buy_enabled_comment": "【CTO V171修复】禁止涨停作单！涨停时买不进去，排队是大猪的特权，智猪不接盘",
+    
+    "early_buy": {
+      "_description": "【CTO V172】早盘点火连续函数参数 - 废除if-else布尔切断，改用概率乘积模型",
+      
+      "mfe_midpoint": 1.2,
+      "_WARNING_mfe_midpoint": "[UNVERIFIED] MFE Sigmoid中心点，待网格扫描验证",
+      
+      "mfe_steepness": 2.0,
+      "_WARNING_mfe_steepness": "[UNVERIFIED] MFE Sigmoid陡峭度，越大越接近阶跃函数",
+      
+      "sustain_midpoint": 1.5,
+      "_WARNING_sustain_midpoint": "[UNVERIFIED] sustain_ratio Sigmoid中心点",
+      
+      "sustain_steepness": 2.0,
+      "_WARNING_sustain_steepness": "[UNVERIFIED] sustain_ratio Sigmoid陡峭度",
+      
+      "proximity_optimal": 0.75,
+      "_WARNING_proximity_optimal": "[UNVERIFIED] 涨停逼近率高斯最优值，距涨停25%最优",
+      
+      "proximity_sigma": 0.15,
+      "_WARNING_proximity_sigma": "[UNVERIFIED] 涨停逼近率高斯标准差，控制容忍范围",
+      
+      "ignition_threshold": 0.30,
+      "_WARNING_ignition_threshold": "[UNVERIFIED] 点火概率阈值，低于此值拒绝买入",
+      
+      "inflow_min_for_high_surge": 0.5,
+      "_WARNING_inflow_min_for_high_surge": "[UNVERIFIED] 高涨幅最小流入占比，防缩量秒板毒药"
+    }
   }
 }

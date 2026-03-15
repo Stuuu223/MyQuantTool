@@ -719,7 +719,7 @@ if __name__ == "__main__":
     print("\n【测试F1】mfe初始化防UnboundLocalError验证")
     test_time_spike = datetime(2026, 3, 4, 9, 45, 0)
     try:
-        final_score_spike, sustain_spike, inflow_spike, ratio_spike, mfe_spike = engine.calculate_true_dragon_score(
+        final_score_spike, sustain_spike, inflow_spike, ratio_spike, mfe_spike, debug_spike = engine.calculate_true_dragon_score(
             net_inflow=10000000,
             price=25.0,
             prev_close=22.0,
@@ -742,7 +742,7 @@ if __name__ == "__main__":
     # 原有测试：sustain_ratio负流入场景
     print("\n【测试sustain_ratio】负流入修复验证")
     test_time_neg = datetime(2026, 3, 4, 9, 45, 0)
-    final_score_neg, sustain_ratio_neg, inflow_ratio_neg, ratio_stock_neg, mfe_neg = engine.calculate_true_dragon_score(
+    final_score_neg, sustain_ratio_neg, inflow_ratio_neg, ratio_stock_neg, mfe_neg, debug_neg = engine.calculate_true_dragon_score(
         net_inflow=10000000,
         price=25.0,
         prev_close=22.0,
