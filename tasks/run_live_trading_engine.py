@@ -757,6 +757,10 @@ class LiveTradingEngine:
         if not hasattr(self, 'true_dict') or not self.true_dict:
             self.true_dict = get_true_dictionary()
             
+        # 【CTO V180.1】沙盘模式初始化static_cache，避免AttributeError
+        if not hasattr(self, 'static_cache') or not self.static_cache:
+            self.static_cache = {}
+            
         mock_target_date = getattr(self.qmt_manager, 'target_date', None)
         
         # 【CTO 斩断双倍 I/O】禁止在此处二次召唤 UniverseBuilder，直接使用供弹带
@@ -1965,25 +1969,27 @@ class LiveTradingEngine:
                 # 【CTO V5】午休期间：保持挂起，显示缓存
                 is_lunch_break = time_type(11, 30) <= current_time < time_type(13, 0)
                 if is_lunch_break:
-                    # 【CTO V180】午休期间不退出，改为continue等待下午开盘
-                    if not getattr(self, '_lunch_logged', False):
-                        logger.info("[PAUSE] 午休静默中 (11:30-13:00)，等待下午开盘...")
-                        self._lunch_logged = True
-                    
-                    if self.last_known_top_targets:
-                        self._print_fire_control_panel(
-                            self.last_known_top_targets, 
-                            initial_loading=False, 
-                            pool_stats={
-                                'total': len(self.watchlist),
-                                'active': 0,
-                                'up': 0,
-                                'down': 0,
-                                'filtered': len(self.watchlist)
-                            },
-                            is_rest=True
-                        )
-                        print("\n⏸️ [午休复盘模式] 保留最后机会池数据，等待下午开盘...")
+                    # 【CTO V180.1】午休面板只打印一次，避免60秒刷屏
+                    if not getattr(self, '_printed_lunch_panel', False):
+                        if not getattr(self, '_lunch_logged', False):
+                            logger.info("[PAUSE] 午休静默中 (11:30-13:00)，等待下午开盘...")
+                            self._lunch_logged = True
+                        
+                        if self.last_known_top_targets:
+                            self._print_fire_control_panel(
+                                self.last_known_top_targets, 
+                                initial_loading=False, 
+                                pool_stats={
+                                    'total': len(self.watchlist),
+                                    'active': 0,
+                                    'up': 0,
+                                    'down': 0,
+                                    'filtered': len(self.watchlist)
+                                },
+                                is_rest=True
+                            )
+                            print("\n⏸️ [午休复盘模式] 保留最后机会池数据，等待下午开盘...")
+                        self._printed_lunch_panel = True
                     
                     # 午休期间等待，不退出循环
                     if self.mode == 'live':
@@ -1991,9 +1997,12 @@ class LiveTradingEngine:
                         time.sleep(60)  # 每60秒检查一次
                     continue  # 【CTO V180】改为continue，下午自动恢复
                 
-                # 13:00后重置午休日志标志
-                if current_time >= time_type(13, 0) and getattr(self, '_lunch_logged', False):
-                    self._lunch_logged = False
+                # 13:00后重置午休日志标志和面板标志
+                if current_time >= time_type(13, 0):
+                    if getattr(self, '_lunch_logged', False):
+                        self._lunch_logged = False
+                    if getattr(self, '_printed_lunch_panel', False):
+                        self._printed_lunch_panel = False
                 
                 # 【CTO V5】盘后期间 (15:00后)：执行一次最终计算然后定格展示
                 is_after_hours = current_time >= time_type(15, 0)
@@ -2137,35 +2146,10 @@ class LiveTradingEngine:
                         float(pre_close), float(tick_high), float(tick_low), tick
                     )
                     
-                    # 【CTO V90 终极微积分与崩溃修复】
-                    current_price = tick.get('lastPrice', 0)
-                    pre_close = tick.get('lastClose', 0)
-                    current_amount = tick.get('amount', 0)
-                    
-                    if stock_code not in self.l1_inflow_accumulator:
-                        self.l1_inflow_accumulator[stock_code] = {
-                            'inflow': 0.0, 'last_amount': current_amount, 'last_price': current_price
-                        }
-                        
-                    cache = self.l1_inflow_accumulator[stock_code]
-                    delta_amount = current_amount - cache['last_amount']
-                    delta_price = current_price - cache['last_price']
-                    
-                    if delta_amount > 0:
-                        if delta_price > 0:
-                            cache['inflow'] += delta_amount
-                        elif delta_price < 0:
-                            cache['inflow'] -= delta_amount
-                        else:
-                            bid_vol = tick.get('bidVol1', 0)
-                            ask_vol = tick.get('askVol1', 0)
-                            if bid_vol + ask_vol > 0:
-                                imb = (bid_vol - ask_vol) / (bid_vol + ask_vol)
-                                cache['inflow'] += delta_amount * imb
-                                
-                    cache['last_amount'] = current_amount
-                    cache['last_price'] = current_price
-                    net_inflow_est = cache['inflow']
+                    # 【CTO V180.1】删除手工累加器代码块！
+                    # 原代码在_calculate_l1_inflow后又手动操作accumulator，覆盖了智能算子结果
+                    # 现在直接使用_calculate_l1_inflow返回的net_inflow_est
+                    # Imbalance^3盘口重力算子不再被阉割！
                     
                     # 修复 s_data 崩溃：直接从 true_dict 获取
                     avg_vol = true_dict.get_avg_volume_5d(stock_code) or 0.0
@@ -2504,8 +2488,8 @@ class LiveTradingEngine:
                         trigger_signal = None
                         if final_score >= 50.0 and quant_purity > -50.0:
                             # 计算VWAP（简化：用成交额/成交量）
-                            # 【CTO V180】修复: 使用tick_volume而非未定义的volume_gu
-                            vwap = current_amount / tick_volume if tick_volume > 0 else current_price
+                            # 【CTO V180.1】修复: 使用tick_volume_gu（已定义），而非tick_volume
+                            vwap = current_amount / tick_volume_gu if tick_volume_gu > 0 else current_price
                             # 尝试触发物理买点
                             trigger_signal = self.trigger_validator.check_all_triggers(
                                 stock_code=stock_code,
@@ -2892,7 +2876,8 @@ class LiveTradingEngine:
             # === 【CTO V85: L1 对倒阻尼防线】 ===
             change_pct = (price - prev_close) / prev_close * 100 if prev_close > 0 else 0.0
             if avg_vol_5d and avg_vol_5d > 0:
-                avg_amount_5d = avg_vol_5d * 100 * prev_close
+                # 【CTO V179.5】avg_volume_5d单位是股，禁止×100！
+                avg_amount_5d = avg_vol_5d * prev_close
                 if avg_amount_5d > 0:
                     current_ratio = amount / avg_amount_5d
                     if current_ratio > 3.0 and abs(change_pct) < 2.0:
