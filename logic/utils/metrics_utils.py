@@ -411,6 +411,7 @@ def render_battle_dashboard(data_list, title="战报", clear_screen=False):
         table.add_column("INFLOW%", justify="right", width=9)
         table.add_column("SUSTAIN", justify="right", width=8)
         table.add_column("MFE", justify="right", width=6)
+        table.add_column("IGNITE%", justify="right", width=8)  # 【CTO V180.4】波函数坍缩概率
         
         for i, item in enumerate(data_list, 1):
             # 【CTO安全渲染】：绝对兜底，不准报错
@@ -421,6 +422,7 @@ def render_battle_dashboard(data_list, title="战报", clear_screen=False):
             inflow = item.get('inflow_ratio', 0.0)
             sustain = item.get('sustain_ratio', 0.0)
             mfe = item.get('mfe', 0.0)
+            ignite = item.get('ignition_prob', 0.0)  # 【CTO V180.4】点火概率
             
             # 【CTO安全渲染】强制数值转换，防止类型爆炸
             try:
@@ -447,6 +449,10 @@ def render_battle_dashboard(data_list, title="战报", clear_screen=False):
                 mfe = float(mfe) if mfe is not None else 0.0
             except (ValueError, TypeError):
                 mfe = 0.0
+            try:
+                ignite = float(ignite) if ignite is not None else 0.0
+            except (ValueError, TypeError):
+                ignite = 0.0
             
             # 【CTO V28】量化纯度颜色渲染
             if score >= 80:
@@ -466,6 +472,14 @@ def render_battle_dashboard(data_list, title="战报", clear_screen=False):
             else:
                 change_style = "white"
             
+            # 【CTO V180.4】点火概率颜色
+            if ignite >= 50:
+                ignite_style = "bold red"
+            elif ignite >= 20:
+                ignite_style = "yellow"
+            else:
+                ignite_style = "white"
+            
             # 限制MFE范围
             mfe = max(-99.9, min(mfe, 99.9))
             
@@ -477,7 +491,8 @@ def render_battle_dashboard(data_list, title="战报", clear_screen=False):
                 f"[{change_style}]{change:+.2f}%[/]",
                 f"{inflow:.2f}%",
                 f"{sustain:.2f}",
-                f"{mfe:.1f}"
+                f"{mfe:.1f}",
+                f"[{ignite_style}]{ignite:.1f}%[/{ignite_style}]"
             )
         
         # 打印标题和表格
@@ -642,9 +657,10 @@ def build_dashboard_layout(top_targets, pool_stats=None, account_info=None, is_r
     return Group(header_panel, acc_panel, stats_text, table, cmd_text)
 
 
-def render_live_dashboard(top_targets, pool_stats=None, is_rest=False, msg=None, initial_loading=False, account_info=None):
+def render_live_dashboard(top_targets, pool_stats=None, is_rest=False, msg=None, initial_loading=False, account_info=None, silence_logs: bool = True):
     """
     【CTO V121】兼容接口 - 调用 build_dashboard_layout 返回渲染对象
+    【CTO V180.4】添加silence_logs参数
     
     Args:
         top_targets: TOP10目标列表
@@ -653,103 +669,14 @@ def render_live_dashboard(top_targets, pool_stats=None, is_rest=False, msg=None,
         msg: 自定义消息
         initial_loading: 是否初始加载
         account_info: 虚拟账户信息（新增）
+        silence_logs: 是否静默终端日志（live模式默认True，scan模式传False）
     """
-    # 【CTO V119】禁用终端日志输出，防止滚动
-    _silence_terminal_logging()
+    # 【CTO V180.4】scan模式保留日志输出，便于调试
+    if silence_logs:
+        _silence_terminal_logging()
     
     # 直接返回渲染对象，由外层 Live 调用
     return build_dashboard_layout(top_targets, pool_stats, account_info, is_rest, msg, initial_loading)
-    
-    try:
-        from rich.console import Console
-        from rich.table import Table
-        from rich.panel import Panel
-        
-        console = Console()
-        
-        # 标题栏
-        if msg:
-            title_str = f"🚀 [V20 暴力猎杀雷达] | {msg} | {now_str}"
-        elif is_rest:
-            title_str = f"🚀 [V20 暴力猎杀雷达] | [静态投影复盘] | {now_str}"
-        else:
-            title_str = f"🚀 [V20 暴力猎杀雷达] | [极速高频狙击] | {now_str}"
-        
-        console.print(Panel(title_str, style="bold cyan", expand=False))
-        
-        if initial_loading:
-            console.print("[yellow]>>> 正在连接 QMT 物理内存，装载高阶算子...[/yellow]")
-            return
-        
-        # 战场统计
-        if pool_stats:
-            passed = pool_stats.get('passed_fine_filter', pool_stats.get('active', 0))
-            console.print(f"[white]* 猎杀漏斗: 5191只 → 粗筛: {pool_stats.get('total', 0)}只 → 活跃: {pool_stats.get('active', 0)}只 → 过细筛: {passed}只[/white]")
-            console.print(f"[white]* 战场情绪: 红盘/封板: {pool_stats.get('up', 0)}只 | 水下/绿盘: {pool_stats.get('down', 0)}只 | 派发剔除: {pool_stats.get('active', 0) - passed}只[/white]")
-        
-        # Rich Table核心算子矩阵
-        table = Table(show_header=True, header_style="bold magenta", style="cyan", expand=False)
-        table.add_column("RANK", justify="center", width=4)
-        table.add_column("TARGET", justify="center", width=10, style="bold white")
-        table.add_column("SCORE", justify="right", width=7, style="bold red")
-        table.add_column("PRICE", justify="right", width=7)
-        table.add_column("CHG%", justify="right", width=8)
-        table.add_column("INFLOW%", justify="right", width=9)
-        table.add_column("SUSTAIN", justify="right", width=8)
-        table.add_column("MFE", justify="right", width=6)
-        table.add_column("PURITY%", justify="right", width=8)
-        
-        if not top_targets:
-            table.add_row("...", "暂无目标", "...", "...", "...", "...", "...", "...", "...")
-        else:
-            for i, t in enumerate(top_targets, 1):
-                row_style = "bold red" if i <= 3 else None
-                
-                # 量化纯度渲染
-                p_val = t.get('purity', 0)
-                if p_val >= 80:
-                    p_color = "bold red"
-                elif p_val >= 20:
-                    p_color = "yellow"
-                elif p_val >= -20:
-                    p_color = "white"
-                else:
-                    p_color = "green"
-                purity_str = f"[{p_color}]{p_val:+.1f}%[/{p_color}]"
-                
-                # MFE和Sustain物理截断防爆表
-                safe_sustain = min(max(t.get('sustain_ratio', 0), -99.9), 99.9)
-                safe_mfe = min(max(t.get('mfe', 0), -99.9), 99.9)
-                
-                table.add_row(
-                    str(i),
-                    t['code'],
-                    f"{t.get('score', 0):.1f}",
-                    f"{t['price']:.2f}",
-                    f"{t.get('change', 0):+.2f}%",
-                    f"{t.get('inflow_ratio', 0):.2f}%",
-                    f"{safe_sustain:.2f}x",
-                    f"{safe_mfe:.1f}",
-                    purity_str,
-                    style=row_style
-                )
-        
-        console.print(table)
-        
-        if is_rest:
-            console.print("[bright_black][CMD] 盘后定格完毕。极简终端，摒弃一切多余渲染。[/bright_black]")
-        else:
-            console.print("[bright_black][CMD] 雷达超频扫描中... (Ctrl+C 安全阻断)[/bright_black]")
-    
-    except ImportError:
-        # Rich库不可用时降级为print
-        print(f"\n{'='*80}")
-        print(f"🚀 [V20 暴力猎杀雷达] | {msg or '运行中'} | {now_str}")
-        print(f"{'='*80}")
-        if pool_stats:
-            print(f"* 猎杀漏斗: 粗筛: {pool_stats.get('total', 0)}只 → 活跃: {pool_stats.get('active', 0)}只")
-        if top_targets:
-            print(f"{'排名':<4} {'代码':<10} {'得分':<8} {'价格':<8} {'涨幅':<8}")
-            for i, t in enumerate(top_targets, 1):
-                print(f"{i:<4} {t['code']:<10} {t.get('score', 0):<8.1f} {t['price']:<8.2f} {t.get('change', 0):<8.2f}%")
-        print(f"{'='*80}\n")
+    # 【CTO V180.4】删除return之后的死代码（永不执行的try/except块）
+    # 原代码保留了完整的降级渲染逻辑，但被return拦截永远不执行
+    # 这是技术债炸弹：一旦有人删除return，降级分支会激活但缺少IGNITE%列

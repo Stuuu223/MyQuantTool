@@ -1887,7 +1887,8 @@ class LiveTradingEngine:
             except Exception:
                 pass
         
-        render_live_dashboard(top_targets, pool_stats, is_rest, msg, initial_loading, account_info)
+        render_live_dashboard(top_targets, pool_stats, is_rest, msg, initial_loading, account_info,
+                              silence_logs=(self.mode == 'live'))  # 【CTO V180.4】scan模式保留日志
     
     def _run_radar_main_loop(self):
         """
@@ -2723,8 +2724,9 @@ class LiveTradingEngine:
             "_calculate_turnover_rate已废弃，请直接在主循环中计算换手率。"
             "注意：current_volume单位是手，需×100转换为股后再除以float_volume。"
         )
-        
-        return turnover_rate_per_min
+        # 【CTO V180.4】删除孤立的return语句
+        # 原代码: return turnover_rate_per_min
+        # 此变量已被删除，保留return会导致NameError炸弹
     
     def _micro_defense_check(self, stock_code: str, tick_data: Dict[str, Any]) -> bool:
         """
