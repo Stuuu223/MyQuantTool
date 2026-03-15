@@ -382,8 +382,11 @@ class MockLiveRunner:
                 engine = KineticCoreEngine()
                 # 【CTO V170】传入真实时间切片数据，绝不允许线性外推！
                 # 【CTO V172】传入真实流通盘，绝不允许硬编码10亿股！
+                # 【CTO V173】net_inflow改用true_flow_5min真实时间切片！
+                # 废除current_tick['amount']*0.5全天累计额，改用5分钟真实切片
+                # ⚠️ 0.5净流入比例是估算值[UNVERIFIED]，待网格扫描验证
                 result = engine.calculate_true_dragon_score(
-                    net_inflow=current_tick['amount'] * 0.5,  # 简化：假设50%是净流入
+                    net_inflow=true_flow_5min * 0.5,  # 【CTO V173】真实5分钟切片成交额，假设50%净流入[UNVERIFIED]
                     price=current_tick['price'],
                     prev_close=current_tick['lastClose'],
                     high=current_tick['high'],
