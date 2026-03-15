@@ -291,6 +291,11 @@ class LiveTradingEngine:
         self.eliminate_mfe_threshold: float = 1.2              # MFE<1.2
         self.eliminate_volume_ratio_threshold: float = 3.0     # Volume_Ratio>3.0
         
+        # 【CTO V180.2】午休状态标志显式初始化，禁止依赖getattr运行时兜底
+        self._lunch_logged: bool = False
+        self._printed_lunch_panel: bool = False
+        self._has_generated_report: bool = False
+        
         logger.info("[OK] [LiveTradingEngine] 初始化完成 - QMT Manager已注入")
         logger.info("[CTO状态机] 动态蓄水池架构已启用：candidate_pool/opportunity_pool/eliminated_pool")
     
@@ -757,11 +762,25 @@ class LiveTradingEngine:
         if not hasattr(self, 'true_dict') or not self.true_dict:
             self.true_dict = get_true_dictionary()
             
-        # 【CTO V180.1】沙盘模式初始化static_cache，避免AttributeError
+        # 【CTO V180.2】沙盘模式初始化并填充static_cache
+        # 避免空字典导致_check_vacuum_gliding永远返回False
         if not hasattr(self, 'static_cache') or not self.static_cache:
             self.static_cache = {}
             
         mock_target_date = getattr(self.qmt_manager, 'target_date', None)
+        
+        # 【CTO V180.2】从tick_stream预填充prev_close到static_cache
+        # _check_vacuum_gliding需要self.static_cache.get(stock_code, {}).get('prev_close', 0)
+        # scan模式下必须在此处填充，否则涨停股会被错误剔除
+        for tick in tick_stream:
+            sc = tick.get('stock_code', '')
+            if sc and sc not in self.static_cache:
+                prev_close_val = float(tick.get('lastClose', 0) or tick.get('prev_close', 0))
+                if prev_close_val > 0:
+                    self.static_cache[sc] = {
+                        'prev_close': prev_close_val,
+                        'is_yesterday_limit_up': False  # scan模式暂无此数据，保守默认
+                    }
         
         # 【CTO 斩断双倍 I/O】禁止在此处二次召唤 UniverseBuilder，直接使用供弹带
         # 原代码: base_pool, _ = UniverseBuilder(target_date=mock_target_date).build()
@@ -890,8 +909,8 @@ class LiveTradingEngine:
                 is_yesterday_limit_up = self.static_cache.get(stock_code, {}).get('is_yesterday_limit_up', False)
                 # 【V178 Bug#2】传入真实成交数据用于VWAP计算
                 tick_volume = float(tick.get('volume', 0) or tick.get('lastVolume', 0))
-                # 【CTO V180】引擎返回6个值，必须解包6个！
-                final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe, _ = self._kinetic_core.calculate_true_dragon_score(
+                # 【CTO V180.2】引擎返回6个值，debug_metrics不再丢弃！
+                final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe, debug_metrics = self._kinetic_core.calculate_true_dragon_score(
                     net_inflow=stock_net_inflow,
                     price=current_price,
                     prev_close=pre_close,
@@ -960,7 +979,11 @@ class LiveTradingEngine:
                         'first_entry_time': engine_time.strftime('%H:%M:%S'),
                         # 【CTO课题三】物理买点触发标记
                         'trigger_type': trigger_signal.trigger_type if trigger_signal else None,
-                        'trigger_confidence': trigger_signal.confidence if trigger_signal else 0.0
+                        'trigger_confidence': trigger_signal.confidence if trigger_signal else 0.0,
+                        # 【CTO V180.2】debug_metrics透明化 - 波函数坍缩概率
+                        'ignition_prob': debug_metrics.get('ignition_probability_pct', 0.0),
+                        'mass': debug_metrics.get('mass_potential', 0.0),
+                        'velocity': debug_metrics.get('velocity', 0.0)
                     }
                     current_top_targets.append(target_entry)
                     
@@ -2168,15 +2191,14 @@ class LiveTradingEngine:
                     if float_volume <= 0:
                         float_volume = 1000000000.0  # 默认10亿股
                     
+                    # float_volume来自true_dict.get_float_volume()，单位：股（已由TrueDictionary校正）
+                    # float_market_cap = float_volume(股) × current_price(元/股) = 元
                     float_market_cap = float_volume * current_price
                     
-                    # 【量纲自适应校准算子】
-                    calibrated_market_cap = float_market_cap
-                    if float_market_cap > 0:
-                        if float_market_cap < 20000000:  # 小于2000万，单位是"万股"
-                            calibrated_market_cap = float_market_cap * 10000
-                        elif float_market_cap < 200000000:  # 小于2亿，单位是"手"
-                            calibrated_market_cap = float_market_cap * 100
+                    # 【CTO V180.2】删除量纲自适应死代码
+                    # 原if/elif块在正常股票（市值>2亿元）下永远不触发，是量纲混乱时期遗留
+                    # 禁止量纲自适应"猜测"，单位已在TrueDictionary层确定性校正
+                    calibrated_market_cap = float_market_cap  # 单位：元
                     
                     # 用校准后的市值计算真实流入占比（不再归零！）
                     if calibrated_market_cap > 0:
@@ -2312,7 +2334,12 @@ class LiveTradingEngine:
                     # 真龙可能缩量锁筹，只要不触发派发防线，一律放行给引擎打分！
                     try:
                         # 【CTO V20】float_volume已在上方从缓存或兜底获取
-                        volume_gu = current_volume * 100  # 手→股
+                        # 【CTO V180.2 量纲铁律】
+                        # ⚠️ 此处current_volume来自xtdata.get_full_tick()的'volume'字段
+                        # 实盘live模式：volume单位=手(100股)，×100转换为股
+                        # scan模式的tick数据【绝对不允许】流经此代码路径（应走run_historical_stream）
+                        # 如果未来合并路径，必须先确认volume字段单位！
+                        volume_gu = current_volume * 100  # 手 → 股（实盘订阅专用）
                         current_turnover = (volume_gu / float_volume * 100) if float_volume else 0
                         
                         # 【CTO V31修复】时间加权预估全天换手率
@@ -2446,8 +2473,8 @@ class LiveTradingEngine:
                         try:
                             # 【V178 Bug#2】传入真实成交数据用于VWAP计算
                             tick_volume_gu = float(current_volume or 0) * 100  # 手→股
-                            # 【CTO V180】引擎返回6个值，必须解包6个！
-                            final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe, _ = core_engine.calculate_true_dragon_score(
+                            # 【CTO V180.2】引擎返回6个值，debug_metrics不再丢弃！
+                            final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe, debug_metrics = core_engine.calculate_true_dragon_score(
                                 net_inflow=net_inflow_est,  # 净流入估算（元）
                                 price=current_price,
                                 prev_close=pre_close,
@@ -2521,7 +2548,11 @@ class LiveTradingEngine:
                                 'purity': quant_purity,  # 【CTO V21】量化纯度百分比
                                 # 【CTO课题三】物理买点触发标记
                                 'trigger_type': trigger_signal.trigger_type if trigger_signal else None,
-                                'trigger_confidence': trigger_signal.confidence if trigger_signal else 0.0
+                                'trigger_confidence': trigger_signal.confidence if trigger_signal else 0.0,
+                                # 【CTO V180.2】debug_metrics透明化 - 波函数坍缩概率
+                                'ignition_prob': debug_metrics.get('ignition_probability_pct', 0.0),
+                                'mass': debug_metrics.get('mass_potential', 0.0),
+                                'velocity': debug_metrics.get('velocity', 0.0)
                             })
                     except Exception:
                         continue
