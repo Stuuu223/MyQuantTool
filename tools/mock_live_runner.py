@@ -180,21 +180,12 @@ class MockLiveRunner:
                     # QMT返回的FloatVolume单位是万股，需要转换为股
                     float_vol_wangu = detail.get('FloatVolume', 0)
                     if float_vol_wangu and float_vol_wangu > 0:
-                        # 【CTO V173】用市值法检测单位，替代数值猜测
-                        # 【CTO V174】修复：current_tick在此作用域未定义，改用tick_list最后一个tick的价格
-                        est_price = float(tick_list[-1].get('price', 10)) if tick_list else 10.0
-                        est_market_cap = float_vol_wangu * est_price
-                        
-                        if est_market_cap < 200000000:  # 市值<2亿，说明单位是万股
-                            # QMT返回的是万股，转换为股
-                            float_vol_shares = float_vol_wangu * 10000
-                            logger.debug(f"[MockLiveRunner] {stock_code} 检测到万股单位，升维为股")
-                        else:
-                            # 单位已经是股
-                            float_vol_shares = float_vol_wangu
-                        
+                        # 【CTO V175铁律】QMT FloatVolume单位永远是万股，直接×10000转股
+                        # 依据：README量纲铁律表 + V64血泪档案（2026-03-10）
+                        # 废弃V173/V174市值法猜测（循环论证，else分支永不触发）
+                        float_vol_shares = float_vol_wangu * 10000  # 万股 → 股，铁律
                         self.float_volumes[stock_code] = float_vol_shares
-                        logger.debug(f"[MockLiveRunner] {stock_code} 真实流通盘: {float_vol_shares/100000000:.2f}亿股")
+                        logger.debug(f"[MockLiveRunner] {stock_code} 流通盘: {float_vol_shares/1e8:.2f}亿股")
                     else:
                         logger.warning(f"[MockLiveRunner] {stock_code} FloatVolume=0，将跳过打分")
                         self.float_volumes[stock_code] = 0

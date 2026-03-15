@@ -406,11 +406,8 @@ class KineticCoreEngine:
         if high < low:
             high = low = price  # 容错
         
-        # 量纲升维
-        float_market_cap = float_volume_shares * price
-        if 0 < float_market_cap < 200000000:  # 2亿以下
-            float_market_cap = float_market_cap * 10000.0
-            logger.debug(f"V88 [量纲升维] {stock_code} 市值已升维")
+        # 【CTO V175】流通市值计算，量纲已在入口确定性转换（万股×10000=股）
+        float_market_cap = float_volume_shares * price  # 单位：股 × 元/股 = 元
         
         # ========== 1. 质量 = 流入占比 × 放量倍数 ==========
         # 流入占比（对数软压缩）
