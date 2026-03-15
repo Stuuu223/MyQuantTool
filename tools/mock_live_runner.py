@@ -104,6 +104,9 @@ class MockLiveRunner:
         # 【CTO V172】真实流通盘缓存 - 废除10亿股硬编码！
         self.float_volumes: Dict[str, float] = {}  # {stock_code: float_volume_shares}
         
+        # 【CTO V175】无状态打分引擎单例（全局复用，禁止在循环内重复实例化）
+        self.kinetic_engine = KineticCoreEngine()
+        
         logger.info(f"[MockLiveRunner] 初始化完成，目标日期={target_date}，本金=¥{initial_capital:,.0f}")
         logger.info(f"[MockLiveRunner] 沙盒ID: {self.sandbox.get_run_id()}")
     
@@ -374,8 +377,8 @@ class MockLiveRunner:
             
             # 调用核心打分引擎
             try:
-                # 创建引擎实例并调用
-                engine = KineticCoreEngine()
+                # 【CTO V175】复用单例，禁止循环内实例化（7万次→1次）
+                engine = self.kinetic_engine
                 # 【CTO V170】传入真实时间切片数据，绝不允许线性外推！
                 # 【CTO V172】传入真实流通盘，绝不允许硬编码10亿股！
                 # 【CTO V173】net_inflow改用true_flow_5min真实时间切片！
