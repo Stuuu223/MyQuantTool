@@ -154,6 +154,13 @@ class KineticCoreEngine:
         self.extreme_vol_bonus: float = bonus_config.get('extreme_vol_bonus', 10.0)
         self.high_efficiency_turnover_min: float = bonus_config.get('high_efficiency_turnover_min', 0.5)
         self.high_turnover_bonus: float = bonus_config.get('high_turnover_bonus', 5.0)
+        
+        # 【V178 Bug#1】物理参数热路径缓存
+        # 避免每次Tick调用self._config.get()触发磁盘读取
+        physics_config = self._config.get('kinetic_physics', {})
+        self.pm_threshold: float = physics_config.get('price_momentum_collapse_threshold', 0.57)
+        self.mfe_sigmoid_center: float = physics_config.get('mfe_sigmoid_center', 5.0)
+        self.mfe_sigmoid_slope: float = physics_config.get('mfe_sigmoid_slope', 0.5)
 
     def reload_config(self) -> None:
         """
@@ -426,14 +433,18 @@ class KineticCoreEngine:
         safe_flow_5min = flow_5min if flow_5min > 0 else (flow_15min / 3.0 if flow_15min > 0 else 1.0)
         safe_median = flow_5min_median_stock if flow_5min_median_stock > 0 else MIN_BASE_FLOW
         raw_ratio_stock = safe_flow_5min / safe_median if safe_median > 0 else 1.0
-        ratio_stock = 1.0 + 6.0 * math.tanh(raw_ratio_stock - 1.0)
         
         # ========== 1. 洛伦兹质量收缩 (Lorentz Contraction) ==========
         # 【CTO V100 铁律】放量>10倍后边际效用急剧递减，防止90x异常对倒撑爆引擎！
-        if ratio_stock > 10.0:
-            effective_ratio = 10.0 + 5.0 * math.log10(ratio_stock - 9.0)
+        # 【V178 Bug#3修复】对原始raw_ratio_stock做收缩，而非tanh压缩后的ratio_stock
+        # tanh上界约7.0，所以if ratio_stock > 10.0永远不成立（死代码）
+        if raw_ratio_stock > 10.0:
+            effective_ratio = 10.0 + 5.0 * math.log10(raw_ratio_stock - 9.0)
         else:
-            effective_ratio = ratio_stock
+            effective_ratio = raw_ratio_stock
+        
+        # tanh压缩（对收缩后的effective_ratio）
+        ratio_stock = 1.0 + 6.0 * math.tanh(effective_ratio - 1.0)
         
         # 质量势能
         # === 【CTO V157 跨日势能溢出算子 - 废除涨停标签迷信】 ===
@@ -479,7 +490,13 @@ class KineticCoreEngine:
         
         # 【CTO V109 能量重心降维提取】
         # 计算全天成交均价 (VWAP)，作为主力的真实能量重心
-        vwap = (total_amount / total_volume) if total_volume > 0 else prev_close
+        # 【V178 Bug#2 方案B】无成交数据时用HLC均价近似
+        if total_volume > 0 and total_amount > 0:
+            vwap = total_amount / total_volume
+        else:
+            # 无成交数据时，用(High+Low+Close)/3作为均价近似
+            vwap = (high + low + price) / 3.0
+            logger.debug(f"⚠️ [VWAP近似] {stock_code} 无成交数据，使用HLC均价{vwap:.2f}近似VWAP")
         
         # === 【CTO V176 Law1: 抗重力姿态判定】===
         # 废除3.5%硬编码回撤阈值！改用连续物理姿态判定
@@ -499,12 +516,12 @@ class KineticCoreEngine:
             price_momentum = 0.5 if high == low else 0.0
         
         # 【CTO V177】阈值参数化，禁止硬编码
+        # 【V178 Bug#1】改用热路径缓存，避免每次Tick读config
         # [UNVERIFIED] 当前默认值基于2样本反向拟合，需>=50样本回测验证
-        pm_threshold = self._config.get('kinetic_physics.price_momentum_collapse_threshold', 0.57)
-        if price_momentum < pm_threshold:
+        if price_momentum < self.pm_threshold:
             is_micro_collapsed = True
-            logger.debug(f"☄️ [冲高回落] {stock_code} momentum={price_momentum:.2f}<{pm_threshold:.2f}[UNVERIFIED]，姿态破败，返回0分")
-            empty_debug = {'mass_potential': 0.0, 'velocity': 0.0, 'base_kinetic_energy': 0.0, 'friction_multiplier': 0.0, 'purity_norm': 0.0, 'inflow_ratio_pct': inflow_ratio_pct, 'ratio_stock': ratio_stock, 'reason': '姿态破败', 'pm_threshold': pm_threshold}
+            logger.debug(f"☄️ [冲高回落] {stock_code} momentum={price_momentum:.2f}<{self.pm_threshold:.2f}[UNVERIFIED]，姿态破败，返回0分")
+            empty_debug = {'mass_potential': 0.0, 'velocity': 0.0, 'base_kinetic_energy': 0.0, 'friction_multiplier': 0.0, 'purity_norm': 0.0, 'inflow_ratio_pct': inflow_ratio_pct, 'ratio_stock': ratio_stock, 'reason': '姿态破败', 'pm_threshold': self.pm_threshold}
             return 0.0, 0.0, inflow_ratio_pct, ratio_stock, mfe, empty_debug
         
         # === 【CTO V110 绝对水位隔离：重力逃逸判据 + V112微观坍塌】 ===
@@ -529,6 +546,12 @@ class KineticCoreEngine:
         else:
             # 午盘（13:00-15:00），扣除90分钟午休
             minutes_from_open = _total_min - (9 * 60 + 30) - 90
+        
+        # 【V178 Bug#4】开盘前边界保护
+        # 如果传入时间早于09:30，minutes_from_open为负数，语义错误
+        if minutes_from_open < 0:
+            logger.warning(f"[时序异常] {stock_code} 传入时间 {current_time.time()} 早于开盘时间09:30，minutes_from_open强制为0")
+            minutes_from_open = 0
         
         # 动态阻尼场
         if minutes_from_open < 60:
@@ -578,11 +601,10 @@ class KineticCoreEngine:
             # 做功效率 = 振幅/流入
             mfe = amplitude_pct / inflow_ratio_pct if inflow_ratio_pct > 0 else 0.0
             # 【CTO V177】Sigmoid参数重新标定
+            # 【V178 Bug#1】改用热路径缓存，避免每次Tick读config
             # 新MFE公式典型值3-20，中心点从1.2→5.0，斜率从2.0→0.5
             # [UNVERIFIED] 参数需用真实数据分布拟合后固化
-            mfe_center = self._config.get('kinetic_physics.mfe_sigmoid_center', 5.0)
-            mfe_slope = self._config.get('kinetic_physics.mfe_sigmoid_slope', 0.5)
-            efficiency_multiplier = 3.0 / (1.0 + math.exp(-mfe_slope * (mfe - mfe_center)))
+            efficiency_multiplier = 3.0 / (1.0 + math.exp(-self.mfe_sigmoid_slope * (mfe - self.mfe_sigmoid_center)))
         
         # === 【CTO V103 纯物理力场防线：废除一切静态位移阈值】 ===
         

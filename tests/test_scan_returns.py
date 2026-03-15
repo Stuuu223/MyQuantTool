@@ -117,6 +117,7 @@ def get_top_stocks(date: str, top_n: int = 20) -> List[Dict]:
                 tick = df.iloc[-1]
                 current_price = float(tick.get('lastPrice', 0))
                 current_amount = float(tick.get('amount', 0))
+                current_volume = float(tick.get('volume', 0))  # 【V178】获取成交量
                 pre_close = float(tick.get('lastClose', 0))
                 
                 if pre_close <= 0 or current_price <= 0:
@@ -231,6 +232,8 @@ def get_top_stocks(date: str, top_n: int = 20) -> List[Dict]:
                     space_gap_pct=0.05,  # 【CTO修复】5%纯净水域默认值，释放系统活力
                     float_volume_shares=fv,
                     current_time=actual_time,
+                    total_amount=current_amount,      # 【V178】真实成交额
+                    total_volume=current_volume,      # 【V178】真实成交量
                     is_limit_up=is_limit_up,  # 【CTO V33】涨停状态
                     limit_up_queue_amount=limit_up_queue_amount,  # 【CTO V33】封单金额
                     mode="scan",  # 【CTO V34】scan模式跳过时间衰减

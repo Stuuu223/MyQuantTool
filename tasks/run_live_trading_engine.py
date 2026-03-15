@@ -882,6 +882,8 @@ class LiveTradingEngine:
                 # 调用核心引擎打分
                 # 【CTO V101】获取连板基因
                 is_yesterday_limit_up = self.static_cache.get(stock_code, {}).get('is_yesterday_limit_up', False)
+                # 【V178 Bug#2】传入真实成交数据用于VWAP计算
+                tick_volume = float(tick.get('volume', 0) or tick.get('lastVolume', 0))
                 final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe = self._kinetic_core.calculate_true_dragon_score(
                     net_inflow=stock_net_inflow,
                     price=current_price,
@@ -895,6 +897,8 @@ class LiveTradingEngine:
                     space_gap_pct=space_gap_pct,
                     float_volume_shares=float_volume,
                     current_time=engine_time,
+                    total_amount=current_amount,  # 【V178】真实全天成交额
+                    total_volume=tick_volume,      # 【V178】真实全天成交量
                     is_limit_up=is_limit_up,
                     limit_up_queue_amount=limit_up_queue_amount,
                     mode="scan", # 告知引擎这是定格沙盘
@@ -2440,6 +2444,8 @@ class LiveTradingEngine:
                         # 【CTO V101】获取连板基因
                         is_yesterday_limit_up = self.static_cache.get(stock_code, {}).get('is_yesterday_limit_up', False)
                         try:
+                            # 【V178 Bug#2】传入真实成交数据用于VWAP计算
+                            tick_volume_gu = float(current_volume or 0) * 100  # 手→股
                             final_score, sustain_ratio, inflow_ratio, ratio_stock, mfe = core_engine.calculate_true_dragon_score(
                                 net_inflow=net_inflow_est,  # 净流入估算（元）
                                 price=current_price,
@@ -2453,6 +2459,8 @@ class LiveTradingEngine:
                                 space_gap_pct=space_gap_pct,
                                 float_volume_shares=float_volume,
                                 current_time=engine_time,  # 真实时间
+                                total_amount=current_amount,  # 【V178】真实全天成交额
+                                total_volume=tick_volume_gu,   # 【V178】真实全天成交量（股）
                                 is_limit_up=is_limit_up,  # 【CTO V33】涨停状态
                                 limit_up_queue_amount=limit_up_queue_amount,  # 【CTO V33】封单金额
                                 mode=engine_mode,  # 【CTO V34】scan跳过衰减/live应用衰减
@@ -2901,6 +2909,8 @@ class LiveTradingEngine:
             # 【CTO V101】获取连板基因
             is_yesterday_limit_up = self.static_cache.get(stock_code, {}).get('is_yesterday_limit_up', False)
             # 调用 V20.5 动能引擎
+            # 【V178 Bug#2】传入真实成交数据用于VWAP计算
+            volume_gu = float(volume or 0) * 100  # 手→股
             base_score, sustain_ratio, inflow_ratio, ratio_stock, mfe_score = self._kinetic_core.calculate_true_dragon_score(
                 net_inflow=net_inflow_est,  # 【CTO V87】使用L1微积分状态机
                 price=price,
@@ -2914,6 +2924,8 @@ class LiveTradingEngine:
                 space_gap_pct=0.05,
                 float_volume_shares=float_volume,
                 current_time=now,
+                total_amount=amount,        # 【V178】真实全天成交额
+                total_volume=volume_gu,     # 【V178】真实全天成交量（股）
                 is_limit_up=is_limit_up,  # 【CTO V33】涨停状态
                 limit_up_queue_amount=limit_up_queue_amount,  # 【CTO V33】封单金额
                 mode="live",  # 【CTO V34】黄金3分钟队列用live模式

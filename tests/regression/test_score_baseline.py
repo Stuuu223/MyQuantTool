@@ -110,6 +110,8 @@ def _calc_score(tick: dict) -> float:
             space_gap_pct=(high - price) / high if high > 0 else 0.5,
             float_volume_shares=float_volume,
             current_time=engine_time,
+            total_amount=amount,              # 【V178】真实成交额
+            total_volume=tick.get('volume', 0),  # 【V178】真实成交量
             is_limit_up=is_limit_up,
             limit_up_queue_amount=0.0,
             mode='scan',
