@@ -538,13 +538,9 @@ class KineticCoreEngine:
             friction_multiplier = purity_norm ** 1.5
             logger.debug(f"⚖️ [重力逃逸豁免] {stock_code} 高空水位(涨幅{change_pct:.1f}%)稳踩VWAP，纯度{purity_norm*100:.0f}%判定为洗盘！")
         
-        # 【CTO V112 流星坠毁极刑】
-        # 如果发生了微观坍塌(从高点回撤>4.5%)，这就是"流星坠毁"！
-        # 无论纯度如何，都要执行严厉惩罚！诱多出货票必须被绞杀！
-        if is_micro_collapsed:
-            # 流星坠毁：用5次方惩罚，让分数归零
-            friction_multiplier = purity_norm ** 5
-            logger.debug(f"☄️ [流星坠毁] {stock_code} 从高点回撤>{4.5}%，执行5次方极刑！")
+        # 【CTO V173】删除流星坠毁死代码！
+        # L500已return，以下代码永远不会执行，已删除。
+        # 流星坠毁(is_micro_collapsed=True)在L500已直接return 0，无需重复惩罚。
         
         # 【CTO V112 坠毁极刑】
         # 只要你没资格进入逃逸层(被砸破了VWAP，或者发生了微观坍塌)，且纯度低于45%
