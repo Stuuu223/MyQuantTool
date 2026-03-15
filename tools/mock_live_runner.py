@@ -743,16 +743,10 @@ class MockLiveRunner:
             retrace_ratio = drawdown_from_high / upward_displacement
             retrace_ratio_max = self.config_manager.get('kinetic_physics.retrace_ratio_max', 0.618)
             if retrace_ratio > retrace_ratio_max:
-                return  # 避雷针：向上势能已被吞噬，禁止开火
+                return  # 避雷针：向上势能已被吞噬，跳过
         
-        # 【CTO V172 VWAP确认】
-        total_amount = top1_data.get('amount', 0)
-        total_volume = tick.get('volume', 1)
-        if total_volume > 0:
-            vwap = total_amount / (total_volume * 100) if total_volume > 0 else price
-            vwap_deviation_max = self.config_manager.get('kinetic_physics.vwap_deviation_max', 0.02)
-            if price < vwap * (1 - vwap_deviation_max):
-                return  # 智猪法则：未在均线上方形成强势沉没成本
+        # 【CTO V175】VWAP过滤已在引擎calculate_true_dragon_score()内部处理，此处不重复计算
+        # 原代码量纲错误：total_volume是单笔tick成交量，total_amount是全天累计额
         
         # 【CTO V172核心：连续函数点火概率模型】
         # 废除if-else布尔切断，改用Sigmoid和Gaussian连续函数乘积
