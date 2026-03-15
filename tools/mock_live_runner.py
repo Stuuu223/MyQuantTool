@@ -325,7 +325,8 @@ class MockLiveRunner:
         """
         self.leaderboard.clear()
         
-        minutes_passed = self._get_minutes_passed(target_time)
+        # 【CTO V175】_get_minutes_passed()已废弃为僵尸调用
+        # 引擎内部calculate_true_dragon_score()自行计算minutes_from_open（已修正午休扣除）
         
         for stock_code, tick_list in self.tick_queues.items():
             # 找到目标时间点之前最后一个Tick

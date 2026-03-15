@@ -510,8 +510,15 @@ class KineticCoreEngine:
             not is_micro_collapsed           # 【V112】未发生微观坍塌
         )
         
-        # 时间熵特征提取 (判断当前处于什么交易阶段)
-        minutes_from_open = (current_time.hour * 60 + current_time.minute) - (9 * 60 + 30)
+        # 时间熵特征提取：计算实际交易分钟数（扣除午休90分钟）
+        # 【CTO V175】修复：午后开盘不应被误判为尾盘陷阱
+        _total_min = current_time.hour * 60 + current_time.minute
+        if _total_min <= 11 * 60 + 30:
+            # 早盘（09:30-11:30）
+            minutes_from_open = _total_min - (9 * 60 + 30)
+        else:
+            # 午盘（13:00-15:00），扣除90分钟午休
+            minutes_from_open = _total_min - (9 * 60 + 30) - 90
         
         # 动态阻尼场
         if minutes_from_open < 60:
