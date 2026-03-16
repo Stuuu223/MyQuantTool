@@ -277,6 +277,11 @@ class LiveTradingEngine:
         # 【CTO课题三】动态买点验证器 - 拒绝静态打分崇拜，构建物理触发
         self.trigger_validator = TriggerValidator()
         self.trigger_history: List[Dict] = []  # 触发信号历史
+        # 【Task D修复】TriggerValidator历史缓冲区 - 解决trigger_type永远为None的根因
+        # 三个触发器需要的历史长度：VWAP反弹需MFE>=3/价格>=5，阶梯突破需价格>=15，真空点火需量比>=3
+        self._tv_price_history: Dict[str, deque] = {}   # {stock_code: deque(maxlen=20)}
+        self._tv_mfe_history: Dict[str, deque] = {}     # {stock_code: deque(maxlen=5)}
+        self._tv_vr_history: Dict[str, deque] = {}      # {stock_code: deque(maxlen=5)}
         logger.info("[OK] TriggerValidator初始化成功 - 物理买点拓扑检测已启用")
         
         # 【架构大道至简】EventBus 双轨制已删除，统一主循环拉取架构
@@ -366,6 +371,10 @@ class LiveTradingEngine:
         except (ImportError, Exception) as e:
             logger.warning(f"[WARN] PaperTradeEngine初始化失败: {e}")
             self.paper_engine = None
+        
+        # 【P0修复】动态粗筛补充状态变量
+        self._last_universe_refresh_time: Optional[datetime] = None
+        self._universe_refresh_interval_min: int = 15
     
     # ==================== 【CTO V53时间沙盒】统一时间获取入口 ====================
     
@@ -819,6 +828,59 @@ class LiveTradingEngine:
     
     # ==================== 【CTO状态机重构】结束 ====================
     
+    def _maybe_refresh_universe(self, current_time: datetime):
+        """
+        【P0修复】动态粗筛补充 - 每15分钟重扫全市场
+
+        解决问题：09:30一次性建立粗筛池后，下午新出现动能的票
+        无法进入candidate_pool，导致14:27仅剩72只的断崖现象。
+
+        设计原则：
+        - 只新增，不重置：已在candidate/opportunity/eliminated的票保持原状态
+        - 宽进标准：只要有量有价格动能就进候选池
+        - 每15分钟执行一次，不阻塞主循环（O(n)扫描，约100ms）
+        """
+        if self._last_universe_refresh_time is None:
+            self._last_universe_refresh_time = current_time
+            return
+
+        elapsed = (current_time - self._last_universe_refresh_time).total_seconds() / 60
+        if elapsed < self._universe_refresh_interval_min:
+            return
+
+        try:
+            from logic.data_providers.universe_builder import UniverseBuilder
+            new_pool, _ = UniverseBuilder(
+                target_date=self.target_date,
+                mode='live'
+            ).build()
+
+            new_count = 0
+            for code in new_pool:
+                if (code not in self.candidate_pool and
+                        code not in self.opportunity_pool and
+                        code not in self.eliminated_pool):
+                    self.candidate_pool[code] = StockTracker(
+                        stock_code=code,
+                        state=StockState.CANDIDATE,
+                        enter_time=current_time
+                    )
+                    new_count += 1
+
+            if new_count > 0:
+                logger.info(
+                    f"🔄 [动态补充] 粗筛池新增 {new_count} 只票 "
+                    f"(候选池: {len(self.candidate_pool)} | "
+                    f"机会池: {len(self.opportunity_pool)} | "
+                    f"剔除池: {len(self.eliminated_pool)})"
+                )
+
+            self._last_universe_refresh_time = current_time
+
+        except Exception as e:
+            logger.warning(f"[WARN] 动态补充粗筛池失败: {e}")
+            self._last_universe_refresh_time = current_time  # 失败也更新时间，避免死循环
+
     def run_historical_stream(self, tick_stream: list):
         """
         【CTO V61 绝对同源版】Scan模式专属引擎
@@ -1013,20 +1075,41 @@ class LiveTradingEngine:
                     # 【CTO V180】使用已定义的tick_volume变量
                     vwap = current_amount / tick_volume if tick_volume > 0 else current_price
                     
+                    # 【Task D修复】先push历史数据到缓冲区，再调用触发器
+                    # scan模式是单帧定格快照，历史队列永远只有1帧，触发器无法工作
+                    if self.mode != 'scan':
+                        from collections import deque
+                        # 价格历史（ maxlen=20）
+                        if stock_code not in self._tv_price_history:
+                            self._tv_price_history[stock_code] = deque(maxlen=20)
+                        self._tv_price_history[stock_code].append(current_price)
+                        # MFE历史（ maxlen=5）
+                        if stock_code not in self._tv_mfe_history:
+                            self._tv_mfe_history[stock_code] = deque(maxlen=5)
+                        self._tv_mfe_history[stock_code].append(mfe)
+                        # 量比历史（ maxlen=5）
+                        if stock_code not in self._tv_vr_history:
+                            self._tv_vr_history[stock_code] = deque(maxlen=5)
+                        self._tv_vr_history[stock_code].append(ratio_stock)
+                    
                     # 尝试触发物理买点
-                    trigger_signal = self.trigger_validator.check_all_triggers(
-                        stock_code=stock_code,
-                        current_price=current_price,
-                        prev_close=pre_close,
-                        vwap=vwap,
-                        volume_ratio=ratio_stock,
-                        current_mfe=mfe,
-                        recent_mfe_list=[mfe],  # 单帧数据，后续扩展
-                        price_history=[current_price],
-                        recent_volume_ratios=[ratio_stock],
-                        current_slope=change_pct,  # 简化用涨跌幅
-                        timestamp=engine_time
-                    )
+                    if self.mode == 'scan':
+                        # scan模式不支持实时触发检测，历史数据不足
+                        trigger_signal = None
+                    else:
+                        trigger_signal = self.trigger_validator.check_all_triggers(
+                            stock_code=stock_code,
+                            current_price=current_price,
+                            prev_close=pre_close,
+                            vwap=vwap,
+                            volume_ratio=ratio_stock,
+                            current_mfe=mfe,
+                            recent_mfe_list=list(self._tv_mfe_history.get(stock_code, [mfe])),
+                            price_history=list(self._tv_price_history.get(stock_code, [current_price])),
+                            recent_volume_ratios=list(self._tv_vr_history.get(stock_code, [ratio_stock])),
+                            current_slope=change_pct,  # 简化用涨跌幅
+                            timestamp=engine_time
+                        )
                 
                 # ==================== 入选条件 ====================
                 # 方案A（宽松）：分数达标即可入选，物理买点作为置信度加分
@@ -1134,7 +1217,24 @@ class LiveTradingEngine:
                 
                 # 全榜追踪器帧更新
                 if hasattr(self, 'universal_tracker') and self.universal_tracker:
-                    self.universal_tracker.on_frame(current_top_targets[:10], engine_time, executed_trade_info)
+                    # 【Bug#2修复】构建完整的decision_context，补充缺失的持仓字段
+                    entry_price = getattr(self.decision_brain, 'entry_price', 0.0)
+                    held_unrealized_pnl_pct = (
+                        (held_price - entry_price) / entry_price * 100
+                        if entry_price > 0 and held_price > 0 else 0.0
+                    )
+                    decision_context = {
+                        **decision,  # 继承决策大脑输出
+                        'held_stock': held_code or '',
+                        'held_price': held_price,
+                        'held_unrealized_pnl_pct': held_unrealized_pnl_pct
+                    }
+                    self.universal_tracker.on_frame(
+                        current_top_targets[:10], 
+                        engine_time, 
+                        executed_trade_info,
+                        decision_context
+                    )
                     
             except Exception as e:
                 logger.debug(f"[DEBUG] 决策大脑帧处理跳过: {e}")
@@ -2155,6 +2255,9 @@ class LiveTradingEngine:
                 now = self.get_current_time()
                 current_time = now.time()
                 
+                # 【P0修复】动态粗筛补充 - 每15分钟重扫全市场
+                self._maybe_refresh_universe(now)
+                
                 # 【CTO V5】午休期间：保持挂起，显示缓存
                 is_lunch_break = time_type(11, 30) <= current_time < time_type(13, 0)
                 if is_lunch_break:
@@ -2684,20 +2787,9 @@ class LiveTradingEngine:
                             # 计算VWAP（简化：用成交额/成交量）
                             # 【CTO V180.1】修复: 使用tick_volume_gu（已定义），而非tick_volume
                             vwap = current_amount / tick_volume_gu if tick_volume_gu > 0 else current_price
-                            # 尝试触发物理买点
-                            trigger_signal = self.trigger_validator.check_all_triggers(
-                                stock_code=stock_code,
-                                current_price=current_price,
-                                prev_close=pre_close,
-                                vwap=vwap,
-                                volume_ratio=ratio_stock,
-                                current_mfe=mfe,
-                                recent_mfe_list=[mfe],
-                                price_history=[current_price],
-                                recent_volume_ratios=[ratio_stock],
-                                current_slope=change_pct,
-                                timestamp=engine_time
-                            )
+                            # 【Task D修复】scan模式是单帧定格快照，历史队列永远只有1帧，不做触发检测
+                            # 直接标记为'scan_no_realtime_history'，避免误导
+                            trigger_signal = None  # scan模式不支持实时触发检测
                         
                         # 【CTO V21垃圾隔离防线】
                         # 1. 决不允许不及格的票（<50分）上榜！
@@ -2714,7 +2806,8 @@ class LiveTradingEngine:
                                 'mfe': mfe,  # 资金效率指标
                                 'purity': quant_purity,  # 【CTO V21】量化纯度百分比
                                 # 【CTO课题三】物理买点触发标记
-                                'trigger_type': trigger_signal.trigger_type if trigger_signal else None,
+                                # 【Task D修复】scan模式标记为'scan_no_realtime_history'
+                                'trigger_type': 'scan_no_realtime_history' if self.mode == 'scan' else (trigger_signal.trigger_type if trigger_signal else None),
                                 'trigger_confidence': trigger_signal.confidence if trigger_signal else 0.0,
                                 # 【CTO V180.2】debug_metrics透明化 - 波函数坍缩概率
                                 'ignition_prob': debug_metrics.get('ignition_probability_pct', 0.0),

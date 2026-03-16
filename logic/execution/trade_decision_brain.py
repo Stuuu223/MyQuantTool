@@ -65,7 +65,7 @@ class TradeDecisionBrain:
         新增分位数相关参数：
           - entry_percentile_threshold: 榜首必须超过的分位点（默认 p90）
           - entry_relative_multiplier: 榜首必须超过 median × N 倍（默认 1.5）
-          - entry_min_board_size: 榜单最少几票才做决策（默认 3，防止单票冲榜）
+          - entry_min_board_size: 榜单最少几票才做决策（默认 10，_percentile需要n>=10才让p90有统计意义）
           - entry_ignition_prob_min_b: 通道B最低点火概率门槛（默认 20.0%）
         """
         config = config or {}
@@ -81,7 +81,8 @@ class TradeDecisionBrain:
         # 【路线A 新增参数】里氏震级相对分位数门槛
         self.entry_percentile_threshold: float = config.get('entry_percentile_threshold', 0.90)
         self.entry_relative_multiplier: float = config.get('entry_relative_multiplier', 1.5)
-        self.entry_min_board_size: int = config.get('entry_min_board_size', 3)
+        # 【Bug#1修复】默认值改为10，_percentile需要n>=10才让p90有统计意义(n=5时p90≈第4名)
+        self.entry_min_board_size: int = config.get('entry_min_board_size', 10)
         self.entry_ignition_prob_min_b: float = config.get('entry_ignition_prob_min_b', 20.0)
 
         # 内部状态

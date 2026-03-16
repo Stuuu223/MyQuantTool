@@ -236,6 +236,25 @@ class SessionSnapshot:
             engine.watchlist = saved_watchlist
             logger.info(f"[SessionSnapshot]   ✅ watchlist恢复: {len(saved_watchlist)} 只票")
 
+        # 8. 【Bug#4修复】恢复 opportunity_pool（仅恢复state=OPPORTUNITY的）
+        oppo_pool = snapshot.get('opportunity_pool', {})
+        if oppo_pool and hasattr(engine, 'opportunity_pool'):
+            from tasks.run_live_trading_engine import StockTracker, StockState
+            restored_count = 0
+            for code, info in oppo_pool.items():
+                if code not in engine.opportunity_pool:
+                    engine.opportunity_pool[code] = StockTracker(
+                        stock_code=code,
+                        state=StockState.OPPORTUNITY,
+                    )
+                    # 恢复分数（用于后续决策）
+                    engine.opportunity_pool[code].final_score = float(
+                        info.get('final_score', 0)
+                    )
+                    restored_count += 1
+            if restored_count > 0:
+                logger.info(f"[SessionSnapshot]   ✅ 机会池恢复: {restored_count} 只票")
+
         logger.info(f"[SessionSnapshot] 🚀 Session 恢复完成 "
                     f"(快照时间: {snapshot.get('snapshot_time', '未知')})")
 

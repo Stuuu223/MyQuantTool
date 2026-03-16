@@ -123,6 +123,9 @@ class PaperTradeEngine:
 
         # 全仓买入（单吊模式：把所有可用资金全部投入）
         volume = int(self.available_cash / price / 100) * 100  # 取整到手
+        # 【Bug#3修复】低价股(如0.5元)会导致volume爆炸，加50万股上限
+        MAX_PAPER_VOLUME = 500000
+        volume = min(volume, MAX_PAPER_VOLUME)
         if volume <= 0:
             return None
 

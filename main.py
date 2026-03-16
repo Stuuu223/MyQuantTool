@@ -1152,6 +1152,23 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, dry_run):
         else:
             click.echo("\n⚡ Step 2: 挂载 EventDriven 引擎...")
             engine = _create_engine()
+            
+            # 【P0修复】SessionSnapshot: 重启自动恢复记忆
+            from logic.memory.session_snapshot import SessionSnapshot
+            session_snap = SessionSnapshot(trade_date=today_str)
+            
+            # 尝试恢复上次崩溃状态
+            restored = session_snap.restore(engine)
+            if restored:
+                click.echo(click.style(
+                    f"🔄 [自动恢复] 检测到上次异常退出，已恢复候选池/机会池状态",
+                    fg='yellow'
+                ))
+            
+            # 启动自动快照（每30秒）
+            session_snap.start_auto_snapshot(engine)
+            click.echo(click.style("📸 [SessionSnapshot] 自动快照已启动 (每30秒)", fg='cyan'))
+            
             engine.start_session()
         
             # 【CTO审计】强制显示观察池数量
@@ -1182,6 +1199,12 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, dry_run):
             
             click.echo("\n🛑 收到中断信号，正在卸载监控器...")
             engine.stop()
+            
+            # 【P0修复】SessionSnapshot: 停止自动快照
+            if 'session_snap' in dir() and session_snap is not None:
+                session_snap.stop_auto_snapshot(engine)
+                click.echo(click.style("📸 [SessionSnapshot] 自动快照已停止", fg='cyan'))
+            
             click.echo(click.style("✅ 系统安全退出", fg='green'))
         
     except Exception as e:
