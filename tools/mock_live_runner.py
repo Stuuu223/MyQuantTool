@@ -83,22 +83,37 @@ class StockStateBuffer:
             self.mfe_history.pop(0)
             self.volume_ratio_history.pop(0)
 
-    def get_vwap(self, tick_list: List[Dict], current_time: datetime, parse_fn) -> float:
+    def get_vwap(self, tick_list: List[Dict], current_time: datetime, parse_fn,
+                 time_index: List = None) -> float:
         """
         计算当日截止当前时刻的VWAP（成交额加权均价）。
         QMT amount 是累计值，取最新快照即可。
+        使用 bisect 二分查找替代线性扫描（O(log n) vs O(n)）
         """
-        total_amount = 0.0
-        total_volume = 0
-        for tick in tick_list:
-            try:
-                if parse_fn(tick['time']) <= current_time:
-                    total_amount = tick['amount']
-                    total_volume = tick.get('volume', 0)
-            except Exception:
-                continue
-        if total_volume > 0:
-            return total_amount / total_volume
+        if not tick_list:
+            return self.last_price
+
+        if time_index:
+            # 使用预解析时间索引 + bisect
+            idx = bisect.bisect_right(time_index, current_time) - 1
+            if idx >= 0:
+                total_amount = tick_list[idx]['amount']
+                total_volume = tick_list[idx].get('volume', 0)
+                if total_volume > 0:
+                    return total_amount / total_volume
+        else:
+            # 回退到线性扫描（兼容旧调用）
+            total_amount = 0.0
+            total_volume = 0
+            for tick in tick_list:
+                try:
+                    if parse_fn(tick['time']) <= current_time:
+                        total_amount = tick['amount']
+                        total_volume = tick.get('volume', 0)
+                except Exception:
+                    continue
+            if total_volume > 0:
+                return total_amount / total_volume
         return self.last_price
 
     def get_current_slope(self) -> float:
@@ -375,7 +390,8 @@ class MockLiveRunner:
             vwap = 0.0
             if buf:
                 vwap = buf.get_vwap(
-                    self.tick_queues.get(code, []), current_time, self._parse_tick_time
+                    self.tick_queues.get(code, []), current_time, self._parse_tick_time,
+                    time_index=self.tick_time_index.get(code, [])
                 )
 
             volume_ratio = data.get('sustain_ratio', 1.0)
@@ -824,7 +840,8 @@ class MockLiveRunner:
                     current_price=top1_data['price'],
                     prev_close=top1_data['tick'].get('lastClose', top1_data['price']),
                     vwap=buf.get_vwap(
-                        self.tick_queues.get(top1_code, []), current_time, self._parse_tick_time
+                        self.tick_queues.get(top1_code, []), current_time, self._parse_tick_time,
+                        time_index=self.tick_time_index.get(top1_code, [])
                     ),
                     volume_ratio=top1_data.get('sustain_ratio', 1.0),
                     current_mfe=top1_data.get('mfe', 0.0),
