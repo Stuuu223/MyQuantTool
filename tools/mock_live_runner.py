@@ -926,16 +926,37 @@ class MockLiveRunner:
         tag = "✅ 真实引擎跑赢理想" if alpha >= 0 else "⚠️  摩擦成本侵蚀α"
         print(f"\n📊 Alpha = {alpha:+.2f}%  {tag}")
 
+        # ── Bug#4修复：注入双引擎对比数据到UniversalTracker
+        for code in list(self.execution_manager.positions.keys()) | set(self.paper_engine.positions.keys()):
+            # 真实引擎数据
+            real_pos = self.execution_manager.positions.get(code)
+            friction_buy = real_pos.entry_price if real_pos else 0
+            friction_sell = real_pos.current_price if real_pos else 0
+            
+            # 零摩擦引擎数据
+            paper_pos = self.paper_engine.positions.get(code)
+            paper_buy = paper_pos.get('entry_price', 0) if paper_pos else 0
+            paper_sell = paper_pos.get('current_price', 0) if paper_pos else 0
+            
+            if friction_buy > 0 or paper_buy > 0:
+                self.universal_tracker.inject_paper_trade_result(
+                    stock_code=code,
+                    paper_buy=paper_buy,
+                    paper_sell=paper_sell,
+                    friction_buy=friction_buy,
+                    friction_sell=friction_sell
+                )
+
         # ── Layer 2: 全榜生命周期
         print("\n" + "-"*72)
         print("📋 [全榜生命周期] — 所有上榜票的命运（错过了什么）")
         print("-"*72)
         universe_report = self.universal_tracker.get_full_report()
         all_stocks_raw = universe_report.get('all_stocks', [])
-        # all_stocks 是 list[dict]，每个 dict 有 'code' 和 'peak_gain_pct' 字段
+        # all_stocks 是 list[dict]，每个 dict 有 'code' 和 'max_gain_pct' 字段
         sorted_universe = sorted(
             all_stocks_raw,
-            key=lambda x: x.get('peak_gain_pct', 0), reverse=True
+            key=lambda x: x.get('max_gain_pct', 0), reverse=True
         )[:20]
         if sorted_universe:
             print(f"\n  {'代码':<10} {'首次上榜':<9} {'上榜价':>8} "
@@ -945,7 +966,7 @@ class MockLiveRunner:
                 code = info.get('code', 'N/A')
                 bought_by = info.get('bought_by_engines', [])
                 eng_str   = '+'.join(bought_by) if bought_by else '❌ 未买入'
-                peak  = info.get('peak_gain_pct', 0)
+                peak  = info.get('max_gain_pct', 0)
                 final = info.get('final_gain_pct', 0)
                 note  = f'⭐ 错过 +{peak:.1f}%' if peak >= 3 and not bought_by else ('✅ 持有' if bought_by else '')
                 print(f"  {code:<10} {info.get('first_appear_time','N/A'):<9} "
@@ -1027,7 +1048,7 @@ class MockLiveRunner:
             lines.append(
                 f"| {code} | {info.get('first_appear_time','N/A')} | "
                 f"¥{info.get('first_appear_price',0):.2f} | "
-                f"{info.get('peak_gain_pct',0):+.1f}% | "
+                f"{info.get('max_gain_pct',0):+.1f}% | "
                 f"{info.get('final_gain_pct',0):+.1f}% | {bought} |"
             )
         lines.append("\n## TriggerValidator 触发统计\n")

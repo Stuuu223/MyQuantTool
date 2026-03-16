@@ -184,7 +184,7 @@ class TradeDecisionBrain:
             return self._decision_to_dict(decision)
 
         # ── 2. 无持仓：判断入场 ──────────────────────────────────────────────
-        entry_decision = self._should_enter(top_targets)
+        entry_decision = self._should_enter(top_targets, current_time)
         if entry_decision is not None:
             decision.action = 'BUY'
             decision.stock_code = entry_decision['code']
@@ -244,7 +244,10 @@ class TradeDecisionBrain:
     # 核心决策逻辑（私有）
     # =========================================================================
 
-    def _should_enter(self, top_targets: List[Dict]) -> Optional[Dict]:
+    # 有效触发信号类型（修复Bug#1：'none'字符串误判为有信号）
+    VALID_TRIGGERS = {'vacuum_ignition', 'stair_breakout', 'gravity_slingshot'}
+
+    def _should_enter(self, top_targets: List[Dict], current_time: datetime = None) -> Optional[Dict]:
         """
         【路线A 核心改造】里氏震级相对分位数入场判断
 
@@ -252,11 +255,12 @@ class TradeDecisionBrain:
             top1.score >= entry_score_threshold（固定值65，量纲爆炸后完全失效）
 
         新版逻辑：
+            Step0: 开盘冷却期（Bug#2修复）- 09:35前不入场，防止噪声
             Step1: 榜单至少 entry_min_board_size 票（防止单票孤榜误判）
             Step2: 计算当帧榜单的 p90 和 median
             Step3: 双通道判断
-                通道A（有 trigger_type）: score >= p90 AND score >= median × multiplier
-                通道B（无 trigger_type）: score >= p95 AND score >= median × multiplier AND ignition_prob >= 20%
+                通道A（有 VALID 触发信号）: score >= p90 AND score >= median × multiplier
+                通道B（无触发信号）: score >= p95 AND score >= median × multiplier AND ignition_prob >= 20%
             Step4: 全部通过 → 返回入场目标
 
         物理意义：
@@ -270,6 +274,13 @@ class TradeDecisionBrain:
 
         if not top_targets:
             return None
+
+        # Bug#2修复：开盘冷却期（09:30-09:35不入场，防止噪声买入）
+        if current_time is not None:
+            cooldown_end = current_time.replace(hour=9, minute=35, second=0, microsecond=0)
+            if current_time < cooldown_end:
+                logger.debug(f"[冷却期] {current_time.strftime('%H:%M:%S')} 开盘前5分钟，不入场")
+                return None
 
         # 榜单规模保护（防止 1-2 票孤榜时 p90=p50=同一票，任何票都能通过）
         if len(top_targets) < self.entry_min_board_size:
@@ -304,8 +315,11 @@ class TradeDecisionBrain:
         rank_below = sum(1 for s in scores if s < top1_score)
         relative_rank = rank_below / n if n > 0 else 0.0
 
+        # Bug#1修复：使用VALID_TRIGGERS集合判断，而非 trigger_type != ''
+        has_valid_trigger = trigger_type in self.VALID_TRIGGERS
+
         # ── 通道A：有明确触发信号 ───────────────────────────────────────────
-        if trigger_type != '':
+        if has_valid_trigger:
             passes = (top1_score >= p90) and (top1_score >= relative_threshold)
             if passes:
                 logger.debug(
@@ -328,7 +342,7 @@ class TradeDecisionBrain:
                 )
                 return None
 
-        # ── 通道B：无 trigger_type，依赖高分位+高点火概率 ─────────────────
+        # ── 通道B：无有效 trigger_type，依赖高分位+高点火概率 ─────────────────
         passes_b = (
             (top1_score >= p95) and
             (top1_score >= relative_threshold) and
