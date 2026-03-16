@@ -284,6 +284,11 @@ class TradeDecisionBrain:
         trigger_type = top1.get('trigger_type') or ''
         ignition_prob = top1.get('ignition_prob', 0.0)
 
+        # 零分保护：榜单全是0分时跳过决策（防止 0>=0 通过入场）
+        if top1_score <= 0:
+            logger.debug(f"[路线A] 榜首score={top1_score:.0f}，跳过决策")
+            return None
+
         # 计算分位数快照
         p90 = self._percentile(scores, self.entry_percentile_threshold)
         p95 = self._percentile(scores, 0.95)

@@ -22,6 +22,7 @@ import sys
 import argparse
 import logging
 import json
+import bisect
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple
@@ -159,6 +160,7 @@ class MockLiveRunner:
 
         # ── Tick数据 & 流通盘
         self.tick_queues: Dict[str, List[Dict]] = {}
+        self.tick_time_index: Dict[str, List[datetime]] = {}  # 预解析时间戳列表（用于bisect）
         self.float_volumes: Dict[str, float] = {}
 
         # ── 每只股票的历史状态缓冲区（TriggerValidator依赖）
@@ -231,11 +233,15 @@ class MockLiveRunner:
 
             self.tick_queues[stock_code] = tick_list
 
-            # 真实流通盘（铁律：FloatVolume 单位万股 × 10000 = 股）
+            # 预解析时间戳列表（用于bisect二分查找，O(log n)替代O(n)线性扫描）
+            time_list = [self._parse_tick_time(t['time']) for t in tick_list]
+            self.tick_time_index[stock_code] = time_list
+
+            # 真实流通盘（QMT FloatVolume 单位=股，无需转换）
             try:
                 detail = xtdata.get_instrument_detail(stock_code)
                 fv = detail.get('FloatVolume', 0) if detail else 0
-                self.float_volumes[stock_code] = fv * 10000 if fv and fv > 0 else 0
+                self.float_volumes[stock_code] = fv if fv and fv > 0 else 0
             except Exception as e:
                 logger.warning(f"[load_tick] {stock_code} 流通盘失败: {e}")
                 self.float_volumes[stock_code] = 0
@@ -584,25 +590,28 @@ class MockLiveRunner:
         self.leaderboard.clear()
 
         for stock_code, tick_list in self.tick_queues.items():
-            current_tick = None
-            for tick in tick_list:
-                if self._parse_tick_time(tick['time']) <= target_time:
-                    current_tick = tick
-                else:
-                    break
-            if current_tick is None:
+            # 使用预解析时间索引 + bisect_right 二分查找（O(log n) 替代 O(n)）
+            time_list = self.tick_time_index.get(stock_code, [])
+            if not time_list or not tick_list:
                 continue
+
+            # 二分查找：找到 <= target_time 的最后一个 tick 索引
+            idx = bisect.bisect_right(time_list, target_time) - 1
+            if idx < 0:
+                continue
+            current_tick = tick_list[idx]
 
             total_amount = current_tick['amount']
             cutoff_5 = target_time - timedelta(minutes=5)
             cutoff_15 = target_time - timedelta(minutes=15)
-            amt_5ago = amt_15ago = 0.0
-            for tick in tick_list:
-                tt = self._parse_tick_time(tick['time'])
-                if tt <= cutoff_5:
-                    amt_5ago = tick['amount']
-                if tt <= cutoff_15:
-                    amt_15ago = tick['amount']
+
+            # 二分查找 5 分钟前的 tick
+            idx_5 = bisect.bisect_right(time_list, cutoff_5) - 1
+            amt_5ago = tick_list[idx_5]['amount'] if idx_5 >= 0 else 0.0
+
+            # 二分查找 15 分钟前的 tick
+            idx_15 = bisect.bisect_right(time_list, cutoff_15) - 1
+            amt_15ago = tick_list[idx_15]['amount'] if idx_15 >= 0 else 0.0
 
             true_flow_5min = max(0.0, total_amount - amt_5ago)
             true_flow_15min = max(0.0, total_amount - amt_15ago)
@@ -661,13 +670,15 @@ class MockLiveRunner:
         # ── 真实摩擦引擎
         for stock_code, pos in list(self.execution_manager.positions.items()):
             tick_list = self.tick_queues.get(stock_code, [])
-            current_tick = None
-            for tick in reversed(tick_list):
-                if self._parse_tick_time(tick['time']) <= current_time:
-                    current_tick = tick
-                    break
-            if current_tick is None:
+            time_list = self.tick_time_index.get(stock_code, [])
+            if not tick_list or not time_list:
                 continue
+
+            # bisect 二分查找（O(log n) 替代 O(n) reversed 扫描）
+            idx = bisect.bisect_right(time_list, current_time) - 1
+            if idx < 0:
+                continue
+            current_tick = tick_list[idx]
 
             pos.current_price = current_tick['price']
             pos.max_price = max(getattr(pos, 'max_price', pos.current_price), pos.current_price)
@@ -682,10 +693,8 @@ class MockLiveRunner:
                 continue
 
             cutoff_5 = current_time - timedelta(minutes=5)
-            amt_5ago = 0.0
-            for tick in tick_list:
-                if self._parse_tick_time(tick['time']) <= cutoff_5:
-                    amt_5ago = tick['amount']
+            idx_5 = bisect.bisect_right(time_list, cutoff_5) - 1
+            amt_5ago = tick_list[idx_5]['amount'] if idx_5 >= 0 else 0.0
             true_flow_5 = max(0.0, current_tick['amount'] - amt_5ago)
             inflow_ratio = (true_flow_5 * 0.5) / (real_float_vol * current_tick['price']) * 100 \
                 if real_float_vol > 0 and current_tick['price'] > 0 else 0
@@ -725,10 +734,11 @@ class MockLiveRunner:
         # ── 零摩擦引擎：只更新价格
         for stock_code in list(self.paper_engine.positions.keys()):
             tick_list = self.tick_queues.get(stock_code, [])
-            for tick in reversed(tick_list):
-                if self._parse_tick_time(tick['time']) <= current_time:
-                    self.paper_engine.update_position_price(stock_code, tick['price'])
-                    break
+            time_list = self.tick_time_index.get(stock_code, [])
+            if tick_list and time_list:
+                idx = bisect.bisect_right(time_list, current_time) - 1
+                if idx >= 0:
+                    self.paper_engine.update_position_price(stock_code, tick_list[idx]['price'])
 
     # ============================================================
     # 工具方法
@@ -748,17 +758,15 @@ class MockLiveRunner:
 
     def _get_minute_volume(self, stock_code: str, current_time: datetime) -> float:
         tick_list = self.tick_queues.get(stock_code, [])
-        if not tick_list:
+        time_list = self.tick_time_index.get(stock_code, [])
+        if not tick_list or not time_list:
             return 0.0
         ms = current_time.replace(second=0, microsecond=0)
         me = ms + timedelta(minutes=1)
-        prev_amt = curr_amt = 0.0
-        for tick in tick_list:
-            tt = self._parse_tick_time(tick['time'])
-            if tt <= ms:
-                prev_amt = tick['amount']
-            if tt < me:
-                curr_amt = tick['amount']
+        idx_ms = bisect.bisect_right(time_list, ms) - 1
+        idx_me = bisect.bisect_right(time_list, me) - 1
+        prev_amt = tick_list[idx_ms]['amount'] if idx_ms >= 0 else 0.0
+        curr_amt = tick_list[idx_me]['amount'] if idx_me >= 0 else 0.0
         return max(0.0, curr_amt - prev_amt)
 
     def _parse_tick_time(self, time_val) -> datetime:
