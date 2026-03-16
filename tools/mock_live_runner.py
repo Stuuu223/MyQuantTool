@@ -927,7 +927,8 @@ class MockLiveRunner:
         print(f"\n📊 Alpha = {alpha:+.2f}%  {tag}")
 
         # ── Bug#4修复：注入双引擎对比数据到UniversalTracker
-        for code in list(self.execution_manager.positions.keys()) | set(self.paper_engine.positions.keys()):
+        all_codes = set(self.execution_manager.positions.keys()) | set(self.paper_engine.positions.keys())
+        for code in all_codes:
             # 真实引擎数据
             real_pos = self.execution_manager.positions.get(code)
             friction_buy = real_pos.entry_price if real_pos else 0
