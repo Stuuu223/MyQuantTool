@@ -334,6 +334,38 @@ class LiveTradingEngine:
         
         logger.info("[OK] [LiveTradingEngine] 初始化完成 - QMT Manager已注入")
         logger.info("[CTO状态机] 动态蓄水池架构已启用：candidate_pool/opportunity_pool/eliminated_pool")
+        
+        # ==================== 【Phase4注入】决策大脑 + 全榜追踪器 + 零摩擦对照组 ====================
+        # 【Phase4注入】决策大脑 - 单吊模式交易决策
+        try:
+            from logic.execution.trade_decision_brain import TradeDecisionBrain
+            self.decision_brain = TradeDecisionBrain()
+            logger.info("[OK] TradeDecisionBrain初始化成功 - 单吊决策大脑")
+        except (ImportError, Exception) as e:
+            logger.warning(f"[WARN] TradeDecisionBrain初始化失败: {e}")
+            self.decision_brain = None
+        
+        # 【Phase4注入】全榜追踪器 - 记录所有上榜票的命运
+        try:
+            from logic.execution.universal_tracker import UniversalTracker
+            self.universal_tracker = UniversalTracker(session_id=self.target_date)
+            logger.info("[OK] UniversalTracker初始化成功 - 全榜生命周期追踪")
+        except (ImportError, Exception) as e:
+            logger.warning(f"[WARN] UniversalTracker初始化失败: {e}")
+            self.universal_tracker = None
+        
+        # 【Phase4注入】零摩擦理想引擎 - 对照组
+        try:
+            from logic.execution.paper_trade_engine import PaperTradeEngine
+            # 使用与MockExecutionManager相同的初始资金
+            _initial_cap = 100000.0
+            if hasattr(self, 'execution_manager') and self.execution_manager:
+                _initial_cap = getattr(self.execution_manager, 'initial_capital', 100000.0)
+            self.paper_engine = PaperTradeEngine(initial_capital=_initial_cap)
+            logger.info(f"[OK] PaperTradeEngine初始化成功 - 零摩擦对照组(¥{_initial_cap:,.0f})")
+        except (ImportError, Exception) as e:
+            logger.warning(f"[WARN] PaperTradeEngine初始化失败: {e}")
+            self.paper_engine = None
     
     # ==================== 【CTO V53时间沙盒】统一时间获取入口 ====================
     
@@ -1037,6 +1069,76 @@ class LiveTradingEngine:
                 continue
 
         current_top_targets.sort(key=lambda x: x['score'], reverse=True)
+        
+        # ==================== 【Phase4注入】决策大脑帧调用 + 全榜追踪器帧更新 ====================
+        # 【Phase4注入】决策大脑判断入场/出场（scan模式）
+        if current_top_targets and hasattr(self, 'decision_brain') and self.decision_brain:
+            try:
+                # 获取持仓信息
+                held_price = 0.0
+                held_code = None
+                if hasattr(self, 'execution_manager') and self.execution_manager and self.execution_manager.positions:
+                    held_code = list(self.execution_manager.positions.keys())[0]
+                    held_price = self.execution_manager.positions[held_code].current_price
+                
+                # 调用决策大脑
+                decision = self.decision_brain.on_new_frame(
+                    top_targets=current_top_targets[:5],
+                    current_time=engine_time,
+                    held_stock_current_price=held_price
+                )
+                
+                # 执行决策
+                executed_trade_info = None
+                if decision['action'] == 'BUY' and hasattr(self, 'execution_manager') and self.execution_manager:
+                    buy_code = decision['stock_code']
+                    buy_price = decision['price']
+                    # 执行买入
+                    success, order = self.execution_manager.place_mock_order(
+                        stock_code=buy_code,
+                        last_price=buy_price,
+                        direction='BUY'
+                    )
+                    if success:
+                        executed_trade_info = {
+                            'action': 'BUY',
+                            'stock_code': buy_code,
+                            'price': buy_price,
+                            'reason': decision['reason']
+                        }
+                        # 同步到零摩擦对照引擎
+                        if hasattr(self, 'paper_engine') and self.paper_engine:
+                            self.paper_engine.place_order(buy_code, buy_price, 'BUY', decision.get('trigger_type'))
+                        # 清除决策大脑持仓状态后重新设置
+                        logger.info(f"💰 [决策买入] {buy_code} @ ¥{buy_price:.2f} | 原因: {decision['reason']}")
+                
+                elif decision['action'] == 'SELL' and hasattr(self, 'execution_manager') and self.execution_manager:
+                    if held_code:
+                        sell_price = held_price
+                        success, order = self.execution_manager.place_mock_order(
+                            stock_code=held_code,
+                            last_price=sell_price,
+                            direction='SELL'
+                        )
+                        if success:
+                            executed_trade_info = {
+                                'action': 'SELL',
+                                'stock_code': held_code,
+                                'price': sell_price,
+                                'reason': decision['reason']
+                            }
+                            if hasattr(self, 'paper_engine') and self.paper_engine:
+                                self.paper_engine.place_order(held_code, sell_price, 'SELL')
+                            self.decision_brain.clear_position()
+                            logger.info(f"🔔 [决策卖出] {held_code} @ ¥{sell_price:.2f} | 原因: {decision['reason']}")
+                
+                # 全榜追踪器帧更新
+                if hasattr(self, 'universal_tracker') and self.universal_tracker:
+                    self.universal_tracker.on_frame(current_top_targets[:10], engine_time, executed_trade_info)
+                    
+            except Exception as e:
+                logger.debug(f"[DEBUG] 决策大脑帧处理跳过: {e}")
+        
         self.last_known_top_targets = current_top_targets[:10]
         
         # 写入战报数据
@@ -1063,6 +1165,32 @@ class LiveTradingEngine:
                 msg=f"无达标股票(粗筛{len(last_tick_by_stock)}只)"
             )
             print("\n[CMD] 沙盘时间线推演定格完毕。[空榜]")
+        
+        # ==================== 【Phase4注入】scan模式全榜追踪战报输出 ====================
+        if hasattr(self, 'universal_tracker') and self.universal_tracker:
+            import os
+            os.makedirs('data/battle_reports', exist_ok=True)
+            report_path = f"data/battle_reports/{self.target_date}_scan_report.json"
+            try:
+                self.universal_tracker.export_to_json(report_path)
+                logger.info(f"[OK] 全榜追踪战报已输出: {report_path}")
+            except Exception as e:
+                logger.warning(f"[WARN] 全榜追踪战报告输出失败: {e}")
+        
+        # 【Phase4注入】双引擎对比：零摩擦理想引擎 vs 真实摩擦引擎
+        if hasattr(self, 'paper_engine') and self.paper_engine and hasattr(self, 'execution_manager') and self.execution_manager:
+            try:
+                friction_rpt = self.execution_manager.get_performance_report()
+                if 'error' not in friction_rpt:
+                    comparison = self.paper_engine.compare_with_friction(friction_rpt)
+                    logger.info(
+                        f"[对照组] 理想收益: {comparison['paper_pnl_pct']:+.2f}% | "
+                        f"真实收益: {comparison['friction_pnl_pct']:+.2f}% | "
+                        f"摩擦损耗: {comparison['alpha_lost_to_friction']:+.2f}pp | "
+                        f"裁定: {comparison['verdict']}"
+                    )
+            except Exception as e:
+                logger.debug(f"[DEBUG] 双引擎对比跳过: {e}")
             
         self._generate_final_battle_report()
         self._has_generated_report = True
