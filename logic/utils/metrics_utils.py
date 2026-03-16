@@ -661,6 +661,7 @@ def render_live_dashboard(top_targets, pool_stats=None, is_rest=False, msg=None,
     """
     【CTO V121】兼容接口 - 调用 build_dashboard_layout 返回渲染对象
     【CTO V180.4】添加silence_logs参数
+    【CTO V185】修复战报大屏不显示：scan模式直接打印渲染对象
     
     Args:
         top_targets: TOP10目标列表
@@ -675,8 +676,15 @@ def render_live_dashboard(top_targets, pool_stats=None, is_rest=False, msg=None,
     if silence_logs:
         _silence_terminal_logging()
     
-    # 直接返回渲染对象，由外层 Live 调用
-    return build_dashboard_layout(top_targets, pool_stats, account_info, is_rest, msg, initial_loading)
+    # 构建渲染对象
+    renderable = build_dashboard_layout(top_targets, pool_stats, account_info, is_rest, msg, initial_loading)
+    
+    # 【CTO V185修复】scan/盘后模式直接打印，实盘Live模式由外层调用console.print
+    from rich.console import Console
+    console = Console()
+    console.print(renderable)
+    
+    return renderable
     # 【CTO V180.4】删除return之后的死代码（永不执行的try/except块）
     # 原代码保留了完整的降级渲染逻辑，但被return拦截永远不执行
     # 这是技术债炸弹：一旦有人删除return，降级分支会激活但缺少IGNITE%列
