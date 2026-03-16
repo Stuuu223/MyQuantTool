@@ -996,7 +996,8 @@ class MockLiveRunner:
             "| 代码 | 首次上榜 | 上榜价 | 峰值 | 末涨幅 | 买入情况 |",
             "|------|---------|--------|------|--------|---------|",
         ]
-        for code, info in sorted_universe:
+        for info in sorted_universe:
+            code = info.get('code', 'N/A')
             bought = '+'.join(info.get('bought_by_engines', [])) or '❌未买入'
             lines.append(
                 f"| {code} | {info.get('first_appear_time','N/A')} | "
