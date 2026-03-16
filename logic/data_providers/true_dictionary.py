@@ -777,7 +777,12 @@ class TrueDictionary:
         except (ValueError, TypeError):
             return 0.0
     
-    def build_static_cache(self, stock_list: List[str], default_float_volume: float = 1000000000.0) -> Dict:
+    def build_static_cache(
+        self,
+        stock_list: List[str],
+        default_float_volume: float = 1000000000.0,
+        target_date: str = None,  # 【CTO V9.5 Issue#6修复】回测时必须传入，禁止用datetime.now()
+    ) -> Dict:
         """
         【CTO V34】构建静态常数预编译快查表
         
@@ -788,6 +793,7 @@ class TrueDictionary:
         Args:
             stock_list: 股票代码列表
             default_float_volume: 流通股本默认值（10亿股）
+            target_date: 目标日期(格式'YYYYMMDD')，回测时必须传入，禁止datetime.now()未来函数
             
         Returns:
             Dict: {stock_code: {'float_volume': float, 'avg_volume_5d': float, 'is_yesterday_limit_up': bool}}
@@ -797,9 +803,14 @@ class TrueDictionary:
         
         static_cache = {}
         
-        # 【CTO V101】批量获取最近3天日K数据，用于判断昨日涨停
-        today = datetime.now().strftime('%Y%m%d')
-        three_days_ago = (datetime.now() - timedelta(days=5)).strftime('%Y%m%d')  # 多预留几天考虑非交易日
+        # 【CTO V9.5 Issue#6修复】使用传入的target_date，禁止datetime.now()（未来函数）
+        today = target_date if target_date else datetime.now().strftime('%Y%m%d')
+        # 使用交易日历获取历史日期（如果可用）
+        try:
+            from logic.utils.calendar_utils import get_nth_previous_trading_day
+            three_days_ago = get_nth_previous_trading_day(today, 5)
+        except ImportError:
+            three_days_ago = (datetime.now() - timedelta(days=5)).strftime('%Y%m%d')
         
         try:
             daily_data = xtdata.get_local_data(
@@ -822,23 +833,29 @@ class TrueDictionary:
                 fv = default_float_volume
             
             # 【CTO V101 连板海马体】判断昨日是否涨停
+            # 【CTO V9.5 Issue#4修复】用昨收价与涨停价对比，而非昨最高价
+            # 原因：冲高回落（盘中触及涨停但未收于涨停）不算涨停
             is_yesterday_limit_up = False
             if daily_data and stock in daily_data and daily_data[stock] is not None:
                 df = daily_data[stock]
                 if len(df) >= 2:
                     try:
-                        # 昨日最高价
-                        prev_high = float(df['high'].iloc[-2])
-                        # 前日收盘价
-                        prev_prev_close = float(df['close'].iloc[-3]) if len(df) >= 3 else float(df['open'].iloc[-2])
+                        prev_close = float(df['close'].iloc[-2])  # 昨收盘价
                         
-                        if prev_prev_close > 0:
-                            y_change = (prev_high - prev_prev_close) / prev_prev_close * 100.0
-                            # 宽容判定：主板>9.5%，创业板>19.5% 视为昨日涨停(或触及涨停)
-                            limit_threshold = 19.5 if stock.startswith(('30', '68')) else 9.5
-                            if y_change >= limit_threshold:
-                                is_yesterday_limit_up = True
-                    except Exception as e:
+                        # 优先用TrueDictionary缓存的up_stop_price（已在warmup时预热）
+                        up_stop = self.get_up_stop_price(stock)
+                        
+                        if up_stop > 0 and prev_close > 0:
+                            # 昨收盘价与涨停价误差<0.5%，判定为涨停
+                            is_yesterday_limit_up = (abs(prev_close - up_stop) / up_stop < 0.005)
+                        elif prev_close > 0:
+                            # fallback: up_stop_price缓存未命中，用涨幅法（用昨收/前收，非最高/前收）
+                            prev_prev_close = float(df['close'].iloc[-3]) if len(df) >= 3 else float(df['open'].iloc[-2])
+                            if prev_prev_close > 0:
+                                y_change = (prev_close - prev_prev_close) / prev_prev_close * 100.0
+                                limit_threshold = 19.5 if stock.startswith(('30', '68')) else 9.5
+                                is_yesterday_limit_up = y_change >= limit_threshold
+                    except Exception:
                         pass
             
             static_cache[stock] = {
@@ -852,12 +869,14 @@ class TrueDictionary:
     
     def get_avg_turnover_5d(self, stock_code: str, target_date: str = None) -> float:
         """
-        获取5日平均换手率 - 市值平替法
+        获取5日平均换手率 - 成交额市值法
         
-        【CTO市值平替法】
-        - 公式：成交额 / (流通股本 × 收盘价) × 100
-        - 优点：绕开volume单位问题，避免历史流通股本漂移
-        - 注意：使用当前的FloatVolume（误差在可接受范围内）
+        【CTO V9.5 Issue#3修复】成交额市值法
+        - 公式：成交额(元) / (流通股本(股) × 收盘价(元/股)) × 100
+        - 量纲链：元 / (股 × 元/股) × 100 = 元/元 × 100 = % ✅
+        - 说明：本方法使用amount字段，不使用volume字段，与volume单位无关
+                因此不存在「绕开volume单位问题」——压根就没有该问题
+        - 优点：避免历史流通股本漂移（送转股导致FloatVolume变化）
         
         Args:
             stock_code: 股票代码
