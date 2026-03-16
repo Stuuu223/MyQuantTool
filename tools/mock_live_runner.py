@@ -561,7 +561,7 @@ class MockLiveRunner:
 
         # 零摩擦引擎
         if stock_code in self.paper_engine.positions:
-            p = price or self.paper_engine.positions[stock_code].entry_price
+            p = price or self.paper_engine.positions[stock_code]['cost_price']
             self.paper_engine.place_order(
                 stock_code=stock_code, price=p, direction='SELL', timestamp=current_time
             )
@@ -906,16 +906,18 @@ class MockLiveRunner:
         print("📋 [全榜生命周期] — 所有上榜票的命运（错过了什么）")
         print("-"*72)
         universe_report = self.universal_tracker.get_full_report()
-        all_stocks = universe_report.get('all_stocks', {})
+        all_stocks_raw = universe_report.get('all_stocks', [])
+        # all_stocks 是 list[dict]，每个 dict 有 'code' 和 'peak_gain_pct' 字段
         sorted_universe = sorted(
-            all_stocks.items(),
-            key=lambda x: x[1].get('peak_gain_pct', 0), reverse=True
+            all_stocks_raw,
+            key=lambda x: x.get('peak_gain_pct', 0), reverse=True
         )[:20]
         if sorted_universe:
             print(f"\n  {'代码':<10} {'首次上榜':<9} {'上榜价':>8} "
                   f"{'峰值涨幅':>10} {'末价涨幅':>10} {'买入方式':<14} {'备注'}")
             print("  " + "-"*74)
-            for code, info in sorted_universe:
+            for info in sorted_universe:
+                code = info.get('code', 'N/A')
                 bought_by = info.get('bought_by_engines', [])
                 eng_str   = '+'.join(bought_by) if bought_by else '❌ 未买入'
                 peak  = info.get('peak_gain_pct', 0)
