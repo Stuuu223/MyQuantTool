@@ -95,8 +95,12 @@ def extract_volume_ratio(
     - 量比 < 1.0: 缩量（洗盘或死水）
     
     Args:
-        current_volume: 今日成交量（股）
-        avg_volume_5d: 5日平均成交量（股）
+        current_volume: 今日成交量（单位由调用方决定，必须与avg_volume_5d一致）
+            实盘/回测中应传入「手」（来自Tick.volume或K线.volume）
+        avg_volume_5d: 5日平均成交量（单位由调用方决定，必须与current_volume一致）
+            实盘/回测中应传入「手」（来自K线.volume历史5日均值，排除今日）
+        注意: 本函数无单位转换逻辑，调用方负责保证两参数单位一致
+              如传入 股/手 混合参数，量比将被放大100倍，系统不会报错但结果错误
     
     Returns:
         float: 量比
@@ -500,7 +504,8 @@ VALIDATED_LAWS = {
 #   from logic.core.physics_sensors import (
 #       extract_purity,           # 纯度：(close-low)/(high-low)
 #       extract_volume_ratio,     # 量比：current_vol / avg_vol_5d
-#       extract_mfe_efficiency,   # MFE做功效率
+#       # extract_mfe 已废弃，MFE计算已内置于 kinetic_core_engine.calculate_true_dragon_score()
+#       # 禁止从外部调用 extract_mfe，该函数标注为DEAD CODE
 #       extract_time_decay_factor, # 时间衰减
 #       extract_overdraft_multiplier, # 透支效应
 #   )
