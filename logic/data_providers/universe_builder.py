@@ -307,18 +307,23 @@ class UniverseBuilder:
                 self._volume_ratios[stock] = 0.0
                 continue
 
-            # 【新增】计算 volume_ratio = 今日成交量 / 5日均成交量
-            n = min(5, len(df))
-            if n > 0:
-                today_volume = float(df['volume'].iloc[-1])
-                avg_volume_5d = df['volume'].iloc[-n:].mean()
+            # 【新增】计算 volume_ratio = 今日成交量 / 历史5日均量
+            # 【CTO V9.5 Issue#1铁律】avg_volume_5d 必须排除今日，否则今日放量会污染均值
+            # 修复前：iloc[-n:] 包含今日，量比被压低约30%
+            # 修复后：iloc[-hist_n-1:-1] 只取历史5天，排除今日
+            hist_n = min(5, len(df) - 1)  # 历史天数，排除今日(-1)
+            if hist_n > 0:
+                today_volume = float(df['volume'].iloc[-1])  # 单位: 手
+                avg_volume_5d = df['volume'].iloc[-hist_n - 1:-1].mean()  # 单位: 手（仅历史）
                 if avg_volume_5d > 0 and not (pd.isna(today_volume) or np.isinf(today_volume)):
-                    volume_ratio = today_volume / avg_volume_5d
+                    volume_ratio = today_volume / avg_volume_5d  # 单位: 手/手 = 无量纲
                     self._volume_ratios[stock] = float(volume_ratio)
                 else:
                     self._volume_ratios[stock] = 0.0
             else:
-                self._volume_ratios[stock] = 0.0
+                # 数据只有1行，无历史可算，量比设1.0（兜底）
+                today_volume = float(df['volume'].iloc[-1]) if len(df) > 0 else 0.0
+                self._volume_ratios[stock] = 1.0 if today_volume > 0 else 0.0
 
             # 【CTO V129 游资四维共振漏斗】全部条件满足才能进！
             # 条件1: 5日均额>1.5亿
@@ -339,9 +344,18 @@ class UniverseBuilder:
                 cnt_price += 1
                 continue
             
-            # 提取5日窗口数据
-            avg_amount_5d = df['amount'].iloc[-n:].mean() if not pd.isna(df['amount'].iloc[-n:].mean()) else 0
-            avg_volume_5d = df['volume'].iloc[-n:].mean() if not pd.isna(df['volume'].iloc[-n:].mean()) else 0
+            # 【CTO V9.5 Issue#2铁律】与修改点A保持一致，avg_volume_5d/avg_amount_5d 排除今日
+            # 单位: avg_amount_5d=元（历史5日）, avg_volume_5d=手（历史5日）
+            _hist_n = min(5, len(df) - 1)
+            if _hist_n > 0:
+                avg_amount_5d = df['amount'].iloc[-_hist_n - 1:-1].mean()
+                avg_volume_5d = df['volume'].iloc[-_hist_n - 1:-1].mean()
+                avg_amount_5d = avg_amount_5d if not pd.isna(avg_amount_5d) else 0
+                avg_volume_5d = avg_volume_5d if not pd.isna(avg_volume_5d) else 0
+            else:
+                # 只有1行数据时，用今日值兜底
+                avg_amount_5d = float(df['amount'].iloc[-1]) if len(df) > 0 else 0
+                avg_volume_5d = float(df['volume'].iloc[-1]) if len(df) > 0 else 0
             
             # 【条件1】五日成交均额大于1.5亿
             if avg_amount_5d < self.min_avg_amount:
@@ -369,6 +383,8 @@ class UniverseBuilder:
 
             # 【第二道锁：动能爆发力】今日量比必须 >= 2.0倍（P50=1.94x）
             # 这是最可靠的物理指标，不受除权影响！
+            # 【CTO V9.5 Issue#2】此处 avg_volume_5d 来自修改点B，已排除今日
+            # 单位: 手/手 = 无量纲，与 self._volume_ratios 口径一致
             volume_ratio = today_volume / avg_volume_5d if avg_volume_5d > 0 else 0
             if volume_ratio < 2.0:
                 cnt_turnover += 1
