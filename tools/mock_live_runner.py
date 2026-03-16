@@ -933,9 +933,9 @@ class MockLiveRunner:
             friction_buy = real_pos.entry_price if real_pos else 0
             friction_sell = real_pos.current_price if real_pos else 0
             
-            # 零摩擦引擎数据
+            # 零摩擦引擎数据（字段名：cost_price, current_price）
             paper_pos = self.paper_engine.positions.get(code)
-            paper_buy = paper_pos.get('entry_price', 0) if paper_pos else 0
+            paper_buy = paper_pos.get('cost_price', 0) if paper_pos else 0
             paper_sell = paper_pos.get('current_price', 0) if paper_pos else 0
             
             if friction_buy > 0 or paper_buy > 0:
