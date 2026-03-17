@@ -53,19 +53,18 @@ class TestTurnoverCalculation:
     
     def test_turnover_small_cap(self):
         """
-        小盘股换手率计算
-        案例：流通股本=5亿股，成交量=1000万手
-        预期换手率 = (1000万×100) / 5亿 × 100 = 200%
-        注意：这会触发死亡换手防线！
+        【CTO E-6修复】验证小盘股在正常交易日（换手3%）不触发死亡防线
+        案例：流通股本=5亿股，成交量=15万手
+        预期换手率 = (15万×100) / 5亿 × 100 = 3.0%
         """
-        current_volume_hand = 10_000_000  # 1000万手
+        current_volume_hand = 150_000  # 15万手
         float_volume_shares = 500_000_000  # 5亿股
         
         volume_gu = current_volume_hand * 100
         turnover = volume_gu / float_volume_shares * 100
         
-        assert abs(turnover - 200.0) < 1.0, f"换手率={turnover}%，量纲可能错误！"
-        assert turnover >= 70.0, "200%换手率应当触发死亡防线"
+        assert abs(turnover - 3.0) < 0.01, f"换手率={turnover}%，量纲可能错误！"
+        assert turnover < 70.0, "3%换手率不应触发死亡防线"
 
 
 class TestTurnoverDefenseLine:
@@ -159,15 +158,22 @@ class TestDeathTurnoverThreshold:
     
     def test_no_magic_numbers_150_or_300(self):
         """
-        验证代码中没有150%或300%的魔法数字
+        【CTO E-4修复】真实文件扫描，验证代码中没有150%或300%的魔法数字
+        死亡换手阈值必须是70%，不允许出现150%或300%
         """
-        # 这是概念性测试，实际需要代码扫描
-        # 70%是唯一合法的死亡换手阈值
-        INVALID_THRESHOLDS = [150.0, 300.0]
-        VALID_THRESHOLD = 70.0
+        import subprocess
+        import pathlib
         
-        assert VALID_THRESHOLD not in INVALID_THRESHOLDS, \
-            "70%是合法阈值，不应出现在非法列表中"
+        # 扫描 run_live_trading_engine.py 中的非法阈值
+        target_file = pathlib.Path(__file__).parent.parent / 'tasks' / 'run_live_trading_engine.py'
+        if target_file.exists():
+            result = subprocess.run(
+                ['findstr', '/n', '150\\.0 300\\.0', str(target_file)],
+                capture_output=True, text=True, shell=True
+            )
+            # findstr找到匹配会返回stdout
+            assert not result.stdout.strip(), \
+                f"发现残留非法换手率阈值(150%/300%)：\n{result.stdout}\n死亡换手阈值必须是70%！"
 
 
 if __name__ == '__main__':
