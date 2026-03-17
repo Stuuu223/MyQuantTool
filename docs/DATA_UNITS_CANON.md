@@ -1,7 +1,8 @@
 # 【量纲宪法】MyQuantTool 数据单位权威定义
 
-**最后验证日期**: 待补充（需开盘实测 Task D-1）  
-**验证人**: 待实盘验证（Task D-1 未执行）  
+**版本**: V188 白盒防腐层架构  
+**最后验证日期**: 待补充（需开盘实测 H-0 五票诊断）  
+**验证人**: 待实盘验证  
 **声明**: 其他文件的量纲注释一律以本文件为准，本文件错误请提 PR 修改
 
 ---
@@ -10,34 +11,44 @@
 
 | 数据源 API | 字段 | 单位 | 验证方法 | 备注 |
 |-----------|------|------|----------|------|
-| `get_instrument_detail` FloatVolume | float_volume_raw | **万股** | 待开盘实测（Task D-1） | QMT原始返回值 |
-| TrueDictionary._float_volume（升维后）| float_volume | **股** | 待开盘实测（Task D-1） | 已×10000，可直接使用 |
-| `get_full_tick` volume | volume | **手** | 待开盘实测（Task D-1） | 需×100转股 |
-| `get_local_data(period='1d')` volume | avg_vol_5d | **手** | 待开盘实测（Task D-1） | 需×100转股 |
-| `get_local_data(period='tick')` volume | tick_volume | **手** | 待开盘实测（Task D-1） | 需×100转股 |
-| `subscribe_quote` 实时流 volume | volume | **手** | 待开盘实测（Task D-1） | 需×100转股 |
+| `get_instrument_detail` FloatVolume | float_volume_raw | **万股** | 待开盘实测（H-0） | QMT原始返回值 |
+| TrueDictionary._float_volume（升维后）| float_volume | **股** | QMTNormalizer归一化 | 由Normalizer自动升维 |
+| `get_full_tick` volume | volume | **手** | 待开盘实测（H-0） | QMTNormalizer归一化 |
+| `get_local_data(period='1d')` volume | avg_vol_5d | **手** | 待开盘实测（H-0） | QMTNormalizer归一化 |
+| `get_local_data(period='tick')` volume | tick_volume | **手** | 待开盘实测（H-0） | QMTNormalizer归一化 |
+| `subscribe_quote` 实时流 volume | volume | **手** | 待开盘实测（H-0） | QMTNormalizer归一化 |
 | 所有数据源 amount | amount | **元** | 无需转换 | 成交额单位统一 |
 
-**重要说明**：QMT `get_instrument_detail` 返回的 `FloatVolume` 原始单位是**万股**。TrueDictionary 内部自动执行 `×10000` 升维为**股**，外部调用者通过 `get_float_volume()` 获取的已经是股单位，无需再次转换。
+**【V188白盒防腐层架构】**：
+- 所有量纲转换**必须且只能**通过 `QMTNormalizer` 进行
+- 禁止业务代码直接写 `*100` 或 `*10000`
+- 每次升维触发必须打 `WARNING` 日志（白盒可观测）
 
 ---
 
 ## 二、核心公式（唯一版本）
 
-### 2.1 换手率公式
+### 2.1 换手率公式（V188白盒版）
 ```python
-# 换手率 = (成交量[手] × 100[股/手]) / 流通股本[股] × 100
-volume_gu = current_volume * 100  # 手 → 股
-current_turnover = volume_gu / float_volume * 100  # 结果单位：%
+from logic.data_providers.qmt_normalizer import QMTNormalizer
+
+# 白盒防腐层统一入口
+turnover_rate = QMTNormalizer.calculate_turnover_rate(
+    volume_raw=current_volume,      # QMT原始值（手）
+    float_volume_raw=float_volume,  # QMT原始值（可能是万股）
+    price=current_price,
+    volume_source='live_tick'
+)
 ```
 
-### 2.2 成交额公式
+### 2.2 量比公式（无量纲自消除）
 ```python
-# 成交额 = 5日均量[手] × 100[股/手] × 价格[元/股]
-avg_amount_5d = avg_volume_5d * 100 * prev_close  # 结果单位：元
+# 量比 = 今日成交量 / 5日平均成交量
+# 注意：分子分母单位相同（都是手），量纲自然消除，无需转换！
+volume_ratio = today_volume / avg_volume_5d
 ```
 
-### 2.3 VWAP公式
+### 2.3 成交额公式
 ```python
 # VWAP = 成交额[元] / (成交量[手] × 100[股/手])
 tick_volume_gu = tick_volume * 100  # 手 → 股
