@@ -39,6 +39,9 @@ except ImportError:
 
 from logic.utils.calendar_utils import get_nth_previous_trading_day
 
+# 【CTO V188】白盒防腐层 - 所有量纲转换必须通过Normalizer
+from logic.data_providers.qmt_normalizer import QMTNormalizer
+
 
 def _load_bson_blacklist() -> set[str]:
     """
@@ -370,11 +373,14 @@ class UniverseBuilder:
                 passed.append(stock)
                 continue
             
-            # 【CTO V185 量纲修正】get_local_data返回的volume单位是手（100股），不是股！
-            # 经诊断验证：平安银行换手率 = volume×100/FloatVolume = 0.43% ✅
-            # 今日换手率 = 今日成交量(手) × 100 / 流通股本(股)
-            today_turnover_pct = (today_volume * 100 / float_volume_shares) * 100
-            avg_turnover_5d_pct = (avg_volume_5d * 100 / float_volume_shares) * 100
+            # 【CTO V188 白盒防腐层】通过Normalizer计算换手率
+            # today_volume单位=手，float_volume_shares单位=股（TrueDictionary已归一化）
+            today_volume_gu = QMTNormalizer.normalize_volume(today_volume, 'daily_kline')
+            today_turnover_pct = (today_volume_gu / float_volume_shares) * 100 if float_volume_shares > 0 else 0
+            
+            # 5日均量同样需要归一化
+            avg_volume_5d_gu = QMTNormalizer.normalize_volume(avg_volume_5d, 'daily_kline')
+            avg_turnover_5d_pct = (avg_volume_5d_gu / float_volume_shares) * 100 if float_volume_shares > 0 else 0
             
             # 【CTO V137 纯正物理防线】(摒弃除权造假，重归金额与量比)
             # 致命发现：QMT FloatVolume是当前值，用历史成交量除以当前股本会导致"时空错乱谬误"！

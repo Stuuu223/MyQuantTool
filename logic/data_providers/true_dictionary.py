@@ -40,6 +40,9 @@ except ImportError as e:
     CALENDAR_UTILS_AVAILABLE = False
     logging.warning(f"[TrueDictionary] 交易日历工具导入失败: {e}")
 
+# 【CTO V188】白盒防腐层 - 所有量纲转换必须通过Normalizer
+from logic.data_providers.qmt_normalizer import QMTNormalizer
+
 # 获取logger
 try:
     from logic.utils.logger import get_logger
@@ -69,19 +72,19 @@ class TrueDictionary:
         return cls._instance
     
     # =====================================================
-    # 【CTO量纲宪法 V186】项目全局单位约定
+    # 【CTO量纲宪法 V188】白盒防腐层架构
     # =====================================================
-    # float_volume (self._float_volume) 单位：【股】← 已由万股×10000升维，TrueDictionary内部负责
-    # avg_volume_5d   (self._avg_volume_5d) 单位：【手】  来源：QMT get_local_data(period='1d') volume
-    # get_full_tick volume                  单位：【手】  来源：实盘订阅/快照
-    # get_local_data tick volume            单位：【手】  来源：历史Tick数据
+    # 所有量纲转换必须且只能通过 QMTNormalizer 进行
+    # 禁止业务代码直接写 *100 或 *10000
     # =====================================================
-    # QMT原始返回：get_instrument_detail FloatVolume 单位=【万股】
-    # TrueDictionary内部自动×10000升维为股，外部调用者无需再转换
+    # QMT原始单位（脏数据）：
+    #   get_instrument_detail FloatVolume → 万股
+    #   get_full_tick volume → 手
+    #   get_local_data volume → 手
     # =====================================================
-    # 换手率公式：(get_full_tick.volume[手] × 100) / float_volume[股] × 100 = %
-    # 成交额公式：avg_volume_5d[手] × 100 × price[元/股] = 元
-    # VWAP公式：amount[元] / (volume[手] × 100) = 元/股
+    # TrueDictionary内部单位（净化后）：
+    #   self._float_volume → 股（由QMTNormalizer.normalize_float_shares转换）
+    #   self._avg_volume_5d → 手（保持原始单位，量纲在计算时消除）
     # =====================================================
 
     def __init__(self):
@@ -675,10 +678,14 @@ class TrueDictionary:
                     detail = xtdata.get_instrument_detail(stock_code, True)
                     
                     if detail is not None:
-                        # 提取FloatVolume(流通股本)
-                        fv = detail.get('FloatVolume', 0) if hasattr(detail, 'get') else getattr(detail, 'FloatVolume', 0)
-                        if fv:
-                            self._float_volume[stock_code] = int(fv)
+                        # 提取FloatVolume(流通股本) - 【V188】通过Normalizer归一化
+                        fv_raw = detail.get('FloatVolume', 0) if hasattr(detail, 'get') else getattr(detail, 'FloatVolume', 0)
+                        if fv_raw:
+                            # 获取涨停价作为价格参考（用于市值推断）
+                            up_price = detail.get('UpStopPrice', 0) if hasattr(detail, 'get') else getattr(detail, 'UpStopPrice', 0)
+                            # 通过白盒防腐层归一化为"股"
+                            fv_clean = QMTNormalizer.normalize_float_shares(float(fv_raw), float(up_price) if up_price else 0)
+                            self._float_volume[stock_code] = int(fv_clean)
                         
                         # 提取涨停价/跌停价
                         up = detail.get('UpStopPrice', 0) if hasattr(detail, 'get') else getattr(detail, 'UpStopPrice', 0)
