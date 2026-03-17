@@ -96,6 +96,10 @@ class TradeDecisionBrain:
         # 【路线A】每帧分位数快照（用于战报回溯）
         self._last_frame_p90: float = 0.0
         self._last_frame_median: float = 0.0
+        
+        # 【P2修复】卖出后冷静期：防止车轮战
+        self._last_sell_time: Optional[datetime] = None
+        self._sell_cooldown_minutes: int = config.get('sell_cooldown_minutes', 30)
 
         logger.info(
             f"[OK] TradeDecisionBrain V2.0(路线A)初始化完成 | "
@@ -287,6 +291,17 @@ class TradeDecisionBrain:
             if current_time < cooldown_end:
                 logger.debug(f"[冷却期] {current_time.strftime('%H:%M:%S')} 开盘前5分钟，不入场")
                 return None
+            
+            # 【P2修复】卖出后冷静期（防止车轮战：卖出后立即买入另一只）
+            if self._last_sell_time is not None:
+                minutes_since_sell = (current_time - self._last_sell_time).total_seconds() / 60
+                if minutes_since_sell < self._sell_cooldown_minutes:
+                    remaining = self._sell_cooldown_minutes - minutes_since_sell
+                    logger.debug(
+                        f"[冷静期] 卖出后{minutes_since_sell:.0f}分钟 < {self._sell_cooldown_minutes}分钟，"
+                        f"还需等待{remaining:.0f}分钟"
+                    )
+                    return None
 
         # 榜单规模保护（防止 1-2 票孤榜时 p90=p50=同一票，任何票都能通过）
         if len(top_targets) < self.entry_min_board_size:
@@ -436,6 +451,9 @@ class TradeDecisionBrain:
         self.entry_price = 0.0
         self.entry_score = 0.0
         self.held_stock_code = ""
+        
+        # 【P2修复】记录卖出时间，启动冷静期
+        self._last_sell_time = datetime.now()
 
         logger.debug(f"[DEBUG] TradeDecisionBrain 持仓已清空: {cleared_code} @{cleared_price:.2f}")
 
