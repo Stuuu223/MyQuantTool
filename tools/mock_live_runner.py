@@ -144,11 +144,14 @@ class MockLiveRunner:
         target_date: str,
         stock_list: List[str] = None,
         initial_capital: float = 100_000.0,
-        sandbox: SandboxManager = None
+        sandbox: SandboxManager = None,
+        verbose: bool = False  # 【R7-3】静默模式开关
     ):
         self.target_date = target_date
         self.stock_list = stock_list or []
         self.config_manager = get_config_manager()
+        self.verbose = verbose  # 【R7-3】静默模式
+        self.trade_events: List[Dict] = []  # 【R7-3】交易事件记录
 
         # 沙盒
         self.sandbox = sandbox or SandboxManager(mode="backtest")
@@ -533,12 +536,22 @@ class MockLiveRunner:
                     'score': score,
                     'engine': 'real'
                 }
-                print(
-                    f"\n🔴 [真实买入] {stock_code} @ {price:.2f}  "
-                    f"分数:{score:.0f}  trigger:{trigger_type}  {reason}"
-                )
+                self.trade_events.append({
+                    'time': current_time.strftime('%H:%M'),
+                    'action': 'BUY',
+                    'code': stock_code,
+                    'price': price,
+                    'engine': 'real',
+                    'reason': reason[:40]
+                })
+                if self.verbose:
+                    print(
+                        f"\n🔴 [真实买入] {stock_code} @ {price:.2f}  "
+                        f"分数:{score:.0f}  trigger:{trigger_type}  {reason}"
+                    )
             else:
-                print(f"\n⚠️  [真实买入拒绝] {stock_code} @ {price:.2f}  {reason}")
+                if self.verbose:
+                    print(f"\n⚠️  [真实买入拒绝] {stock_code} @ {price:.2f}  {reason}")
 
         # 零摩擦引擎
         if not self.paper_bought_today:
@@ -561,7 +574,16 @@ class MockLiveRunner:
                         'score': score,
                         'engine': 'paper'
                     }
-                print(f"🔵 [纸面买入] {stock_code} @ {price:.2f}  {reason}")
+                self.trade_events.append({
+                        'time': current_time.strftime('%H:%M'),
+                        'action': 'BUY',
+                        'code': stock_code,
+                        'price': price,
+                        'engine': 'paper',
+                        'reason': reason[:40]
+                    })
+                if self.verbose:
+                    print(f"🔵 [纸面买入] {stock_code} @ {price:.2f}  {reason}")
 
         return executed_trade
 
@@ -597,7 +619,16 @@ class MockLiveRunner:
                         'reason': reason,
                         'engine': 'real'
                     }
-                    print(f"\n🟢 [真实卖出] {stock_code} @ {price:.2f}  {reason}")
+                    self.trade_events.append({
+                        'time': current_time.strftime('%H:%M'),
+                        'action': 'SELL',
+                        'code': stock_code,
+                        'price': price,
+                        'engine': 'real',
+                        'reason': reason[:40]
+                    })
+                    if self.verbose:
+                        print(f"\n🟢 [真实卖出] {stock_code} @ {price:.2f}  {reason}")
 
         # 零摩擦引擎
         if stock_code in self.paper_engine.positions:
@@ -906,11 +937,22 @@ class MockLiveRunner:
 
     def _print_final_report(self):
         """
+        Layer 0: 今日交易记录（静默模式下一次性输出）
         Layer 1: 双引擎账户对比 + Alpha
         Layer 2: 全榜生命周期（错过了什么）
         Layer 3: TriggerValidator 触发信号统计
         Layer 4: 沙盒持久化
         """
+        # ── Layer 0: 今日交易记录
+        if self.trade_events:
+            print("\n" + "="*72)
+            print(f"📋 [今日交易记录] 共{len(self.trade_events)}笔")
+            print("-"*72)
+            for e in self.trade_events:
+                lock_tag = "T+1锁" if e['action'] == 'BUY' else ""
+                print(f"  [{e['time']}] {e['action']} {e['code']} @ ¥{e['price']:.2f}  {lock_tag}  {e['reason']}")
+            print("-"*72)
+
         print("\n" + "="*72)
         print(f"【工业级战报 V2.0 — {self.target_date}】  沙盒:{self.sandbox.get_run_id()}")
         print("="*72)
@@ -1123,7 +1165,7 @@ def run_single_day(args):
     sandbox = SandboxManager(mode="backtest")
     sandbox.save_config_snapshot({'date': args.date, 'capital': args.capital,
                                   'stock_count': len(stock_list)})
-    runner = MockLiveRunner(args.date, stock_list, args.capital, sandbox)
+    runner = MockLiveRunner(args.date, stock_list, args.capital, sandbox, verbose=args.verbose)
     runner.run_mock_session()
     sandbox.print_sandbox_summary()
 
@@ -1160,7 +1202,7 @@ def run_continuous_backtest(args):
             print(f"[WARN] {date_str} 股票池为空，跳过")
             continue
 
-        runner = MockLiveRunner(date_str, stock_list, args.capital, sandbox)
+        runner = MockLiveRunner(date_str, stock_list, args.capital, sandbox, verbose=args.verbose)
         if shared_manager is not None:
             runner.execution_manager = shared_manager
             shared_manager.carry_positions_to_next_day(
@@ -1175,8 +1217,31 @@ def run_continuous_backtest(args):
             if paper_shared_positions:
                 for code, pos_data in paper_shared_positions.items():
                     runner.paper_engine.positions[code] = pos_data.copy()
+                
+                # 【R7-1修复】扣减持仓占用资金，防止资产虚高（双记bug）
+                # 问题：注入positions后available_cash仍是满额initial_capital
+                # 结果：总资产虚高，Alpha计算失真（方向反了）
+                position_cost = sum(
+                    pos_data.get('cost_price', 0) * pos_data.get('volume', 0)
+                    for pos_data in paper_shared_positions.values()
+                )
+                runner.paper_engine.available_cash -= position_cost
+                
+                # 防御性检查：资金不能为负
+                if runner.paper_engine.available_cash < 0:
+                    logger.error(
+                        f"[跨日同步] paper_engine资金扣减后为负: "
+                        f"¥{runner.paper_engine.available_cash:,.2f}，"
+                        f"持仓成本: ¥{position_cost:,.2f}，检查持仓数量是否正确"
+                    )
+                    runner.paper_engine.available_cash = 0  # 兜底
+                
                 runner.paper_bought_today = True
-                logger.info(f"[跨日同步] 零摩擦引擎继承持仓: {list(paper_shared_positions.keys())}")
+                logger.info(
+                    f"[跨日同步] 零摩擦引擎继承持仓: {list(paper_shared_positions.keys())}，"
+                    f"扣减资金: ¥{position_cost:,.2f}，"
+                    f"剩余现金: ¥{runner.paper_engine.available_cash:,.2f}"
+                )
             
             # 跨日补充 float_volumes 缓存（持仓监控需要）
             for code in shared_manager.positions:
