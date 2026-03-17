@@ -200,6 +200,10 @@ class MockLiveRunner:
         # ── 单吊锁（零摩擦引擎）
         self.paper_bought_today: bool = False
 
+        # ── 【P1-2】动态扩池配置
+        self._last_universe_refresh_time: Optional[datetime] = None
+        self._universe_refresh_interval_min: int = 30  # 每30分钟刷新一次
+
         logger.info(
             f"[MockLiveRunner V2.0] date={target_date}  "
             f"capital=¥{initial_capital:,.0f}  sandbox={self.sandbox.get_run_id()}"
@@ -317,6 +321,9 @@ class MockLiveRunner:
                     print(f"\n⏰ [{ts}] {key_events[ts]}")
                     print("-" * 50)
 
+            # Step0: 【P1-2】动态扩池（每30分钟检查是否有新股票进池）
+            self._maybe_refresh_universe(current_time)
+
             # Step1: 持仓监控（必须在决策之前！更新current_price）
             self._monitor_positions(current_time)
 
@@ -353,6 +360,49 @@ class MockLiveRunner:
             print(f"\n⏰ [15:00:00] 收盘")
             print("-" * 50)
         self._print_final_report()
+
+    # ============================================================
+    # 【P1-2】动态扩池（与Live引擎沸水入池逻辑对齐）
+    # ============================================================
+
+    def _maybe_refresh_universe(self, current_time: datetime):
+        """
+        每30分钟从UniverseBuilder拉取最新候选池，增量加载新票的tick数据。
+        解决问题：Mock启动时stock_list固定，盘中新出现动能的票无法进入池子。
+        设计原则：只新增，不重置；已在池子的票保持原状态。
+        """
+        if self._last_universe_refresh_time is None:
+            self._last_universe_refresh_time = current_time
+            return
+
+        elapsed = (current_time - self._last_universe_refresh_time).total_seconds() / 60
+        if elapsed < self._universe_refresh_interval_min:
+            return
+
+        try:
+            from logic.data_providers.universe_builder import UniverseBuilder
+            new_pool, _ = UniverseBuilder(target_date=self.target_date).build()
+
+            new_count = 0
+            for code in new_pool:
+                if code not in self.tick_queues:
+                    # 加载新票的tick数据
+                    loaded = self.load_tick_data(code)
+                    if loaded:
+                        new_count += 1
+                        logger.info(f"[动态扩池] {current_time.strftime('%H:%M')} 新增: {code}")
+
+            if new_count > 0:
+                logger.info(
+                    f"[动态扩池] 新增 {new_count} 只票，"
+                    f"当前池子: {len(self.tick_queues)} 只"
+                )
+
+            self._last_universe_refresh_time = current_time
+
+        except Exception as e:
+            logger.warning(f"[WARN] 动态扩池失败: {e}")
+            self._last_universe_refresh_time = current_time  # 失败也更新时间，避免死循环
 
     # ============================================================
     # 缓冲区维护
@@ -647,17 +697,21 @@ class MockLiveRunner:
         # 零摩擦引擎
         if stock_code in self.paper_engine.positions:
             p = price or self.paper_engine.positions[stock_code]['cost_price']
-            self.paper_engine.place_order(
+            # 【P1-3修复】检查卖出返回值，Fail-Close模式
+            paper_result = self.paper_engine.place_order(
                 stock_code=stock_code, price=p, direction='SELL', timestamp=current_time
             )
-            if executed_trade is None:
-                executed_trade = {
-                    'action': 'SELL',
-                    'stock_code': stock_code,
-                    'price': p,
-                    'reason': reason,
-                    'engine': 'paper'
-                }
+            if paper_result is None:
+                logger.warning(f"[Paper卖出失败] {stock_code} @ {p:.2f}，持仓可能未清除")
+            else:
+                if executed_trade is None:
+                    executed_trade = {
+                        'action': 'SELL',
+                        'stock_code': stock_code,
+                        'price': p,
+                        'reason': reason,
+                        'engine': 'paper'
+                    }
 
         return executed_trade
 
