@@ -2252,10 +2252,12 @@ class LiveTradingEngine:
                         # 【CTO V12 死亡防线】只防出货，不设底线！
                         # 1. 绝对死亡线：全天换手 > 70%
                         if current_turnover >= 70.0 or est_full_day_turnover > 100.0:
+                            pool_stats['filtered'] += 1
                             continue  # 死亡换手/绞肉机，跳过
                         
                         # 2. 极速派发线：开盘30分钟内换手 > 15%
                         if minutes_elapsed <= 30 and current_turnover > 15.0:
+                            pool_stats['filtered'] += 1
                             continue  # 开盘极速派发，跳过
                         
                         # 3. ATR势垒（可选）- 这个需要动态计算，保留
@@ -2265,6 +2267,7 @@ class LiveTradingEngine:
                             if today_tr > 0:
                                 atr_ratio = today_tr / atr_20d
                                 if atr_ratio < 1.8:
+                                    pool_stats['filtered'] += 1
                                     continue  # ATR势垒不足，跳过
                         
                         # 放行！进入引擎打分环节
