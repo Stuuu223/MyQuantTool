@@ -35,9 +35,10 @@ class TestTurnoverCalculation:
         assert abs(turnover - 0.52) < 0.01, f"换手率={turnover}%，量纲可能错误！"
         assert turnover < 70.0, "正常交易日不应触发死亡防线"
     
-    def test_turnover_high_activity(self):
+    def test_turnover_large_cap_26pct(self):
         """
-        高活跃日换手率计算
+        【CTO F-4改名】大盘股高活跃日换手率计算
+        此测试专门验证大盘股量纲，小盘股用 test_turnover_small_cap
         案例：某日成交量=5000万手
         流通股本=192亿股
         预期换手率 = (5000万×100) / 192亿 × 100 ≈ 26%
