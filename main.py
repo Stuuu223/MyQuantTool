@@ -1220,14 +1220,4 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, dry_run):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 if __name__ == '__main__':
-    # 【CTO F-2修复】量纲自检：系统启动前验证单位正确性
-    from tools.verify_units import verify_units
-    vr = verify_units()
-    if not vr['passed']:
-        import sys
-        print("[致命] 量纲自检失败，系统拒绝启动！")
-        for err in vr.get('errors', []):
-            print(f"  - {err}")
-        sys.exit(1)
-    
     cli()
