@@ -717,9 +717,9 @@ class MockLiveRunner:
             pos.current_price = current_tick['price']
             pos.max_price = max(getattr(pos, 'max_price', pos.current_price), pos.current_price)
 
-            # T+1锁：今日买入不止损
-            if self.t1_lock.get(stock_code) == self.target_date:
-                continue
+            # 【R6-1修复】T+1锁：分离监控与交易逻辑
+            # T+1制度下不能卖出，但仍然需要监控风险和更新指标
+            is_t1_locked = (self.t1_lock.get(stock_code) == self.target_date)
 
             real_float_vol = self.float_volumes.get(stock_code, 0)
             if real_float_vol <= 0:
@@ -751,27 +751,35 @@ class MockLiveRunner:
                 stock_code, current_tick['price'], mfe, minutes_elapsed
             )
             if stopped:
-                success, _ = self.execution_manager.place_mock_order(
-                    stock_code=stock_code,
-                    last_price=current_tick['price'],
-                    direction='SELL'
-                )
-                if success:
-                    # 通知 UniversalTracker 止损卖出
-                    stop_trade = {
-                        'action': 'SELL',
-                        'stock_code': stock_code,
-                        'price': current_tick['price'],
-                        'reason': f'微观防爆: {reason}',
-                        'engine': 'real'
-                    }
-                    self.universal_tracker.on_frame(
-                        top_targets=[],
-                        current_time=current_time,
-                        executed_trade=stop_trade,
-                        decision_context=None
+                if is_t1_locked:
+                    # 【R6-1修复】T+1制度下无法卖出，只能记录风险警告
+                    logger.warning(
+                        f"⚠️ [T+1风险警告] {stock_code} @ {current_tick['price']:.2f} "
+                        f"触发止损条件({reason})，但T+1锁无法卖出！当前浮亏可能扩大，明日开盘注意！"
                     )
-                    logger.warning(f"⚠️ [微观防爆] {stock_code} @ {current_tick['price']:.2f} {reason}")
+                else:
+                    # 非T+1锁，正常执行止损卖出
+                    success, _ = self.execution_manager.place_mock_order(
+                        stock_code=stock_code,
+                        last_price=current_tick['price'],
+                        direction='SELL'
+                    )
+                    if success:
+                        # 通知 UniversalTracker 止损卖出
+                        stop_trade = {
+                            'action': 'SELL',
+                            'stock_code': stock_code,
+                            'price': current_tick['price'],
+                            'reason': f'微观防爆: {reason}',
+                            'engine': 'real'
+                        }
+                        self.universal_tracker.on_frame(
+                            top_targets=[],
+                            current_time=current_time,
+                            executed_trade=stop_trade,
+                            decision_context=None
+                        )
+                        logger.warning(f"⚠️ [微观防爆] {stock_code} @ {current_tick['price']:.2f} {reason}")
 
         # ── 零摩擦引擎：只更新价格
         for stock_code in list(self.paper_engine.positions.keys()):
@@ -1145,6 +1153,7 @@ def run_continuous_backtest(args):
           f"{len(trading_days)}个交易日  沙盒:{sandbox.get_run_id()}")
 
     shared_manager = None
+    paper_shared_positions = None  # 【R6-3修复】零摩擦引擎持仓跨日继承
     daily_snapshots = []
 
     for i, date_str in enumerate(trading_days):
@@ -1162,6 +1171,16 @@ def run_continuous_backtest(args):
             )
             # 跨日：继承持仓视为"已买入"，触发单吊锁
             runner.has_bought_today = len(shared_manager.positions) > 0
+            
+            # 【R6-3修复】零摩擦引擎持仓跨日继承
+            # 问题：跨日时runner.paper_engine是新创建的实例，没有继承前日零摩擦持仓
+            # 结果：多日回测中Alpha计算失真（真实引擎有持仓，零摩擦引擎清零）
+            if paper_shared_positions:
+                for code, pos_data in paper_shared_positions.items():
+                    runner.paper_engine.positions[code] = pos_data.copy()
+                runner.paper_bought_today = True
+                logger.info(f"[跨日同步] 零摩擦引擎继承持仓: {list(paper_shared_positions.keys())}")
+            
             # 跨日补充 float_volumes 缓存（持仓监控需要）
             for code in shared_manager.positions:
                 if code not in runner.float_volumes:
@@ -1208,13 +1227,19 @@ def run_continuous_backtest(args):
                     buy_date = ''
                     
                     # Step1: 优先从entry_time字符串提取日期（最可靠）
-                    # entry_time格式: "2026-03-13 14:05:23" 或其他格式
+                    # entry_time格式: "2026-03-13 14:05:23" 或 "20260313145700"
                     if hasattr(held_pos, 'entry_time') and held_pos.entry_time:
                         try:
-                            buy_date = str(held_pos.entry_time).split()[0].replace('-', '')
-                            buy_date = buy_date if len(buy_date) == 8 else ''
-                            if buy_date:
+                            raw = str(held_pos.entry_time).split()[0].replace('-', '')
+                            # 【R6-4修复】支持YYYYMMDDHHMMSS格式（14位纯数字取前8位）
+                            if len(raw) == 14 and raw.isdigit():
+                                buy_date = raw[:8]
+                                logger.info(f"[跨日同步] 从entry_time提取日期(14位格式): {buy_date}")
+                            elif len(raw) == 8:
+                                buy_date = raw
                                 logger.info(f"[跨日同步] 从entry_time提取日期: {buy_date}")
+                            else:
+                                buy_date = ''
                         except Exception:
                             buy_date = ''
                     
@@ -1244,9 +1269,12 @@ def run_continuous_backtest(args):
                         f"使用{buy_date}收盘时间14:57作为fallback"
                     )
                 
-                # 防御性断言：确保entry_time已被设置
-                assert runner.decision_brain.entry_time is not None, \
-                    f"[BUG] {held_code} entry_time未被设置，止损将失效"
+                # 【R6-4修复】验证entry_time为合理值（不早于2020年）
+                et = runner.decision_brain.entry_time
+                if et is None or et.year < 2020:
+                    raise RuntimeError(
+                        f"[BUG] {held_code} entry_time={et} 不合理，止损计算将错误"
+                    )
                 
                 logger.info(f"[跨日同步] 大脑继承持仓: {held_code} @¥{held_pos.entry_price:.2f}")
                 
@@ -1257,6 +1285,11 @@ def run_continuous_backtest(args):
 
         runner.run_mock_session()
         shared_manager = runner.execution_manager
+        
+        # 【R6-3修复】保存零摩擦引擎持仓状态用于下一交易日
+        if runner.paper_engine.positions:
+            paper_shared_positions = runner.paper_engine.positions.copy()
+            logger.info(f"[跨日保存] 零摩擦引擎持仓: {list(runner.paper_engine.positions.keys())}")
 
         snap = shared_manager.get_daily_snapshot(date_str)
         daily_snapshots.append(snap)
