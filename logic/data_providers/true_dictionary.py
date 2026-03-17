@@ -68,6 +68,19 @@ class TrueDictionary:
             cls._instance = super().__new__(cls)
         return cls._instance
     
+    # =====================================================
+    # 【CTO量纲宪法 V186】项目全局单位约定
+    # =====================================================
+    # float_volume    (self._float_volume)  单位：【股】  来源：QMT get_instrument_detail FloatVolume
+    # avg_volume_5d   (self._avg_volume_5d) 单位：【手】  来源：QMT get_local_data(period='1d') volume
+    # get_full_tick volume                  单位：【手】  来源：实盘订阅/快照
+    # get_local_data tick volume            单位：【手】  来源：历史Tick数据
+    # =====================================================
+    # 换手率公式：(get_full_tick.volume[手] × 100) / float_volume[股] × 100 = %
+    # 成交额公式：avg_volume_5d[手] × 100 × price[元/股] = 元
+    # VWAP公式：amount[元] / (volume[手] × 100) = 元/股
+    # =====================================================
+
     def __init__(self):
         if TrueDictionary._initialized:
             return

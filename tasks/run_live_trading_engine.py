@@ -1073,7 +1073,9 @@ class LiveTradingEngine:
                 trigger_signal = None
                 if final_score >= 50.0 and quant_purity > -50.0:
                     # 【CTO V180】使用已定义的tick_volume变量
-                    vwap = current_amount / tick_volume if tick_volume > 0 else current_price
+                    # 【CTO V186 D-3】tick_volume是手单位，需×100转股后计算VWAP
+                    tick_volume_gu = tick_volume * 100  # 手 → 股
+                    vwap = current_amount / tick_volume_gu if tick_volume_gu > 0 else current_price
                     
                     # 【Task D修复】先push历史数据到缓冲区，再调用触发器
                     # scan模式是单帧定格快照，历史队列永远只有1帧，触发器无法工作
@@ -2272,8 +2274,11 @@ class LiveTradingEngine:
                         
                         # 放行！进入引擎打分环节
                         pool_stats['passed_fine_filter'] = pool_stats.get('passed_fine_filter', 0) + 1
-                    except Exception:
-                        pass  # 细筛失败不阻塞，继续计算
+                    except Exception as e:
+                        # 【CTO V186 D-2】异常时宁可错杀，不可放行！
+                        _log_reject(stock_code, f"细筛异常，保守过滤: {e}")
+                        pool_stats['filtered'] += 1
+                        continue
                     
                     # 【CTO第四级：动能打分】
                     try:
