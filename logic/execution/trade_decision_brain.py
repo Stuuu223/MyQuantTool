@@ -153,6 +153,15 @@ class TradeDecisionBrain:
         """
         decision = DecisionResult(action='WATCH')
 
+        # 【Bug C修复】无论有无持仓，都先计算并更新分位数缓存
+        # 原问题：_last_frame_p90/median只在_should_enter()内更新，有持仓时不调用_should_enter()
+        # 导致SELL/HOLD期间战报里的分位数是入场时的历史值，不是当前帧实时值
+        if top_targets and len(top_targets) >= 1:
+            scores = [t.get('score', 0.0) for t in top_targets]
+            if scores:
+                self._last_frame_p90 = self._percentile(scores, self.entry_percentile_threshold)
+                self._last_frame_median = statistics.median(scores)
+
         # ── 1. 有持仓：优先判断出场 ──────────────────────────────────────────
         if self.current_position is not None:
             exit_decision = self._should_exit(held_stock_current_price, current_time)
@@ -176,7 +185,8 @@ class TradeDecisionBrain:
                 )
 
                 # 【Fix#2】SELL分支必须清仓，防止下帧继续输出SELL死循环
-                self.clear_position()
+                # 【Bug A修复】传入current_time确保回测场景冷静期正确生效
+                self.clear_position(current_time=current_time)
 
                 return self._decision_to_dict(decision)
 
@@ -426,19 +436,28 @@ class TradeDecisionBrain:
     # 状态管理
     # =========================================================================
 
-    def clear_position(self):
+    def clear_position(self, current_time: Optional[datetime] = None):
         """
         清除持仓状态（卖出后调用）
 
         【Fix#3】必须写入 decision_log，保证复盘时 POSITION_CLEARED 可追踪。
         V1.0 此方法无日志，导致复盘时无法确定哪一帧清仓。
+        
+        【CTO审计Bug A修复】
+        使用传入的 current_time 而非 datetime.now()，确保回测场景下冷静期正确生效。
+        在回测中，current_time 是历史时间（如 2026-03-16），datetime.now() 是当前时间（如 2026-03-17），
+        两者差值为负数导致冷静期检查 _should_enter() 中的 (current_time - _last_sell_time) 永远为负，
+        冷静期在回测中完全失效。
         """
         cleared_code = self.held_stock_code
         cleared_price = self.entry_price
+        
+        # 【Bug A修复】使用传入的时间或回退到系统时间
+        effective_time = current_time if current_time else datetime.now()
 
         # 写入 decision_log（Fix#3）
         self.decision_log.append({
-            'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'time': effective_time.strftime('%Y-%m-%d %H:%M:%S'),
             'action': 'POSITION_CLEARED',
             'stock_code': cleared_code,
             'reason': '持仓状态已清空',
@@ -452,8 +471,8 @@ class TradeDecisionBrain:
         self.entry_score = 0.0
         self.held_stock_code = ""
         
-        # 【P2修复】记录卖出时间，启动冷静期
-        self._last_sell_time = datetime.now()
+        # 【Bug A修复】记录卖出时间，启动冷静期（使用正确的时钟）
+        self._last_sell_time = effective_time
 
         logger.debug(f"[DEBUG] TradeDecisionBrain 持仓已清空: {cleared_code} @{cleared_price:.2f}")
 

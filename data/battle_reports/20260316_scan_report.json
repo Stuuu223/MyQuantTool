@@ -1,0 +1,434 @@
+{
+  "session_id": "20260316",
+  "schema": "B",
+  "generated_at": "2026-03-16T15:32:03.505212",
+  "summary": {
+    "total_appeared": 10,
+    "bought_count": 0,
+    "missed_count": 10,
+    "win_rate_pct": 0.0,
+    "avg_bought_pnl_pct": 0.0,
+    "avg_missed_gain_pct": 0.0,
+    "best_missed": {
+      "code": "300185.SZ",
+      "peak_score": 479126.4,
+      "first_appear_price": 4.21,
+      "max_gain_pct": 0.0,
+      "actual_pnl_pct": 0.0,
+      "was_bought": false,
+      "schema_b_eligible": false,
+      "had_physical_trigger": false,
+      "trigger_first_time": "",
+      "skip_reason": "",
+      "alpha_lost_to_friction": 0.0
+    },
+    "worst_bought": null
+  },
+  "schema_b_analysis": {
+    "schema_b_eligible_count": 0,
+    "schema_b_bought_count": 0,
+    "schema_b_missed_count": 0,
+    "best_schema_b_missed": null,
+    "schema_b_conversion_rate_pct": 0.0,
+    "note": "方案B: 只有同时满足「物理触发信号 + 分位数入场条件」的票才具备买入资格。此处列出所有具备资格的票，无论最终是否买入。"
+  },
+  "dual_engine_comparison": {
+    "tracked_count": 0,
+    "avg_paper_pnl_pct": 0.0,
+    "avg_friction_pnl_pct": 0.0,
+    "avg_alpha_lost_to_friction_pp": 0.0,
+    "verdict": "摩擦可控",
+    "per_stock": []
+  },
+  "decision_log_summary": {
+    "total_frames": 0,
+    "buy_count": 0,
+    "sell_count": 0,
+    "watch_count": 0,
+    "buy_events": [],
+    "sell_events": []
+  },
+  "all_stocks": [
+    {
+      "code": "300185.SZ",
+      "first_appear_time": "2026-03-13 15:00:00",
+      "last_appear_time": "2026-03-13 15:00:00",
+      "appear_count": 1,
+      "peak_score": 479126.4,
+      "first_appear_price": 4.21,
+      "peak_price": 4.21,
+      "final_price": 4.21,
+      "max_gain_pct": 0.0,
+      "final_gain_pct": 0.0,
+      "was_bought": false,
+      "buy_price": 0.0,
+      "sell_price": 0.0,
+      "actual_pnl_pct": 0.0,
+      "missed_gain_pct": 0.0,
+      "peak_trigger_type": "",
+      "score_history": [
+        479126.4
+      ],
+      "price_history": [
+        4.21
+      ],
+      "trigger_types_history": [
+        ""
+      ],
+      "had_physical_trigger": false,
+      "trigger_first_time": "",
+      "trigger_first_price": 0.0,
+      "trigger_peak_confidence": 0.0,
+      "schema_b_eligible": false,
+      "paper_buy_price": 0.0,
+      "paper_sell_price": 0.0,
+      "paper_pnl_pct": 0.0,
+      "friction_pnl_pct": 0.0,
+      "alpha_lost_to_friction": 0.0,
+      "skip_reason": ""
+    },
+    {
+      "code": "601218.SH",
+      "first_appear_time": "2026-03-13 15:00:00",
+      "last_appear_time": "2026-03-13 15:00:00",
+      "appear_count": 1,
+      "peak_score": 41842.0,
+      "first_appear_price": 6.94,
+      "peak_price": 6.94,
+      "final_price": 6.94,
+      "max_gain_pct": 0.0,
+      "final_gain_pct": 0.0,
+      "was_bought": false,
+      "buy_price": 0.0,
+      "sell_price": 0.0,
+      "actual_pnl_pct": 0.0,
+      "missed_gain_pct": 0.0,
+      "peak_trigger_type": "",
+      "score_history": [
+        41842.0
+      ],
+      "price_history": [
+        6.94
+      ],
+      "trigger_types_history": [
+        ""
+      ],
+      "had_physical_trigger": false,
+      "trigger_first_time": "",
+      "trigger_first_price": 0.0,
+      "trigger_peak_confidence": 0.0,
+      "schema_b_eligible": false,
+      "paper_buy_price": 0.0,
+      "paper_sell_price": 0.0,
+      "paper_pnl_pct": 0.0,
+      "friction_pnl_pct": 0.0,
+      "alpha_lost_to_friction": 0.0,
+      "skip_reason": ""
+    },
+    {
+      "code": "300569.SZ",
+      "first_appear_time": "2026-03-13 15:00:00",
+      "last_appear_time": "2026-03-13 15:00:00",
+      "appear_count": 1,
+      "peak_score": 5111.7,
+      "first_appear_price": 7.79,
+      "peak_price": 7.79,
+      "final_price": 7.79,
+      "max_gain_pct": 0.0,
+      "final_gain_pct": 0.0,
+      "was_bought": false,
+      "buy_price": 0.0,
+      "sell_price": 0.0,
+      "actual_pnl_pct": 0.0,
+      "missed_gain_pct": 0.0,
+      "peak_trigger_type": "",
+      "score_history": [
+        5111.7
+      ],
+      "price_history": [
+        7.79
+      ],
+      "trigger_types_history": [
+        ""
+      ],
+      "had_physical_trigger": false,
+      "trigger_first_time": "",
+      "trigger_first_price": 0.0,
+      "trigger_peak_confidence": 0.0,
+      "schema_b_eligible": false,
+      "paper_buy_price": 0.0,
+      "paper_sell_price": 0.0,
+      "paper_pnl_pct": 0.0,
+      "friction_pnl_pct": 0.0,
+      "alpha_lost_to_friction": 0.0,
+      "skip_reason": ""
+    },
+    {
+      "code": "600370.SH",
+      "first_appear_time": "2026-03-13 15:00:00",
+      "last_appear_time": "2026-03-13 15:00:00",
+      "appear_count": 1,
+      "peak_score": 3407.69,
+      "first_appear_price": 2.73,
+      "peak_price": 2.73,
+      "final_price": 2.73,
+      "max_gain_pct": 0.0,
+      "final_gain_pct": 0.0,
+      "was_bought": false,
+      "buy_price": 0.0,
+      "sell_price": 0.0,
+      "actual_pnl_pct": 0.0,
+      "missed_gain_pct": 0.0,
+      "peak_trigger_type": "",
+      "score_history": [
+        3407.69
+      ],
+      "price_history": [
+        2.73
+      ],
+      "trigger_types_history": [
+        ""
+      ],
+      "had_physical_trigger": false,
+      "trigger_first_time": "",
+      "trigger_first_price": 0.0,
+      "trigger_peak_confidence": 0.0,
+      "schema_b_eligible": false,
+      "paper_buy_price": 0.0,
+      "paper_sell_price": 0.0,
+      "paper_pnl_pct": 0.0,
+      "friction_pnl_pct": 0.0,
+      "alpha_lost_to_friction": 0.0,
+      "skip_reason": ""
+    },
+    {
+      "code": "600226.SH",
+      "first_appear_time": "2026-03-13 15:00:00",
+      "last_appear_time": "2026-03-13 15:00:00",
+      "appear_count": 1,
+      "peak_score": 3335.97,
+      "first_appear_price": 6.02,
+      "peak_price": 6.02,
+      "final_price": 6.02,
+      "max_gain_pct": 0.0,
+      "final_gain_pct": 0.0,
+      "was_bought": false,
+      "buy_price": 0.0,
+      "sell_price": 0.0,
+      "actual_pnl_pct": 0.0,
+      "missed_gain_pct": 0.0,
+      "peak_trigger_type": "",
+      "score_history": [
+        3335.97
+      ],
+      "price_history": [
+        6.02
+      ],
+      "trigger_types_history": [
+        ""
+      ],
+      "had_physical_trigger": false,
+      "trigger_first_time": "",
+      "trigger_first_price": 0.0,
+      "trigger_peak_confidence": 0.0,
+      "schema_b_eligible": false,
+      "paper_buy_price": 0.0,
+      "paper_sell_price": 0.0,
+      "paper_pnl_pct": 0.0,
+      "friction_pnl_pct": 0.0,
+      "alpha_lost_to_friction": 0.0,
+      "skip_reason": ""
+    },
+    {
+      "code": "002487.SZ",
+      "first_appear_time": "2026-03-13 15:00:00",
+      "last_appear_time": "2026-03-13 15:00:00",
+      "appear_count": 1,
+      "peak_score": 3108.66,
+      "first_appear_price": 80.65,
+      "peak_price": 80.65,
+      "final_price": 80.65,
+      "max_gain_pct": 0.0,
+      "final_gain_pct": 0.0,
+      "was_bought": false,
+      "buy_price": 0.0,
+      "sell_price": 0.0,
+      "actual_pnl_pct": 0.0,
+      "missed_gain_pct": 0.0,
+      "peak_trigger_type": "",
+      "score_history": [
+        3108.66
+      ],
+      "price_history": [
+        80.65
+      ],
+      "trigger_types_history": [
+        ""
+      ],
+      "had_physical_trigger": false,
+      "trigger_first_time": "",
+      "trigger_first_price": 0.0,
+      "trigger_peak_confidence": 0.0,
+      "schema_b_eligible": false,
+      "paper_buy_price": 0.0,
+      "paper_sell_price": 0.0,
+      "paper_pnl_pct": 0.0,
+      "friction_pnl_pct": 0.0,
+      "alpha_lost_to_friction": 0.0,
+      "skip_reason": ""
+    },
+    {
+      "code": "605222.SH",
+      "first_appear_time": "2026-03-13 15:00:00",
+      "last_appear_time": "2026-03-13 15:00:00",
+      "appear_count": 1,
+      "peak_score": 3000.33,
+      "first_appear_price": 23.06,
+      "peak_price": 23.06,
+      "final_price": 23.06,
+      "max_gain_pct": 0.0,
+      "final_gain_pct": 0.0,
+      "was_bought": false,
+      "buy_price": 0.0,
+      "sell_price": 0.0,
+      "actual_pnl_pct": 0.0,
+      "missed_gain_pct": 0.0,
+      "peak_trigger_type": "",
+      "score_history": [
+        3000.33
+      ],
+      "price_history": [
+        23.06
+      ],
+      "trigger_types_history": [
+        ""
+      ],
+      "had_physical_trigger": false,
+      "trigger_first_time": "",
+      "trigger_first_price": 0.0,
+      "trigger_peak_confidence": 0.0,
+      "schema_b_eligible": false,
+      "paper_buy_price": 0.0,
+      "paper_sell_price": 0.0,
+      "paper_pnl_pct": 0.0,
+      "friction_pnl_pct": 0.0,
+      "alpha_lost_to_friction": 0.0,
+      "skip_reason": ""
+    },
+    {
+      "code": "002692.SZ",
+      "first_appear_time": "2026-03-13 15:00:00",
+      "last_appear_time": "2026-03-13 15:00:00",
+      "appear_count": 1,
+      "peak_score": 1162.8,
+      "first_appear_price": 6.23,
+      "peak_price": 6.23,
+      "final_price": 6.23,
+      "max_gain_pct": 0.0,
+      "final_gain_pct": 0.0,
+      "was_bought": false,
+      "buy_price": 0.0,
+      "sell_price": 0.0,
+      "actual_pnl_pct": 0.0,
+      "missed_gain_pct": 0.0,
+      "peak_trigger_type": "",
+      "score_history": [
+        1162.8
+      ],
+      "price_history": [
+        6.23
+      ],
+      "trigger_types_history": [
+        ""
+      ],
+      "had_physical_trigger": false,
+      "trigger_first_time": "",
+      "trigger_first_price": 0.0,
+      "trigger_peak_confidence": 0.0,
+      "schema_b_eligible": false,
+      "paper_buy_price": 0.0,
+      "paper_sell_price": 0.0,
+      "paper_pnl_pct": 0.0,
+      "friction_pnl_pct": 0.0,
+      "alpha_lost_to_friction": 0.0,
+      "skip_reason": ""
+    },
+    {
+      "code": "603218.SH",
+      "first_appear_time": "2026-03-13 15:00:00",
+      "last_appear_time": "2026-03-13 15:00:00",
+      "appear_count": 1,
+      "peak_score": 586.74,
+      "first_appear_price": 16.65,
+      "peak_price": 16.65,
+      "final_price": 16.65,
+      "max_gain_pct": 0.0,
+      "final_gain_pct": 0.0,
+      "was_bought": false,
+      "buy_price": 0.0,
+      "sell_price": 0.0,
+      "actual_pnl_pct": 0.0,
+      "missed_gain_pct": 0.0,
+      "peak_trigger_type": "",
+      "score_history": [
+        586.74
+      ],
+      "price_history": [
+        16.65
+      ],
+      "trigger_types_history": [
+        ""
+      ],
+      "had_physical_trigger": false,
+      "trigger_first_time": "",
+      "trigger_first_price": 0.0,
+      "trigger_peak_confidence": 0.0,
+      "schema_b_eligible": false,
+      "paper_buy_price": 0.0,
+      "paper_sell_price": 0.0,
+      "paper_pnl_pct": 0.0,
+      "friction_pnl_pct": 0.0,
+      "alpha_lost_to_friction": 0.0,
+      "skip_reason": ""
+    },
+    {
+      "code": "000777.SZ",
+      "first_appear_time": "2026-03-13 15:00:00",
+      "last_appear_time": "2026-03-13 15:00:00",
+      "appear_count": 1,
+      "peak_score": 478.27,
+      "first_appear_price": 26.84,
+      "peak_price": 26.84,
+      "final_price": 26.84,
+      "max_gain_pct": 0.0,
+      "final_gain_pct": 0.0,
+      "was_bought": false,
+      "buy_price": 0.0,
+      "sell_price": 0.0,
+      "actual_pnl_pct": 0.0,
+      "missed_gain_pct": 0.0,
+      "peak_trigger_type": "",
+      "score_history": [
+        478.27
+      ],
+      "price_history": [
+        26.84
+      ],
+      "trigger_types_history": [
+        ""
+      ],
+      "had_physical_trigger": false,
+      "trigger_first_time": "",
+      "trigger_first_price": 0.0,
+      "trigger_peak_confidence": 0.0,
+      "schema_b_eligible": false,
+      "paper_buy_price": 0.0,
+      "paper_sell_price": 0.0,
+      "paper_pnl_pct": 0.0,
+      "friction_pnl_pct": 0.0,
+      "alpha_lost_to_friction": 0.0,
+      "skip_reason": ""
+    }
+  ],
+  "scan_validation": null
+}

@@ -1,0 +1,103 @@
+{
+    "date": "20260316",
+    "generated_at": "2026-03-16 14:27:36",
+    "total_targets": 8,
+    "top_targets": [
+        {
+            "code": "300243.SZ",
+            "score": 71449.5,
+            "time": "14:26:25",
+            "first_entry_time": "14:25:26",
+            "price": 17.63,
+            "change": 15.986842105263158,
+            "inflow_ratio": 14.722171649709834,
+            "ratio_stock": 6.334175139712084,
+            "sustain_ratio": 3.922457366681991,
+            "purity": 90.33457249070632
+        },
+        {
+            "code": "002310.SZ",
+            "score": 29527.9,
+            "time": "14:25:55",
+            "first_entry_time": "14:25:26",
+            "price": 2.99,
+            "change": 9.926470588235293,
+            "inflow_ratio": 5.750471998522913,
+            "ratio_stock": 6.913229637625224,
+            "sustain_ratio": 7.466289373657976,
+            "purity": 93.10344827586206
+        },
+        {
+            "code": "603050.SH",
+            "score": 2747.0,
+            "time": "14:25:26",
+            "first_entry_time": "14:25:26",
+            "price": 23.78,
+            "change": 5.501330967169485,
+            "inflow_ratio": 0.8633543607702502,
+            "ratio_stock": 3.338269985440098,
+            "sustain_ratio": 2.5542352688843097,
+            "purity": 54.8672566371682
+        },
+        {
+            "code": "600370.SH",
+            "score": 1155.7,
+            "time": "14:27:14",
+            "first_entry_time": "14:25:26",
+            "price": 3,
+            "change": 9.89010989010989,
+            "inflow_ratio": 2.1110398646329056,
+            "ratio_stock": 5.400735848459933,
+            "sustain_ratio": 4.120272172540258,
+            "purity": 100.0
+        },
+        {
+            "code": "603055.SH",
+            "score": 578.7,
+            "time": "14:25:26",
+            "first_entry_time": "14:25:26",
+            "price": 10.56,
+            "change": 3.9370078740157513,
+            "inflow_ratio": 1.180524969880017,
+            "ratio_stock": 4.675526325720282,
+            "sustain_ratio": 2.419811377405616,
+            "purity": 62.5
+        },
+        {
+            "code": "600956.SH",
+            "score": 567.5,
+            "time": "14:25:34",
+            "first_entry_time": "14:25:26",
+            "price": 9.98,
+            "change": 4.066736183524511,
+            "inflow_ratio": 0.5694311811316929,
+            "ratio_stock": 4.082373205894856,
+            "sustain_ratio": 2.6108177821094514,
+            "purity": 34.82142857142859
+        },
+        {
+            "code": "002645.SZ",
+            "score": 368.3,
+            "time": "14:25:58",
+            "first_entry_time": "14:25:26",
+            "price": 17.74,
+            "change": 3.440233236151603,
+            "inflow_ratio": 2.7548198839798,
+            "ratio_stock": 2.4973831988311854,
+            "sustain_ratio": 2.228682654747262,
+            "purity": 84.28571428571392
+        },
+        {
+            "code": "002831.SZ",
+            "score": 336.1,
+            "time": "14:27:12",
+            "first_entry_time": "14:25:26",
+            "price": 35.82,
+            "change": 3.6458333333333273,
+            "inflow_ratio": 1.1721819021037065,
+            "ratio_stock": 5.622050618325752,
+            "sustain_ratio": 3.556746831925149,
+            "purity": 42.56756756756749
+        }
+    ]
+}

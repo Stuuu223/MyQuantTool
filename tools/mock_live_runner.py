@@ -433,10 +433,9 @@ class MockLiveRunner:
             })
 
         # ── Phase B: 决策大脑
-        # 【P0修复】从正确的引擎获取held_price
-        # 问题：真实引擎买入可能被拒绝，但PaperTrade买入成功
-        # 此时决策大脑认为持有X股票，但真实引擎持仓是Y股票
-        # 解决：检查决策大脑的held_stock_code，从对应引擎或榜单获取价格
+        # 【Bug B修复】从正确的引擎获取held_price，使用if-elif-elif结构
+        # 问题：原代码第三步无条件覆盖前两步结果，导致优先级逻辑失效
+        # 解决：只在held_price<=0时才使用榜单fallback
         held_price = 0.0
         brain_held_code = self.decision_brain.held_stock_code
         
@@ -450,10 +449,11 @@ class MockLiveRunner:
                 held_price = self.paper_engine.positions[brain_held_code].get('current_price', 0.0)
                 if held_price <= 0:
                     held_price = self.paper_engine.positions[brain_held_code].get('cost_price', 0.0)
-            # 最后从榜单获取（最可靠）
-            target = next((t for t in enriched_targets if t['code'] == brain_held_code), None)
-            if target and target.get('price', 0) > 0:
-                held_price = target['price']
+            # 【Bug B修复】最后从榜单获取（仅在前两步都失败时fallback）
+            if held_price <= 0:
+                target = next((t for t in enriched_targets if t['code'] == brain_held_code), None)
+                if target and target.get('price', 0) > 0:
+                    held_price = target['price']
 
         decision = self.decision_brain.on_new_frame(
             top_targets=enriched_targets,
@@ -715,7 +715,6 @@ class MockLiveRunner:
             current_tick = tick_list[idx]
 
             pos.current_price = current_tick['price']
-            pos.max_price = max(getattr(pos, 'max_price', pos.current_price), pos.current_price)
             pos.max_price = max(getattr(pos, 'max_price', pos.current_price), pos.current_price)
 
             # T+1锁：今日买入不止损
@@ -1156,6 +1155,29 @@ def run_continuous_backtest(args):
             for code in shared_manager.positions:
                 if code not in runner.float_volumes:
                     runner.load_tick_data(code)
+            
+            # 【Bug E修复】同步decision_brain与execution_manager持仓状态
+            # 问题：decision_brain每次新建实例状态清零，但execution_manager保留持仓
+            # 结果：大脑不知道持仓存在，第二天可能重复买入（违反单吊约束）
+            if shared_manager.positions:
+                held_code = next(iter(shared_manager.positions))
+                held_pos = shared_manager.positions[held_code]
+                runner.decision_brain.held_stock_code = held_code
+                runner.decision_brain.current_position = {
+                    'code': held_code,
+                    'price': held_pos.entry_price
+                }
+                runner.decision_brain.entry_price = held_pos.entry_price
+                runner.decision_brain.entry_score = getattr(held_pos, 'entry_score', 0.0)
+                # entry_time 需要解析字符串
+                if hasattr(held_pos, 'entry_time') and held_pos.entry_time:
+                    try:
+                        runner.decision_brain.entry_time = datetime.strptime(
+                            held_pos.entry_time, '%Y-%m-%d %H:%M:%S'
+                        )
+                    except Exception:
+                        runner.decision_brain.entry_time = datetime.now()
+                logger.info(f"[跨日同步] 大脑继承持仓: {held_code} @¥{held_pos.entry_price:.2f}")
 
         runner.run_mock_session()
         shared_manager = runner.execution_manager
