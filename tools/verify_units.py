@@ -14,17 +14,19 @@
 3. Fail-Close：区分"无QMT包"和"QMT崩溃"
 """
 import sys
+import os
 import logging
 
 logger = logging.getLogger(__name__)
 
 # 【CTO V188】五票诊断样本：覆盖大盘/中盘/小盘/创业板/科创板
+# 【CTO I-2修复】茅台expected_float数量级修正：126亿→12.56亿
 PROBE_STOCKS = [
-    {'code': '000001.SZ', 'name': '平安银行', 'expected_float': 19_200_000_000, 'type': '大盘银行'},
-    {'code': '600519.SH', 'name': '贵州茅台', 'expected_float': 12_560_000_000, 'type': '超大盘消费'},
-    {'code': '002475.SZ', 'name': '立讯精密', 'expected_float': 7_200_000_000, 'type': '中盘科技'},
-    {'code': '300750.SZ', 'name': '宁德时代', 'expected_float': 4_400_000_000, 'type': '创业板龙头'},
-    {'code': '688981.SH', 'name': '中芯国际', 'expected_float': 1_900_000_000, 'type': '科创板龙头'},
+    {'code': '000001.SZ', 'name': '平安银行', 'expected_float': 19_200_000_000, 'type': '大盘银行'},  # 约192亿股
+    {'code': '600519.SH', 'name': '贵州茅台', 'expected_float': 1_256_000_000, 'type': '超大盘消费'},  # 约12.56亿股（I-2修复）
+    {'code': '002475.SZ', 'name': '立讯精密', 'expected_float': 7_200_000_000, 'type': '中盘科技'},  # 约72亿股
+    {'code': '300750.SZ', 'name': '宁德时代', 'expected_float': 4_400_000_000, 'type': '创业板龙头'},  # 约44亿股
+    {'code': '688981.SH', 'name': '中芯国际', 'expected_float': 1_900_000_000, 'type': '科创板龙头'},  # 约19亿股
 ]
 
 
@@ -40,6 +42,12 @@ def verify_units() -> dict:
             'errors': list
         }
     """
+    # 【CTO I-4】测试环境豁免：CI/CD可通过设置环境变量跳过
+    # 生产环境不得设置此变量！
+    if os.environ.get('QMT_SKIP_UNIT_VERIFY', '').lower() in ('1', 'true', 'yes'):
+        logger.warning("[verify_units] 环境变量 QMT_SKIP_UNIT_VERIFY=1，跳过单位验证（测试环境专用）")
+        return {'passed': True, 'errors': [], 'skipped': True, 'float_volume_results': [], 'full_tick_volume_unit': None}
+    
     result = {
         'float_volume_results': [],
         'full_tick_volume_unit': None,
@@ -51,10 +59,10 @@ def verify_units() -> dict:
     try:
         from xtquant import xtdata
     except ImportError as e:
-        # 测试环境可能无QMT，但需要明确区分
+        # 生产环境ImportError = 真实错误，Fail-Close
         result['errors'].append(f"[致命] 无法导入xtquant: {e}")
-        result['errors'].append("如果是测试环境请手动跳过，否则必须安装QMT！")
-        result['passed'] = False  # Fail-Close：没有QMT包不允许启动
+        result['errors'].append("生产环境必须安装QMT！测试环境可设置QMT_SKIP_UNIT_VERIFY=1跳过")
+        result['passed'] = False
         return result
     
     print("=" * 70)

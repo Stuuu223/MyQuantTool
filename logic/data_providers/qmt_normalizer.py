@@ -37,6 +37,12 @@ class QMTNormalizer:
     # subscribe_quote volume → 手
     # =====================================================
     
+    # 【CTO I-1】source白名单（已知所有QMT来源=手，需×100）
+    _KNOWN_HAND_SOURCES = frozenset({
+        'full_tick', 'subscribe_quote', 'daily_kline',
+        'tick_kline', 'live_tick', 'tick_history'
+    })
+    
     @staticmethod
     def normalize_volume(raw_volume: float, source: str) -> float:
         """
@@ -55,30 +61,33 @@ class QMTNormalizer:
         if raw_volume <= 0:
             return 0.0
         
-        # 所有QMT数据源的volume单位都是"手"
-        # 需要乘100转换为"股"
-        clean_volume = raw_volume * 100
+        if source in QMTNormalizer._KNOWN_HAND_SOURCES:
+            return float(raw_volume * 100)  # 手 → 股
         
-        return clean_volume
+        # 【CTO I-1】未知来源：白盒告警，原样返回（不静默处理！）
+        logger.warning(
+            f"[QMTNormalizer] normalize_volume: 未知source='{source}'，"
+            f"raw_volume={raw_volume}，原样返回！请检查调用方！"
+        )
+        return float(raw_volume)
     
     @staticmethod
     def normalize_float_shares(raw_float: float, price: float = 0.0) -> float:
         """
         将QMT的流通股本统一洗为"股"
         
-        QMT的get_instrument_detail返回的FloatVolume单位可能是：
-        - 万股（大多数情况，如平安银行≈192万）
-        - 股（少数情况）
+        【CTO I-3修正】实测结论：
+        - QMT V9.x实测返回【股】（2026-03-17实测000001.SZ≈194亿）
+        - 但历史上曾返回【万股】，保留自适应逻辑以防接口回退
         
         判断逻辑（两级判断）：
         1. 如果 raw_float > 1e8，直接判定为"股"（覆盖99%场景）
-        2. 否则用市值法兜底：est_market_cap = raw_float * price
-           - 如果 est_market_cap 在 [2亿, 5万亿] 区间，判定为"股"
-           - 否则判定为"万股"，需要×10000升维
+        2. 否则判定为"万股"，需要×10000升维
+           - 升维后检查市值是否在合理范围（1亿~5万亿）
         
         Args:
             raw_float: QMT get_instrument_detail 返回的 FloatVolume 原始值
-            price: 当前价格（用于市值推断），可选
+            price: 当前价格（用于市值合理性检查），可选
         
         Returns:
             float: 统一为"股"单位的流通股本
@@ -91,24 +100,27 @@ class QMTNormalizer:
         if raw_float > 1e8:  # 1亿
             return raw_float
         
-        # 第二级判断：市值推断法
-        if price > 0:
-            est_market_cap = raw_float * price
-            
-            # A股流通市值范围：2亿 ~ 5万亿
-            # 如果市值在这个区间，说明单位已经是"股"
-            if 2e8 <= est_market_cap <= 5e12:
-                return raw_float
+        # 第二级判断：判定为"万股"，执行升维
+        upgraded = raw_float * 10000
         
-        # 市值不在合理区间，判定为"万股"，需要升维
+        # 【CTO I-3】升维后市值合理性检查
+        if price > 0:
+            est_market_cap = upgraded * price
+            if est_market_cap < 1e8:  # 升维后市值<1亿？异常！
+                logger.error(
+                    f"[QMTNormalizer] 升维后市值异常！raw={raw_float:,.0f}, "
+                    f"×10000后={upgraded:,.0f}股, ×price={price:.2f}后"
+                    f"市值={est_market_cap:,.0f}元 < 1亿，疑似数据源异常，请人工核查！"
+                )
+                return float(raw_float)  # 拒绝升维，原样返回
+        
         # 【白盒可观测】每次升维必须打WARNING日志
         logger.warning(
             f"[QMTNormalizer] FloatVolume升维触发: raw={raw_float:,.0f}, "
-            f"price={price:.2f}, est_cap={raw_float * price:,.0f}元, "
-            f"判定单位=万股, 执行×10000升维"
+            f"price={price:.2f}, 执行×10000升维 → {upgraded:,.0f}股"
         )
         
-        return raw_float * 10000
+        return float(upgraded)
     
     @staticmethod
     def calculate_turnover_rate(
