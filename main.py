@@ -1158,8 +1158,10 @@ def live_cmd(ctx, mode, max_positions, cutoff_time, dry_run):
             session_snap = SessionSnapshot(trade_date=today_str)
             
             # 尝试恢复上次崩溃状态
-            restored = session_snap.restore(engine)
-            if restored:
+            # 【R5-Session修复】SessionSnapshot没有restore()方法，改为两步调用
+            snapshot = session_snap.load()
+            if snapshot:
+                session_snap.restore_to_engine(engine, snapshot)
                 click.echo(click.style(
                     f"🔄 [自动恢复] 检测到上次异常退出，已恢复候选池/机会池状态",
                     fg='yellow'

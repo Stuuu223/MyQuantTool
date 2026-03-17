@@ -736,8 +736,16 @@ class MockLiveRunner:
             amplitude = (current_tick['high'] - current_tick['low']) / prev_close if prev_close > 0 else 0
             mfe = amplitude / max(inflow_ratio, 0.01)
 
-            entry_time = datetime.strptime(pos.entry_time, '%Y-%m-%d %H:%M:%S')
-            minutes_elapsed = int((current_time - entry_time).total_seconds() / 60)
+            # 【R5-2修复】添加try-except保护，避免热路径崩溃导致止损失效
+            try:
+                entry_time = datetime.strptime(pos.entry_time, '%Y-%m-%d %H:%M:%S')
+                minutes_elapsed = int((current_time - entry_time).total_seconds() / 60)
+            except (ValueError, TypeError) as e:
+                logger.error(
+                    f"[monitor] {stock_code} entry_time格式错误: {repr(pos.entry_time)} → {e}，"
+                    f"跳过本帧止损检查（风险：止损可能延迟）"
+                )
+                continue  # 跳过本只股票本帧止损，不中断整个监控循环
 
             stopped, reason = self.execution_manager.check_micro_guard(
                 stock_code, current_tick['price'], mfe, minutes_elapsed
@@ -1179,54 +1187,67 @@ def run_continuous_backtest(args):
                 }
                 runner.decision_brain.entry_price = held_pos.entry_price
                 runner.decision_brain.entry_score = getattr(held_pos, 'entry_score', 0.0)
-                # entry_time 需要解析字符串
+                
+                # 【R5-1修复】确保entry_time永远不为None的三级fallback架构
+                # 问题：当entry_time为空/None时，整个if块被跳过，导致_should_exit()崩溃
+                set_success = False
+                
+                # 主路径：尝试正常解析
                 if hasattr(held_pos, 'entry_time') and held_pos.entry_time:
                     try:
                         runner.decision_brain.entry_time = datetime.strptime(
                             held_pos.entry_time, '%Y-%m-%d %H:%M:%S'
                         )
+                        set_success = True
+                        logger.info(f"[跨日同步] entry_time解析成功: {held_pos.entry_time}")
                     except Exception:
-                        # 【Bug-New-1修复V2】彻底重写fallback逻辑
-                        # 问题1: entry_date格式是YYYY-MM-DD，但strptime期望YYYYMMDD
-                        # 问题2: or date_str导致fallback链被截断，if not buy_date是死代码
-                        buy_date = ''
-                        
-                        # Step1: 优先从entry_time字符串提取日期（最可靠）
-                        # entry_time格式: "2026-03-13 14:05:23"
-                        if held_pos.entry_time:
-                            try:
-                                buy_date = held_pos.entry_time.split()[0].replace('-', '')
-                                if len(buy_date) == 8:
-                                    logger.info(f"[跨日同步] 从entry_time提取日期: {buy_date}")
-                            except Exception:
-                                buy_date = ''
-                        
-                        # Step2: 次选从entry_date提取并转换格式
-                        # entry_date格式: "2026-03-13" -> "20260313"
-                        if not buy_date:
-                            raw_entry_date = getattr(held_pos, 'entry_date', '')
-                            if raw_entry_date and '-' in raw_entry_date:
-                                buy_date = raw_entry_date.replace('-', '')
-                                if len(buy_date) == 8:
-                                    logger.info(f"[跨日同步] 从entry_date转换日期: {buy_date}")
-                                else:
-                                    buy_date = ''
-                        
-                        # Step3: 最后防线（带警告，hold_minutes可能不准）
-                        if not buy_date:
-                            buy_date = date_str
-                            logger.error(
-                                f"[跨日同步] {held_code} 无法推断买入日期，"
-                                f"使用当前交易日{date_str}作为fallback（hold_minutes计算可能不准）"
-                            )
-                        
-                        runner.decision_brain.entry_time = datetime.strptime(
-                            buy_date, '%Y%m%d'
-                        ).replace(hour=14, minute=57, second=0, microsecond=0)
-                        logger.warning(
-                            f"[跨日同步] {held_code} entry_time解析失败，"
-                            f"使用{buy_date}收盘时间14:57作为fallback"
+                        pass  # 继续执行下面的三级fallback
+                
+                # 三级fallback（覆盖entry_time为空/None + 格式错误两种情况）
+                if not set_success:
+                    buy_date = ''
+                    
+                    # Step1: 优先从entry_time字符串提取日期（最可靠）
+                    # entry_time格式: "2026-03-13 14:05:23" 或其他格式
+                    if hasattr(held_pos, 'entry_time') and held_pos.entry_time:
+                        try:
+                            buy_date = str(held_pos.entry_time).split()[0].replace('-', '')
+                            buy_date = buy_date if len(buy_date) == 8 else ''
+                            if buy_date:
+                                logger.info(f"[跨日同步] 从entry_time提取日期: {buy_date}")
+                        except Exception:
+                            buy_date = ''
+                    
+                    # Step2: 次选从entry_date提取并转换格式
+                    # entry_date格式: "2026-03-13" -> "20260313"
+                    if not buy_date:
+                        raw_entry_date = getattr(held_pos, 'entry_date', '')
+                        if raw_entry_date and '-' in raw_entry_date:
+                            candidate = raw_entry_date.replace('-', '')
+                            buy_date = candidate if len(candidate) == 8 else ''
+                            if buy_date:
+                                logger.info(f"[跨日同步] 从entry_date转换日期: {buy_date}")
+                    
+                    # Step3: 最后防线（带警告，hold_minutes可能不准）
+                    if not buy_date:
+                        buy_date = date_str
+                        logger.error(
+                            f"[跨日同步] {held_code} 无法推断买入日期，"
+                            f"使用当前交易日{date_str}作为fallback（hold_minutes计算可能不准）"
                         )
+                    
+                    runner.decision_brain.entry_time = datetime.strptime(
+                        buy_date, '%Y%m%d'
+                    ).replace(hour=14, minute=57, second=0, microsecond=0)
+                    logger.warning(
+                        f"[跨日同步] {held_code} entry_time解析失败，"
+                        f"使用{buy_date}收盘时间14:57作为fallback"
+                    )
+                
+                # 防御性断言：确保entry_time已被设置
+                assert runner.decision_brain.entry_time is not None, \
+                    f"[BUG] {held_code} entry_time未被设置，止损将失效"
+                
                 logger.info(f"[跨日同步] 大脑继承持仓: {held_code} @¥{held_pos.entry_price:.2f}")
                 
                 # 【Fix-2修复】同步has_bought_today标志，防止当天再次买入违反单吊约束

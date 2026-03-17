@@ -168,6 +168,40 @@ def test_decision_brain():
         f"原因={result_b.get('reason', 'N/A')}"
     assert result_b.get('stock_code') == '000002.SZ', \
         f"通道B应买入榜首000002.SZ，实际={result_b.get('stock_code')}"
+    
+    # 【R5-3新增】验证通道B的路径（应该包含ignition相关信息）
+    reason_b = result_b.get('reason', '')
+    assert 'ignition' in reason_b.lower() or result_b.get('trigger_type') == 'none', \
+        f"通道B应通过ignition_prob触发，但reason={reason_b!r}, trigger_type={result_b.get('trigger_type')}"
+    print(f"  → ✅ 通道B路径验证: trigger_type={result_b.get('trigger_type')}, reason={reason_b[:50]}")
+    
+    # 【R5-3新增】边界情况：ignition_prob刚好低于门槛不应触发BUY
+    print("\n  ── 通道B边界测试（ignition_prob=19.9%，低于20%门槛）──")
+    brain_b_fail = TradeDecisionBrain()
+    top_targets_b_fail = []
+    top_targets_b_fail.append({
+        'code': '000003.SZ', 'score': 30000, 'price': 12.0,
+        'trigger_type': 'none', 'trigger_confidence': 0.0,
+        'ignition_prob': 19.9,  # 低于20%门槛
+        'mfe': 1.5, 'sustain_ratio': 2.0,
+    })
+    for i in range(1, 12):
+        top_targets_b_fail.append({
+            'code': f'602{str(i).zfill(3)}.SH', 'score': 5000 + i*100, 'price': 12.0 + i,
+            'trigger_type': 'none', 'trigger_confidence': 0.0,
+            'ignition_prob': 10.0,
+            'mfe': 0.8, 'sustain_ratio': 1.2,
+        })
+    
+    result_b_fail = brain_b_fail.on_new_frame(
+        top_targets=top_targets_b_fail,
+        current_time=TEST_TIME,
+        held_stock_current_price=0.0
+    )
+    assert result_b_fail.get('action') != 'BUY', \
+        f"通道B边界验证: ignition_prob=19.9%时不应触发BUY，实际={result_b_fail.get('action')}"
+    print(f"  → ✅ 通道B边界验证: ignition_prob=19.9%不触发BUY（正确），action={result_b_fail.get('action')}")
+
     print(f"  → ✅ 通道B入场正确触发: BUY {result_b.get('stock_code')}")
 
 check("TradeDecisionBrain on_new_frame签名+返回值", test_decision_brain)
