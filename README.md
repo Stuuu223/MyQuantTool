@@ -57,11 +57,13 @@
 
 ### 📐 量纲铁律 (V66 绝地反击验证)
 
+> ⚠️ **本表已废弃！量纲唯一真理源：[`docs/DATA_UNITS_CANON.md`](docs/DATA_UNITS_CANON.md)**
+
 | 数据源 | volume单位 | amount单位 | float_volume单位 | 入口清洗 |
 |--------|------------|------------|------------------|----------|
 | `subscribe_quote` 实盘流 | 手(100股) | 元 | **万股** | `volume *= 100`, `float_volume *= 10000` |
-| `get_full_tick` 快照 | 股 | 元 | **万股** | `float_volume *= 10000` |
-| `get_local_data` 回测 | 股 | 元 | **万股** | `float_volume *= 10000` |
+| `get_full_tick` 快照 | **手** | 元 | **万股** | `float_volume *= 10000` |
+| `get_local_data` 回测 | **手** | 元 | **万股** | `float_volume *= 10000` |
 
 **⚠️ 量纲统一铁律 (V66 确立)**：由于 QMT/通达信数据源的极度混乱，`float_volume` 经常在"股"和"万股"之间反复横跳。
 
