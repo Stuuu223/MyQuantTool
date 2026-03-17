@@ -114,6 +114,58 @@ avg_volume_5d = df['volume'].iloc[-n-1:-1].mean()  # 只取历史5天
 
 ---
 
+## 三补充、FloatVolume单位避坑记录（2026-03-17实测）
+
+### 🚨 致命陷阱：FloatVolume单位是【股】不是【万股】
+
+**问题描述**：V173之前代码误以为 `get_instrument_detail` 返回的 `FloatVolume` 单位是万股，导致流通盘被放大10000倍。
+
+**实测证据**（2026-03-17）：
+```python
+# 平安银行 000001.SZ
+detail = xtdata.get_instrument_detail('000001.SZ')
+fv = detail.get('FloatVolume', 0)
+print(fv)  # 输出: 19405600653 (约194亿股)
+# 如果单位是万股，应该是 1940560 (约194亿股/10000)
+# 实际输出是194亿级别，证明单位是【股】
+```
+
+**错误代码**（V173之前）：
+```python
+# mock_live_runner.py 错误实现
+fv = detail.get('FloatVolume', 0) * 10000  # ❌ 误以为是万股，×10000升维
+```
+
+**正确代码**（V173之后）：
+```python
+# mock_live_runner.py 正确实现
+fv = detail.get('FloatVolume', 0)  # ✅ 单位本就是股，无需转换
+```
+
+**危害链**：
+```
+FloatVolume × 10000
+→ 流通盘显示 1940560亿股（物理荒谬）
+→ inflow_ratio = amount / float_market_cap 接近 0
+→ 所有票得0分
+→ 无法买入任何票
+```
+
+### ✅ 修复记录
+
+| 版本 | 修复内容 | Git Commit |
+|------|----------|------------|
+| V173 | 删除 FloatVolume × 10000 错误转换 | 38ee458 |
+| V185 | 实测验证单位确实是股 | 实测确认 |
+
+### 📋 避坑指南
+
+1. **永远记住**：`get_instrument_detail` 返回的 `FloatVolume` 单位是**股**
+2. **不要猜测**：遇到量纲问题，写测试脚本实测验证
+3. **警惕历史代码**：V66时代有「市值<2亿则×10000」的补丁逻辑，这是历史遗留，现在已修复
+
+---
+
 ## 四、`avg_amount_5d` 的换算（用于流通市值相关计算）
 
 ```

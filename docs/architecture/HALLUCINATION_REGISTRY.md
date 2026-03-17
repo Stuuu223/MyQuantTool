@@ -57,6 +57,13 @@
 | H-009 | 🔴 L3 | 量纲铁律表第二行 | `get_full_tick 快照: volume单位=股` | Tick.volume单位是**手**，2026-03-16实测pvolume/volume=100确认 | ✅ 本次已修正 |
 | H-010 | 🔴 L3 | 量纲铁律表第三行 | `get_local_data 回测: volume单位=股` | K线.volume单位是**手**，2026-03-16实测amount/volume≈股价×100确认 | ✅ 本次已修正 |
 
+### `tools/mock_live_runner.py`
+
+| ID | 等级 | 位置 | 幻觉内容 | 真相 | 状态 |
+|---|---|---|---|---|---|
+| H-011 | 🔴 L3 | L258 附近 | `FloatVolume` 误以为单位是万股，代码写 `fv * 10000` 升维 | `get_instrument_detail` 返回的 `FloatVolume` 单位是**股**，无需×10000。×10000导致流通盘显示12642亿股（物理荒谬），inflow_ratio接近0，所有票得0分 | ✅ V173已修复 |
+| H-012 | 🟠 L2 | 多处 | 用 `python -c` 裸调 `MockLiveRunner()` 不传 `stock_list` | CLI入口已写好 `UniverseBuilder` 路径，应使用 `python tools/mock_live_runner.py --date YYYYMMDD`，否则stock_list=[]导致无Tick数据 | ⚠️ 执行规范问题 |
+
 ---
 
 ## AI代码生成前强制自检清单
