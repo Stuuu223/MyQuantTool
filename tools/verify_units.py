@@ -65,8 +65,13 @@ def verify_units() -> dict:
                     print(f"[验证1] FloatVolume单位=股，原始值={fv_raw:,.0f}")
                 elif abs(fv_raw * 10000 - KNOWN_FLOAT_SHARES) / KNOWN_FLOAT_SHARES < 0.1:
                     result['float_volume_unit'] = '万股'
-                    print(f"[警告] FloatVolume单位=万股，原始值={fv_raw:,.0f}")
-                    print(f"       需要×10000转换为股！")
+                    result['passed'] = False  # 【CTO E-3修复】万股必须拦截！
+                    result['errors'].append(
+                        f"FloatVolume单位=万股(原始值{fv_raw:,.0f})，"
+                        f"TrueDictionary升维逻辑是否已启用？请检查！"
+                    )
+                    print(f"[致命] FloatVolume单位=万股，原始值={fv_raw:,.0f}")
+                    print(f"       TrueDictionary必须×10000升维为股！")
                 else:
                     result['errors'].append(
                         f"FloatVolume={fv_raw:,.0f}，无法判断单位！"
