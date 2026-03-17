@@ -1045,10 +1045,9 @@ class MockLiveRunner:
         real_total, real_pos_value, real_report, real_pnl, real_pnl_pct,
         paper_total, paper_pnl, paper_pnl_pct, alpha, sorted_universe, tv_report
     ) -> str:
-        # 【Fix-1残留修复】使用target_date而非datetime.now()，确保回测可重现性
-        report_time = datetime.strptime(self.target_date, '%Y%m%d').replace(
-            hour=15, minute=30, second=0
-        ).strftime('%Y-%m-%d %H:%M:%S')
+        # 【R4-3修复】恢复真实生成时间用于追溯
+        # 回测日期已在标题显示，无需在生成时间处造假
+        report_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         lines = [
             f"# 全息战报 V2.0 — {self.target_date}\n",
             f"> 沙盒: `{self.sandbox.get_run_id()}`  "
@@ -1187,12 +1186,40 @@ def run_continuous_backtest(args):
                             held_pos.entry_time, '%Y-%m-%d %H:%M:%S'
                         )
                     except Exception:
-                        # 【Bug-New-1修复】fallback应使用买入日收盘时间，而非新交易日开盘时间
-                        # 否则hold_minutes从0归零，超时止损延迟max_hold_minutes分钟
-                        buy_date = getattr(held_pos, 'entry_date', '') or date_str
-                        # 如果entry_date为空，尝试从entry_time字符串提取日期
-                        if not buy_date and held_pos.entry_time:
-                            buy_date = held_pos.entry_time.split()[0].replace('-', '')
+                        # 【Bug-New-1修复V2】彻底重写fallback逻辑
+                        # 问题1: entry_date格式是YYYY-MM-DD，但strptime期望YYYYMMDD
+                        # 问题2: or date_str导致fallback链被截断，if not buy_date是死代码
+                        buy_date = ''
+                        
+                        # Step1: 优先从entry_time字符串提取日期（最可靠）
+                        # entry_time格式: "2026-03-13 14:05:23"
+                        if held_pos.entry_time:
+                            try:
+                                buy_date = held_pos.entry_time.split()[0].replace('-', '')
+                                if len(buy_date) == 8:
+                                    logger.info(f"[跨日同步] 从entry_time提取日期: {buy_date}")
+                            except Exception:
+                                buy_date = ''
+                        
+                        # Step2: 次选从entry_date提取并转换格式
+                        # entry_date格式: "2026-03-13" -> "20260313"
+                        if not buy_date:
+                            raw_entry_date = getattr(held_pos, 'entry_date', '')
+                            if raw_entry_date and '-' in raw_entry_date:
+                                buy_date = raw_entry_date.replace('-', '')
+                                if len(buy_date) == 8:
+                                    logger.info(f"[跨日同步] 从entry_date转换日期: {buy_date}")
+                                else:
+                                    buy_date = ''
+                        
+                        # Step3: 最后防线（带警告，hold_minutes可能不准）
+                        if not buy_date:
+                            buy_date = date_str
+                            logger.error(
+                                f"[跨日同步] {held_code} 无法推断买入日期，"
+                                f"使用当前交易日{date_str}作为fallback（hold_minutes计算可能不准）"
+                            )
+                        
                         runner.decision_brain.entry_time = datetime.strptime(
                             buy_date, '%Y%m%d'
                         ).replace(hour=14, minute=57, second=0, microsecond=0)

@@ -53,7 +53,7 @@ class SandboxManager:
         初始化沙盒管理器
         
         Args:
-            run_id: 运行批次ID，为空则自动生成（格式：run_YYYYMMDD_HHMMSS）
+            run_id: 运行批次ID，为空则自动生成（格式：run_YYYYMMDD_HHMMSS_PID）
             mode: 运行模式（backtest/scan/live）
         """
         self.mode = mode
@@ -62,8 +62,11 @@ class SandboxManager:
         if run_id:
             self.run_id = run_id
         else:
+            # 【R4-5修复】加入进程ID确保唯一性，防止1秒内多次启动冲突
+            import os
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            self.run_id = f"run_{timestamp}"
+            pid = os.getpid()
+            self.run_id = f"run_{timestamp}_{pid}"
         
         # 创建沙盒根目录
         self.sandbox_root = BACKTEST_OUT_ROOT / self.run_id
@@ -106,6 +109,7 @@ class SandboxManager:
         config_path = self.sandbox_root / "config_snapshot.json"
         
         # 添加元数据
+        # created_at使用真实时间用于追溯，与战报JSON保持一致风格
         config_with_meta = {
             "run_id": self.run_id,
             "mode": self.mode,
@@ -192,17 +196,12 @@ class SandboxManager:
         """
         json_path = self.get_battle_report_json_path(date_str)
         
-        # 【Fix-5修复】使用回测日期作为created_at，确保可重现性
-        # 格式：YYYY-MM-DD 15:30:00（收盘后生成）
-        created_at = datetime.strptime(date_str, '%Y%m%d').replace(
-            hour=15, minute=30, second=0
-        ).isoformat()
-        
-        # 添加元数据
+        # 【R4-3修复】恢复created_at为真实创建时间用于追溯
+        # 新增backtest_date字段存放回测日期，区分两个时间维度
         report_with_meta = {
             "run_id": self.run_id,
-            "date": date_str,
-            "created_at": created_at,
+            "backtest_date": date_str,          # 回测日期（语义明确）
+            "created_at": datetime.now().isoformat(),  # 真实文件创建时间（追溯用）
             **report_data
         }
         
