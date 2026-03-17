@@ -158,22 +158,23 @@ class TestDeathTurnoverThreshold:
     
     def test_no_magic_numbers_150_or_300(self):
         """
-        【CTO E-4修复】真实文件扫描，验证代码中没有150%或300%的魔法数字
+        【CTO F-1修复】纯Python文件扫描，验证代码中没有150%或300%的魔法数字
         死亡换手阈值必须是70%，不允许出现150%或300%
         """
-        import subprocess
         import pathlib
+        import re
         
         # 扫描 run_live_trading_engine.py 中的非法阈值
-        target_file = pathlib.Path(__file__).parent.parent / 'tasks' / 'run_live_trading_engine.py'
-        if target_file.exists():
-            result = subprocess.run(
-                ['findstr', '/n', '150\\.0 300\\.0', str(target_file)],
-                capture_output=True, text=True, shell=True
-            )
-            # findstr找到匹配会返回stdout
-            assert not result.stdout.strip(), \
-                f"发现残留非法换手率阈值(150%/300%)：\n{result.stdout}\n死亡换手阈值必须是70%！"
+        target = pathlib.Path(__file__).parent.parent / 'tasks' / 'run_live_trading_engine.py'
+        # 文件不存在本身就是错误，必须fail
+        assert target.exists(), f"引擎文件路径错误: {target}"
+        
+        content = target.read_text(encoding='utf-8', errors='replace')
+        # 只扫描非注释行，避免血泪教训注释误报
+        code_lines = [l for l in content.splitlines() if not l.strip().startswith('#')]
+        code_only = '\n'.join(code_lines)
+        bad_vals = re.findall(r'\b(150\.0|300\.0)\b', code_only)
+        assert not bad_vals, f"发现非法换手率阈值: {bad_vals}，死亡换手只允许70%"
 
 
 if __name__ == '__main__':
