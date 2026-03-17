@@ -1165,8 +1165,10 @@ class LiveTradingEngine:
                     held_price = self.execution_manager.positions[held_code].current_price
                 
                 # 调用决策大脑
+                # 【P0-1修复】传入全量列表，分位数统计需要足够样本量
+                # 原: top_targets=current_top_targets[:5] 导致p90=最高分，统计无意义
                 decision = self.decision_brain.on_new_frame(
-                    top_targets=current_top_targets[:5],
+                    top_targets=current_top_targets,
                     current_time=engine_time,
                     held_stock_current_price=held_price
                 )

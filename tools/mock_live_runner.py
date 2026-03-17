@@ -294,7 +294,9 @@ class MockLiveRunner:
         if loaded == 0:
             print("[ERR] 无Tick数据，终止")
             return
-        print(f"成功加载 {loaded}/{len(self.stock_list)} 只股票\n")
+        # 【P1-1修复】加载信息添加verbose保护
+        if self.verbose:
+            print(f"成功加载 {loaded}/{len(self.stock_list)} 只股票\n")
 
         # 竞价阶段榜单
         auction_t = datetime.strptime(f"{self.target_date}09:25:00", "%Y%m%d%H:%M:%S")
@@ -310,8 +312,10 @@ class MockLiveRunner:
         for current_time in time_points:
             ts = current_time.strftime('%H:%M:%S')
             if ts in key_events:
-                print(f"\n⏰ [{ts}] {key_events[ts]}")
-                print("-" * 50)
+                # 【P1-1修复】verbose保护
+                if self.verbose:
+                    print(f"\n⏰ [{ts}] {key_events[ts]}")
+                    print("-" * 50)
 
             # Step1: 持仓监控（必须在决策之前！更新current_price）
             self._monitor_positions(current_time)
@@ -335,12 +339,19 @@ class MockLiveRunner:
             self._run_decision_and_execute(current_time, sorted_board)
 
             cm = current_time.hour * 60 + current_time.minute
-            if abs(cm - last_print_min) >= 15:
-                self._print_status_brief(current_time, sorted_board)
+            # 【P1-1修复】_print_status_brief调用添加verbose保护
+            if self.verbose and abs(cm - last_print_min) >= 15:
+                # 【P0-2修复】传入_last_enriched_targets，避免重复调用TriggerValidator
+                self._print_status_brief(
+                    current_time, sorted_board,
+                    enriched_targets=getattr(self, '_last_enriched_targets', None)
+                )
                 last_print_min = cm
 
-        print(f"\n⏰ [15:00:00] 收盘")
-        print("-" * 50)
+        # 【P1-1修复】收盘print添加verbose保护
+        if self.verbose:
+            print(f"\n⏰ [15:00:00] 收盘")
+            print("-" * 50)
         self._print_final_report()
 
     # ============================================================
@@ -489,6 +500,9 @@ class MockLiveRunner:
             executed_trade=executed_trade,
             decision_context=decision
         )
+
+        # 【P0-2修复】保存enriched_targets供_print_status_brief使用
+        self._last_enriched_targets = enriched_targets
 
     # ── 买入执行（双引擎）
     def _execute_buy(
@@ -889,32 +903,19 @@ class MockLiveRunner:
             })
 
     def _print_status_brief(
-        self, current_time: datetime, sorted_board: List[Tuple[str, Dict]]
+        self, current_time: datetime, sorted_board: List[Tuple[str, Dict]],
+        enriched_targets: List[Dict] = None  # 【P0-2修复】新增参数，避免重复调用TriggerValidator
     ):
         ts = current_time.strftime('%H:%M')
         if sorted_board:
             top1_code, top1_data = sorted_board[0]
-            buf = self.stock_buffers.get(top1_code)
+            # 【P0-2修复】从enriched_targets获取trigger信息，不再重复调用TriggerValidator
+            # 原代码重复调用会污染状态机历史队列，产生幽灵信号
             trigger_hint = ''
-            if buf and len(buf.price_history) >= 3:
-                sig = self.trigger_validator.check_all_triggers(
-                    stock_code=top1_code,
-                    current_price=top1_data['price'],
-                    prev_close=top1_data['tick'].get('lastClose', top1_data['price']),
-                    vwap=buf.get_vwap(
-                        self.tick_queues.get(top1_code, []), current_time, self._parse_tick_time,
-                        time_index=self.tick_time_index.get(top1_code, [])
-                    ),
-                    volume_ratio=top1_data.get('sustain_ratio', 1.0),
-                    current_mfe=top1_data.get('mfe', 0.0),
-                    recent_mfe_list=list(buf.mfe_history),
-                    price_history=list(buf.price_history),
-                    recent_volume_ratios=list(buf.volume_ratio_history),
-                    current_slope=buf.get_current_slope(),
-                    timestamp=current_time
-                )
-                if sig:
-                    trigger_hint = f" 🎯{sig.trigger_type}({sig.confidence:.2f})"
+            if enriched_targets:
+                top1_enrich = next((t for t in enriched_targets if t['code'] == top1_code), None)
+                if top1_enrich and top1_enrich.get('trigger_type') and top1_enrich['trigger_type'] != 'none':
+                    trigger_hint = f" 🎯{top1_enrich['trigger_type']}({top1_enrich.get('trigger_confidence', 0):.2f})"
             print(f"  [{ts}] Top1: {top1_code} 分={top1_data['score']:.0f} "
                   f"价={top1_data['price']:.2f}{trigger_hint}")
         real_pos = self.execution_manager.positions
