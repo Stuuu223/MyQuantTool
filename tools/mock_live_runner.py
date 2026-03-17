@@ -419,7 +419,7 @@ class MockLiveRunner:
                 trigger_confidence = trigger_signal.confidence
 
             dbg = data.get('debug_metrics', {})
-            ignition_prob = dbg.get('ignition_prob', 0.0)
+            ignition_prob = dbg.get('ignition_probability_pct', 0.0)  # 【P1修复】字段名匹配
 
             enriched_targets.append({
                 'code': code,
