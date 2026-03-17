@@ -1045,10 +1045,14 @@ class MockLiveRunner:
         real_total, real_pos_value, real_report, real_pnl, real_pnl_pct,
         paper_total, paper_pnl, paper_pnl_pct, alpha, sorted_universe, tv_report
     ) -> str:
+        # 【Fix-1残留修复】使用target_date而非datetime.now()，确保回测可重现性
+        report_time = datetime.strptime(self.target_date, '%Y%m%d').replace(
+            hour=15, minute=30, second=0
+        ).strftime('%Y-%m-%d %H:%M:%S')
         lines = [
             f"# 全息战报 V2.0 — {self.target_date}\n",
             f"> 沙盒: `{self.sandbox.get_run_id()}`  "
-            f"生成: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n",
+            f"生成: {report_time}\n",
             "## 双引擎对比\n",
             "| 引擎 | 总资产 | 盈亏% | 备注 |",
             "|------|--------|-------|------|",
@@ -1160,9 +1164,12 @@ def run_continuous_backtest(args):
             # 问题：decision_brain每次新建实例状态清零，但execution_manager保留持仓
             # 结果：大脑不知道持仓存在，第二天可能重复买入（违反单吊约束）
             if shared_manager.positions:
-                # 【Fix-5补充】单吊约束断言
-                assert len(shared_manager.positions) <= 1, \
-                    f"单吊约束违反: 检测到{len(shared_manager.positions)}个持仓"
+                # 【Bug-New-3修复】assert在-O模式下被跳过，改用显式RuntimeError
+                if len(shared_manager.positions) > 1:
+                    raise RuntimeError(
+                        f"[硬红线] 单吊约束违反: 检测到{len(shared_manager.positions)}个持仓 "
+                        f"→ {list(shared_manager.positions.keys())}"
+                    )
                 
                 held_code = next(iter(shared_manager.positions))
                 held_pos = shared_manager.positions[held_code]
@@ -1180,13 +1187,18 @@ def run_continuous_backtest(args):
                             held_pos.entry_time, '%Y-%m-%d %H:%M:%S'
                         )
                     except Exception:
-                        # 【Fix-1修复】使用新交易日开盘时间而非datetime.now()
+                        # 【Bug-New-1修复】fallback应使用买入日收盘时间，而非新交易日开盘时间
+                        # 否则hold_minutes从0归零，超时止损延迟max_hold_minutes分钟
+                        buy_date = getattr(held_pos, 'entry_date', '') or date_str
+                        # 如果entry_date为空，尝试从entry_time字符串提取日期
+                        if not buy_date and held_pos.entry_time:
+                            buy_date = held_pos.entry_time.split()[0].replace('-', '')
                         runner.decision_brain.entry_time = datetime.strptime(
-                            date_str, '%Y%m%d'
-                        ).replace(hour=9, minute=30, second=0, microsecond=0)
+                            buy_date, '%Y%m%d'
+                        ).replace(hour=14, minute=57, second=0, microsecond=0)
                         logger.warning(
                             f"[跨日同步] {held_code} entry_time解析失败，"
-                            f"使用{date_str}开盘时间作为fallback"
+                            f"使用{buy_date}收盘时间14:57作为fallback"
                         )
                 logger.info(f"[跨日同步] 大脑继承持仓: {held_code} @¥{held_pos.entry_price:.2f}")
                 

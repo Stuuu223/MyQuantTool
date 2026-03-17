@@ -192,11 +192,17 @@ class SandboxManager:
         """
         json_path = self.get_battle_report_json_path(date_str)
         
+        # 【Fix-5修复】使用回测日期作为created_at，确保可重现性
+        # 格式：YYYY-MM-DD 15:30:00（收盘后生成）
+        created_at = datetime.strptime(date_str, '%Y%m%d').replace(
+            hour=15, minute=30, second=0
+        ).isoformat()
+        
         # 添加元数据
         report_with_meta = {
             "run_id": self.run_id,
             "date": date_str,
-            "created_at": datetime.now().isoformat(),
+            "created_at": created_at,
             **report_data
         }
         

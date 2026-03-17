@@ -127,12 +127,12 @@ def test_decision_brain():
     for k in required_keys:
         assert k in result, f"返回字典缺少key: {k}"
     
-    # 【Fix-4修复】验证入场逻辑是否正确触发
+    # 【Fix-4修复】验证入场逻辑是否正确触发 - 使用assert而非print
     # 榜首30000分，其余<10000，p90应该远低于榜首，应触发BUY
-    if result.get('action') == 'BUY':
-        print(f"  → ✅ 入场逻辑正确触发: BUY {result.get('stock_code')}")
-    else:
-        print(f"  → ⚠️ 未触发BUY，action={result.get('action')}，需检查入场条件")
+    assert result.get('action') == 'BUY', \
+        f"入场逻辑验证失败: 期望BUY，实际={result.get('action')} " \
+        f"原因={result.get('reason', 'N/A')}"
+    print(f"  → ✅ 入场逻辑正确触发: BUY {result.get('stock_code')}")
 
 check("TradeDecisionBrain on_new_frame签名+返回值", test_decision_brain)
 

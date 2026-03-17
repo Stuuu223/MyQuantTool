@@ -243,9 +243,9 @@ class TradeDecisionBrain:
 
         # ── 3. 无入场信号：观望，打印分位数上下文 ──────────────────────────
         if top_targets:
-            scores = [t.get('score', 0) for t in top_targets]
-            p90 = self._percentile(scores, self.entry_percentile_threshold)
-            median = statistics.median(scores) if scores else 0
+            # 【Bug-New-2修复】复用on_new_frame开头已缓存的分位数，避免第三次重复计算
+            p90 = self._last_frame_p90
+            median = self._last_frame_median
             top1 = top_targets[0]
             decision.reason = (
                 f"观望 | 榜首score={top1.get('score', 0):.0f} "
@@ -336,10 +336,6 @@ class TradeDecisionBrain:
         p95 = self._percentile(scores, 0.95)
         median = statistics.median(scores)
         relative_threshold = median * self.entry_relative_multiplier
-
-        # 【Fix-3删除】缓存已在on_new_frame开头无条件更新，此处不再重复赋值
-        # self._last_frame_p90 = p90
-        # self._last_frame_median = median
 
         # 计算榜首相对百分位（用于战报）
         n = len(scores)
