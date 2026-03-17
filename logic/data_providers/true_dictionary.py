@@ -71,10 +71,13 @@ class TrueDictionary:
     # =====================================================
     # 【CTO量纲宪法 V186】项目全局单位约定
     # =====================================================
-    # float_volume    (self._float_volume)  单位：【股】  来源：QMT get_instrument_detail FloatVolume
+    # float_volume (self._float_volume) 单位：【股】← 已由万股×10000升维，TrueDictionary内部负责
     # avg_volume_5d   (self._avg_volume_5d) 单位：【手】  来源：QMT get_local_data(period='1d') volume
     # get_full_tick volume                  单位：【手】  来源：实盘订阅/快照
     # get_local_data tick volume            单位：【手】  来源：历史Tick数据
+    # =====================================================
+    # QMT原始返回：get_instrument_detail FloatVolume 单位=【万股】
+    # TrueDictionary内部自动×10000升维为股，外部调用者无需再转换
     # =====================================================
     # 换手率公式：(get_full_tick.volume[手] × 100) / float_volume[股] × 100 = %
     # 成交额公式：avg_volume_5d[手] × 100 × price[元/股] = 元
