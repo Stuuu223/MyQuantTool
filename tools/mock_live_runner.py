@@ -1160,6 +1160,10 @@ def run_continuous_backtest(args):
             # 问题：decision_brain每次新建实例状态清零，但execution_manager保留持仓
             # 结果：大脑不知道持仓存在，第二天可能重复买入（违反单吊约束）
             if shared_manager.positions:
+                # 【Fix-5补充】单吊约束断言
+                assert len(shared_manager.positions) <= 1, \
+                    f"单吊约束违反: 检测到{len(shared_manager.positions)}个持仓"
+                
                 held_code = next(iter(shared_manager.positions))
                 held_pos = shared_manager.positions[held_code]
                 runner.decision_brain.held_stock_code = held_code
@@ -1176,8 +1180,20 @@ def run_continuous_backtest(args):
                             held_pos.entry_time, '%Y-%m-%d %H:%M:%S'
                         )
                     except Exception:
-                        runner.decision_brain.entry_time = datetime.now()
+                        # 【Fix-1修复】使用新交易日开盘时间而非datetime.now()
+                        runner.decision_brain.entry_time = datetime.strptime(
+                            date_str, '%Y%m%d'
+                        ).replace(hour=9, minute=30, second=0, microsecond=0)
+                        logger.warning(
+                            f"[跨日同步] {held_code} entry_time解析失败，"
+                            f"使用{date_str}开盘时间作为fallback"
+                        )
                 logger.info(f"[跨日同步] 大脑继承持仓: {held_code} @¥{held_pos.entry_price:.2f}")
+                
+                # 【Fix-2修复】同步has_bought_today标志，防止当天再次买入违反单吊约束
+                runner.has_bought_today = True
+                runner.paper_bought_today = True
+                logger.info(f"[跨日同步] has_bought_today=True, paper_bought_today=True")
 
         runner.run_mock_session()
         shared_manager = runner.execution_manager

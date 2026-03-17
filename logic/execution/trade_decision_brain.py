@@ -337,9 +337,9 @@ class TradeDecisionBrain:
         median = statistics.median(scores)
         relative_threshold = median * self.entry_relative_multiplier
 
-        # 缓存供 WATCH 分支打印
-        self._last_frame_p90 = p90
-        self._last_frame_median = median
+        # 【Fix-3删除】缓存已在on_new_frame开头无条件更新，此处不再重复赋值
+        # self._last_frame_p90 = p90
+        # self._last_frame_median = median
 
         # 计算榜首相对百分位（用于战报）
         n = len(scores)

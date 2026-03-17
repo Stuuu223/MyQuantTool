@@ -12,6 +12,9 @@ PASS = "✅ PASS"
 FAIL = "❌ FAIL"
 results = []
 
+# 【Fix-4修复】使用固定的测试时间，确保测试幂等性
+TEST_TIME = datetime(2026, 3, 17, 10, 30, 0)
+
 def check(name, fn):
     try:
         fn()
@@ -42,7 +45,7 @@ def test_paper_engine():
     
     # 买入
     order = e.place_order('000001.SZ', 10.0, 'BUY',
-                          trigger_type='test', timestamp=datetime.now())
+                          trigger_type='test', timestamp=TEST_TIME)
     assert order is not None, "买入应返回非None"
     assert '000001.SZ' in e.positions, "买入后应有持仓"
     
@@ -64,9 +67,14 @@ def test_paper_engine():
     
     # 卖出
     sell_order = e.place_order('000001.SZ', 10.5, 'SELL',
-                                timestamp=datetime.now())
+                                timestamp=TEST_TIME)
     assert sell_order is not None, "卖出应返回非None"
-    print(f"  → 卖出完成，剩余持仓={list(e.positions.keys())}")
+    
+    # 【Fix-4修复】卖出后验证持仓清空+资金增加
+    assert '000001.SZ' not in e.positions, "卖出后持仓应清空"
+    post_capital = e.get_total_asset()  # 使用正确的方法名
+    assert post_capital > 100_000, f"卖出盈利后总资产应>初始本金，实际={post_capital}"
+    print(f"  → 卖出完成，持仓已清空，总资产={post_capital:.2f}")
     
     # 绩效报告
     report = e.get_performance_report()
@@ -83,29 +91,34 @@ def test_decision_brain():
     # 空榜单 - 【接口确认】返回dict而非None
     result_empty = brain.on_new_frame(
         top_targets=[],
-        current_time=datetime.now(),
+        current_time=TEST_TIME,
         held_stock_current_price=0.0
     )
     print(f"  → 空榜单返回: action={result_empty.get('action')}")
     assert result_empty is not None, "空榜单应返回dict而非None"
     assert result_empty.get('action') == 'WATCH', "空榜单应返回WATCH"
     
-    # 含数据的榜单
-    top_targets = [
-        {
-            'code': '000001.SZ', 'score': 200, 'price': 10.0,
-            'trigger_type': 'slingshot', 'trigger_confidence': 0.85,
-            'ignition_prob': 0.7, 'mfe': 1.5, 'sustain_ratio': 2.0,
-        },
-        {
-            'code': '600519.SH', 'score': 150, 'price': 1800.0,
+    # 【Fix-4修复】扩充榜单到12只票，使用正确的trigger_type
+    # VALID_TRIGGERS = {'vacuum_ignition', 'stair_breakout', 'gravity_slingshot'}
+    # 榜首score设为其余票的3x以上触发里氏震级条件
+    top_targets = []
+    # 榜首：高分+有效trigger
+    top_targets.append({
+        'code': '000001.SZ', 'score': 30000, 'price': 10.0,
+        'trigger_type': 'gravity_slingshot', 'trigger_confidence': 0.85,
+        'ignition_prob': 0.7, 'mfe': 1.5, 'sustain_ratio': 2.0,
+    })
+    # 其余11只票：分数远低于榜首
+    for i in range(1, 12):
+        top_targets.append({
+            'code': f'600{str(i).zfill(3)}.SH', 'score': 5000 + i*100, 'price': 10.0 + i,
             'trigger_type': 'none', 'trigger_confidence': 0.0,
             'ignition_prob': 0.3, 'mfe': 0.8, 'sustain_ratio': 1.2,
-        },
-    ]
+        })
+    
     result = brain.on_new_frame(
         top_targets=top_targets,
-        current_time=datetime.now(),
+        current_time=TEST_TIME,
         held_stock_current_price=0.0
     )
     print(f"  → 含数据返回: action={result.get('action')}, code={result.get('stock_code')}")
@@ -113,6 +126,13 @@ def test_decision_brain():
                      'score', 'trigger_type']
     for k in required_keys:
         assert k in result, f"返回字典缺少key: {k}"
+    
+    # 【Fix-4修复】验证入场逻辑是否正确触发
+    # 榜首30000分，其余<10000，p90应该远低于榜首，应触发BUY
+    if result.get('action') == 'BUY':
+        print(f"  → ✅ 入场逻辑正确触发: BUY {result.get('stock_code')}")
+    else:
+        print(f"  → ⚠️ 未触发BUY，action={result.get('action')}，需检查入场条件")
 
 check("TradeDecisionBrain on_new_frame签名+返回值", test_decision_brain)
 
@@ -126,21 +146,20 @@ def test_universal_tracker():
          'trigger_type': 'none', 'trigger_confidence': 0.0,
          'ignition_prob': 0.5, 'mfe': 1.2, 'sustain_ratio': 1.5},
     ]
-    now = datetime.now()
     
     # 无成交帧
-    tracker.on_frame(top_targets=targets, current_time=now,
+    tracker.on_frame(top_targets=targets, current_time=TEST_TIME,
                      executed_trade=None, decision_context=None)
     
     # 有买入成交帧
     trade = {'action': 'BUY', 'stock_code': '000001.SZ',
              'price': 10.0, 'reason': '测试买入'}
-    tracker.on_frame(top_targets=targets, current_time=now,
+    tracker.on_frame(top_targets=targets, current_time=TEST_TIME,
                      executed_trade=trade, decision_context=None)
     
     # 价格更新
     if hasattr(tracker, 'on_price_update'):
-        tracker.on_price_update('000001.SZ', 10.5, now)
+        tracker.on_price_update('000001.SZ', 10.5, TEST_TIME)
         print("  → on_price_update 存在且可调用")
     
     # 报告 - 【接口确认】keys与预期不同
@@ -169,7 +188,7 @@ def test_trigger_validator():
         volume_ratio=1.5, current_mfe=1.2,
         recent_mfe_list=[1.0], price_history=[9.9],
         recent_volume_ratios=[1.2], current_slope=0.01,
-        timestamp=datetime.now()
+        timestamp=TEST_TIME
     )
     print(f"  → 历史不足时返回: {sig_none}")
     
@@ -182,7 +201,7 @@ def test_trigger_validator():
         price_history=[9.7, 9.8, 10.0],
         recent_volume_ratios=[1.5, 1.8, 2.0],
         current_slope=0.02,
-        timestamp=datetime.now()
+        timestamp=TEST_TIME
     )
     print(f"  → 足够历史时返回: {sig}")
     if sig is not None:
