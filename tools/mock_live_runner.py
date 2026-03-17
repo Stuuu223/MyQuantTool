@@ -309,26 +309,26 @@ class MockLiveRunner:
                 print(f"\n⏰ [{ts}] {key_events[ts]}")
                 print("-" * 50)
 
-            # Step1: 计算榜单
+            # Step1: 持仓监控（必须在决策之前！更新current_price）
+            self._monitor_positions(current_time)
+
+            # Step2: 计算榜单
             self._calculate_leaderboard_at_time(current_time)
 
-            # Step2: 按分数排序
+            # Step3: 按分数排序
             sorted_board = sorted(
                 self.leaderboard.items(),
                 key=lambda x: x[1]['score'], reverse=True
             )
 
-            # Step3: 更新每只股票的历史缓冲区（TriggerValidator的数据基础）
+            # Step4: 更新每只股票的历史缓冲区（TriggerValidator的数据基础）
             self._update_stock_buffers(sorted_board)
 
-            # Step4: 记录每分钟Top10到审计台账
+            # Step5: 记录每分钟Top10到审计台账
             self._record_top10_to_ledger(current_time, sorted_board)
 
-            # Step5: 构建带 trigger 信号的榜单 → 喂给 Brain → 双引擎执行
+            # Step6: 构建带 trigger 信号的榜单 → 喂给 Brain → 双引擎执行
             self._run_decision_and_execute(current_time, sorted_board)
-
-            # Step6: 持仓监控（双引擎）
-            self._monitor_positions(current_time)
 
             cm = current_time.hour * 60 + current_time.minute
             if abs(cm - last_print_min) >= 15:
@@ -433,11 +433,27 @@ class MockLiveRunner:
             })
 
         # ── Phase B: 决策大脑
+        # 【P0修复】从正确的引擎获取held_price
+        # 问题：真实引擎买入可能被拒绝，但PaperTrade买入成功
+        # 此时决策大脑认为持有X股票，但真实引擎持仓是Y股票
+        # 解决：检查决策大脑的held_stock_code，从对应引擎或榜单获取价格
         held_price = 0.0
-        if self.execution_manager.positions:
-            held_code = next(iter(self.execution_manager.positions))
-            held_pos = self.execution_manager.positions[held_code]
-            held_price = held_pos.current_price if held_pos.current_price > 0 else held_pos.entry_price
+        brain_held_code = self.decision_brain.held_stock_code
+        
+        if brain_held_code:
+            # 优先从真实引擎获取
+            if brain_held_code in self.execution_manager.positions:
+                pos = self.execution_manager.positions[brain_held_code]
+                held_price = pos.current_price if pos.current_price > 0 else pos.entry_price
+            # 其次从PaperTrade引擎获取
+            elif brain_held_code in self.paper_engine.positions:
+                held_price = self.paper_engine.positions[brain_held_code].get('current_price', 0.0)
+                if held_price <= 0:
+                    held_price = self.paper_engine.positions[brain_held_code].get('cost_price', 0.0)
+            # 最后从榜单获取（最可靠）
+            target = next((t for t in enriched_targets if t['code'] == brain_held_code), None)
+            if target and target.get('price', 0) > 0:
+                held_price = target['price']
 
         decision = self.decision_brain.on_new_frame(
             top_targets=enriched_targets,
@@ -557,7 +573,8 @@ class MockLiveRunner:
         reason: str
     ) -> Optional[Dict]:
         target = next((t for t in enriched_targets if t['code'] == stock_code), None)
-        price = target['price'] if target else 0.0
+        price_from_target = target['price'] if target else 0.0
+        price = price_from_target
 
         executed_trade = None
 
@@ -688,6 +705,7 @@ class MockLiveRunner:
             tick_list = self.tick_queues.get(stock_code, [])
             time_list = self.tick_time_index.get(stock_code, [])
             if not tick_list or not time_list:
+                logger.warning(f"[monitor] {stock_code} 无Tick数据，无法更新current_price")
                 continue
 
             # bisect 二分查找（O(log n) 替代 O(n) reversed 扫描）
@@ -697,6 +715,7 @@ class MockLiveRunner:
             current_tick = tick_list[idx]
 
             pos.current_price = current_tick['price']
+            pos.max_price = max(getattr(pos, 'max_price', pos.current_price), pos.current_price)
             pos.max_price = max(getattr(pos, 'max_price', pos.current_price), pos.current_price)
 
             # T+1锁：今日买入不止损
