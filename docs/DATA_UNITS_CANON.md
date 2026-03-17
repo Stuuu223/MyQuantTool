@@ -1,7 +1,7 @@
 # 【量纲宪法】MyQuantTool 数据单位权威定义
 
-**最后验证日期**: 2026-03-17  
-**验证人**: CTO审计团队  
+**最后验证日期**: 待补充（需开盘实测 Task D-1）  
+**验证人**: 待实盘验证（Task D-1 未执行）  
 **声明**: 其他文件的量纲注释一律以本文件为准，本文件错误请提 PR 修改
 
 ---
@@ -10,12 +10,12 @@
 
 | 数据源 API | 字段 | 单位 | 验证方法 | 备注 |
 |-----------|------|------|----------|------|
-| `get_instrument_detail` FloatVolume | float_volume_raw | **万股** | 平安银行≈192万 | QMT原始返回值 |
-| TrueDictionary._float_volume（升维后）| float_volume | **股** | 平安银行≈192亿 | 已×10000，可直接使用 |
-| `get_full_tick` volume | volume | **手** | 实盘快照验证 | 需×100转股 |
-| `get_local_data(period='1d')` volume | avg_vol_5d | **手** | 对比东方财富 | 需×100转股 |
-| `get_local_data(period='tick')` volume | tick_volume | **手** | 历史Tick验证 | 需×100转股 |
-| `subscribe_quote` 实时流 volume | volume | **手** | 实盘订阅验证 | 需×100转股 |
+| `get_instrument_detail` FloatVolume | float_volume_raw | **万股** | 待开盘实测（Task D-1） | QMT原始返回值 |
+| TrueDictionary._float_volume（升维后）| float_volume | **股** | 待开盘实测（Task D-1） | 已×10000，可直接使用 |
+| `get_full_tick` volume | volume | **手** | 待开盘实测（Task D-1） | 需×100转股 |
+| `get_local_data(period='1d')` volume | avg_vol_5d | **手** | 待开盘实测（Task D-1） | 需×100转股 |
+| `get_local_data(period='tick')` volume | tick_volume | **手** | 待开盘实测（Task D-1） | 需×100转股 |
+| `subscribe_quote` 实时流 volume | volume | **手** | 待开盘实测（Task D-1） | 需×100转股 |
 | 所有数据源 amount | amount | **元** | 无需转换 | 成交额单位统一 |
 
 **重要说明**：QMT `get_instrument_detail` 返回的 `FloatVolume` 原始单位是**万股**。TrueDictionary 内部自动执行 `×10000` 升维为**股**，外部调用者通过 `get_float_volume()` 获取的已经是股单位，无需再次转换。
