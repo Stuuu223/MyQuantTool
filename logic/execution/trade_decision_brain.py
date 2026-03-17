@@ -158,6 +158,9 @@ class TradeDecisionBrain:
                 decision.price = held_stock_current_price
                 decision.reason = exit_decision[1]
                 decision.score = self.entry_score
+                # 【P0修复】SELL分支也填充p90和median（使用缓存值）
+                decision.p90_threshold = self._last_frame_p90
+                decision.median_score = self._last_frame_median
 
                 self._log_decision(current_time, decision)
 
@@ -179,6 +182,9 @@ class TradeDecisionBrain:
             decision.price = held_stock_current_price
             decision.reason = "持仓中，等待出场信号"
             decision.score = self.entry_score
+            # 【P0修复】HOLD分支也填充p90和median（使用缓存值）
+            decision.p90_threshold = self._last_frame_p90
+            decision.median_score = self._last_frame_median
 
             self._log_decision(current_time, decision)
             return self._decision_to_dict(decision)
