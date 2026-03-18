@@ -852,9 +852,9 @@ class LiveTradingEngine:
 
         try:
             from logic.data_providers.universe_builder import UniverseBuilder
+            # 【CTO V206】修复mode传参Bug：UniverseBuilder.__init__不接受mode参数
             new_pool, _ = UniverseBuilder(
-                target_date=self.target_date,
-                mode='live'
+                target_date=self.target_date
             ).build()
 
             new_count = 0
@@ -2528,6 +2528,11 @@ class LiveTradingEngine:
                 # 构建当前排名字典
                 current_ranks = {t['code']: i+1 for i, t in enumerate(top_20)}
                 
+                # 【CTO V206】从UniversalTracker获取first_appear_time
+                # 解决LIFECYCLE断流问题
+                if hasattr(self, 'universal_tracker') and self.universal_tracker:
+                    registry = self.universal_tracker.registry
+                
                 # 计算每只股票的排名变化
                 for t in top_20:
                     code = t['code']
@@ -2544,6 +2549,12 @@ class LiveTradingEngine:
                             t['rank_change'] = f'{change}'  # 下降(负数)
                         else:
                             t['rank_change'] = '='  # 持平
+                    
+                    # 【CTO V206】从registry获取first_appear_time
+                    if hasattr(self, 'universal_tracker') and self.universal_tracker:
+                        lifecycle = registry.get(code)
+                        if lifecycle and lifecycle.first_appear_time:
+                            t['first_appear_time'] = lifecycle.first_appear_time
                 
                 # 更新记忆
                 self._last_ranks = current_ranks.copy()
@@ -3405,7 +3416,7 @@ class LiveTradingEngine:
         2. 终端打印TOP 3战神榜
         """
         if not self.highest_scores:
-            logger.info("?? 今日无战报数据（观察池为空或无打分记录）")
+            logger.info("[INFO] 今日无战报数据（观察池为空或无打分记录）")
             return
         
         import json
@@ -3420,8 +3431,16 @@ class LiveTradingEngine:
         today = current_time.strftime('%Y%m%d')
         report_path = report_dir / f'battle_report_{today}.json'
         
+        # 【CTO V206】类型防爆：过滤掉没有'code'键的脏数据
+        valid_scores = {}
+        for code, target in self.highest_scores.items():
+            if isinstance(target, dict) and 'code' in target:
+                valid_scores[code] = target
+            else:
+                logger.warning(f"[WARN] 跳过脏数据: key={code}, type={type(target)}")
+        
         # 按分数排序
-        final_list = sorted(self.highest_scores.values(), key=lambda x: x.get('score', 0), reverse=True)
+        final_list = sorted(valid_scores.values(), key=lambda x: x.get('score', 0), reverse=True)
         
         # 生成战报数据
         report_data = {
@@ -3441,15 +3460,20 @@ class LiveTradingEngine:
         
         # 终端打印战神榜
         print("\n" + "=" * 60)
-        print("?? 今日战神榜 TOP 10")
+        print("[BATTLE] 今日战神榜 TOP 10")
         print("=" * 60)
         print(f"{'排名':<4} {'代码':<12} {'最高血量':<10} {'时间':<10} {'涨幅':<8}")
         print("-" * 60)
         for i, target in enumerate(final_list[:10], 1):
-            print(f"{i:<4} {target['code']:<12} {target['score']:<10.1f} {target.get('time', '--:--:--'):<10} {target.get('change', 0):<8.2f}%")
+            # 【CTO V206】安全获取字段
+            code = target.get('code', 'UNKNOWN')
+            score = target.get('score', 0)
+            time_str = target.get('time', '--:--:--')
+            change = target.get('change', 0)
+            print(f"{i:<4} {code:<12} {score:<10.1f} {time_str:<10} {change:<8.2f}%")
         print("=" * 60)
-        print(f"?? 总计追踪: {len(final_list)} 只股票")
-        print(f"?? 完整战报: {report_path}")
+        print(f"[TOTAL] 总计追踪: {len(final_list)} 只股票")
+        print(f"[FILE] 完整战报: {report_path}")
 
 
 # 便捷函数
