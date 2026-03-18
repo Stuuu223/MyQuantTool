@@ -110,6 +110,7 @@ class UniversalTracker:
 
     MAX_PRICE_HISTORY = 300
     MAX_SCORE_HISTORY = 30
+    HEARTBEAT_INTERVAL = 60  # 【CTO V199】心跳间隔：每60帧写一次全榜快照
 
     def __init__(self, session_id: str = None, schema: str = 'B'):
         """
@@ -124,6 +125,7 @@ class UniversalTracker:
         self._sold_codes: Dict[str, float] = {}
         self.decision_log: List[DecisionEvent] = []   # 决策事件流
         self._validation_result: Optional[Dict] = None  # ScanValidator 结果嵌入
+        self._frame_counter: int = 0  # 【CTO V199】帧计数器，用于心跳触发
         
         # 【CTO V198】流式战报写入 - P0数据安全
         # 每次有新标的上榜或peak_price更新时立即写入磁盘
@@ -213,6 +215,13 @@ class UniversalTracker:
                     f"[WARN] 缺乏标的 {code} 的真实交易数据，"
                     f"无法更新峰值，保持原峰值不变"
                 )
+        
+        # =========== 【CTO V199 心跳机制】 ===========
+        # 每60帧写一次全榜快照，确保即使无新事件也有周期性数据留存
+        self._frame_counter += 1
+        if self._frame_counter % self.HEARTBEAT_INTERVAL == 0:
+            self._write_heartbeat(time_str)
+        # =============================================
 
     # ------------------------------------------------------------------
     # 价格持续追踪（离榜后仍需更新到收盘）
@@ -626,6 +635,93 @@ class UniversalTracker:
             
         except Exception as e:
             logger.warning(f"[WARN] 流式写入失败: {e}")
+
+    def _write_heartbeat(self, time_str: str):
+        """
+        【CTO V199】心跳快照 - 每60帧写一次全榜状态
+        
+        遍历当前registry中所有股票，记录它们的：
+        - 当前价格
+        - 当前分数
+        - 峰值价格
+        - 累计收益
+        
+        用途：即使无新事件发生，也能追溯任意时刻的全榜状态
+        """
+        if not self.registry:
+            return
+        
+        try:
+            stocks_snapshot = []
+            for code, lifecycle in self.registry.items():
+                stocks_snapshot.append({
+                    'code': code,
+                    'score': lifecycle.peak_score,
+                    'price': lifecycle.final_price,
+                    'peak_price': lifecycle.peak_price,
+                    'max_gain_pct': lifecycle.max_gain_pct,
+                    'trigger_type': lifecycle.peak_trigger_type,
+                    'was_bought': lifecycle.was_bought,
+                })
+            
+            record = {
+                'ts': time_str,
+                'event': 'HEARTBEAT',
+                'frame': self._frame_counter,
+                'stock_count': len(stocks_snapshot),
+                'stocks': stocks_snapshot,
+            }
+            
+            with open(self.streaming_report_path, 'a', encoding='utf-8') as f:
+                f.write(json.dumps(record, ensure_ascii=False) + '\n')
+                f.flush()
+            
+            logger.debug(f"[HEARTBEAT] frame={self._frame_counter} stocks={len(stocks_snapshot)}")
+            
+        except Exception as e:
+            logger.warning(f"[WARN] 心跳写入失败: {e}")
+
+    def write_decision(self, decision: Dict, time_str: str):
+        """
+        【CTO V199】决策事件记录 - 写入大脑决策日志
+        
+        Args:
+            decision: 决策大脑返回的决策字典
+                - action: 'BUY' / 'VETO' / 'HELD' / 'SELL'
+                - code: 目标股票代码
+                - price: 决策时价格
+                - score: 决策时分数
+                - reason: 决策理由
+                - trigger_type: 触发类型
+                - ignition_prob: 点火概率
+                - p90_threshold: p90阈值
+                - median_score: 中位数分数
+            time_str: 时间戳字符串
+        """
+        try:
+            record = {
+                'ts': time_str,
+                'event': 'DECISION',
+                'frame': self._frame_counter,
+                'action': decision.get('action', 'UNKNOWN'),
+                'code': decision.get('code', ''),
+                'price': decision.get('price', 0.0),
+                'score': decision.get('score', 0.0),
+                'reason': decision.get('reason', ''),
+                'trigger_type': decision.get('trigger_type', ''),
+                'ignition_prob': decision.get('ignition_prob', 0.0),
+                'p90_threshold': decision.get('p90_threshold', 0.0),
+                'median_score': decision.get('median_score', 0.0),
+            }
+            
+            with open(self.streaming_report_path, 'a', encoding='utf-8') as f:
+                f.write(json.dumps(record, ensure_ascii=False) + '\n')
+                f.flush()
+            
+            logger.debug(f"[DECISION] {decision.get('action')} {decision.get('code')} score={decision.get('score', 0):.0f}")
+            
+        except Exception as e:
+            logger.warning(f"[WARN] 决策写入失败: {e}")
 
     def export_to_json(self, filepath: str):
         report = self.get_full_report()

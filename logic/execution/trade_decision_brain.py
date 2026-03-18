@@ -385,6 +385,44 @@ class TradeDecisionBrain:
             )
             return None
         # =============================================================
+        
+        # =========== 【CTO V199 断层碾压狙击逻辑】 ===========
+        # 核心理念：只抓绝对龙头，必须有断层碾压优势
+        # 条件A：榜首分数 > 5000（确保是高质量机会）
+        # 条件B：物理门槛已通过（PM和MFE都在阈值之上）
+        # 条件C：top1 > top2 * 1.2（断层碾压，若无top2则直接满足）
+        
+        MIN_SNIPER_SCORE = 5000.0  # 最低狙击分数
+        FAULT_LINE_RATIO = 1.2     # 断层碾压比例
+        
+        # 提取top2分数
+        top2_score = scores[1] if len(scores) > 1 else 0.0
+        
+        # 条件A：分数必须超过最低狙击线
+        if top1_score < MIN_SNIPER_SCORE:
+            logger.debug(
+                f"[VETO-SCORE] {top1.get('code')} score={top1_score:.0f} < 狙击线{MIN_SNIPER_SCORE:.0f}"
+            )
+            return None
+        
+        # 条件C：断层碾压（榜首必须碾压第二名20%以上）
+        if top2_score > 0 and top1_score < top2_score * FAULT_LINE_RATIO:
+            fault_line_gap = (top1_score / top2_score - 1) * 100 if top2_score > 0 else 0
+            logger.debug(
+                f"[VETO-FAULT] {top1.get('code')} 未形成断层碾压 | "
+                f"top1={top1_score:.0f} vs top2={top2_score:.0f} | "
+                f"领先{fault_line_gap:.1f}% < 断层要求{FAULT_LINE_RATIO-1:.0%}"
+            )
+            return None
+        
+        # 断层碾压逻辑通过，记录日志
+        fault_line_gap = (top1_score / top2_score - 1) * 100 if top2_score > 0 else 100
+        logger.debug(
+            f"[SNIPER-OK] {top1.get('code')} 断层碾压通过 | "
+            f"score={top1_score:.0f} > 狙击线{MIN_SNIPER_SCORE:.0f} | "
+            f"断层领先{fault_line_gap:.1f}%"
+        )
+        # =============================================================
 
         # Bug#1修复：使用VALID_TRIGGERS集合判断，而非 trigger_type != ''
         has_valid_trigger = trigger_type in self.VALID_TRIGGERS

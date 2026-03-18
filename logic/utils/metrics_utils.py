@@ -616,6 +616,7 @@ def build_dashboard_layout(top_targets, pool_stats=None, account_info=None, is_r
     
     # 4. 战神榜核心矩阵
     # 【CTO V198】榜单从Top10拓宽到Top20，添加排名跃升轨迹列
+    # 【CTO V200】添加 DIST%(涨停逼近率)、LIFECYCLE(生命周期)、BRAIN_STATE(大脑状态) 三列
     table = Table(show_header=True, header_style="bold magenta", style="cyan", expand=False)
     table.add_column("RANK", justify="center", width=4)
     table.add_column("TRAJ", justify="center", width=6)  # 【CTO V198】排名跃升轨迹
@@ -623,14 +624,17 @@ def build_dashboard_layout(top_targets, pool_stats=None, account_info=None, is_r
     table.add_column("SCORE", justify="right", width=8, style="bold red")
     table.add_column("PRICE", justify="right", width=7)
     table.add_column("CHG%", justify="right", width=8)
+    table.add_column("DIST%", justify="right", width=6)   # 【CTO V200】涨停逼近率
     table.add_column("INFLOW%", justify="right", width=8)
     table.add_column("SUSTAIN", justify="right", width=8)
     table.add_column("MFE", justify="right", width=6)
     table.add_column("IGNITE%", justify="right", width=8)  # 【CTO V180.3】波函数坍缩概率
-    table.add_column("PURITY%", justify="right", width=8)
+    table.add_column("LIFECYCLE", justify="center", width=10)  # 【CTO V200】时间生命周期
+    table.add_column("BRAIN_STATE", justify="center", width=12)  # 【CTO V200】大脑静默透视
     
     if not top_targets:
-        table.add_row("...", "...", "空仓观望", "...", "...", "...", "...", "...", "...", "...", "...")
+        # V200: 13列空行 (RANK, TRAJ, TARGET, SCORE, PRICE, CHG%, DIST%, INFLOW%, SUSTAIN, MFE, IGNITE%, LIFECYCLE, BRAIN_STATE)
+        table.add_row("...", "...", "空仓观望", "...", "...", "...", "...", "...", "...", "...", "...", "...", "...")
     else:
         for i, t in enumerate(top_targets, 1):
             row_style = "bold red" if i <= 3 else None
@@ -655,15 +659,78 @@ def build_dashboard_layout(top_targets, pool_stats=None, account_info=None, is_r
             else:
                 traj_str = ""
             
+            # =========== 【CTO V200】三列新增数据 ===========
+            # V200-T1: DIST% - 涨停逼近率
+            # 计算距离涨停的百分比：(up_stop - price) / up_stop * 100
+            # 创业板(300)/科创板(688)涨停20%，主板涨停10%
+            price = t.get('price', 0)
+            up_stop = t.get('up_stop_price', 0)
+            prev_close = t.get('prev_close', price)
+            code = t.get('code', '')
+            if up_stop > 0 and price > 0:
+                dist_pct = (up_stop - price) / up_stop * 100
+            elif prev_close > 0:
+                # 如果没有涨停价，用昨收估算：创业板/科创板20%，主板10%
+                limit_pct = 0.20 if (code.startswith('300') or code.startswith('688')) else 0.10
+                up_stop_est = prev_close * (1 + limit_pct)
+                dist_pct = (up_stop_est - price) / up_stop_est * 100
+            else:
+                dist_pct = 0.0
+            dist_color = "green" if dist_pct < 3 else "yellow" if dist_pct < 5 else "white"
+            dist_str = f"[{dist_color}]{dist_pct:.1f}%[/{dist_color}]"
+            
+            # V200-T2: LIFECYCLE - 时间生命周期
+            # 格式: "HH:MM(Xm)" 显示首次上榜时间和在榜分钟数
+            lifecycle_info = t.get('lifecycle', '')
+            if not lifecycle_info:
+                first_appear = t.get('first_appear_time', '')
+                stay_minutes = t.get('stay_minutes', 0)
+                if first_appear:
+                    # 提取时间部分 HH:MM
+                    if len(first_appear) >= 16:
+                        time_part = first_appear[11:16]  # "HH:MM"
+                    else:
+                        time_part = first_appear
+                    lifecycle_str = f"{time_part}({stay_minutes}m)"
+                else:
+                    lifecycle_str = "-"
+            else:
+                lifecycle_str = lifecycle_info
+            
+            # V200-T3: BRAIN_STATE - 大脑静默透视
+            # 显示决策状态: VETO:理由 / BUY / HELD / WATCH
+            brain_state = t.get('brain_state', '')
+            if not brain_state:
+                # 根据分数推断状态
+                score = t.get('score', 0)
+                if score >= 5000:
+                    brain_state = "BUY"
+                elif score > 0:
+                    brain_state = "VETO:未断层"
+                else:
+                    brain_state = "WATCH"
+            # 渲染颜色
+            if brain_state.startswith('BUY'):
+                brain_str = f"[bold green]{brain_state}[/bold green]"
+            elif brain_state.startswith('VETO'):
+                brain_str = f"[bold red]{brain_state}[/bold red]"
+            elif brain_state.startswith('HELD'):
+                brain_str = f"[bold yellow]{brain_state}[/bold yellow]"
+            else:
+                brain_str = f"[white]{brain_state}[/white]"
+            # ==============================================
+            
             safe_sustain = min(max(t.get('sustain_ratio', 0), -99.9), 99.9)
             safe_mfe = min(max(t.get('mfe', 0), -99.9), 99.9)
             
             table.add_row(
                 str(i), traj_str, t['code'], f"{t.get('score', 0):.1f}", f"{t['price']:.2f}",
-                f"{t.get('change', 0):+.2f}%", f"{t.get('inflow_ratio', 0):.2f}%",
+                f"{t.get('change', 0):+.2f}%", dist_str,  # V200-T1: DIST%
+                f"{t.get('inflow_ratio', 0):.2f}%",
                 f"{safe_sustain:.2f}x", f"{safe_mfe:.1f}",
                 ignite_str,
-                f"[{p_color}]{p_val:+.1f}%[/{p_color}]", style=row_style
+                lifecycle_str, brain_str,  # V200-T2/T3: LIFECYCLE, BRAIN_STATE
+                style=row_style
             )
     
     cmd_text = Text("[CMD] 雷达超频扫描中... (Ctrl+C 安全阻断)", style="bright_black") if not is_rest else Text("[CMD] 盘后定格完毕。", style="bright_black")
@@ -677,9 +744,10 @@ def render_live_dashboard(top_targets, pool_stats=None, is_rest=False, msg=None,
     【CTO V121】兼容接口 - 调用 build_dashboard_layout 返回渲染对象
     【CTO V180.4】添加silence_logs参数
     【CTO V185】修复战报大屏不显示：scan模式直接打印渲染对象
+    【CTO V199】原地渲染：清屏后打印，实现固定位置跳动而非瀑布流刷屏
     
     Args:
-        top_targets: TOP10目标列表
+        top_targets: TOP20目标列表
         pool_stats: 漏斗统计信息
         is_rest: 是否盘后模式
         msg: 自定义消息
@@ -694,12 +762,12 @@ def render_live_dashboard(top_targets, pool_stats=None, is_rest=False, msg=None,
     # 构建渲染对象
     renderable = build_dashboard_layout(top_targets, pool_stats, account_info, is_rest, msg, initial_loading)
     
-    # 【CTO V185修复】scan/盘后模式直接打印，实盘Live模式由外层调用console.print
+    # 【CTO V199】原地渲染：清屏后打印
+    # 避免瀑布流刷屏，实现固定位置的动态跳动
     from rich.console import Console
     console = Console()
+    console.clear()  # 清屏，实现原地刷新
+    
     console.print(renderable)
     
     return renderable
-    # 【CTO V180.4】删除return之后的死代码（永不执行的try/except块）
-    # 原代码保留了完整的降级渲染逻辑，但被return拦截永远不执行
-    # 这是技术债炸弹：一旦有人删除return，降级分支会激活但缺少IGNITE%列
