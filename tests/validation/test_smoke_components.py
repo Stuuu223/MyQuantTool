@@ -216,42 +216,51 @@ check("TradeDecisionBrain on_new_frame签名+返回值", test_decision_brain)
 # ── TEST 4: UniversalTracker on_frame + get_full_report
 def test_universal_tracker():
     from logic.execution.universal_tracker import UniversalTracker
-    tracker = UniversalTracker()
+    import tempfile
+    import shutil
     
-    targets = [
-        {'code': '000001.SZ', 'score': 200, 'price': 10.0,
-         'trigger_type': 'none', 'trigger_confidence': 0.0,
-         'ignition_prob': 50.0, 'mfe': 1.2, 'sustain_ratio': 1.5},  # 百分比形式
-    ]
-    
-    # 无成交帧
-    tracker.on_frame(top_targets=targets, current_time=TEST_TIME,
-                     executed_trade=None, decision_context=None)
-    
-    # 有买入成交帧
-    trade = {'action': 'BUY', 'stock_code': '000001.SZ',
-             'price': 10.0, 'reason': '测试买入'}
-    tracker.on_frame(top_targets=targets, current_time=TEST_TIME,
-                     executed_trade=trade, decision_context=None)
-    
-    # 价格更新
-    if hasattr(tracker, 'on_price_update'):
-        tracker.on_price_update('000001.SZ', 10.5, TEST_TIME)
-        print("  → on_price_update 存在且可调用")
-    
-    # 报告 - 【接口确认】keys与预期不同
-    report = tracker.get_full_report()
-    assert isinstance(report, dict), "get_full_report应返回dict"
-    print(f"  → report keys={list(report.keys())}")
-    
-    # 【Bug-New-5修复】关键key验证 - 改为硬验证
-    # expected_keys与实际返回对齐
-    expected_keys = ['session_id', 'generated_at', 'summary',
-                     'schema_b_analysis', 'dual_engine_comparison',
-                     'decision_log_summary', 'all_stocks', 'scan_validation']
-    missing_keys = [k for k in expected_keys if k not in report]
-    assert not missing_keys, f"get_full_report缺少key: {missing_keys}"
-    print(f"  → ✅ 所有必需keys存在: {expected_keys}")
+    # 【CTO V211-T2】测试数据写入临时目录，避免污染生产目录
+    temp_dir = tempfile.mkdtemp(prefix='tracker_test_')
+    try:
+        tracker = UniversalTracker(output_dir=temp_dir)
+        
+        targets = [
+            {'code': '000001.SZ', 'score': 200, 'price': 10.0,
+             'trigger_type': 'none', 'trigger_confidence': 0.0,
+             'ignition_prob': 50.0, 'mfe': 1.2, 'sustain_ratio': 1.5},  # 百分比形式
+        ]
+        
+        # 无成交帧
+        tracker.on_frame(top_targets=targets, current_time=TEST_TIME,
+                         executed_trade=None, decision_context=None)
+        
+        # 有买入成交帧
+        trade = {'action': 'BUY', 'stock_code': '000001.SZ',
+                 'price': 10.0, 'reason': '测试买入'}
+        tracker.on_frame(top_targets=targets, current_time=TEST_TIME,
+                         executed_trade=trade, decision_context=None)
+        
+        # 价格更新
+        if hasattr(tracker, 'on_price_update'):
+            tracker.on_price_update('000001.SZ', 10.5, TEST_TIME)
+            print("  → on_price_update 存在且可调用")
+        
+        # 报告 - 【接口确认】keys与预期不同
+        report = tracker.get_full_report()
+        assert isinstance(report, dict), "get_full_report应返回dict"
+        print(f"  → report keys={list(report.keys())}")
+        
+        # 【Bug-New-5修复】关键key验证 - 改为硬验证
+        # expected_keys与实际返回对齐
+        expected_keys = ['session_id', 'generated_at', 'summary',
+                         'schema_b_analysis', 'dual_engine_comparison',
+                         'decision_log_summary', 'all_stocks', 'scan_validation']
+        missing_keys = [k for k in expected_keys if k not in report]
+        assert not missing_keys, f"get_full_report缺少key: {missing_keys}"
+        print(f"  → ✅ 所有必需keys存在: {expected_keys}")
+    finally:
+        # 【CTO V211-T2】清理临时目录
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
 check("UniversalTracker on_frame+get_full_report", test_universal_tracker)
 

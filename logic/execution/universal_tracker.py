@@ -160,11 +160,13 @@ class UniversalTracker:
     MAX_SCORE_HISTORY = 30
     HEARTBEAT_INTERVAL = 60  # 【CTO V199】心跳间隔：每60帧写一次全榜快照
 
-    def __init__(self, session_id: str = None, schema: str = 'B'):
+    def __init__(self, session_id: str = None, schema: str = 'B', output_dir: str = None):
         """
         Args:
             session_id: 会话ID（默认使用当前日期时间）
             schema: 入场方案 'A'（宽松） 或 'B'（严格，需要物理触发）
+            output_dir: 输出目录（默认data/battle_reports，测试环境传入tests/temp_data/）
+                        【CTO V211-T2】新增参数，实现测试/生产物理隔离
         """
         self.session_id = session_id or datetime.now().strftime('%Y%m%d_%H%M%S')
         self.schema = schema
@@ -176,9 +178,10 @@ class UniversalTracker:
         self._frame_counter: int = 0  # 【CTO V199】帧计数器，用于心跳触发
         
         # =========== 【CTO V202 双轨持久化体系】 ===========
-        # 轨道1：行情流 - 记录所有标的的行情轨迹（new_appear/peak_update）
-        # 用途：盘后复盘可追溯任意标的的完整量价轨迹
-        self._streaming_dir = 'data/battle_reports'
+        # 【CTO V211-T2】output_dir参数：测试环境可传入临时目录
+        # 生产环境：data/battle_reports
+        # 测试环境：tests/temp_data/
+        self._streaming_dir = output_dir or 'data/battle_reports'
         os.makedirs(self._streaming_dir, exist_ok=True)
         
         # 【CTO V210-T3】文件命名精确到秒，实现测试/实盘物理隔离

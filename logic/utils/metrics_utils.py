@@ -17,6 +17,8 @@ Version: 1.0.0
 """
 
 from typing import Optional, List, Tuple
+import os
+import sys
 import pandas as pd
 import numpy as np
 
@@ -765,12 +767,17 @@ def render_live_dashboard(top_targets, pool_stats=None, is_rest=False, msg=None,
     # 构建渲染对象
     renderable = build_dashboard_layout(top_targets, pool_stats, account_info, is_rest, msg, initial_loading)
     
-    # 【CTO V199】原地渲染：清屏后打印
-    # 避免瀑布流刷屏，实现固定位置的动态跳动
+    # 【CTO V213】极简止刷：用ANSI清屏符替代console.clear()
+    # 根因：console.clear()在部分Windows终端被解释为"向下翻页"(打印换行符)
+    # 而ANSI序列\033[2J(清屏)+\033[H(光标归位)实现真正的原地刷新
+    # Windows环境需先启用ANSI支持
+    if os.name == 'nt':
+        os.system('color')
+    sys.stdout.write('\033[2J\033[H')
+    sys.stdout.flush()
+    
     from rich.console import Console
     console = Console()
-    console.clear()  # 清屏，实现原地刷新
-    
     console.print(renderable)
     
     return renderable

@@ -377,6 +377,20 @@ class LiveTradingEngine:
         # 【P0修复】动态粗筛补充状态变量
         self._last_universe_refresh_time: Optional[datetime] = None
         self._universe_refresh_interval_min: int = 15
+        
+        # ==================== 【CTO V213 数据防腐层】TickAdapter依赖注入 ====================
+        # 根据mode注入不同的Adapter，斩断主引擎与xtdata的直接耦合
+        # - Live模式: LiveTickAdapter (从QMT获取实时数据)
+        # - Scan模式: MockTickAdapter (从本地历史数据读取)
+        try:
+            from logic.data_providers.tick_adapters import create_tick_adapter
+            self.tick_adapter = create_tick_adapter(mode=self.mode, target_date=self.target_date)
+            if hasattr(self.tick_adapter, 'initialize'):
+                self.tick_adapter.initialize()
+            logger.info(f"[OK] TickAdapter初始化成功 - mode={self.mode}")
+        except (ImportError, Exception) as e:
+            logger.warning(f"[WARN] TickAdapter初始化失败: {e}，将使用fallback直接调用xtdata")
+            self.tick_adapter = None
     
     # ==================== 【CTO V53时间沙盒】统一时间获取入口 ====================
     
@@ -402,6 +416,58 @@ class LiveTradingEngine:
             tick_time: Tick数据携带的时间戳
         """
         self._mock_time = tick_time
+    
+    def get_tick_snapshot(self, stock_codes: List[str]) -> Dict[str, Dict]:
+        """
+        【CTO V213 数据防腐层】统一Tick获取入口
+        
+        优先使用tick_adapter获取数据，失败则fallback到直接调用xtdata。
+        返回原始字典格式，保持向后兼容。
+        
+        Args:
+            stock_codes: 股票代码列表
+            
+        Returns:
+            {stock_code: tick_dict} 原始Tick字典
+        """
+        result = {}
+        
+        # 优先使用tick_adapter（数据防腐层）
+        if self.tick_adapter is not None:
+            try:
+                standard_ticks = self.tick_adapter.get_ticks(stock_codes)
+                if standard_ticks:
+                    # 将StandardTick转换回原始字典格式（向后兼容）
+                    for code, tick in standard_ticks.items():
+                        result[code] = {
+                            'lastPrice': tick.last_price,
+                            'volume': tick.volume_shares // 100,  # 转回手单位
+                            'amount': tick.amount_yuan,
+                            'lastClose': tick.prev_close,
+                            'open': tick.open_price,
+                            'high': tick.high_price,
+                            'low': tick.low_price,
+                            'limitUp': tick.limit_up,
+                            'limitDown': tick.limit_down,
+                            'bidPrice1': tick.bid_prices[0] if tick.bid_prices else 0,
+                            'askPrice1': tick.ask_prices[0] if tick.ask_prices else 0,
+                            'bidVol1': tick.bid_vols[0] // 100 if tick.bid_vols else 0,  # 转回手
+                            'askVol1': tick.ask_vols[0] // 100 if tick.ask_vols else 0,
+                        }
+                    return result
+            except Exception as e:
+                logger.debug(f"[TickAdapter] get_ticks失败，fallback到xtdata: {e}")
+        
+        # Fallback: 直接调用xtdata
+        try:
+            from xtquant import xtdata
+            raw_ticks = xtdata.get_full_tick(stock_codes)
+            if raw_ticks:
+                return raw_ticks
+        except Exception as e:
+            logger.error(f"[Fallback] xtdata.get_full_tick失败: {e}")
+        
+        return result
     
     # ==================== 【CTO状态机重构】动态蓄水池核心方法 ====================
     
