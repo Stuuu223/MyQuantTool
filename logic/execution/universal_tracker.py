@@ -246,6 +246,7 @@ class UniversalTracker:
             code = target.get('code', '')
             if not code:
                 continue
+            # 【CTO V205】传入瞬时物理数据
             self._update_stock_on_appear(
                 code=code,
                 score=target.get('score', 0.0),
@@ -253,7 +254,13 @@ class UniversalTracker:
                 trigger_type=target.get('trigger_type') or '',
                 trigger_confidence=target.get('trigger_confidence', 0.0),
                 ignition_prob=target.get('ignition_prob', 0.0),
-                time_str=time_str
+                time_str=time_str,
+                # 【CTO V205】瞬时物理态
+                mfe=target.get('mfe', 0.0),
+                price_momentum=target.get('price_momentum', 0.0),
+                inflow_ratio=target.get('inflow_ratio', 0.0),
+                sustain_ratio=target.get('sustain_ratio', 0.0),
+                change_pct=target.get('change', 0.0),
             )
         
         # 【CTO V195】拆除外层静默跳过逻辑
@@ -434,21 +441,30 @@ class UniversalTracker:
         trigger_type: str,
         trigger_confidence: float,
         ignition_prob: float,
-        time_str: str
+        time_str: str,
+        # 【CTO V205】瞬时物理态参数
+        mfe: float = 0.0,
+        price_momentum: float = 0.0,
+        inflow_ratio: float = 0.0,
+        sustain_ratio: float = 0.0,
+        change_pct: float = 0.0
     ):
         """更新股票上榜状态"""
         lifecycle = self._get_or_create(code)
         
-        # 【CTO V198】检测是否需要流式写入
+        # 【CTO V204】修复appear_count判断逻辑
+        # 在appear_count递增之前判断是否为首次上榜
+        # _get_or_create返回新对象时appear_count=0，此时is_new_appear=True
         is_new_appear = lifecycle.appear_count == 0
         old_peak = lifecycle.peak_price
 
-        if lifecycle.appear_count == 0:
+        if is_new_appear:
             lifecycle.first_appear_time = time_str
             lifecycle.first_appear_price = price
             lifecycle.peak_price = price
             lifecycle.peak_score = score
 
+        # 在判断之后递增appear_count
         lifecycle.appear_count += 1
         lifecycle.last_appear_time = time_str
 
@@ -475,11 +491,25 @@ class UniversalTracker:
         if trigger_type and not lifecycle.had_physical_trigger:
             lifecycle.had_physical_trigger = True
         
-        # 【CTO V198】流式写入JSONL - P0数据安全
+        # 【CTO V198/V205】流式写入JSONL - P0数据安全
         # 条件：新上榜 或 peak_price创新高
         should_write = is_new_appear or (lifecycle.peak_price > old_peak)
         if should_write:
-            self._write_streaming_record(lifecycle, time_str, 'new_appear' if is_new_appear else 'peak_update')
+            # 【CTO V205】传入瞬时物理数据
+            instant_physics = {
+                'mfe': mfe,
+                'price_momentum': price_momentum,
+                'inflow_ratio': inflow_ratio,
+                'sustain_ratio': sustain_ratio,
+                'change_pct': change_pct,
+                'trigger_type': trigger_type,
+                'ignition_prob': ignition_prob,
+            }
+            self._write_streaming_record(
+                lifecycle, time_str, 
+                'new_appear' if is_new_appear else 'peak_update',
+                instant_physics=instant_physics
+            )
             lifecycle.trigger_first_time = time_str
             lifecycle.trigger_first_price = price
         if trigger_confidence > lifecycle.trigger_peak_confidence:
@@ -709,14 +739,15 @@ class UniversalTracker:
         except Exception as e:
             logger.warning(f"[WARN] 狙击黑匣子写入失败: {e}")
 
-    def _write_streaming_record(self, lifecycle: StockLifecycle, time_str: str, event_type: str):
+    def _write_streaming_record(self, lifecycle: StockLifecycle, time_str: str, event_type: str, instant_physics: Dict = None):
         """
-        【CTO V202】行情流写入 - 独立于决策流
+        【CTO V202/V205】行情流写入 - 瞬时物理态注入
         
         写入 streaming_report_path（行情轨迹流）
         仅记录标的的行情事件：new_appear / peak_update
         
         这是双轨持久化的轨道1：回答"这只票盘中走势如何"
+        【CTO V205】新增instant_physics参数，记录信号触发时刻的物理环境
         """
         try:
             record = {
@@ -731,6 +762,17 @@ class UniversalTracker:
                 'was_bought': lifecycle.was_bought,
                 'appear_count': lifecycle.appear_count,
             }
+            
+            # 【CTO V205】注入瞬时物理态数据
+            if instant_physics:
+                record.update({
+                    'mfe_at_signal': instant_physics.get('mfe', 0.0),
+                    'price_momentum_at_signal': instant_physics.get('price_momentum', 0.0),
+                    'inflow_ratio_at_signal': instant_physics.get('inflow_ratio', 0.0),
+                    'sustain_ratio_at_signal': instant_physics.get('sustain_ratio', 0.0),
+                    'change_pct': instant_physics.get('change_pct', 0.0),
+                    'ignition_prob': instant_physics.get('ignition_prob', 0.0),
+                })
             
             with open(self.streaming_report_path, 'a', encoding='utf-8') as f:
                 f.write(safe_json_dumps(record) + '\n')

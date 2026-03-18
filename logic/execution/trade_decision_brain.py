@@ -418,18 +418,44 @@ class TradeDecisionBrain:
         if top1_score < MIN_SNIPER_SCORE:
             reason = f"VETO-SCORE:分数{top1_score:.0f}<狙击线{MIN_SNIPER_SCORE:.0f}"
             logger.debug(f"[{reason}] {top1.get('code')}")
-            return {'action': 'VETO', 'code': top1.get('code'), 'score': top1_score, 
-                    'price': top1.get('price', 0), 'reason': reason, 
-                    'trigger_type': trigger_type, 'ignition_prob': ignition_prob}
+            return {
+                'action': 'VETO', 
+                'code': top1.get('code'), 
+                'score': top1_score, 
+                'price': top1.get('price', 0), 
+                'reason': reason, 
+                'trigger_type': trigger_type, 
+                'ignition_prob': ignition_prob,
+                # 【CTO V205】瞬时物理态字段
+                'mfe': top1.get('mfe', 0.0),
+                'price_momentum': top1.get('price_momentum', 0.0),
+                'inflow_ratio': top1.get('inflow_ratio', 0.0),
+                'sustain_ratio': top1.get('sustain_ratio', 0.0),
+                'p90_threshold': p90,
+                'median_score': median,
+            }
         
         # 条件C：断层碾压（榜首必须碾压第二名20%以上）
         if top2_score > 0 and top1_score < top2_score * FAULT_LINE_RATIO:
             fault_line_gap = (top1_score / top2_score - 1) * 100 if top2_score > 0 else 0
             reason = f"VETO-FAULT:未断层碾压(领先{fault_line_gap:.0f}%<{(FAULT_LINE_RATIO-1)*100:.0f}%)"
             logger.debug(f"[{reason}] {top1.get('code')} top1={top1_score:.0f} vs top2={top2_score:.0f}")
-            return {'action': 'VETO', 'code': top1.get('code'), 'score': top1_score,
-                    'price': top1.get('price', 0), 'reason': reason,
-                    'trigger_type': trigger_type, 'ignition_prob': ignition_prob}
+            return {
+                'action': 'VETO', 
+                'code': top1.get('code'), 
+                'score': top1_score,
+                'price': top1.get('price', 0), 
+                'reason': reason,
+                'trigger_type': trigger_type, 
+                'ignition_prob': ignition_prob,
+                # 【CTO V205】瞬时物理态字段
+                'mfe': top1.get('mfe', 0.0),
+                'price_momentum': top1.get('price_momentum', 0.0),
+                'inflow_ratio': top1.get('inflow_ratio', 0.0),
+                'sustain_ratio': top1.get('sustain_ratio', 0.0),
+                'p90_threshold': p90,
+                'median_score': median,
+            }
         
         # 断层碾压逻辑通过，记录日志
         fault_line_gap = (top1_score / top2_score - 1) * 100 if top2_score > 0 else 100

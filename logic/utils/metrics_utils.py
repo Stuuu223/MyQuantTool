@@ -680,10 +680,13 @@ def build_dashboard_layout(top_targets, pool_stats=None, account_info=None, is_r
             dist_str = f"[{dist_color}]{dist_pct:.1f}%[/{dist_color}]"
             
             # V200-T2: LIFECYCLE - 时间生命周期
+            # 【CTO V204】修复键名不一致：同时检查first_appear_time和first_entry_time
             # 格式: "HH:MM(Xm)" 显示首次上榜时间和在榜分钟数
             lifecycle_info = t.get('lifecycle', '')
             if not lifecycle_info:
-                first_appear = t.get('first_appear_time', '')
+                # 优先检查first_appear_time（UniversalTracker标准）
+                # 兼容first_entry_time（run_live_trading_engine历史命名）
+                first_appear = t.get('first_appear_time', '') or t.get('first_entry_time', '')
                 stay_minutes = t.get('stay_minutes', 0)
                 if first_appear:
                     # 提取时间部分 HH:MM
