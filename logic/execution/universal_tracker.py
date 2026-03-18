@@ -29,6 +29,54 @@ from dataclasses import dataclass, field, asdict
 logger = logging.getLogger(__name__)
 
 
+# =========== 【CTO V202 序列化防爆盾】 ===========
+class SafeJSONEncoder(json.JSONEncoder):
+    """
+    序列化防爆盾 - 处理datetime/numpy/NaN等特殊类型
+    
+    防止以下崩溃场景：
+    1. datetime对象 -> ISO字符串
+    2. numpy.float64/int64 -> Python原生类型
+    3. NaN/Infinity -> None
+    4. 其他不可序列化对象 -> str()
+    """
+    def default(self, obj):
+        # datetime对象
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        # numpy类型处理
+        try:
+            import numpy as np
+            if isinstance(obj, (np.floating, np.integer)):
+                return float(obj) if isinstance(obj, np.floating) else int(obj)
+            if isinstance(obj, np.ndarray):
+                return obj.tolist()
+        except ImportError:
+            pass
+        # NaN/Infinity处理
+        if isinstance(obj, float):
+            if obj != obj:  # NaN check
+                return None
+            if obj == float('inf') or obj == float('-inf'):
+                return None
+        # 默认：尝试转为字符串
+        try:
+            return str(obj)
+        except Exception:
+            return None
+
+
+def safe_json_dumps(obj, **kwargs) -> str:
+    """安全JSON序列化，带防爆盾"""
+    return json.dumps(obj, cls=SafeJSONEncoder, ensure_ascii=False, **kwargs)
+
+
+def safe_json_dump(obj, fp, **kwargs):
+    """安全JSON写入文件，带防爆盾"""
+    return json.dump(obj, fp, cls=SafeJSONEncoder, ensure_ascii=False, **kwargs)
+# ================================================
+
+
 @dataclass
 class DecisionEvent:
     """
@@ -127,23 +175,37 @@ class UniversalTracker:
         self._validation_result: Optional[Dict] = None  # ScanValidator 结果嵌入
         self._frame_counter: int = 0  # 【CTO V199】帧计数器，用于心跳触发
         
-        # 【CTO V201】战地黑匣子 - 狙击手流式记录
-        # 文件命名：sniper_log_{date}.jsonl
-        # 三种核心事件：EVENT_APPEAR(发现猎物) / EVENT_VETO(拒绝开火) / EVENT_FIRE(扣动扳机)
-        # 即使盘中崩溃也不会丢失数据
-        self._sniper_log_dir = 'data/battle_reports'
-        os.makedirs(self._sniper_log_dir, exist_ok=True)
+        # =========== 【CTO V202 双轨持久化体系】 ===========
+        # 轨道1：行情流 - 记录所有标的的行情轨迹（new_appear/peak_update）
+        # 用途：盘后复盘可追溯任意标的的完整量价轨迹
+        self._streaming_dir = 'data/battle_reports'
+        os.makedirs(self._streaming_dir, exist_ok=True)
         date_str = datetime.now().strftime('%Y%m%d')
+        self.streaming_report_path = os.path.join(
+            self._streaming_dir,
+            f'streaming_report_{date_str}.jsonl'
+        )
+        
+        # 轨道2：决策流 - 记录大脑的狙击决策（EVENT_VETO/EVENT_FIRE）
+        # 用途：回答"为什么那只涨停的票我没买"
         self.sniper_log_path = os.path.join(
-            self._sniper_log_dir, 
+            self._streaming_dir,
             f'sniper_log_{date_str}.jsonl'
         )
+        
+        # 轨道3：心跳快照 - 独立目录，每60帧覆写全市场状态
+        # 用途：盘后可加载任意时间点的全市场兵力分布
+        self._heartbeat_dir = os.path.join(self._streaming_dir, 'heartbeats')
+        os.makedirs(self._heartbeat_dir, exist_ok=True)
+        
         self._streaming_file = None
         self._last_flushed_peaks: Dict[str, float] = {}  # 记录上次写入的peak_price，避免重复写入
         
         logger.info(
-            f"[OK] UniversalTracker V2.0 初始化完成 | 会话: {self.session_id} | 入场方案: {schema} | "
-            f"狙击黑匣子: {self.sniper_log_path}"
+            f"[OK] UniversalTracker V2.0 双轨持久化 | 会话: {self.session_id} | 入场方案: {schema}\n"
+            f"    行情流: {self.streaming_report_path}\n"
+            f"    决策流: {self.sniper_log_path}\n"
+            f"    快照目录: {self._heartbeat_dir}"
         )
 
     # ------------------------------------------------------------------
@@ -639,7 +701,7 @@ class UniversalTracker:
                 record.update(extra)
             
             with open(self.sniper_log_path, 'a', encoding='utf-8') as f:
-                f.write(json.dumps(record, ensure_ascii=False) + '\n')
+                f.write(safe_json_dumps(record) + '\n')
                 f.flush()
             
             logger.debug(f"[{event_type}] {code} score={score:.0f} {reason}")
@@ -649,48 +711,53 @@ class UniversalTracker:
 
     def _write_streaming_record(self, lifecycle: StockLifecycle, time_str: str, event_type: str):
         """
-        【CTO V198/V201】兼容接口 - 调用 _write_sniper_event
+        【CTO V202】行情流写入 - 独立于决策流
         
-        保持向后兼容，新代码应直接调用 _write_sniper_event
+        写入 streaming_report_path（行情轨迹流）
+        仅记录标的的行情事件：new_appear / peak_update
+        
+        这是双轨持久化的轨道1：回答"这只票盘中走势如何"
         """
-        # 映射旧事件类型到新事件类型
-        event_map = {
-            'new_appear': self.EVENT_APPEAR,
-            'peak_update': self.EVENT_APPEAR,  # 峰值更新也归类为追踪事件
-        }
-        mapped_event = event_map.get(event_type, event_type)
-        
-        self._write_sniper_event(
-            code=lifecycle.code,
-            event_type=mapped_event,
-            time_str=time_str,
-            score=lifecycle.peak_score,
-            price=lifecycle.final_price,
-            extra={
+        try:
+            record = {
+                'ts': time_str,
+                'event': event_type,
+                'code': lifecycle.code,
+                'score': lifecycle.peak_score,
+                'price': lifecycle.final_price,
                 'peak_price': lifecycle.peak_price,
                 'max_gain_pct': lifecycle.max_gain_pct,
                 'trigger_type': lifecycle.peak_trigger_type,
                 'was_bought': lifecycle.was_bought,
                 'appear_count': lifecycle.appear_count,
             }
-        )
+            
+            with open(self.streaming_report_path, 'a', encoding='utf-8') as f:
+                f.write(safe_json_dumps(record) + '\n')
+                f.flush()
+            
+            logger.debug(f"[STREAM] {event_type}: {lifecycle.code} @ {lifecycle.peak_price:.2f}")
+            
+        except Exception as e:
+            # 【CTO V202】防爆盾：写入失败不阻塞主引擎
+            logger.warning(f"[WARN] 行情流写入失败(已吞异常): {e}")
 
     def _write_heartbeat(self, time_str: str):
         """
-        【CTO V199】心跳快照 - 每60帧写一次全榜状态
+        【CTO V202】心跳快照 - 独立文件覆写模式
         
-        遍历当前registry中所有股票，记录它们的：
-        - 当前价格
-        - 当前分数
-        - 峰值价格
-        - 累计收益
+        每60帧将全市场状态覆写入独立快照文件：
+        - 路径：data/battle_reports/heartbeats/snapshot_{HHMM}.json
+        - 模式：覆写（'w'），不是追加
+        - 用途：盘后可加载任意时间点的全市场兵力分布
         
-        用途：即使无新事件发生，也能追溯任意时刻的全榜状态
+        这解决了V201把几百只股票塞进JSONL单行的性能炸弹问题
         """
         if not self.registry:
             return
         
         try:
+            # 构建全市场快照
             stocks_snapshot = []
             for code, lifecycle in self.registry.items():
                 stocks_snapshot.append({
@@ -701,24 +768,33 @@ class UniversalTracker:
                     'max_gain_pct': lifecycle.max_gain_pct,
                     'trigger_type': lifecycle.peak_trigger_type,
                     'was_bought': lifecycle.was_bought,
+                    'first_appear_time': lifecycle.first_appear_time,
+                    'appear_count': lifecycle.appear_count,
                 })
             
-            record = {
+            snapshot = {
                 'ts': time_str,
-                'event': 'HEARTBEAT',
                 'frame': self._frame_counter,
                 'stock_count': len(stocks_snapshot),
                 'stocks': stocks_snapshot,
             }
             
-            with open(self.sniper_log_path, 'a', encoding='utf-8') as f:
-                f.write(json.dumps(record, ensure_ascii=False) + '\n')
+            # 独立快照文件：覆写模式
+            time_compact = time_str.replace(':', '').replace('-', '').replace(' ', '_')[:15]  # 20260318_100500
+            snapshot_path = os.path.join(
+                self._heartbeat_dir,
+                f'snapshot_{time_compact}.json'
+            )
+            
+            with open(snapshot_path, 'w', encoding='utf-8') as f:
+                safe_json_dump(snapshot, f, indent=2)
                 f.flush()
             
-            logger.debug(f"[HEARTBEAT] frame={self._frame_counter} stocks={len(stocks_snapshot)}")
+            logger.debug(f"[HEARTBEAT] frame={self._frame_counter} stocks={len(stocks_snapshot)} -> {snapshot_path}")
             
         except Exception as e:
-            logger.warning(f"[WARN] 心跳写入失败: {e}")
+            # 【CTO V202】防爆盾：写入失败不阻塞主引擎
+            logger.warning(f"[WARN] 心跳快照写入失败(已吞异常): {e}")
 
     def write_decision(self, decision: Dict, time_str: str):
         """
@@ -768,7 +844,7 @@ class UniversalTracker:
             }
             
             with open(self.sniper_log_path, 'a', encoding='utf-8') as f:
-                f.write(json.dumps(record, ensure_ascii=False) + '\n')
+                f.write(safe_json_dumps(record) + '\n')
                 f.flush()
             
             # VETO事件重要，提升日志级别
@@ -778,7 +854,8 @@ class UniversalTracker:
                 logger.debug(f"[{event_type}] {action} {decision.get('code')} score={decision.get('score', 0):.0f}")
             
         except Exception as e:
-            logger.warning(f"[WARN] 决策写入失败: {e}")
+            # 【CTO V202】防爆盾：写入失败不阻塞主引擎
+            logger.warning(f"[WARN] 决策写入失败(已吞异常): {e}")
 
     def export_to_json(self, filepath: str):
         report = self.get_full_report()
