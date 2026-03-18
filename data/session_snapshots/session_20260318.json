@@ -1,6 +1,6 @@
 {
   "trade_date": "20260318",
-  "snapshot_time": "2026-03-18T10:50:35.502154",
+  "snapshot_time": "2026-03-18T10:57:05.671010",
   "engine_mode": "live",
   "brain_state": {},
   "exec_state": {
@@ -12,1234 +12,1244 @@
   "opportunity_pool": {},
   "l1_inflow_accumulator": {
     "300961.SZ": {
-      "inflow": -47848582.61641486,
-      "last_amount": 287234600.0,
-      "last_price": 15.82
+      "inflow": -47512091.41439462,
+      "last_amount": 298688100.0,
+      "last_price": 15.77
     },
     "603977.SH": {
-      "inflow": 13110836.630033232,
-      "last_amount": 511517000.0,
-      "last_price": 16.0
+      "inflow": 13709539.74808913,
+      "last_amount": 519891800.0,
+      "last_price": 15.98
     },
     "601555.SH": {
-      "inflow": -38408431.76754283,
-      "last_amount": 364379100.0,
+      "inflow": -36236636.23205197,
+      "last_amount": 382079600.0,
       "last_price": 8.41
     },
     "002427.SZ": {
-      "inflow": -17430126.088588692,
-      "last_amount": 321932200.0,
-      "last_price": 7.7
+      "inflow": -17493676.53337979,
+      "last_amount": 329658900.0,
+      "last_price": 7.65
     },
     "002285.SZ": {
-      "inflow": 52318830.95508843,
-      "last_amount": 478799500.0,
-      "last_price": 3.44
+      "inflow": 51067356.9352554,
+      "last_amount": 488517500.0,
+      "last_price": 3.43
     },
     "603105.SH": {
-      "inflow": 28402123.31720841,
-      "last_amount": 508778700.0,
-      "last_price": 11.1
+      "inflow": 29512189.439021286,
+      "last_amount": 524037400.0,
+      "last_price": 11.06
     },
     "000617.SZ": {
-      "inflow": -14632818.978097783,
-      "last_amount": 2363184800.0,
-      "last_price": 10.01
+      "inflow": -25759239.441877346,
+      "last_amount": 2487705300.0,
+      "last_price": 9.96
     },
     "000717.SZ": {
-      "inflow": 195075.52410638574,
-      "last_amount": 288798400.0,
-      "last_price": 2.76
+      "inflow": 2392641.898143269,
+      "last_amount": 295788200.0,
+      "last_price": 2.77
     },
     "002507.SZ": {
-      "inflow": -8908250.634842915,
-      "last_amount": 157818300.0,
+      "inflow": -9764205.38455847,
+      "last_amount": 167463300.0,
       "last_price": 13.06
     },
     "300051.SZ": {
-      "inflow": 13426764.62226909,
-      "last_amount": 243480100.0,
-      "last_price": 10.84
+      "inflow": 14065916.219939804,
+      "last_amount": 251645300.0,
+      "last_price": 10.81
     },
     "300345.SZ": {
-      "inflow": -37911161.627035424,
-      "last_amount": 451348500.0,
-      "last_price": 7.82
+      "inflow": -40298787.10133236,
+      "last_amount": 463547000.0,
+      "last_price": 7.77
     },
     "600691.SH": {
-      "inflow": -121182806.40129481,
-      "last_amount": 965450600.0,
-      "last_price": 4.39
+      "inflow": -123020156.46417242,
+      "last_amount": 1008372100.0,
+      "last_price": 4.37
     },
     "603929.SH": {
-      "inflow": -25246454.31067324,
-      "last_amount": 1076356100.0,
-      "last_price": 173.54
+      "inflow": -30675696.594846077,
+      "last_amount": 1098046300.0,
+      "last_price": 173.5
     },
     "300432.SZ": {
-      "inflow": 34159775.25372826,
-      "last_amount": 846378800.0,
-      "last_price": 19.3
+      "inflow": 16399041.88824546,
+      "last_amount": 925577600.0,
+      "last_price": 19.2
     },
     "002652.SZ": {
-      "inflow": 7705819.374647706,
-      "last_amount": 440519000.0,
-      "last_price": 5.19
+      "inflow": 9400606.485933945,
+      "last_amount": 448776600.0,
+      "last_price": 5.16
     },
     "603806.SH": {
-      "inflow": 58017751.40478502,
-      "last_amount": 736158500.0,
-      "last_price": 18.15
+      "inflow": 59530066.436166376,
+      "last_amount": 759457000.0,
+      "last_price": 18.01
     },
     "600751.SH": {
-      "inflow": -28525894.183446765,
-      "last_amount": 222648800.0,
-      "last_price": 4.14
+      "inflow": -29031309.334114306,
+      "last_amount": 229249300.0,
+      "last_price": 4.13
     },
     "300400.SZ": {
-      "inflow": 108864338.73464926,
-      "last_amount": 615811300.0,
-      "last_price": 25.44
+      "inflow": 111527979.80259506,
+      "last_amount": 635841300.0,
+      "last_price": 25.29
     },
     "300209.SZ": {
-      "inflow": -14684085.092080329,
-      "last_amount": 551197900.0,
-      "last_price": 10.4
+      "inflow": -11003731.552286899,
+      "last_amount": 560009500.0,
+      "last_price": 10.44
     },
     "603817.SH": {
-      "inflow": 23941852.633811653,
-      "last_amount": 283794100.0,
-      "last_price": 8.51
+      "inflow": 24623821.44101106,
+      "last_amount": 307044800.0,
+      "last_price": 8.56
     },
     "300042.SZ": {
-      "inflow": 462364854.2756266,
-      "last_amount": 2039243100.0,
-      "last_price": 58.18
+      "inflow": 452627997.6116867,
+      "last_amount": 2086193700.0,
+      "last_price": 57.82
     },
     "000560.SZ": {
-      "inflow": -49167606.498450436,
-      "last_amount": 437503600.0,
+      "inflow": -50447053.82252838,
+      "last_amount": 448525900.0,
       "last_price": 3.31
     },
     "001236.SZ": {
-      "inflow": -2353014.2835906725,
-      "last_amount": 131858500.0,
-      "last_price": 10.43
+      "inflow": -3441929.6033221358,
+      "last_amount": 144316300.0,
+      "last_price": 10.46
     },
     "300981.SZ": {
-      "inflow": 396614.034707446,
-      "last_amount": 262829300.0,
-      "last_price": 16.36
+      "inflow": -203271.63624046085,
+      "last_amount": 271039500.0,
+      "last_price": 16.29
     },
     "600872.SH": {
-      "inflow": -7699769.064278233,
-      "last_amount": 93942000.0,
-      "last_price": 19.05
+      "inflow": -8912246.426671261,
+      "last_amount": 99528600.0,
+      "last_price": 19.04
     },
     "600667.SH": {
-      "inflow": 83917621.81637749,
-      "last_amount": 2225175900.0,
-      "last_price": 11.35
+      "inflow": 83795525.32636353,
+      "last_amount": 2285635300.0,
+      "last_price": 11.32
     },
     "002426.SZ": {
-      "inflow": -7650078.191555002,
-      "last_amount": 899070200.0,
-      "last_price": 4.39
+      "inflow": -15292640.298373565,
+      "last_amount": 922165600.0,
+      "last_price": 4.37
     },
     "603110.SH": {
-      "inflow": 8999032.468642583,
-      "last_amount": 108580200.0,
-      "last_price": 17.77
+      "inflow": 6466285.612341496,
+      "last_amount": 115030100.0,
+      "last_price": 17.68
     },
     "600860.SH": {
-      "inflow": -54328225.21142432,
-      "last_amount": 331546400.0,
-      "last_price": 13.24
+      "inflow": -54450627.65676091,
+      "last_amount": 346710800.0,
+      "last_price": 13.14
     },
     "000420.SZ": {
-      "inflow": -202523652.53080547,
-      "last_amount": 1220900400.0,
-      "last_price": 5.0
+      "inflow": -192621100.11235002,
+      "last_amount": 1262444300.0,
+      "last_price": 4.99
     },
     "002310.SZ": {
-      "inflow": -29135926.469547737,
-      "last_amount": 818017400.0,
-      "last_price": 2.89
+      "inflow": -28482717.56180571,
+      "last_amount": 828072400.0,
+      "last_price": 2.88
     },
     "600032.SH": {
-      "inflow": -36447246.6272172,
-      "last_amount": 552047300.0,
-      "last_price": 9.06
+      "inflow": -36345195.159616075,
+      "last_amount": 566165900.0,
+      "last_price": 9.03
     },
     "605277.SH": {
-      "inflow": -49766826.5710711,
-      "last_amount": 600871000.0,
-      "last_price": 24.84
+      "inflow": -44925429.873715185,
+      "last_amount": 618074100.0,
+      "last_price": 24.93
     },
     "603538.SH": {
-      "inflow": 3893678.413742249,
-      "last_amount": 428731800.0,
+      "inflow": -65567.09545403387,
+      "last_amount": 441637500.0,
       "last_price": 26.35
     },
     "600307.SH": {
-      "inflow": 480806044.6580868,
-      "last_amount": 1362635200.0,
+      "inflow": 482411044.6580868,
+      "last_amount": 1364240200.0,
       "last_price": 2.42
     },
     "600370.SH": {
-      "inflow": 314937436.5865048,
-      "last_amount": 1010202100.0,
+      "inflow": 315565836.5865048,
+      "last_amount": 1010830500.0,
       "last_price": 3.63
     },
     "600381.SH": {
-      "inflow": 11015510.458104473,
-      "last_amount": 34623300.0,
+      "inflow": 11691710.458104473,
+      "last_amount": 35299500.0,
       "last_price": 3.02
     },
     "600396.SH": {
-      "inflow": 173699150.0,
-      "last_amount": 286636800.0,
+      "inflow": 180061850.0,
+      "last_amount": 292999500.0,
       "last_price": 5.17
     },
     "600468.SH": {
-      "inflow": 373932100.0,
-      "last_amount": 523371000.0,
+      "inflow": 380895300.0,
+      "last_amount": 530334200.0,
       "last_price": 8.97
     },
     "600563.SH": {
-      "inflow": 635499882.26474,
-      "last_amount": 1541105100.0,
-      "last_price": 123.4
+      "inflow": 620624387.6189044,
+      "last_amount": 1586048400.0,
+      "last_price": 123.29
     },
     "600599.SH": {
-      "inflow": 3424500.0,
-      "last_amount": 6251700.0,
+      "inflow": 3435600.0,
+      "last_amount": 6262800.0,
       "last_price": 5.89
     },
     "600666.SH": {
-      "inflow": 627896750.0,
-      "last_amount": 965255000.0,
+      "inflow": 639548150.0,
+      "last_amount": 976906400.0,
       "last_price": 4.44
     },
     "600726.SH": {
-      "inflow": 262319838.4981561,
-      "last_amount": 1617050000.0,
-      "last_price": 4.45
+      "inflow": 263234542.47055548,
+      "last_amount": 1655788200.0,
+      "last_price": 4.46
     },
     "600821.SH": {
-      "inflow": 1976474767.1446521,
-      "last_amount": 4452923100.0,
+      "inflow": 1988083110.5430145,
+      "last_amount": 4526477700.0,
       "last_price": 10.48
     },
     "600868.SH": {
-      "inflow": 67918528.7214422,
-      "last_amount": 498568000.0,
-      "last_price": 3.96
+      "inflow": 68310262.36780998,
+      "last_amount": 509941900.0,
+      "last_price": 3.94
     },
     "600979.SH": {
-      "inflow": 37367471.26237891,
-      "last_amount": 357235900.0,
-      "last_price": 5.18
+      "inflow": 37542815.449201345,
+      "last_amount": 363488800.0,
+      "last_price": 5.16
     },
     "601616.SH": {
-      "inflow": 97492289.7690865,
-      "last_amount": 562004800.0,
-      "last_price": 5.39
+      "inflow": 97296642.16806565,
+      "last_amount": 567360600.0,
+      "last_price": 5.38
     },
     "601777.SH": {
-      "inflow": 56688894.057914905,
-      "last_amount": 280514600.0,
-      "last_price": 10.47
+      "inflow": 56824102.37434935,
+      "last_amount": 283782200.0,
+      "last_price": 10.48
     },
     "603088.SH": {
-      "inflow": 184563110.10382897,
-      "last_amount": 603271600.0,
-      "last_price": 13.15
+      "inflow": 185826888.1859581,
+      "last_amount": 617630400.0,
+      "last_price": 13.17
     },
     "603168.SH": {
-      "inflow": 146620783.5725925,
-      "last_amount": 216619800.0,
+      "inflow": 148257983.5725925,
+      "last_amount": 218257000.0,
       "last_price": 7.8
     },
     "603387.SH": {
-      "inflow": 172458900.0,
-      "last_amount": 324648500.0,
+      "inflow": 173386900.0,
+      "last_amount": 325576500.0,
       "last_price": 10.38
     },
     "603489.SH": {
-      "inflow": 125383248.11251175,
-      "last_amount": 261760700.0,
+      "inflow": 126296348.11251175,
+      "last_amount": 262673800.0,
       "last_price": 36.67
     },
     "603580.SH": {
-      "inflow": 10855247.870305054,
-      "last_amount": 42068100.0,
-      "last_price": 16.07
+      "inflow": 10877881.686606452,
+      "last_amount": 42337800.0,
+      "last_price": 16.11
     },
     "603693.SH": {
-      "inflow": 124557970.93018237,
-      "last_amount": 827251800.0,
-      "last_price": 16.36
+      "inflow": 121467059.62781261,
+      "last_amount": 838381500.0,
+      "last_price": 16.21
     },
     "603738.SH": {
-      "inflow": 171174038.91402003,
-      "last_amount": 602315700.0,
-      "last_price": 23.44
+      "inflow": 173230620.66375962,
+      "last_amount": 620356200.0,
+      "last_price": 23.39
     },
     "603789.SH": {
-      "inflow": 8605700.0,
-      "last_amount": 14727800.0,
+      "inflow": 8698300.0,
+      "last_amount": 14820400.0,
       "last_price": 6.13
     },
     "603803.SH": {
-      "inflow": 585181492.5285612,
-      "last_amount": 973102600.0,
+      "inflow": 591193692.5285612,
+      "last_amount": 979114800.0,
       "last_price": 13.13
     },
     "603897.SH": {
-      "inflow": 311134722.8088651,
-      "last_amount": 599471300.0,
+      "inflow": 318233222.8088651,
+      "last_amount": 606569800.0,
       "last_price": 33.14
     },
     "603986.SH": {
-      "inflow": 1066325587.0584576,
-      "last_amount": 7338242900.0,
-      "last_price": 304.68
+      "inflow": 1035000525.7191457,
+      "last_amount": 7571596600.0,
+      "last_price": 304.77
     },
     "605162.SH": {
-      "inflow": 74802282.07543346,
-      "last_amount": 269625200.0,
-      "last_price": 10.25
+      "inflow": 74548192.59738652,
+      "last_amount": 273081500.0,
+      "last_price": 10.22
     },
     "605222.SH": {
-      "inflow": 13399947.155791933,
-      "last_amount": 176000400.0,
-      "last_price": 22.51
+      "inflow": 13589037.458199501,
+      "last_amount": 180049800.0,
+      "last_price": 22.5
     },
     "605299.SH": {
-      "inflow": 42955467.59456441,
-      "last_amount": 294008000.0,
-      "last_price": 13.84
+      "inflow": 43262021.44286367,
+      "last_amount": 299621300.0,
+      "last_price": 13.81
     },
     "688158.SH": {
-      "inflow": 324652706.7486509,
-      "last_amount": 2355118200.0,
-      "last_price": 43.85
+      "inflow": 334344468.01042104,
+      "last_amount": 2399008600.0,
+      "last_price": 44.01
     },
     "688229.SH": {
-      "inflow": 58577211.32967311,
-      "last_amount": 195171600.0,
-      "last_price": 95.69
+      "inflow": 58811490.35678008,
+      "last_amount": 197636800.0,
+      "last_price": 95.92
     },
     "688449.SH": {
-      "inflow": 104870185.3118518,
-      "last_amount": 453265600.0,
-      "last_price": 51.94
+      "inflow": 102157691.56576577,
+      "last_amount": 475399000.0,
+      "last_price": 51.54
     },
     "688472.SH": {
-      "inflow": 190315503.87738264,
-      "last_amount": 1158405900.0,
-      "last_price": 15.26
+      "inflow": 186858259.4458943,
+      "last_amount": 1172907600.0,
+      "last_price": 15.19
     },
     "688525.SH": {
-      "inflow": 1364180419.06415,
-      "last_amount": 8012006600.0,
-      "last_price": 251.52
+      "inflow": 1314403820.575423,
+      "last_amount": 8262641600.0,
+      "last_price": 250.2
     },
     "688622.SH": {
-      "inflow": 17191232.28552377,
-      "last_amount": 124373500.0,
-      "last_price": 68.2
+      "inflow": 17473644.15012498,
+      "last_amount": 126253200.0,
+      "last_price": 67.88
     },
     "688678.SH": {
-      "inflow": 32566869.31976498,
-      "last_amount": 268762100.0,
-      "last_price": 26.94
+      "inflow": 31011364.254276965,
+      "last_amount": 275963400.0,
+      "last_price": 26.82
     },
     "688700.SH": {
-      "inflow": 109804968.15046565,
-      "last_amount": 718715500.0,
-      "last_price": 53.23
+      "inflow": 108654086.94281147,
+      "last_amount": 734744600.0,
+      "last_price": 53.06
     },
     "688766.SH": {
-      "inflow": 239599084.67813647,
-      "last_amount": 1498206900.0,
-      "last_price": 269.0
+      "inflow": 231937961.13461214,
+      "last_amount": 1530904100.0,
+      "last_price": 268.9
     },
     "000014.SZ": {
-      "inflow": 68139244.01259503,
-      "last_amount": 237586400.0,
-      "last_price": 15.17
+      "inflow": 69036348.49520433,
+      "last_amount": 242336100.0,
+      "last_price": 15.18
     },
     "000020.SZ": {
-      "inflow": 28758850.0,
-      "last_amount": 50991400.0,
+      "inflow": 28874450.0,
+      "last_amount": 51107000.0,
       "last_price": 19.28
     },
     "000037.SZ": {
-      "inflow": 82887600.0,
-      "last_amount": 111766200.0,
+      "inflow": 88488600.0,
+      "last_amount": 117367200.0,
       "last_price": 10.54
     },
     "000531.SZ": {
-      "inflow": 47626659.63082853,
-      "last_amount": 186194800.0,
-      "last_price": 7.27
+      "inflow": 47624796.17990659,
+      "last_amount": 188609500.0,
+      "last_price": 7.24
     },
     "000533.SZ": {
-      "inflow": 339481954.5103212,
-      "last_amount": 3535059600.0,
-      "last_price": 20.63
+      "inflow": 334093076.9102345,
+      "last_amount": 3561129700.0,
+      "last_price": 20.53
     },
     "000539.SZ": {
-      "inflow": 83756000.0,
-      "last_amount": 125055200.0,
+      "inflow": 85880500.0,
+      "last_amount": 127179700.0,
       "last_price": 5.61
     },
     "000990.SZ": {
-      "inflow": 435374647.4697864,
-      "last_amount": 714352800.0,
+      "inflow": 437333047.4697864,
+      "last_amount": 716311200.0,
       "last_price": 10.79
     },
     "000993.SZ": {
-      "inflow": 94420336.44423367,
-      "last_amount": 527044600.0,
-      "last_price": 14.18
+      "inflow": 95250697.51973766,
+      "last_amount": 532904100.0,
+      "last_price": 14.2
     },
     "001287.SZ": {
-      "inflow": 552295448.4760463,
-      "last_amount": 963995700.0,
+      "inflow": 560069348.4760463,
+      "last_amount": 971769600.0,
       "last_price": 24.64
     },
     "002173.SZ": {
-      "inflow": 190115797.90545478,
-      "last_amount": 1328889300.0,
-      "last_price": 29.8
+      "inflow": 187517991.13447744,
+      "last_amount": 1360116300.0,
+      "last_price": 29.77
     },
     "002309.SZ": {
-      "inflow": 67321701.8270403,
-      "last_amount": 547424000.0,
-      "last_price": 3.5
+      "inflow": 69493678.45883048,
+      "last_amount": 555749500.0,
+      "last_price": 3.49
     },
     "002323.SZ": {
-      "inflow": 159535050.0,
-      "last_amount": 288468300.0,
+      "inflow": 160874950.0,
+      "last_amount": 289808200.0,
       "last_price": 3.03
     },
     "002445.SZ": {
-      "inflow": 642507295.9144421,
-      "last_amount": 1784578400.0,
+      "inflow": 644251895.9144421,
+      "last_amount": 1786323000.0,
       "last_price": 4.07
     },
     "002463.SZ": {
-      "inflow": 1702446059.0769286,
-      "last_amount": 8719416000.0,
-      "last_price": 89.61
+      "inflow": 1609329440.2323658,
+      "last_amount": 9049419900.0,
+      "last_price": 88.9
     },
     "002636.SZ": {
-      "inflow": 124993735.89331988,
-      "last_amount": 1543850200.0,
-      "last_price": 34.01
+      "inflow": 118857625.99589509,
+      "last_amount": 1589157100.0,
+      "last_price": 33.93
     },
     "002713.SZ": {
-      "inflow": 98759914.21957159,
-      "last_amount": 210222500.0,
-      "last_price": 11.13
+      "inflow": 98171097.91459785,
+      "last_amount": 214340000.0,
+      "last_price": 11.09
     },
     "002789.SZ": {
-      "inflow": 24216217.513866004,
-      "last_amount": 39368800.0,
+      "inflow": 24667417.513866004,
+      "last_amount": 39820000.0,
       "last_price": 11.57
     },
     "002808.SZ": {
-      "inflow": 6233470.030478924,
-      "last_amount": 13744300.0,
+      "inflow": 6248870.030478924,
+      "last_amount": 13759700.0,
       "last_price": 4.54
     },
     "002859.SZ": {
-      "inflow": 84318192.01506488,
-      "last_amount": 469819000.0,
-      "last_price": 43.79
+      "inflow": 86240337.0167318,
+      "last_amount": 481329800.0,
+      "last_price": 43.73
     },
     "002952.SZ": {
-      "inflow": 29334750.363529075,
-      "last_amount": 190057200.0,
-      "last_price": 25.44
+      "inflow": 28829603.98811937,
+      "last_amount": 192364800.0,
+      "last_price": 25.33
     },
     "002992.SZ": {
-      "inflow": 18398964.7330729,
-      "last_amount": 77018900.0,
-      "last_price": 55.33
+      "inflow": 18421553.625906043,
+      "last_amount": 79621800.0,
+      "last_price": 55.05
     },
     "300040.SZ": {
-      "inflow": 53364693.28801639,
-      "last_amount": 489050500.0,
-      "last_price": 7.79
+      "inflow": 52584215.38449573,
+      "last_amount": 498190900.0,
+      "last_price": 7.75
     },
     "300050.SZ": {
-      "inflow": 23701907.991711963,
-      "last_amount": 153849800.0,
+      "inflow": 22249163.326390725,
+      "last_amount": 165263500.0,
       "last_price": 6.54
     },
     "300140.SZ": {
-      "inflow": 50320966.03525359,
-      "last_amount": 429215100.0,
+      "inflow": 51823697.39636113,
+      "last_amount": 438735900.0,
       "last_price": 7.63
     },
     "300166.SZ": {
-      "inflow": 1074398423.8433967,
-      "last_amount": 3614608700.0,
-      "last_price": 15.56
+      "inflow": 1078046727.5689428,
+      "last_amount": 3663595100.0,
+      "last_price": 15.6
     },
     "300223.SZ": {
-      "inflow": 642574085.131338,
-      "last_amount": 3199624400.0,
-      "last_price": 129.85
+      "inflow": 628250361.2778258,
+      "last_amount": 3323415400.0,
+      "last_price": 129.73
     },
     "300266.SZ": {
-      "inflow": 13514722.10316302,
-      "last_amount": 117953400.0,
-      "last_price": 2.79
+      "inflow": 13144152.509452246,
+      "last_amount": 121916700.0,
+      "last_price": 2.78
     },
     "300272.SZ": {
-      "inflow": 118752510.69304273,
-      "last_amount": 528573000.0,
-      "last_price": 8.55
+      "inflow": 117966385.79310228,
+      "last_amount": 537339200.0,
+      "last_price": 8.540000000000001
     },
     "300302.SZ": {
-      "inflow": 846510312.1736153,
-      "last_amount": 1873228100.0,
+      "inflow": 856403812.1736153,
+      "last_amount": 1883121600.0,
       "last_price": 24.83
     },
     "300317.SZ": {
-      "inflow": 523558415.99070704,
-      "last_amount": 1165469400.0,
-      "last_price": 6.02
+      "inflow": 522195241.008653,
+      "last_amount": 1192413100.0,
+      "last_price": 6.0
     },
     "300394.SZ": {
-      "inflow": 2820048000.448575,
-      "last_amount": 8926835500.0,
-      "last_price": 299.5
+      "inflow": 2827882528.785435,
+      "last_amount": 9122565000.0,
+      "last_price": 298.4
     },
     "300464.SZ": {
-      "inflow": 21184271.86611272,
-      "last_amount": 159985000.0,
-      "last_price": 7.56
+      "inflow": 22150351.213160083,
+      "last_amount": 163760400.0,
+      "last_price": 7.55
     },
     "300571.SZ": {
-      "inflow": 123475141.25551221,
-      "last_amount": 388461000.0,
-      "last_price": 32.79
+      "inflow": 129456198.35840906,
+      "last_amount": 401379400.0,
+      "last_price": 33.06
     },
     "300606.SZ": {
-      "inflow": 57795047.68891773,
-      "last_amount": 874947500.0,
-      "last_price": 41.64
+      "inflow": 58724220.36759898,
+      "last_amount": 893098700.0,
+      "last_price": 41.77
     },
     "300633.SZ": {
-      "inflow": 14938102.909966005,
-      "last_amount": 113425700.0,
-      "last_price": 26.28
+      "inflow": 14554100.784995694,
+      "last_amount": 115360000.0,
+      "last_price": 26.29
     },
     "300867.SZ": {
-      "inflow": 46125922.061039075,
-      "last_amount": 240874200.0,
-      "last_price": 20.61
+      "inflow": 44036442.3291239,
+      "last_amount": 250611100.0,
+      "last_price": 20.41
     },
     "300887.SZ": {
-      "inflow": 27662853.51462206,
-      "last_amount": 230364200.0,
+      "inflow": 28264825.35597974,
+      "last_amount": 235275500.0,
       "last_price": 11.79
     },
     "300939.SZ": {
-      "inflow": 30802603.868680008,
-      "last_amount": 245557100.0,
-      "last_price": 39.24
+      "inflow": 30404797.60716905,
+      "last_amount": 253004600.0,
+      "last_price": 39.13
     },
     "300986.SZ": {
-      "inflow": 154281001.1603221,
-      "last_amount": 859247500.0,
-      "last_price": 27.97
+      "inflow": 153785186.66428885,
+      "last_amount": 878533100.0,
+      "last_price": 28.06
     },
     "301043.SZ": {
-      "inflow": 7947767.649725369,
-      "last_amount": 47083200.0,
-      "last_price": 58.79
+      "inflow": 7805045.390481225,
+      "last_amount": 48214500.0,
+      "last_price": 58.84
     },
     "301090.SZ": {
-      "inflow": 31503194.234166764,
-      "last_amount": 300013100.0,
-      "last_price": 8.99
+      "inflow": 31379224.1045505,
+      "last_amount": 304788000.0,
+      "last_price": 9.02
     },
     "301099.SZ": {
-      "inflow": 36650240.32179422,
-      "last_amount": 717918000.0,
-      "last_price": 51.7
+      "inflow": 36953870.91707788,
+      "last_amount": 737236200.0,
+      "last_price": 51.43
     },
     "301128.SZ": {
-      "inflow": 57683084.22380326,
-      "last_amount": 529753400.0,
-      "last_price": 112.08
+      "inflow": 66165858.16136235,
+      "last_amount": 546785700.0,
+      "last_price": 111.79
     },
     "301282.SZ": {
-      "inflow": 90091745.3045373,
-      "last_amount": 654615100.0,
-      "last_price": 35.89
+      "inflow": 90864368.76714443,
+      "last_amount": 663810800.0,
+      "last_price": 35.99
     },
     "301306.SZ": {
-      "inflow": 160442696.68867835,
-      "last_amount": 897599600.0,
-      "last_price": 118.6
+      "inflow": 159967431.4019515,
+      "last_amount": 910396600.0,
+      "last_price": 118.15
     },
     "301307.SZ": {
-      "inflow": 63588277.233664595,
-      "last_amount": 374349500.0,
-      "last_price": 42.23
+      "inflow": 64438171.01258844,
+      "last_amount": 380831000.0,
+      "last_price": 42.12
     },
     "301308.SZ": {
-      "inflow": 1169128881.8782434,
-      "last_amount": 5187498400.0,
-      "last_price": 347.86
+      "inflow": 1088746451.299881,
+      "last_amount": 5403063200.0,
+      "last_price": 347.49
     },
     "301369.SZ": {
-      "inflow": 95096724.15536177,
-      "last_amount": 291095700.0,
-      "last_price": 148.81
+      "inflow": 94787821.34468392,
+      "last_amount": 294241800.0,
+      "last_price": 148.47
     },
     "301428.SZ": {
-      "inflow": 181502395.51789767,
-      "last_amount": 540767800.0,
-      "last_price": 38.87
+      "inflow": 199400228.928224,
+      "last_amount": 595137500.0,
+      "last_price": 39.03
     },
     "301563.SZ": {
-      "inflow": 63345135.54797043,
-      "last_amount": 354345200.0,
-      "last_price": 164.3
+      "inflow": 66419097.12852916,
+      "last_amount": 374376500.0,
+      "last_price": 165.5
     },
     "301609.SZ": {
-      "inflow": 29375625.8235626,
-      "last_amount": 359928000.0,
-      "last_price": 54.86
+      "inflow": 31078258.968728404,
+      "last_amount": 365472800.0,
+      "last_price": 55.07
     },
     "301638.SZ": {
-      "inflow": 205786223.23142543,
-      "last_amount": 1633797900.0,
-      "last_price": 31.09
+      "inflow": 205360385.04136986,
+      "last_amount": 1668382400.0,
+      "last_price": 31.07
     },
     "301658.SZ": {
-      "inflow": 73163816.77847753,
-      "last_amount": 658547300.0,
-      "last_price": 47.69
+      "inflow": 73446785.94723636,
+      "last_amount": 665845200.0,
+      "last_price": 48.0
     },
     "600956.SH": {
-      "inflow": 25590660.115760833,
-      "last_amount": 546466800.0,
-      "last_price": 10.51
+      "inflow": 26726250.276291803,
+      "last_amount": 551648900.0,
+      "last_price": 10.47
     },
     "601991.SH": {
-      "inflow": 131732755.14171168,
-      "last_amount": 949261600.0,
+      "inflow": 128748119.16738509,
+      "last_amount": 974539000.0,
       "last_price": 4.27
     },
     "601999.SH": {
-      "inflow": 17001538.920729324,
-      "last_amount": 136667800.0,
-      "last_price": 8.040000000000001
+      "inflow": 17785730.333091397,
+      "last_amount": 140386300.0,
+      "last_price": 8.02
     },
     "603248.SH": {
-      "inflow": 95038017.83208838,
-      "last_amount": 1160795400.0,
-      "last_price": 33.39
+      "inflow": 92972273.6334804,
+      "last_amount": 1174535400.0,
+      "last_price": 33.12
     },
     "603429.SH": {
-      "inflow": 1101120.4012538097,
-      "last_amount": 55235100.0,
-      "last_price": 8.0
+      "inflow": 1816224.6960402762,
+      "last_amount": 57539500.0,
+      "last_price": 8.01
     },
     "605228.SH": {
-      "inflow": 21042923.291437626,
-      "last_amount": 86370400.0,
+      "inflow": 21204103.381608542,
+      "last_amount": 88029600.0,
       "last_price": 13.15
     },
     "688248.SH": {
-      "inflow": 39793202.43376678,
-      "last_amount": 290067800.0,
-      "last_price": 64.8
+      "inflow": 39172775.6537606,
+      "last_amount": 294817300.0,
+      "last_price": 64.66
     },
     "688325.SH": {
-      "inflow": 20796358.39465202,
-      "last_amount": 226683900.0,
-      "last_price": 129.2
+      "inflow": 21047996.062914,
+      "last_amount": 228530000.0,
+      "last_price": 129.18
     },
     "688336.SH": {
-      "inflow": 143178943.7052024,
-      "last_amount": 597653300.0,
-      "last_price": 67.16
+      "inflow": 146999163.93902093,
+      "last_amount": 616078600.0,
+      "last_price": 66.97
     },
     "688416.SH": {
-      "inflow": 67740076.51944861,
-      "last_amount": 404809600.0,
-      "last_price": 98.25
+      "inflow": 63835490.92227619,
+      "last_amount": 417935600.0,
+      "last_price": 98.08
     },
     "000600.SZ": {
-      "inflow": 104305015.99013789,
-      "last_amount": 462728600.0,
-      "last_price": 9.89
+      "inflow": 103999905.22414394,
+      "last_amount": 482179700.0,
+      "last_price": 9.88
     },
     "001382.SZ": {
-      "inflow": 30899893.871968795,
-      "last_amount": 369587200.0,
-      "last_price": 24.99
+      "inflow": 32630467.836393483,
+      "last_amount": 379301400.0,
+      "last_price": 25.06
     },
     "002062.SZ": {
-      "inflow": 20756426.5800859,
-      "last_amount": 159566500.0,
-      "last_price": 8.17
+      "inflow": 21156849.540027656,
+      "last_amount": 162863000.0,
+      "last_price": 8.14
     },
     "002339.SZ": {
-      "inflow": 263641450.0,
-      "last_amount": 428618600.0,
+      "inflow": 267330650.0,
+      "last_amount": 432307800.0,
       "last_price": 12.51
     },
     "003010.SZ": {
-      "inflow": 55307747.023424834,
-      "last_amount": 317823600.0,
-      "last_price": 31.27
+      "inflow": 58857836.28916667,
+      "last_amount": 327337100.0,
+      "last_price": 31.25
     },
     "300215.SZ": {
-      "inflow": 49625602.81790963,
-      "last_amount": 337740800.0,
+      "inflow": 47688401.18599041,
+      "last_amount": 346213400.0,
       "last_price": 8.81
     },
     "300231.SZ": {
-      "inflow": 91796024.78327209,
-      "last_amount": 378580000.0,
-      "last_price": 11.95
+      "inflow": 93914119.99441248,
+      "last_amount": 392741400.0,
+      "last_price": 11.96
     },
     "300342.SZ": {
-      "inflow": 191886937.09558514,
-      "last_amount": 1029768000.0,
-      "last_price": 42.74
+      "inflow": 188408502.0145056,
+      "last_amount": 1054743000.0,
+      "last_price": 42.73
     },
     "300503.SZ": {
-      "inflow": 88928655.93849088,
-      "last_amount": 738187500.0,
-      "last_price": 51.88
+      "inflow": 89185950.94797528,
+      "last_amount": 752765600.0,
+      "last_price": 51.93
     },
     "300972.SZ": {
-      "inflow": 58151116.53338185,
-      "last_amount": 463294200.0,
-      "last_price": 190.7
+      "inflow": 56786104.09756376,
+      "last_amount": 470105500.0,
+      "last_price": 190.53
     },
     "301068.SZ": {
-      "inflow": 5686314.483208024,
-      "last_amount": 103480400.0,
-      "last_price": 34.52
+      "inflow": 4807474.997475641,
+      "last_amount": 106245500.0,
+      "last_price": 34.41
     },
     "301227.SZ": {
-      "inflow": 25601374.124817416,
-      "last_amount": 91546800.0,
-      "last_price": 41.0
+      "inflow": 26699587.809050377,
+      "last_amount": 94670400.0,
+      "last_price": 41.03
     },
     "301379.SZ": {
-      "inflow": 36914185.31485523,
-      "last_amount": 109558500.0,
-      "last_price": 27.18
+      "inflow": 37650423.09109782,
+      "last_amount": 112142200.0,
+      "last_price": 27.11
     },
     "600543.SH": {
-      "inflow": 4222881.248165853,
-      "last_amount": 42051100.0,
-      "last_price": 5.2
+      "inflow": 4149623.0644104453,
+      "last_amount": 42225900.0,
+      "last_price": 5.18
     },
     "603098.SH": {
-      "inflow": 195174025.26788038,
-      "last_amount": 503462700.0,
+      "inflow": 197731125.26788038,
+      "last_amount": 506019800.0,
       "last_price": 17.36
     },
     "603687.SH": {
-      "inflow": 53889275.93693559,
-      "last_amount": 249719700.0,
-      "last_price": 10.84
+      "inflow": 59916955.007472955,
+      "last_amount": 269481700.0,
+      "last_price": 10.9
     },
     "605058.SH": {
-      "inflow": 82309413.02717178,
-      "last_amount": 294196000.0,
-      "last_price": 34.74
+      "inflow": 82823662.6918745,
+      "last_amount": 296449800.0,
+      "last_price": 34.76
     },
     "688197.SH": {
-      "inflow": 14540418.07379224,
-      "last_amount": 77643400.0,
-      "last_price": 40.91
+      "inflow": 14001898.999591565,
+      "last_amount": 79045300.0,
+      "last_price": 40.75
     },
     "688290.SH": {
-      "inflow": 7086882.751713114,
-      "last_amount": 69890700.0,
-      "last_price": 53.32
+      "inflow": 5663459.67462812,
+      "last_amount": 71612000.0,
+      "last_price": 53.16
     },
     "688345.SH": {
-      "inflow": 3045015.720422791,
-      "last_amount": 53328800.0,
-      "last_price": 39.63
+      "inflow": 3162624.367913691,
+      "last_amount": 54941900.0,
+      "last_price": 39.52
     },
     "000021.SZ": {
-      "inflow": 511955190.5830176,
-      "last_amount": 3098786800.0,
-      "last_price": 32.68
+      "inflow": 499229105.4261781,
+      "last_amount": 3185396400.0,
+      "last_price": 32.64
     },
     "001266.SZ": {
-      "inflow": 21672054.008960016,
-      "last_amount": 108108100.0,
-      "last_price": 36.09
+      "inflow": 21727367.99928958,
+      "last_amount": 115591700.0,
+      "last_price": 35.86
     },
     "002183.SZ": {
-      "inflow": 91683101.1116947,
-      "last_amount": 370589600.0,
-      "last_price": 5.38
+      "inflow": 91683279.77079715,
+      "last_amount": 380740100.0,
+      "last_price": 5.37
     },
     "002693.SZ": {
-      "inflow": 33233153.862121817,
-      "last_amount": 114024200.0,
+      "inflow": 38829053.86212182,
+      "last_amount": 119620100.0,
       "last_price": 8.21
     },
     "002912.SZ": {
-      "inflow": 11700577.083026871,
-      "last_amount": 75045700.0,
-      "last_price": 28.94
+      "inflow": 11846314.340880586,
+      "last_amount": 76985800.0,
+      "last_price": 28.95
     },
     "300184.SZ": {
-      "inflow": 238899446.42806974,
-      "last_amount": 1272602100.0,
-      "last_price": 11.64
+      "inflow": 240458083.738452,
+      "last_amount": 1300134900.0,
+      "last_price": 11.57
     },
     "300205.SZ": {
-      "inflow": 2975329.320152258,
-      "last_amount": 12940700.0,
-      "last_price": 5.39
+      "inflow": 2819565.672769106,
+      "last_amount": 13234000.0,
+      "last_price": 5.38
     },
     "300268.SZ": {
-      "inflow": 3804698.9994826987,
-      "last_amount": 16949500.0,
-      "last_price": 13.99
+      "inflow": 3898303.7464784584,
+      "last_amount": 17231900.0,
+      "last_price": 13.93
     },
     "300751.SZ": {
-      "inflow": 360470093.4782235,
-      "last_amount": 1906859700.0,
-      "last_price": 262.83
+      "inflow": 362647897.55355865,
+      "last_amount": 1949216700.0,
+      "last_price": 261.02
     },
     "301093.SZ": {
-      "inflow": 89432061.97281738,
-      "last_amount": 372616300.0,
-      "last_price": 88.60000000000001
+      "inflow": 95967135.5023473,
+      "last_amount": 389455100.0,
+      "last_price": 88.13
     },
     "301180.SZ": {
-      "inflow": 33088947.954464566,
-      "last_amount": 236239900.0,
-      "last_price": 21.88
+      "inflow": 30514410.254964553,
+      "last_amount": 247056400.0,
+      "last_price": 21.61
     },
     "600758.SH": {
-      "inflow": 112768496.04107092,
-      "last_amount": 390850100.0,
-      "last_price": 4.23
+      "inflow": 111737140.04575737,
+      "last_amount": 394291400.0,
+      "last_price": 4.22
     },
     "603601.SH": {
-      "inflow": 1487492283.3544106,
-      "last_amount": 2351394900.0,
+      "inflow": 1495950183.3544106,
+      "last_amount": 2359852800.0,
       "last_price": 11.77
     },
     "603655.SH": {
-      "inflow": 75797636.86598161,
-      "last_amount": 166242400.0,
-      "last_price": 41.29
+      "inflow": 71229292.08548766,
+      "last_amount": 172367400.0,
+      "last_price": 40.7
     },
     "603912.SH": {
-      "inflow": 265404100.2199464,
-      "last_amount": 422330400.0,
+      "inflow": 270585600.2199464,
+      "last_amount": 427511900.0,
       "last_price": 10.24
     },
     "688331.SH": {
-      "inflow": 182507722.07612044,
-      "last_amount": 664083500.0,
-      "last_price": 119.59
+      "inflow": 183481429.849466,
+      "last_amount": 681467900.0,
+      "last_price": 119.4
     },
     "688519.SH": {
-      "inflow": 60968623.31279382,
-      "last_amount": 527614700.0,
-      "last_price": 130.52
+      "inflow": 60157585.990757816,
+      "last_amount": 542001100.0,
+      "last_price": 131.21
     },
     "001317.SZ": {
-      "inflow": 27251502.2148388,
-      "last_amount": 132508500.0,
-      "last_price": 47.21
+      "inflow": 27557025.87496979,
+      "last_amount": 135141500.0,
+      "last_price": 47.16
     },
     "002565.SZ": {
-      "inflow": 696479778.3570222,
-      "last_amount": 3396845400.0,
-      "last_price": 15.95
+      "inflow": 701190993.1614404,
+      "last_amount": 3449403300.0,
+      "last_price": 15.91
     },
     "003018.SZ": {
-      "inflow": 157218030.06945708,
-      "last_amount": 346055800.0,
+      "inflow": 157910730.06945708,
+      "last_amount": 346748500.0,
       "last_price": 27.27
     },
     "300319.SZ": {
-      "inflow": 135095440.265472,
-      "last_amount": 445328100.0,
-      "last_price": 13.65
+      "inflow": 137793269.87729594,
+      "last_amount": 455684100.0,
+      "last_price": 13.66
     },
     "300872.SZ": {
-      "inflow": 27520352.633566607,
-      "last_amount": 148956200.0,
-      "last_price": 17.75
+      "inflow": 29074540.309224363,
+      "last_amount": 152046800.0,
+      "last_price": 17.76
     },
     "301166.SZ": {
-      "inflow": 42055053.92695558,
-      "last_amount": 180529200.0,
-      "last_price": 34.93
+      "inflow": 41013330.1048221,
+      "last_amount": 185596700.0,
+      "last_price": 34.9
     },
     "301220.SZ": {
-      "inflow": 22695213.140959013,
-      "last_amount": 263732200.0,
-      "last_price": 46.6
+      "inflow": 21574038.070442565,
+      "last_amount": 270076700.0,
+      "last_price": 46.47
     },
     "688535.SH": {
-      "inflow": 131661349.40589039,
-      "last_amount": 429954200.0,
-      "last_price": 129.15
+      "inflow": 127323881.6494251,
+      "last_amount": 442229700.0,
+      "last_price": 128.1
     },
     "002916.SZ": {
-      "inflow": 317019456.71238893,
-      "last_amount": 1601247300.0,
-      "last_price": 259.17
+      "inflow": 311893085.49145466,
+      "last_amount": 1639299400.0,
+      "last_price": 258.2
     },
     "300076.SZ": {
-      "inflow": 21981481.553100623,
-      "last_amount": 75860700.0,
-      "last_price": 7.53
+      "inflow": 21973641.53439408,
+      "last_amount": 79844800.0,
+      "last_price": 7.49
     },
     "300641.SZ": {
-      "inflow": 73493452.49404031,
-      "last_amount": 822438600.0,
-      "last_price": 23.34
+      "inflow": 63585876.54831602,
+      "last_amount": 850903800.0,
+      "last_price": 23.06
     },
     "600683.SH": {
-      "inflow": 107847699.47647895,
-      "last_amount": 780386000.0,
-      "last_price": 10.23
+      "inflow": 114940441.98751488,
+      "last_amount": 799271100.0,
+      "last_price": 10.33
     },
     "603398.SH": {
-      "inflow": 89230348.35370259,
-      "last_amount": 191557100.0,
-      "last_price": 10.72
+      "inflow": 80434126.6918475,
+      "last_amount": 209792000.0,
+      "last_price": 10.58
     },
     "605258.SH": {
-      "inflow": 29770824.24464409,
-      "last_amount": 111708800.0,
-      "last_price": 36.71
+      "inflow": 29770836.334795192,
+      "last_amount": 113275200.0,
+      "last_price": 36.7
     },
     "001331.SZ": {
-      "inflow": 114519052.03916803,
-      "last_amount": 310246500.0,
-      "last_price": 55.31
+      "inflow": 111683622.41979231,
+      "last_amount": 316705000.0,
+      "last_price": 54.89
     },
     "600282.SH": {
-      "inflow": 70877471.740199,
-      "last_amount": 233977300.0,
-      "last_price": 5.66
+      "inflow": 73738215.02718611,
+      "last_amount": 246243400.0,
+      "last_price": 5.7
     },
     "688496.SH": {
-      "inflow": 12576934.956864117,
-      "last_amount": 58126000.0,
+      "inflow": 12660563.123839533,
+      "last_amount": 59211100.0,
       "last_price": 6.73
     },
     "002213.SZ": {
-      "inflow": 245075412.6935901,
-      "last_amount": 956787300.0,
-      "last_price": 30.41
+      "inflow": 238165562.8933122,
+      "last_amount": 983807700.0,
+      "last_price": 30.17
     },
     "002837.SZ": {
-      "inflow": 1186158474.6745994,
-      "last_amount": 4005969100.0,
-      "last_price": 105.92
+      "inflow": 1155770618.5656188,
+      "last_amount": 4133164700.0,
+      "last_price": 105.18
     },
     "300389.SZ": {
-      "inflow": 131972314.69015878,
-      "last_amount": 402069900.0,
-      "last_price": 19.61
+      "inflow": 131117483.04422796,
+      "last_amount": 411092700.0,
+      "last_price": 19.6
     },
     "300462.SZ": {
-      "inflow": 9890405.76772675,
-      "last_amount": 32442900.0,
-      "last_price": 13.78
+      "inflow": 9701367.262939967,
+      "last_amount": 32961600.0,
+      "last_price": 13.74
     },
     "300654.SZ": {
-      "inflow": 31118962.744358063,
-      "last_amount": 117204200.0,
-      "last_price": 11.43
+      "inflow": 29713889.101892527,
+      "last_amount": 119735900.0,
+      "last_price": 11.38
     },
     "300879.SZ": {
-      "inflow": 23724972.9777146,
-      "last_amount": 125898000.0,
-      "last_price": 24.8
+      "inflow": 23331555.93964174,
+      "last_amount": 128886500.0,
+      "last_price": 24.79
     },
     "301667.SZ": {
-      "inflow": 226697244.29636687,
-      "last_amount": 1203697700.0,
-      "last_price": 118.88
+      "inflow": 221079939.47519365,
+      "last_amount": 1246361300.0,
+      "last_price": 116.96
     },
     "600302.SH": {
-      "inflow": 32532117.26315408,
-      "last_amount": 154039800.0,
-      "last_price": 11.75
+      "inflow": 32421160.213487025,
+      "last_amount": 157563200.0,
+      "last_price": 11.68
     },
     "600575.SH": {
-      "inflow": 47390074.992486835,
-      "last_amount": 243200900.0,
-      "last_price": 4.1
+      "inflow": 46864044.810945176,
+      "last_amount": 252489100.0,
+      "last_price": 4.12
     },
     "603316.SH": {
-      "inflow": 161820550.0,
-      "last_amount": 294562800.0,
+      "inflow": 163697250.0,
+      "last_amount": 296439500.0,
       "last_price": 16.39
     },
     "002224.SZ": {
-      "inflow": 57961440.95506052,
-      "last_amount": 390752500.0,
-      "last_price": 4.98
+      "inflow": 58636866.18387522,
+      "last_amount": 396201400.0,
+      "last_price": 4.97
     },
     "301200.SZ": {
-      "inflow": 127829417.49354777,
-      "last_amount": 531603900.0,
+      "inflow": 120717814.78151806,
+      "last_amount": 552788500.0,
       "last_price": 156.26
     },
     "301399.SZ": {
-      "inflow": 35645266.13134537,
-      "last_amount": 121791700.0,
-      "last_price": 22.15
+      "inflow": 35737426.56014689,
+      "last_amount": 124317900.0,
+      "last_price": 22.12
     },
     "603189.SH": {
-      "inflow": 41019301.47872929,
-      "last_amount": 123727500.0,
-      "last_price": 19.11
+      "inflow": 41661398.498466276,
+      "last_amount": 127651400.0,
+      "last_price": 19.06
     },
     "300238.SZ": {
-      "inflow": 39269532.36352025,
-      "last_amount": 155579800.0,
-      "last_price": 16.57
+      "inflow": 39397417.515365705,
+      "last_amount": 158558000.0,
+      "last_price": 16.54
     },
     "301309.SZ": {
-      "inflow": 23067302.1830265,
-      "last_amount": 101666100.0,
-      "last_price": 34.49
+      "inflow": 23541832.818786923,
+      "last_amount": 104937100.0,
+      "last_price": 34.44
     },
     "300499.SZ": {
-      "inflow": 664617723.7877878,
-      "last_amount": 1883231400.0,
-      "last_price": 41.13
+      "inflow": 664991906.5955722,
+      "last_amount": 1997308000.0,
+      "last_price": 41.2
     },
     "603222.SH": {
-      "inflow": 50160432.22716887,
-      "last_amount": 189761100.0,
-      "last_price": 9.16
+      "inflow": 50224228.231111795,
+      "last_amount": 191999400.0,
+      "last_price": 9.11
     },
     "688328.SH": {
-      "inflow": 90782854.91745475,
-      "last_amount": 307028800.0,
-      "last_price": 47.94
+      "inflow": 92047361.47274621,
+      "last_amount": 312832400.0,
+      "last_price": 48.33
     },
     "002656.SZ": {
-      "inflow": 14687045.390514748,
-      "last_amount": 38175400.0,
-      "last_price": 3.07
+      "inflow": 14786032.728519103,
+      "last_amount": 39029000.0,
+      "last_price": 3.06
     },
     "002686.SZ": {
-      "inflow": 38036194.81722773,
-      "last_amount": 174541100.0,
-      "last_price": 7.33
+      "inflow": 36859202.92789069,
+      "last_amount": 182295500.0,
+      "last_price": 7.32
     },
     "002771.SZ": {
-      "inflow": 33441081.136766113,
-      "last_amount": 118992100.0,
-      "last_price": 16.16
+      "inflow": 34116888.07306025,
+      "last_amount": 123926000.0,
+      "last_price": 16.18
     },
     "300091.SZ": {
-      "inflow": 19098242.40870826,
-      "last_amount": 83444100.0,
-      "last_price": 3.05
+      "inflow": 19220207.332835473,
+      "last_amount": 85040400.0,
+      "last_price": 3.04
     },
     "300249.SZ": {
-      "inflow": 279579401.732548,
-      "last_amount": 708790700.0,
-      "last_price": 18.33
+      "inflow": 296752378.0900179,
+      "last_amount": 746809200.0,
+      "last_price": 18.39
     },
     "301382.SZ": {
-      "inflow": 194424697.90257663,
-      "last_amount": 529243600.0,
-      "last_price": 37.08
+      "inflow": 196574437.29463902,
+      "last_amount": 540681000.0,
+      "last_price": 37.11
     },
     "600167.SH": {
-      "inflow": 30323220.39781205,
-      "last_amount": 86559400.0,
-      "last_price": 6.75
+      "inflow": 29914071.188301507,
+      "last_amount": 88406300.0,
+      "last_price": 6.73
     },
     "688373.SH": {
-      "inflow": 31196460.26414956,
-      "last_amount": 81239300.0,
-      "last_price": 6.3
+      "inflow": 31455992.461480282,
+      "last_amount": 83046900.0,
+      "last_price": 6.28
     },
     "002077.SZ": {
-      "inflow": 102566439.69129361,
-      "last_amount": 362778200.0,
-      "last_price": 16.52
+      "inflow": 103339775.012752,
+      "last_amount": 381424700.0,
+      "last_price": 16.5
     },
     "600645.SH": {
-      "inflow": 277557784.5333741,
-      "last_amount": 723073300.0,
-      "last_price": 32.27
+      "inflow": 276917584.2094609,
+      "last_amount": 738954500.0,
+      "last_price": 32.18
     },
     "600742.SH": {
-      "inflow": 75703206.12058285,
-      "last_amount": 206291300.0,
-      "last_price": 10.66
+      "inflow": 74716308.21482821,
+      "last_amount": 211499200.0,
+      "last_price": 10.64
     },
     "603400.SH": {
-      "inflow": 28523613.007895194,
-      "last_amount": 91225400.0,
-      "last_price": 71.06
+      "inflow": 27592053.070437834,
+      "last_amount": 93448100.0,
+      "last_price": 70.51
     },
     "300032.SZ": {
-      "inflow": 111216011.34382117,
-      "last_amount": 307148900.0,
+      "inflow": 112722540.62397899,
+      "last_amount": 312777300.0,
       "last_price": 6.05
     },
     "605303.SH": {
-      "inflow": 28611743.145020537,
-      "last_amount": 106248900.0,
-      "last_price": 18.62
+      "inflow": 28607647.144952558,
+      "last_amount": 108390700.0,
+      "last_price": 18.4
     },
     "688507.SH": {
-      "inflow": 69918164.46353906,
-      "last_amount": 192514200.0,
-      "last_price": 94.74
+      "inflow": 70749637.27427377,
+      "last_amount": 196284200.0,
+      "last_price": 94.34
     },
     "002655.SZ": {
-      "inflow": 128790357.76408963,
-      "last_amount": 397131200.0,
-      "last_price": 18.18
+      "inflow": 129078709.98121174,
+      "last_amount": 406605100.0,
+      "last_price": 18.05
     },
     "300626.SZ": {
-      "inflow": 35051275.76683718,
-      "last_amount": 126783700.0,
-      "last_price": 21.96
+      "inflow": 32932283.09744333,
+      "last_amount": 138888600.0,
+      "last_price": 21.84
     },
     "600429.SH": {
-      "inflow": 52282292.89151339,
-      "last_amount": 162634400.0,
-      "last_price": 5.77
+      "inflow": 52695292.71091426,
+      "last_amount": 166788500.0,
+      "last_price": 5.78
     },
     "688380.SH": {
-      "inflow": 203718144.18224776,
-      "last_amount": 594038200.0,
-      "last_price": 49.84
+      "inflow": 200543453.5109467,
+      "last_amount": 612325600.0,
+      "last_price": 49.74
     },
     "301365.SZ": {
-      "inflow": 43903976.718991436,
-      "last_amount": 130297600.0,
-      "last_price": 27.68
+      "inflow": 44213144.75128168,
+      "last_amount": 132722500.0,
+      "last_price": 27.57
     },
     "600605.SH": {
-      "inflow": 34681693.03004573,
-      "last_amount": 107167300.0,
-      "last_price": 30.17
+      "inflow": 36805937.056830496,
+      "last_amount": 111261700.0,
+      "last_price": 30.28
     },
     "688107.SH": {
-      "inflow": 94603070.77511714,
-      "last_amount": 273196300.0,
-      "last_price": 31.47
+      "inflow": 95609090.46517766,
+      "last_amount": 281147300.0,
+      "last_price": 31.45
     },
     "002345.SZ": {
-      "inflow": 62664065.60792488,
-      "last_amount": 153977400.0,
-      "last_price": 10.52
+      "inflow": 61679874.46353157,
+      "last_amount": 160649100.0,
+      "last_price": 10.48
     },
     "002956.SZ": {
-      "inflow": 13499905.439093051,
-      "last_amount": 39695400.0,
-      "last_price": 26.69
+      "inflow": 14467097.007657627,
+      "last_amount": 42484500.0,
+      "last_price": 26.78
     },
     "300730.SZ": {
-      "inflow": 36551943.574581556,
-      "last_amount": 87083900.0,
-      "last_price": 13.18
+      "inflow": 44301023.78510013,
+      "last_amount": 107057900.0,
+      "last_price": 13.34
     },
     "300731.SZ": {
-      "inflow": 332181603.6359206,
-      "last_amount": 784621500.0,
-      "last_price": 75.39
+      "inflow": 340431986.6197513,
+      "last_amount": 809799400.0,
+      "last_price": 75.31
     },
     "600682.SH": {
-      "inflow": 60019725.23826754,
-      "last_amount": 163259100.0,
-      "last_price": 7.28
+      "inflow": 59564479.736934185,
+      "last_amount": 165513300.0,
+      "last_price": 7.27
     },
     "600847.SH": {
-      "inflow": 24159074.423636805,
-      "last_amount": 79381400.0,
-      "last_price": 14.79
+      "inflow": 25029559.896319106,
+      "last_amount": 83140800.0,
+      "last_price": 14.87
     },
     "603052.SH": {
-      "inflow": 162867623.54248673,
-      "last_amount": 609428700.0,
-      "last_price": 62.0
+      "inflow": 169439173.8675397,
+      "last_amount": 633626100.0,
+      "last_price": 61.99
     },
     "000045.SZ": {
-      "inflow": 51839639.74733662,
-      "last_amount": 139510100.0,
-      "last_price": 13.21
+      "inflow": 52273647.82855968,
+      "last_amount": 142741600.0,
+      "last_price": 13.19
     },
     "000062.SZ": {
-      "inflow": 162199980.29793143,
-      "last_amount": 901638500.0,
-      "last_price": 27.94
+      "inflow": 156056614.30411777,
+      "last_amount": 923326900.0,
+      "last_price": 27.62
     },
     "000488.SZ": {
-      "inflow": 47586030.804263465,
-      "last_amount": 254398100.0,
-      "last_price": 3.14
+      "inflow": 45172447.03096028,
+      "last_amount": 263400800.0,
+      "last_price": 3.11
     },
     "002950.SZ": {
-      "inflow": 34134596.55230644,
-      "last_amount": 142996100.0,
+      "inflow": 34692804.060149714,
+      "last_amount": 146407100.0,
       "last_price": 11.55
     },
     "300558.SZ": {
-      "inflow": 72989633.83631697,
-      "last_amount": 191884800.0,
-      "last_price": 44.9
+      "inflow": 71836708.91361359,
+      "last_amount": 203502000.0,
+      "last_price": 44.77
     },
     "603239.SH": {
-      "inflow": 29853372.553183116,
-      "last_amount": 80709000.0,
+      "inflow": 29915948.59094443,
+      "last_amount": 82891500.0,
       "last_price": 22.75
     },
     "603590.SH": {
-      "inflow": 32347122.06906445,
-      "last_amount": 96589600.0,
-      "last_price": 37.63
+      "inflow": 31708117.524774864,
+      "last_amount": 99105200.0,
+      "last_price": 37.37
     },
     "300492.SZ": {
-      "inflow": 42029196.595715314,
-      "last_amount": 113733300.0,
-      "last_price": 67.97
+      "inflow": 36954974.82977488,
+      "last_amount": 124797400.0,
+      "last_price": 67.4
     },
     "688021.SH": {
-      "inflow": 19224124.51087352,
-      "last_amount": 84894300.0,
-      "last_price": 26.47
+      "inflow": 20089273.072264034,
+      "last_amount": 90470900.0,
+      "last_price": 25.92
     },
     "301687.SZ": {
-      "inflow": 107082241.61197323,
-      "last_amount": 435820700.0,
-      "last_price": 71.85000000000001
+      "inflow": 107189407.41161563,
+      "last_amount": 479363500.0,
+      "last_price": 71.46000000000001
+    },
+    "600643.SH": {
+      "inflow": 140896636.5627021,
+      "last_amount": 533539700.0,
+      "last_price": 5.32
+    },
+    "001221.SZ": {
+      "inflow": 29265786.645999517,
+      "last_amount": 100141200.0,
+      "last_price": 69.60000000000001
     }
   },
   "highest_scores": {
@@ -1619,9 +1629,9 @@
       "price": 44.56
     },
     "603817.SH": {
-      "score": 175.6,
-      "time": "09:57:57",
-      "price": 8.55
+      "score": 223.5,
+      "time": "10:57:03",
+      "price": 8.56
     },
     "000990.SZ": {
       "score": 1829.4099999999999,
@@ -1719,8 +1729,8 @@
       "price": 5.48
     },
     "603168.SH": {
-      "score": 24585.5,
-      "time": "10:49:33",
+      "score": 24666.3,
+      "time": "10:55:54",
       "price": 7.8
     },
     "600370.SH": {
@@ -1994,9 +2004,9 @@
       "price": 42.8
     },
     "301563.SZ": {
-      "score": 3678.1,
-      "time": "10:05:55",
-      "price": 164.62
+      "score": 4065.8,
+      "time": "10:54:36",
+      "price": 165.35
     },
     "603189.SH": {
       "score": 2968.7,
@@ -2019,9 +2029,9 @@
       "price": 10.67
     },
     "300499.SZ": {
-      "score": 80823.2,
-      "time": "10:46:00",
-      "price": 41.59
+      "score": 91544.9,
+      "time": "10:53:24",
+      "price": 41.69
     },
     "300042.SZ": {
       "score": 24351.45,
@@ -2109,9 +2119,9 @@
       "price": 32.99
     },
     "301428.SZ": {
-      "score": 222927.0,
-      "time": "10:50:06",
-      "price": 38.93
+      "score": 368020.1,
+      "time": "10:53:33",
+      "price": 39.68
     },
     "002445.SZ": {
       "score": 37236.1,
@@ -2149,9 +2159,9 @@
       "price": 5.84
     },
     "605303.SH": {
-      "score": 4460.9,
-      "time": "10:47:03",
-      "price": 18.59
+      "score": 5016.2,
+      "time": "10:50:45",
+      "price": 18.6
     },
     "688107.SH": {
       "score": 4397.6,
@@ -2169,9 +2179,9 @@
       "price": 26.98
     },
     "300730.SZ": {
-      "score": 2179.6,
-      "time": "10:41:12",
-      "price": 13.22
+      "score": 4910.1,
+      "time": "10:56:48",
+      "price": 13.37
     },
     "600605.SH": {
       "score": 4688.9,
@@ -2184,9 +2194,9 @@
       "price": 10.58
     },
     "001382.SZ": {
-      "score": 1578.4,
-      "time": "10:29:00",
-      "price": 24.92
+      "score": 2179.0,
+      "time": "10:55:29",
+      "price": 25.13
     },
     "603052.SH": {
       "score": 9646.8,
@@ -2244,18 +2254,28 @@
       "price": 68.53
     },
     "688021.SH": {
-      "score": 4406.3,
-      "time": "10:46:42",
-      "price": 26.14
+      "score": 4802.6,
+      "time": "10:54:20",
+      "price": 26.13
     },
     "301687.SZ": {
       "score": 3917.7,
       "time": "10:49:34",
       "price": 72.66
+    },
+    "600643.SH": {
+      "score": 1783.5,
+      "time": "10:53:27",
+      "price": 5.350000000000001
+    },
+    "001221.SZ": {
+      "score": 600.5,
+      "time": "10:52:50",
+      "price": 70.3
     }
   },
-  "market_total_inflow_cache": 39309025287.49119,
-  "global_tick_frame": 4560,
+  "market_total_inflow_cache": 39228978483.70377,
+  "global_tick_frame": 4948,
   "watchlist": [
     "300961.SZ",
     "603977.SH",
@@ -2502,6 +2522,8 @@
     "603590.SH",
     "300492.SZ",
     "688021.SH",
-    "301687.SZ"
+    "301687.SZ",
+    "600643.SH",
+    "001221.SZ"
   ]
 }

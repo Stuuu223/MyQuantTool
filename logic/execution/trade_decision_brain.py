@@ -224,6 +224,22 @@ class TradeDecisionBrain:
 
         # ── 2. 无持仓：判断入场 ──────────────────────────────────────────────
         entry_decision = self._should_enter(top_targets, current_time)
+        
+        # 【CTO V201】处理VETO返回值 - 记录拒绝理由供盘后复盘
+        if entry_decision is not None and entry_decision.get('action') == 'VETO':
+            decision.action = 'VETO'
+            decision.stock_code = entry_decision.get('code', '')
+            decision.price = entry_decision.get('price', 0.0)
+            decision.score = entry_decision.get('score', 0.0)
+            decision.reason = entry_decision.get('reason', 'VETO:未知原因')
+            decision.trigger_type = entry_decision.get('trigger_type', '')
+            decision.ignition_prob = entry_decision.get('ignition_prob', 0.0)
+            decision.p90_threshold = self._last_frame_p90
+            decision.median_score = self._last_frame_median
+            
+            self._log_decision(current_time, decision)
+            return self._decision_to_dict(decision)
+        
         if entry_decision is not None:
             decision.action = 'BUY'
             decision.stock_code = entry_decision['code']
@@ -400,20 +416,20 @@ class TradeDecisionBrain:
         
         # 条件A：分数必须超过最低狙击线
         if top1_score < MIN_SNIPER_SCORE:
-            logger.debug(
-                f"[VETO-SCORE] {top1.get('code')} score={top1_score:.0f} < 狙击线{MIN_SNIPER_SCORE:.0f}"
-            )
-            return None
+            reason = f"VETO-SCORE:分数{top1_score:.0f}<狙击线{MIN_SNIPER_SCORE:.0f}"
+            logger.debug(f"[{reason}] {top1.get('code')}")
+            return {'action': 'VETO', 'code': top1.get('code'), 'score': top1_score, 
+                    'price': top1.get('price', 0), 'reason': reason, 
+                    'trigger_type': trigger_type, 'ignition_prob': ignition_prob}
         
         # 条件C：断层碾压（榜首必须碾压第二名20%以上）
         if top2_score > 0 and top1_score < top2_score * FAULT_LINE_RATIO:
             fault_line_gap = (top1_score / top2_score - 1) * 100 if top2_score > 0 else 0
-            logger.debug(
-                f"[VETO-FAULT] {top1.get('code')} 未形成断层碾压 | "
-                f"top1={top1_score:.0f} vs top2={top2_score:.0f} | "
-                f"领先{fault_line_gap:.1f}% < 断层要求{FAULT_LINE_RATIO-1:.0%}"
-            )
-            return None
+            reason = f"VETO-FAULT:未断层碾压(领先{fault_line_gap:.0f}%<{(FAULT_LINE_RATIO-1)*100:.0f}%)"
+            logger.debug(f"[{reason}] {top1.get('code')} top1={top1_score:.0f} vs top2={top2_score:.0f}")
+            return {'action': 'VETO', 'code': top1.get('code'), 'score': top1_score,
+                    'price': top1.get('price', 0), 'reason': reason,
+                    'trigger_type': trigger_type, 'ignition_prob': ignition_prob}
         
         # 断层碾压逻辑通过，记录日志
         fault_line_gap = (top1_score / top2_score - 1) * 100 if top2_score > 0 else 100

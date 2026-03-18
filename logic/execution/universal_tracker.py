@@ -127,22 +127,23 @@ class UniversalTracker:
         self._validation_result: Optional[Dict] = None  # ScanValidator 结果嵌入
         self._frame_counter: int = 0  # 【CTO V199】帧计数器，用于心跳触发
         
-        # 【CTO V198】流式战报写入 - P0数据安全
-        # 每次有新标的上榜或peak_price更新时立即写入磁盘
+        # 【CTO V201】战地黑匣子 - 狙击手流式记录
+        # 文件命名：sniper_log_{date}.jsonl
+        # 三种核心事件：EVENT_APPEAR(发现猎物) / EVENT_VETO(拒绝开火) / EVENT_FIRE(扣动扳机)
         # 即使盘中崩溃也不会丢失数据
-        self._streaming_report_dir = 'data/battle_reports'
-        os.makedirs(self._streaming_report_dir, exist_ok=True)
+        self._sniper_log_dir = 'data/battle_reports'
+        os.makedirs(self._sniper_log_dir, exist_ok=True)
         date_str = datetime.now().strftime('%Y%m%d')
-        self.streaming_report_path = os.path.join(
-            self._streaming_report_dir, 
-            f'streaming_report_{date_str}.jsonl'
+        self.sniper_log_path = os.path.join(
+            self._sniper_log_dir, 
+            f'sniper_log_{date_str}.jsonl'
         )
         self._streaming_file = None
         self._last_flushed_peaks: Dict[str, float] = {}  # 记录上次写入的peak_price，避免重复写入
         
         logger.info(
             f"[OK] UniversalTracker V2.0 初始化完成 | 会话: {self.session_id} | 入场方案: {schema} | "
-            f"流式战报: {self.streaming_report_path}"
+            f"狙击黑匣子: {self.sniper_log_path}"
         )
 
     # ------------------------------------------------------------------
@@ -599,42 +600,80 @@ class UniversalTracker:
             'decision_events': len(self.decision_log),
         }
 
-    def _write_streaming_record(self, lifecycle: StockLifecycle, time_str: str, event_type: str):
+    # =========== 【CTO V201 狙击手事件常量】 ===========
+    EVENT_APPEAR = 'EVENT_APPEAR'   # 发现猎物：标的首次进入榜单
+    EVENT_VETO = 'EVENT_VETO'       # 拒绝开火：大脑决定不买
+    EVENT_FIRE = 'EVENT_FIRE'       # 扣动扳机：BUY/SELL决策
+    EVENT_HEARTBEAT = 'HEARTBEAT'   # 心跳快照：周期性全榜状态
+
+    def _write_sniper_event(self, code: str, event_type: str, time_str: str, 
+                             score: float = 0, price: float = 0, reason: str = '',
+                             extra: Dict = None):
         """
-        【CTO V198】流式写入JSONL - P0数据安全
+        【CTO V201】战地黑匣子 - 狙击手事件记录
         
-        每次有新标的上榜或peak_price更新时，立即写入磁盘
-        即使盘中崩溃也不会丢失数据
+        三种核心事件：
+        - EVENT_APPEAR: 发现猎物（标的首次上榜）
+        - EVENT_VETO: 拒绝开火（大脑拒绝买入，记录详细理由）
+        - EVENT_FIRE: 扣动扳机（实际执行BUY/SELL决策）
         
         Args:
-            lifecycle: 股票生命周期数据
-            time_str: 时间戳字符串
-            event_type: 事件类型 ('new_appear' | 'peak_update')
+            code: 股票代码
+            event_type: 事件类型
+            time_str: 时间戳
+            score: 当前分数
+            price: 当前价格
+            reason: 事件原因（VETO时为拒绝理由）
+            extra: 额外数据字典
         """
         try:
-            # 构建记录
             record = {
                 'ts': time_str,
                 'event': event_type,
-                'code': lifecycle.code,
-                'score': lifecycle.peak_score,
-                'price': lifecycle.final_price,
+                'code': code,
+                'score': score,
+                'price': price,
+                'reason': reason,
+            }
+            if extra:
+                record.update(extra)
+            
+            with open(self.sniper_log_path, 'a', encoding='utf-8') as f:
+                f.write(json.dumps(record, ensure_ascii=False) + '\n')
+                f.flush()
+            
+            logger.debug(f"[{event_type}] {code} score={score:.0f} {reason}")
+            
+        except Exception as e:
+            logger.warning(f"[WARN] 狙击黑匣子写入失败: {e}")
+
+    def _write_streaming_record(self, lifecycle: StockLifecycle, time_str: str, event_type: str):
+        """
+        【CTO V198/V201】兼容接口 - 调用 _write_sniper_event
+        
+        保持向后兼容，新代码应直接调用 _write_sniper_event
+        """
+        # 映射旧事件类型到新事件类型
+        event_map = {
+            'new_appear': self.EVENT_APPEAR,
+            'peak_update': self.EVENT_APPEAR,  # 峰值更新也归类为追踪事件
+        }
+        mapped_event = event_map.get(event_type, event_type)
+        
+        self._write_sniper_event(
+            code=lifecycle.code,
+            event_type=mapped_event,
+            time_str=time_str,
+            score=lifecycle.peak_score,
+            price=lifecycle.final_price,
+            extra={
                 'peak_price': lifecycle.peak_price,
                 'max_gain_pct': lifecycle.max_gain_pct,
                 'trigger_type': lifecycle.peak_trigger_type,
                 'was_bought': lifecycle.was_bought,
                 'appear_count': lifecycle.appear_count,
             }
-            
-            # 追加写入JSONL文件
-            with open(self.streaming_report_path, 'a', encoding='utf-8') as f:
-                f.write(json.dumps(record, ensure_ascii=False) + '\n')
-                f.flush()  # 强制刷入磁盘
-            
-            logger.debug(f"[STREAM] {event_type}: {lifecycle.code} @ {lifecycle.peak_price:.2f}")
-            
-        except Exception as e:
-            logger.warning(f"[WARN] 流式写入失败: {e}")
+        )
 
     def _write_heartbeat(self, time_str: str):
         """
@@ -672,7 +711,7 @@ class UniversalTracker:
                 'stocks': stocks_snapshot,
             }
             
-            with open(self.streaming_report_path, 'a', encoding='utf-8') as f:
+            with open(self.sniper_log_path, 'a', encoding='utf-8') as f:
                 f.write(json.dumps(record, ensure_ascii=False) + '\n')
                 f.flush()
             
@@ -683,27 +722,41 @@ class UniversalTracker:
 
     def write_decision(self, decision: Dict, time_str: str):
         """
-        【CTO V199】决策事件记录 - 写入大脑决策日志
+        【CTO V201】战地黑匣子 - 狙击手决策记录
+        
+        记录大脑的每一次关键决策：
+        - EVENT_FIRE: 实际扣动扳机（BUY/SELL）
+        - EVENT_VETO: 拒绝开火，记录详细拒绝理由供盘后复盘
         
         Args:
-            decision: 决策大脑返回的决策字典
-                - action: 'BUY' / 'VETO' / 'HELD' / 'SELL'
+            decision: 决策字典
+                - action: 'BUY' / 'SELL' / 'VETO' / 'HELD' / 'WATCH'
                 - code: 目标股票代码
                 - price: 决策时价格
                 - score: 决策时分数
-                - reason: 决策理由
+                - reason: 决策理由（VETO时为详细拒绝理由）
                 - trigger_type: 触发类型
                 - ignition_prob: 点火概率
                 - p90_threshold: p90阈值
                 - median_score: 中位数分数
             time_str: 时间戳字符串
         """
+        action = decision.get('action', 'UNKNOWN')
+        
+        # 映射action到狙击手事件类型
+        if action in ('BUY', 'SELL'):
+            event_type = self.EVENT_FIRE
+        elif action == 'VETO':
+            event_type = self.EVENT_VETO
+        else:
+            event_type = action  # HELD, WATCH 保持原样
+        
         try:
             record = {
                 'ts': time_str,
-                'event': 'DECISION',
+                'event': event_type,
                 'frame': self._frame_counter,
-                'action': decision.get('action', 'UNKNOWN'),
+                'action': action,
                 'code': decision.get('code', ''),
                 'price': decision.get('price', 0.0),
                 'score': decision.get('score', 0.0),
@@ -714,11 +767,15 @@ class UniversalTracker:
                 'median_score': decision.get('median_score', 0.0),
             }
             
-            with open(self.streaming_report_path, 'a', encoding='utf-8') as f:
+            with open(self.sniper_log_path, 'a', encoding='utf-8') as f:
                 f.write(json.dumps(record, ensure_ascii=False) + '\n')
                 f.flush()
             
-            logger.debug(f"[DECISION] {decision.get('action')} {decision.get('code')} score={decision.get('score', 0):.0f}")
+            # VETO事件重要，提升日志级别
+            if action == 'VETO':
+                logger.info(f"[{event_type}] {decision.get('code')} score={decision.get('score', 0):.0f} | {decision.get('reason', '')}")
+            else:
+                logger.debug(f"[{event_type}] {action} {decision.get('code')} score={decision.get('score', 0):.0f}")
             
         except Exception as e:
             logger.warning(f"[WARN] 决策写入失败: {e}")
