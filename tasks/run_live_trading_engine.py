@@ -1191,6 +1191,8 @@ class LiveTradingEngine:
                         # 【CTO V210-T2】致命修复：添加price_momentum到target_entry
                         # 根因：debug_metrics里有price_momentum但target_entry没有取，导致Tracker永远拿到0.0
                         'price_momentum': debug_metrics.get('price_momentum', 0.0),
+                        # 【CTO V216】盘口五档深度比 - 从tick数据获取
+                        'depth_ratio': float(tick.get('depthRatio', 0.0) or 0.0),
                     }
                     current_top_targets.append(target_entry)
                     

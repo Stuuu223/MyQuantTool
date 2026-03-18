@@ -68,6 +68,23 @@ class StandardTick:
     # 扩展字段 (用于传递原始数据)
     extra: Dict[str, Any] = field(default_factory=dict)
     
+    @property
+    def depth_ratio(self) -> float:
+        """
+        【CTO V216】盘口五档深度比
+        
+        计算公式：(bidVol1+...+bidVol5) / (askVol1+...+askVol5 + 1e-6)
+        物理意义：买盘力量/卖盘力量，>1表示买盘强，<1表示卖盘强
+        
+        Returns:
+            float: 深度比（分母防零）
+        """
+        bid_vols = self.bid_vols or []
+        ask_vols = self.ask_vols or []
+        total_bid = sum(bid_vols) if bid_vols else 0.0
+        total_ask = sum(ask_vols) if ask_vols else 0.0
+        return total_bid / (total_ask + 1e-6)  # 分母防零
+    
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典格式（snake_case字段名）"""
         return {
@@ -142,6 +159,8 @@ class StandardTick:
             'askVol3': ask_vols[2] / 100.0 if len(ask_vols) > 2 and ask_vols[2] else 0.0,
             'askVol4': ask_vols[3] / 100.0 if len(ask_vols) > 3 and ask_vols[3] else 0.0,
             'askVol5': ask_vols[4] / 100.0 if len(ask_vols) > 4 and ask_vols[4] else 0.0,
+            # 【CTO V216】盘口五档深度比
+            'depthRatio': self.depth_ratio,  # 买盘力量/卖盘力量
         }
     
     @classmethod

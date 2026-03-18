@@ -267,6 +267,8 @@ class UniversalTracker:
                 inflow_ratio=target.get('inflow_ratio', 0.0),
                 sustain_ratio=target.get('sustain_ratio', 0.0),
                 change_pct=target.get('change', 0.0),
+                # 【CTO V216】盘口五档深度比
+                depth_ratio=target.get('depth_ratio', 0.0),
             )
         
         # 【CTO V195】拆除外层静默跳过逻辑
@@ -453,7 +455,9 @@ class UniversalTracker:
         price_momentum: float = 0.0,
         inflow_ratio: float = 0.0,
         sustain_ratio: float = 0.0,
-        change_pct: float = 0.0
+        change_pct: float = 0.0,
+        # 【CTO V216】盘口五档深度比
+        depth_ratio: float = 0.0
     ):
         """更新股票上榜状态"""
         lifecycle = self._get_or_create(code)
@@ -510,6 +514,8 @@ class UniversalTracker:
                 'change_pct': change_pct,
                 'trigger_type': trigger_type,
                 'ignition_prob': ignition_prob,
+                # 【CTO V216】盘口五档深度比
+                'depth_ratio': depth_ratio,
             }
             self._write_streaming_record(
                 lifecycle, time_str, 
@@ -778,6 +784,8 @@ class UniversalTracker:
                     'sustain_ratio_at_signal': instant_physics.get('sustain_ratio', 0.0),
                     'change_pct': instant_physics.get('change_pct', 0.0),
                     'ignition_prob': instant_physics.get('ignition_prob', 0.0),
+                    # 【CTO V216】盘口五档深度比
+                    'depth_ratio_at_signal': instant_physics.get('depth_ratio', 0.0),
                 })
             
             with open(self.streaming_report_path, 'a', encoding='utf-8') as f:
