@@ -330,6 +330,23 @@ class ConfigManager:
         """
         return self.get('kinetic_physics.atr_filter_mode', 'record_only')
     
+    def get_decision_brain_config(self) -> Dict[str, float]:
+        """
+        【CTO V194】获取决策大脑配置
+        
+        Returns:
+            Dict: 决策大脑参数字典，包含:
+                - pm_threshold_buy: Price Momentum买入门槛（默认0.90）
+                - mfe_threshold_buy: MFE买入门槛（无默认值，必须显式配置）
+        
+        注意：mfe_threshold_buy必须从config显式注入，禁止使用魔法数字默认值
+        """
+        decision_brain = self._config.get('decision_brain', {})
+        return {
+            'pm_threshold_buy': decision_brain.get('pm_threshold_buy', 0.90),
+            'mfe_threshold_buy': decision_brain.get('mfe_threshold_buy')  # 无默认值，显式要求
+        }
+    
     def get_qmt_userdata_path(self) -> str:
         """
         【唯一真理源】获取 QMT 客户端数据目录

@@ -86,7 +86,8 @@ check("PaperTradeEngine 完整买卖周期", test_paper_engine)
 # ── TEST 3: TradeDecisionBrain 签名验证
 def test_decision_brain():
     from logic.execution.trade_decision_brain import TradeDecisionBrain
-    brain = TradeDecisionBrain()
+    # 【CTO V194】测试用例需要传入mfe_threshold_buy配置
+    brain = TradeDecisionBrain(config={'mfe_threshold_buy': 1.0})
     
     # 空榜单 - 【接口确认】返回dict而非None
     result_empty = brain.on_new_frame(
@@ -102,12 +103,13 @@ def test_decision_brain():
     # VALID_TRIGGERS = {'vacuum_ignition', 'stair_breakout', 'gravity_slingshot'}
     # 榜首score设为其余票的3x以上触发里氏震级条件
     top_targets = []
-    # 榜首：高分+有效trigger
+    # 榜首：高分+有效trigger+满足物理门槛
     top_targets.append({
         'code': '000001.SZ', 'score': 30000, 'price': 10.0,
         'trigger_type': 'gravity_slingshot', 'trigger_confidence': 0.85,
         'ignition_prob': 70.0,  # 【R4-4修复】百分比形式(70%)，非小数(0.7)
         'mfe': 1.5, 'sustain_ratio': 2.0,
+        'price_momentum': 0.95,  # 【CTO V194】物理门槛：>0.90才算起爆临界点
     })
     # 其余11只票：分数远低于榜首
     for i in range(1, 12):
@@ -116,6 +118,7 @@ def test_decision_brain():
             'trigger_type': 'none', 'trigger_confidence': 0.0,
             'ignition_prob': 30.0,  # 【R4-4修复】百分比形式
             'mfe': 0.8, 'sustain_ratio': 1.2,
+            'price_momentum': 0.50,  # 低位票
         })
     
     result = brain.on_new_frame(
@@ -138,7 +141,7 @@ def test_decision_brain():
     
     # ── 【R4-4新增】通道B测试：无有效trigger但高点火概率
     print("\n  ── 通道B测试（无trigger，高点火概率）──")
-    brain_b = TradeDecisionBrain()
+    brain_b = TradeDecisionBrain(config={'mfe_threshold_buy': 1.0})
     top_targets_b = []
     # 榜首：无trigger但高点火概率(75% > 门槛20%)
     top_targets_b.append({
@@ -147,6 +150,7 @@ def test_decision_brain():
         'trigger_confidence': 0.0,
         'ignition_prob': 75.0,  # 百分比形式，>=20%门槛
         'mfe': 1.5, 'sustain_ratio': 2.0,
+        'price_momentum': 0.95,  # 【CTO V194】物理门槛
     })
     for i in range(1, 12):
         top_targets_b.append({
@@ -154,6 +158,7 @@ def test_decision_brain():
             'trigger_type': 'none', 'trigger_confidence': 0.0,
             'ignition_prob': 15.0,  # < 20%门槛，不满足通道B
             'mfe': 0.8, 'sustain_ratio': 1.2,
+            'price_momentum': 0.50,
         })
     
     result_b = brain_b.on_new_frame(
@@ -177,13 +182,14 @@ def test_decision_brain():
     
     # 【R5-3新增】边界情况：ignition_prob刚好低于门槛不应触发BUY
     print("\n  ── 通道B边界测试（ignition_prob=19.9%，低于20%门槛）──")
-    brain_b_fail = TradeDecisionBrain()
+    brain_b_fail = TradeDecisionBrain(config={'mfe_threshold_buy': 1.0})
     top_targets_b_fail = []
     top_targets_b_fail.append({
         'code': '000003.SZ', 'score': 30000, 'price': 12.0,
         'trigger_type': 'none', 'trigger_confidence': 0.0,
         'ignition_prob': 19.9,  # 低于20%门槛
         'mfe': 1.5, 'sustain_ratio': 2.0,
+        'price_momentum': 0.95,  # 【CTO V194】物理门槛
     })
     for i in range(1, 12):
         top_targets_b_fail.append({
@@ -191,6 +197,7 @@ def test_decision_brain():
             'trigger_type': 'none', 'trigger_confidence': 0.0,
             'ignition_prob': 10.0,
             'mfe': 0.8, 'sustain_ratio': 1.2,
+            'price_momentum': 0.50,
         })
     
     result_b_fail = brain_b_fail.on_new_frame(

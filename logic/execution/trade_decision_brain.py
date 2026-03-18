@@ -89,8 +89,16 @@ class TradeDecisionBrain:
         # 注意：这是买入决策门槛，不是KineticCoreEngine的底线门槛(0.57)
         # CTO宪法规定：Price_Momentum > 0.9 才是起爆临界点
         self.pm_threshold_buy: float = config.get('pm_threshold_buy', 0.90)
-        # MFE买入门槛：低MFE表示资金效率极低，不应作为首选
-        self.mfe_threshold_buy: float = config.get('mfe_threshold_buy', 1.0)
+        
+        # 【CTO V194 去魔法化】MFE买入门槛必须显式注入
+        # 禁止使用未经数据验证的默认值！MFE阈值需要基于真实样本分布确定
+        if 'mfe_threshold_buy' not in config:
+            raise ValueError(
+                "缺乏 MFE 验证分布数据，禁止使用魔法数字。"
+                "请在 strategy_params.json 的 decision_brain 配置节中显式设置 mfe_threshold_buy 参数。"
+                "建议通过回测确定最优阈值。"
+            )
+        self.mfe_threshold_buy: float = config['mfe_threshold_buy']
 
         # 内部状态
         self.current_position: Optional[Dict] = None

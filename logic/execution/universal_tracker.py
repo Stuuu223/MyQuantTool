@@ -181,7 +181,22 @@ class UniversalTracker:
         if global_prices:
             for code in list(self.registry.keys()):
                 if code in global_prices:
-                    self.on_price_update(code, global_prices[code], current_time)
+                    price = global_prices[code]
+                    # 【CTO V194】数据断流保护：价格为0或None视为无效数据
+                    if price is None or price <= 0:
+                        logger.warning(
+                            f"[WARN] 缺乏标的 {code} 的有效价格数据(price={price})，"
+                            f"无法更新峰值，保持原峰值不变"
+                        )
+                        continue
+                    self.on_price_update(code, price, current_time)
+                else:
+                    # 【CTO V194】数据断流保护：在册股票未在global_prices中获取到价格
+                    # 可能原因：停牌、接口断流、订阅池未覆盖
+                    logger.warning(
+                        f"[WARN] 缺乏标的 {code} 的真实交易数据，"
+                        f"无法更新峰值，保持原峰值不变"
+                    )
 
     # ------------------------------------------------------------------
     # 价格持续追踪（离榜后仍需更新到收盘）

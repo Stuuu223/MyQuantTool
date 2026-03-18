@@ -342,9 +342,11 @@ class LiveTradingEngine:
         
         # ==================== 【Phase4注入】决策大脑 + 全榜追踪器 + 零摩擦对照组 ====================
         # 【Phase4注入】决策大脑 - 单吊模式交易决策
+        # 【CTO V194】从ConfigManager获取配置，确保mfe_threshold_buy显式注入
         try:
             from logic.execution.trade_decision_brain import TradeDecisionBrain
-            self.decision_brain = TradeDecisionBrain()
+            brain_config = self.config_mgr.get_decision_brain_config()
+            self.decision_brain = TradeDecisionBrain(config=brain_config)
             logger.info("[OK] TradeDecisionBrain初始化成功 - 单吊决策大脑")
         except (ImportError, Exception) as e:
             logger.warning(f"[WARN] TradeDecisionBrain初始化失败: {e}")
@@ -2022,8 +2024,17 @@ class LiveTradingEngine:
                     self._macro_multiplier = 1.0  # 正常
                 
                 # 【CTO第一级：全量快照捕获】
+                # 【CTO V194修复】订阅池 = watchlist ∪ registry.keys()
+                # 确保被Tracker记录过的标的即使被剔除出watchlist，也能获取其真实数据
+                # 这是修复"错失涨幅"统计失效的关键：不能用脑补价格替代真实Tick
+                subscription_pool = set(self.watchlist)
+                if hasattr(self, 'universal_tracker') and self.universal_tracker:
+                    registry_keys = set(self.universal_tracker.registry.keys())
+                    subscription_pool = subscription_pool | registry_keys
+                subscription_pool = list(subscription_pool)  # 转为list供QMT API使用
+                
                 try:
-                    all_ticks = xtdata.get_full_tick(self.watchlist)
+                    all_ticks = xtdata.get_full_tick(subscription_pool)
                 except Exception as e:
                     logger.error(f"获取全量Tick失败: {e}")
                     if self.mode == 'live':

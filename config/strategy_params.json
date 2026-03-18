@@ -222,5 +222,17 @@
     
     "overdraft_log_coeff": 0.5,
     "_WARNING_overdraft_log_coeff": "[UNVERIFIED] 透支效应对数衰减系数。需全量Tick数据交叉验证"
+  },
+
+  "decision_brain": {
+    "_description": "【CTO V194】决策大脑参数 - 所有阈值必须显式注入，禁止魔法数字",
+    
+    "pm_threshold_buy": 0.90,
+    "_pm_threshold_buy_comment": "Price Momentum买入门槛：价格在日内高位比例>0.9才算起爆临界点",
+    
+    "mfe_threshold_buy": 1.0,
+    "_WARNING_mfe_threshold_buy": "[UNVERIFIED] MFE买入门槛：资金效率最低要求。此值暂定1.0，需通过回测验证MFE分布后固化。建议网格扫描范围：0.5-3.0",
+    
+    "_todo": "TODO: 运行回测确定mfe_threshold_buy最优值。低MFE表示资金效率低（大钱只砸出小振幅），阈值过高会误杀真龙，过低会放过低效标的"
   }
 }

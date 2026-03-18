@@ -163,7 +163,11 @@ class MockLiveRunner:
         self.trigger_validator = TriggerValidator()
 
         # ── 决策大脑（接收整个榜单，返回 BUY/SELL/HOLD）
-        self.decision_brain = TradeDecisionBrain()
+        # 【CTO V194】从ConfigManager获取配置，确保mfe_threshold_buy显式注入
+        from logic.core.config_manager import get_config_manager
+        config_mgr = get_config_manager()
+        brain_config = config_mgr.get_decision_brain_config()
+        self.decision_brain = TradeDecisionBrain(config=brain_config)
 
         # ── 真实摩擦撮合引擎
         self.execution_manager = MockExecutionManager(
