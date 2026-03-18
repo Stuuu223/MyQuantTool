@@ -319,15 +319,15 @@ def create_tick_adapter(mode: str, target_date: str = None) -> TickAdapterBase:
     工厂函数 - 创建Tick适配器
     
     Args:
-        mode: 'live' 或 'mock'
-        target_date: 目标日期（mock模式必需）
+        mode: 'live' 或 'scan'/'mock'
+        target_date: 目标日期（scan/mock模式必需）
         
     Returns:
         TickAdapterBase实例
     """
     if mode == 'live':
         return LiveTickAdapter()
-    elif mode == 'mock':
+    elif mode in ('scan', 'mock'):  # 【V215】scan等同于mock
         return MockTickAdapter(target_date)
     else:
-        raise ValueError(f"未知的mode: {mode}，必须是 'live' 或 'mock'")
+        raise ValueError(f"未知的mode: {mode}，必须是 'live' 或 'scan'/'mock'")

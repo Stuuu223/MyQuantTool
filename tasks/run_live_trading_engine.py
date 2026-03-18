@@ -419,10 +419,11 @@ class LiveTradingEngine:
     
     def get_tick_snapshot(self, stock_codes: List[str]) -> Dict[str, Dict]:
         """
-        【CTO V213/V214 数据防腐层】统一Tick获取入口
+        【CTO V213/V214/V215 数据防腐层】统一Tick获取入口
         
-        优先使用tick_adapter获取数据，失败则fallback到直接调用xtdata。
-        返回QMT原生格式字典，保持向后兼容。
+        【CTO V215】废除Fallback机制！
+        - Adapter失败时直接返回空字典，绝不允许绕过防腐层
+        - 这是架构纯粹性的铁律，确保Mock回测的确定性
         
         Args:
             stock_codes: 股票代码列表
@@ -432,26 +433,21 @@ class LiveTradingEngine:
         """
         result = {}
         
-        # 优先使用tick_adapter（数据防腐层）
-        if self.tick_adapter is not None:
-            try:
-                standard_ticks = self.tick_adapter.get_ticks(stock_codes)
-                if standard_ticks:
-                    # 【CTO V214】使用to_qmt_dict()返回完整QMT兼容格式
-                    for code, tick in standard_ticks.items():
-                        result[code] = tick.to_qmt_dict()
-                    return result
-            except Exception as e:
-                logger.debug(f"[TickAdapter] get_ticks失败，fallback到xtdata: {e}")
+        # 【CTO V215】仅使用tick_adapter，废除Fallback
+        if self.tick_adapter is None:
+            logger.error("[TickAdapter] 未初始化！无法获取Tick数据")
+            return result
         
-        # Fallback: 直接调用xtdata（仅用于Adapter不可用时的紧急回退）
         try:
-            from xtquant import xtdata
-            raw_ticks = xtdata.get_full_tick(stock_codes)
-            if raw_ticks:
-                return raw_ticks
+            standard_ticks = self.tick_adapter.get_ticks(stock_codes)
+            if standard_ticks:
+                # 【CTO V214】使用to_qmt_dict()返回完整QMT兼容格式
+                for code, tick in standard_ticks.items():
+                    result[code] = tick.to_qmt_dict()
         except Exception as e:
-            logger.error(f"[Fallback] xtdata.get_full_tick失败: {e}")
+            # 【CTO V215】Adapter失败时记录错误，返回空字典
+            # 绝不偷偷绕过防腐层！
+            logger.error(f"[TickAdapter] get_ticks失败: {e}")
         
         return result
     
