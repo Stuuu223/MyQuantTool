@@ -70,30 +70,49 @@ class StandardTick:
     extra: Dict[str, Any] = field(default_factory=dict)
     
     @property
-    def depth_ratio(self) -> float:
+    def raw_depth_ratio(self) -> float:
         """
-        【CTO V217】盘口五档深度比 - 对数对称化版本
+        【CTO V218】原始对数深度比 - 仅供内部调试/ML使用
         
         计算公式：ln((total_bid + 1) / (total_ask + 1))
+        值域：[-∞, +∞]（极端卖压≈-13，极端买压≈+13）
         
-        【V217修正】原公式 total_bid/(total_ask+1e-6) 存在严重不对称谬误：
-        - 看多值域：1 ~ +∞（可达10000+）
-        - 看空值域：0 ~ 1（被死死压制）
-        
-        对数对称化后的物理意义：
-        - >0 表示买盘强（正数，极端涨停≈+13）
-        - <0 表示卖盘强（负数，极端跌停≈-13）
-        - =0 表示绝对平衡（买卖相等）
+        警告：此值包含负数，直接用于打分会导致灾难！
+        请使用 depth_ratio 属性获取归一化后的安全值。
         
         Returns:
-            float: 对数深度比（完美对称）
+            float: 原始对数深度比（未归一化）
         """
         bid_vols = self.bid_vols or []
         ask_vols = self.ask_vols or []
         total_bid = sum(bid_vols) if bid_vols else 0.0
         total_ask = sum(ask_vols) if ask_vols else 0.0
-        # 【CTO V217】拉普拉斯平滑(+1) + 自然对数 = 完美对称
+        # 拉普拉斯平滑(+1) + 自然对数
         return math.log((total_bid + 1.0) / (total_ask + 1.0))
+    
+    @property
+    def depth_ratio(self) -> float:
+        """
+        【CTO V218】盘口五档深度比 - Sigmoid归一化版本
+        
+        计算公式：sigmoid(ln((bid+1)/(ask+1))) = 1/(1+exp(-raw))
+        
+        【V218封印】原始对数比值域[-13,+13]包含负数：
+        - 直接参与打分会产生负分灾难
+        - UI格式化负数可能崩溃
+        - 必须用Sigmoid挤压到绝对安全区间[0,1]
+        
+        归一化后的物理意义：
+        - 0.5 表示绝对平衡（买卖相等）
+        - >0.5 表示买盘强（逼近1.0为极端涨停）
+        - <0.5 表示卖盘强（逼近0.0为极端跌停）
+        
+        Returns:
+            float: 归一化深度比 [0, 1]（永远非负，永不爆炸）
+        """
+        raw = self.raw_depth_ratio
+        # Sigmoid挤压：(-∞,+∞) → (0,1)
+        return 1.0 / (1.0 + math.exp(-raw))
     
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典格式（snake_case字段名）"""
