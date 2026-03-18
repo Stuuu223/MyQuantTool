@@ -1,0 +1,3 @@
+{"ts": "2026-03-17 10:30:00", "event": "new_appear", "code": "000001.SZ", "score": 200, "price": 10.0, "peak_price": 10.0, "max_gain_pct": 0.0, "trigger_type": "", "was_bought": false, "appear_count": 1}
+{"ts": "2026-03-17 10:30:00", "event": "new_appear", "code": "000001.SZ", "score": 200, "price": 10.0, "peak_price": 10.0, "max_gain_pct": 0.0, "trigger_type": "", "was_bought": false, "appear_count": 1}
+{"ts": "2026-03-18 10:26:14", "event": "new_appear", "code": "000001.SZ", "score": 1000.0, "price": 10.5, "peak_price": 10.5, "max_gain_pct": 0.0, "trigger_type": "", "was_bought": false, "appear_count": 1}

@@ -615,8 +615,10 @@ def build_dashboard_layout(top_targets, pool_stats=None, account_info=None, is_r
         stats_text.append(f"[ALERT] 情绪: 红盘/封板 {pool_stats.get('up',0)}只 | 水下/绿盘 {pool_stats.get('down',0)}只 | 派发剔除 {pool_stats.get('active',0)-passed}只", style="white")
     
     # 4. 战神榜核心矩阵
+    # 【CTO V198】榜单从Top10拓宽到Top20，添加排名跃升轨迹列
     table = Table(show_header=True, header_style="bold magenta", style="cyan", expand=False)
     table.add_column("RANK", justify="center", width=4)
+    table.add_column("TRAJ", justify="center", width=6)  # 【CTO V198】排名跃升轨迹
     table.add_column("TARGET", justify="center", width=10, style="bold white")
     table.add_column("SCORE", justify="right", width=8, style="bold red")
     table.add_column("PRICE", justify="right", width=7)
@@ -628,7 +630,7 @@ def build_dashboard_layout(top_targets, pool_stats=None, account_info=None, is_r
     table.add_column("PURITY%", justify="right", width=8)
     
     if not top_targets:
-        table.add_row("...", "空仓观望", "...", "...", "...", "...", "...", "...", "...", "...")
+        table.add_row("...", "...", "空仓观望", "...", "...", "...", "...", "...", "...", "...", "...")
     else:
         for i, t in enumerate(top_targets, 1):
             row_style = "bold red" if i <= 3 else None
@@ -640,11 +642,24 @@ def build_dashboard_layout(top_targets, pool_stats=None, account_info=None, is_r
             ignite_color = "red" if ignite_val >= 50 else "yellow" if ignite_val >= 20 else "white"
             ignite_str = f"[{ignite_color}]{ignite_val:.1f}%[/{ignite_color}]"
             
+            # 【CTO V198】排名跃升轨迹渲染（纯文字，不用emoji）
+            rank_change = t.get('rank_change', '')
+            if rank_change == 'NEW':
+                traj_str = "[bold yellow][NEW][/bold yellow]"
+            elif rank_change.startswith('+'):
+                traj_str = f"[bold green]^{rank_change}[/bold green]"  # 上升
+            elif rank_change.startswith('-'):
+                traj_str = f"[bold red]v{rank_change}[/bold red]"  # 下降
+            elif rank_change == '=':
+                traj_str = "[white]=[/white]"
+            else:
+                traj_str = ""
+            
             safe_sustain = min(max(t.get('sustain_ratio', 0), -99.9), 99.9)
             safe_mfe = min(max(t.get('mfe', 0), -99.9), 99.9)
             
             table.add_row(
-                str(i), t['code'], f"{t.get('score', 0):.1f}", f"{t['price']:.2f}",
+                str(i), traj_str, t['code'], f"{t.get('score', 0):.1f}", f"{t['price']:.2f}",
                 f"{t.get('change', 0):+.2f}%", f"{t.get('inflow_ratio', 0):.2f}%",
                 f"{safe_sustain:.2f}x", f"{safe_mfe:.1f}",
                 ignite_str,

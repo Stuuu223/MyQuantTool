@@ -2518,11 +2518,39 @@ class LiveTradingEngine:
                 
                 # 【CTO第五级：机会池排序】
                 current_top_targets.sort(key=lambda x: x['score'], reverse=True)
-                top_10 = current_top_targets[:10]
+                # 【CTO V198】榜单从Top10拓宽到Top20
+                top_20 = current_top_targets[:20]
+                
+                # 【CTO V198】计算排名跃升轨迹
+                if not hasattr(self, '_last_ranks'):
+                    self._last_ranks = {}  # code -> 上一次排名
+                
+                # 构建当前排名字典
+                current_ranks = {t['code']: i+1 for i, t in enumerate(top_20)}
+                
+                # 计算每只股票的排名变化
+                for t in top_20:
+                    code = t['code']
+                    last_rank = self._last_ranks.get(code)
+                    if last_rank is None:
+                        # 新上榜
+                        t['rank_change'] = 'NEW'
+                    else:
+                        current_rank = current_ranks[code]
+                        change = last_rank - current_rank  # 正数=上升
+                        if change > 0:
+                            t['rank_change'] = f'+{change}'  # 上升
+                        elif change < 0:
+                            t['rank_change'] = f'{change}'  # 下降(负数)
+                        else:
+                            t['rank_change'] = '='  # 持平
+                
+                # 更新记忆
+                self._last_ranks = current_ranks.copy()
                 
                 # 【CTO V4关键】更新静态机会池缓存！
-                if top_10:
-                    self.last_known_top_targets = top_10
+                if top_20:
+                    self.last_known_top_targets = top_20
                 
                 # ============================================================
                 # 【CTO V71单吊极锋执行器】买入触发逻辑
@@ -2530,8 +2558,8 @@ class LiveTradingEngine:
                 # 触发条件：榜首分数>=70分，且通过微观防线检查
                 # 单吊模式：只买榜首一只，满仓单票
                 # ============================================================
-                if top_10 and self.execution_manager and self.mode == 'live':
-                    top_stock = top_10[0]
+                if top_20 and self.execution_manager and self.mode == 'live':
+                    top_stock = top_20[0]
                     top_code = top_stock['code']
                     top_score = top_stock['score']
                     
@@ -2572,7 +2600,8 @@ class LiveTradingEngine:
                     logger.info("[OK] 盘后最终 Tick 快照计算完成，投影定格！")
                 
                 # 主线程刷屏（盘后模式静默，不清屏）
-                self._print_fire_control_panel(top_10, initial_loading=False, pool_stats=pool_stats, is_rest=is_after_hours)
+                # 【CTO V198】传入Top20榜单
+                self._print_fire_control_panel(top_20, initial_loading=False, pool_stats=pool_stats, is_rest=is_after_hours)
                 
                 # 【CTO V46架构大一统】持仓止损/止盈检查
                 # 检查所有持仓是否触发卖出条件

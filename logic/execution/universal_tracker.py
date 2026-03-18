@@ -124,8 +124,23 @@ class UniversalTracker:
         self._sold_codes: Dict[str, float] = {}
         self.decision_log: List[DecisionEvent] = []   # 决策事件流
         self._validation_result: Optional[Dict] = None  # ScanValidator 结果嵌入
+        
+        # 【CTO V198】流式战报写入 - P0数据安全
+        # 每次有新标的上榜或peak_price更新时立即写入磁盘
+        # 即使盘中崩溃也不会丢失数据
+        self._streaming_report_dir = 'data/battle_reports'
+        os.makedirs(self._streaming_report_dir, exist_ok=True)
+        date_str = datetime.now().strftime('%Y%m%d')
+        self.streaming_report_path = os.path.join(
+            self._streaming_report_dir, 
+            f'streaming_report_{date_str}.jsonl'
+        )
+        self._streaming_file = None
+        self._last_flushed_peaks: Dict[str, float] = {}  # 记录上次写入的peak_price，避免重复写入
+        
         logger.info(
-            f"[OK] UniversalTracker V2.0 初始化完成 | 会话: {self.session_id} | 入场方案: {schema}"
+            f"[OK] UniversalTracker V2.0 初始化完成 | 会话: {self.session_id} | 入场方案: {schema} | "
+            f"流式战报: {self.streaming_report_path}"
         )
 
     # ------------------------------------------------------------------
@@ -351,6 +366,10 @@ class UniversalTracker:
     ):
         """更新股票上榜状态"""
         lifecycle = self._get_or_create(code)
+        
+        # 【CTO V198】检测是否需要流式写入
+        is_new_appear = lifecycle.appear_count == 0
+        old_peak = lifecycle.peak_price
 
         if lifecycle.appear_count == 0:
             lifecycle.first_appear_time = time_str
@@ -383,6 +402,12 @@ class UniversalTracker:
         # === V2.0: 物理触发信号记录 ===
         if trigger_type and not lifecycle.had_physical_trigger:
             lifecycle.had_physical_trigger = True
+        
+        # 【CTO V198】流式写入JSONL - P0数据安全
+        # 条件：新上榜 或 peak_price创新高
+        should_write = is_new_appear or (lifecycle.peak_price > old_peak)
+        if should_write:
+            self._write_streaming_record(lifecycle, time_str, 'new_appear' if is_new_appear else 'peak_update')
             lifecycle.trigger_first_time = time_str
             lifecycle.trigger_first_price = price
         if trigger_confidence > lifecycle.trigger_peak_confidence:
@@ -564,6 +589,43 @@ class UniversalTracker:
             ),
             'decision_events': len(self.decision_log),
         }
+
+    def _write_streaming_record(self, lifecycle: StockLifecycle, time_str: str, event_type: str):
+        """
+        【CTO V198】流式写入JSONL - P0数据安全
+        
+        每次有新标的上榜或peak_price更新时，立即写入磁盘
+        即使盘中崩溃也不会丢失数据
+        
+        Args:
+            lifecycle: 股票生命周期数据
+            time_str: 时间戳字符串
+            event_type: 事件类型 ('new_appear' | 'peak_update')
+        """
+        try:
+            # 构建记录
+            record = {
+                'ts': time_str,
+                'event': event_type,
+                'code': lifecycle.code,
+                'score': lifecycle.peak_score,
+                'price': lifecycle.final_price,
+                'peak_price': lifecycle.peak_price,
+                'max_gain_pct': lifecycle.max_gain_pct,
+                'trigger_type': lifecycle.peak_trigger_type,
+                'was_bought': lifecycle.was_bought,
+                'appear_count': lifecycle.appear_count,
+            }
+            
+            # 追加写入JSONL文件
+            with open(self.streaming_report_path, 'a', encoding='utf-8') as f:
+                f.write(json.dumps(record, ensure_ascii=False) + '\n')
+                f.flush()  # 强制刷入磁盘
+            
+            logger.debug(f"[STREAM] {event_type}: {lifecycle.code} @ {lifecycle.peak_price:.2f}")
+            
+        except Exception as e:
+            logger.warning(f"[WARN] 流式写入失败: {e}")
 
     def export_to_json(self, filepath: str):
         report = self.get_full_report()
