@@ -27,7 +27,7 @@ def check(name, fn):
 
 # ── TEST 1: StockStateBuffer 基础功能
 def test_stock_state_buffer():
-    from tools.mock_live_runner import StockStateBuffer
+    from logic.execution.stock_state_buffer import StockStateBuffer
     buf = StockStateBuffer("000001.SZ")
     for i in range(35):  # 超过WINDOW=30，测试滚动
         buf.update(price=10.0+i*0.01, mfe=1.0+i*0.01, sustain_ratio=1.5)
