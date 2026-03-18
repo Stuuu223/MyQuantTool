@@ -777,12 +777,20 @@ class UniversalTracker:
             with open(self.streaming_report_path, 'a', encoding='utf-8') as f:
                 f.write(safe_json_dumps(record) + '\n')
                 f.flush()
+                # 【CTO V209-T1】强制落盘：确保数据实时写入磁盘
+                os.fsync(f.fileno())
             
             logger.debug(f"[STREAM] {event_type}: {lifecycle.code} @ {lifecycle.peak_price:.2f}")
             
+        except TypeError as e:
+            # 【CTO V209-T1】暴露序列化失败的具体字段
+            import traceback
+            logger.error(f"[ERROR] 行情流序列化失败! code={lifecycle.code}, event={event_type}")
+            logger.error(f"[ERROR] 失败字段详情: {e}")
+            logger.error(f"[ERROR] 堆栈追踪:\n{traceback.format_exc()}")
         except Exception as e:
-            # 【CTO V202】防爆盾：写入失败不阻塞主引擎
-            logger.warning(f"[WARN] 行情流写入失败(已吞异常): {e}")
+            # 【CTO V209-T1】其他异常也提升为ERROR级别，不再静默吞掉
+            logger.error(f"[ERROR] 行情流写入失败: {type(e).__name__}: {e}")
 
     def _write_heartbeat(self, time_str: str):
         """

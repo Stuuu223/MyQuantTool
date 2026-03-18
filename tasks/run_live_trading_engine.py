@@ -2178,8 +2178,8 @@ class LiveTradingEngine:
                 
                 # 更新缓存（至少100万兜底，避免除零）
                 self.market_total_inflow_cache = max(market_total_inflow, 1000000.0)
-                print(f">>> [虹吸基准] 全候选池总净流入: {self.market_total_inflow_cache/100000000:.2f}亿元")
-                sys.stdout.flush()
+                # 【CTO V208-T1】切断脏日志：删除print，改为logger.debug避免干扰Rich Live渲染
+                logger.debug(f"[虹吸基准] 全候选池总净流入: {self.market_total_inflow_cache/100000000:.2f}亿元")
                 
                 # 【CTO第二级：极速布朗运动分类】
                 for stock_code in self.watchlist:
@@ -2609,6 +2609,32 @@ class LiveTradingEngine:
                 if is_after_hours:
                     has_run_after_hours = True
                     logger.info("[OK] 盘后最终 Tick 快照计算完成，投影定格！")
+                
+                # ============================================================
+                # 【CTO V208-T3】打通Tracker数据血脉 - Live模式实时喂量
+                # ============================================================
+                # 根因：Live模式下从未调用on_frame，导致JSONL文件永远为空
+                # 修复：每帧调用on_frame，确保流式写入（事件驱动落盘）
+                # ============================================================
+                if hasattr(self, 'universal_tracker') and self.universal_tracker and top_20:
+                    try:
+                        # 构建global_prices字典（用于离榜股票peak_price更新）
+                        global_prices = {
+                            code: tick.get('lastPrice', 0) 
+                            for code, tick in all_ticks.items() 
+                            if tick and tick.get('lastPrice', 0) > 0
+                        }
+                        # 调用on_frame - 核心数据血脉！
+                        self.universal_tracker.on_frame(
+                            top_20,           # 当前榜单
+                            now,              # 当前时间
+                            executed_trade=None,  # Live模式交易在单吊执行器中处理
+                            decision_context=None,  # Live模式暂不传递决策上下文
+                            global_prices=global_prices
+                        )
+                        logger.debug(f"[TRACKER] on_frame调用成功: {len(top_20)}只标的")
+                    except Exception as e:
+                        logger.warning(f"[WARN] Tracker on_frame调用失败: {e}")
                 
                 # 主线程刷屏（盘后模式静默，不清屏）
                 # 【CTO V198】传入Top20榜单
