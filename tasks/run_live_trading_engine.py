@@ -1233,11 +1233,15 @@ class LiveTradingEngine:
                         'held_price': held_price,
                         'held_unrealized_pnl_pct': held_unrealized_pnl_pct
                     }
+                    # 【CTO V192修复】传入global_prices解决视野盲区
+                    # 构建全量价格字典：{stock_code: current_price}
+                    global_prices = {code: tick.get('lastPrice', 0) for code, tick in all_ticks.items() if tick}
                     self.universal_tracker.on_frame(
                         current_top_targets[:10], 
                         engine_time, 
                         executed_trade_info,
-                        decision_context
+                        decision_context,
+                        global_prices=global_prices
                     )
                     
             except Exception as e:

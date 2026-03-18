@@ -544,11 +544,14 @@ class MockLiveRunner:
 
         # ── Phase D: 喂给 UniversalTracker
         # 传入整个榜单 + 本帧成交结果 + 大脑决策上下文（含 p90_threshold/median_score/relative_rank）
+        # 【CTO V192修复】构建global_prices解决视野盲区
+        global_prices = {t['code']: t.get('price', 0) for t in enriched_targets if t.get('code')}
         self.universal_tracker.on_frame(
             top_targets=enriched_targets[:10],
             current_time=current_time,
             executed_trade=executed_trade,
-            decision_context=decision
+            decision_context=decision,
+            global_prices=global_prices
         )
 
         # 【P0-2修复】保存enriched_targets供_print_status_brief使用
@@ -869,11 +872,14 @@ class MockLiveRunner:
                             'reason': f'微观防爆: {reason}',
                             'engine': 'real'
                         }
+                        # 【CTO V192修复】传入当前止损股票的价格更新peak_price
+                        stop_global_prices = {stock_code: current_tick['price']}
                         self.universal_tracker.on_frame(
                             top_targets=[],
                             current_time=current_time,
                             executed_trade=stop_trade,
-                            decision_context=None
+                            decision_context=None,
+                            global_prices=stop_global_prices
                         )
                         logger.warning(f"⚠️ [微观防爆] {stock_code} @ {current_tick['price']:.2f} {reason}")
 

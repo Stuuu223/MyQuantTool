@@ -137,7 +137,8 @@ class UniversalTracker:
         top_targets: List[Dict],
         current_time: datetime,
         executed_trade: Dict = None,
-        decision_context: Dict = None
+        decision_context: Dict = None,
+        global_prices: Dict[str, float] = None
     ):
         """
         每帧调用，传入当前榜单和当帧是否有实际成交。
@@ -147,6 +148,8 @@ class UniversalTracker:
             current_time: 当前时间
             executed_trade: 当帧成交信息 {'action', 'stock_code', 'price', 'reason'} 或 None
             decision_context: 决策大脑输出的完整上下文（来自 TradeDecisionBrain.on_new_frame 返回值）
+            global_prices: 全量价格快照 {stock_code: current_price}
+                           【CTO V192修复】解决视野盲区：即使股票跌出榜单，仍能更新peak_price
         """
         time_str = current_time.strftime('%Y-%m-%d %H:%M:%S')
 
@@ -172,6 +175,13 @@ class UniversalTracker:
                 ignition_prob=target.get('ignition_prob', 0.0),
                 time_str=time_str
             )
+        
+        # 【CTO V192修复】视野盲区消除：用global_prices更新所有已上榜股票的价格
+        # 即使某票跌出榜单，仍能追踪其peak_price，计算真实的missed_gain
+        if global_prices:
+            for code in list(self.registry.keys()):
+                if code in global_prices:
+                    self.on_price_update(code, global_prices[code], current_time)
 
     # ------------------------------------------------------------------
     # 价格持续追踪（离榜后仍需更新到收盘）
