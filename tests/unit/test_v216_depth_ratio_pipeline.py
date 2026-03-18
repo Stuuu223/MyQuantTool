@@ -1,10 +1,15 @@
 """
-【CTO V216】深度比管道测试 - 严格断言版
+【CTO V217】深度比管道测试 - 对数对称化版本
 
 测试目标：验证depth_ratio从StandardTick到JSONL的完整链路
 StandardTick.depth_ratio → to_qmt_dict()['depthRatio'] → target_entry['depth_ratio']
     → UniversalTracker.on_frame() → instant_physics['depth_ratio']
     → _write_streaming_record() → JSONL['depth_ratio_at_signal']
+
+【V217修正】depth_ratio改为对数对称化公式：
+- 公式：ln((total_bid + 1) / (total_ask + 1))
+- 物理意义：>0买盘强，<0卖盘强，=0绝对平衡
+- 完美对称：极端买压≈+13，极端卖压≈-13
 
 测试铁律：
 1. 每个测试必须包含assert断言
@@ -13,34 +18,37 @@ StandardTick.depth_ratio → to_qmt_dict()['depthRatio'] → target_entry['depth
 """
 
 import pytest
+import math
 from datetime import datetime
 
 
 class TestStandardTickDepthRatio:
-    """【CTO V216-T1】StandardTick.depth_ratio属性测试"""
+    """【CTO V217】StandardTick.depth_ratio对数对称化测试"""
     
     def test_depth_ratio_calculation(self):
-        """测试depth_ratio计算公式：(bid1+...+bid5)/(ask1+...+ask5+1e-6)"""
+        """测试depth_ratio对数对称化公式：ln((bid+1)/(ask+1))"""
         from logic.data_providers.standard_tick import StandardTick
         
         tick = StandardTick(
-            code='000001.SZ',  # 【修正】字段名是code不是stock_code
+            code='000001.SZ',
             time='20260318094500',
             last_price=10.0,
             volume_shares=1000000,
-            amount_yuan=10000000.0,  # 【修正】字段名是amount_yuan不是amount
+            amount_yuan=10000000.0,
             bid_prices=[9.99, 9.98, 9.97, 9.96, 9.95],
             ask_prices=[10.01, 10.02, 10.03, 10.04, 10.05],
             bid_vols=[100, 200, 300, 400, 500],  # sum=1500
             ask_vols=[50, 100, 150, 200, 250],   # sum=750
         )
         
-        # depth_ratio = 1500 / (750 + 1e-6) ≈ 2.0
-        expected = 1500.0 / 750.0
+        # 【V217】对数对称化: ln((1500+1)/(750+1)) = ln(1501/751) ≈ 0.69
+        expected = math.log((1500.0 + 1.0) / (750.0 + 1.0))
         assert abs(tick.depth_ratio - expected) < 0.001, f"Expected {expected}, got {tick.depth_ratio}"
+        # 买多卖少，depth_ratio应该是正数
+        assert tick.depth_ratio > 0, f"Buy pressure should yield positive depth_ratio, got {tick.depth_ratio}"
     
     def test_depth_ratio_empty_vols(self):
-        """测试空盘口情况"""
+        """测试空盘口情况 - 绝对平衡"""
         from logic.data_providers.standard_tick import StandardTick
         
         tick = StandardTick(
@@ -55,7 +63,7 @@ class TestStandardTickDepthRatio:
             ask_vols=[],
         )
         
-        # 空盘口 = 0 / (0 + 1e-6) ≈ 0
+        # 【V217】空盘口 = ln((0+1)/(0+1)) = ln(1) = 0.0
         assert tick.depth_ratio == 0.0, f"Empty orderbook should return 0.0, got {tick.depth_ratio}"
     
     def test_depth_ratio_none_vols(self):
@@ -74,11 +82,11 @@ class TestStandardTickDepthRatio:
             ask_vols=None,
         )
         
-        # None盘口也应返回0.0（类型收敛）
+        # 【V217】None盘口 = ln((0+1)/(0+1)) = 0.0（类型收敛后绝对平衡）
         assert tick.depth_ratio == 0.0, f"None orderbook should return 0.0, got {tick.depth_ratio}"
     
     def test_depth_ratio_sell_pressure(self):
-        """测试卖压大于买压情况"""
+        """测试卖压大于买压情况 - 应返回负数"""
         from logic.data_providers.standard_tick import StandardTick
         
         tick = StandardTick(
@@ -93,12 +101,32 @@ class TestStandardTickDepthRatio:
             ask_vols=[500, 500, 500, 500, 500],  # sum=2500
         )
         
-        # depth_ratio = 500 / 2500 = 0.2
-        assert abs(tick.depth_ratio - 0.2) < 0.001, f"Expected 0.2, got {tick.depth_ratio}"
+        # 【V217】对数对称化: ln((500+1)/(2500+1)) = ln(501/2501) ≈ -1.61
+        expected = math.log((500.0 + 1.0) / (2500.0 + 1.0))
+        assert abs(tick.depth_ratio - expected) < 0.001, f"Expected {expected}, got {tick.depth_ratio}"
+        # 卖多买少，depth_ratio应该是负数
+        assert tick.depth_ratio < 0, f"Sell pressure should yield negative depth_ratio, got {tick.depth_ratio}"
+    
+    def test_neutral_pressure(self):
+        """【CTO V217新增】测试买卖相等时 - 绝对中性"""
+        from logic.data_providers.standard_tick import StandardTick
+        
+        tick = StandardTick(
+            code='000001.SZ',
+            time='20260318094500',
+            last_price=10.0,
+            volume_shares=1000000,
+            amount_yuan=10000000.0,
+            bid_vols=[100, 100, 100, 100, 100],  # sum=500
+            ask_vols=[100, 100, 100, 100, 100],  # sum=500
+        )
+        
+        # 【V217】买卖相等 = ln((500+1)/(500+1)) = ln(1) = 0.0
+        assert tick.depth_ratio == 0.0, f"Neutral pressure should return 0.0, got {tick.depth_ratio}"
 
 
 class TestToQmtDictDepthRatio:
-    """【CTO V216-T1】to_qmt_dict()输出测试"""
+    """【CTO V217】to_qmt_dict()输出测试"""
     
     def test_to_qmt_dict_contains_depth_ratio(self):
         """测试to_qmt_dict输出包含depthRatio字段"""
@@ -110,8 +138,8 @@ class TestToQmtDictDepthRatio:
             last_price=10.0,
             volume_shares=1000000,
             amount_yuan=10000000.0,
-            bid_vols=[100, 200, 300, 400, 500],
-            ask_vols=[50, 100, 150, 200, 250],
+            bid_vols=[100, 200, 300, 400, 500],  # sum=1500
+            ask_vols=[50, 100, 150, 200, 250],   # sum=750
         )
         
         qmt_dict = tick.to_qmt_dict()
@@ -119,7 +147,27 @@ class TestToQmtDictDepthRatio:
         # 必须包含depthRatio字段
         assert 'depthRatio' in qmt_dict, "to_qmt_dict must contain 'depthRatio' field"
         assert isinstance(qmt_dict['depthRatio'], float), "depthRatio must be float"
-        assert qmt_dict['depthRatio'] > 0, f"depthRatio should be positive, got {qmt_dict['depthRatio']}"
+        # 【V217】买多卖少，depth_ratio应该是正数
+        assert qmt_dict['depthRatio'] > 0, f"Buy pressure should yield positive depth_ratio, got {qmt_dict['depthRatio']}"
+    
+    def test_to_qmt_dict_negative_depth_ratio(self):
+        """【CTO V217新增】测试to_qmt_dict输出负数depthRatio"""
+        from logic.data_providers.standard_tick import StandardTick
+        
+        tick = StandardTick(
+            code='000001.SZ',
+            time='20260318094500',
+            last_price=10.0,
+            volume_shares=1000000,
+            amount_yuan=10000000.0,
+            bid_vols=[50, 50, 50, 50, 50],  # sum=250
+            ask_vols=[500, 500, 500, 500, 500],  # sum=2500
+        )
+        
+        qmt_dict = tick.to_qmt_dict()
+        
+        # 【V217】卖多买少，depth_ratio应该是负数
+        assert qmt_dict['depthRatio'] < 0, f"Sell pressure should yield negative depth_ratio, got {qmt_dict['depthRatio']}"
     
     def test_to_qmt_dict_type_convergence(self):
         """测试V215类型收敛：None变为[]"""
@@ -140,7 +188,6 @@ class TestToQmtDictDepthRatio:
         qmt_dict = tick.to_qmt_dict()
         
         # V215类型收敛：None → []
-        # 注意：to_qmt_dict内部已经做了or []处理，所以输出不应该是None
         assert isinstance(qmt_dict.get('bidPrice1'), (int, float)), \
             f"bidPrice1 should be numeric, got {type(qmt_dict.get('bidPrice1'))}"
     
@@ -148,7 +195,6 @@ class TestToQmtDictDepthRatio:
         """测试V215浮点除法：北交所碎股防爆"""
         from logic.data_providers.standard_tick import StandardTick
         
-        # 假设北交所某股成交量是150股（非整手）
         tick = StandardTick(
             code='830001.BJ',
             time='20260318094500',
@@ -242,7 +288,7 @@ class TestUniversalTrackerDepthRatio:
 
 
 class TestDepthRatioEdgeCases:
-    """边界条件测试"""
+    """【CTO V217】边界条件测试 - 对数对称化版本"""
     
     def test_extreme_buy_pressure(self):
         """测试极端买压（涨停板买单堆积）"""
@@ -258,9 +304,12 @@ class TestDepthRatioEdgeCases:
             ask_vols=[10, 10, 10, 10, 10],  # sum=50 (涨停板卖单稀少)
         )
         
-        # depth_ratio = 500000 / 50 = 10000
-        assert tick.depth_ratio > 1000, \
-            f"Extreme buy pressure should have high depth_ratio, got {tick.depth_ratio}"
+        # 【V217】对数对称化: ln((500000+1)/(50+1)) = ln(500001/51) ≈ 9.17
+        # 不再是天文数字10000，而是完美对称的正数
+        assert tick.depth_ratio > 8.0, \
+            f"Extreme buy pressure should have positive depth_ratio>8, got {tick.depth_ratio}"
+        assert tick.depth_ratio < 15.0, \
+            f"Extreme buy pressure depth_ratio should be bounded, got {tick.depth_ratio}"
     
     def test_extreme_sell_pressure(self):
         """测试极端卖压（跌停板卖单堆积）"""
@@ -276,9 +325,47 @@ class TestDepthRatioEdgeCases:
             ask_vols=[100000, 100000, 100000, 100000, 100000],  # sum=500000
         )
         
-        # depth_ratio = 50 / 500000 ≈ 0.0001
-        assert tick.depth_ratio < 0.001, \
-            f"Extreme sell pressure should have near-zero depth_ratio, got {tick.depth_ratio}"
+        # 【V217】对数对称化: ln((50+1)/(500000+1)) = ln(51/500001) ≈ -9.17
+        # 不再是接近0的小数，而是完美对称的负数！
+        assert tick.depth_ratio < -8.0, \
+            f"Extreme sell pressure should have negative depth_ratio<-8, got {tick.depth_ratio}"
+        assert tick.depth_ratio > -15.0, \
+            f"Extreme sell pressure depth_ratio should be bounded, got {tick.depth_ratio}"
+    
+    def test_symmetry_verification(self):
+        """【CTO V217新增】验证对数对称性"""
+        from logic.data_providers.standard_tick import StandardTick
+        
+        # 场景1：买100万，卖1
+        tick1 = StandardTick(
+            code='000001.SZ',
+            time='20260318094500',
+            last_price=11.0,
+            volume_shares=10000000,
+            amount_yuan=100000000.0,
+            bid_vols=[200000, 200000, 200000, 200000, 200000],  # sum=1000000
+            ask_vols=[0, 0, 0, 0, 1],  # sum=1
+        )
+        
+        # 场景2：买1，卖100万
+        tick2 = StandardTick(
+            code='000001.SZ',
+            time='20260318094500',
+            last_price=9.0,
+            volume_shares=10000000,
+            amount_yuan=100000000.0,
+            bid_vols=[0, 0, 0, 0, 1],  # sum=1
+            ask_vols=[200000, 200000, 200000, 200000, 200000],  # sum=1000000
+        )
+        
+        # 【V217】对数对称性验证：depth_ratio1 ≈ -depth_ratio2
+        assert abs(tick1.depth_ratio + tick2.depth_ratio) < 0.001, \
+            f"Symmetry broken: {tick1.depth_ratio} vs {-tick2.depth_ratio}"
+        
+        # 场景1应该是正数（买压）
+        assert tick1.depth_ratio > 0, f"Buy pressure should be positive, got {tick1.depth_ratio}"
+        # 场景2应该是负数（卖压）
+        assert tick2.depth_ratio < 0, f"Sell pressure should be negative, got {tick2.depth_ratio}"
 
 
 if __name__ == '__main__':

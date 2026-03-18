@@ -18,6 +18,7 @@ Version: 1.0.0
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any
 from datetime import datetime
+import math  # 【CTO V217】对数对称化depth_ratio
 
 
 @dataclass
@@ -71,19 +72,28 @@ class StandardTick:
     @property
     def depth_ratio(self) -> float:
         """
-        【CTO V216】盘口五档深度比
+        【CTO V217】盘口五档深度比 - 对数对称化版本
         
-        计算公式：(bidVol1+...+bidVol5) / (askVol1+...+askVol5 + 1e-6)
-        物理意义：买盘力量/卖盘力量，>1表示买盘强，<1表示卖盘强
+        计算公式：ln((total_bid + 1) / (total_ask + 1))
+        
+        【V217修正】原公式 total_bid/(total_ask+1e-6) 存在严重不对称谬误：
+        - 看多值域：1 ~ +∞（可达10000+）
+        - 看空值域：0 ~ 1（被死死压制）
+        
+        对数对称化后的物理意义：
+        - >0 表示买盘强（正数，极端涨停≈+13）
+        - <0 表示卖盘强（负数，极端跌停≈-13）
+        - =0 表示绝对平衡（买卖相等）
         
         Returns:
-            float: 深度比（分母防零）
+            float: 对数深度比（完美对称）
         """
         bid_vols = self.bid_vols or []
         ask_vols = self.ask_vols or []
         total_bid = sum(bid_vols) if bid_vols else 0.0
         total_ask = sum(ask_vols) if ask_vols else 0.0
-        return total_bid / (total_ask + 1e-6)  # 分母防零
+        # 【CTO V217】拉普拉斯平滑(+1) + 自然对数 = 完美对称
+        return math.log((total_bid + 1.0) / (total_ask + 1.0))
     
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典格式（snake_case字段名）"""
