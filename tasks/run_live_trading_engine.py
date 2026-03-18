@@ -419,16 +419,16 @@ class LiveTradingEngine:
     
     def get_tick_snapshot(self, stock_codes: List[str]) -> Dict[str, Dict]:
         """
-        【CTO V213 数据防腐层】统一Tick获取入口
+        【CTO V213/V214 数据防腐层】统一Tick获取入口
         
         优先使用tick_adapter获取数据，失败则fallback到直接调用xtdata。
-        返回原始字典格式，保持向后兼容。
+        返回QMT原生格式字典，保持向后兼容。
         
         Args:
             stock_codes: 股票代码列表
             
         Returns:
-            {stock_code: tick_dict} 原始Tick字典
+            {stock_code: tick_dict} QMT原生格式字典
         """
         result = {}
         
@@ -437,28 +437,14 @@ class LiveTradingEngine:
             try:
                 standard_ticks = self.tick_adapter.get_ticks(stock_codes)
                 if standard_ticks:
-                    # 将StandardTick转换回原始字典格式（向后兼容）
+                    # 【CTO V214】使用to_qmt_dict()返回完整QMT兼容格式
                     for code, tick in standard_ticks.items():
-                        result[code] = {
-                            'lastPrice': tick.last_price,
-                            'volume': tick.volume_shares // 100,  # 转回手单位
-                            'amount': tick.amount_yuan,
-                            'lastClose': tick.prev_close,
-                            'open': tick.open_price,
-                            'high': tick.high_price,
-                            'low': tick.low_price,
-                            'limitUp': tick.limit_up,
-                            'limitDown': tick.limit_down,
-                            'bidPrice1': tick.bid_prices[0] if tick.bid_prices else 0,
-                            'askPrice1': tick.ask_prices[0] if tick.ask_prices else 0,
-                            'bidVol1': tick.bid_vols[0] // 100 if tick.bid_vols else 0,  # 转回手
-                            'askVol1': tick.ask_vols[0] // 100 if tick.ask_vols else 0,
-                        }
+                        result[code] = tick.to_qmt_dict()
                     return result
             except Exception as e:
                 logger.debug(f"[TickAdapter] get_ticks失败，fallback到xtdata: {e}")
         
-        # Fallback: 直接调用xtdata
+        # Fallback: 直接调用xtdata（仅用于Adapter不可用时的紧急回退）
         try:
             from xtquant import xtdata
             raw_ticks = xtdata.get_full_tick(stock_codes)
@@ -1656,7 +1642,7 @@ class LiveTradingEngine:
             
             # 获取快照，只取前100只作为应急观察池
             xtdata.subscribe_whole_quote(all_stocks[:500])
-            snapshot = xtdata.get_full_tick(all_stocks[:500])
+            snapshot = self.get_tick_snapshot(all_stocks[:500])
             if snapshot:
                 self.watchlist = list(snapshot.keys())[:100]
                 logger.info(f"[OK] QMT快照回退完成: {len(self.watchlist)} 只候选")
@@ -1935,7 +1921,7 @@ class LiveTradingEngine:
                 if is_trading and not is_after_hours_init:
                     xtdata.subscribe_whole_quote(batch)
                 # 轻碰一下接口，建立内存通道即可
-                xtdata.get_full_tick(batch)
+                self.get_tick_snapshot(batch)
                 # 【CTO V56】沙盘模式CPU不需要呼吸，只需要计算！
                 if self.mode == 'live':
                     time.sleep(0.1)  # 实盘让底盘呼吸
@@ -2033,12 +2019,15 @@ class LiveTradingEngine:
                 if self.mode == 'live' and self.global_tick_frame % 180 == 0:  # 假设1秒1帧，180帧≈3分钟
                     logger.info("🌊 [活水引入] 执行全市场截面快照，捕获盘中新龙...")
                     try:
-                        # 【CTO重构】废弃qmt_adapter，直接用xtdata
-                        from xtquant import xtdata
-                        all_a_shares = xtdata.get_stock_list_in_sector('沪深A股')
+                        # 【CTO V214】使用tick_adapter获取股票列表
+                        all_a_shares = self.tick_adapter.get_stock_list('沪深A股') if self.tick_adapter else []
+                        if not all_a_shares:
+                            from xtquant import xtdata
+                            all_a_shares = xtdata.get_stock_list_in_sector('沪深A股')
                         if all_a_shares:
+                            from xtquant import xtdata
                             xtdata.subscribe_whole_quote(all_a_shares)
-                            mid_snapshot = xtdata.get_full_tick(all_a_shares)
+                            mid_snapshot = self.get_tick_snapshot(all_a_shares)
                             if mid_snapshot:
                                 import pandas as pd
                                 mid_df = pd.DataFrame([
@@ -2109,7 +2098,7 @@ class LiveTradingEngine:
                 hot_pool = list(self.watchlist)
                 
                 try:
-                    all_ticks = xtdata.get_full_tick(hot_pool)
+                    all_ticks = self.get_tick_snapshot(hot_pool)
                 except Exception as e:
                     logger.error(f"获取全量Tick失败: {e}")
                     if self.mode == 'live':
@@ -2140,7 +2129,7 @@ class LiveTradingEngine:
                             for i in range(0, len(cold_pool_list), CHUNK_SIZE):
                                 chunk = cold_pool_list[i:i+CHUNK_SIZE]
                                 try:
-                                    chunk_ticks = xtdata.get_full_tick(chunk)
+                                    chunk_ticks = self.get_tick_snapshot(chunk)
                                     if chunk_ticks:
                                         cold_pool_ticks.update(chunk_ticks)
                                 except Exception as e:
@@ -3246,15 +3235,18 @@ class LiveTradingEngine:
         try:
             logger.info("[SEARCH] 执行当前截面快照筛选...")
             
-            # 【CTO重构】废弃qmt_adapter，直接用xtdata
-            from xtquant import xtdata
-            all_stocks = xtdata.get_stock_list_in_sector('沪深A股')
+            # 【CTO V214】使用tick_adapter获取股票列表
+            all_stocks = self.tick_adapter.get_stock_list('沪深A股') if self.tick_adapter else []
+            if not all_stocks:
+                from xtquant import xtdata
+                all_stocks = xtdata.get_stock_list_in_sector('沪深A股')
             if not all_stocks:
                 logger.error("[ERR] 无法获取股票列表")
                 return
             
+            from xtquant import xtdata
             xtdata.subscribe_whole_quote(all_stocks)
-            snapshot = xtdata.get_full_tick(all_stocks)
+            snapshot = self.get_tick_snapshot(all_stocks)
             if not snapshot:
                 logger.error("[ERR] 无法获取当前快照")
                 return

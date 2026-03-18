@@ -384,16 +384,21 @@ def batch_calc_sustain(current_prices: List[float],
 def render_battle_dashboard(data_list, title="战报", clear_screen=False):
     """
     【CTO V28 Rich工业大屏】原地刷新，永不滚屏！
+    【CTO V214】ANSI清屏替代os.system
     """
     # 【CTO安全渲染】空列表保护
     if not data_list:
         print(f"\n====================\n{title} (空榜单)\n====================")
         return
     
-    # 清屏
+    # 清屏 - 【CTO V214】使用ANSI序列替代os.system
     if clear_screen:
         import os
-        os.system('cls' if os.name == 'nt' else 'clear')
+        import sys
+        if os.name == 'nt':
+            os.system('color')
+        sys.stdout.write('\033[2J\033[H')
+        sys.stdout.flush()
     
     # 【CTO V28】使用Rich库替代print
     try:

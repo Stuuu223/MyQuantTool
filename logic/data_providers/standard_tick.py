@@ -69,7 +69,7 @@ class StandardTick:
     extra: Dict[str, Any] = field(default_factory=dict)
     
     def to_dict(self) -> Dict[str, Any]:
-        """转换为字典格式"""
+        """转换为字典格式（snake_case字段名）"""
         return {
             'code': self.code,
             'time': self.time,
@@ -87,6 +87,54 @@ class StandardTick:
             'limit_up': self.limit_up,
             'limit_down': self.limit_down,
             'extra': self.extra
+        }
+    
+    def to_qmt_dict(self) -> Dict[str, Any]:
+        """
+        【CTO V214】转换为QMT原生格式字典（camelCase字段名）
+        
+        返回与xtdata.get_full_tick()完全兼容的字典格式，
+        用于主引擎无感知替换。
+        
+        量纲转换：
+        - volume_shares(股) → volume(手)，除以100
+        - bid_vols/ask_vols(股) → bidVol/askVol(手)，除以100
+        """
+        return {
+            'lastPrice': self.last_price,
+            'volume': self.volume_shares // 100,  # 股→手
+            'amount': self.amount_yuan,
+            'lastClose': self.prev_close,
+            'preClose': self.prev_close,  # 兼容两种字段名
+            'open': self.open_price,
+            'high': self.high_price,
+            'low': self.low_price,
+            'limitUp': self.limit_up,
+            'limitDown': self.limit_down,
+            # 完整五档买价
+            'bidPrice1': self.bid_prices[0] if len(self.bid_prices) > 0 else 0.0,
+            'bidPrice2': self.bid_prices[1] if len(self.bid_prices) > 1 else 0.0,
+            'bidPrice3': self.bid_prices[2] if len(self.bid_prices) > 2 else 0.0,
+            'bidPrice4': self.bid_prices[3] if len(self.bid_prices) > 3 else 0.0,
+            'bidPrice5': self.bid_prices[4] if len(self.bid_prices) > 4 else 0.0,
+            # 完整五档卖价
+            'askPrice1': self.ask_prices[0] if len(self.ask_prices) > 0 else 0.0,
+            'askPrice2': self.ask_prices[1] if len(self.ask_prices) > 1 else 0.0,
+            'askPrice3': self.ask_prices[2] if len(self.ask_prices) > 2 else 0.0,
+            'askPrice4': self.ask_prices[3] if len(self.ask_prices) > 3 else 0.0,
+            'askPrice5': self.ask_prices[4] if len(self.ask_prices) > 4 else 0.0,
+            # 完整五档买量（手）
+            'bidVol1': self.bid_vols[0] // 100 if len(self.bid_vols) > 0 and self.bid_vols[0] else 0,
+            'bidVol2': self.bid_vols[1] // 100 if len(self.bid_vols) > 1 and self.bid_vols[1] else 0,
+            'bidVol3': self.bid_vols[2] // 100 if len(self.bid_vols) > 2 and self.bid_vols[2] else 0,
+            'bidVol4': self.bid_vols[3] // 100 if len(self.bid_vols) > 3 and self.bid_vols[3] else 0,
+            'bidVol5': self.bid_vols[4] // 100 if len(self.bid_vols) > 4 and self.bid_vols[4] else 0,
+            # 完整五档卖量（手）
+            'askVol1': self.ask_vols[0] // 100 if len(self.ask_vols) > 0 and self.ask_vols[0] else 0,
+            'askVol2': self.ask_vols[1] // 100 if len(self.ask_vols) > 1 and self.ask_vols[1] else 0,
+            'askVol3': self.ask_vols[2] // 100 if len(self.ask_vols) > 2 and self.ask_vols[2] else 0,
+            'askVol4': self.ask_vols[3] // 100 if len(self.ask_vols) > 3 and self.ask_vols[3] else 0,
+            'askVol5': self.ask_vols[4] // 100 if len(self.ask_vols) > 4 and self.ask_vols[4] else 0,
         }
     
     @classmethod
