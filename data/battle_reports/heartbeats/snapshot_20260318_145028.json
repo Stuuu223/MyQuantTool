@@ -1,0 +1,271 @@
+{
+  "ts": "2026-03-18 14:50:28",
+  "frame": 720,
+  "stock_count": 24,
+  "stocks": [
+    {
+      "code": "301128.SZ",
+      "score": 488993.0,
+      "price": 130.02,
+      "peak_price": 130.02,
+      "max_gain_pct": 0.0,
+      "trigger_type": "",
+      "was_bought": false,
+      "first_appear_time": "2026-03-18 14:38:23",
+      "appear_count": 720
+    },
+    {
+      "code": "300302.SZ",
+      "score": 455743.7,
+      "price": 24.83,
+      "peak_price": 24.83,
+      "max_gain_pct": 0.0,
+      "trigger_type": "",
+      "was_bought": false,
+      "first_appear_time": "2026-03-18 14:38:23",
+      "appear_count": 720
+    },
+    {
+      "code": "301428.SZ",
+      "score": 442610.4,
+      "price": 39.79,
+      "peak_price": 39.79,
+      "max_gain_pct": 0.0,
+      "trigger_type": "",
+      "was_bought": false,
+      "first_appear_time": "2026-03-18 14:38:23",
+      "appear_count": 720
+    },
+    {
+      "code": "301306.SZ",
+      "score": 437155.9,
+      "price": 131.21,
+      "peak_price": 131.21,
+      "max_gain_pct": 0.0,
+      "trigger_type": "",
+      "was_bought": false,
+      "first_appear_time": "2026-03-18 14:38:23",
+      "appear_count": 720
+    },
+    {
+      "code": "300571.SZ",
+      "score": 397332.3,
+      "price": 35.24,
+      "peak_price": 35.24,
+      "max_gain_pct": 0.0,
+      "trigger_type": "",
+      "was_bought": false,
+      "first_appear_time": "2026-03-18 14:38:23",
+      "appear_count": 720
+    },
+    {
+      "code": "688328.SH",
+      "score": 439389.9,
+      "price": 50.15,
+      "peak_price": 50.15,
+      "max_gain_pct": 0.0,
+      "trigger_type": "",
+      "was_bought": false,
+      "first_appear_time": "2026-03-18 14:38:23",
+      "appear_count": 720
+    },
+    {
+      "code": "300166.SZ",
+      "score": 60271.1,
+      "price": 15.66,
+      "peak_price": 15.67,
+      "max_gain_pct": 0.5131494547787048,
+      "trigger_type": "",
+      "was_bought": false,
+      "first_appear_time": "2026-03-18 14:38:23",
+      "appear_count": 659
+    },
+    {
+      "code": "002565.SZ",
+      "score": 38179.8,
+      "price": 16.21,
+      "peak_price": 16.21,
+      "max_gain_pct": 0.0,
+      "trigger_type": "",
+      "was_bought": false,
+      "first_appear_time": "2026-03-18 14:38:23",
+      "appear_count": 720
+    },
+    {
+      "code": "002445.SZ",
+      "score": 37213.0,
+      "price": 4.07,
+      "peak_price": 4.07,
+      "max_gain_pct": 0.0,
+      "trigger_type": "",
+      "was_bought": false,
+      "first_appear_time": "2026-03-18 14:38:23",
+      "appear_count": 720
+    },
+    {
+      "code": "603601.SH",
+      "score": 37030.0,
+      "price": 11.77,
+      "peak_price": 11.77,
+      "max_gain_pct": 0.0,
+      "trigger_type": "",
+      "was_bought": false,
+      "first_appear_time": "2026-03-18 14:38:23",
+      "appear_count": 720
+    },
+    {
+      "code": "603803.SH",
+      "score": 35889.2,
+      "price": 13.13,
+      "peak_price": 13.13,
+      "max_gain_pct": 0.0,
+      "trigger_type": "",
+      "was_bought": false,
+      "first_appear_time": "2026-03-18 14:38:23",
+      "appear_count": 720
+    },
+    {
+      "code": "003018.SZ",
+      "score": 31036.8,
+      "price": 27.27,
+      "peak_price": 27.27,
+      "max_gain_pct": 0.0,
+      "trigger_type": "",
+      "was_bought": false,
+      "first_appear_time": "2026-03-18 14:38:23",
+      "appear_count": 720
+    },
+    {
+      "code": "603897.SH",
+      "score": 27058.2,
+      "price": 33.14,
+      "peak_price": 33.14,
+      "max_gain_pct": 0.0,
+      "trigger_type": "",
+      "was_bought": false,
+      "first_appear_time": "2026-03-18 14:38:23",
+      "appear_count": 720
+    },
+    {
+      "code": "001287.SZ",
+      "score": 26363.2,
+      "price": 24.64,
+      "peak_price": 24.64,
+      "max_gain_pct": 0.0,
+      "trigger_type": "",
+      "was_bought": false,
+      "first_appear_time": "2026-03-18 14:38:23",
+      "appear_count": 720
+    },
+    {
+      "code": "600666.SH",
+      "score": 26015.7,
+      "price": 4.44,
+      "peak_price": 4.44,
+      "max_gain_pct": 0.0,
+      "trigger_type": "",
+      "was_bought": false,
+      "first_appear_time": "2026-03-18 14:38:23",
+      "appear_count": 720
+    },
+    {
+      "code": "603912.SH",
+      "score": 25267.7,
+      "price": 10.24,
+      "peak_price": 10.24,
+      "max_gain_pct": 0.0,
+      "trigger_type": "",
+      "was_bought": false,
+      "first_appear_time": "2026-03-18 14:38:23",
+      "appear_count": 720
+    },
+    {
+      "code": "603168.SH",
+      "score": 23845.5,
+      "price": 7.8,
+      "peak_price": 7.8,
+      "max_gain_pct": 0.0,
+      "trigger_type": "",
+      "was_bought": false,
+      "first_appear_time": "2026-03-18 14:38:23",
+      "appear_count": 720
+    },
+    {
+      "code": "300499.SZ",
+      "score": 28015.5,
+      "price": 41.26,
+      "peak_price": 41.3,
+      "max_gain_pct": 0.24271844660192793,
+      "trigger_type": "",
+      "was_bought": false,
+      "first_appear_time": "2026-03-18 14:38:23",
+      "appear_count": 707
+    },
+    {
+      "code": "301382.SZ",
+      "score": 36478.1,
+      "price": 38.6,
+      "peak_price": 38.72,
+      "max_gain_pct": 0.8858780614903498,
+      "trigger_type": "",
+      "was_bought": false,
+      "first_appear_time": "2026-03-18 14:38:23",
+      "appear_count": 713
+    },
+    {
+      "code": "300042.SZ",
+      "score": 26219.1,
+      "price": 59.62,
+      "peak_price": 60.31,
+      "max_gain_pct": 1.6004043126684682,
+      "trigger_type": "",
+      "was_bought": false,
+      "first_appear_time": "2026-03-18 14:38:23",
+      "appear_count": 589
+    },
+    {
+      "code": "300317.SZ",
+      "score": 10837.6,
+      "price": 6.03,
+      "peak_price": 6.04,
+      "max_gain_pct": 0.33222591362127013,
+      "trigger_type": "",
+      "was_bought": false,
+      "first_appear_time": "2026-03-18 14:39:43",
+      "appear_count": 106
+    },
+    {
+      "code": "600821.SH",
+      "score": 27776.3,
+      "price": 10.65,
+      "peak_price": 10.65,
+      "max_gain_pct": 1.428571428571432,
+      "trigger_type": "",
+      "was_bought": false,
+      "first_appear_time": "2026-03-18 14:39:47",
+      "appear_count": 81
+    },
+    {
+      "code": "688158.SH",
+      "score": 7080.339999999999,
+      "price": 47.4,
+      "peak_price": 47.6,
+      "max_gain_pct": 0.5279831045406547,
+      "trigger_type": "",
+      "was_bought": false,
+      "first_appear_time": "2026-03-18 14:39:56",
+      "appear_count": 8
+    },
+    {
+      "code": "301667.SZ",
+      "score": 14590.8,
+      "price": 111.31,
+      "peak_price": 114,
+      "max_gain_pct": 0.2991377793418999,
+      "trigger_type": "",
+      "was_bought": false,
+      "first_appear_time": "2026-03-18 14:42:23",
+      "appear_count": 17
+    }
+  ]
+}

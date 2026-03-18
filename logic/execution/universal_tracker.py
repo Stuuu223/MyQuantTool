@@ -180,17 +180,20 @@ class UniversalTracker:
         # 用途：盘后复盘可追溯任意标的的完整量价轨迹
         self._streaming_dir = 'data/battle_reports'
         os.makedirs(self._streaming_dir, exist_ok=True)
-        date_str = datetime.now().strftime('%Y%m%d')
+        
+        # 【CTO V210-T3】文件命名精确到秒，实现测试/实盘物理隔离
+        # 根因：测试运行和实盘运行用同一个日期文件，导致测试数据污染实盘数据
+        datetime_str = datetime.now().strftime('%Y%m%d_%H%M%S')
         self.streaming_report_path = os.path.join(
             self._streaming_dir,
-            f'streaming_report_{date_str}.jsonl'
+            f'streaming_report_{datetime_str}.jsonl'
         )
         
         # 轨道2：决策流 - 记录大脑的狙击决策（EVENT_VETO/EVENT_FIRE）
         # 用途：回答"为什么那只涨停的票我没买"
         self.sniper_log_path = os.path.join(
             self._streaming_dir,
-            f'sniper_log_{date_str}.jsonl'
+            f'sniper_log_{datetime_str}.jsonl'
         )
         
         # 轨道3：心跳快照 - 独立目录，每60帧覆写全市场状态

@@ -1139,7 +1139,10 @@ class LiveTradingEngine:
                         # 【CTO V180.2】debug_metrics透明化 - 波函数坍缩概率
                         'ignition_prob': debug_metrics.get('ignition_probability_pct', 0.0),
                         'mass': debug_metrics.get('mass_potential', 0.0),
-                        'velocity': debug_metrics.get('velocity', 0.0)
+                        'velocity': debug_metrics.get('velocity', 0.0),
+                        # 【CTO V210-T2】致命修复：添加price_momentum到target_entry
+                        # 根因：debug_metrics里有price_momentum但target_entry没有取，导致Tracker永远拿到0.0
+                        'price_momentum': debug_metrics.get('price_momentum', 0.0),
                     }
                     current_top_targets.append(target_entry)
                     
@@ -2511,7 +2514,9 @@ class LiveTradingEngine:
                                 # 【CTO V180.2】debug_metrics透明化 - 波函数坍缩概率
                                 'ignition_prob': debug_metrics.get('ignition_probability_pct', 0.0),
                                 'mass': debug_metrics.get('mass_potential', 0.0),
-                                'velocity': debug_metrics.get('velocity', 0.0)
+                                'velocity': debug_metrics.get('velocity', 0.0),
+                                # 【CTO V210-T2】致命修复：添加price_momentum
+                                'price_momentum': debug_metrics.get('price_momentum', 0.0),
                             })
                     except Exception:
                         continue

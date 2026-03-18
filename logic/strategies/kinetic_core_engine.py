@@ -678,6 +678,8 @@ class KineticCoreEngine:
         logger.debug(f"[V88Physics] {stock_code} | mass:{mass_potential:.4f} | vel:{velocity:.2f}% | ke:{base_kinetic_energy:.4f} | friction:{friction_multiplier:.2f} | mfe_mult:{efficiency_multiplier:.2f} | score:{final_score}")
         
         # 【CTO V168 透明度改造】收集所有物理算子明细用于审计
+        # 【CTO V210-T2】致命修复：添加price_momentum到debug_metrics
+        # 根因：price_momentum计算了但没有暴露，导致Tracker和决策大脑永远拿到0.0
         debug_metrics = {
             'mass_potential': mass_potential,           # 质量势能
             'velocity': velocity,                       # 速度(涨幅^3)
@@ -694,7 +696,8 @@ class KineticCoreEngine:
             'is_gravitational_escape': is_gravitational_escape, # 是否重力逃逸
             'is_micro_collapsed': is_micro_collapsed,   # 是否微观坍塌
             'change_pct': change_pct,                   # 涨幅百分比
-            'vwap': vwap                                # 成交均价
+            'vwap': vwap,                               # 成交均价
+            'price_momentum': price_momentum,           # 【CTO V210-T2】价格动能(日内相对位置)
         }
         
         # ========== 7. 波函数坍缩概率 (V178新增) ==========
