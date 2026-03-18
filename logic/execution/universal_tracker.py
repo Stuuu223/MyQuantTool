@@ -176,27 +176,28 @@ class UniversalTracker:
                 time_str=time_str
             )
         
-        # 【CTO V192修复】视野盲区消除：用global_prices更新所有已上榜股票的价格
-        # 即使某票跌出榜单，仍能追踪其peak_price，计算真实的missed_gain
-        if global_prices:
-            for code in list(self.registry.keys()):
-                if code in global_prices:
-                    price = global_prices[code]
-                    # 【CTO V194】数据断流保护：价格为0或None视为无效数据
-                    if price is None or price <= 0:
-                        logger.warning(
-                            f"[WARN] 缺乏标的 {code} 的有效价格数据(price={price})，"
-                            f"无法更新峰值，保持原峰值不变"
-                        )
-                        continue
-                    self.on_price_update(code, price, current_time)
-                else:
-                    # 【CTO V194】数据断流保护：在册股票未在global_prices中获取到价格
-                    # 可能原因：停牌、接口断流、订阅池未覆盖
+        # 【CTO V195】拆除外层静默跳过逻辑
+        # 原问题：`if global_prices:` 在传入空字典 `{}` 时判定为False，整个代码块被静默跳过
+        # 修复：删除外层判断，直接进入循环，让内层判断处理空字典情况
+        # 如果global_prices为空，内层`if code in global_prices:`会走向else触发WARN
+        for code in list(self.registry.keys()):
+            if global_prices and code in global_prices:
+                price = global_prices[code]
+                # 【CTO V194】数据断流保护：价格为0或None视为无效数据
+                if price is None or price <= 0:
                     logger.warning(
-                        f"[WARN] 缺乏标的 {code} 的真实交易数据，"
+                        f"[WARN] 缺乏标的 {code} 的有效价格数据(price={price})，"
                         f"无法更新峰值，保持原峰值不变"
                     )
+                    continue
+                self.on_price_update(code, price, current_time)
+            else:
+                # 【CTO V195】数据断流保护：在册股票未在global_prices中获取到价格
+                # 可能原因：停牌、接口断流、订阅池未覆盖、或global_prices为空字典
+                logger.warning(
+                    f"[WARN] 缺乏标的 {code} 的真实交易数据，"
+                    f"无法更新峰值，保持原峰值不变"
+                )
 
     # ------------------------------------------------------------------
     # 价格持续追踪（离榜后仍需更新到收盘）

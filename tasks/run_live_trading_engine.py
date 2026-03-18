@@ -2024,22 +2024,70 @@ class LiveTradingEngine:
                     self._macro_multiplier = 1.0  # 正常
                 
                 # 【CTO第一级：全量快照捕获】
-                # 【CTO V194修复】订阅池 = watchlist ∪ registry.keys()
-                # 确保被Tracker记录过的标的即使被剔除出watchlist，也能获取其真实数据
-                # 这是修复"错失涨幅"统计失效的关键：不能用脑补价格替代真实Tick
-                subscription_pool = set(self.watchlist)
-                if hasattr(self, 'universal_tracker') and self.universal_tracker:
-                    registry_keys = set(self.universal_tracker.registry.keys())
-                    subscription_pool = subscription_pool | registry_keys
-                subscription_pool = list(subscription_pool)  # 转为list供QMT API使用
+                # 【CTO V195 冷热隔离】解决订阅池无限膨胀问题
+                # 
+                # 问题：V194将registry.keys()全部加入订阅池，但registry只进不出
+                # 从09:30到14:50会从30只膨胀到1000-2000只，导致：
+                # 1. 每帧3秒调用get_full_tick(1500只)产生巨大I/O阻塞
+                # 2. 极易触发券商API单次请求上限(500/1000)
+                #
+                # 方案：冷热隔离
+                # - 热池(watchlist): 高频3秒刷新，用于核心交易决策
+                # - 冷池(registry): 低频每60帧(约3分钟)更新peak_price
+                # - 冷池使用切片拉取(每批500只)
+                
+                # 热池：高频刷新（每帧）
+                hot_pool = list(self.watchlist)
                 
                 try:
-                    all_ticks = xtdata.get_full_tick(subscription_pool)
+                    all_ticks = xtdata.get_full_tick(hot_pool)
                 except Exception as e:
                     logger.error(f"获取全量Tick失败: {e}")
                     if self.mode == 'live':
                         time.sleep(1)
                     continue
+                
+                # 冷池：低频刷新（每60帧 ≈ 3分钟）
+                # 更新已离榜股票的peak_price，用于计算missed_gain
+                cold_pool_ticks = {}
+                if hasattr(self, 'universal_tracker') and self.universal_tracker:
+                    registry_keys = set(self.universal_tracker.registry.keys()) - set(self.watchlist)
+                    if registry_keys:
+                        # 帧计数器（首次初始化）
+                        if not hasattr(self, '_cold_pool_frame_count'):
+                            self._cold_pool_frame_count = 0
+                            self._cold_pool_last_update = None
+                        
+                        self._cold_pool_frame_count += 1
+                        
+                        # 每60帧更新一次冷池
+                        COLD_POOL_UPDATE_INTERVAL = 60
+                        if self._cold_pool_frame_count % COLD_POOL_UPDATE_INTERVAL == 0:
+                            cold_pool_list = list(registry_keys)
+                            logger.debug(f"[冷池更新] 离榜股票{len(cold_pool_list)}只，开始切片拉取...")
+                            
+                            # 切片拉取（每批500只，避免API上限）
+                            CHUNK_SIZE = 500
+                            for i in range(0, len(cold_pool_list), CHUNK_SIZE):
+                                chunk = cold_pool_list[i:i+CHUNK_SIZE]
+                                try:
+                                    chunk_ticks = xtdata.get_full_tick(chunk)
+                                    if chunk_ticks:
+                                        cold_pool_ticks.update(chunk_ticks)
+                                except Exception as e:
+                                    logger.warning(f"[冷池切片] 批次{i//CHUNK_SIZE+1}拉取失败: {e}")
+                            
+                            self._cold_pool_last_update = datetime.now()
+                            logger.debug(f"[冷池更新] 完成，获取{len(cold_pool_ticks)}只股票数据")
+                            
+                            # 更新tracker中的离榜股票peak_price
+                            if cold_pool_ticks and self.universal_tracker:
+                                for code, tick in cold_pool_ticks.items():
+                                    price = tick.get('lastPrice', 0) if isinstance(tick, dict) else 0
+                                    if price and price > 0:
+                                        self.universal_tracker.on_price_update(
+                                            code, price, datetime.now()
+                                        )
                 
                 # 【CTO V38】live模式只连QMT内存！
                 # 如果返回空数据，说明是非交易日或QMT未启动

@@ -90,15 +90,18 @@ class TradeDecisionBrain:
         # CTO宪法规定：Price_Momentum > 0.9 才是起爆临界点
         self.pm_threshold_buy: float = config.get('pm_threshold_buy', 0.90)
         
-        # 【CTO V194 去魔法化】MFE买入门槛必须显式注入
-        # 禁止使用未经数据验证的默认值！MFE阈值需要基于真实样本分布确定
-        if 'mfe_threshold_buy' not in config:
+        # 【CTO V195 修复NoneType崩溃陷阱】
+        # 原逻辑`if 'mfe_threshold_buy' not in config`只检查键是否存在
+        # 但config.get()可能返回None值，导致后续比较`top1_mfe < None`抛TypeError
+        # 必须检查值是否为None，而不是键是否存在
+        mfe_val = config.get('mfe_threshold_buy')
+        if mfe_val is None:
             raise ValueError(
                 "缺乏 MFE 验证分布数据，禁止使用魔法数字。"
                 "请在 strategy_params.json 的 decision_brain 配置节中显式设置 mfe_threshold_buy 参数。"
                 "建议通过回测确定最优阈值。"
             )
-        self.mfe_threshold_buy: float = config['mfe_threshold_buy']
+        self.mfe_threshold_buy: float = float(mfe_val)
 
         # 内部状态
         self.current_position: Optional[Dict] = None
