@@ -704,7 +704,7 @@ class LiveTradingEngine:
         2. L2上帝视角(十档)和L1刺刀模式(五档)自动降级
         3. 三次方失衡算子(Imbalance^3)放大深层盘口意图
         
-        ⚠️ [ARCHITECTURE WARNING] l1_inflow_accumulator 是有状态字典，挂载在实例上
+        [WARN] [ARCHITECTURE WARNING] l1_inflow_accumulator 是有状态字典，挂载在实例上
         当前为单线程串行安全，若引入多线程必须替换为 threading.local() 或对象池
         禁止在未做线程隔离的情况下并发调用此方法
         
@@ -815,14 +815,14 @@ class LiveTradingEngine:
             if tracker.stock_code in self.candidate_pool:
                 del self.candidate_pool[tracker.stock_code]
             self.eliminated_pool[tracker.stock_code] = tracker
-            logger.info(f"💀 [剔除] {tracker.stock_code}: {reason}")
+            logger.info(f"[FATAL] [剔除] {tracker.stock_code}: {reason}")
         
         elif new_state == StockState.OPPORTUNITY:
             # 从候选池移到机会池
             if tracker.stock_code in self.candidate_pool:
                 del self.candidate_pool[tracker.stock_code]
             self.opportunity_pool[tracker.stock_code] = tracker
-            logger.info(f"🎯 [机会] {tracker.stock_code}: 分数{tracker.final_score:.1f}")
+            logger.info(f"[OPPORTUNITY] {tracker.stock_code}: 分数{tracker.final_score:.1f}")
         
         logger.debug(f"[状态转换] {tracker.stock_code}: {old_state.value} -> {new_state.value}")
     
@@ -973,7 +973,7 @@ class LiveTradingEngine:
                 if current_ratio > 3.0 and abs(change_pct) < 2.0:
                     # 放量滞涨，认定为摩擦消耗，强制抹除 90% 的虚假流入！
                     net_inflow_est *= 0.1
-                    logger.debug(f"🚨 [对倒降维] {stock_code} 量比{current_ratio:.1f}x但涨幅仅{change_pct:.2f}%，剥离虚假流入！")
+                    logger.debug(f"[CRITICAL] [对倒降维] {stock_code} 量比{current_ratio:.1f}x但涨幅仅{change_pct:.2f}%，剥离虚假流入！")
             
             if net_inflow_est > 0:
                 market_total_inflow += net_inflow_est
@@ -1197,7 +1197,7 @@ class LiveTradingEngine:
                         if hasattr(self, 'paper_engine') and self.paper_engine:
                             self.paper_engine.place_order(buy_code, buy_price, 'BUY', decision.get('trigger_type'))
                         # 清除决策大脑持仓状态后重新设置
-                        logger.info(f"💰 [决策买入] {buy_code} @ ¥{buy_price:.2f} | 原因: {decision['reason']}")
+                        logger.info(f"[TRADE-BUY] {buy_code} @ {buy_price:.2f} | 原因: {decision['reason']}")
                 
                 elif decision['action'] == 'SELL' and hasattr(self, 'execution_manager') and self.execution_manager:
                     if held_code:
@@ -1217,7 +1217,7 @@ class LiveTradingEngine:
                             if hasattr(self, 'paper_engine') and self.paper_engine:
                                 self.paper_engine.place_order(held_code, sell_price, 'SELL')
                             self.decision_brain.clear_position()
-                            logger.info(f"🔔 [决策卖出] {held_code} @ ¥{sell_price:.2f} | 原因: {decision['reason']}")
+                            logger.info(f"[TRADE-SELL] {held_code} @ {sell_price:.2f} | 原因: {decision['reason']}")
                 
                 # 全榜追踪器帧更新
                 if hasattr(self, 'universal_tracker') and self.universal_tracker:
@@ -1253,7 +1253,7 @@ class LiveTradingEngine:
         self.highest_scores = {t['code']: t for t in current_top_targets}
         
         # 6. 大屏展示
-        logger.info(f"📊 强制收尸结算...共{len(current_top_targets)}只达标(>=50分)")
+        logger.info(f"[STATS] 强制收尸结算...共{len(current_top_targets)}只达标(>=50分)")
         if self.last_known_top_targets:
             self._print_fire_control_panel(
                 self.last_known_top_targets, 
@@ -1263,8 +1263,8 @@ class LiveTradingEngine:
             )
             print("\n[CMD] 沙盘时间线推演定格完毕。")
         else:
-            # 【CTO增强】即使榜单为空也显示提示，避免用户误以为卡死
-            logger.warning(f"⚠️ 沙盘结算完成，但无股票达标(>=50分)。粗筛池{len(last_tick_by_stock)}只，请检查V65引力阻尼是否过严。")
+            # [CTO增强]即使榜单为空也显示提示，避免用户误以为卡死
+            logger.warning(f"[WARN] 沙盘结算完成，但无股票达标(>=50分)。粗筛池{len(last_tick_by_stock)}只，请检查V65引力阻尼是否过严。")
             self._print_fire_control_panel(
                 [], 
                 initial_loading=False, 
@@ -1997,7 +1997,7 @@ class LiveTradingEngine:
                                             added_count += 1
                                             
                                     if added_count > 0:
-                                        logger.info(f"🔥 [沸水入池] 动态量比阀值飙至 {dynamic_vr_threshold:.1f}x！捕获 {added_count} 只新龙！当前池子: {len(self.watchlist)}只")
+                                        logger.info(f"[ALERT] [沸水入池] 动态量比阀值飙至 {dynamic_vr_threshold:.1f}x！捕获 {added_count} 只新龙！当前池子: {len(self.watchlist)}只")
                                         # 同步订阅底层（容错包裹）
                                         try:
                                             from xtquant import xtdata
@@ -2239,7 +2239,7 @@ class LiveTradingEngine:
                     try:
                         # 【CTO V20】float_volume已在上方从缓存或兜底获取
                         # 【CTO V180.2 量纲铁律】
-                        # ⚠️ 此处current_volume来自xtdata.get_full_tick()的'volume'字段
+                        # [WARN] 此处current_volume来自xtdata.get_full_tick()的'volume'字段
                         # 实盘live模式：volume单位=手(100股)，×100转换为股
                         # scan模式的tick数据【绝对不允许】流经此代码路径（应走run_historical_stream）
                         # 如果未来合并路径，必须先确认volume字段单位！
@@ -2484,7 +2484,7 @@ class LiveTradingEngine:
                         
                         # 微观防线检查
                         if self._micro_defense_check(top_code, top_tick):
-                            logger.info(f"🎯 [单吊触发] {top_code} 分数={top_score:.1f} 价格={top_price:.2f}")
+                            logger.info(f"[TRIGGER] [单吊触发] {top_code} 分数={top_score:.1f} 价格={top_price:.2f}")
                             
                             # 扣动扳机（MockExecutionManager会自动检查资金状态）
                             success = self.execution_manager.place_mock_order(
@@ -2494,11 +2494,11 @@ class LiveTradingEngine:
                             )
                             
                             if success:
-                                logger.info(f"✅ [成交确认] {top_code} 买入成功！")
+                                logger.info(f"[OK] [成交确认] {top_code} 买入成功！")
                                 # 单吊模式：买入后退出主循环（不再寻找其他机会）
                                 # self.running = False
                             else:
-                                logger.debug(f"❌ [买入失败] {top_code} 资金不足或仓位已满")
+                                logger.debug(f"[X] [买入失败] {top_code} 资金不足或仓位已满")
                 
                 # 【CTO V13】更新pool_stats缓存，解决盘中无数据时显示0的问题
                 if pool_stats.get('active', 0) > 0:
@@ -2681,7 +2681,7 @@ class LiveTradingEngine:
                         if current_time_val >= time_type(9, 45, 0):
                             if delta_turnover > 0.5 and price_change_pct < -0.5:
                                 logger.warning(
-                                    f"🚨 [L1探针] {stock_code} 爆量({delta_turnover:.2f}%)"
+                                    f"[CRITICAL] [L1探针] {stock_code} 爆量({delta_turnover:.2f}%)"
                                     f"且价格下跌({price_change_pct:.2f}%)，主力派发！"
                                 )
                                 return False
@@ -2708,10 +2708,10 @@ class LiveTradingEngine:
             
             current_price = tick_data.get('price', 0)
             if up_stop_price > 0 and current_price >= up_stop_price * 0.995:
-                logger.debug(f"🔒 {stock_code} 接近涨停状态，放弃开火")
+                logger.debug(f"[LOCK] {stock_code} 接近涨停状态，放弃开火")
                 return False
             if down_stop_price > 0 and current_price <= down_stop_price * 1.005:
-                logger.debug(f"🔒 {stock_code} 接近跌停状态，放弃开火")
+                logger.debug(f"[LOCK] {stock_code} 接近跌停状态，放弃开火")
                 return False
             
             micro_ok = capital_flow_ok and sector_resonance_ok
@@ -2793,7 +2793,7 @@ class LiveTradingEngine:
                     current_ratio = amount / avg_amount_5d
                     if current_ratio > 3.0 and abs(change_pct) < 2.0:
                         net_inflow_est *= 0.1
-                        logger.debug(f"🚨 [对倒降维] {stock_code} 量比{current_ratio:.1f}x但涨幅仅{change_pct:.2f}%，剥离虚假流入！")
+                        logger.debug(f"[CRITICAL] [对倒降维] {stock_code} 量比{current_ratio:.1f}x但涨幅仅{change_pct:.2f}%，剥离虚假流入！")
             
             # 【CTO V34照妖镜修复】用绝对价格推导判断涨停（解决askPrice1盘后失效问题）
             # 涨停价计算：主板10%，创业板/科创板20%，北交所30%
@@ -3048,7 +3048,7 @@ class LiveTradingEngine:
         from datetime import datetime
         
         try:
-            logger.info("🔍 执行当前截面快照筛选...")
+            logger.info("[SEARCH] 执行当前截面快照筛选...")
             
             # 【CTO重构】废弃qmt_adapter，直接用xtdata
             from xtquant import xtdata
@@ -3138,7 +3138,7 @@ class LiveTradingEngine:
             
             if added_stocks:
                 self.watchlist.extend(added_stocks)
-                logger.info(f"🔥 [天网捕获] 盘中捕捉到 {len(added_stocks)} 只新异动标的！当前雷达池扩容至: {len(self.watchlist)}只")
+                logger.info(f"[ALERT] [天网捕获] 盘中捕捉到 {len(added_stocks)} 只新异动标的！当前雷达池扩容至: {len(self.watchlist)}只")
                 
                 # 【极其关键】必须为新猎物挂载 QMT 内存订阅，否则主循环读不到新股票的 Tick！
                 if self.mode == 'live':

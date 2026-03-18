@@ -62,13 +62,13 @@ class MockQmtAdapter:
             xtdata.enable_hello = False
             self._xtdata = xtdata
             self._is_initialized = True
-            logger.info(f"✅ [MockQmtAdapter] 初始化成功，目标日期: {self.target_date}")
+            logger.info(f"[OK] [MockQmtAdapter] 初始化成功，目标日期: {self.target_date}")
             return True
         except ImportError:
-            logger.error("❌ [MockQmtAdapter] 无法导入xtquant模块")
+            logger.error("[X] [MockQmtAdapter] 无法导入xtquant模块")
             return False
         except Exception as e:
-            logger.error(f"❌ [MockQmtAdapter] 初始化失败: {e}")
+            logger.error(f"[X] [MockQmtAdapter] 初始化失败: {e}")
             return False
     
     def subscribe_ticks(self, stock_list: List[str]) -> int:
@@ -108,7 +108,7 @@ class MockQmtAdapter:
                 logger.debug(f"[MockQmtAdapter] {stock} 加载失败: {e}")
                 continue
         
-        logger.info(f"✅ [MockQmtAdapter] 预加载 {success_count}/{len(stock_list)} 只股票历史Tick")
+        logger.info(f"[OK] [MockQmtAdapter] 预加载 {success_count}/{len(stock_list)} 只股票历史Tick")
         return success_count
     
     def get_all_a_shares(self) -> List[str]:

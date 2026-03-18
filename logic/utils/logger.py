@@ -42,12 +42,12 @@ def log_execution_time(func: Callable = None, *, level: str = "DEBUG") -> Callab
                 result = f(*args, **kwargs)
                 elapsed = time.time() - start
                 getattr(logger, level.lower(), logger.debug)(
-                    f"⏱️ {f.__name__} 执行完成，耗时: {elapsed:.3f}s"
+                    f"[TIMER] {f.__name__} 执行完成，耗时: {elapsed:.3f}s"
                 )
                 return result
             except Exception as e:
                 elapsed = time.time() - start
-                logger.error(f"⏱️ {f.__name__} 执行失败，耗时: {elapsed:.3f}s，错误: {e}")
+                logger.error(f"[TIMER] {f.__name__} 执行失败，耗时: {elapsed:.3f}s，错误: {e}")
                 raise
         return wrapper
     
@@ -79,9 +79,9 @@ class performance_context:
         elapsed = time.time() - self.start_time
         if exc_type is None:
             getattr(self.logger, self.level.lower(), self.logger.debug)(
-                f"⏱️ {self.name} 完成，耗时: {elapsed:.3f}s"
+                f"[TIMER] {self.name} 完成，耗时: {elapsed:.3f}s"
             )
         else:
             self.logger.error(
-                f"⏱️ {self.name} 失败，耗时: {elapsed:.3f}s，错误: {exc_val}"
+                f"[TIMER] {self.name} 失败，耗时: {elapsed:.3f}s，错误: {exc_val}"
             )

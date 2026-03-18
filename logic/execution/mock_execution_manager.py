@@ -420,7 +420,7 @@ class MockExecutionManager:
         if current_price < pos.entry_price and current_mfe < self.micro_guard_mfe_threshold:
             reason = f"微观防爆: 价格{current_price:.2f}<{pos.entry_price:.2f} + MFE{current_mfe:.2f}<{self.micro_guard_mfe_threshold}"
             pos.stopped_out = True
-            logger.warning(f"⚠️ [微观防爆] {stock_code}: {reason}")
+            logger.warning(f"[WARN] [微观防爆] {stock_code}: {reason}")
             return True, reason
         
         return False, ""
@@ -657,6 +657,6 @@ class MockExecutionManager:
             del self.positions[stock_code]
             
             logger.info(
-                f"🔔 [强制平仓] {stock_code} | 原因:{reason} | "
+                f"[TRADE-SELL] [强制平仓] {stock_code} | 原因:{reason} | "
                 f"均价:{executed_price:.2f} | 盈亏:{pnl:+.2f}({pnl_pct:+.2f}%)"
             )

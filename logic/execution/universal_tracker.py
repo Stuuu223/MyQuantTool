@@ -301,7 +301,7 @@ class UniversalTracker:
             lifecycle = self._get_or_create(code)
             lifecycle.was_bought = True
             lifecycle.buy_price = price
-            logger.info(f"📊 [追踪] {code} 买入 @¥{price:.2f}")
+            logger.info(f"[STATS] [追踪] {code} 买入 @¥{price:.2f}")
         elif action == 'SELL':
             self._sold_codes[code] = price
             lifecycle = self.registry.get(code)
@@ -312,7 +312,7 @@ class UniversalTracker:
                         (price - lifecycle.buy_price) / lifecycle.buy_price * 100
                     )
                 logger.info(
-                    f"📊 [追踪] {code} 卖出 @¥{price:.2f} | 盈亏:{lifecycle.actual_pnl_pct:+.2f}%"
+                    f"[STATS] [追踪] {code} 卖出 @¥{price:.2f} | 盈亏:{lifecycle.actual_pnl_pct:+.2f}%"
                 )
         elif action == 'SKIP' and code:
             lifecycle = self._get_or_create(code)

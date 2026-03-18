@@ -482,11 +482,11 @@ class KineticCoreEngine:
             # 极端缩量且今天盘中无封单，这是惯性衰竭的铁板！
             # 【V179 P2】铁板惩罚系数参数化，从硬编码0.1改为config读取
             mass_potential = (inflow_ratio_pct / 100.0) * self.iron_plate_penalty
-            logger.debug(f"⚠️ [惯性衰竭] {stock_code} 缩量铁板(ratio:{ratio_stock:.2f})，势能衰减(惩罚×{self.iron_plate_penalty})！")
+            logger.debug(f"[WARN] [惯性衰竭] {stock_code} 缩量铁板(ratio:{ratio_stock:.2f})，势能衰减(惩罚x{self.iron_plate_penalty})！")
         else:
             # 真正的动态质量继承！质量加成让放量承接产生真实动能增益！
             mass_potential = (inflow_ratio_pct / 100.0) * overflow_multiplier * mass_boost
-            logger.debug(f"⚡ [势能继承] {stock_code} 溢出乘数:{overflow_multiplier:.2f}x 质量加成:{mass_boost:.2f}x，质量:{mass_potential:.4f}")
+            logger.debug(f"[FAST] [势能继承] {stock_code} 溢出乘数:{overflow_multiplier:.2f}x 质量加成:{mass_boost:.2f}x，质量:{mass_potential:.4f}")
         
         # ========== 2. 指数速度向量 (VELOCITY CUBED) ==========
         # 【CTO V92 铁律】涨幅的威力是非线性的！3次幂让涨幅9%的动能是涨幅3%的27倍！
@@ -511,9 +511,9 @@ class KineticCoreEngine:
         else:
             # 无成交数据时，用(High+Low+Close)/3作为均价近似
             vwap = (high + low + price) / 3.0
-            logger.debug(f"⚠️ [VWAP近似] {stock_code} 无成交数据，使用HLC均价{vwap:.2f}近似VWAP")
+            logger.debug(f"[WARN] [VWAP近似] {stock_code} 无成交数据，使用HLC均价{vwap:.2f}近似VWAP")
         
-        # === 【CTO V176 Law1: 抗重力姿态判定】===
+        # === [CTO V176 Law1: 抗重力姿态判定]===
         # 废除3.5%硬编码回撤阈值！改用连续物理姿态判定
         # price_momentum = (price - low) / (high - low)
         # 物理意义：现价在日内价格区间的相对位置
@@ -535,7 +535,7 @@ class KineticCoreEngine:
         # [UNVERIFIED] 当前默认值基于2样本反向拟合，需>=50样本回测验证
         if price_momentum < self.pm_threshold:
             is_micro_collapsed = True
-            logger.debug(f"☄️ [冲高回落] {stock_code} momentum={price_momentum:.2f}<{self.pm_threshold:.2f}[UNVERIFIED]，姿态破败，返回0分")
+            logger.debug(f"[VETO-MOMENTUM] [冲高回落] {stock_code} momentum={price_momentum:.2f}<{self.pm_threshold:.2f}[UNVERIFIED]，姿态破败，返回0分")
             empty_debug = {'mass_potential': 0.0, 'velocity': 0.0, 'base_kinetic_energy': 0.0, 'friction_multiplier': 0.0, 'purity_norm': 0.0, 'inflow_ratio_pct': inflow_ratio_pct, 'ratio_stock': ratio_stock, 'reason': '姿态破败', 'pm_threshold': self.pm_threshold}
             return 0.0, 0.0, inflow_ratio_pct, ratio_stock, mfe, empty_debug
         
@@ -599,9 +599,9 @@ class KineticCoreEngine:
         # 彻底杜绝水下反抽骗炮！(水下股票反抽超过均价线也被当成高位洗盘的致命Bug已修复)
         if is_gravitational_escape and purity_norm < 0.7:
             friction_multiplier = purity_norm ** 1.5
-            logger.debug(f"⚖️ [重力逃逸豁免] {stock_code} 高空水位(涨幅{change_pct:.1f}%)稳踩VWAP，纯度{purity_norm*100:.0f}%判定为洗盘！")
+            logger.debug(f"[EXEMPTION] [重力逃逸豁免] {stock_code} 高空水位(涨幅{change_pct:.1f}%)稳踩VWAP，纯度{purity_norm*100:.0f}%判定为洗盘！")
         
-        # 【CTO V173】删除流星坠毁死代码！
+        # [CTO V173] 删除流星坠毁死代码！
         # L500已return，以下代码永远不会执行，已删除。
         # 流星坠毁(is_micro_collapsed=True)在L500已直接return 0，无需重复惩罚。
         
@@ -610,7 +610,7 @@ class KineticCoreEngine:
         # 直接执行6次方最高摩擦惩罚，让那些无承接票分数显著降低！
         if not is_gravitational_escape and purity_norm < 0.45:
             friction_multiplier = purity_norm ** 6
-            logger.debug(f"📉 [纯度惩罚] {stock_code} 未逃逸重力且纯度{purity_norm*100:.0f}%，执行6次方高摩擦惩罚")
+            logger.debug(f"[PENALTY] [纯度惩罚] {stock_code} 未逃逸重力且纯度{purity_norm*100:.0f}%，执行6次方高摩擦惩罚")
         
         # ========== 5. 效率激活 = MFE Sigmoid ==========
         # 【CTO V176 Law2】废除科学怪人公式，改用真实物理做功效率
@@ -639,7 +639,7 @@ class KineticCoreEngine:
         # 如果没有残留能量(overflow_multiplier<=1.0)，且流入>0.5%但MFE极低，说明动能被摩擦力耗尽
         if overflow_multiplier <= 1.0 and inflow_ratio_pct > 0.5:
             if mfe < 0.1:
-                logger.debug(f"🧱 [阻力死墙] {stock_code} 做功效率极低(MFE:{mfe:.2f})，动能被摩擦力耗尽，静默！")
+                logger.debug(f"[VETO-WALL] [阻力死墙] {stock_code} 做功效率极低(MFE:{mfe:.2f})，动能被摩擦力耗尽，静默！")
                 empty_debug = {'mass_potential': mass_potential, 'velocity': velocity, 'base_kinetic_energy': base_kinetic_energy, 'friction_multiplier': friction_multiplier, 'purity_norm': purity_norm, 'inflow_ratio_pct': inflow_ratio_pct, 'ratio_stock': ratio_stock, 'mfe': mfe, 'reason': '阻力死墙'}
                 return 0.0, 0.0, inflow_ratio_pct, ratio_stock, mfe, empty_debug
         
@@ -647,7 +647,7 @@ class KineticCoreEngine:
         # 物理学定义：价格被砸穿了日内的"能量质心"(近似为当日开盘价)。
         # 如果当前价格跌破了开盘价，且被死死压在日内最高点的一半以下(纯度<0.4)，主升力场已坍塌。
         if price < open_price and purity_norm < 0.4:
-            logger.debug(f"🕳️ [引力坍塌] {stock_code} 跌破开盘价且纯度仅{purity_norm*100:.0f}%，势能坠入黑洞！")
+            logger.debug(f"[BLACK-HOLE] [引力坍塌] {stock_code} 跌破开盘价且纯度仅{purity_norm*100:.0f}%，势能坠入黑洞！")
             empty_debug = {'mass_potential': mass_potential, 'velocity': velocity, 'base_kinetic_energy': base_kinetic_energy, 'friction_multiplier': friction_multiplier, 'purity_norm': purity_norm, 'inflow_ratio_pct': inflow_ratio_pct, 'ratio_stock': ratio_stock, 'reason': '引力坍塌'}
             return 0.0, 0.0, inflow_ratio_pct, ratio_stock, mfe, empty_debug
         
@@ -816,9 +816,9 @@ if __name__ == "__main__":
         )
         assert final_score_spike == 0.0, f"Spike极刑应返回0.0，实际{final_score_spike}"
         assert mfe_spike == 0.0, f"mfe应为初始化默认值0.0，实际{mfe_spike}"
-        print(f"  ✅ 通过 - Spike极刑前置时mfe={mfe_spike}，无UnboundLocalError")
+        print(f"  [OK] 通过 - Spike极刑前置时mfe={mfe_spike}，无UnboundLocalError")
     except UnboundLocalError as e:
-        print(f"  ❌ 失败 - UnboundLocalError: {e}")
+        print(f"  [X] 失败 - UnboundLocalError: {e}")
     
     # 原有测试：sustain_ratio负流入场景
     print("\n【测试sustain_ratio】负流入修复验证")
@@ -840,8 +840,8 @@ if __name__ == "__main__":
     print(f"  flow_5min=-500万（净流出），flow_15min=1000万")
     print(f"  sustain_ratio: {sustain_ratio_neg:.2f}")
     print(f"  最终得分: {final_score_neg:.2f}")
-    print("  ✅ 通过")
+    print("  [OK] 通过")
     
     print("\n" + "=" * 70)
-    print("✅ 所有单元测试通过！")
+    print("[OK] 所有单元测试通过！")
     print("=" * 70)

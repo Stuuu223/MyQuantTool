@@ -177,7 +177,7 @@ class SessionSnapshot:
                 logger.info(f"[SessionSnapshot] 快照日期 {data.get('trade_date')} != 今日 {self.trade_date}，忽略")
                 return None
             snap_time = data.get('snapshot_time', '未知')
-            logger.info(f"[SessionSnapshot] ✅ 发现同日快照 (保存于 {snap_time})，准备恢复...")
+            logger.info(f"[SessionSnapshot] [OK] 发现同日快照 (保存于 {snap_time})，准备恢复...")
             return data
         except Exception as e:
             logger.warning(f"[SessionSnapshot] 快照读取失败: {e}")
@@ -198,7 +198,7 @@ class SessionSnapshot:
             et = brain_state.get('entry_time')
             db.entry_time = datetime.fromisoformat(et) if et else None
             if db.held_stock_code:
-                logger.info(f"[SessionSnapshot]   ✅ 持仓恢复: {db.held_stock_code} @{db.entry_price:.2f}")
+                logger.info(f"[SessionSnapshot]   [OK] 持仓恢复: {db.held_stock_code} @{db.entry_price:.2f}")
 
         # 2. 恢复 execution_manager 资金
         exec_state = snapshot.get('exec_state', {})
@@ -208,14 +208,14 @@ class SessionSnapshot:
                 em.current_capital = float(exec_state['current_capital'])
             if 'total_pnl' in exec_state:
                 em.total_pnl = float(exec_state['total_pnl'])
-            logger.info(f"[SessionSnapshot]   ✅ 资金恢复: ¥{getattr(em, 'current_capital', 0):,.2f} "
+            logger.info(f"[SessionSnapshot]   [OK] 资金恢复: ¥{getattr(em, 'current_capital', 0):,.2f} "
                         f"| 今日盈亏: ¥{getattr(em, 'total_pnl', 0):+,.2f}")
 
         # 3. 恢复 L1 资金流向累加器
         l1_state = snapshot.get('l1_inflow_accumulator', {})
         if l1_state:
             engine.l1_inflow_accumulator = l1_state
-            logger.info(f"[SessionSnapshot]   ✅ L1资金流向累加器恢复: {len(l1_state)} 只票")
+            logger.info(f"[SessionSnapshot]   [OK] L1资金流向累加器恢复: {len(l1_state)} 只票")
 
         # 4. 恢复宏观资金虹吸缓存
         engine.market_total_inflow_cache = float(
@@ -228,13 +228,13 @@ class SessionSnapshot:
         # 6. 恢复今日战报
         engine.highest_scores = snapshot.get('highest_scores', {})
         if engine.highest_scores:
-            logger.info(f"[SessionSnapshot]   ✅ 今日战报恢复: {len(engine.highest_scores)} 只票历史最高分")
+            logger.info(f"[SessionSnapshot]   [OK] 今日战报恢复: {len(engine.highest_scores)} 只票历史最高分")
 
         # 7. 恢复 watchlist（若引擎 watchlist 为空）
         saved_watchlist = snapshot.get('watchlist', [])
         if saved_watchlist and not getattr(engine, 'watchlist', []):
             engine.watchlist = saved_watchlist
-            logger.info(f"[SessionSnapshot]   ✅ watchlist恢复: {len(saved_watchlist)} 只票")
+            logger.info(f"[SessionSnapshot]   [OK] watchlist恢复: {len(saved_watchlist)} 只票")
 
         # 8. 【Bug#4修复】恢复 opportunity_pool（仅恢复state=OPPORTUNITY的）
         oppo_pool = snapshot.get('opportunity_pool', {})
@@ -253,7 +253,7 @@ class SessionSnapshot:
                     )
                     restored_count += 1
             if restored_count > 0:
-                logger.info(f"[SessionSnapshot]   ✅ 机会池恢复: {restored_count} 只票")
+                logger.info(f"[SessionSnapshot]   [OK] 机会池恢复: {restored_count} 只票")
 
         logger.info(f"[SessionSnapshot] 🚀 Session 恢复完成 "
                     f"(快照时间: {snapshot.get('snapshot_time', '未知')})")

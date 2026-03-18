@@ -300,12 +300,12 @@ class PathResolver:
         
         raise RuntimeError(
             f"QMT数据目录未配置或无法找到。\n"
-            f"❌ 错误：系统无法找到QMT数据目录，请检查以下配置：\n"
+            f"[X] 错误：系统无法找到QMT数据目录，请检查以下配置：\n"
             f"1. 环境变量QMT_PATH是否正确设置 (当前值: {os.getenv('QMT_PATH', '未设置')})\n"
             f"2. QMT客户端是否已正确安装\n"
             f"3. QMT数据目录路径是否存在\n"
             f"4. .env文件中QMT_PATH配置是否正确\n\n"
-            f"💡 解决方案：\n"
+            f"[TIP] 解决方案：\n"
             f"   设置环境变量: set QMT_PATH=H:\\QMT\\userdata_mini (替换为实际路径)\n"
             f"   或创建配置文件: {config_file} 并添加: {{'qmt_data_dir': '你的实际路径'}}\n\n"
             f"📋 常见QMT安装路径: H:\\QMT\\userdata_mini, E:\\QMT\\userdata_mini, D:\\国金证券QMT交易端\\userdata_mini"

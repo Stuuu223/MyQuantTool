@@ -246,19 +246,19 @@ class TimeMachineEngine:
             logger.info(f"【时间机器】UniverseBuilder返回: {len(stock_pool)} 只")
             
         if not stock_pool:
-            logger.error("❌ 【时间机器】粗筛结果为空，今日回测终止！")
+            logger.error("[X] 【时间机器】粗筛结果为空，今日回测终止！")
             return {'date': date, 'status': 'error', 'error': '粗筛结果为空'}
         
         # 【CTO深市突围】：预热TrueDictionary（深市股票安全）
-        print(f"  🔥 预热TrueDictionary...")
+        print(f"  [ALERT] 预热TrueDictionary...")
         from logic.data_providers.true_dictionary import get_true_dictionary
         global_dict = get_true_dictionary()
         warmup_result = global_dict.warmup(stock_pool, target_date=date, force=False)
-        print(f"  ✅ TrueDictionary预热完成")
+        print(f"  [OK] TrueDictionary预热完成")
         
         print(f"\n{'='*60}")
         print(f"【时间机器】回测日期: {date}")
-        print(f"⚡ [CTO深市突围] 靶向读取{len(stock_pool)}只深市股票Tick...")
+        print(f"[FAST] [CTO深市突围] 靶向读取{len(stock_pool)}只深市股票Tick...")
         print(f"{'='*60}")
         
         daily_result = {
@@ -274,19 +274,19 @@ class TimeMachineEngine:
         try:
             # 【CTO全息克隆】：直接使用UniverseBuilder的安全股票池！
             # 不再调用get_local_data筛选，避免BSON崩溃！
-            print(f"  📊 使用全息克隆股票池: {len(stock_pool)} 只")
+            print(f"  [STATS] 使用全息克隆股票池: {len(stock_pool)} 只")
             
             # 直接使用传入的股票池，不进行额外筛选
             valid_stocks = stock_pool
             
-            print(f"  📈 全息克隆筛选: {len(valid_stocks)} 只安全股票")
+            print(f"  [TREND] 全息克隆筛选: {len(valid_stocks)} 只安全股票")
             
             daily_result['valid_stocks'] = len(valid_stocks)
-            print(f"  ✅ 有效数据: {len(valid_stocks)} 只")
+            print(f"  [OK] 有效数据: {len(valid_stocks)} 只")
             
             if len(valid_stocks) < 5:
                 daily_result['status'] = 'insufficient_data'
-                logger.warning(f"  ⚠️ 数据不足: 仅 {len(valid_stocks)} 只有效数据")
+                logger.warning(f"  [WARN] 数据不足: 仅 {len(valid_stocks)} 只有效数据")
                 return daily_result
             
             # 2. 计算09:40指标（早盘5分钟+5分钟）
@@ -294,7 +294,7 @@ class TimeMachineEngine:
             
             # 【CTO深市突围】：深市股票安全，全部处理！
             valid_stocks_to_process = valid_stocks
-            print(f"  📊 处理 {len(valid_stocks_to_process)} 只深市股票")
+            print(f"  [STATS] 处理 {len(valid_stocks_to_process)} 只深市股票")
             
             stock_scores = []
             data_missing_count = 0
@@ -305,7 +305,7 @@ class TimeMachineEngine:
             # 问题：之前用 MAX_STOCKS_PER_RUN=20 截取前20只，导致京东方等大盘股混入
             # 修复：用换手率物理漏斗过滤死水股，不依赖Magic Number市值限制
             # ==========================================
-            print(f"  🔍 开始二维铁网快照预筛 (过滤死水大象)...")
+            print(f"  [SEARCH] 开始二维铁网快照预筛 (过滤死水大象)...")
             
             from logic.core.config_manager import get_config_manager
             config_mgr = get_config_manager()
@@ -316,7 +316,7 @@ class TimeMachineEngine:
             
             # 【CTO降维重铸】日内快照漏斗，彻底废除volume量纲陷阱
             # 使用amount（元）/流通市值计算换手率，永远不需要猜volume单位
-            print(f"  🔍 开始二维铁网快照预筛 (过滤死水大象)...")
+            print(f"  [SEARCH] 开始二维铁网快照预筛 (过滤死水大象)...")
             
             try:
                 from xtquant import xtdata
@@ -360,12 +360,12 @@ class TimeMachineEngine:
                 # 【CTO数据断言】如果缺失率超过20%，触发断路器！
                 total_stocks = len(valid_stocks_to_process)
                 if total_stocks > 0 and (missing_count / total_stocks > 0.2):
-                    error_msg = f"❌ [Fail Fast] 数据严重缺失！{missing_count}/{total_stocks} 只股票无日K数据。请运行 tools/smart_download.py 下载缺失数据！"
+                    error_msg = f"[X] [Fail Fast] 数据严重缺失！{missing_count}/{total_stocks} 只股票无日K数据。请运行 tools/smart_download.py 下载缺失数据！"
                     logger.error(error_msg)
                     print(error_msg)
                     return None  # 直接终止今日回测！
                 
-                print(f"  🎯 换手率铁网(>={min_turnover}%)过滤完毕，剩余: {len(filtered_candidates)} 只真龙候选 (淘汰:{missing_count}只)")
+                print(f"  [TARGET] 换手率铁网(>={min_turnover}%)过滤完毕，剩余: {len(filtered_candidates)} 只真龙候选 (淘汰:{missing_count}只)")
                 
             except Exception as e:
                 logger.error(f"快照预筛失败: {e}")
@@ -378,13 +378,13 @@ class TimeMachineEngine:
             import random
             if len(valid_stocks_to_process) > 50:
                 valid_stocks_to_process = random.sample(valid_stocks_to_process, 50)
-                print(f"  ⚠️ 触发BSON防爆，随机抽取 50 只高换手标的进行 Tick 精确打击")
+                print(f"  [WARN] 触发BSON防爆，随机抽取 50 只高换手标的进行 Tick 精确打击")
             
             if len(valid_stocks_to_process) == 0:
-                print(f"  ❌ 换手率铁网过滤后无候选股票，今日回测终止")
+                print(f"  [X] 换手率铁网过滤后无候选股票，今日回测终止")
                 return daily_result
             
-            print(f"  📊 最终股票池: {len(valid_stocks_to_process)} 只")
+            print(f"  [STATS] 最终股票池: {len(valid_stocks_to_process)} 只")
             
             # 【CTO黑名单】已知的BSON炸弹股票（触发C++断言崩溃）
             BSON_BOMB_BLACKLIST = {
@@ -418,7 +418,7 @@ class TimeMachineEngine:
                     if score is None:
                         data_missing_count += 1
                         data_missing_stocks.append(stock)
-                        logger.warning(f"  ⚠️ {stock}: 数据缺失，跳过算分")
+                        logger.warning(f"  [WARN] {stock}: 数据缺失，跳过算分")
                         continue
                     
                     # 【CTO P0 BUG FIX】final_score=0 是动能引擎正确淘汰的垃圾股，属于合法结果
@@ -428,7 +428,7 @@ class TimeMachineEngine:
                     if score.get('pre_close', 0) <= 0:
                         data_missing_count += 1
                         data_missing_stocks.append(stock)
-                        logger.warning(f"  ⚠️ {stock}: pre_close={score.get('pre_close', 0)} 无效，跳过")
+                        logger.warning(f"  [WARN] {stock}: pre_close={score.get('pre_close', 0)} 无效，跳过")
                         continue
                     
                     stock_scores.append(score)
@@ -436,7 +436,7 @@ class TimeMachineEngine:
                 except Exception as e:
                     error_msg = f"{stock}计算错误: {str(e)}"
                     daily_result['errors'].append(error_msg)
-                    logger.warning(f"  ⚠️ {error_msg}")
+                    logger.warning(f"  [WARN] {error_msg}")
             
             # ========== 【CTO P1 BUG FIX】循环结束后关闭MemoryEngine ==========
             try:
@@ -475,7 +475,7 @@ class TimeMachineEngine:
             # 5. 执行记忆衰减
             # 【总监验证】纯净模式跳过记忆衰减和写入
             if self.is_pure_mode:
-                logger.info("🧪 [纯净模式] 跳过记忆衰减与写入，实盘基因库保持原状")
+                logger.info("[TEST] [纯净模式] 跳过记忆衰减与写入，实盘基因库保持原状")
             else:
                 # 【CTO手术二 Fix 3】传入 record_date 参数
                 self._apply_memory_decay(date, top20, record_date=date)
@@ -559,7 +559,7 @@ class TimeMachineEngine:
             
             # 【CTO修复】打印数据缺失统计
             if data_missing_count > 0:
-                print(f"\n  📊 数据完整性报告:")
+                print(f"\n  [STATS] 数据完整性报告:")
                 print(f"     因数据缺失被跳过: {data_missing_count} 只")
                 print(f"     被跳过股票: {', '.join(data_missing_stocks[:10])}{'...' if len(data_missing_stocks) > 10 else ''}")
                 logger.info(f"【时间机器】{date} 数据缺失统计: {data_missing_count} 只被跳过")
@@ -570,8 +570,8 @@ class TimeMachineEngine:
             daily_result['status'] = 'error'
             error_msg = str(e)
             daily_result['errors'].append(error_msg)
-            logger.error(f"  ❌ 错误: {error_msg}")
-            print(f"  ❌ 错误: {error_msg}")
+            logger.error(f"  [X] 错误: {error_msg}")
+            print(f"  [X] 错误: {error_msg}")
         
         return daily_result
     
@@ -644,7 +644,7 @@ class TimeMachineEngine:
             return df
             
         except Exception as e:
-            logger.error(f"❌ 读取 {stock_code} Tick 数据失败: {e}")
+            logger.error(f"[X] 读取 {stock_code} Tick 数据失败: {e}")
             return None
     
     def _get_pre_close(self, stock_code: str, date: str) -> float:
@@ -1006,7 +1006,7 @@ class TimeMachineEngine:
                         # ============================================================
                         memory_multiplier = 1.0
                         if self.is_pure_mode:
-                            logger.debug(f"🧪 [纯净模式] {stock_code} 跳过记忆读取，memory_multiplier=1.0")
+                            logger.debug(f"[TEST] [纯净模式] {stock_code} 跳过记忆读取，memory_multiplier=1.0")
                         else:
                             try:
                                 if memory_engine is not None:
@@ -1018,7 +1018,7 @@ class TimeMachineEngine:
                                 # 注意：不在函数内close()！由外部统一管理生命周期
                             except Exception as mem_e:
                                 # Graceful降级：记忆引擎失败时multiplier=1.0
-                                logger.debug(f"⚠️ {stock_code} 记忆读取失败，使用默认multiplier=1.0: {mem_e}")
+                                logger.debug(f"[WARN] {stock_code} 记忆读取失败，使用默认multiplier=1.0: {mem_e}")
                                 memory_multiplier = 1.0
                         
                         # 调用动能打分引擎验钞机 (CTO终极红线版)
@@ -1054,12 +1054,12 @@ class TimeMachineEngine:
                             )
                         except Exception as kinetic_e:
                             print(f"【DEBUG】动能打分引擎算分异常: {type(kinetic_e).__name__}: {kinetic_e}")
-                            logger.error(f"❌ {stock_code} 动能打分引擎算分失败: {kinetic_e}")
+                            logger.error(f"[X] {stock_code} 动能打分引擎算分失败: {kinetic_e}")
                             continue
                         
                         # 应用记忆multiplier
                         final_score = base_score * memory_multiplier
-                        logger.debug(f"🎯 {stock_code} 动能打分引擎算分: base={base_score:.2f}, memory_mult={memory_multiplier:.2f}, final={final_score:.2f}")
+                        logger.debug(f"[TARGET] {stock_code} 动能打分引擎算分: base={base_score:.2f}, memory_mult={memory_multiplier:.2f}, final={final_score:.2f}")
                         
                         is_scored = True
                         early_exit = True  # 【CTO防爆】打分完成后退出循环
@@ -1181,11 +1181,11 @@ class TimeMachineEngine:
         
         backtest_memory_file = PathResolver.get_data_dir() / 'memory' / 'ShortTermMemory_backtest.json'
         if backtest_memory_file.exists():
-            logger.info("🗑️ 【时空清理】重置平行宇宙(回测)记忆库...")
+            logger.info("[CLEANUP] 【时空清理】重置平行宇宙(回测)记忆库...")
             print("🧠 【平行宇宙】重置回测专属记忆库...")
             # 清空平行宇宙记忆，让回测以纯洁状态开始
             backtest_memory_file.unlink()
-            print("✅ 【平行宇宙】回测记忆库已清空，实盘基因库不受影响！")
+            print("[OK] 【平行宇宙】回测记忆库已清空，实盘基因库不受影响！")
         else:
             logger.info("🆕 【平行宇宙】创建回测专属记忆库")
             print("🧠 【平行宇宙】使用隔离记忆库，实盘基因库不受影响！")
@@ -1207,7 +1207,7 @@ class TimeMachineEngine:
             # CTO铁律: 每日动态粗筛 (UniverseBuilder纯血模式)
             try:
                 stock_pool = self._load_stock_pool(date=date)
-                print(f"  📊 当日粗筛: {len(stock_pool)} 只")
+                print(f"  [STATS] 当日粗筛: {len(stock_pool)} 只")
             except Exception as e:
                 error_msg = str(e)
                 # CTO修复：检测是否为节假日（UniverseBuilder返回空）
@@ -1221,7 +1221,7 @@ class TimeMachineEngine:
                     })
                 else:
                     logger.error(f"【时间机器】{date} 粗筛失败: {e}")
-                    print(f"  ❌ {date} 粗筛失败: {e}")
+                    print(f"  [X] {date} 粗筛失败: {e}")
                     all_results.append({
                         'date': date,
                         'status': 'coarse_filter_failed',
@@ -1641,12 +1641,12 @@ class TimeMachineEngine:
             )
             
             if not tick_data or normalized_code not in tick_data:
-                logger.warning(f"⚠️ {stock_code} 无Tick数据")
+                logger.warning(f"[WARN] {stock_code} 无Tick数据")
                 return None
             
             df = tick_data[normalized_code]
             if df.empty or len(df) < 10:
-                logger.warning(f"⚠️ {stock_code} Tick数据不足")
+                logger.warning(f"[WARN] {stock_code} Tick数据不足")
                 return None
             
             # 转换时间戳为可读时间
@@ -1660,7 +1660,7 @@ class TimeMachineEngine:
             # 【时空切片1】截取 09:30-09:35 计算真实 flow_5min
             df_5min = df[(df['time_str'] >= '09:30:00') & (df['time_str'] <= '09:35:00')].copy()
             if df_5min.empty:
-                logger.warning(f"⚠️ {stock_code} 09:30-09:35 无数据")
+                logger.warning(f"[WARN] {stock_code} 09:30-09:35 无数据")
                 return None
             
             # 计算5分钟资金流入（简化：用amount增量）
@@ -1673,7 +1673,7 @@ class TimeMachineEngine:
             # 【时空切片2】截取 09:30-09:45 计算真实 flow_15min
             df_15min = df[(df['time_str'] >= '09:30:00') & (df['time_str'] <= '09:45:00')].copy()
             if df_15min.empty:
-                logger.warning(f"⚠️ {stock_code} 09:30-09:45 无数据")
+                logger.warning(f"[WARN] {stock_code} 09:30-09:45 无数据")
                 return None
             
             if 'amount' in df_15min.columns:
@@ -1681,7 +1681,7 @@ class TimeMachineEngine:
             else:
                 flow_15min = (df_15min['lastPrice'] * df_15min['volume'] * 100).sum()
             
-            logger.debug(f"✅ {stock_code} 时空切片: 5min={flow_5min/1e8:.2f}亿, 15min={flow_15min/1e8:.2f}亿")
+            logger.debug(f"[OK] {stock_code} 时空切片: 5min={flow_5min/1e8:.2f}亿, 15min={flow_15min/1e8:.2f}亿")
             
             return {
                 'flow_5min': float(flow_5min),
@@ -1691,7 +1691,7 @@ class TimeMachineEngine:
             }
             
         except Exception as e:
-            logger.error(f"❌ {stock_code} 时空切片计算失败: {e}")
+            logger.error(f"[X] {stock_code} 时空切片计算失败: {e}")
             return None
 
     

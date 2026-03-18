@@ -60,13 +60,13 @@ class QMTEventAdapter:
             from xtquant import xtdata
             self._xtdata = xtdata
             self._is_initialized = True
-            logger.info("✅ [QMTEventAdapter] QMT连接初始化成功")
+            logger.info("[OK] [QMTEventAdapter] QMT连接初始化成功")
             return True
         except ImportError:
-            logger.error("❌ [QMTEventAdapter] 无法导入xtquant模块")
+            logger.error("[X] [QMTEventAdapter] 无法导入xtquant模块")
             return False
         except Exception as e:
-            logger.error(f"❌ [QMTEventAdapter] QMT初始化失败: {e}")
+            logger.error(f"[X] [QMTEventAdapter] QMT初始化失败: {e}")
             return False
     
     def subscribe_ticks(self, stock_list: List[str]) -> int:
@@ -85,20 +85,20 @@ class QMTEventAdapter:
             int: 成功订阅的数量
         """
         if not self._is_initialized:
-            logger.error("❌ [QMTEventAdapter] 未初始化，无法订阅")
+            logger.error("[X] [QMTEventAdapter] 未初始化，无法订阅")
             return 0
             
         if not stock_list:
-            logger.warning("⚠️ [QMTEventAdapter] 股票列表为空，跳过订阅")
+            logger.warning("[WARN] [QMTEventAdapter] 股票列表为空，跳过订阅")
             return 0
             
         # 过滤已订阅的股票
         new_stocks = [s for s in stock_list if s not in self._subscribed_stocks]
         if not new_stocks:
-            logger.info("📊 [QMTEventAdapter] 所有股票已订阅，无需重复")
+            logger.info("[STATS] [QMTEventAdapter] 所有股票已订阅，无需重复")
             return 0
             
-        logger.info(f"📊 [QMTEventAdapter] 开始订阅 {len(new_stocks)} 只股票Tick数据...")
+        logger.info(f"[STATS] [QMTEventAdapter] 开始订阅 {len(new_stocks)} 只股票Tick数据...")
         
         subscribed_count = 0
         for code in new_stocks:
@@ -112,15 +112,15 @@ class QMTEventAdapter:
                 self._subscribed_stocks.add(code)
                 subscribed_count += 1
             except Exception as e:
-                logger.warning(f"⚠️ [QMTEventAdapter] 订阅 {code} 失败: {e}")
+                logger.warning(f"[WARN] [QMTEventAdapter] 订阅 {code} 失败: {e}")
                 
-        logger.info(f"✅ [QMTEventAdapter] Tick订阅完成: {subscribed_count}/{len(new_stocks)} 只")
+        logger.info(f"[OK] [QMTEventAdapter] Tick订阅完成: {subscribed_count}/{len(new_stocks)} 只")
         return subscribed_count
     
     def unsubscribe_all(self):
         """取消所有订阅"""
         # 注意: xtdata没有直接的取消订阅API，此处作为占位
-        logger.info(f"📊 [QMTEventAdapter] 已订阅股票数: {len(self._subscribed_stocks)}")
+        logger.info(f"[STATS] [QMTEventAdapter] 已订阅股票数: {len(self._subscribed_stocks)}")
         self._subscribed_stocks.clear()
     
     def _qmt_tick_callback(self, datas: Dict):
@@ -154,10 +154,10 @@ class QMTEventAdapter:
                 # 计数日志(每100次输出一次)
                 self._tick_count += 1
                 if self._tick_count % 100 == 0:
-                    logger.info(f"📊 [QMTEventAdapter] 累计处理Tick: {self._tick_count} 条")
+                    logger.info(f"[STATS] [QMTEventAdapter] 累计处理Tick: {self._tick_count} 条")
                     
         except Exception as e:
-            logger.error(f"❌ [QMTEventAdapter] Tick回调处理失败: {e}")
+            logger.error(f"[X] [QMTEventAdapter] Tick回调处理失败: {e}")
     
     def _convert_to_standard_tick(self, stock_code: str, raw_tick: Dict) -> Dict[str, Any]:
         """
@@ -209,10 +209,10 @@ class QMTEventAdapter:
             self.event_bus.publish('tick', event_obj)
             
         except TypeError as te:
-            logger.error(f"❌ [QMTEventAdapter] TickEvent字段不匹配: {te}")
+            logger.error(f"[X] [QMTEventAdapter] TickEvent字段不匹配: {te}")
             logger.debug(f"   传入字段: {list(tick_event.keys())}")
         except Exception as e:
-            logger.error(f"❌ [QMTEventAdapter] TickEvent创建失败: {e}")
+            logger.error(f"[X] [QMTEventAdapter] TickEvent创建失败: {e}")
     
     def get_full_tick_snapshot(self, stock_list: List[str]) -> Dict[str, Dict]:
         """
@@ -228,7 +228,7 @@ class QMTEventAdapter:
             Dict: {stock_code: tick_data}
         """
         if not self._is_initialized:
-            logger.error("❌ [QMTEventAdapter] 未初始化，无法获取快照")
+            logger.error("[X] [QMTEventAdapter] 未初始化，无法获取快照")
             return {}
             
         if not stock_list:
@@ -244,9 +244,9 @@ class QMTEventAdapter:
                 if snapshot:
                     result.update(snapshot)
             except Exception as e:
-                logger.warning(f"⚠️ [QMTEventAdapter] 获取快照批次失败({i}-{i+batch_size}): {e}")
+                logger.warning(f"[WARN] [QMTEventAdapter] 获取快照批次失败({i}-{i+batch_size}): {e}")
                 
-        logger.info(f"✅ [QMTEventAdapter] 获取快照完成: {len(result)}/{len(stock_list)} 只")
+        logger.info(f"[OK] [QMTEventAdapter] 获取快照完成: {len(result)}/{len(stock_list)} 只")
         return result
     
     def get_all_a_shares(self) -> List[str]:
@@ -257,15 +257,15 @@ class QMTEventAdapter:
             List[str]: 沪深A股代码列表
         """
         if not self._is_initialized:
-            logger.error("❌ [QMTEventAdapter] 未初始化，无法获取股票列表")
+            logger.error("[X] [QMTEventAdapter] 未初始化，无法获取股票列表")
             return []
             
         try:
             stocks = self._xtdata.get_stock_list_in_sector('沪深A股')
-            logger.info(f"✅ [QMTEventAdapter] 获取全市场股票: {len(stocks)} 只")
+            logger.info(f"[OK] [QMTEventAdapter] 获取全市场股票: {len(stocks)} 只")
             return stocks
         except Exception as e:
-            logger.error(f"❌ [QMTEventAdapter] 获取股票列表失败: {e}")
+            logger.error(f"[X] [QMTEventAdapter] 获取股票列表失败: {e}")
             return []
 
 

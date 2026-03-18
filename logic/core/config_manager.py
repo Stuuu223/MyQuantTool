@@ -65,7 +65,7 @@ class ConfigManager:
             with open(config_path, 'r', encoding='utf-8') as f:
                 self._config = json.load(f)
         except Exception as e:
-            raise RuntimeError(f"❌ [ConfigManager] 加载配置文件失败: {e}")
+            raise RuntimeError(f"[X] [ConfigManager] 加载配置文件失败: {e}")
     
     def reload_config(self) -> None:
         """
@@ -100,7 +100,7 @@ class ConfigManager:
                 missing.append(key)
                 
         if missing:
-            error_msg = f"❌ [配置断言失败] strategy_params.json 缺少核心键值: {missing}。请立即更新配置文件！"
+            error_msg = f"[X] [配置断言失败] strategy_params.json 缺少核心键值: {missing}。请立即更新配置文件！"
             print(error_msg)
             raise RuntimeError(error_msg)
     
@@ -278,7 +278,7 @@ class ConfigManager:
         
         【阈值来源】
         - 【CTO M2修复】基于极小样本观察，暂定阈值1.8，待大规模回测验证
-        - ⚠️ 警告：此参数未经跨年跨牛熊验证，仅作占位符使用
+        - [WARN] 警告：此参数未经跨年跨牛熊验证，仅作占位符使用
         
         Returns:
             float: ATR势垒阈值，默认1.8
@@ -418,7 +418,7 @@ if __name__ == "__main__":
     print(f"  实盘(95th)阈值   : {live_thr:.4f}")
     print(f"  回测(88th)阈值   : {bt_thr:.4f}")
     assert bt_thr <= live_thr, "回测阈值应<=实盘阈值"
-    print("  ✅ 通过")
+    print("  [OK] 通过")
     
     # 测试 temporary_override 对动态阈值的影响（无需reload_config）
     print("\n--- temporary_override 自动生效测试 ---")
@@ -426,7 +426,7 @@ if __name__ == "__main__":
         thr_90 = config_mgr.compute_volume_ratio_threshold(mock_ratios, mode='backtest')
     print(f"  override 0.90 → 阈值: {thr_90:.4f} (应 >= {bt_thr:.4f})")
     assert thr_90 >= bt_thr, "90分位阈值应>=88分位阈值"
-    print("  ✅ temporary_override 自动生效，无需reload_config")
+    print("  [OK] temporary_override 自动生效，无需reload_config")
     
     # 测试数据不足时 fallback
     print("\n--- 数据不足 fallback 测试 ---")
@@ -434,7 +434,7 @@ if __name__ == "__main__":
     fallback_thr = config_mgr.compute_volume_ratio_threshold(small_ratios, mode='live')
     assert fallback_thr == 3.0, f"数据不足时应返回fixed_threshold=3.0，实际{fallback_thr}"
     print(f"  数据不足(3只<100只) → fallback: {fallback_thr}")
-    print("  ✅ 通过")
+    print("  [OK] 通过")
     
     print("=" * 60)
-    print("✅ 配置管理器测试完成 (V1.1)")
+    print("[OK] 配置管理器测试完成 (V1.1)")

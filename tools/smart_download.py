@@ -160,7 +160,7 @@ def download_one_day(date: str, stocks: list[str], xtdata,
             elapsed   = time.time() - t0
             speed     = (i + 1) / elapsed if elapsed > 0 else 0
             remaining = (total - i - 1) / speed if speed > 0 else 0
-            log(f'  [{i+1}/{total}] 投递✅{ok} 失败❌{fail} | '
+            log(f'  [{i+1}/{total}] 投递[OK]{ok} 失败[X]{fail} | '
                 f'{elapsed:.0f}s已用 预计剩{remaining:.0f}s | {speed:.0f}只/s')
 
     elapsed = time.time() - t0
@@ -177,7 +177,7 @@ def download_one_day(date: str, stocks: list[str], xtdata,
         log(f'  [落盘验证] {verify_result["landed"]}/{verify_result["checked"]}只 '
             f'落盘率{land_rate:.0f}%')
         if land_rate < 30:
-            log(f'  ⚠️  落盘率过低！可能原因: QMT数据服务未启动 / 服务端无此日期Tick / 磁盘写满')
+            log(f'  [WARN]  落盘率过低！可能原因: QMT数据服务未启动 / 服务端无此日期Tick / 磁盘写满')
 
     # 写 tick_index
     try:
@@ -249,12 +249,12 @@ def download_with_verify(date: str, stocks: list[str], xtdata) -> dict:
             failed += 1
             status = 'not_landed'   # 服务端可能无此日期数据
 
-        log(f'  [{i+1}/{total}] {stock} → {"✅ 落盘" if landed else "❌ 未落盘"} ({status})')
+        log(f'  [{i+1}/{total}] {stock} → {"[OK] 落盘" if landed else "[X] 未落盘"} ({status})')
         detail.append({'stock': stock, 'status': status})
 
-    log(f'  [{date}] 落盘✅{verified} 未落盘❌{failed} / 共{total}只')
+    log(f'  [{date}] 落盘[OK]{verified} 未落盘[X]{failed} / 共{total}只')
     if failed > 0 and verified == 0:
-        log('  ⚠️  全部未落盘！服务端可能无此日期Tick，或QMT数据服务未连接')
+        log('  [WARN]  全部未落盘！服务端可能无此日期Tick，或QMT数据服务未连接')
     return {'date': date, 'verified': verified, 'failed': failed, 'detail': detail}
 
 
@@ -297,9 +297,9 @@ def main():
         log(f'连接端口 {port}...')
         try:
             xtdata.connect(port=port)
-            log('✅ 连接成功')
+            log('[OK] 连接成功')
         except Exception as e:
-            log(f'❌ 连接失败: {e}')
+            log(f'[X] 连接失败: {e}')
             return
         
         # 获取目标股票列表
@@ -413,7 +413,7 @@ def main():
                 
                 if not active_stocks:
                     consecutive_no_data += 1
-                    log(f'  ⚠️ 当日无活跃股，跳过')
+                    log(f'  [WARN] 当日无活跃股，跳过')
                     continue
                 
                 # 3. 【CTO V158 分批500只异步投递】
@@ -454,13 +454,13 @@ def main():
                 if has_data:
                     consecutive_no_data = 0
                     total_downloaded_days += 1
-                    log(f'  ✅ {date_str} 分K落盘成功 ({elapsed:.0f}s, {len(active_stocks)}只) - 累计{total_downloaded_days}天')
+                    log(f'  [OK] {date_str} 分K落盘成功 ({elapsed:.0f}s, {len(active_stocks)}只) - 累计{total_downloaded_days}天')
                 else:
                     consecutive_no_data += 1
-                    log(f'  ⚠️ {date_str} 数据为空，券商服务器无此日数据')
+                    log(f'  [WARN] {date_str} 数据为空，券商服务器无此日数据')
                     
             except Exception as e:
-                log(f'  ❌ 下载异常: {e}')
+                log(f'  [X] 下载异常: {e}')
                 consecutive_no_data += 1
         
         # 最终报告
@@ -500,9 +500,9 @@ def main():
     log(f'连接端口 {port}...')
     try:
         xtdata.connect(port=port)
-        log('✅ 连接成功')
+        log('[OK] 连接成功')
     except Exception as e:
-        log(f'❌ 连接失败: {e}')
+        log(f'[X] 连接失败: {e}')
         return
 
     all_stocks = xtdata.get_stock_list_in_sector('沪深A股')
@@ -543,7 +543,7 @@ def main():
         f'{trading_days[-1] if trading_days else "N/A"}')
 
     if not trading_days:
-        log('❌ 没有可处理的交易日，退出')
+        log('[X] 没有可处理的交易日，退出')
         return
 
     # ── 阶段二：下载 ──
@@ -579,8 +579,8 @@ def main():
             pass
 
         total_elapsed = time.time() - grand_t0
-        log(f'\n✅ PINPOINT完成! 总耗时 {total_elapsed:.0f}s')
-        log('  如所有日期均❌未落盘 → 服务端无此标的历史Tick（确认结论前请用更早日期轮询）')
+        log(f'\n[OK] PINPOINT完成! 总耗时 {total_elapsed:.0f}s')
+        log('  如所有日期均[X]未落盘 → 服务端无此标的历史Tick（确认结论前请用更早日期轮询）')
         return
 
     # FULL 模式
@@ -597,7 +597,7 @@ def main():
             if i < len(trading_days) - 1:
                 time.sleep(DAY_SLEEP)
         total_elapsed = time.time() - grand_t0
-        log(f'\n✅ FULL全量完成! 总耗时 {total_elapsed:.0f}s ({total_elapsed/60:.1f}min)')
+        log(f'\n[OK] FULL全量完成! 总耗时 {total_elapsed:.0f}s ({total_elapsed/60:.1f}min)')
         return
 
     # 粗筛模式 【CTO V122 样本完整性保卫令】
@@ -627,11 +627,11 @@ def main():
                 vol_threshold = 3.0
             
             if not valid_stocks:
-                log('  ⚠️ 粗筛后无标的，跳过')
+                log('  [WARN] 粗筛后无标的，跳过')
                 continue
 
         except Exception as e:
-            log(f'  ❌ 粗筛失败: {e}，跳过')
+            log(f'  [X] 粗筛失败: {e}，跳过')
             continue
 
         download_one_day(date, valid_stocks, xtdata, full=False,
@@ -643,7 +643,7 @@ def main():
             f'总耗时{total_elapsed:.0f}s | 预计剩{remaining:.0f}s ({remaining/60:.1f}min)')
         if i < len(trading_days) - 1:
             time.sleep(DAY_SLEEP)
-    log(f'\n✅ 完成! 处理 {len(trading_days)}天，投递 {grand_total}只次Tick指令')
+    log(f'\n[OK] 完成! 处理 {len(trading_days)}天，投递 {grand_total}只次Tick指令')
 
 
 if __name__ == '__main__':

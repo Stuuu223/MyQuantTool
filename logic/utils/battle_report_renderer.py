@@ -74,7 +74,7 @@ def render_terminal_battle_report(report: Dict) -> None:
     
     print()
     print("╔" + "═" * (width - 2) + "╗")
-    print(f"║ {'📊 今日战报 | ' + session_id + ' | 沙盘模式':^{width-4}} ║")
+    print(f"║ {'[STATS] 今日战报 | ' + session_id + ' | 沙盘模式':^{width-4}} ║")
     print("╠" + "═" * 8 + "╦" + "═" * 10 + "╦" + "═" * 8 + "╦" + "═" * 8 + "╦" + "═" * 10 + "╦" + "═" * 8 + "╦" + "═" * 10 + "╣")
     print(f"║ {'代码':^6} ║ {'首次上榜':^8} ║ {'峰值分':^6} ║ {'首榜价':^6} ║ {'最高涨幅':^8} ║ {'买入':^4} ║ {'实际盈亏':^8} ║")
     print("╠" + "═" * 8 + "╬" + "═" * 10 + "╬" + "═" * 8 + "╬" + "═" * 8 + "╬" + "═" * 10 + "╬" + "═" * 8 + "╬" + "═" * 10 + "╣")
@@ -91,7 +91,7 @@ def render_terminal_battle_report(report: Dict) -> None:
         missed_gain = stock.get('missed_gain_pct', 0)
         
         # 买入标记
-        buy_mark = "✅" if was_bought else "❌"
+        buy_mark = "[OK]" if was_bought else "[X]"
         
         # 盈亏显示
         if was_bought:
@@ -123,16 +123,16 @@ def render_terminal_battle_report(report: Dict) -> None:
         pvf = report['paper_vs_friction']
         print()
         print("══════════════════════════════════════════════════════════════════════════════")
-        print(f"📊 双引擎对比:")
+        print(f"[STATS] 双引擎对比:")
         print(f"   理想收益(零摩擦): {format_pct(pvf.get('paper_pnl_pct', 0))}")
         print(f"   真实收益(含摩擦): {format_pct(pvf.get('friction_pnl_pct', 0))}")
         print(f"   摩擦损耗: {pvf.get('alpha_lost_to_friction', 0):+.2f}pp")
         
         verdict = pvf.get('verdict', 'UNKNOWN')
         if verdict == 'FRICTION_ACCEPTABLE':
-            print(f"   裁定: ✅ 摩擦可接受（损耗<1.5pp）")
+            print(f"   裁定: [OK] 摩擦可接受（损耗<1.5pp）")
         else:
-            print(f"   裁定: ⚠️ 摩擦过高（损耗>=1.5pp）")
+            print(f"   裁定: [WARN] 摩擦过高（损耗>=1.5pp）")
         print("══════════════════════════════════════════════════════════════════════════════")
 
 
@@ -228,7 +228,7 @@ def render_html_battle_report(report: Dict, output_path: str) -> None:
     </style>
 </head>
 <body>
-    <h1>📊 今日战报 | {session_id}</h1>
+    <h1>[STATS] 今日战报 | {session_id}</h1>
     
     <div class="summary-cards">
         <div class="card">
@@ -280,7 +280,7 @@ def render_html_battle_report(report: Dict, output_path: str) -> None:
         missed_gain = stock.get('missed_gain_pct', 0)
         
         row_class = 'bought' if was_bought else 'missed'
-        buy_mark = '✅' if was_bought else '❌'
+        buy_mark = '[OK]' if was_bought else '[X]'
         pnl_class = 'positive' if actual_pnl > 0 else 'negative' if actual_pnl < 0 else ''
         
         if was_bought:
@@ -310,7 +310,7 @@ def render_html_battle_report(report: Dict, output_path: str) -> None:
         verdict_class = 'accept' if verdict == 'FRICTION_ACCEPTABLE' else 'reject'
         
         html += f"""
-    <h2>📊 双引擎对比</h2>
+    <h2>[STATS] 双引擎对比</h2>
     <div class="summary-cards">
         <div class="card">
             <h3>理想收益(零摩擦)</h3>
@@ -326,7 +326,7 @@ def render_html_battle_report(report: Dict, output_path: str) -> None:
         </div>
     </div>
     <div class="verdict {verdict_class}">
-        裁定: {'✅ 摩擦可接受（损耗<1.5pp）' if verdict == 'FRICTION_ACCEPTABLE' else '⚠️ 摩擦过高（损耗>=1.5pp）'}
+        裁定: {'[OK] 摩擦可接受（损耗<1.5pp）' if verdict == 'FRICTION_ACCEPTABLE' else '[WARN] 摩擦过高（损耗>=1.5pp）'}
     </div>
 """
     

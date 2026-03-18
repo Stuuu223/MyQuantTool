@@ -85,6 +85,13 @@ class TradeDecisionBrain:
         self.entry_min_board_size: int = config.get('entry_min_board_size', 10)
         self.entry_ignition_prob_min_b: float = config.get('entry_ignition_prob_min_b', 20.0)
 
+        # 【CTO V193 宪法级物理门槛】无硬编码，可配置
+        # 注意：这是买入决策门槛，不是KineticCoreEngine的底线门槛(0.57)
+        # CTO宪法规定：Price_Momentum > 0.9 才是起爆临界点
+        self.pm_threshold_buy: float = config.get('pm_threshold_buy', 0.90)
+        # MFE买入门槛：低MFE表示资金效率极低，不应作为首选
+        self.mfe_threshold_buy: float = config.get('mfe_threshold_buy', 1.0)
+
         # 内部状态
         self.current_position: Optional[Dict] = None
         self.entry_time: Optional[datetime] = None
@@ -103,7 +110,8 @@ class TradeDecisionBrain:
 
         logger.info(
             f"[OK] TradeDecisionBrain V2.0(路线A)初始化完成 | "
-            f"里氏震级门槛: p{self.entry_percentile_threshold*100:.0f} × {self.entry_relative_multiplier}x | "
+            f"里氏震级门槛: p{self.entry_percentile_threshold*100:.0f} x {self.entry_relative_multiplier}x | "
+            f"物理门槛: PM>={self.pm_threshold_buy:.2f} MFE>={self.mfe_threshold_buy:.1f} | "
             f"止损:{self.stop_loss_pct*100:.1f}% | "
             f"止盈:{self.take_profit_pct*100:.1f}% | "
             f"最大持仓:{self.max_hold_minutes}分钟 | "
@@ -178,7 +186,7 @@ class TradeDecisionBrain:
                 self._log_decision(current_time, decision)
 
                 logger.info(
-                    f"🔔 [卖出信号] {decision.stock_code} | "
+                    f"[TRADE-SELL] [卖出信号] {decision.stock_code} | "
                     f"原因:{decision.reason} | "
                     f"价格:{decision.price:.2f} | "
                     f"盈亏:{(held_stock_current_price - self.entry_price) / self.entry_price * 100:+.2f}%"
@@ -231,7 +239,7 @@ class TradeDecisionBrain:
             self._log_decision(current_time, decision)
 
             logger.info(
-                f"💰 [买入信号] {decision.stock_code} | "
+                f"[TRADE-BUY] [买入信号] {decision.stock_code} | "
                 f"score:{decision.score:.0f} | "
                 f"p90门槛:{decision.p90_threshold:.0f} | "
                 f"中位数:{decision.median_score:.0f} | "
@@ -341,6 +349,31 @@ class TradeDecisionBrain:
         n = len(scores)
         rank_below = sum(1 for s in scores if s < top1_score)
         relative_rank = rank_below / n if n > 0 else 0.0
+
+        # =========== 【CTO V193 宪法级物理门槛强制校验】 ===========
+        # 关键：决策大脑选龙必须使用严格的物理门槛，不是底线淘汰
+        # KineticCoreEngine的0.57和0.1是底线Veto，决策大脑必须寻找真正的起爆点
+        top1_price_momentum = top1.get('price_momentum', 0.0)
+        top1_mfe = top1.get('mfe', 0.0)
+
+        # 物理门槛1: Price Momentum 必须超过起爆临界点(默认0.9)
+        # 物理意义：(price - low) / (high - low) > 0.9 表示价格在日内高位，有起爆势能
+        if top1_price_momentum < self.pm_threshold_buy:
+            logger.debug(
+                f"[VETO-PM] {top1.get('code')} momentum={top1_price_momentum:.2f} "
+                f"< 阈值{self.pm_threshold_buy:.2f}，未达起爆临界点，跳过"
+            )
+            return None
+
+        # 物理门槛2: MFE 必须满足最低效率要求(默认1.0)
+        # 物理意义：MFE = 振幅% / 流入占比，低MFE表示资金效率极低（大钱只砸出小振幅）
+        if top1_mfe < self.mfe_threshold_buy:
+            logger.debug(
+                f"[VETO-MFE] {top1.get('code')} MFE={top1_mfe:.2f} "
+                f"< 阈值{self.mfe_threshold_buy:.2f}，资金效率过低，跳过"
+            )
+            return None
+        # =============================================================
 
         # Bug#1修复：使用VALID_TRIGGERS集合判断，而非 trigger_type != ''
         has_valid_trigger = trigger_type in self.VALID_TRIGGERS

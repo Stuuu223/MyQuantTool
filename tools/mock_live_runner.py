@@ -542,10 +542,32 @@ class MockLiveRunner:
                 current_time, target_code, enriched_targets, reason
             )
 
-        # ── Phase D: 喂给 UniversalTracker
+        # -- Phase D: 喂给 UniversalTracker
         # 传入整个榜单 + 本帧成交结果 + 大脑决策上下文（含 p90_threshold/median_score/relative_rank）
-        # 【CTO V192修复】构建global_prices解决视野盲区
-        global_prices = {t['code']: t.get('price', 0) for t in enriched_targets if t.get('code')}
+        # 【CTO V193修复】从全量tick_queues提取global_prices
+        # 关键：enriched_targets只包含当前榜单，已跌出榜单的股票价格会停止更新
+        # 解决：遍历所有候选池股票的tick_queues，获取当前时间点的价格
+        import bisect
+        global_prices = {}
+        
+        # 1. 首先从enriched_targets获取当前榜单价格（最可靠）
+        for t in enriched_targets:
+            if t.get('code'):
+                global_prices[t['code']] = t.get('price', 0)
+        
+        # 2. 补充已上榜但跌出榜单的股票价格（从tick_queues获取）
+        # 使用registry中已记录的股票代码
+        if hasattr(self.universal_tracker, 'registry'):
+            for stock_code in self.universal_tracker.registry.keys():
+                if stock_code not in global_prices:
+                    tick_list = self.tick_queues.get(stock_code, [])
+                    time_list = self.tick_time_index.get(stock_code, [])
+                    if tick_list and time_list:
+                        # 使用bisect找到当前时间点对应的tick
+                        idx = bisect.bisect_right(time_list, current_time) - 1
+                        if idx >= 0:
+                            global_prices[stock_code] = tick_list[idx].get('price', 0)
+        
         self.universal_tracker.on_frame(
             top_targets=enriched_targets[:10],
             current_time=current_time,
@@ -618,7 +640,7 @@ class MockLiveRunner:
                     )
             else:
                 if self.verbose:
-                    print(f"\n⚠️  [真实买入拒绝] {stock_code} @ {price:.2f}  {reason}")
+                    print(f"\n[WARN]  [真实买入拒绝] {stock_code} @ {price:.2f}  {reason}")
 
         # 零摩擦引擎
         if not self.paper_bought_today:
@@ -853,7 +875,7 @@ class MockLiveRunner:
                 if is_t1_locked:
                     # 【R6-1修复】T+1制度下无法卖出，只能记录风险警告
                     logger.warning(
-                        f"⚠️ [T+1风险警告] {stock_code} @ {current_tick['price']:.2f} "
+                        f"[WARN] [T+1风险警告] {stock_code} @ {current_tick['price']:.2f} "
                         f"触发止损条件({reason})，但T+1锁无法卖出！当前浮亏可能扩大，明日开盘注意！"
                     )
                 else:
@@ -872,8 +894,18 @@ class MockLiveRunner:
                             'reason': f'微观防爆: {reason}',
                             'engine': 'real'
                         }
-                        # 【CTO V192修复】传入当前止损股票的价格更新peak_price
+                        # [CTO V193修复] 从全量tick_queues提取global_prices
                         stop_global_prices = {stock_code: current_tick['price']}
+                        # 补充其他已上榜股票的价格
+                        if hasattr(self.universal_tracker, 'registry'):
+                            for reg_code in self.universal_tracker.registry.keys():
+                                if reg_code not in stop_global_prices:
+                                    tick_list = self.tick_queues.get(reg_code, [])
+                                    time_list = self.tick_time_index.get(reg_code, [])
+                                    if tick_list and time_list:
+                                        idx = bisect.bisect_right(time_list, current_time) - 1
+                                        if idx >= 0:
+                                            stop_global_prices[reg_code] = tick_list[idx].get('price', 0)
                         self.universal_tracker.on_frame(
                             top_targets=[],
                             current_time=current_time,
@@ -881,9 +913,9 @@ class MockLiveRunner:
                             decision_context=None,
                             global_prices=stop_global_prices
                         )
-                        logger.warning(f"⚠️ [微观防爆] {stock_code} @ {current_tick['price']:.2f} {reason}")
+                        logger.warning(f"[WARN] [微观防爆] {stock_code} @ {current_tick['price']:.2f} {reason}")
 
-        # ── 零摩擦引擎：只更新价格
+        # -- 零摩擦引擎：只更新价格
         for stock_code in list(self.paper_engine.positions.keys()):
             tick_list = self.tick_queues.get(stock_code, [])
             time_list = self.tick_time_index.get(stock_code, [])
@@ -975,7 +1007,7 @@ class MockLiveRunner:
             if enriched_targets:
                 top1_enrich = next((t for t in enriched_targets if t['code'] == top1_code), None)
                 if top1_enrich and top1_enrich.get('trigger_type') and top1_enrich['trigger_type'] != 'none':
-                    trigger_hint = f" 🎯{top1_enrich['trigger_type']}({top1_enrich.get('trigger_confidence', 0):.2f})"
+                    trigger_hint = f" [TARGET]{top1_enrich['trigger_type']}({top1_enrich.get('trigger_confidence', 0):.2f})"
             print(f"  [{ts}] Top1: {top1_code} 分={top1_data['score']:.0f} "
                   f"价={top1_data['price']:.2f}{trigger_hint}")
         real_pos = self.execution_manager.positions
@@ -1057,8 +1089,8 @@ class MockLiveRunner:
 
         # ── Alpha
         alpha = real_pnl_pct - paper_pnl_pct
-        tag = "✅ 真实引擎跑赢理想" if alpha >= 0 else "⚠️  摩擦成本侵蚀α"
-        print(f"\n📊 Alpha = {alpha:+.2f}%  {tag}")
+        tag = "[OK] 真实引擎跑赢理想" if alpha >= 0 else "[WARN]  摩擦成本侵蚀α"
+        print(f"\n[STATS] Alpha = {alpha:+.2f}%  {tag}")
 
         # ── Bug#4修复：注入双引擎对比数据到UniversalTracker
         all_codes = set(self.execution_manager.positions.keys()) | set(self.paper_engine.positions.keys())
@@ -1100,10 +1132,10 @@ class MockLiveRunner:
             for info in sorted_universe:
                 code = info.get('code', 'N/A')
                 bought_by = info.get('bought_by_engines', [])
-                eng_str   = '+'.join(bought_by) if bought_by else '❌ 未买入'
+                eng_str   = '+'.join(bought_by) if bought_by else '[X] 未买入'
                 peak  = info.get('max_gain_pct', 0)
                 final = info.get('final_gain_pct', 0)
-                note  = f'⭐ 错过 +{peak:.1f}%' if peak >= 3 and not bought_by else ('✅ 持有' if bought_by else '')
+                note  = f'⭐ 错过 +{peak:.1f}%' if peak >= 3 and not bought_by else ('[OK] 持有' if bought_by else '')
                 print(f"  {code:<10} {info.get('first_appear_time','N/A'):<9} "
                       f"{info.get('first_appear_price',0):>8.2f} "
                       f"{peak:>+9.1f}% {final:>+9.1f}%  {eng_str:<14} {note}")
@@ -1154,7 +1186,7 @@ class MockLiveRunner:
             paper_total, paper_pnl, paper_pnl_pct, alpha, sorted_universe, tv_report
         )
         self.sandbox.save_battle_report_md(self.target_date, md)
-        print(f"\n📁 档案已存入沙盒: {self.sandbox.get_sandbox_root()}")
+        print(f"\n[DIR] 档案已存入沙盒: {self.sandbox.get_sandbox_root()}")
 
     def _generate_markdown_report(
         self,
@@ -1175,14 +1207,14 @@ class MockLiveRunner:
             f"胜率{real_report.get('win_rate',0):.1f}% |",
             f"| 🔵零摩擦对照 | ¥{paper_total:,.2f} | {paper_pnl_pct:+.2f}% | — |",
             f"| **Alpha** | — | **{alpha:+.2f}%** | "
-            f"{'✅跑赢' if alpha>=0 else '⚠️被摩擦侵蚀'} |\n",
+            f"{'[OK]跑赢' if alpha>=0 else '[WARN]被摩擦侵蚀'} |\n",
             "## 全榜生命周期 Top20\n",
             "| 代码 | 首次上榜 | 上榜价 | 峰值 | 末涨幅 | 买入情况 |",
             "|------|---------|--------|------|--------|---------|",
         ]
         for info in sorted_universe:
             code = info.get('code', 'N/A')
-            bought = '+'.join(info.get('bought_by_engines', [])) or '❌未买入'
+            bought = '+'.join(info.get('bought_by_engines', [])) or '[X]未买入'
             lines.append(
                 f"| {code} | {info.get('first_appear_time','N/A')} | "
                 f"¥{info.get('first_appear_price',0):.2f} | "
@@ -1353,11 +1385,11 @@ def run_continuous_backtest(args):
 
         snap = shared_manager.get_daily_snapshot(date_str)
         daily_snapshots.append(snap)
-        print(f"📊 [{date_str}] 净值:¥{snap['total_value']:,.2f}  累计:{snap['pnl_pct']:+.2f}%")
+        print(f"[STATS] [{date_str}] 净值:¥{snap['total_value']:,.2f}  累计:{snap['pnl_pct']:+.2f}%")
 
     if daily_snapshots:
         print("\n" + "="*72)
-        print("📈 资金曲线")
+        print("[TREND] 资金曲线")
         print(f"{'日期':<12} {'现金':>12} {'持仓':>12} {'总资产':>12} {'累计收益':>10}")
         print("-"*62)
         for s in daily_snapshots:

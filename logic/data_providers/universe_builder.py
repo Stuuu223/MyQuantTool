@@ -154,13 +154,13 @@ class UniverseBuilder:
         try:
             from xtquant import xtdata
         except ImportError:
-            logger.error('❌ [漏斗１] xtquant未安装')
+            logger.error('[X] [漏斗１] xtquant未安装')
             return []
 
         try:
             all_stocks = xtdata.get_stock_list_in_sector('沪深A股')
         except Exception as e:
-            logger.error(f'❌ [漏斗１] 获取全市场列表失败: {e}')
+            logger.error(f'[X] [漏斗１] 获取全市场列表失败: {e}')
             return []
 
         result = []
@@ -222,7 +222,7 @@ class UniverseBuilder:
         try:
             from xtquant import xtdata
         except ImportError:
-            logger.error('❌ [漏斗２] xtquant未安装，跳过')
+            logger.error('[X] [漏斗２] xtquant未安装，跳过')
             return stock_list
 
         end_date   = self.target_date
@@ -271,9 +271,9 @@ class UniverseBuilder:
         # 【CTO V73修复】只有真正缺失的才报警，且阈值设为>100才报警（避免噪音）
         # 很多股票（停牌、次新、ST等）本身就不会有完整数据，这是正常的业务过滤
         if missing_stocks and len(missing_stocks) > 100:
-            logger.warning(f'⚠️ [防空警报] 发现 {len(missing_stocks)} 只股票日K数据缺失！')
+            logger.warning(f'[WARN] [防空警报] 发现 {len(missing_stocks)} 只股票日K数据缺失！')
             logger.warning(f'🚫 为防止实盘引擎被网络卡死，系统拒绝现场下载，这些股票将被物理隔离。')
-            logger.warning(f'💡 请在盘后运行：python tools/smart_download.py 补充弹药！')
+            logger.warning(f'[TIP] 请在盘后运行：python tools/smart_download.py 补充弹药！')
         elif missing_stocks:
             # 少量缺失是正常的（次新/停牌），只记录debug
             logger.debug(f'[数据检查] {len(missing_stocks)} 只股票数据不足，已跳过（次新/停牌属正常情况）')

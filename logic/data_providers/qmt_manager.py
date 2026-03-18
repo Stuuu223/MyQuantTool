@@ -192,14 +192,14 @@ class QmtDataManager:
             return env_path
 
         if env_path:
-            logger.warning(f"⚠️ 环境变量 QMT_PATH [{env_path}] 不存在，降级到内部沙盒。")
+            logger.warning(f"[WARN] 环境变量 QMT_PATH [{env_path}] 不存在，降级到内部沙盒。")
 
         sandbox_dir = Path.cwd() / ".qmt_userdata_sandbox"
         try:
             sandbox_dir.mkdir(parents=True, exist_ok=True)
             logger.info(f"[QmtDataManager] 使用项目内沙盒路径: {sandbox_dir}")
         except Exception as e:
-            logger.error(f"❌ 无法创建沙盒目录: {e}")
+            logger.error(f"[X] 无法创建沙盒目录: {e}")
             import tempfile
             sandbox_dir = Path(tempfile.gettempdir()) / "myquanttool_qmt_sandbox"
             sandbox_dir.mkdir(parents=True, exist_ok=True)
@@ -218,7 +218,7 @@ class QmtDataManager:
             return env_token.strip()
 
         # 【绝对禁止崩溃】没有 Token 就静默降级为 L1
-        logger.warning("⚠️ [数据降级] 未检测到 QMT_VIP_TOKEN，系统已自动降级为 L1 普通行情模式！")
+        logger.warning("[WARN] [数据降级] 未检测到 QMT_VIP_TOKEN，系统已自动降级为 L1 普通行情模式！")
         return None
 
     def start_vip_service(self) -> bool:
@@ -235,13 +235,13 @@ class QmtDataManager:
                 # 1. 尝试连接本地客户端 (极简版默认 58609)
                 try:
                     xtdata.connect(port=58609)
-                    logger.info("✅ 成功连入本地 QMT 客户端 (58609)！")
+                    logger.info("[OK] 成功连入本地 QMT 客户端 (58609)！")
                 except Exception:
                     try:
                         xtdata.connect(port=58610)
-                        logger.info("✅ 成功连入本地 QMT 客户端 (58610)！")
+                        logger.info("[OK] 成功连入本地 QMT 客户端 (58610)！")
                     except Exception as e:
-                        logger.error(f"❌ 客户端连接全面崩溃: {e}")
+                        logger.error(f"[X] 客户端连接全面崩溃: {e}")
                         return False
 
                 # === 【CTO V85 L2 权限注入与容错】 ===
@@ -255,7 +255,7 @@ class QmtDataManager:
                             xtdata.set_vip_license(token)
                         logger.info("💎 [VIP L2] VIP Token 注入成功！L2 高频行情/十档盘口已激活！")
                     except Exception as e:
-                        logger.warning(f"⚠️ [VIP 失效] VIP Token 无效或已过期 ({e})。已平滑降级为 L1 模式，继续战斗！")
+                        logger.warning(f"[WARN] [VIP 失效] VIP Token 无效或已过期 ({e})。已平滑降级为 L1 模式，继续战斗！")
                         self.use_vip = False
                 # =====================================
 
@@ -266,25 +266,25 @@ class QmtDataManager:
                     # 探针1: get_markets 基础连接验证
                     markets = xtdata.get_markets()
                     if not markets:
-                        logger.error("❌ 探针返回空数据，连接未就绪")
+                        logger.error("[X] 探针返回空数据，连接未就绪")
                         return False
-                    logger.info(f"✅ 探针1通过：已授权 {len(markets)} 个市场")
+                    logger.info(f"[OK] 探针1通过：已授权 {len(markets)} 个市场")
                     
                     # 探针2: get_full_tick 实时数据验证（更强）
                     tick = xtdata.get_full_tick(['000001.SZ'])
                     if tick and len(tick) > 0:
-                        logger.info(f"✅ 探针2通过：实时Tick数据通道畅通")
+                        logger.info(f"[OK] 探针2通过：实时Tick数据通道畅通")
                     else:
-                        logger.warning("⚠️ 探针2返回空，但连接已建立，继续执行")
+                        logger.warning("[WARN] 探针2返回空，但连接已建立，继续执行")
                 except Exception as probe_e:
-                    logger.error(f"❌ 探针异常: {probe_e}")
+                    logger.error(f"[X] 探针异常: {probe_e}")
                     return False
 
                 QmtDataManager._vip_global_initialized = True
                 return True
 
             except Exception as e:
-                logger.error(f"❌ VIP 启动发生未知异常: {e}")
+                logger.error(f"[X] VIP 启动发生未知异常: {e}")
                 return False
 
     def stop_vip_service(self) -> bool:
@@ -495,7 +495,7 @@ class QmtDataManager:
             if not QmtDataManager._vip_global_initialized:
                 vip_ok = self.start_vip_service()
                 if not vip_ok:
-                    logger.error("❌ VIP客户端连接失败，请确认QMT是否已登录运行")
+                    logger.error("[X] VIP客户端连接失败，请确认QMT是否已登录运行")
                     return {
                         s: DownloadResult(
                             success=False,
@@ -570,7 +570,7 @@ class QmtDataManager:
                             message=f"成功 ({tick_count}条)",
                         )
                         logger.info(
-                            f"[{i}/{len(stock_list)}] ✅ {stock_code} Tick下载成功 ({tick_count}条)"
+                            f"[{i}/{len(stock_list)}] [OK] {stock_code} Tick下载成功 ({tick_count}条)"
                         )
                     else:
                         results[stock_code] = DownloadResult(

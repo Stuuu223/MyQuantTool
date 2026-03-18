@@ -84,7 +84,7 @@ class AsyncEventBus:
             'start_time': time.time()
         }
         
-        logger.info(f"✅ [AsyncEventBus] 初始化完成 (max_queue_size: {max_queue_size}, workers: {max_workers})")
+        logger.info(f"[OK] [AsyncEventBus] 初始化完成 (max_queue_size: {max_queue_size}, workers: {max_workers})")
     
     def subscribe(self, event_type: str, handler: Callable):
         """
@@ -97,7 +97,7 @@ class AsyncEventBus:
         if event_type not in self._handlers:
             self._handlers[event_type] = []
         self._handlers[event_type].append(handler)
-        logger.debug(f"🎯 订阅事件: {event_type}, 处理器数: {len(self._handlers[event_type])}")
+        logger.debug(f"[TARGET] 订阅事件: {event_type}, 处理器数: {len(self._handlers[event_type])}")
     
     def publish(self, event_type: str, data: Any) -> bool:
         """
@@ -118,7 +118,7 @@ class AsyncEventBus:
         except queue.Full:
             # 队列已满，丢弃事件 (CTO强制：不能阻塞)
             self._stats['dropped'] += 1
-            logger.warning(f"⚠️ 队列满，事件丢弃: {event_type} (已丢弃: {self._stats['dropped']})")
+            logger.warning(f"[WARN] 队列满，事件丢弃: {event_type} (已丢弃: {self._stats['dropped']})")
             return False
     
     def start_consumer(self):
@@ -126,7 +126,7 @@ class AsyncEventBus:
         启动消费者线程 (CTO加固: 使用线程池并发处理)
         """
         if self._running:
-            logger.warning("⚠️ 事件总线消费者已在运行")
+            logger.warning("[WARN] 事件总线消费者已在运行")
             return
         
         def consumer():
@@ -156,14 +156,14 @@ class AsyncEventBus:
                     # 队列为空，继续循环
                     continue
                 except Exception as e:
-                    logger.error(f"❌ 消费者线程异常: {e}")
+                    logger.error(f"[X] 消费者线程异常: {e}")
                     time.sleep(0.1)  # 防止异常导致的死循环
             
-            logger.info("🛑 事件总线消费者线程停止")
+            logger.info("[STOP] 事件总线消费者线程停止")
         
         self._consumer_thread = threading.Thread(target=consumer, daemon=True)
         self._consumer_thread.start()
-        logger.info("✅ 事件总线消费者已启动")
+        logger.info("[OK] 事件总线消费者已启动")
     
     def _safe_handler_call(self, handler: Callable, data: Any):
         """
@@ -176,11 +176,11 @@ class AsyncEventBus:
         try:
             handler(data)
         except Exception as e:
-            logger.error(f"❌ 处理事件失败: {e}")
+            logger.error(f"[X] 处理事件失败: {e}")
     
     def stop(self):
         """停止事件总线"""
-        logger.info("🛑 停止事件总线...")
+        logger.info("[STOP] 停止事件总线...")
         self._running = False
         if self._consumer_thread and self._consumer_thread.is_alive():
             self._consumer_thread.join(timeout=2.0)  # 最多等待2秒
@@ -188,14 +188,14 @@ class AsyncEventBus:
         # 关闭线程池
         self._executor.shutdown(wait=True)
         
-        logger.info("✅ 事件总线已停止")
+        logger.info("[OK] 事件总线已停止")
     
     def _print_stats(self):
         """打印统计信息"""
         elapsed = time.time() - self._stats['start_time']
         rate = self._stats['processed'] / elapsed if elapsed > 0 else 0
         logger.info(
-            f"📊 事件总线统计: 发布{self._stats['published']} | "
+            f"[STATS] 事件总线统计: 发布{self._stats['published']} | "
             f"处理{self._stats['processed']} | "
             f"丢弃{self._stats['dropped']} | "
             f"速率{rate:.1f}/s"
@@ -230,7 +230,7 @@ def create_event_bus(max_queue_size: int = 10000, max_workers: int = 10) -> Asyn
 
 if __name__ == "__main__":
     # 测试异步事件总线
-    print("🧪 异步事件总线测试 (CTO加固版)")
+    print("[TEST] 异步事件总线测试 (CTO加固版)")
     print("=" * 50)
     
     # 创建事件总线
@@ -240,13 +240,13 @@ if __name__ == "__main__":
     def price_handler(data):
         time.sleep(0.01)  # 模拟耗时操作
         if isinstance(data, TickEvent):
-            print(f"💰 价格更新: {data.stock_code} -> {data.price}")
+            print(f"[TRADE-BUY] 价格更新: {data.stock_code} -> {data.price}")
     
     def volume_handler(data):
         time.sleep(0.01)  # 模拟耗时操作
         if isinstance(data, TickEvent):
             if data.volume > 100000:
-                print(f"📊 大单监控: {data.stock_code} 量 {data.volume}")
+                print(f"[STATS] 大单监控: {data.stock_code} 量 {data.volume}")
     
     # 订阅事件
     event_bus.subscribe('tick', price_handler)
@@ -272,7 +272,7 @@ if __name__ == "__main__":
         
         success = event_bus.publish('tick', tick)
         if not success:
-            print(f"❌ 事件发布失败: {tick.stock_code}")
+            print(f"[X] 事件发布失败: {tick.stock_code}")
         
         time.sleep(0.005)  # 快速发布事件
     
@@ -281,8 +281,8 @@ if __name__ == "__main__":
     
     # 打印统计
     stats = event_bus.get_stats()
-    print(f"\n📈 最终统计: {stats}")
+    print(f"\n[TREND] 最终统计: {stats}")
     
     # 停止事件总线
     event_bus.stop()
-    print("\n✅ 测试完成")
+    print("\n[OK] 测试完成")

@@ -257,7 +257,7 @@ class ExitManager:
 def test_exit_manager():
     """单元测试：ExitManager止损逻辑"""
     print("\n" + "=" * 60)
-    print("📊 ExitManager 单元测试")
+    print("[STATS] ExitManager 单元测试")
     print("=" * 60)
     
     # 测试1：VWAP止损
@@ -276,7 +276,7 @@ def test_exit_manager():
         result = mgr.on_tick(tick)
         print(f"  {tick['time'][-6:]} 价格={tick['price']:.2f} VWAP={result['vwap']:.2f} 动作={result['action']}")
         if result['action'] == 'sell':
-            print(f"  ✅ VWAP止损触发: {result['reason']}")
+            print(f"  [OK] VWAP止损触发: {result['reason']}")
             break
     
     # 测试2：真龙高水位止盈
@@ -294,7 +294,7 @@ def test_exit_manager():
         result = mgr2.on_tick(tick)
         print(f"  {tick['time'][-6:]} 价格={tick['price']:.2f} 最高收益={result['max_profit']*100:.1f}% 动作={result['action']}")
         if result['action'] == 'sell':
-            print(f"  ✅ 真龙止盈触发: {result['reason']}")
+            print(f"  [OK] 真龙止盈触发: {result['reason']}")
             break
     
     # 测试3：平民高水位止盈
@@ -311,11 +311,11 @@ def test_exit_manager():
         result = mgr3.on_tick(tick)
         print(f"  {tick['time'][-6:]} 价格={tick['price']:.2f} 最高收益={result['max_profit']*100:.1f}% 动作={result['action']}")
         if result['action'] == 'sell':
-            print(f"  ✅ 平民止盈触发: {result['reason']}")
+            print(f"  [OK] 平民止盈触发: {result['reason']}")
             break
     
     print("\n" + "=" * 60)
-    print("✅ ExitManager 单元测试完成")
+    print("[OK] ExitManager 单元测试完成")
     print("=" * 60)
 
 

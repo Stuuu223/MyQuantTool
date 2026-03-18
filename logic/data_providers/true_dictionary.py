@@ -108,7 +108,7 @@ class TrueDictionary:
         }
         
         TrueDictionary._initialized = True
-        logger.info("✅ [TrueDictionary] 初始化完成 - 100% QMT本地模式，等待盘前装弹")
+        logger.info("[OK] [TrueDictionary] 初始化完成 - 100% QMT本地模式，等待盘前装弹")
     
     # ============================================================
     # 盘前装弹机 - 09:25前必须完成 (100% QMT本地)
@@ -142,7 +142,7 @@ class TrueDictionary:
         
         if not force and cache_file.exists():
             try:
-                logger.info(f"⚡ [CTO缓存命中] 从硬盘加载 {cache_file}...")
+                logger.info(f"[FAST] [CTO缓存命中] 从硬盘加载 {cache_file}...")
                 with open(cache_file, 'r', encoding='utf-8') as f:
                     cached_data = json.load(f)
                 
@@ -151,12 +151,12 @@ class TrueDictionary:
                 expected_count = len(stock_list)
                 if cached_float_count < expected_count * 0.5:
                     # 缓存数量严重不足（<50%），判定为投毒缓存，强制重新装弹
-                    logger.error(f"⚠️ [CTO缓存毒化告警] 缓存只有{cached_float_count}只，期望{expected_count}只，丢弃烂缓存重新装弹！")
+                    logger.error(f"[WARN] [CTO缓存毒化告警] 缓存只有{cached_float_count}只，期望{expected_count}只，丢弃烂缓存重新装弹！")
                     # 备份证据
                     import shutil
                     poisoned_file = cache_file.with_suffix('.json.poisoned')
                     shutil.move(str(cache_file), str(poisoned_file))
-                    logger.info(f"🗑️ 投毒缓存已备份到: {poisoned_file}")
+                    logger.info(f"[CLEANUP] 投毒缓存已备份到: {poisoned_file}")
                     # 不return，继续往下走正常装弹流程
                 else:
                     # 缓存健康，正常加载
@@ -167,7 +167,7 @@ class TrueDictionary:
                     self._metadata['cache_date'] = today
                     self._metadata['data_source'] = 'QMT本地100% + 硬盘缓存'
                     
-                    logger.info(f"✅ [CTO缓存命中] 0毫秒装弹完成! 5日均量:{len(self._avg_volume_5d)}只, 流通股本:{len(self._float_volume)}只")
+                    logger.info(f"[OK] [CTO缓存命中] 0毫秒装弹完成! 5日均量:{len(self._avg_volume_5d)}只, 流通股本:{len(self._float_volume)}只")
                     return {
                         'qmt': {'success': len(self._float_volume), 'failed': 0, 'note': 'from_cache'},
                         'avg_volume': {'success': len(self._avg_volume_5d), 'failed': 0, 'note': 'from_cache'},
@@ -177,7 +177,7 @@ class TrueDictionary:
                         'cache_hit': True
                     }
             except Exception as e:
-                logger.warning(f"⚠️ [CTO缓存] 加载缓存失败: {e}, 重新计算...")
+                logger.warning(f"[WARN] [CTO缓存] 加载缓存失败: {e}, 重新计算...")
         
         print(f"🚀 [TrueDictionary-CTO防弹衣] 启动盘前装弹,目标{len(stock_list)}只股票")
         logger.info(f"🚀 [TrueDictionary-CTO防弹衣] 启动盘前装弹,目标{len(stock_list)}只股票")
@@ -208,8 +208,8 @@ class TrueDictionary:
             'ready_for_trading': True  # 宽松模式，允许继续
         }
         
-        print(f"✅ [TrueDictionary] CTO防弹衣装弹完成! (FloatVolume: {qmt_result['success']}只)")
-        logger.info(f"✅ [TrueDictionary] CTO防弹衣装弹完成! (FloatVolume: {qmt_result['success']}只)")
+        print(f"[OK] [TrueDictionary] CTO防弹衣装弹完成! (FloatVolume: {qmt_result['success']}只)")
+        logger.info(f"[OK] [TrueDictionary] CTO防弹衣装弹完成! (FloatVolume: {qmt_result['success']}只)")
         
         # 【CTO缓存革命】保存到硬盘缓存
         try:
@@ -231,7 +231,7 @@ class TrueDictionary:
             logger.info(f"💾 [CTO缓存] 数据已持久化至 {cache_file}")
             stats['cache_saved'] = True
         except Exception as e:
-            logger.warning(f"⚠️ [CTO缓存] 保存缓存失败: {e}")
+            logger.warning(f"[WARN] [CTO缓存] 保存缓存失败: {e}")
             stats['cache_saved'] = False
         
         return stats
@@ -254,8 +254,8 @@ class TrueDictionary:
         """
         start = time.perf_counter()
         
-        print(f"📊 [QMT本地] 计算5日均量...")
-        logger.info(f"📊 [QMT本地] 开始计算5日均量,目标{len(stock_list)}只股票")
+        print(f"[STATS] [QMT本地] 计算5日均量...")
+        logger.info(f"[STATS] [QMT本地] 开始计算5日均量,目标{len(stock_list)}只股票")
         
         try:
             from xtquant import xtdata
@@ -267,7 +267,7 @@ class TrueDictionary:
             # 【CTO防爆】：禁止调用get_trading_dates，会导致BSON崩溃！
             # 原因：get_trading_dates内部触发了QMT C++层的批量数据加载
             if not target_date:
-                logger.error("❌ [CTO铁血令] 回测模式必须传入target_date！禁止使用datetime.now()！")
+                logger.error("[X] [CTO铁血令] 回测模式必须传入target_date！禁止使用datetime.now()！")
                 return {'success': 0, 'failed': len(stock_list)}
             
             # 【CTO时空锁死】：必须基于目标回测日期往前推算！
@@ -302,9 +302,9 @@ class TrueDictionary:
             # 问题根因：download_history_data在QMT限流时会无限挂起
             # 修复：缺失数据直接跳过，不阻塞实盘引擎！
             if missing_stocks:
-                logger.warning(f'⚠️ [防空警报] {len(missing_stocks)}只股票本地K线缺失！')
+                logger.warning(f'[WARN] [防空警报] {len(missing_stocks)}只股票本地K线缺失！')
                 logger.warning(f'🚫 为防止实盘引擎被网络卡死，系统拒绝现场下载，这些股票将被物理隔离。')
-                logger.warning(f'💡 请在盘后运行：python tools/smart_download.py 补充弹药！')
+                logger.warning(f'[TIP] 请在盘后运行：python tools/smart_download.py 补充弹药！')
                 # 不下载！缺失的票在后续df is None判断中自然会被过滤掉
             
             # 【调试日志】检查all_data返回状态
@@ -355,8 +355,8 @@ class TrueDictionary:
             elapsed = (time.perf_counter() - start) * 1000
             self._metadata['avg_volume_warmup_time'] = elapsed  # 已更名
             
-            print(f"✅ [QMT本地] 5日均量计算完成: {success}只成功, {failed}只失败, 耗时{elapsed:.0f}ms")
-            logger.info(f"✅ [QMT本地-5日均量] {success}只成功,耗时{elapsed:.1f}ms")
+            print(f"[OK] [QMT本地] 5日均量计算完成: {success}只成功, {failed}只失败, 耗时{elapsed:.0f}ms")
+            logger.info(f"[OK] [QMT本地-5日均量] {success}只成功,耗时{elapsed:.1f}ms")
             
             return {
                 'source': 'QMT本地日K数据',
@@ -367,8 +367,8 @@ class TrueDictionary:
             }
             
         except Exception as e:
-            logger.error(f"🚨 [QMT本地-5日均量] 计算失败: {e}")
-            print(f"🚨 [QMT本地-5日均量] 计算失败: {e}")
+            logger.error(f"[CRITICAL] [QMT本地-5日均量] 计算失败: {e}")
+            print(f"[CRITICAL] [QMT本地-5日均量] 计算失败: {e}")
             return {'source': 'QMT本地', 'success': 0, 'failed': len(stock_list), 'error': str(e)}
     
     def _warmup_ma_data(self, stock_list: List[str], target_date: str = None) -> Dict:
@@ -383,8 +383,8 @@ class TrueDictionary:
         """
         start = time.perf_counter()
         
-        print(f"📊 [QMT本地] 计算MA均线数据...")
-        logger.info(f"📊 [QMT本地] 开始计算MA5/MA10/MA20,目标{len(stock_list)}只股票")
+        print(f"[STATS] [QMT本地] 计算MA均线数据...")
+        logger.info(f"[STATS] [QMT本地] 开始计算MA5/MA10/MA20,目标{len(stock_list)}只股票")
         
         try:
             from xtquant import xtdata
@@ -395,7 +395,7 @@ class TrueDictionary:
             # 【CTO时空锁死】：回测模式必须基于target_date往前推算！
             # 【CTO防爆】：禁止调用get_trading_dates，会导致BSON崩溃！
             if not target_date:
-                logger.error("❌ [CTO铁血令] MA预热必须传入target_date！禁止使用datetime.now()！")
+                logger.error("[X] [CTO铁血令] MA预热必须传入target_date！禁止使用datetime.now()！")
                 return {'success': 0, 'failed': len(stock_list)}
             
             # 【CTO时空锁死】：必须基于目标回测日期往前推算！
@@ -456,8 +456,8 @@ class TrueDictionary:
             
             elapsed = (time.perf_counter() - start) * 1000
             
-            print(f"✅ [QMT本地] MA均线计算完成: {success}只成功, {failed}只失败, 耗时{elapsed:.0f}ms")
-            logger.info(f"✅ [QMT本地-MA均线] {success}只成功,耗时{elapsed:.1f}ms")
+            print(f"[OK] [QMT本地] MA均线计算完成: {success}只成功, {failed}只失败, 耗时{elapsed:.0f}ms")
+            logger.info(f"[OK] [QMT本地-MA均线] {success}只成功,耗时{elapsed:.1f}ms")
             
             return {
                 'source': 'QMT本地日K数据',
@@ -467,8 +467,8 @@ class TrueDictionary:
             }
             
         except Exception as e:
-            logger.error(f"🚨 [QMT本地-MA均线] 计算失败: {e}")
-            print(f"🚨 [QMT本地-MA均线] 计算失败: {e}")
+            logger.error(f"[CRITICAL] [QMT本地-MA均线] 计算失败: {e}")
+            print(f"[CRITICAL] [QMT本地-MA均线] 计算失败: {e}")
             return {'source': 'QMT本地', 'success': 0, 'failed': len(stock_list), 'error': str(e)}
     
     def get_ma_data(self, stock_code: str) -> Optional[Dict]:
@@ -496,8 +496,8 @@ class TrueDictionary:
         """
         start = time.perf_counter()
         
-        print(f"📊 [QMT本地] 计算ATR_20D股性雷达...")
-        logger.info(f"📊 [QMT本地] 开始计算ATR_20D,目标{len(stock_list)}只股票")
+        print(f"[STATS] [QMT本地] 计算ATR_20D股性雷达...")
+        logger.info(f"[STATS] [QMT本地] 开始计算ATR_20D,目标{len(stock_list)}只股票")
         
         try:
             from xtquant import xtdata
@@ -508,7 +508,7 @@ class TrueDictionary:
             # 【CTO时空锁死】：回测模式必须基于target_date往前推算！
             # 【CTO防爆】：禁止调用get_trading_dates，会导致BSON崩溃！
             if not target_date:
-                logger.error("❌ [CTO铁血令] ATR预热必须传入target_date！禁止使用datetime.now()！")
+                logger.error("[X] [CTO铁血令] ATR预热必须传入target_date！禁止使用datetime.now()！")
                 return {'success': 0, 'failed': len(stock_list)}
             
             # 【CTO时空锁死】：必须基于目标回测日期往前推算！
@@ -598,10 +598,10 @@ class TrueDictionary:
             
             # 【CTO修正】如果使用默认值的超过50%，必须报严重警告
             if success < len(stock_list) * 0.5:
-                logger.error(f"❌ [数据断层致命告警] {len(stock_list)-success} 只股票丢失真实日K！被迫启用 0.05 盲狙默认值！这极度危险！")
-                print(f"❌ [QMT本地] ATR_20D计算: {success}只真实数据, {len(stock_list)-success}只使用默认值(极度危险！)")
+                logger.error(f"[X] [数据断层致命告警] {len(stock_list)-success} 只股票丢失真实日K！被迫启用 0.05 盲狙默认值！这极度危险！")
+                print(f"[X] [QMT本地] ATR_20D计算: {success}只真实数据, {len(stock_list)-success}只使用默认值(极度危险！)")
             else:
-                logger.info(f"✅ [QMT本地] ATR_20D计算完成: {success}只成功,{len(stock_list)-success}只使用默认值,耗时{elapsed:.1f}ms")
+                logger.info(f"[OK] [QMT本地] ATR_20D计算完成: {success}只成功,{len(stock_list)-success}只使用默认值,耗时{elapsed:.1f}ms")
                 print(f"[QMT本地] ATR_20D计算完成: {success}只成功, {len(stock_list)-success}只使用默认值")
             
             return {
@@ -612,8 +612,8 @@ class TrueDictionary:
             }
             
         except Exception as e:
-            logger.error(f"🚨 [QMT本地-ATR_20D] 计算失败: {e}")
-            print(f"🚨 [QMT本地-ATR_20D] 计算失败: {e}")
+            logger.error(f"[CRITICAL] [QMT本地-ATR_20D] 计算失败: {e}")
+            print(f"[CRITICAL] [QMT本地-ATR_20D] 计算失败: {e}")
             return {'source': 'QMT本地', 'success': 0, 'failed': len(stock_list), 'error': str(e)}
 
     def get_atr_20d(self, stock_code: str) -> float:
@@ -702,11 +702,11 @@ class TrueDictionary:
                 'avg_ms_per_stock': elapsed / len(stock_list) if stock_list else 0
             }
             
-            logger.info(f"✅ [QMT装弹] {success}只成功,耗时{elapsed:.1f}ms,平均每只{result['avg_ms_per_stock']:.3f}ms")
+            logger.info(f"[OK] [QMT装弹] {success}只成功,耗时{elapsed:.1f}ms,平均每只{result['avg_ms_per_stock']:.3f}ms")
             return result
             
         except Exception as e:
-            logger.error(f"🚨 [QMT装弹失败] {e}")
+            logger.error(f"[CRITICAL] [QMT装弹失败] {e}")
             return {'source': 'QMT', 'success': 0, 'failed': len(stock_list), 'error': str(e)}
     
     def _check_data_integrity(self, stock_list: List[str]) -> Dict:
@@ -883,7 +883,7 @@ class TrueDictionary:
         
         【CTO V9.5 Issue#3修复】成交额市值法
         - 公式：成交额(元) / (流通股本(股) × 收盘价(元/股)) × 100
-        - 量纲链：元 / (股 × 元/股) × 100 = 元/元 × 100 = % ✅
+        - 量纲链：元 / (股 × 元/股) × 100 = 元/元 × 100 = % [OK]
         - 说明：本方法使用amount字段，不使用volume字段，与volume单位无关
                 因此不存在「绕开volume单位问题」——压根就没有该问题
         - 优点：避免历史流通股本漂移（送转股导致FloatVolume变化）
@@ -1039,30 +1039,30 @@ if __name__ == "__main__":
     # 测试股票(小规模测试)
     test_stocks = ['000001.SZ', '000002.SZ', '600000.SH']
     
-    print(f"\n📊 测试股票: {test_stocks}")
-    print("⚠️  注意: 此测试需要真实QMT连接!")
+    print(f"\n[STATS] 测试股票: {test_stocks}")
+    print("[WARN]  注意: 此测试需要真实QMT连接!")
     
     try:
         # 执行盘前装弹
         result = td.warmup(test_stocks)
         
-        print("\n📈 装弹结果:")
+        print("\n[TREND] 装弹结果:")
         print(f"  QMT: {result['qmt']}")
         print(f"  5日均量: {result['avg_volume']}")
         print(f"  完整性: {result['integrity']}")
         
         # 查询测试
         if result['integrity']['is_ready']:
-            print("\n🔍 内存查询测试:")
+            print("\n[SEARCH] 内存查询测试:")
             for stock in test_stocks:
                 fv = td.get_float_volume(stock)
                 avg = td.get_avg_volume_5d(stock)
                 up = td.get_up_stop_price(stock)
                 print(f"  {stock}: FloatVolume={fv:,}, 5日Avg={avg:,.0f}, 涨停价={up}")
         
-        print("\n✅ TrueDictionary测试完成 (100% QMT本地)")
+        print("\n[OK] TrueDictionary测试完成 (100% QMT本地)")
         
     except Exception as e:
-        print(f"\n❌ 测试失败(可能需要QMT连接): {e}")
+        print(f"\n[X] 测试失败(可能需要QMT连接): {e}")
         import traceback
         traceback.print_exc()

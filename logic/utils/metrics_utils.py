@@ -597,10 +597,10 @@ def build_dashboard_layout(top_targets, pool_stats=None, account_info=None, is_r
         t_color = "red" if t_pnl_amt >= 0 else "green"
         
         acc_text = (
-            f"[bold yellow]💰 总资产:[/bold yellow] ¥{t_asset:,.2f}  |  "
+            f"[bold yellow][TRADE-BUY] 总资产:[/bold yellow] ¥{t_asset:,.2f}  |  "
             f"[bold cyan]💵 剩余子弹:[/bold cyan] ¥{a_cash:,.2f}  |  "
             f"[bold magenta]📦 锁定槽位:[/bold magenta] {p_count} 只\n"
-            f"[bold {d_color}]⚡ 今日盈亏: ¥{d_pnl_amt:+,.2f} ({d_pnl_pct:+.2f}%)[/]  |  "
+            f"[bold {d_color}][FAST] 今日盈亏: ¥{d_pnl_amt:+,.2f} ({d_pnl_pct:+.2f}%)[/]  |  "
             f"[bold {t_color}]🏆 累计盈亏: ¥{t_pnl_amt:+,.2f} ({t_pnl_pct:+.2f}%)[/]"
         )
         acc_panel = Panel(acc_text, title="[ 虚拟资金风控中枢 ]", border_style="cyan", expand=False)
@@ -611,8 +611,8 @@ def build_dashboard_layout(top_targets, pool_stats=None, account_info=None, is_r
     stats_text = Text()
     if pool_stats:
         passed = pool_stats.get('passed_fine_filter', pool_stats.get('active', 0))
-        stats_text.append(f"🔍 漏斗: 5191只 → 粗筛 {pool_stats.get('total',0)} → 活跃 {pool_stats.get('active',0)} → 过细筛 {passed}\n", style="white")
-        stats_text.append(f"🔥 情绪: 红盘/封板 {pool_stats.get('up',0)}只 | 水下/绿盘 {pool_stats.get('down',0)}只 | 派发剔除 {pool_stats.get('active',0)-passed}只", style="white")
+        stats_text.append(f"[SEARCH] 漏斗: 5191只 → 粗筛 {pool_stats.get('total',0)} → 活跃 {pool_stats.get('active',0)} → 过细筛 {passed}\n", style="white")
+        stats_text.append(f"[ALERT] 情绪: 红盘/封板 {pool_stats.get('up',0)}只 | 水下/绿盘 {pool_stats.get('down',0)}只 | 派发剔除 {pool_stats.get('active',0)-passed}只", style="white")
     
     # 4. 战神榜核心矩阵
     table = Table(show_header=True, header_style="bold magenta", style="cyan", expand=False)

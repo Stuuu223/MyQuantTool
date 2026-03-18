@@ -50,7 +50,7 @@ class PhysicsFeatures:
 
 # ============== 基础物理量提取器 ==============
 
-# ⚠️ [DEAD CODE] 此函数在整个仓库中零调用。
+# [WARN] [DEAD CODE] 此函数在整个仓库中零调用。
 # 实盘引擎使用 extract_mfe_efficiency (logic/strategies/kinetic_core_engine.py)
 # 禁止在此函数中增加任何逻辑。
 def extract_mfe(
@@ -60,7 +60,7 @@ def extract_mfe(
     """
     【MFE做功效率传感器】
     
-    ⚠️ [DEAD CODE] 零引用，仅作为参考实现保留。
+    [WARN] [DEAD CODE] 零引用，仅作为参考实现保留。
     
     MFE = 振幅百分比 / 净流入百分比
     
@@ -111,8 +111,8 @@ def extract_volume_ratio(
     return current_volume / avg_volume_5d
 
 
-# ⚠️ [DEAD CODE] 此函数在整个仓库中零调用。
-# ⚠️ [DATAFRAME DEPENDENCY] 入参 pd.Series 引入 DataFrame 依赖。
+# [WARN] [DEAD CODE] 此函数在整个仓库中零调用。
+# [WARN] [DATAFRAME DEPENDENCY] 入参 pd.Series 引入 DataFrame 依赖。
 # 实盘引擎禁止使用 DataFrame 操作，追求 O(1) 标量计算。
 # 若需加速度计算，应改用标量版本：price_accel = (v2 - v1) / dt
 def extract_acceleration(
@@ -122,7 +122,7 @@ def extract_acceleration(
     """
     【加速度张量】二阶导数传感器
     
-    ⚠️ [DEAD CODE] 零引用，且存在 DataFrame 依赖问题。
+    [WARN] [DEAD CODE] 零引用，且存在 DataFrame 依赖问题。
     实盘引擎应使用标量版本避免 pandas 开销。
     
     不看涨幅，看价格斜率的二阶导数
@@ -185,8 +185,8 @@ def extract_purity(
 
 # ============== 高级物理特征提取器 ==============
 
-# ⚠️ [DEAD CODE] 此函数在整个仓库中零调用。
-# ⚠️ [DATAFRAME DEPENDENCY] 入参 pd.DataFrame 引入 DataFrame 依赖。
+# [WARN] [DEAD CODE] 此函数在整个仓库中零调用。
+# [WARN] [DATAFRAME DEPENDENCY] 入参 pd.DataFrame 引入 DataFrame 依赖。
 # 禁止在此函数中增加任何逻辑。
 def extract_non_newtonian_viscosity(
     tick_df: Optional[pd.DataFrame]
@@ -194,7 +194,7 @@ def extract_non_newtonian_viscosity(
     """
     【非牛顿流体粘滞度传感器】
     
-    ⚠️ [DEAD CODE] 零引用，仅作为参考实现保留。
+    [WARN] [DEAD CODE] 零引用，仅作为参考实现保留。
     
     计算Tick级盘口厚度 / ΔPrice
     
@@ -233,8 +233,8 @@ def extract_non_newtonian_viscosity(
         return 1.0
 
 
-# ⚠️ [DEAD CODE] 此函数在整个仓库中零调用。
-# ⚠️ [DATAFRAME DEPENDENCY] 入参 pd.DataFrame 引入 DataFrame 依赖。
+# [WARN] [DEAD CODE] 此函数在整个仓库中零调用。
+# [WARN] [DATAFRAME DEPENDENCY] 入参 pd.DataFrame 引入 DataFrame 依赖。
 # 禁止在此函数中增加任何逻辑。
 def extract_smart_pig_signal(
     minute_df: Optional[pd.DataFrame],
@@ -243,7 +243,7 @@ def extract_smart_pig_signal(
     """
     【智猪博弈信号提取器】
     
-    ⚠️ [DEAD CODE] 零引用，仅作为参考实现保留。
+    [WARN] [DEAD CODE] 零引用，仅作为参考实现保留。
     
     识别形态：
     1. 大猪出汗模型：在VWAP下方爆出天量，硬生生把价格推上水面
@@ -305,7 +305,7 @@ def extract_smart_pig_signal(
 
 # ============== 综合特征提取器 ==============
 
-# ⚠️ [DEAD CODE] 此函数在整个仓库中零调用。
+# [WARN] [DEAD CODE] 此函数在整个仓库中零调用。
 # 禁止在此函数中增加任何 Pandas/DataFrame 操作。
 # 仅保留作为物理铁律的参考实现。
 def extract_all_features(
@@ -314,7 +314,7 @@ def extract_all_features(
     """
     从全息样本中提取所有物理特征
     
-    ⚠️ [ARCHITECTURE WARNING] 此函数依赖 HolographicSample 复杂数据舱，
+    [WARN] [ARCHITECTURE WARNING] 此函数依赖 HolographicSample 复杂数据舱，
     引入了 DataFrame 依赖。当前实盘引擎使用标量参数版本的独立函数，
     如 extract_purity(close, high, low) 而非 DataFrame 操作。
     
@@ -454,7 +454,7 @@ def extract_overdraft_multiplier(
     - 量比95th(8.2x)次日溢价仅+1.19%
     - 量比50th(1.0x)次日溢价+4.67%
     
-    ⚠️ `min_limit` 和 `log_coefficient` 为待定超参，必须由上层注入！
+    [WARN] `min_limit` 和 `log_coefficient` 为待定超参，必须由上层注入！
     从 config_manager.get('kinetic_physics.overdraft_min_limit') 获取。
     禁止使用魔法默认值！
 
@@ -500,7 +500,7 @@ VALIDATED_LAWS = {
 # 
 # 实盘引擎应使用标量参数版本的独立函数，而非 DataFrame 依赖版本：
 #
-# ✅ 正确用法：
+# [OK] 正确用法：
 #   from logic.core.physics_sensors import (
 #       extract_purity,           # 纯度：(close-low)/(high-low)
 #       extract_volume_ratio,     # 量比：current_vol / avg_vol_5d
@@ -523,11 +523,11 @@ VALIDATED_LAWS = {
 #       log_coefficient=cfg.get('kinetic_physics.overdraft_log_coeff', 0.5)
 #   )
 #
-# ❌ 禁止用法：
+# [X] 禁止用法：
 #   # 不要使用 extract_all_features，它依赖复杂的 HolographicSample
-#   features = extract_all_features(sample)  # ❌ DataFrame 依赖
+#   features = extract_all_features(sample)  # [X] DataFrame 依赖
 #
-# ⚠️ 架构原则：
+# [WARN] 架构原则：
 #   1. 实盘引擎追求 O(1) 时间复杂度
 #   2. 避免 DataFrame 操作带来的内存分配开销
 #   3. 使用标量参数，便于 JIT 编译优化

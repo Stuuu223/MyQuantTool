@@ -6,7 +6,7 @@
 
 【CTO V181 架构注释】
 此文件是活跃核心组件，被mock_live_runner.py使用，负责回测结果归档。
-⚠️ 禁止删除！GitHub code search索引延迟可能导致搜索无结果，但实际引用存在。
+[WARN] 禁止删除！GitHub code search索引延迟可能导致搜索无结果，但实际引用存在。
 
 【Boss指令】
 "先把日志、运行文件创建好归类好，方便以后研究、翻查、搜寻，再说连续回测"
@@ -260,7 +260,7 @@ class SandboxManager:
     def print_sandbox_summary(self):
         """打印沙盒目录结构摘要"""
         print(f"\n{'='*70}")
-        print(f"📁 沙盒档案库: {self.run_id}")
+        print(f"[DIR] 沙盒档案库: {self.run_id}")
         print(f"{'='*70}")
         print(f"根目录: {self.sandbox_root}")
         print(f"\n目录结构:")
