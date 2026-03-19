@@ -184,19 +184,19 @@ class UniversalTracker:
         self._streaming_dir = output_dir or 'data/battle_reports'
         os.makedirs(self._streaming_dir, exist_ok=True)
         
-        # 【CTO V210-T3】文件命名精确到秒，实现测试/实盘物理隔离
-        # 根因：测试运行和实盘运行用同一个日期文件，导致测试数据污染实盘数据
-        datetime_str = datetime.now().strftime('%Y%m%d_%H%M%S')
+        # 【CTO V222】恢复单日单文件 - 状态机持久化
+        # 文件名精确到天，避免重启后生成新文件
+        # 测试隔离通过output_dir参数实现，而非文件名
+        date_str = datetime.now().strftime('%Y%m%d')
         self.streaming_report_path = os.path.join(
             self._streaming_dir,
-            f'streaming_report_{datetime_str}.jsonl'
+            f'streaming_report_{date_str}.jsonl'
         )
         
-        # 轨道2：决策流 - 记录大脑的狙击决策（EVENT_VETO/EVENT_FIRE）
-        # 用途：回答"为什么那只涨停的票我没买"
+        # 轨道2：决策流 - 记录大脑的狙击决策
         self.sniper_log_path = os.path.join(
             self._streaming_dir,
-            f'sniper_log_{datetime_str}.jsonl'
+            f'sniper_log_{date_str}.jsonl'
         )
         
         # 轨道3：心跳快照 - 独立目录，每60帧覆写全市场状态
@@ -207,12 +207,57 @@ class UniversalTracker:
         self._streaming_file = None
         self._last_flushed_peaks: Dict[str, float] = {}  # 记录上次写入的peak_price，避免重复写入
         
+        # 【CTO V222】状态恢复 - 重启后从现有JSONL恢复状态
+        self._recover_from_existing_file()
+        
         logger.info(
             f"[OK] UniversalTracker V2.0 双轨持久化 | 会话: {self.session_id} | 入场方案: {schema}\n"
             f"    行情流: {self.streaming_report_path}\n"
             f"    决策流: {self.sniper_log_path}\n"
             f"    快照目录: {self._heartbeat_dir}"
         )
+
+    def _recover_from_existing_file(self):
+        """
+        【CTO V222】从现有JSONL文件恢复状态
+        
+        盘中重启时，读取当天已有的JSONL记录，恢复：
+        - registry（股票生命周期）
+        - appear_count（上榜次数）
+        - first_appear_time（首次上榜时间）
+        """
+        if not os.path.exists(self.streaming_report_path):
+            return
+        
+        try:
+            recovered_count = 0
+            with open(self.streaming_report_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    try:
+                        record = json.loads(line.strip())
+                        code = record.get('code', '')
+                        if not code:
+                            continue
+                        
+                        # 获取或创建lifecycle
+                        lifecycle = self._get_or_create(code)
+                        
+                        # 恢复状态（只恢复最后一次记录）
+                        lifecycle.first_appear_time = record.get('first_appear_time', lifecycle.first_appear_time)
+                        lifecycle.appear_count = max(lifecycle.appear_count, record.get('appear_count', 0))
+                        lifecycle.peak_score = max(lifecycle.peak_score, record.get('score', 0))
+                        lifecycle.peak_price = max(lifecycle.peak_price, record.get('peak_price', 0))
+                        lifecycle.final_price = record.get('price', lifecycle.final_price)
+                        lifecycle.was_bought = record.get('was_bought', False)
+                        
+                        recovered_count += 1
+                    except json.JSONDecodeError:
+                        continue
+            
+            if recovered_count > 0:
+                logger.info(f"[OK] 状态恢复完成: 从 {self.streaming_report_path} 恢复 {recovered_count} 条记录, registry大小={len(self.registry)}")
+        except Exception as e:
+            logger.warning(f"[WARN] 状态恢复失败: {e}, 将从空状态开始")
 
     # ------------------------------------------------------------------
     # 核心帧更新接口（每个 Tick 帧调用一次）
@@ -843,18 +888,35 @@ class UniversalTracker:
                 'stocks': stocks_snapshot,
             }
             
-            # 独立快照文件：覆写模式
-            time_compact = time_str.replace(':', '').replace('-', '').replace(' ', '_')[:15]  # 20260318_100500
+            # 【CTO V223】单日单文件 + 原子覆写
+            # 文件名固定为 snapshot_{YYYYMMDD}_latest.json
+            date_str = time_str[:10].replace('-', '')  # 从 '2026-03-19 ...' 提取 '20260319'
             snapshot_path = os.path.join(
                 self._heartbeat_dir,
-                f'snapshot_{time_compact}.json'
+                f'snapshot_{date_str}_latest.json'
             )
+            temp_path = snapshot_path + '.tmp'
             
-            with open(snapshot_path, 'w', encoding='utf-8') as f:
-                safe_json_dump(snapshot, f, indent=2)
-                f.flush()
-            
-            logger.debug(f"[HEARTBEAT] frame={self._frame_counter} stocks={len(stocks_snapshot)} -> {snapshot_path}")
+            try:
+                # 1. 先写入临时文件
+                with open(temp_path, 'w', encoding='utf-8') as f:
+                    safe_json_dump(snapshot, f, indent=2)
+                    f.flush()
+                    os.fsync(f.fileno())  # 强制刷入物理磁盘
+                
+                # 2. 原子级替换旧文件
+                os.replace(temp_path, snapshot_path)
+                
+                logger.debug(f"[HEARTBEAT] frame={self._frame_counter} stocks={len(stocks_snapshot)} -> {snapshot_path}")
+            except Exception as write_error:
+                logger.warning(f"[WARN] 心跳快照原子落盘失败: {write_error}")
+                # 清理残骸
+                if os.path.exists(temp_path):
+                    try:
+                        os.remove(temp_path)
+                    except Exception:
+                        pass
+                raise
             
         except Exception as e:
             # 【CTO V202】防爆盾：写入失败不阻塞主引擎
