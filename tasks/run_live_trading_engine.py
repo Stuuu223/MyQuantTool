@@ -1169,20 +1169,10 @@ class LiveTradingEngine:
                 # 当前采用方案A，但在结果中标记触发状态
                 
                 if final_score >= 50.0 and quant_purity > -50.0:
-                    # 【CTO V222】正确计算depth_ratio - 从五档数据计算
-                    # QMT返回的是bidVol/askVol数组，不是depthRatio字段！
-                    bid_list = tick.get('bidVol', [])
-                    ask_list = tick.get('askVol', [])
-                    # 如果数组不存在，尝试独立字段（兼容不同数据源）
-                    if not bid_list or not isinstance(bid_list, list):
-                        bid_list = [tick.get(f'bidVol{i}', 0) or 0 for i in range(1, 6)]
-                    if not ask_list or not isinstance(ask_list, list):
-                        ask_list = [tick.get(f'askVol{i}', 0) or 0 for i in range(1, 6)]
-                    total_bid = sum(bid_list[:5]) if bid_list else 0
-                    total_ask = sum(ask_list[:5]) if ask_list else 0
-                    # 对数深度比：ln((bid+1)/(ask+1))
-                    import math
-                    depth_ratio_calc = math.log((total_bid + 1) / (total_ask + 1)) if total_bid + total_ask > 0 else 0.0
+                    # 【CTO V224】物理净化：使用StandardTick防腐层获取depth_ratio
+                    # 绝对禁止在主引擎中写原生数据解析和公式计算！
+                    from logic.data_providers.standard_tick import StandardTick
+                    std_tick = StandardTick.from_qmt_tick(stock_code, tick)
                     
                     target_entry = {
                         'code': stock_code,
@@ -1205,8 +1195,8 @@ class LiveTradingEngine:
                         'velocity': debug_metrics.get('velocity', 0.0),
                         # 【CTO V210-T2】致命修复：添加price_momentum到target_entry
                         'price_momentum': debug_metrics.get('price_momentum', 0.0),
-                        # 【CTO V222】盘口深度比 - 从五档数据正确计算
-                        'depth_ratio': depth_ratio_calc,
+                        # 【CTO V224】盘口深度比 - 从StandardTick防腐层获取
+                        'depth_ratio': std_tick.depth_ratio,
                     }
                     current_top_targets.append(target_entry)
                     

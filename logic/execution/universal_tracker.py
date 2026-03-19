@@ -207,8 +207,9 @@ class UniversalTracker:
         self._streaming_file = None
         self._last_flushed_peaks: Dict[str, float] = {}  # 记录上次写入的peak_price，避免重复写入
         
-        # 【CTO V222】状态恢复 - 重启后从现有JSONL恢复状态
-        self._recover_from_existing_file()
+        # 【CTO V224】真正的状态机恢复 - 从心跳快照Checkpoint恢复
+        # 废除JSONL幽灵恢复，只从最新的快照恢复
+        self._load_checkpoint()
         
         logger.info(
             f"[OK] UniversalTracker V2.0 双轨持久化 | 会话: {self.session_id} | 入场方案: {schema}\n"
@@ -217,47 +218,64 @@ class UniversalTracker:
             f"    快照目录: {self._heartbeat_dir}"
         )
 
-    def _recover_from_existing_file(self):
+    def _load_checkpoint(self):
         """
-        【CTO V222】从现有JSONL文件恢复状态
+        【CTO V224】真正的心跳快照恢复
         
-        盘中重启时，读取当天已有的JSONL记录，恢复：
-        - registry（股票生命周期）
-        - appear_count（上榜次数）
-        - first_appear_time（首次上榜时间）
+        工业级状态机恢复原则：
+        - 只从最新的Checkpoint快照恢复（单点真相）
+        - 不依赖增量日志（JSONL）恢复，避免幽灵僵尸票
+        
+        快照格式：
+        {
+            "ts": "时间戳",
+            "frame": 帧数,
+            "stocks": [{code, score, price, peak_price, max_gain_pct, 
+                       trigger_type, was_bought, first_appear_time, appear_count}]
+        }
         """
-        if not os.path.exists(self.streaming_report_path):
+        # 构建快照路径
+        date_str = datetime.now().strftime('%Y%m%d')
+        checkpoint_path = os.path.join(
+            self._heartbeat_dir,
+            f'snapshot_{date_str}_latest.json'
+        )
+        
+        if not os.path.exists(checkpoint_path):
+            logger.debug(f"[CHECKPOINT] 今日无快照，从空状态开始: {checkpoint_path}")
             return
         
         try:
-            recovered_count = 0
-            with open(self.streaming_report_path, 'r', encoding='utf-8') as f:
-                for line in f:
-                    try:
-                        record = json.loads(line.strip())
-                        code = record.get('code', '')
-                        if not code:
-                            continue
-                        
-                        # 获取或创建lifecycle
-                        lifecycle = self._get_or_create(code)
-                        
-                        # 恢复状态（只恢复最后一次记录）
-                        lifecycle.first_appear_time = record.get('first_appear_time', lifecycle.first_appear_time)
-                        lifecycle.appear_count = max(lifecycle.appear_count, record.get('appear_count', 0))
-                        lifecycle.peak_score = max(lifecycle.peak_score, record.get('score', 0))
-                        lifecycle.peak_price = max(lifecycle.peak_price, record.get('peak_price', 0))
-                        lifecycle.final_price = record.get('price', lifecycle.final_price)
-                        lifecycle.was_bought = record.get('was_bought', False)
-                        
-                        recovered_count += 1
-                    except json.JSONDecodeError:
-                        continue
+            with open(checkpoint_path, 'r', encoding='utf-8') as f:
+                snapshot = json.load(f)
             
-            if recovered_count > 0:
-                logger.info(f"[OK] 状态恢复完成: 从 {self.streaming_report_path} 恢复 {recovered_count} 条记录, registry大小={len(self.registry)}")
+            stocks = snapshot.get('stocks', [])
+            if not stocks:
+                logger.debug(f"[CHECKPOINT] 快照为空，从空状态开始")
+                return
+            
+            # 恢复registry
+            for stock_data in stocks:
+                code = stock_data.get('code', '')
+                if not code:
+                    continue
+                
+                lifecycle = self._get_or_create(code)
+                lifecycle.peak_score = stock_data.get('score', 0)
+                lifecycle.final_price = stock_data.get('price', 0)
+                lifecycle.peak_price = stock_data.get('peak_price', 0)
+                lifecycle.max_gain_pct = stock_data.get('max_gain_pct', 0)
+                lifecycle.peak_trigger_type = stock_data.get('trigger_type', '')
+                lifecycle.was_bought = stock_data.get('was_bought', False)
+                lifecycle.first_appear_time = stock_data.get('first_appear_time', '')
+                lifecycle.appear_count = stock_data.get('appear_count', 0)
+            
+            logger.info(
+                f"[OK] [CHECKPOINT] 状态恢复完成: 从 {checkpoint_path} "
+                f"恢复 {len(stocks)} 只股票, frame={snapshot.get('frame', 0)}"
+            )
         except Exception as e:
-            logger.warning(f"[WARN] 状态恢复失败: {e}, 将从空状态开始")
+            logger.warning(f"[WARN] [CHECKPOINT] 快照恢复失败: {e}, 从空状态开始")
 
     # ------------------------------------------------------------------
     # 核心帧更新接口（每个 Tick 帧调用一次）
