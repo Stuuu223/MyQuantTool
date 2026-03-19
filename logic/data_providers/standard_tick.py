@@ -219,21 +219,36 @@ class StandardTick:
             tick.get('askPrice4', 0) or 0.0,
             tick.get('askPrice5', 0) or 0.0,
         ]
-        # 【V185量纲铁律】盘口量也是手，×100转股
-        bid_vols = [
-            int((tick.get('bidVol1', 0) or 0) * 100),
-            int((tick.get('bidVol2', 0) or 0) * 100),
-            int((tick.get('bidVol3', 0) or 0) * 100),
-            int((tick.get('bidVol4', 0) or 0) * 100),
-            int((tick.get('bidVol5', 0) or 0) * 100),
-        ]
-        ask_vols = [
-            int((tick.get('askVol1', 0) or 0) * 100),
-            int((tick.get('askVol2', 0) or 0) * 100),
-            int((tick.get('askVol3', 0) or 0) * 100),
-            int((tick.get('askVol4', 0) or 0) * 100),
-            int((tick.get('askVol5', 0) or 0) * 100),
-        ]
+        # 【CTO V225】QMT返回的bidVol/askVol可能是数组格式！
+        # 先尝试数组格式，再尝试独立字段格式
+        bid_vol_array = tick.get('bidVol', [])
+        ask_vol_array = tick.get('askVol', [])
+        
+        if isinstance(bid_vol_array, (list, tuple)) and len(bid_vol_array) >= 5:
+            # 数组格式：[vol1, vol2, vol3, vol4, vol5]，单位是手
+            bid_vols = [int((v or 0) * 100) for v in bid_vol_array[:5]]
+        else:
+            # 独立字段格式：bidVol1, bidVol2...
+            bid_vols = [
+                int((tick.get('bidVol1', 0) or 0) * 100),
+                int((tick.get('bidVol2', 0) or 0) * 100),
+                int((tick.get('bidVol3', 0) or 0) * 100),
+                int((tick.get('bidVol4', 0) or 0) * 100),
+                int((tick.get('bidVol5', 0) or 0) * 100),
+            ]
+        
+        if isinstance(ask_vol_array, (list, tuple)) and len(ask_vol_array) >= 5:
+            # 数组格式
+            ask_vols = [int((v or 0) * 100) for v in ask_vol_array[:5]]
+        else:
+            # 独立字段格式
+            ask_vols = [
+                int((tick.get('askVol1', 0) or 0) * 100),
+                int((tick.get('askVol2', 0) or 0) * 100),
+                int((tick.get('askVol3', 0) or 0) * 100),
+                int((tick.get('askVol4', 0) or 0) * 100),
+                int((tick.get('askVol5', 0) or 0) * 100),
+            ]
         
         return cls(
             code=code,

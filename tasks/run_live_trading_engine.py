@@ -1169,10 +1169,9 @@ class LiveTradingEngine:
                 # 当前采用方案A，但在结果中标记触发状态
                 
                 if final_score >= 50.0 and quant_purity > -50.0:
-                    # 【CTO V224】物理净化：使用StandardTick防腐层获取depth_ratio
-                    # 绝对禁止在主引擎中写原生数据解析和公式计算！
-                    from logic.data_providers.standard_tick import StandardTick
-                    std_tick = StandardTick.from_qmt_tick(stock_code, tick)
+                    # 【CTO V225】绝对净化：depth_ratio已在get_tick_snapshot()的to_qmt_dict()中计算
+                    # 主引擎绝不接触数据解析！直接从清洗后的字典获取
+                    depth_ratio_val = float(tick.get('depthRatio', 0.0) or 0.0)
                     
                     target_entry = {
                         'code': stock_code,
@@ -1195,8 +1194,8 @@ class LiveTradingEngine:
                         'velocity': debug_metrics.get('velocity', 0.0),
                         # 【CTO V210-T2】致命修复：添加price_momentum到target_entry
                         'price_momentum': debug_metrics.get('price_momentum', 0.0),
-                        # 【CTO V224】盘口深度比 - 从StandardTick防腐层获取
-                        'depth_ratio': std_tick.depth_ratio,
+                        # 【CTO V225】盘口深度比 - 从防腐层已清洗的字典中获取
+                        'depth_ratio': depth_ratio_val,
                     }
                     current_top_targets.append(target_entry)
                     

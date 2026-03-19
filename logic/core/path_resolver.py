@@ -223,40 +223,61 @@ class PathResolver:
     @classmethod
     def get_qmt_data_dir(cls) -> Path:
         """
-        获取QMT数据目录 - 从环境变量或配置文件读取，禁止硬编码
+        获取QMT数据目录 - 从配置文件/环境变量/自动检测读取，禁止硬编码
+        
+        优先级：
+        1. config/data_paths.json配置文件
+        2. 环境变量QMT_PATH
+        3. 自动检测常见安装位置
         
         Returns:
             Path: QMT数据目录的绝对路径
             
         Raises:
             RuntimeError: QMT数据目录未配置且默认路径不存在
-            FileNotFoundError: 配置文件不存在
-            json.JSONDecodeError: 配置文件格式错误
-            KeyError: 配置文件中缺少必要的键
         """
-        # 首先尝试从环境变量读取
+        # 【CTO V225】优先级1：从配置文件读取
+        try:
+            config_file = cls.get_config_dir() / 'data_paths.json'
+            if config_file.exists():
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                qmt_data_dir = config.get('qmt_data_dir')
+                if qmt_data_dir:
+                    path = Path(qmt_data_dir)
+                    if path.exists():
+                        return path.resolve()
+                    else:
+                        raise RuntimeError(
+                            f"QMT数据目录未配置或无法找到。\n"
+                            f"[X] 错误：配置文件中指定的路径不存在: {path}\n"
+                            f"[TIP] 请检查config/data_paths.json中的qmt_data_dir配置"
+                        )
+        except json.JSONDecodeError as e:
+            raise RuntimeError(
+                f"QMT数据目录未配置或无法找到。\n"
+                f"[X] 错误：配置文件格式错误: {e}\n"
+                f"[TIP] 请检查config/data_paths.json是否为有效JSON"
+            )
+        except FileNotFoundError:
+            pass  # 配置文件不存在，继续尝试其他方式
+        
+        # 【CTO V225】优先级2：从环境变量读取
         qmt_path_env = os.getenv("QMT_PATH")
         if qmt_path_env:
             path = Path(qmt_path_env)
             if path.exists():
                 return path.resolve()
             else:
-                raise RuntimeError(f"环境变量QMT_PATH指定的路径不存在: {path}")
+                raise RuntimeError(
+                    f"QMT数据目录未配置或无法找到。\n"
+                    f"[X] 错误：环境变量QMT_PATH指定的路径不存在: {path}\n"
+                    f"[TIP] 请检查环境变量QMT_PATH配置"
+                )
         
-        # 直接从环境变量或默认路径获取QMT数据目录
-        qmt_path = os.environ.get("QMT_PATH")
-        if qmt_path:
-            path = Path(qmt_path)
-            if path.exists():
-                return path.resolve()
-            else:
-                raise RuntimeError(f"环境变量QMT_PATH指定的路径不存在: {path}")
-        
-        # 智能检测：尝试从xtdata获取当前连接的数据路径信息
+        # 【CTO V225】优先级3：自动检测常见安装位置
         try:
             from xtquant import xtdata
-            # xtdata在连接时会显示数据路径信息，我们利用这一点
-            # 检查当前系统上可能的QMT安装位置
             import platform
             possible_paths = []
             
@@ -265,7 +286,6 @@ class PathResolver:
                 env_value = os.getenv(env_var)
                 if env_value:
                     if env_var == 'HOMEDRIVE':
-                        # 尝试常见安装位置
                         qmt_path = Path(f"{env_value}/QMT/userdata_mini")
                         if qmt_path.exists():
                             possible_paths.append(qmt_path)
@@ -278,7 +298,6 @@ class PathResolver:
             for drive_letter in string.ascii_uppercase:
                 drive_path = f"{drive_letter}:"
                 if os.path.exists(drive_path):
-                    # 检查这个驱动器上是否有QMT安装
                     qmt_path = Path(f"{drive_letter}:/QMT/userdata_mini")
                     if qmt_path.exists():
                         possible_paths.append(qmt_path)
@@ -286,29 +305,25 @@ class PathResolver:
                     if qmt_path2.exists():
                         possible_paths.append(qmt_path2)
             
-            # 返回第一个找到的有效路径
             for path in possible_paths:
                 if path.exists():
                     return path.resolve()
                     
         except ImportError:
-            # xtquant不可用时跳过智能检测
             pass
         except Exception:
-            # 其他异常也跳过智能检测
             pass
         
         raise RuntimeError(
             f"QMT数据目录未配置或无法找到。\n"
             f"[X] 错误：系统无法找到QMT数据目录，请检查以下配置：\n"
-            f"1. 环境变量QMT_PATH是否正确设置 (当前值: {os.getenv('QMT_PATH', '未设置')})\n"
-            f"2. QMT客户端是否已正确安装\n"
-            f"3. QMT数据目录路径是否存在\n"
-            f"4. .env文件中QMT_PATH配置是否正确\n\n"
+            f"1. 配置文件config/data_paths.json中的qmt_data_dir\n"
+            f"2. 环境变量QMT_PATH (当前值: {os.getenv('QMT_PATH', '未设置')})\n"
+            f"3. QMT客户端是否已正确安装\n\n"
             f"[TIP] 解决方案：\n"
-            f"   设置环境变量: set QMT_PATH=H:\\QMT\\userdata_mini (替换为实际路径)\n"
-            f"   或创建配置文件: {config_file} 并添加: {{'qmt_data_dir': '你的实际路径'}}\n\n"
-            f"📋 常见QMT安装路径: H:\\QMT\\userdata_mini, E:\\QMT\\userdata_mini, D:\\国金证券QMT交易端\\userdata_mini"
+            f"   创建配置文件: config/data_paths.json 并添加: {{'qmt_data_dir': '你的实际路径'}}\n"
+            f"   或设置环境变量: set QMT_PATH=H:\\QMT\\userdata_mini\n\n"
+            f"常见QMT安装路径: H:\\QMT\\userdata_mini, E:\\QMT\\userdata_mini, D:\\国金证券QMT交易端\\userdata_mini"
         )
     
     @classmethod
