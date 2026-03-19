@@ -413,11 +413,18 @@ class KineticCoreEngine:
         float_volume_shares = safe_float(float_volume_shares, 0.0)
         
         # 安全检查
+        # 【CTO V221-T3】预计算price_momentum用于早期返回的empty_debug
+        early_price_momentum = 0.0
+        if high > low and price > 0:
+            early_price_momentum = (price - low) / (high - low)
+        elif high == low:
+            early_price_momentum = 0.5  # 一字板给中性值
+        
         if price <= 0:
-            empty_debug = {'mass_potential': 0.0, 'velocity': 0.0, 'base_kinetic_energy': 0.0, 'friction_multiplier': 0.0, 'purity_norm': 0.0, 'inflow_ratio_pct': 0.0, 'ratio_stock': 0.0, 'depth_ratio': depth_ratio, 'depth_penalty': 0.0, 'reason': '价格无效'}
+            empty_debug = {'mass_potential': 0.0, 'velocity': 0.0, 'base_kinetic_energy': 0.0, 'friction_multiplier': 0.0, 'purity_norm': 0.0, 'inflow_ratio_pct': 0.0, 'ratio_stock': 0.0, 'depth_ratio': depth_ratio, 'depth_penalty': 0.0, 'price_momentum': early_price_momentum, 'reason': '价格无效'}
             return 0.0, 0.0, 0.0, 0.0, 0.0, empty_debug
         if float_volume_shares <= 0:
-            empty_debug = {'mass_potential': 0.0, 'velocity': 0.0, 'base_kinetic_energy': 0.0, 'friction_multiplier': 0.0, 'purity_norm': 0.0, 'inflow_ratio_pct': 0.0, 'ratio_stock': 0.0, 'depth_ratio': depth_ratio, 'depth_penalty': 0.0, 'reason': '流通盘无效'}
+            empty_debug = {'mass_potential': 0.0, 'velocity': 0.0, 'base_kinetic_energy': 0.0, 'friction_multiplier': 0.0, 'purity_norm': 0.0, 'inflow_ratio_pct': 0.0, 'ratio_stock': 0.0, 'depth_ratio': depth_ratio, 'depth_penalty': 0.0, 'price_momentum': early_price_momentum, 'reason': '流通盘无效'}
             return 0.0, 0.0, 0.0, 0.0, 0.0, empty_debug
         if high < low:
             high = low = price  # 容错
@@ -539,7 +546,7 @@ class KineticCoreEngine:
         if price_momentum < self.pm_threshold:
             is_micro_collapsed = True
             logger.debug(f"[VETO-MOMENTUM] [冲高回落] {stock_code} momentum={price_momentum:.2f}<{self.pm_threshold:.2f}[UNVERIFIED]，姿态破败，返回0分")
-            empty_debug = {'mass_potential': 0.0, 'velocity': 0.0, 'base_kinetic_energy': 0.0, 'friction_multiplier': 0.0, 'purity_norm': 0.0, 'inflow_ratio_pct': inflow_ratio_pct, 'ratio_stock': ratio_stock, 'depth_ratio': depth_ratio, 'depth_penalty': 0.0, 'reason': '姿态破败', 'pm_threshold': self.pm_threshold}
+            empty_debug = {'mass_potential': 0.0, 'velocity': 0.0, 'base_kinetic_energy': 0.0, 'friction_multiplier': 0.0, 'purity_norm': 0.0, 'inflow_ratio_pct': inflow_ratio_pct, 'ratio_stock': ratio_stock, 'depth_ratio': depth_ratio, 'depth_penalty': 0.0, 'price_momentum': price_momentum, 'reason': '姿态破败', 'pm_threshold': self.pm_threshold}
             return 0.0, 0.0, inflow_ratio_pct, ratio_stock, mfe, empty_debug
         
         # === 【CTO V110 绝对水位隔离：重力逃逸判据 + V112微观坍塌】 ===
@@ -566,7 +573,7 @@ class KineticCoreEngine:
         LUNCH_BREAK_END = time_type(13, 0)
         if LUNCH_BREAK_START <= current_time.time() < LUNCH_BREAK_END:
             logger.warning(f"[时序异常] {stock_code} 传入休市时间{current_time.time()}，返回0分")
-            empty_debug = {'mass_potential': mass_potential, 'velocity': velocity, 'base_kinetic_energy': base_kinetic_energy, 'friction_multiplier': 0.0, 'purity_norm': purity_norm, 'inflow_ratio_pct': inflow_ratio_pct, 'ratio_stock': ratio_stock, 'depth_ratio': depth_ratio, 'depth_penalty': 0.0, 'reason': '休市时间'}
+            empty_debug = {'mass_potential': mass_potential, 'velocity': velocity, 'base_kinetic_energy': base_kinetic_energy, 'friction_multiplier': 0.0, 'purity_norm': purity_norm, 'inflow_ratio_pct': inflow_ratio_pct, 'ratio_stock': ratio_stock, 'depth_ratio': depth_ratio, 'depth_penalty': 0.0, 'price_momentum': price_momentum, 'reason': '休市时间'}
             return 0.0, 0.0, inflow_ratio_pct, ratio_stock, 0.0, empty_debug
         
         if _total_min <= 11 * 60 + 30:
@@ -660,7 +667,7 @@ class KineticCoreEngine:
         if overflow_multiplier <= 1.0 and inflow_ratio_pct > 0.5:
             if mfe < 0.1:
                 logger.debug(f"[VETO-WALL] [阻力死墙] {stock_code} 做功效率极低(MFE:{mfe:.2f})，动能被摩擦力耗尽，静默！")
-                empty_debug = {'mass_potential': mass_potential, 'velocity': velocity, 'base_kinetic_energy': base_kinetic_energy, 'friction_multiplier': friction_multiplier, 'purity_norm': purity_norm, 'inflow_ratio_pct': inflow_ratio_pct, 'ratio_stock': ratio_stock, 'mfe': mfe, 'depth_ratio': depth_ratio, 'depth_penalty': depth_penalty, 'reason': '阻力死墙'}
+                empty_debug = {'mass_potential': mass_potential, 'velocity': velocity, 'base_kinetic_energy': base_kinetic_energy, 'friction_multiplier': friction_multiplier, 'purity_norm': purity_norm, 'inflow_ratio_pct': inflow_ratio_pct, 'ratio_stock': ratio_stock, 'mfe': mfe, 'depth_ratio': depth_ratio, 'depth_penalty': depth_penalty, 'price_momentum': price_momentum, 'reason': '阻力死墙'}
                 return 0.0, 0.0, inflow_ratio_pct, ratio_stock, mfe, empty_debug
         
         # 2. 重力势能坍塌 (Gravitational Collapse, 取代回撤>4%静态阈值)
@@ -668,7 +675,7 @@ class KineticCoreEngine:
         # 如果当前价格跌破了开盘价，且被死死压在日内最高点的一半以下(纯度<0.4)，主升力场已坍塌。
         if price < open_price and purity_norm < 0.4:
             logger.debug(f"[BLACK-HOLE] [引力坍塌] {stock_code} 跌破开盘价且纯度仅{purity_norm*100:.0f}%，势能坠入黑洞！")
-            empty_debug = {'mass_potential': mass_potential, 'velocity': velocity, 'base_kinetic_energy': base_kinetic_energy, 'friction_multiplier': friction_multiplier, 'purity_norm': purity_norm, 'inflow_ratio_pct': inflow_ratio_pct, 'ratio_stock': ratio_stock, 'depth_ratio': depth_ratio, 'depth_penalty': depth_penalty, 'reason': '引力坍塌'}
+            empty_debug = {'mass_potential': mass_potential, 'velocity': velocity, 'base_kinetic_energy': base_kinetic_energy, 'friction_multiplier': friction_multiplier, 'purity_norm': purity_norm, 'inflow_ratio_pct': inflow_ratio_pct, 'ratio_stock': ratio_stock, 'depth_ratio': depth_ratio, 'depth_penalty': depth_penalty, 'price_momentum': price_momentum, 'reason': '引力坍塌'}
             return 0.0, 0.0, inflow_ratio_pct, ratio_stock, mfe, empty_debug
         
         # ========== 6. 终极融合 ==========
